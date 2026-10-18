@@ -992,13 +992,17 @@ by the existing ten-second registry deadline. Preparation never renews the
 The browser proxy preserves immutable Cache-Control on versioned responses and
 preserves withdrawal/unavailability errors from the gateway.
 
-The implemented runtime source is native development only: Codefly owns and
-creates its digest-named selection cache, then injects `artifact-cache/ROOT` as a
-workspace value into Accounts and the gateway. They open it read-only; a Pod or
-nonlocal run refuses that source. The registry reader is separately tested but
-production repository, protected reader identity, custody and retention have not
-been bound to a deployed composition. These changes do not qualify production
-artifact acquisition or production mountless credential delivery.
+Codefly selects the source in the render-owned `artifact-cache` group, and
+Accounts and the gateway read it through `frontendpayload.Configure`. A native
+run creates its digest-named selection cache and injects `artifact-cache/ROOT`;
+they open it read-only, and a Pod or nonlocal run refuses that source. A
+deployed render builds each component's bundle from its release, publishes it
+by digest to one repository beside the cell's images, and injects
+`artifact-cache/REPOSITORY`; a Pod reads it over HTTPS as its own workload
+identity (the metadata server's token, no stored credential), and outside a Pod
+that value is refused. The two never coexist. Reader access to the repository
+is the cell operator's grant to these two workloads; retention is the
+repository's. A live cell read has not been qualified here.
 
 ### Admission with no consumed permissions
 
@@ -1011,7 +1015,7 @@ Installation-use consent and team grants remain required even for a no-op
 installation. An empty permission list does not make a page public.
 
 The `artifact-cache` configuration group belongs to the CLI: the native run
-injects its actual retained root, and authored defaults (including empty files)
+injects its actual retained root, a deployed render its bundle repository, and authored defaults (including empty files)
 are refused by the render. Use the lifecycle CLI candidate for local validation;
 released CLI 0.1.185 does not yet recognise this group as CLI-owned. The root and
 module-tools configuration gates both enforce that no authored default ships.

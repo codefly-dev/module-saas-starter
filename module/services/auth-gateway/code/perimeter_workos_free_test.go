@@ -53,9 +53,11 @@ var allowedPerimeterConfigDeps = map[string]bool{
 	// to require a token's resource audience to name it, so the origin a client
 	// is sent to and the origin a token is accepted at are one operator-pinned
 	// value rather than two headers that can disagree.
-	// artifact-cache is CLI render-owned and supplies only the native digest
-	// cache ROOT. ConfigureNative refuses Pods and non-local contexts; this
-	// group carries neither provider credentials nor a provider endpoint.
+	// artifact-cache is CLI render-owned and supplies only where frontend
+	// bundles are read from: the native digest cache ROOT (refused in Pods and
+	// non-local contexts) or the published bundle REPOSITORY (read as the
+	// Pod's workload identity). Neither is an identity provider's credential
+	// or endpoint.
 	"artifact-cache": true,
 	"application":    true,
 	"gateway":        true,

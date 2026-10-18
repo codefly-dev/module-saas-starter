@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -31,7 +32,13 @@ func (c *solutionRegistryCache) prepareFrontends(ctx context.Context, snapshot *
 		if json.Unmarshal([]byte(record.GetFrontend().GetManifest()), &frontend) != nil || frontend.Payload == nil {
 			continue
 		}
-		bundle, _ := c.prepareBundle(ctx, &frontend)
+		bundle, err := c.prepareBundle(ctx, &frontend)
+		if err != nil {
+			// The reason is the preparer's classified one: a registry status,
+			// a missing blob, a refused redirect or the reader identity's
+			// refusal, never a token or a locator.
+			log.Printf("solution %s: frontend bundle not prepared: %v", record.GetSolutionId(), err)
+		}
 		out[record.GetSolutionId()] = map[string]*preparedFrontend{frontendAssetVersion(record): {frontend: &frontend, ready: bundle != nil}}
 	}
 	return out

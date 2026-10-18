@@ -262,7 +262,7 @@ func main() {
 		// reach this replica without restarting it.
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
-		frontendSource, err := frontendpayload.ConfigureNative(ctx, codefly.For(ctx), codefly.IsLocal(), os.Getenv("KUBERNETES_SERVICE_HOST") != "")
+		frontendSource, err := frontendpayload.Configure(ctx, codefly.For(ctx), codefly.IsLocal(), os.Getenv("KUBERNETES_SERVICE_HOST") != "")
 		if err != nil {
 			panic(err)
 		}
