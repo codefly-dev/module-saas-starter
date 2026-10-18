@@ -123,9 +123,9 @@ func TestAnUndeclaredPrefixIsRefusedWithItsReasonLogged(t *testing.T) {
 		revision uint64
 		reason   string
 	}{
-		"no envelope ever derived": {ModulePrincipalRegistry{}, 0, "the module registry is empty and was derived from no module envelope"},
+		"no envelope ever derived":     {ModulePrincipalRegistry{}, 0, "the module registry is empty and was derived from no module envelope"},
 		"an envelope allowing nothing": {ModulePrincipalRegistry{}, 4, "the module registry is empty"},
-		"other modules declared": {ModulePrincipalRegistry{"principal-1": {Prefix: "crm"}}, 4, "the module registry holds no entry for it"},
+		"other modules declared":       {ModulePrincipalRegistry{"principal-1": {Prefix: "crm"}}, 4, "the module registry holds no entry for it"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			logs := captureBusinessLogs(t)
@@ -168,4 +168,27 @@ func (c *businessLogCapture) String() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return strings.Join(c.lines, "\n")
+}
+
+// roleOnlyStore answers the platform role and nothing else: reaching the
+// applied bindings without super_admin panics on the nil embedded store.
+type roleOnlyStore struct {
+	Store
+	role string
+}
+
+func (s roleOnlyStore) GetPlatformRole(context.Context, string) (string, error) { return s.role, nil }
+
+// What the applied manifests ask for is a super_admin's read on its own, not
+// only behind the adapter's gate.
+func TestOnlyASuperAdminReadsWhatTheManifestsAskFor(t *testing.T) {
+	for _, role := range []string{"", "support", "admin"} {
+		t.Run("role "+role, func(t *testing.T) {
+			s := &Service{store: roleOnlyStore{role: role}}
+			_, err := s.ModuleAuthorityRequests(context.Background(), "actor-1")
+			var refused *StoreError
+			require.ErrorAs(t, err, &refused)
+			require.Equal(t, ErrTypePermission, refused.StoreErrorType)
+		})
+	}
 }

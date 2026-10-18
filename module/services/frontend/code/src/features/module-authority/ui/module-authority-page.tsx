@@ -143,7 +143,10 @@ export function ModuleAuthorityPage() {
 					<CardDescription>
 						{denied.length === 0
 							? "The envelope declares a ceiling for every principal asked for."
-							: `${denied.length} of ${requested.length} asked for ${denied.length === 1 ? "is" : "are"} not allowed, and denied every Work Context.`}
+							: `${denied.length} of ${requested.length} asked for ${denied.length === 1 ? "has" : "have"} no ceiling in the envelope, and ${denied.length === 1 ? "is" : "are"} denied every Work Context.`}{" "}
+						A declared ceiling is necessary, not sufficient: the reconcile pass
+						still omits a principal two bindings ask for, or whose manifest no
+						longer verifies, and names each in the accounts log.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -240,7 +243,22 @@ export function ModuleAuthorityPage() {
 	);
 }
 
+/** The authority request, indented; shown as sent when it is not JSON. */
+function indented(authority: string): string {
+	try {
+		return JSON.stringify(JSON.parse(authority), null, 2);
+	} catch {
+		return authority;
+	}
+}
+
 function RequestsTable({ requested }: { requested: ModuleAuthorityRequest[] }) {
+	// Two bindings asking for one principal leave it with no single answer, so
+	// the pass omits it whatever the envelope says.
+	const askers = new Map<string, number>();
+	for (const request of requested) {
+		askers.set(request.principal, (askers.get(request.principal) ?? 0) + 1);
+	}
 	return (
 		<Table aria-label="Authority the applied manifests ask for">
 			<TableHeader>
@@ -261,11 +279,16 @@ function RequestsTable({ requested }: { requested: ModuleAuthorityRequest[] }) {
 						<TableCell>
 							{request.allowed ? (
 								<Badge tone="success" dot>
-									Allowed
+									Ceiling declared
 								</Badge>
 							) : (
 								<Badge tone="danger" dot>
-									Not allowed
+									No ceiling
+								</Badge>
+							)}
+							{(askers.get(request.principal) ?? 0) > 1 && (
+								<Badge tone="danger" dot>
+									Asked for by {askers.get(request.principal)} bindings
 								</Badge>
 							)}
 						</TableCell>
@@ -275,7 +298,7 @@ function RequestsTable({ requested }: { requested: ModuleAuthorityRequest[] }) {
 									Authority request
 								</summary>
 								<pre className="mt-2 max-w-xl overflow-x-auto text-xs">
-									{JSON.stringify(JSON.parse(request.authority), null, 2)}
+									{indented(request.authority)}
 								</pre>
 							</details>
 						</TableCell>

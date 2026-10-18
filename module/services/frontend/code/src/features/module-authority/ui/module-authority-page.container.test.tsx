@@ -75,14 +75,14 @@ describe("ModuleAuthorityPage", () => {
 		).toBeTruthy();
 		expect(
 			screen.getByText(
-				"2 of 2 asked for are not allowed, and denied every Work Context.",
+				/^2 of 2 asked for have no ceiling in the envelope, and are denied every Work Context\./,
 			),
 		).toBeTruthy();
 		const table = screen.getByRole("table", {
 			name: "Authority the applied manifests ask for",
 		});
 		expect(within(table).getByText("documents")).toBeTruthy();
-		expect(within(table).getAllByText("Not allowed")).toHaveLength(2);
+		expect(within(table).getAllByText("No ceiling")).toHaveLength(2);
 		const draft = screen.getByLabelText(
 			"Envelope document",
 		) as HTMLTextAreaElement;
@@ -102,7 +102,7 @@ describe("ModuleAuthorityPage", () => {
 		expect(await screen.findByText(revision3.writtenBy)).toBeTruthy();
 		expect(
 			screen.getByText(
-				"1 of 2 asked for is not allowed, and denied every Work Context.",
+				/^1 of 2 asked for has no ceiling in the envelope, and is denied every Work Context\./,
 			),
 		).toBeTruthy();
 		const draft = screen.getByLabelText(
@@ -124,6 +124,58 @@ describe("ModuleAuthorityPage", () => {
 			revision: 4,
 			principals: { documents: {} },
 		});
+	});
+
+	it("keeps the draft fenced on its own revision when another one is written meanwhile", async () => {
+		serveEnvelope({ envelope: revision3, requested: [] });
+		const sent = serveWrite(() =>
+			HttpResponse.json(
+				{ code: "aborted", message: "written since" },
+				{ status: 409 },
+			),
+		);
+		const { client } = renderInApp(<ModuleAuthorityPage />);
+		const draft = (await screen.findByLabelText(
+			"Envelope document",
+		)) as HTMLTextAreaElement;
+		fireEvent.change(draft, {
+			target: { value: JSON.stringify({ revision: 4, principals: {} }) },
+		});
+
+		serveEnvelope({ envelope: { ...revision3, revision: "4" }, requested: [] });
+		await client.invalidateQueries();
+		expect(
+			await screen.findByText(
+				/Revision 4 was written after this draft was started from revision 3/,
+			),
+		).toBeTruthy();
+		await write("4");
+
+		await waitFor(() => expect(sent).toHaveLength(1));
+		expect(sent[0].expectedRevision).toBe("3");
+		expect(
+			await screen.findByText(/Another administrator wrote a revision/),
+		).toBeTruthy();
+	});
+
+	it("flags a principal two bindings ask for, and shows an unreadable request as sent", async () => {
+		serveEnvelope({
+			envelope: revision3,
+			requested: [
+				asking("reports", true),
+				{
+					...asking("reports", true),
+					binding: "acme.test.other",
+					authority: "{not json",
+				},
+			],
+		});
+		renderInApp(<ModuleAuthorityPage />);
+
+		expect(await screen.findAllByText("Asked for by 2 bindings")).toHaveLength(
+			2,
+		);
+		expect(screen.getByText("{not json")).toBeTruthy();
 	});
 
 	it.each([
