@@ -717,7 +717,7 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		}
 		// Connecting delegates the source's sync to the module bindings that
 		// accept it, in the same transaction as the source itself.
-		return s.recordSourceDelegationsTx(ctx, actorID, orgID, source.ID)
+		return s.recordSourceDelegationsOnConnectTx(ctx, actorID, orgID, source.ID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
@@ -981,7 +981,7 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		if err := s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID, payload); err != nil {
 			return err
 		}
-		return s.recordSourceDelegationsTx(ctx, actorID, orgID, source.ID)
+		return s.recordSourceDelegationsOnConnectTx(ctx, actorID, orgID, source.ID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
@@ -1381,7 +1381,7 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 				}
 				// Replacing the credential is a reconnect: the delegation moves to
 				// the person who reconnected, atomically with the credential.
-				return s.recordSourceDelegationsTx(ctx, actorID, orgID, source.ID)
+				return s.recordSourceDelegationsOnConnectTx(ctx, actorID, orgID, source.ID)
 			}); err != nil {
 				return "", err
 			}
@@ -1474,7 +1474,7 @@ func (s *Service) ReconnectDatasourceSource(ctx context.Context, actorID, orgID,
 			return status.Error(codes.FailedPrecondition,
 				"This source was given a credential while it was being reconnected. Reconnect it with a replacement PAT.")
 		}
-		return s.recordSourceDelegationsTx(ctx, actorID, orgID, source.ID)
+		return s.recordSourceDelegationsOnConnectTx(ctx, actorID, orgID, source.ID)
 	}); err != nil {
 		return "", err
 	}

@@ -30,7 +30,20 @@ import (
 //     three-clause ruling did not name**, and it is here because leaving it out
 //     would make every such ceiling entry dead and take the module content-read
 //     surface down; flagged for confirmation rather than quietly widened.
-//  4. Nothing else. The gateway's own name is never an audience: a capability
+//  4. The ALIAS of every DECLARED, NON-TOMBSTONED module registration — a module
+//     whose presence this host applied. A forwarded viewer Work Context names the
+//     module it is for by that alias (the gateway's /v1/<alias> route admits it
+//     there), and a module that only serves the gateway's viewers derives no
+//     principal, so clause 3 alone left it unaddressable. It is derived from
+//     delivered presence exactly as clause 2 is, and withdrawn with the same
+//     tombstone. Addressability only: authority for the module's own calls is
+//     still the authority document's alone. It is keyed by alias, unlike
+//     clause 2, because the alias is what the module verifies a viewer's Work
+//     Context against; so a capability minted for a withdrawn module stays
+//     good at a successor declared under the same alias until it expires. That
+//     is bounded by the capability's lifetime and by the per-request
+//     installation admission the gateway makes before forwarding it.
+//  5. Nothing else. The gateway's own name is never an audience: a capability
 //     addressed to the forwarding hop is one the hop would consume rather than
 //     forward.
 //
@@ -65,16 +78,24 @@ func SolutionAudience(bindingID string) string {
 // replaces was a string nobody could trace to a consumer.
 var ErrAudienceNotInHostVocabulary = fmt.Errorf("audience is not one this host serves")
 
-// DeclaredSolutionBindingStore reads the binding ids the audience set is derived
-// from. Separate from SolutionRuntimeBoundarySeedStore because the two want
-// DIFFERENT rows: the boundary check includes tombstones, since a withdrawn
+// LiveDeclaredBinding is one live declared registration as the vocabulary reads
+// it: the binding that declared it, the kind it was declared as, and the route
+// alias it holds.
+type LiveDeclaredBinding struct {
+	BindingID string
+	Kind      SolutionDeclaredKind
+	Alias     string
+}
+
+// DeclaredSolutionBindingStore reads the declarations the audience set is
+// derived from. Separate from SolutionRuntimeBoundarySeedStore because the two
+// want DIFFERENT rows: the boundary check includes tombstones, since a withdrawn
 // solution's runs may still be executing and their boundaries still have to be
 // protected, while an audience must not survive the withdrawal that took the
 // consumer away.
 type DeclaredSolutionBindingStore interface {
-	// LiveDeclaredSolutionBindingIDs returns the binding id of every declared,
-	// non-tombstoned registration.
-	LiveDeclaredSolutionBindingIDs(ctx context.Context) ([]string, error)
+	// LiveDeclaredBindings returns every declared, non-tombstoned registration.
+	LiveDeclaredBindings(ctx context.Context) ([]LiveDeclaredBinding, error)
 }
 
 // HostAudienceCacheBound is how long a resolved set of declared solution bindings
@@ -93,7 +114,7 @@ const HostAudienceCacheBound = 120 * time.Second
 // the time it was taken. Stored behind an atomic pointer and never mutated, so a
 // reader either sees a whole previous snapshot or a whole newer one.
 type declaredAudienceSnapshot struct {
-	bindings []string
+	bindings []LiveDeclaredBinding
 	at       time.Time
 }
 
@@ -113,7 +134,7 @@ func (s *Service) InvalidateHostAudiences() {
 	s.declaredAudienceBindings.Store(nil)
 }
 
-// declaredAudienceBindingIDs resolves the declared binding ids, from the cache
+// liveDeclaredBindings resolves the live declarations, from the cache
 // when it is inside the bound and from the control plane when it is not.
 //
 // Caching THIS half is what keeps the vocabulary off the per-mint hot path. It
@@ -122,7 +143,7 @@ func (s *Service) InvalidateHostAudiences() {
 // whose MaxConns is the pgx default and which every other control-plane capability
 // shares, including the delivery reconciler. A mint storm therefore queued
 // delivery, which is the mechanism that withdraws a compromised solution.
-func (s *Service) declaredAudienceBindingIDs(ctx context.Context) ([]string, error) {
+func (s *Service) liveDeclaredBindings(ctx context.Context) ([]LiveDeclaredBinding, error) {
 	now := time.Now
 	if s.audienceClock != nil {
 		now = s.audienceClock
@@ -138,10 +159,10 @@ func (s *Service) declaredAudienceBindingIDs(ctx context.Context) ([]string, err
 		// refuse every solution mint while looking like a vocabulary decision.
 		return nil, fmt.Errorf("cannot resolve the host audience vocabulary: store does not read declared solution bindings")
 	}
-	var bindings []string
+	var bindings []LiveDeclaredBinding
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
-		bindings, err = store.LiveDeclaredSolutionBindingIDs(ctx)
+		bindings, err = store.LiveDeclaredBindings(ctx)
 		return err
 	}); err != nil {
 		// A failed read does NOT replace the snapshot: an outage must not install an
@@ -166,7 +187,7 @@ func (s *Service) HostAudiences(ctx context.Context) (map[string]struct{}, error
 		// panicking on a nil store three frames deeper.
 		return nil, fmt.Errorf("cannot resolve the host audience vocabulary: accounts service is not configured")
 	}
-	bindings, err := s.declaredAudienceBindingIDs(ctx)
+	bindings, err := s.liveDeclaredBindings(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -175,8 +196,17 @@ func (s *Service) HostAudiences(ctx context.Context) (map[string]struct{}, error
 	set[ModuleCapabilitiesAudience] = struct{}{}
 	set[SourceOperationAudience] = struct{}{}
 	for _, binding := range bindings {
-		if binding = strings.TrimSpace(binding); binding != "" {
-			set[SolutionAudience(binding)] = struct{}{}
+		if id := strings.TrimSpace(binding.BindingID); id != "" {
+			set[SolutionAudience(id)] = struct{}{}
+		}
+		// A declared module's alias (clause 4). An alias is one RFC 1123 label
+		// (core refuses any other route alias), so it can never spell a
+		// `solution:` audience.
+		if binding.Kind != SolutionDeclaredKindModule {
+			continue
+		}
+		if alias := strings.TrimSpace(binding.Alias); alias != "" {
+			set[alias] = struct{}{}
 		}
 	}
 	// A declared module's own prefix. The registry is keyed by principal id, and

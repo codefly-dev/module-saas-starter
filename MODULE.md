@@ -169,10 +169,23 @@ facts differently in the read API it answers an operator with, and only the
 document's spelling parses at install
 (`module/services/accounts/code/pkg/business/datasource_trigger.go`):
 
-| Declared identity | What it is |
-|---|---|
-| `source` | The grant reference, and the contract. It names a connected data source; the host resolves the live delegation from it on every mint, re-checking the source, the person's membership and role, and the binding. An identifier rather than a credential — which is what lets an occurrence's run outlive the capability that admitted it, and makes a revocation land on the next occurrence. |
-| `binding` | The installation-principal arm, and the first proof. It names one of the release's bindings and mints from that binding's headless scopes under the module's own principal. An ordinary token admission, bounded by the capability's own short lifetime. |
+| Declared identity | What it is | State |
+|---|---|---|
+| `source` | The grant reference, and the contract. It names a connected data source; the host resolves the live delegation from it on every mint, re-checking the source, the person's membership and role, and the binding. An identifier rather than a credential — which is what lets an occurrence's run outlive the capability that admitted it, and makes a revocation land on the next occurrence. | implemented, with the revocation limit below |
+| `binding` | The installation-principal arm. It would name one of the release's bindings and mint from that binding's headless scopes under the module's own principal — an ordinary token admission bounded by the capability's own short lifetime. | **planned.** It cannot serve this trigger: the headless mint's lifetime is 60 seconds against this trigger's 10-minute declared deadline, the capability is owned by the module's own principal while the reconcile operation requires an organization member, and nothing in the host ever emitted this field. Using it needs a lifetime policy for occurrences that the mint does not have. |
+
+**A revocation is not permanent while the reference is the source id.** The host
+resolves the active delegation from the source on every mint, so revoking one
+and then *reconnecting* the source records a new delegation that the same
+reference resolves to — an installed trigger re-arms with no explicit
+re-delegation. The durable shape is an opaque, delegation-level reference, and
+this host already accepts one (`MintSourceOperationContext`'s `delegation_id`,
+and the gateway field behind it). What is missing is on the caller's side: the
+module-authority client a firing module uses sends `source_id` only, and refuses
+any answer whose `source_id` differs from what it sent, so a delegation id in
+the declaration is rejected by that client rather than by this host. Named as
+that client's gap in
+[WORK_CONTEXTS.md § Triggers](./module/WORK_CONTEXTS.md#triggers-for-work-no-person-started).
 
 A composition must declare the grant for whichever arm it uses
 (`source_delegation_scopes`, `headless_scopes`) and the audience its executing
@@ -182,15 +195,35 @@ the host refuses rather than running the work as itself.
 already-connected source without making an administrator reconnect it, which is
 otherwise the only way one is recorded.
 
-**The host's own schedule left with it.** Every connected source has a reconcile
-interval — the safety net for a lost webhook, and the only path to a new version
-of a source whose provider has no webhook receiver at all. That interval is now
-the source's *configuration*, and what it produces is a **declaration**: a cron
-in UTC, the missed-run and overlap policies, a deadline, the input every
-occurrence is admitted with, and the identity above. This host fires nothing on
-it, and a test walks the service's AST to keep that true. One occurrence admits
-`DatasourceService/ReconcileSource`, the same host operation a person's manual
-pass takes.
+**The schedule is declared here, and — for now — also fired here.** Every
+connected source has a reconcile interval: the safety net for a lost webhook,
+and the only path to a new version of a source whose provider has no webhook
+receiver at all. That interval is the source's *configuration*, and what it
+produces is a **declaration**: a cron in UTC, the missed-run and overlap
+policies, a deadline, the input every occurrence is admitted with, and the
+identity above. One occurrence admits `DatasourceService/ReconcileSource`, the
+same host operation a person's manual pass takes.
+
+Nothing consumes that declaration yet. `GetSourceTriggerDeclaration` is a read,
+no path here installs a release, and the module that fires triggers keys an
+installed trigger by its release *name* while this host declares every source
+under one name — so per-source triggers cannot be installed for more than one
+source even once something tries. That is the firing module's gap to close
+(several triggers per release, or a release named per source), stated in
+[WORK_CONTEXTS.md § Triggers](./module/WORK_CONTEXTS.md#triggers-for-work-no-person-started)
+and not worked around here.
+
+So this host still runs the one-minute sweep that reads the due set and enqueues
+each source, as an **explicitly labelled stopgap** (issue #1112): deleting it on
+the declaration alone left no scheduled reconcile running anywhere, which made a
+lost webhook permanent and meant a pull provider never refreshed without "Sync
+now". The deletion list is one block beside `RunDatasourceReconcile` in
+`business/datasource_deliveries.go`, and a test keeps every one of its names
+inside the files that list names, so deleting it stays one commit. While both
+exist they must not both run: the two enqueue under different idempotency keys,
+so a double fire is a second pass that serialises behind the first — survivable
+for GitHub, a second full re-send for a pull provider. That is the cost, and it
+is why this is a stopgap rather than a belt-and-braces.
 
 **"Sync now" is that admission, not a request beside it** (issue #1094). The
 published kit points the button at `ReconcileSource` under an **effect identity
@@ -211,8 +244,9 @@ receipt is recovered by identity and never enumerated.
 **What is not proven:** no live occurrence exists. Nothing in this repository
 composes a module that executes declared work, so the declaration is built
 and held to the contract's field names by test, and the walk that has not been
-run is a schedule coming due in a composed environment. The identity's two arms
-are qualified at the routes an executing module calls.
+run is a *declared* schedule coming due in a composed environment. The reference
+arm is qualified at the route an executing module calls; the installation-binding
+arm is planned and has never been emitted.
 
 The depth is in
 [services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md#unattended-work-whose-authority-an-occurrence-runs-under)
@@ -707,6 +741,29 @@ expected omission, not a missing base file — module-level files are always
 enforced. So absent base files for a service you never composed are normal;
 missing base files for a service you DID compose are a real failure.
 
+**Composing no Vault** is the common case of this, because a cell whose keys
+live in its cloud key-management service reads none:
+`KEY_SERVICE_BACKEND=kms` with `KEY_SERVICE_SIGNING_BACKEND=kms-wrapped` opens
+no Vault connection at all. Leave `vault` out of `services:` and the service
+tree is not copied, accounts' `vault` service-dependency is pruned, no
+environment schedules one, and — because leaving it out is how a composition
+*selects* the cloud key service today — the **`vault` configuration group is
+withdrawn with the selection**, so nothing is left answering for the address and
+AppRole credential of a Vault that is not there. The group follows the backend
+selection rather than the service's presence: a cell whose Vault is the cell's
+own keeps the group though this module renders no Vault at all.
+
+A composition that wants the Vault in its local environment but not on its cell
+needs the finer grain, `key-service: vault | kms` per environment. That is
+implemented in the module agent and **not declarable yet**: the environment
+block's schema is the CLI's, parsed strictly with no extension seam. Neither
+route reaches a composition that **pins a published release** of this module,
+which is the shape a hosted cell actually deploys: both are declarations in the
+consumer's own manifest, and a pinned consumer still composes the `vault`
+service until it edits that manifest. See `module/deployment/README.md`,
+"Composing no Vault", for both routes, the refusals, what the CLI still owes,
+and what a pinned composition can and cannot do today.
+
 For the frontend product-plugin overlay specifically — package layout,
 generated projections, and gates — see
 [docs/frontend-plugin-installation.md](./module/docs/frontend-plugin-installation.md).
@@ -716,11 +773,14 @@ plugin transport, at `/api/plugins/{plugin}/{alias}/{relative-path}`, under the
 viewer's forwarded credential. It carries what that module's bindings declare,
 in both shapes: safe path segments with a Google custom verb allowed on the
 **last** one, its colon forwarded literal (`records:recover`,
-`interactions/{id}:respond`), and Connect procedures, for a requirement that
-declares `/` as its route prefix — the origin root, where the Connect protocol
-and this contract's own capability handshake already put a procedure. A page is
-not restricted to REST bindings, and it never chooses a prefix: a route outside
-the alias its requirement declared is refused. The policy is
+`interactions/{id}:respond`), and Connect procedures of the services a
+requirement names. A `connect` requirement declares both halves — `routePrefix`
+is where its upstream mounts Connect (`/` is the origin root, where the protocol
+and this contract's own capability handshake already put a procedure), and
+`connectServices` is the bound, because a procedure's path carries its own
+service name and the caller therefore supplies it. A page is not restricted to
+REST bindings, and it never chooses a prefix or a service: a route outside the
+alias its requirement declared is refused. The policy is
 [docs/frontend-plugin-bff-contract.md](./module/docs/frontend-plugin-bff-contract.md);
 the playground that drives every shape is `/admin/platform/plugin-transport`.
 

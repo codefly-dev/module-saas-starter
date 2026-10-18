@@ -4,7 +4,7 @@
 
 import type { GenFile, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { ListSolutionHostBindingsRequestSchema, ListSolutionHostBindingsResponseSchema, ListSolutionRegistrationsRequestSchema, ListSolutionRegistrationsResponseSchema } from "./solution_registry_pb";
+import type { GetRetainedSolutionFrontendRequestSchema, GetRetainedSolutionFrontendResponseSchema, ListSolutionHostBindingsRequestSchema, ListSolutionHostBindingsResponseSchema, ListSolutionRegistrationsRequestSchema, ListSolutionRegistrationsResponseSchema } from "./solution_registry_pb";
 import { file_saas_accounts_v1_solution_registry } from "./solution_registry_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
 
@@ -12,7 +12,7 @@ import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
  * Describes the file saas/accounts/v1/solution_registry_service.proto.
  */
 export const file_saas_accounts_v1_solution_registry_service: GenFile = /*@__PURE__*/
-  fileDesc("CjBzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5X3NlcnZpY2UucHJvdG8SEHNhYXMuYWNjb3VudHMudjEy2AIKF1NvbHV0aW9uUmVnaXN0cnlTZXJ2aWNlEpsBChhMaXN0U29sdXRpb25Ib3N0QmluZGluZ3MSMS5zYWFzLmFjY291bnRzLnYxLkxpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1JlcXVlc3QaMi5zYWFzLmFjY291bnRzLnYxLkxpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1Jlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESngEKGUxpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnMSMi5zYWFzLmFjY291bnRzLnYxLkxpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnNSZXF1ZXN0GjMuc2Fhcy5hY2NvdW50cy52MS5MaXN0U29sdXRpb25SZWdpc3RyYXRpb25zUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgAULEAQoUY29tLnNhYXMuYWNjb3VudHMudjFCHFNvbHV0aW9uUmVnaXN0cnlTZXJ2aWNlUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_saas_accounts_v1_solution_registry, file_saas_policy_v1_options]);
+  fileDesc("CjBzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5X3NlcnZpY2UucHJvdG8SEHNhYXMuYWNjb3VudHMudjEy/wMKF1NvbHV0aW9uUmVnaXN0cnlTZXJ2aWNlEpsBChhMaXN0U29sdXRpb25Ib3N0QmluZGluZ3MSMS5zYWFzLmFjY291bnRzLnYxLkxpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1JlcXVlc3QaMi5zYWFzLmFjY291bnRzLnYxLkxpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1Jlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESngEKGUxpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnMSMi5zYWFzLmFjY291bnRzLnYxLkxpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnNSZXF1ZXN0GjMuc2Fhcy5hY2NvdW50cy52MS5MaXN0U29sdXRpb25SZWdpc3RyYXRpb25zUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARKkAQobR2V0UmV0YWluZWRTb2x1dGlvbkZyb250ZW5kEjQuc2Fhcy5hY2NvdW50cy52MS5HZXRSZXRhaW5lZFNvbHV0aW9uRnJvbnRlbmRSZXF1ZXN0GjUuc2Fhcy5hY2NvdW50cy52MS5HZXRSZXRhaW5lZFNvbHV0aW9uRnJvbnRlbmRSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABQsQBChRjb20uc2Fhcy5hY2NvdW50cy52MUIcU29sdXRpb25SZWdpc3RyeVNlcnZpY2VQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_saas_accounts_v1_solution_registry, file_saas_policy_v1_options]);
 
 /**
  * Internal read service for declared solution state. The gateway is the client
@@ -45,6 +45,16 @@ export const SolutionRegistryService: GenService<{
     methodKind: "unary";
     input: typeof ListSolutionRegistrationsRequestSchema;
     output: typeof ListSolutionRegistrationsResponseSchema;
+  },
+  /**
+   * Read one retained frontend on a live target, without granting API access.
+   *
+   * @generated from rpc saas.accounts.v1.SolutionRegistryService.GetRetainedSolutionFrontend
+   */
+  getRetainedSolutionFrontend: {
+    methodKind: "unary";
+    input: typeof GetRetainedSolutionFrontendRequestSchema;
+    output: typeof GetRetainedSolutionFrontendResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_solution_registry_service, 0);

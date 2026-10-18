@@ -26,8 +26,18 @@ func (s *hostAudienceStore) WithControlPlane(ctx context.Context, fn func(contex
 	return fn(ctx)
 }
 
-func (s *hostAudienceStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
-	return s.bindings, s.err
+func (s *hostAudienceStore) LiveDeclaredBindings(context.Context) ([]business.LiveDeclaredBinding, error) {
+	return declaredSolutions(s.bindings), s.err
+}
+
+// declaredSolutions is the vocabulary reader's rows for declared solution
+// bindings with these ids.
+func declaredSolutions(bindings []string) []business.LiveDeclaredBinding {
+	out := make([]business.LiveDeclaredBinding, 0, len(bindings))
+	for _, id := range bindings {
+		out = append(out, business.LiveDeclaredBinding{BindingID: id, Kind: business.SolutionDeclaredKindSolution, Alias: id})
+	}
+	return out
 }
 
 // withHostAudiences installs a service whose vocabulary is exactly these declared
@@ -211,9 +221,9 @@ type countingAudienceStore struct {
 	reads int
 }
 
-func (s *countingAudienceStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+func (s *countingAudienceStore) LiveDeclaredBindings(context.Context) ([]business.LiveDeclaredBinding, error) {
 	s.reads++
-	return s.bindings, s.err
+	return declaredSolutions(s.bindings), s.err
 }
 
 func withCountingHostAudiences(t *testing.T, bindings ...string) *countingAudienceStore {

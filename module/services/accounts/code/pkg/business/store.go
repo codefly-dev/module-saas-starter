@@ -145,12 +145,18 @@ type Store interface {
 	// ordinal. Strictly increasing is the guarantee, not density: a gap is expected
 	// and is not a dropped payload.
 	AllocateDatasourceOrdinal(ctx context.Context, sourceID string) (int64, error)
+	// ListDatasourceSourcesDueForReconcile returns active sources whose
+	// next_reconcile_at has elapsed, for the host's reconcile sweep.
+	// Control-plane.
+	//
+	// STOPGAP (issue #1112): read only by Service.RunDatasourceReconcile, and
+	// deleted with it. See that function for the condition.
+	ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*DatasourceSource, error)
 	// BumpDatasourceReconcile moves the source's next-reconcile instant out by
-	// its interval without touching the cursor. There is no due query beside
-	// it and no sweep that would read one: the instant's PRESENCE is what the
-	// park and restore paths read as "this source is on its declared
-	// schedule", and one reconcile pass moves it so it does not drift
-	// arbitrarily far into the past. Control-plane.
+	// its interval without touching the cursor. The instant's PRESENCE is what
+	// the park and restore paths read as "this source is on its declared
+	// schedule", and both a reconcile pass and the stopgap sweep move it so it
+	// does not drift arbitrarily far into the past. Control-plane.
 	BumpDatasourceReconcile(ctx context.Context, sourceID string) error
 	// MarkDatasourceSourceDegraded parks a source the compiler cannot make
 	// progress on (an oversized snapshot manifest), recording the reason and

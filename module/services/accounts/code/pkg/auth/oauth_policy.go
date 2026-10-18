@@ -60,28 +60,49 @@ func NewOAuthRequestPolicy(provider string, redirectURIs []string) (*OAuthReques
 	return policy, nil
 }
 
-// Validate returns one generic sentinel for provider and redirect mismatches so
-// public handlers do not reveal which part of the allowlist was wrong.
+// Validate checks a request that carried no verified public origin against the
+// operator's static redirect allowlist.
+//
+// Every refusal is ErrInvalidOAuthRequest, which is all a public handler maps on,
+// so the caller never learns which part of the allowlist was wrong. The wrapped
+// text names the check that failed and the values compared — provider names and
+// redirect URIs are not secrets — for the refuser's log alone.
 func (p *OAuthRequestPolicy) Validate(provider, redirectURI string) error {
-	if p == nil || provider != p.provider {
-		return ErrInvalidOAuthRequest
+	if err := p.validateProvider(provider); err != nil {
+		return err
 	}
 	if _, ok := p.redirectURIs[redirectURI]; !ok {
-		return ErrInvalidOAuthRequest
+		return fmt.Errorf("%w: redirect_uri %q is not in the static redirect allowlist (identity/IDENTITY_ALLOWED_REDIRECT_URIS, %d entries)",
+			ErrInvalidOAuthRequest, redirectURI, len(p.redirectURIs))
 	}
 	return nil
 }
 
 // ValidateForPublicOrigin binds OAuth initiation to the authenticated frontend
 // request origin. The callback path is server-owned; the browser may not select
-// an alternate path, host, or port.
+// an alternate path, host, or port. Refusals wrap ErrInvalidOAuthRequest as
+// Validate's do.
 func (p *OAuthRequestPolicy) ValidateForPublicOrigin(provider, redirectURI, publicOrigin string) error {
-	if p == nil || provider != p.provider {
-		return ErrInvalidOAuthRequest
+	if err := p.validateProvider(provider); err != nil {
+		return err
 	}
 	origin, err := CanonicalPublicOrigin(publicOrigin)
-	if err != nil || redirectURI != origin+"/auth/callback" {
-		return ErrInvalidOAuthRequest
+	if err != nil {
+		return fmt.Errorf("%w: verified public origin %q is not canonical: %v", ErrInvalidOAuthRequest, publicOrigin, err)
+	}
+	if want := origin + "/auth/callback"; redirectURI != want {
+		return fmt.Errorf("%w: redirect_uri %q is not the verified public origin's callback %q",
+			ErrInvalidOAuthRequest, redirectURI, want)
+	}
+	return nil
+}
+
+func (p *OAuthRequestPolicy) validateProvider(provider string) error {
+	if p == nil {
+		return fmt.Errorf("%w: no OAuth request policy is configured", ErrInvalidOAuthRequest)
+	}
+	if provider != p.provider {
+		return fmt.Errorf("%w: provider %q is not the configured provider %q", ErrInvalidOAuthRequest, provider, p.provider)
 	}
 	return nil
 }

@@ -1,10 +1,11 @@
 // Package moduleregistrytest states a module principal registry for a test.
 //
 // No production path reads a registry from text: the running registry is
-// derived each reconcile pass from delivered authority inside the module
-// envelope (business.ModulePrincipalReconciler). A capability test still needs
+// derived each reconcile pass from the applied module manifests inside the
+// module envelope (business.ModulePrincipalReconciler). A capability test still needs
 // a registry in hand, and the shortest honest way to write one is the entry's
-// own shape — so this parses `{<prefix>: {<grant>, "workload": {...}}}` and
+// own shape — so this parses `{<prefix>: {<grant>, "workload": {...}}}` (one
+// workload, the common case) and
 // holds every entry to business.ValidateModulePrincipalGrant, the same check
 // the reconciler runs over each entry it derives. A fixture the reconciler
 // could never install fails here instead of testing a state no host reaches.
@@ -65,7 +66,7 @@ func Parse(raw string) (business.ModulePrincipalRegistry, error) {
 			Resources:          declared.Resources,
 			CrossTenant:        declared.CrossTenant,
 			Tenant:             tenant,
-			Workload:           declared.Workload,
+			Workloads:          []business.ModuleWorkload{declared.Workload},
 		}
 		if err := business.ValidateModulePrincipalGrant(prefix, grant); err != nil {
 			return nil, err

@@ -17,7 +17,6 @@ import (
 	"accounts/pkg/auth"
 	ed25519minter "accounts/pkg/auth/ed25519"
 	"accounts/pkg/business"
-	"accounts/pkg/business/executiontest"
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -156,7 +155,7 @@ func (s *contractStore) WithOrgTx(ctx context.Context, _ string, fn func(context
 	return fn(ctx)
 }
 
-func (s *contractStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+func (s *contractStore) LiveDeclaredBindings(context.Context) ([]business.LiveDeclaredBinding, error) {
 	return nil, nil
 }
 
@@ -324,9 +323,9 @@ func installModuleAuthorityContract(t *testing.T, input moduleAuthorityContractI
 	for _, prefix := range []string{contractSourceModule, contractRuntimeModule} {
 		tokens[prefix] = moduleToken(t, prefix)
 	}
-	tokens["unapproved"] = cluster.Run(
-		moduleWorkload(registry[business.ModulePrincipalID(contractSourceModule)]),
-		executiontest.Image(contractSourceModule+"-unreviewed"))
+	foreign := moduleWorkload(registry[business.ModulePrincipalID(contractSourceModule)])
+	foreign.ServiceAccount = "unreviewed"
+	tokens["unapproved"] = cluster.Run(foreign)
 	svc.SetAuditEmitter(&validatingAudit{})
 	WithService(svc)
 	// Keyed as work.go keys production: the cluster key signs access tokens and

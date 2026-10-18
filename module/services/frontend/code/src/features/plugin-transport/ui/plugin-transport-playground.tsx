@@ -27,9 +27,22 @@ import {
 	type TransportDemoRoute,
 	transportCarries,
 	transportDemoPlugin,
+	transportMutates,
 } from "../model/demo-plugin";
 
 const BODY_PREVIEW = 400;
+
+function routeKey(route: TransportDemoRoute): string {
+	return `${route.alias}/${route.path}`;
+}
+
+/** Whether this demo alias is the Connect kind, read from the declaration. */
+function connectAlias(alias: string): boolean {
+	return (
+		transportDemoPlugin.services?.find((service) => service.alias === alias)
+			?.protocol === "connect"
+	);
+}
 
 type Answer =
 	| { kind: "refused-here"; detail: string }
@@ -64,15 +77,28 @@ type Answer =
  * forwarded answer is proved by the transport's own tests, which join this
  * client to the real BFF handler over a stub upstream. That is the honest state
  * of a host that installs no plugin backend rather than a gap in the page.
+ *
+ * The plugin name is editable so an operator can point the table at a plugin
+ * their own composition installed — which is also what makes a press dangerous,
+ * because the custom-verb rows are writes. Anything but a read is therefore
+ * armed by the first press, naming the plugin and alias it will write to, and
+ * sent only by the second; editing the plugin name retracts it.
  */
 export function PluginTransportPlayground() {
 	const runtime = usePluginRuntime();
 	const [plugin, setPlugin] = useState<string>(transportDemoPlugin.name);
 	const [answers, setAnswers] = useState<Record<string, Answer>>({});
+	// The route a press has armed but not yet sent. A mutating send is never
+	// one press: the plugin name above is editable, so the same button that
+	// demonstrates a shape against the uninstalled demo would, pointed at a
+	// plugin the composition really installed, write to that backend under the
+	// operator's own credential. Arming names exactly what will be sent and to
+	// whom, and only the second press sends it.
+	const [armed, setArmed] = useState<string | null>(null);
 
 	async function send(route: TransportDemoRoute) {
-		const key = `${route.alias}/${route.path}`;
-		const connect = route.alias === "procedures";
+		const key = routeKey(route);
+		const connect = connectAlias(route.alias);
 		try {
 			const service = runtime.service(plugin, route.alias);
 			const response = await service.request(route.path, {
@@ -114,6 +140,16 @@ export function PluginTransportPlayground() {
 		}
 	}
 
+	function press(route: TransportDemoRoute) {
+		const key = routeKey(route);
+		if (transportMutates(route) && armed !== key) {
+			setArmed(key);
+			return;
+		}
+		setArmed(null);
+		void send(route);
+	}
+
 	return (
 		<div className="space-y-6">
 			<div>
@@ -144,7 +180,13 @@ export function PluginTransportPlayground() {
 							id="plugin-transport-plugin"
 							className="w-72"
 							value={plugin}
-							onChange={(event) => setPlugin(event.target.value)}
+							onChange={(event) => {
+								// A confirmation named a plugin. Renaming the target
+								// retracts it rather than carrying the armed press
+								// over to a different backend.
+								setArmed(null);
+								setPlugin(event.target.value);
+							}}
 						/>
 					</div>
 					<dl className="text-sm text-muted-foreground">
@@ -165,8 +207,11 @@ export function PluginTransportPlayground() {
 					<CardDescription>
 						A custom verb (<code>:recover</code>, <code>:respond</code>,{" "}
 						<code>:fire</code>) is carried on the last segment, with its colon
-						literal. A colon anywhere else, a traversal, or a non-procedure path
-						on a Connect alias is refused in the browser.
+						literal. A colon anywhere else, a traversal, a non-procedure path on
+						a Connect alias, or a procedure of a service the requirement never
+						declared is refused in the browser. Anything but a read asks for
+						confirmation first: the plugin above is editable, so a press could
+						write to a backend your composition really installed.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -182,8 +227,9 @@ export function PluginTransportPlayground() {
 						</TableHeader>
 						<TableBody>
 							{TRANSPORT_DEMO_ROUTES.map((route) => {
-								const key = `${route.alias}/${route.path}`;
+								const key = routeKey(route);
 								const answer = answers[key];
+								const confirming = armed === key;
 								return (
 									<TableRow key={key}>
 										<TableCell>{route.shape}</TableCell>
@@ -203,13 +249,27 @@ export function PluginTransportPlayground() {
 										<TableCell>
 											<Button
 												size="sm"
-												variant="outline"
+												variant={confirming ? "default" : "outline"}
 												onClick={() => {
-													void send(route);
+													press(route);
 												}}
 											>
-												Send
+												{confirming
+													? `Confirm ${route.method} to ${plugin}`
+													: "Send"}
 											</Button>
+											{confirming && (
+												<p
+													role="status"
+													className="text-xs text-muted-foreground"
+												>
+													This writes to{" "}
+													<code>
+														{plugin}/{route.alias}
+													</code>{" "}
+													if your composition installed it. Press again to send.
+												</p>
+											)}
 										</TableCell>
 									</TableRow>
 								);

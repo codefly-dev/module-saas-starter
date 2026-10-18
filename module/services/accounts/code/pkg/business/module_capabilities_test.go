@@ -1733,7 +1733,7 @@ func TestAModulePrincipalMustDeclareItsWorkload(t *testing.T) {
 		t.Fatalf("a fully declared entry must parse: %v", err)
 	}
 	want := business.ModuleWorkload{ServiceAccount: "documents", Namespace: "acme-prod", Container: "app"}
-	if got := registry[business.ModulePrincipalID("documents")].Workload; got != want {
+	if got := registry[business.ModulePrincipalID("documents")].Workloads; len(got) != 1 || got[0] != want {
 		t.Fatalf("the parsed workload must be carried through verbatim, or it reads as undeclared later: got %+v want %+v", got, want)
 	}
 }

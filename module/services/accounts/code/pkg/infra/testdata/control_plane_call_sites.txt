@@ -33,6 +33,8 @@ pkg/business/connector_credentials.go: (*Service).SourceSigningSecret: WithContr
 pkg/business/current_installation.go: (*Service).ModuleCurrentInstallation: WithControlPlane
 pkg/business/datasource_budget.go: (datasourceScheduler).Acquire: WithControlPlane
 pkg/business/datasource_budget.go: (datasourceScheduler).Blocked: WithControlPlane
+pkg/business/datasource_deliveries.go: (*Service).RunDatasourceReconcile: WithControlPlane
+pkg/business/datasource_deliveries.go: (*Service).RunDatasourceReconcile: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).advanceCursor: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).allocateOrdinal: WithControlPlane
 pkg/business/datasource_deliveries.go: (*Service).parkUnreadablePublicSource: WithControlPlane
@@ -86,7 +88,8 @@ pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithCon
 pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/module_installations.go: (*Service).ReconcileModuleInstallation: WithControlPlane
 pkg/business/module_operation_context.go: (*Service).RecordModuleOperationContextMint: WithControlPlane
-pkg/business/module_upstream.go: (*Service).RecordModuleUpstream: WithControlPlane
+pkg/business/module_principal_reconcile.go: (*ModulePrincipalReconciler).appliedManifestsVerified: WithControlPlane
+pkg/business/module_principal_reconcile.go: (*ModulePrincipalReconciler).readInputs: WithControlPlaneReadSnapshot
 pkg/business/notifications.go: (*Service).resolveNotificationUser: WithControlPlane
 pkg/business/onboarding.go: (*Service).organizationConfigured: WithControlPlane
 pkg/business/organization_lifecycle.go: (*Service).GetOrganizationRoster: WithControlPlane
@@ -138,8 +141,8 @@ pkg/business/solution_audit_events.go: (*Service).AuditEventTypes: WithControlPl
 pkg/business/solution_audit_events.go: (*Service).lookupDeclaredAuditEventType: WithControlPlane
 pkg/business/solution_delivery.go: (*DeliveredSolutionHostBindings).Documents: WithControlPlane
 pkg/business/solution_delivery.go: (*Service).ReceiveSolutionDelivery: WithControlPlane
-pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).newestDelivered: WithControlPlane
-pkg/business/solution_delivery_activation.go: (*SolutionAuthorityActivation).readRegistryInputs: WithControlPlaneReadSnapshot
+pkg/business/solution_delivery.go: (*Service).newestDeliveredManifests: WithControlPlane
+pkg/business/solution_frontend_history.go: (*Service).GetRetainedSolutionFrontend: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionGenerationHistory: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionHostBindings: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionTargets: WithControlPlane
@@ -164,7 +167,7 @@ pkg/business/waitlist.go: (*Service).ReviewWaitlist: As(System())
 pkg/business/waitlist.go: (*Service).VerifyWaitlist: As(System())
 pkg/business/waitlist.go: (*Service).authorizeAccountCreation: As(System())
 pkg/business/waitlist.go: (*Service).convertWaitlistLead: As(System())
-pkg/business/work_context_audience.go: (*Service).declaredAudienceBindingIDs: WithControlPlane
+pkg/business/work_context_audience.go: (*Service).liveDeclaredBindings: WithControlPlane
 pkg/business/work_context_seal.go: (*Service).WorkContextOperationBinding: WithControlPlane
 pkg/infra/postgres.go: (*PostgresStore).ClearAll: WithControlPlane
 pkg/infra/postgres.go: (*PostgresStore).LinkIdentity: txbind.BindRequest
@@ -194,7 +197,7 @@ pkg/infra/postgres_permissions.go: (*PostgresStore).CreateRole: txbind.BindReque
 pkg/infra/postgres_permissions.go: (*PostgresStore).ResolveIdentity: controlPlane.Begin
 pkg/infra/postgres_role_catalog.go: (*PostgresStore).ImportRoleCatalog: WithControlPlane
 pkg/infra/postgres_solution_audit_events.go: (*PostgresStore).GetDeclaredAuditEventType: withControlPlaneTx
-pkg/infra/postgres_solution_registry.go: (*PostgresStore).LiveDeclaredSolutionBindingIDs: WithControlPlane
+pkg/infra/postgres_solution_registry.go: (*PostgresStore).LiveDeclaredBindings: WithControlPlane
 pkg/infra/postgres_solution_registry.go: (*PostgresStore).SolutionRuntimeBoundarySeed: WithControlPlane
 pkg/infra/postgres_solution_registry.go: (*PostgresStore).SolutionRuntimeBoundarySeeds: WithControlPlane
 pkg/infra/postgres_webhook_relay.go: (*PostgresWebhookRelay).Deliver: txbind.BindWorker

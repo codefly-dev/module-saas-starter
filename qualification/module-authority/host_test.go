@@ -28,7 +28,11 @@ import (
 // no process can link a service's generated saas.accounts.v1 types beside the
 // client library's.
 type host struct {
+	// GatewayURL is the gateway's public endpoint, where a viewer's reads go;
+	// WorkloadURL its workload endpoint, where a composed workload mints — the
+	// address the composition points `platform/gateway-endpoint` at.
 	GatewayURL    string
+	WorkloadURL   string
 	Authority     string
 	InternalToken string
 	Fixture       accountsReady
@@ -151,13 +155,17 @@ func bootHost() (*host, error) {
 		return nil, fmt.Errorf("gateway half: %w", err)
 	}
 	var gateway struct {
-		Gateway string         `json:"gateway"`
-		Flow    moduleReadFlow `json:"flow"`
+		Gateway  string         `json:"gateway"`
+		Workload string         `json:"workload"`
+		Flow     moduleReadFlow `json:"flow"`
 	}
 	if err := json.Unmarshal([]byte(line), &gateway); err != nil {
 		return nil, fmt.Errorf("gateway half announced %q: %w", line, err)
 	}
-	h.GatewayURL, h.Flow = gateway.Gateway, gateway.Flow
+	if gateway.Workload == "" {
+		return nil, fmt.Errorf("gateway half announced no workload endpoint: %q", line)
+	}
+	h.GatewayURL, h.WorkloadURL, h.Flow = gateway.Gateway, gateway.Workload, gateway.Flow
 	return h, nil
 }
 

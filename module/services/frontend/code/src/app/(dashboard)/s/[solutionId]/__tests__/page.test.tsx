@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { findSolution } = vi.hoisted(() => ({ findSolution: vi.fn() }));
@@ -14,6 +15,17 @@ vi.mock("@/solutions/SolutionRuntime", () => ({
 }));
 vi.mock("@/solutions/SolutionDashboard", () => ({
 	SolutionDashboards: () => <div data-testid="dashboard">dashboards</div>,
+}));
+// The live delivery gate has its own polling and router tests. This page test
+// exercises only the server page's dashboard/tab placement.
+vi.mock("@/solutions/SolutionLivePage", () => ({
+	SolutionLivePage: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+// The page wrapper refreshes the App Router when a delivered generation
+// changes. These tests render the server page directly, outside Next's router
+// provider, so give the client wrapper the smallest router seam it needs.
+vi.mock("next/navigation", () => ({
+	useRouter: () => ({ refresh: vi.fn() }),
 }));
 
 import SolutionPage from "../page";
@@ -37,15 +49,15 @@ describe("the solution page", () => {
 	it("puts a declared dashboard in its own tab beside the solution, not above it", async () => {
 		findSolution.mockResolvedValue(solution({ events: [], metrics: [], dashboards: [{ id: "overview", title: "Overview", layout: "grid", widgets: [] }] }));
 		await renderPage();
-		expect(screen.getByRole("tab", { name: "App" })).toBeTruthy();
-		expect(screen.getByRole("tab", { name: "Dashboard" })).toBeTruthy();
-		expect(screen.getByTestId("remote")).toBeTruthy();
+		expect(await screen.findByRole("tab", { name: "App" })).toBeTruthy();
+		expect(await screen.findByRole("tab", { name: "Dashboard" })).toBeTruthy();
+		expect(await screen.findByTestId("remote")).toBeTruthy();
 		expect(screen.queryByTestId("dashboard")).toBeNull();
 
 		fireEvent.click(screen.getByRole("tab", { name: "Dashboard" }));
 		expect(await screen.findByTestId("dashboard")).toBeTruthy();
 		// The solution stays mounted behind the dashboard, so its state survives.
-		expect(screen.getByTestId("remote")).toBeTruthy();
+		expect(await screen.findByTestId("remote")).toBeTruthy();
 	});
 
 	// A graph may declare events and metrics and no dashboard: a Dashboard tab
@@ -53,7 +65,7 @@ describe("the solution page", () => {
 	it("shows no tab bar for a graph that declares no dashboard", async () => {
 		findSolution.mockResolvedValue(solution({ events: [], metrics: [], dashboards: [] }));
 		await renderPage();
-		expect(screen.getByTestId("remote")).toBeTruthy();
+		expect(await screen.findByTestId("remote")).toBeTruthy();
 		expect(screen.queryByRole("tablist")).toBeNull();
 	});
 

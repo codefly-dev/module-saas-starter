@@ -69,7 +69,6 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	ctx = moduleMintWorkloadPeer(ctx)
 	authority, err := service.AuthorizeSourceOperationContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), business.SourceDelegationRef{
 		DelegationID: req.GetDelegationId(),
 		SourceID:     req.GetSourceId(),
@@ -197,7 +196,6 @@ func (s *WorkContextAuthorityServer) startSourceOperation(
 			PrincipalKind:      business.PrincipalKindService,
 			DelegationID:       authority.Delegation.ID,
 			GrantedScopes:      actorScopes,
-			Execution:          attestedModuleExecution(authority.ModuleWorkContextAuthority),
 			OperationBindingID: authority.BindingID(),
 		}},
 		Replay: workcontext.ReplayIdempotent,

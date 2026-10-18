@@ -40,6 +40,9 @@ const (
 	// SolutionRegistryServiceListSolutionRegistrationsProcedure is the fully-qualified name of the
 	// SolutionRegistryService's ListSolutionRegistrations RPC.
 	SolutionRegistryServiceListSolutionRegistrationsProcedure = "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
+	// SolutionRegistryServiceGetRetainedSolutionFrontendProcedure is the fully-qualified name of the
+	// SolutionRegistryService's GetRetainedSolutionFrontend RPC.
+	SolutionRegistryServiceGetRetainedSolutionFrontendProcedure = "/saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend"
 )
 
 // SolutionRegistryServiceClient is a client for the saas.accounts.v1.SolutionRegistryService
@@ -54,6 +57,8 @@ type SolutionRegistryServiceClient interface {
 	// ListSolutionRegistrations returns the whole registry so a restarted or
 	// lagging replica can rebuild its routing cache from authoritative state.
 	ListSolutionRegistrations(context.Context, *connect.Request[v1.ListSolutionRegistrationsRequest]) (*connect.Response[v1.ListSolutionRegistrationsResponse], error)
+	// Read one retained frontend on a live target, without granting API access.
+	GetRetainedSolutionFrontend(context.Context, *connect.Request[v1.GetRetainedSolutionFrontendRequest]) (*connect.Response[v1.GetRetainedSolutionFrontendResponse], error)
 }
 
 // NewSolutionRegistryServiceClient constructs a client for the
@@ -79,13 +84,20 @@ func NewSolutionRegistryServiceClient(httpClient connect.HTTPClient, baseURL str
 			connect.WithSchema(solutionRegistryServiceMethods.ByName("ListSolutionRegistrations")),
 			connect.WithClientOptions(opts...),
 		),
+		getRetainedSolutionFrontend: connect.NewClient[v1.GetRetainedSolutionFrontendRequest, v1.GetRetainedSolutionFrontendResponse](
+			httpClient,
+			baseURL+SolutionRegistryServiceGetRetainedSolutionFrontendProcedure,
+			connect.WithSchema(solutionRegistryServiceMethods.ByName("GetRetainedSolutionFrontend")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // solutionRegistryServiceClient implements SolutionRegistryServiceClient.
 type solutionRegistryServiceClient struct {
-	listSolutionHostBindings  *connect.Client[v1.ListSolutionHostBindingsRequest, v1.ListSolutionHostBindingsResponse]
-	listSolutionRegistrations *connect.Client[v1.ListSolutionRegistrationsRequest, v1.ListSolutionRegistrationsResponse]
+	listSolutionHostBindings    *connect.Client[v1.ListSolutionHostBindingsRequest, v1.ListSolutionHostBindingsResponse]
+	listSolutionRegistrations   *connect.Client[v1.ListSolutionRegistrationsRequest, v1.ListSolutionRegistrationsResponse]
+	getRetainedSolutionFrontend *connect.Client[v1.GetRetainedSolutionFrontendRequest, v1.GetRetainedSolutionFrontendResponse]
 }
 
 // ListSolutionHostBindings calls saas.accounts.v1.SolutionRegistryService.ListSolutionHostBindings.
@@ -97,6 +109,12 @@ func (c *solutionRegistryServiceClient) ListSolutionHostBindings(ctx context.Con
 // saas.accounts.v1.SolutionRegistryService.ListSolutionRegistrations.
 func (c *solutionRegistryServiceClient) ListSolutionRegistrations(ctx context.Context, req *connect.Request[v1.ListSolutionRegistrationsRequest]) (*connect.Response[v1.ListSolutionRegistrationsResponse], error) {
 	return c.listSolutionRegistrations.CallUnary(ctx, req)
+}
+
+// GetRetainedSolutionFrontend calls
+// saas.accounts.v1.SolutionRegistryService.GetRetainedSolutionFrontend.
+func (c *solutionRegistryServiceClient) GetRetainedSolutionFrontend(ctx context.Context, req *connect.Request[v1.GetRetainedSolutionFrontendRequest]) (*connect.Response[v1.GetRetainedSolutionFrontendResponse], error) {
+	return c.getRetainedSolutionFrontend.CallUnary(ctx, req)
 }
 
 // SolutionRegistryServiceHandler is an implementation of the
@@ -111,6 +129,8 @@ type SolutionRegistryServiceHandler interface {
 	// ListSolutionRegistrations returns the whole registry so a restarted or
 	// lagging replica can rebuild its routing cache from authoritative state.
 	ListSolutionRegistrations(context.Context, *connect.Request[v1.ListSolutionRegistrationsRequest]) (*connect.Response[v1.ListSolutionRegistrationsResponse], error)
+	// Read one retained frontend on a live target, without granting API access.
+	GetRetainedSolutionFrontend(context.Context, *connect.Request[v1.GetRetainedSolutionFrontendRequest]) (*connect.Response[v1.GetRetainedSolutionFrontendResponse], error)
 }
 
 // NewSolutionRegistryServiceHandler builds an HTTP handler from the service implementation. It
@@ -132,12 +152,20 @@ func NewSolutionRegistryServiceHandler(svc SolutionRegistryServiceHandler, opts 
 		connect.WithSchema(solutionRegistryServiceMethods.ByName("ListSolutionRegistrations")),
 		connect.WithHandlerOptions(opts...),
 	)
+	solutionRegistryServiceGetRetainedSolutionFrontendHandler := connect.NewUnaryHandler(
+		SolutionRegistryServiceGetRetainedSolutionFrontendProcedure,
+		svc.GetRetainedSolutionFrontend,
+		connect.WithSchema(solutionRegistryServiceMethods.ByName("GetRetainedSolutionFrontend")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.SolutionRegistryService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SolutionRegistryServiceListSolutionHostBindingsProcedure:
 			solutionRegistryServiceListSolutionHostBindingsHandler.ServeHTTP(w, r)
 		case SolutionRegistryServiceListSolutionRegistrationsProcedure:
 			solutionRegistryServiceListSolutionRegistrationsHandler.ServeHTTP(w, r)
+		case SolutionRegistryServiceGetRetainedSolutionFrontendProcedure:
+			solutionRegistryServiceGetRetainedSolutionFrontendHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -153,4 +181,8 @@ func (UnimplementedSolutionRegistryServiceHandler) ListSolutionHostBindings(cont
 
 func (UnimplementedSolutionRegistryServiceHandler) ListSolutionRegistrations(context.Context, *connect.Request[v1.ListSolutionRegistrationsRequest]) (*connect.Response[v1.ListSolutionRegistrationsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.SolutionRegistryService.ListSolutionRegistrations is not implemented"))
+}
+
+func (UnimplementedSolutionRegistryServiceHandler) GetRetainedSolutionFrontend(context.Context, *connect.Request[v1.GetRetainedSolutionFrontendRequest]) (*connect.Response[v1.GetRetainedSolutionFrontendResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.SolutionRegistryService.GetRetainedSolutionFrontend is not implemented"))
 }

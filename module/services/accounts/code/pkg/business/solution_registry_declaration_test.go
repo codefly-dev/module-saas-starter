@@ -26,30 +26,44 @@ func (s *declarationProjectionStore) SaveSolutionRegistration(_ context.Context,
 	return nil
 }
 
-func TestDeclaredPresenceDoesNotAdoptRuntimeObservations(t *testing.T) {
+// The frontend half is the applied generation's own frontend block and nothing
+// older: a generation that declares none takes the page with it, whatever the
+// record held before, and one that declares a block writes it whole.
+func TestDeclaredPresenceWritesItsOwnFrontendBlock(t *testing.T) {
+	frontend := &solutionhost.Frontend{Title: "Example", Order: 2, ExposedModule: "./Page", HostContract: 1,
+		Surfaces: []solutionhost.FrontendSurface{{ID: "footnote", Client: "word", Title: "Footnote", Module: "/surfaces/footnote.js", Contract: 1, Applies: "always"}}}
 	for _, tc := range []struct {
 		name     string
 		declared *SolutionDeclaredBinding
-		keep     bool
+		frontend *solutionhost.Frontend
+		want     string
 	}{
-		{"runtime", nil, false},
-		{"replaced target", &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "old-target"}, false},
-		{"same target", &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "current-target"}, true},
+		{"runtime, no block", nil, nil, ""},
+		{"replaced target, no block", &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "old-target"}, nil, ""},
+		{"same target, no block", &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "current-target"}, nil, ""},
+		{"same target, a block", &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "current-target"}, frontend,
+			`{"title":"Example","order":2,"exposed_module":"./Page","host_contract":1,"surfaces":[{"id":"footnote","client":"word","title":"Footnote","module":"/surfaces/footnote.js","contract":1,"applies":"always"}]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &declarationProjectionStore{current: &SolutionRegistration{
 				SolutionID: "example", Publisher: "solution:example", Declared: tc.declared,
-				Frontend: &SolutionFrontendHalf{Manifest: "{}"}, Backend: &SolutionBackendHalf{Upstream: "http://example.svc"},
+				Frontend: &SolutionFrontendHalf{Manifest: "{}"},
 			}}
 			svc := &Service{store: store}
-			document := &solutionhost.SolutionHostBinding{Binding: "acme.test.example", Generation: 2,
-				Kind:    solutionhost.KindSolution,
-				Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"}}
+			document := &solutionhost.ModuleManifest{Binding: "acme.test.example", Generation: 2,
+				Kind:     solutionhost.KindSolution,
+				Release:  solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"},
+				Frontend: tc.frontend}
 			_, err := svc.declareSolutionRegistration(context.Background(), document, "example", "current-target", time.Now())
 			require.NoError(t, err)
 			require.NotNil(t, store.saved)
-			require.Equal(t, tc.keep, store.saved.Frontend != nil)
-			require.Equal(t, tc.keep, store.saved.Backend != nil)
+			if tc.want == "" {
+				require.Nil(t, store.saved.Frontend)
+			} else {
+				require.NotNil(t, store.saved.Frontend)
+				require.JSONEq(t, tc.want, store.saved.Frontend.Manifest)
+				require.Equal(t, int64(10), store.saved.Frontend.Revision)
+			}
 			require.Equal(t, "current-target", store.saved.Declared.TargetID)
 		})
 	}
@@ -76,7 +90,7 @@ func TestTheDeclaredKindReachesTheRegistryRecord(t *testing.T) {
 		t.Run(string(tc.kind), func(t *testing.T) {
 			store := &declarationProjectionStore{}
 			svc := &Service{store: store}
-			document := &solutionhost.SolutionHostBinding{
+			document := &solutionhost.ModuleManifest{
 				Binding: "acme.test.example", Generation: 2, Kind: tc.kind,
 				Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"},
 			}
@@ -87,6 +101,58 @@ func TestTheDeclaredKindReachesTheRegistryRecord(t *testing.T) {
 			require.Equal(t, tc.want, store.saved.Declared.Kind)
 		})
 	}
+}
+
+// Presentation changes replace only the declaration's projection. A headless
+// solution keeps the same installation target when its group moves or clears.
+func TestDeclaredSolutionGroupFollowsAppliedGenerationWithoutChangingTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		group *solutionhost.SolutionGroup
+		want  *SolutionGroup
+	}{
+		{"rename and reorder", &solutionhost.SolutionGroup{ID: "operations", Title: "Operations tools", Order: -2}, &SolutionGroup{ID: "operations", Title: "Operations tools", Order: -2}},
+		{"move", &solutionhost.SolutionGroup{ID: "research", Title: "Research", Order: 4}, &SolutionGroup{ID: "research", Title: "Research", Order: 4}},
+		{"clear", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &declarationProjectionStore{current: &SolutionRegistration{
+				SolutionID: "example", Publisher: "solution:example",
+				Declared: &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "stable-target", Generation: 1, Kind: SolutionDeclaredKindSolution},
+				Group:    &SolutionGroup{ID: "operations", Title: "Operations", Order: 1},
+			}}
+			svc := &Service{store: store}
+			document := &solutionhost.ModuleManifest{
+				Binding: "acme.test.example", Generation: 2, Kind: solutionhost.KindSolution,
+				Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"}, Group: tc.group,
+			}
+			_, err := svc.declareSolutionRegistration(context.Background(), document, "example", "stable-target", time.Now())
+			require.NoError(t, err)
+			require.Equal(t, tc.want, store.saved.Group)
+			require.Nil(t, store.saved.Frontend, "headless solutions are grouped without inventing a page")
+			require.Equal(t, "stable-target", store.saved.Declared.TargetID)
+			require.Equal(t, "example", store.saved.SolutionID)
+			require.Equal(t, uint64(2), store.saved.Declared.Generation)
+		})
+	}
+}
+
+func TestWithdrawalClearsSolutionGroup(t *testing.T) {
+	store := &declarationProjectionStore{current: &SolutionRegistration{
+		SolutionID: "example", Publisher: "solution:example",
+		Declared: &SolutionDeclaredBinding{BindingID: "acme.test.example", TargetID: "target", Kind: SolutionDeclaredKindSolution},
+		Group:    &SolutionGroup{ID: "operations", Title: "Operations", Order: 1},
+	}}
+	svc := &Service{store: store}
+	now := time.Now()
+	_, err := svc.withdrawDeclaredSolutionRegistration(context.Background(),
+		&SolutionHostBindingRecord{BindingID: "acme.test.example", Applied: &SolutionHostBindingApplied{SolutionID: "example"}},
+		&solutionhost.ModuleManifest{Binding: "acme.test.example", Generation: 2, Kind: solutionhost.KindSolution, Removed: true,
+			Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"}}, "target", now)
+	require.NoError(t, err)
+	require.Nil(t, store.saved.Group)
+	require.Equal(t, &now, store.saved.TombstonedAt)
+	require.Equal(t, "target", store.saved.Declared.TargetID)
 }
 
 // A kind this host has no routing surface for is REFUSED, and the refusal leaves
@@ -104,7 +170,7 @@ func TestADeclaredKindThisHostDoesNotRouteIsRefused(t *testing.T) {
 		t.Run(string("kind="+kind), func(t *testing.T) {
 			store := &declarationProjectionStore{}
 			svc := &Service{store: store}
-			document := &solutionhost.SolutionHostBinding{
+			document := &solutionhost.ModuleManifest{
 				Binding: "acme.test.example", Generation: 2, Kind: kind,
 				Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"},
 			}
@@ -129,7 +195,7 @@ func (s *countingDeclarationStore) WithControlPlane(ctx context.Context, fn func
 	return fn(ctx)
 }
 
-func (s *countingDeclarationStore) LiveDeclaredSolutionBindingIDs(context.Context) ([]string, error) {
+func (s *countingDeclarationStore) LiveDeclaredBindings(context.Context) ([]LiveDeclaredBinding, error) {
 	s.reads++
 	return nil, nil
 }
@@ -147,8 +213,8 @@ func (s *countingDeclarationStore) LiveDeclaredSolutionBindingIDs(context.Contex
 // solution becoming addressable), and a withdrawal REMOVES one (a stale snapshot
 // keeps a withdrawn solution addressable for up to the bound).
 func TestTheApplyPathInvalidatesTheAudienceSnapshot(t *testing.T) {
-	document := func(kind solutionhost.Kind) *solutionhost.SolutionHostBinding {
-		return &solutionhost.SolutionHostBinding{
+	document := func(kind solutionhost.Kind) *solutionhost.ModuleManifest {
+		return &solutionhost.ModuleManifest{
 			Binding: "acme.test.example", Generation: 2, Kind: kind,
 			Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"},
 		}

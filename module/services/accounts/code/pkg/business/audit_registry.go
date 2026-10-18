@@ -262,7 +262,7 @@ func optionalFields(fields []PayloadField) []PayloadField {
 	return relaxed
 }
 
-// mintExecutionFields is the execution a module mint record names (#1056),
+// mintExecutionFields is the workload a module mint record names (#1056),
 // declared once so the mints that carry it cannot drift apart.
 func mintExecutionFields() []PayloadField {
 	return []PayloadField{
@@ -271,8 +271,6 @@ func mintExecutionFields() []PayloadField {
 		{Name: "pod", Kind: FieldString, Required: true},
 		{Name: "pod_uid", Kind: FieldString, Required: true},
 		{Name: "container", Kind: FieldString, Required: true},
-		{Name: "running_digest", Kind: FieldString, Required: true},
-		{Name: "build_incarnation", Kind: FieldInt, Required: true},
 	}
 }
 func enum(name string, values ...string) PayloadField {

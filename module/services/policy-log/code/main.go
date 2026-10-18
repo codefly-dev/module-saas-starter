@@ -1,5 +1,5 @@
 // policy-log is the independent signed witness for authority changes. This
-// binary wires the fixed-path signing key, the object store, the warehouse
+// binary wires the delivered signing-key secret, the object store, the warehouse
 // mirror and the transport-independent service onto the gRPC endpoint Codefly
 // allocated, and refuses to start if any one of them is not provisioned.
 //
@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"log"
@@ -86,6 +87,20 @@ func resolveSettings(value func(group, key string) (string, error)) (settings, e
 	return resolved, nil
 }
 
+// resolveSigningKey reads only the declared secret group. The public pin is
+// independently delivered to clients; this service cannot choose or replace it.
+func resolveSigningKey(secret func(string, string) (string, error)) (ed25519.PrivateKey, error) {
+	value, err := secret(policyLogConfiguration, identity.SigningKeySetting)
+	if err != nil {
+		return nil, fmt.Errorf("policy-log: secret %s/%s is required", policyLogConfiguration, identity.SigningKeySetting)
+	}
+	key, err := identity.ParseSigningKey(value)
+	if err != nil {
+		return nil, fmt.Errorf("policy-log: secret %s/%s: %w", policyLogConfiguration, identity.SigningKeySetting, err)
+	}
+	return key, nil
+}
+
 func run(ctx context.Context, stop func()) error {
 	resolved, err := resolveSettings(func(group, key string) (string, error) {
 		return codefly.For(ctx).WorkspaceValue(group, key)
@@ -101,9 +116,7 @@ func run(ctx context.Context, stop func()) error {
 		return fmt.Errorf("Codefly did not inject a port for the %q endpoint", grpcEndpointName)
 	}
 	port := grpcNetwork.Port
-	// The fixed path takes no argument and consults no override: a key this
-	// process chose would witness under an identity nobody pinned.
-	key, err := identity.LoadSigningKey()
+	key, err := resolveSigningKey(codefly.For(ctx).WorkspaceSecret)
 	if err != nil {
 		return err
 	}

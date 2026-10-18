@@ -14,22 +14,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Declared solution presence (issue #952).
+// Declared module and solution presence (issue #952).
 //
-// Delivery declares which solution runs on this host at which generation. Core
-// owns the document and its admission rules; the host reconciles admitted
-// declarations into the durable registry.
+// Delivery declares, in one signed module manifest per binding, which module
+// or solution runs on this host at which generation, which workloads run as
+// it, where its endpoints are and what authority it asks for. Core owns the
+// document and its admission rules; the host reconciles admitted manifests into
+// the durable registry and derives everything else from the applied one.
 //
 // DESIRED records the newest generation delivery supplied and any refusal.
-// APPLIED records the generation reconciled into durable state. Endpoint and
-// manifest observations remain separate from that declaration and never grant
-// presence or installation authority.
+// APPLIED records the generation reconciled into durable state.
 
 const (
 	// SolutionHostBindingReconcileInterval is how often the host re-reads its
-	// mount. Delivery replaces a mounted document at its own cadence and gives
-	// the host no signal, so the pass is a poll; core's DecisionCurrent exists
-	// precisely because the same generation is read over and over.
+	// inbox when nothing asked for a pass sooner. A delivery and an envelope
+	// write trigger one, so the tick is the convergence bound for everything
+	// else (a re-pinned key, a retried apply).
 	SolutionHostBindingReconcileInterval = 30 * time.Second
 
 	// SolutionHostReservedRouteNamespace is the route namespace no delivered
@@ -39,17 +39,13 @@ const (
 )
 
 var (
+	ErrSolutionFrontendNotPrepared = errors.New("signed frontend payload is not prepared for immutable serving")
 	// ErrSolutionHostBindingNotDeclared is returned when a binding ID has no
 	// durable record.
 	ErrSolutionHostBindingNotDeclared = errors.New("solution host binding is not declared")
-	// ErrSolutionHostBindingRouteRequired is returned when a present generation
-	// does not declare exactly one route alias. core permits several; this host
-	// reconciles a binding into one registry record addressed by one path
-	// segment, so it needs exactly one and refuses rather than choosing.
-	ErrSolutionHostBindingRouteRequired = errors.New("solution host binding must declare exactly one route alias")
 	// ErrSolutionHostBindingRouteNotAddressable is returned when the declared
-	// alias is not a registry solution id: core's alias vocabulary admits dots
-	// and slashes, and a registry key is one lowercase path segment.
+	// alias is not a registry solution id: core's alias is one lowercase
+	// segment that may hold dots, and a registry key may not.
 	ErrSolutionHostBindingRouteNotAddressable = errors.New("solution host binding route alias is not an addressable solution id")
 	// ErrSolutionHostBindingKindNotRoutable is returned when a present generation
 	// declares a kind this host has no routing surface for. core admits only
@@ -72,7 +68,7 @@ var solutionIDPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$`)
 // maxSolutionIDLength matches the registry's own bound on solution_id.
 const maxSolutionIDLength = 128
 
-// SolutionHostBindingGeneration is one generation of one document: what it
+// SolutionHostBindingGeneration is one generation of one manifest: what it
 // declares, and the digest that identifies it. The document is kept whole, not
 // just its digest, because the host must be able to say what it is running and
 // what it has been asked to run.
@@ -87,27 +83,23 @@ type SolutionHostBindingGeneration struct {
 // reconciled it into.
 type SolutionHostBindingApplied struct {
 	SolutionHostBindingGeneration
-	// Removed records that the applied generation was a tombstone. It is not an
-	// absence: the binding ID and its generation remain, so a late or replayed
-	// older generation is still refused after a removal.
+	// Removed records that the applied generation was a withdrawal. It is not
+	// an absence: the binding ID and its generation remain, so a late or
+	// replayed generation is still refused after a removal.
 	Removed bool
 	// Routes are the aliases the applied generation holds.
 	Routes []string
 	// SolutionID is the registry record the applied generation reconciled into.
-	// A tombstone generation declares no route, so this is the only way it knows
-	// which record to withdraw.
+	// A withdrawal is routed nowhere, so this is how it knows which record to
+	// withdraw.
 	SolutionID string
 	// Release is publisher/name@version of the applied generation.
 	Release string
 	// Domain is the ownership domain the applied generation declared.
 	//
-	// It is persisted rather than re-derived because it decides WHO MAY CHANGE
-	// this record: core refuses a later generation for the binding that arrives
-	// under a different domain, which is what stops one accepted delivery taking
-	// over a binding another delivery owns. Re-deriving it from the host's own
-	// configured domain list would answer "a domain this host accepts" instead
-	// of "the domain this binding was claimed under", and those differ exactly
-	// when it matters — a host accepting two domains.
+	// It is persisted as well as held in the applied manifest because it
+	// decides WHO MAY CHANGE this record: core refuses a later generation for
+	// the binding that arrives under a different domain.
 	Domain string
 }
 
@@ -115,29 +107,81 @@ type SolutionHostBindingApplied struct {
 type SolutionHostBindingRecord struct {
 	BindingID      string
 	HostCoordinate string
-	HostComponent  string
-	Desired        *SolutionHostBindingGeneration
-	Applied        *SolutionHostBindingApplied
-	PendingReason  string
-	PendingSince   *time.Time
-	UpdatedAt      time.Time
+	// Domain is the ownership domain the binding first applied under. It is
+	// kept when live applied state is not — migration 41 cleared that and kept
+	// this — so a binding awaiting redelivery still belongs to its domain, and
+	// no other pinned domain can take its id (and its installations).
+	Domain        string
+	Desired       *SolutionHostBindingGeneration
+	Applied       *SolutionHostBindingApplied
+	PendingReason string
+	PendingSince  *time.Time
+	UpdatedAt     time.Time
 }
 
-// AppliedState is the record in the shape core judges a document against. A
-// binding with nothing applied contributes no state, which is how core is told
-// "never seen".
-func (r *SolutionHostBindingRecord) AppliedState() (solutionhost.Applied, bool) {
-	if r == nil || r.Applied == nil {
-		return solutionhost.Applied{}, false
+// ownershipDomain is the domain the binding belongs to, or "" for a binding
+// no generation was ever applied for.
+func (r *SolutionHostBindingRecord) ownershipDomain() string {
+	switch {
+	case r == nil:
+		return ""
+	case r.Domain != "":
+		return r.Domain
+	case r.Applied != nil:
+		return r.Applied.Domain
 	}
-	return solutionhost.Applied{
-		Binding:    r.BindingID,
-		Generation: r.Applied.Generation,
-		Digest:     r.Applied.Digest,
-		Domain:     r.Applied.Domain,
-		Routes:     r.Applied.Routes,
-		Removed:    r.Applied.Removed,
-	}, true
+	return ""
+}
+
+// checkOwnershipDomain refuses a manifest for this binding under another
+// ownership domain than the one it belongs to — core's Admit does the same
+// against an applied manifest, and this holds when none remains.
+func (r *SolutionHostBindingRecord) checkOwnershipDomain(candidate *solutionhost.ModuleManifest) error {
+	if domain := r.ownershipDomain(); domain != "" && candidate.Host.Domain != domain {
+		return fmt.Errorf("%w: binding %q belongs to ownership domain %q, and this manifest speaks for %q",
+			ErrSolutionDeliveryDomainNotGranted, candidate.Binding, domain, candidate.Host.Domain)
+	}
+	return nil
+}
+
+// AppliedManifest is the manifest this host applied for the binding, the one
+// core's Admit judges a candidate against; nil when nothing was applied.
+//
+// A withdrawal recorded before the module manifest replaced the presence
+// document cannot be read as a manifest, and it is still terminal: it answers
+// core's ErrWithdrawn, never "nothing applied". Any other unreadable record is
+// the host's own damaged state (ErrAppliedUnusable).
+func (r *SolutionHostBindingRecord) AppliedManifest() (*solutionhost.ModuleManifest, error) {
+	if r == nil || r.Applied == nil {
+		return nil, nil
+	}
+	manifest, err := solutionhost.Parse([]byte(r.Applied.Document))
+	if err != nil {
+		if r.Applied.Removed {
+			return nil, fmt.Errorf("%w: binding %q was withdrawn at generation %d, before this host read module manifests",
+				solutionhost.ErrWithdrawn, r.BindingID, r.Applied.Generation)
+		}
+		return nil, fmt.Errorf("%w: binding %q applied generation %d: %v",
+			solutionhost.ErrAppliedUnusable, r.BindingID, r.Applied.Generation, err)
+	}
+	if manifest.Binding != r.BindingID || manifest.Generation != r.Applied.Generation || manifest.Removed != r.Applied.Removed {
+		return nil, fmt.Errorf("%w: binding %q applied generation %d records a manifest for %q generation %d",
+			solutionhost.ErrAppliedUnusable, r.BindingID, r.Applied.Generation, manifest.Binding, manifest.Generation)
+	}
+	return manifest, nil
+}
+
+// appliedManifests is every readable applied manifest: the incumbents a
+// candidate's route alias is held against. An unreadable record claims no
+// alias here; its own binding's admission reports it.
+func appliedManifests(records []*SolutionHostBindingRecord) []*solutionhost.ModuleManifest {
+	applied := make([]*solutionhost.ModuleManifest, 0, len(records))
+	for _, record := range records {
+		if manifest, err := record.AppliedManifest(); err == nil && manifest != nil {
+			applied = append(applied, manifest)
+		}
+	}
+	return applied
 }
 
 // PendingGeneration is the generation delivery is showing that this host has not
@@ -153,66 +197,43 @@ func (r *SolutionHostBindingRecord) PendingGeneration() uint64 {
 	return r.Desired.Generation
 }
 
-// SolutionHostBindingDocument is one delivered document as it was read. Source
-// is where it came from and appears only in operator-facing messages; identity
-// comes from the document's own binding field, never from a file name.
+// SolutionHostBindingDocument is one delivered manifest carrier as it was read.
+// Source is where it came from and appears only in operator-facing messages;
+// identity comes from the manifest's own binding field.
 type SolutionHostBindingDocument struct {
 	Source string
 
-	// Data is a SIGNED CARRIER — core's {schema, document, bundle} — not a bare
-	// presence document. Delivery signs at publish and the host verifies at
-	// admission, so the bytes that cross the mount are the bytes the signature
-	// covers. A bare document now fails to parse here rather than being
-	// admitted unverified, which is the point: core cd443989 removed every path
-	// from unattested bytes to a host judgement, and this is the host side of
-	// that removal.
+	// Data is a SIGNED CARRIER — core's {document, envelope} — never a bare
+	// manifest, so the bytes the pass judges are the bytes the signature
+	// covers.
 	Data []byte
 }
 
 // SolutionHostBindingSource is the delivered desired set.
 //
-// It returns an error rather than an empty set when the mount cannot be read.
-// Removal is a tombstone generation precisely so that a lost, unmounted or
-// unreadable mount can never be reconciled as "remove everything".
+// It returns an error rather than an empty set when the inbox cannot be read.
+// Removal is a withdrawal generation precisely so that a lost or unreadable
+// input can never be reconciled as "remove everything".
 type SolutionHostBindingSource interface {
 	Documents(ctx context.Context) ([]SolutionHostBindingDocument, error)
 }
 
 // SolutionHostBindingReconciler drives one pass and, when started, repeats it.
 type SolutionHostBindingReconciler struct {
-	service *Service
-	source  SolutionHostBindingSource
-	host    solutionhost.Host
+	service    *Service
+	source     SolutionHostBindingSource
+	coordinate string
 
 	// verifier uses the platform's pins; core checks the envelope and the
-	// signer's ownership domains before returning an admitted document.
+	// signer's ownership domain before a manifest reaches admission.
 	verifier *solutionhost.Verifier
 
 	interval time.Duration
 	now      func() time.Time
 
-	// activation answers whether delivered authority is active for a binding at
-	// a build. It lives on the reconciler because the reconciler already holds
-	// every policy input activation needs — this host's coordinate, the
-	// ownership domains it accepts, which signer may speak for which, and the
-	// bundle verifier — and a second copy of any of them would be a second
-	// answer to "what does this host accept".
-	activation *SolutionAuthorityActivation
-
-	// approvedBuilds is the execution authority this host serves to the mint,
-	// rebuilt from the same inbox in the same pass.
-	//
-	// ONE PASS FOR BOTH HALVES, deliberately. Presence and authority arrive in
-	// one inbox and describe one delivery, so refreshing them on separate
-	// schedules opens a window in which a generation is applied while the build
-	// it approves is still the previous one — and that window is exactly where
-	// a superseded build is mintable. Nothing can drift if there is only one
-	// pass.
-	approvedBuilds *ApprovedBuildReconciler
-
 	// modulePrincipals derives the module registry every capability decision
-	// reads, from the live authority inside the current envelope and the
-	// applied presence it names, and swaps it into the service each pass.
+	// reads, from the applied manifests and the current envelope, and swaps it
+	// into the service each pass.
 	modulePrincipals *ModulePrincipalReconciler
 
 	// trigger asks the loop for a pass now. Buffered by one: a request made
@@ -225,163 +246,78 @@ type SolutionHostBindingReconciler struct {
 }
 
 // SolutionHostBindingReconcilerConfig is everything one host's reconciler needs
-// to judge delivery. Every field but Interval is required, and each absence is
-// refused by name rather than defaulted, because every one of them is a
-// different way for the host to accept a binding it should not.
+// to judge delivery. Every field but Interval and Envelopes is required, and
+// each absence is refused by name rather than defaulted.
 type SolutionHostBindingReconcilerConfig struct {
 	// Source is the delivered desired set, as signed carriers.
 	Source SolutionHostBindingSource
 
-	// Verifier is this host's attestation check over a carrier's bundle. It is
-	// required: without one there is no way to construct the verified value
-	// core's Admit takes, so a host with no verifier admits nothing at all
-	// rather than falling back to admitting everything.
+	// Verifier is this host's pinned-key check over a carrier. Without one
+	// there is no way to construct the verified value admission needs, so a
+	// host with no verifier admits nothing rather than everything.
 	Verifier *solutionhost.Verifier
 
 	// Coordinate is the host this reconciler answers for.
 	Coordinate string
 
-	// Domains are the ownership domains this host accepts delivery under.
-	Domains []string
-
-	// DomainsBySigner is which of those domains each attested signer identity
-	// may speak for, keyed by the identity Verifier returns. A document asserts
-	// its own ownership domain, so without this policy any signer the host
-	// accepted at all could deliver under any domain the host accepted and take
-	// over bindings in it.
-	DomainsBySigner map[string][]string
-
 	// Interval between passes. Zero takes the default.
 	Interval time.Duration
 
-	// Envelopes is where the AUTHORITY CEILING is read from — the module
-	// envelope a platform super_admin writes — on every pass and every
-	// activation, so a narrowing takes effect at the next check with no
-	// restart.
+	// Envelopes is where the administrator's approval — the ceiling a module's
+	// requested authority is intersected with — is read from on every pass,
+	// so a narrowing takes effect at the next pass with no restart.
 	//
-	// Optional, and its absence is not a weaker ceiling. No source, or no
-	// revision written, means no ceiling: every activation refuses with
-	// ErrSolutionAuthorityCeilingUnavailable and the module registry is empty —
-	// the host has decided nothing rather than decided that a grant is absent.
-	// A host that reconciles presence with no ceiling is a correct, complete
-	// deployment: making the presence half depend on the authority half would be
-	// the wrong coupling.
-	//
-	// It is never read out of a delivered document. core: "an envelope a
-	// document carried would be a document declaring its own ceiling".
+	// Optional, and its absence is not a weaker ceiling: no source, or no
+	// revision written, means the module registry is empty. It is never read
+	// out of a delivered manifest: a manifest requests, it never approves.
 	Envelopes ModuleEnvelopeSource
 }
 
 // NewSolutionHostBindingReconciler builds the reconciler for one host
-// coordinate. The coordinate is required: core refuses a document that targets
+// coordinate. The coordinate is required: core refuses a manifest that targets
 // another host, and a host that did not know its own coordinate would reconcile
 // whatever it was handed.
 func NewSolutionHostBindingReconciler(
 	service *Service, config SolutionHostBindingReconcilerConfig,
 ) (*SolutionHostBindingReconciler, error) {
-	source, domains, interval := config.Source, config.Domains, config.Interval
-	if service == nil || source == nil {
+	if service == nil || config.Source == nil {
 		return nil, errors.New("solution host binding reconciler requires a service and a source")
 	}
 	if config.Verifier == nil {
-		return nil, errors.New("solution host binding reconciler requires a bundle verifier; a host that cannot verify a carrier must admit nothing, not everything")
+		return nil, errors.New("solution host binding reconciler requires a pinned-key verifier; a host that cannot verify a carrier must admit nothing, not everything")
 	}
 	if config.Coordinate == "" {
 		return nil, errors.New("solution host binding reconciler requires this host's coordinate")
 	}
-	// Core requires the accepted ownership domains whenever a coordinate is set,
-	// and refuses a document from an unstated one. The reason is that the applied
-	// record cannot bound a binding's FIRST generation — there is nothing to
-	// compare against yet — so without this, any delivery could claim any unseen
-	// binding ID under a domain of its choosing and own it from then on. It is the
-	// host's to declare because core cannot know which delivery is entitled to a
-	// name it has never seen.
-	if len(domains) == 0 {
-		return nil, errors.New("solution host binding reconciler requires the ownership domains this host accepts delivery from")
-	}
-	// Same reasoning one axis over, and core refuses the call without it: an
-	// unstated signer policy would let every accepted signer claim every
-	// accepted domain, which makes the domain list decorative.
-	if len(config.DomainsBySigner) == 0 {
-		return nil, errors.New("solution host binding reconciler requires the ownership domains each signer identity may deliver under")
-	}
+	interval := config.Interval
 	if interval <= 0 {
 		interval = SolutionHostBindingReconcileInterval
 	}
 	reconciler := &SolutionHostBindingReconciler{
-		service:  service,
-		source:   source,
-		verifier: config.Verifier,
-		host: solutionhost.Host{
-			Coordinate:      config.Coordinate,
-			Domains:         domains,
-			DomainsBySigner: config.DomainsBySigner,
-			Reserved:        []string{SolutionHostReservedRouteNamespace},
-		},
-		interval: interval,
-		now:      func() time.Time { return time.Now().UTC() },
+		service:    service,
+		source:     config.Source,
+		coordinate: config.Coordinate,
+		verifier:   config.Verifier,
+		interval:   interval,
+		now:        func() time.Time { return time.Now().UTC() },
+		trigger:    make(chan struct{}, 1),
 	}
-	activation, err := newSolutionAuthorityActivation(reconciler, config.Envelopes)
-	if err != nil {
-		return nil, err
-	}
-	reconciler.activation = activation
-	approvedBuilds, err := NewApprovedBuildReconciler(activation)
-	if err != nil {
-		return nil, err
-	}
-	reconciler.approvedBuilds = approvedBuilds
-	modulePrincipals, err := NewModulePrincipalReconciler(activation)
-	if err != nil {
-		return nil, err
-	}
-	reconciler.modulePrincipals = modulePrincipals
-	reconciler.trigger = make(chan struct{}, 1)
+	reconciler.modulePrincipals = &ModulePrincipalReconciler{reconciler: reconciler, envelopes: config.Envelopes}
 	return reconciler, nil
 }
 
-// ApprovedBuilds is the ExecutionAuthority a host wires into the mint: what
-// this host approves for a principal, as the last successful pass established
-// it.
-//
-// Exposed from here for the same reason AuthorityActivation is — the reconciler
-// already holds every policy input, and a second reader built beside it would
-// be a second answer to what this host approves.
-func (r *SolutionHostBindingReconciler) ApprovedBuilds() ExecutionAuthority {
-	if r == nil {
-		return nil
-	}
-	return r.approvedBuilds
-}
-
-// AuthorityActivation is the seam a capability-minting path asks "is the
-// delivered authority over this binding active for the build I have established
-// this caller is running".
-//
-// It is exposed rather than consumed here because the host does not APPLY
-// authority to anything: there is no durable state an activation reconciles
-// into, and a reconcile pass that logged the answer every interval would be
-// noise rather than an effect. The answer is a read, and the caller that needs
-// it is the one that has independently established a running build.
-func (r *SolutionHostBindingReconciler) AuthorityActivation() *SolutionAuthorityActivation {
-	if r == nil {
-		return nil
-	}
-	return r.activation
-}
-
-// RunOnce reads the mount and reconciles one pass.
+// RunOnce reads the inbox and reconciles one pass.
 //
 // The pass is ordered so that a refusal can never disturb what is running.
-// Everything is read and judged before anything is written: the mount, then the
-// durable applied state, then core's verdict on the whole desired set. Only then
-// is desired state recorded — for every delivered binding, admitted or not, so a
-// withheld generation and its reason are visible — and only then is an admitted
-// generation applied.
+// Everything is read and judged before anything is written: the inbox, then the
+// durable applied state, then core's verdict on each delivered manifest. Only
+// then is desired state recorded — for every delivered binding, admitted or
+// not, so a withheld generation and its reason are visible — and only then is
+// an admitted generation applied.
 func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	documents, err := r.source.Documents(ctx)
 	if err != nil {
-		// An unreadable mount is not an empty desired set. Nothing is recorded
+		// An unreadable inbox is not an empty desired set. Nothing is recorded
 		// and nothing is applied: the last generation that passed keeps running.
 		return fmt.Errorf("read delivered solution host bindings: %w", err)
 	}
@@ -392,10 +328,7 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	host := r.host
-	host.Applied = appliedStates(records)
-
-	admission := admitSolutionHostBindings(host, verified)
+	admission := admitSolutionHostBindings(r.coordinate, r.service.moduleNamespaces, records, verified)
 
 	// Desired state is recorded for every delivered document before anything is
 	// applied, so an operator sees what delivery is showing even when none of it
@@ -407,7 +340,7 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	// apply owns its reason.
 	settled := make(map[string]bool, len(admission.Accepted))
 	for _, accepted := range admission.Accepted {
-		settled[accepted.Document.Binding] = accepted.Decision == solutionhost.DecisionCurrent
+		settled[accepted.Document.Binding] = accepted.Decision == solutionhost.DecisionReplay
 	}
 	var failures []error
 	for _, one := range verified {
@@ -421,16 +354,14 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	}
 
 	for _, applied := range orderSolutionHostBindingApplies(admission.Accepted, records) {
-		if applied.Decision != solutionhost.DecisionApply {
-			// DecisionCurrent: this exact generation is already applied. A host
-			// re-reads its mount every pass, so this is the normal answer and
+		if applied.Decision != solutionhost.DecisionAccept {
+			// DecisionReplay: this exact generation is already applied. A host
+			// re-reads its inbox every pass, so this is the normal answer and
 			// not an error. Desired state was recorded above; there is nothing
 			// to change.
 			continue
 		}
-		if err := r.service.applySolutionHostBinding(
-			ctx, applied.Delivered, r.host.Coordinate, r.host.Domains, r.host.DomainsBySigner, r.now(),
-		); err != nil {
+		if err := r.service.applySolutionHostBinding(ctx, applied.Delivered, r.coordinate, r.now()); err != nil {
 			// One binding's apply failing leaves every other binding's progress
 			// intact: each apply is its own transaction, because each binding is
 			// independent desired state. The reason is recorded as this
@@ -445,21 +376,9 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 		}
 	}
 
-	// THE APPROVED-BUILD VIEW, from the same inbox, in the same pass. It is
-	// refreshed AFTER the applies rather than before: a generation that has just
-	// been applied is the one whose approved build the mint will be asked about,
-	// and refreshing first would serve the previous answer for one whole
-	// interval. Its failures join the pass's, so a principal this host refused
-	// to approve is visible in the same place as a binding it refused to apply.
-	if r.approvedBuilds != nil {
-		if err := r.approvedBuilds.RunOnce(ctx); err != nil {
-			failures = append(failures, fmt.Errorf("refresh the approved-build view: %w", err))
-		}
-	}
-
-	// THE MODULE REGISTRY, last: it reads the presence this pass just applied
-	// and the same authority inbox, so deriving it before the applies would
-	// serve the previous generation's workload for one whole interval.
+	// THE MODULE REGISTRY, last: it reads the manifests this pass just
+	// applied, so deriving it before the applies would serve the previous
+	// generation's workloads and authority for one whole interval.
 	if r.modulePrincipals != nil {
 		if err := r.modulePrincipals.RunOnce(ctx); err != nil {
 			failures = append(failures, fmt.Errorf("derive the module principal registry: %w", err))
@@ -569,8 +488,8 @@ func (r *SolutionHostBindingReconciler) Shutdown(ctx context.Context) error {
 // not.
 //
 // Every refusal here is one of three things, and they are deliberately not
-// distinguished in what is recorded: not a carrier, a carrier whose bundle does
-// not verify, or a verified payload core will not parse. An operator needs to
+// distinguished in what is recorded: not a carrier, a carrier whose envelope does
+// not verify, or a verified payload core will not read. An operator needs to
 // know delivery is shipping something this host will not admit; which of the
 // three it is tells an attacker which half of the door it got past, so the
 // reason recorded against a binding stays coarse while the returned error — which
@@ -607,13 +526,12 @@ func verifySolutionHostBindingDocuments(
 			})
 			continue
 		}
-		document, err := one.Document()
+		document, err := one.Manifest()
 		if err != nil {
-			// core parsed these same bytes inside VerifyDelivered, so this is
+			// core read these same bytes inside VerifyDelivered, so this is
 			// unreachable by construction rather than merely unlikely. It is
 			// still handled as a refusal: a host that cannot read back what it
-			// just verified must admit nothing from it, and the alternative is
-			// a nil document reaching admission.
+			// just verified must admit nothing from it.
 			problems = append(problems, unparsedSolutionHostBinding{
 				binding: attributeSolutionHostBinding(carrier.Document),
 				err:     fmt.Errorf("delivered solution host binding %s: %w", delivered.Source, err),
@@ -626,25 +544,13 @@ func verifySolutionHostBindingDocuments(
 	return verified, problems
 }
 
-// deliveredSolutionHostBinding pairs an attested carrier with the document
-// re-derived from its attested bytes, derived ONCE per pass.
-//
-// core 67ee7220 made Delivered.Document() a derivation returning an error
-// rather than a field returning a pointer, because the pointer form let a
-// caller mutate what Admit would afterwards consume — the attestation covered
-// one generation and admission consumed another, with nothing anywhere saying
-// so. Two consequences land here. A derivation that can fail cannot be read
-// inside a sort comparator, and re-reading it per use would re-parse and
-// canonically round-trip the same bytes once for every question asked of them.
-//
-// Holding the result is safe in a way holding the old pointer was not: Admit
-// re-derives from the attested payload itself, so this copy is what the pass
-// READS and cannot become what the host admits. That is the property core's
-// redesign bought, and pairing the two values here is what makes the pass use
-// one document rather than a fresh one per call site.
+// deliveredSolutionHostBinding pairs an attested carrier with the manifest
+// re-derived from its attested bytes, derived ONCE per pass. The apply
+// re-derives its own from the carrier, so this copy is what the pass READS and
+// cannot become what the host applies.
 type deliveredSolutionHostBinding struct {
 	Delivered *solutionhost.Delivered
-	Document  *solutionhost.SolutionHostBinding
+	Document  *solutionhost.ModuleManifest
 }
 
 // unparsedSolutionHostBinding is a delivered document core would not parse, and
@@ -666,16 +572,6 @@ func attributeSolutionHostBinding(data []byte) string {
 		return ""
 	}
 	return named.Binding
-}
-
-func appliedStates(records []*SolutionHostBindingRecord) []solutionhost.Applied {
-	applied := make([]solutionhost.Applied, 0, len(records))
-	for _, record := range records {
-		if state, ok := record.AppliedState(); ok {
-			applied = append(applied, state)
-		}
-	}
-	return applied
 }
 
 // orderSolutionHostBindingApplies puts the generations that RELEASE a registry
@@ -703,12 +599,7 @@ func orderSolutionHostBindingApplies(
 		if candidate.Document.Removed {
 			return true
 		}
-		for _, alias := range candidate.Document.Aliases() {
-			if alias == current {
-				return false
-			}
-		}
-		return true
+		return candidate.Document.Alias != current
 	}
 	ordered := make([]SolutionHostBindingDecision, 0, len(accepted))
 	for _, candidate := range accepted {
@@ -724,21 +615,16 @@ func orderSolutionHostBindingApplies(
 	return ordered
 }
 
-// solutionHostBindingRegistryKey resolves the registry record a present
-// generation reconciles into.
+// solutionHostBindingRegistryKey resolves the registry record a live manifest
+// reconciles into.
 //
-// The key is the binding's route alias, because the alias is what this host
+// The key is the manifest's route alias, because the alias is what this host
 // routes on: it is the <id> in /solutions/<id>/* and the key the frontend loads
 // a remote under. The binding ID is deliberately not the key — it identifies a
-// deployment instance, may carry characters a path segment may not, and a second
-// instance of the same solution inherits nothing from the first, alias included.
-func solutionHostBindingRegistryKey(document *solutionhost.SolutionHostBinding) (string, error) {
-	aliases := document.Aliases()
-	if len(aliases) != 1 {
-		return "", fmt.Errorf("%w: binding %q declares %d",
-			ErrSolutionHostBindingRouteRequired, document.Binding, len(aliases))
-	}
-	alias := aliases[0]
+// deployment instance, and a second instance of the same solution inherits
+// nothing from the first, alias included.
+func solutionHostBindingRegistryKey(document *solutionhost.ModuleManifest) (string, error) {
+	alias := document.Alias
 	if !solutionIDPattern.MatchString(alias) || len(alias) > maxSolutionIDLength {
 		return "", fmt.Errorf("%w: binding %q declares route %q, which is not one lowercase path segment",
 			ErrSolutionHostBindingRouteNotAddressable, document.Binding, alias)

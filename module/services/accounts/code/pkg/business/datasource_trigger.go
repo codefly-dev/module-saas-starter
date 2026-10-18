@@ -221,6 +221,12 @@ type TriggerChildContext struct {
 // ErrTriggerSourceNotFound reports a source that is not in the organization.
 var ErrTriggerSourceNotFound = errors.New("datasource source not found")
 
+// ErrTriggerSourcePersonal reports a personal source the caller does not own.
+// Distinct from "not found": the source exists and the caller can see it, and
+// what they may not do is record a reference whose authority is theirs rather
+// than its owner's.
+var ErrTriggerSourcePersonal = errors.New("source is personal to another member")
+
 // datasourceTriggerCron spells one reconcile interval as a five-field cron
 // expression, or reports that it cannot.
 //
@@ -322,14 +328,43 @@ func datasourceTriggerInput(orgID, sourceID string) []byte {
 // DeclareSourceTrigger builds the trigger this host declares for one source,
 // under the identity its active delegation gives it.
 //
-// The identity is the reference arm whenever a reference exists, and that is
-// not a preference between two equal options: a reference is revocable and
+// The identity is the reference arm, or none. A reference is revocable and
 // re-checked on every occurrence, which is what lets an occurrence's run
-// outlive the capability that admitted it. The installation-binding arm is the
-// fallback — an ordinary short-lived token admission — and it is named only
-// when no delegation is there to reference. A source with neither declares a
-// schedule with no identity, which an installing module refuses rather than
-// running as itself.
+// outlive the capability that admitted it. A source with no active delegation
+// declares a schedule with no identity, which an installing module refuses
+// rather than running the work as itself.
+//
+// THE INSTALLATION-BINDING ARM IS NOT AVAILABLE FOR THIS TRIGGER, and this
+// function has never emitted it (issue #1112, M4). It was described as the
+// fallback; three facts say it cannot serve this one, each independently:
+//
+//   - ModuleOperationContextTTL is 60 seconds, and this trigger declares a
+//     10-minute DatasourceTriggerDeadline. An occurrence bounded by the
+//     capability's own lifetime cannot carry that deadline.
+//   - the capability is owned by the module's own principal and acts with no
+//     actor hop, while requireReconcile needs an organization MEMBER. An
+//     installation principal is not one, so the admission is refused at the
+//     operation.
+//   - nothing here sets Identity.Binding, so no declaration ever named it.
+//
+// Lengthening the mint for occurrences would be a second lifetime policy on a
+// capability shared with every other headless call, which is why the arm is
+// stated as planned in MODULE.md and WORK_CONTEXTS.md rather than quietly
+// shortened to fit.
+//
+// THE REFERENCE IS THE SOURCE ID, AND REVOCATION IS THEREFORE NOT DURABLE
+// (issue #1112, M3). Every delegation on one source reads back under the same
+// reference value, so this loop names whichever module holds an active one;
+// and because a mint resolves the active delegation from the source afresh, a
+// reconnect that records a new delegation re-arms an installed trigger with no
+// explicit re-delegation. The durable shape is an opaque, delegation-level
+// reference, which this host's own mint already accepts (SourceDelegationRef's
+// DelegationID arm, and the gateway's delegation_id field) — what is missing
+// is a client path to it: the module-authority facade a firing module uses
+// sends source_id only and then refuses any answer whose source_id differs
+// from what it sent, so a delegation id in this field is rejected by the
+// caller, not by this host. Named in WORK_CONTEXTS.md § Triggers as that
+// facade's gap.
 func DeclareSourceTrigger(source *DatasourceSource, references []TriggerDelegationReference, lastOccurrence *time.Time) SourceTriggerDeclaration {
 	declaration := SourceTriggerDeclaration{
 		Release:          DatasourceReconcileRelease,
@@ -361,6 +396,8 @@ func DeclareSourceTrigger(source *DatasourceSource, references []TriggerDelegati
 		Deadline:  DatasourceTriggerDeadline,
 		Input:     datasourceTriggerInput(source.OrgID, source.ID),
 	}
+	// Whichever module holds an active delegation, because every delegation on
+	// one source carries the same reference value — see the M3 note above.
 	for _, reference := range references {
 		if reference.Active && reference.Reference != "" {
 			declaration.Identity = DeclaredTriggerIdentity{Source: reference.Reference}
@@ -568,6 +605,16 @@ func (s *Service) GetSourceTriggerDeclaration(ctx context.Context, orgID, source
 // mint exactly as for a delegation a connect recorded. What it changes is who
 // has to act and when, which is an operational fact and not an authorization
 // one.
+//
+// It is ADDITIVE, and it refuses another member's personal source (issue
+// #1112, M2). It used to run the connect path, which revokes every delegation
+// on the source as `replaced` and re-inserts each one owned by the caller: on
+// a personal source that silently took the owner's delegation away, and on a
+// shared one it moved every unrelated module's authority onto the
+// administrator. Neither is a backfill. So a target that already holds an
+// active delegation is untouched, and a personal source belongs to its owner —
+// the same division ReconcileDatasourceSource makes on the pass itself, and
+// the one whose authority a reference on that source would borrow.
 func (s *Service) DelegateSourceTriggers(ctx context.Context, actorID, orgID, sourceID string) ([]TriggerDelegationReference, error) {
 	orgID, sourceID = strings.TrimSpace(orgID), strings.TrimSpace(sourceID)
 	if orgID == "" || sourceID == "" {
@@ -587,7 +634,20 @@ func (s *Service) DelegateSourceTriggers(ctx context.Context, actorID, orgID, so
 		if source == nil {
 			return ErrTriggerSourceNotFound
 		}
-		return s.recordSourceDelegationsTx(ctx, actorID, orgID, sourceID)
+		// A personal source is its owner's to delegate. ReconcileDatasourceSource
+		// refuses a personal source to anyone but its owner, so a reference
+		// recorded under an administrator would borrow an authority that cannot
+		// perform the pass it admits — every occurrence refused, with the
+		// reference reading as bound.
+		//
+		// Note it is ReconcileDatasourceSource and NOT ReconcileSourceAuthority
+		// that draws that line: the authority check admits the owner OR an
+		// organization administrator, so it would pass here.
+		if source.PersonalOwnerUserID != "" && source.PersonalOwnerUserID != actorID {
+			return ErrTriggerSourcePersonal
+		}
+		_, err = s.recordSourceDelegationsTx(ctx, actorID, orgID, sourceID, sourceDelegationBackfill)
+		return err
 	}); err != nil {
 		return nil, err
 	}

@@ -55,6 +55,7 @@ import { useFrontendConfig } from "@/lib/providers";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
 import { cn } from "@/lib/utils";
 import { useRegisteredSolutions } from "@/solutions/SolutionsMenu";
+import { groupSolutionNavigation } from "@/solutions/solution-groups";
 
 function isNavActive(pathname: string, href: string): boolean {
 	if (href === "/") return pathname === "/";
@@ -223,12 +224,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 						</SidebarGroupContent>
 					</SidebarGroup>
 
-					{registeredSolutions.length > 0 && (
-						<SidebarGroup>
-							<SidebarGroupLabel>Solutions</SidebarGroupLabel>
+					{groupSolutionNavigation(registeredSolutions).map((section) => (
+						<SidebarGroup key={section.key}>
+							<SidebarGroupLabel>{section.title}</SidebarGroupLabel>
 							<SidebarGroupContent>
 								<SidebarMenu>
-									{registeredSolutions.map((solution) => (
+									{section.items.map((solution) => (
 										<SidebarMenuItem key={solution.id}>
 											<SidebarMenuButton
 												render={<Link href={solution.nav.path} />}
@@ -242,7 +243,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 								</SidebarMenu>
 							</SidebarGroupContent>
 						</SidebarGroup>
-					)}
+					))}
 
 					{showAdmin &&
 						primarySections.map((section) => (

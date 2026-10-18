@@ -143,3 +143,20 @@ func TestR1019CanonicalOriginDropsOnlyTheDefaultPort(t *testing.T) {
 		require.Equal(t, want, got, candidate)
 	}
 }
+
+// A mismatch is still ErrPublicOriginNotConfigured, and now carries both canonical
+// origins so the refuser's log says what was presented and what was expected. The
+// frontend presenting its cluster-internal address is the case it was invisible for.
+func TestOriginRefusalNamesBothOrigins(t *testing.T) {
+	pin(t, "https://app.cell.example")
+
+	_, err := auth.WithVerifiedPublicOrigin(context.Background(), "https://APP.other.example:443")
+	require.ErrorIs(t, err, auth.ErrPublicOriginNotConfigured)
+	require.Contains(t, err.Error(), `forwarded "https://app.other.example"`)
+	require.Contains(t, err.Error(), `configured application/APP_BASE_URL "https://app.cell.example"`)
+
+	_, err = auth.WithVerifiedPublicOrigin(context.Background(), "http://frontend.ns.svc.cluster.local:8080")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `forwarded public origin "http://frontend.ns.svc.cluster.local:8080" is not a usable origin`)
+	require.Contains(t, err.Error(), "non-loopback public origin must use HTTPS")
+}

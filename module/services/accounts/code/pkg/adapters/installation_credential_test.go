@@ -30,11 +30,8 @@ func (s *credentialInstallationStore) LiveModuleAuthority(context.Context, strin
 func TestSealedModuleCredentialIsHeldToItsInstallation(t *testing.T) {
 	installModuleWorkContextAuthority(t)
 	id := business.ModulePrincipalID("example")
-	build := testBuildFor(id)
-	workContextSingleton.seals.(*sealAnswersFake).approve(id, build)
 	minted := business.ModuleWorkContextAuthority{
 		PrincipalID: id, Tenant: moduleWorkContextTenant, InstallationID: "installation-a", InstallationRevision: 1,
-		Execution: business.ExecutionIdentity{Running: business.RunningDigest(build.ImageDigest), Incarnation: build.BuildIncarnation},
 	}
 	token, _, err := WorkContextSingleton().StartModuleTask(context.Background(), minted)
 	require.NoError(t, err)

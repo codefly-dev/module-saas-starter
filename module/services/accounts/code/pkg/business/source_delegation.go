@@ -248,39 +248,88 @@ func (r ModulePrincipalRegistry) SourceDelegationTargets() []SourceDelegationTar
 // Recording and revoking
 // ---------------------------------------------------------------------------
 
-// recordSourceDelegationsTx records the delegations a connect or reconnect of
-// sourceID by actorID makes, inside the caller's organization transaction:
-// for every module binding that accepts delegations in this organization, any
-// active delegation of the source to that module is revoked as replaced and a
-// new one is recorded under actorID. Both commit with the connect or not at
-// all, so a reconnect can never leave a source with two delegations or none.
+// sourceDelegationRecordMode is how recordSourceDelegationsTx treats a target
+// that already holds an active delegation of the source.
+//
+// Two modes and not two functions, deliberately: the registry read that answers
+// "which modules accept a delegation here" is a declared-value lookup under a
+// capability the caller already authorised, and there must be exactly ONE path
+// doing it — a second copy is a second place for the two behaviours to drift,
+// and a second entry on the unrouted-capability list a reviewer has to judge.
+type sourceDelegationRecordMode int
+
+const (
+	// sourceDelegationReplace is a CONNECT or RECONNECT. Every target's active
+	// delegation of the source is revoked as replaced and re-recorded under the
+	// connecting person, in one transaction, so a reconnect can never leave a
+	// source with two delegations or none. Correct here because that person has
+	// just (re-)established the source and the authority occurrences borrow is
+	// theirs.
+	sourceDelegationReplace sourceDelegationRecordMode = iota
+	// sourceDelegationBackfill is a reference recorded for a source that is
+	// ALREADY connected (DelegateSourceTriggers). It revokes nothing: a target
+	// already holding an active delegation is left exactly as it is, and only a
+	// target with none gets one.
+	//
+	// The distinction is issue #1112, M2. The backfill used to run the replace
+	// mode, which took every delegation on the source, marked it `replaced` and
+	// re-inserted it owned by the calling administrator: a personal source's
+	// owner lost the delegation their own integrations mint from, and on a
+	// shared source every in-flight child of an unrelated module failed its
+	// re-check and everything after it ran under the administrator's authority
+	// instead of the connector's. A backfill has re-established nothing, so it
+	// has no business re-owning anything.
+	sourceDelegationBackfill
+)
+
+// recordSourceDelegationsTx records the delegations a connect, reconnect or
+// backfill of sourceID by actorID makes, inside the caller's organization
+// transaction, for every module binding that accepts delegations in this
+// organization. What it does about an existing one is the mode's to say.
 //
 // A connect by someone who is not, in this organization, an owner or admin
 // records nothing: the platform operator's bypass of the connect check is not a
 // role a later mint could re-check. The source then reads as having no
 // delegation until an administrator of the organization reconnects it.
-func (s *Service) recordSourceDelegationsTx(ctx context.Context, actorID, orgID, sourceID string) error {
+//
+// It returns how many delegations it recorded, so a backfill's caller can tell
+// "nothing was missing" from "no module accepts a delegation here" — two very
+// different answers for an operator reading the page.
+func (s *Service) recordSourceDelegationsTx(
+	ctx context.Context, actorID, orgID, sourceID string, mode sourceDelegationRecordMode,
+) (int, error) {
 	targets := s.declaredModules().SourceDelegationTargets()
 	if len(targets) == 0 {
-		return nil
+		return 0, nil
 	}
 	role, err := s.store.SourceDelegationMemberRole(ctx, orgID, actorID)
 	if err != nil {
-		return fmt.Errorf("resolve connecting member role: %w", err)
+		return 0, fmt.Errorf("resolve connecting member role: %w", err)
 	}
 	if !sourceDelegationConnectRole(role) {
-		return nil
+		return 0, nil
 	}
+	recorded := 0
 	for _, target := range targets {
-		replaced, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{
-			OrgID: orgID, SourceID: sourceID, ModulePrefix: target.Prefix,
-		}, SourceDelegationReplaced, actorID)
-		if err != nil {
-			return fmt.Errorf("revoke replaced source delegation: %w", err)
-		}
-		for _, previous := range replaced {
-			if err := s.emitSourceDelegationRevokedTx(ctx, actorID, previous, SourceDelegationReplaced); err != nil {
-				return err
+		if mode == sourceDelegationBackfill {
+			existing, err := s.store.ActiveSourceDelegation(ctx, sourceID, target.Prefix)
+			if err != nil {
+				return recorded, fmt.Errorf("read active source delegation: %w", err)
+			}
+			if existing != nil {
+				continue
+			}
+		} else {
+			replaced, err := s.store.RevokeSourceDelegations(ctx, SourceDelegationFilter{
+				OrgID: orgID, SourceID: sourceID, ModulePrefix: target.Prefix,
+			}, SourceDelegationReplaced, actorID)
+			if err != nil {
+				return recorded, fmt.Errorf("revoke replaced source delegation: %w", err)
+			}
+			for _, previous := range replaced {
+				if err := s.emitSourceDelegationRevokedTx(ctx, actorID, previous, SourceDelegationReplaced); err != nil {
+					return recorded, err
+				}
 			}
 		}
 		delegation := &SourceDelegation{
@@ -293,14 +342,22 @@ func (s *Service) recordSourceDelegationsTx(ctx context.Context, actorID, orgID,
 			BindingDigest: SourceDelegationBindingDigest(target.Binding),
 		}
 		if err := s.store.InsertSourceDelegation(ctx, delegation); err != nil {
-			return fmt.Errorf("record source delegation: %w", err)
+			return recorded, fmt.Errorf("record source delegation: %w", err)
 		}
 		if err := s.emitTx(ctx, actorID, "user", EventSourceDelegationCreated, "datasource", sourceID, orgID,
 			sourceDelegationPayload(delegation)); err != nil {
-			return err
+			return recorded, err
 		}
+		recorded++
 	}
-	return nil
+	return recorded, nil
+}
+
+// recordSourceDelegationsOnConnectTx is the connect and reconnect call, whose
+// callers do not read the count.
+func (s *Service) recordSourceDelegationsOnConnectTx(ctx context.Context, actorID, orgID, sourceID string) error {
+	_, err := s.recordSourceDelegationsTx(ctx, actorID, orgID, sourceID, sourceDelegationReplace)
+	return err
 }
 
 // revokeSourceDelegationsTx revokes every active delegation the filter matches,
@@ -631,14 +688,12 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 		// audience the delegation's binding names — so its hop attests the build
 		// its own pod is running, and the delegation is the operation binding the
 		// hop exercises (business.SourceDelegationBindingID), read live by every
-		// verifier. The caller authenticated with its module Work Context, whose
-		// seal names the build its pod was bound to at that mint and which core
-		// has just held against the approved build again.
+		// verifier. The caller authenticated with its module Work Context.
 		authority = SourceOperationContextAuthority{
 			ModuleWorkContextAuthority: ModuleWorkContextAuthority{
 				PrincipalID: caller.PrincipalID, Tenant: delegation.OrgID,
 				InstallationID: callerAuthority.InstallationID, InstallationRevision: callerAuthority.InstallationRevision,
-				ProducerEpoch: callerAuthority.ProducerEpoch, Execution: caller.SealedExecution(),
+				ProducerEpoch: callerAuthority.ProducerEpoch,
 			},
 			ModulePrefix:     grant.Prefix,
 			OwnerPrincipalID: delegation.PrincipalID,

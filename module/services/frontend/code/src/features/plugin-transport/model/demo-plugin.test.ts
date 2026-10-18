@@ -4,10 +4,11 @@ import {
 	TRANSPORT_DEMO_ROUTES,
 	transportCarries,
 	transportDemoPlugin,
+	transportMutates,
 } from "./demo-plugin";
 
 describe("the transport playground's demo plugin", () => {
-	it("declares one REST prefix and one connect requirement at the origin root", () => {
+	it("declares a REST prefix and two connect requirements that name their services", () => {
 		expect(transportDemoPlugin.name).toBe("transport-demo");
 		expect(transportDemoPlugin.services).toEqual([
 			{
@@ -20,9 +21,44 @@ describe("the transport playground's demo plugin", () => {
 				alias: "procedures",
 				protocol: "connect",
 				routePrefix: "/",
+				connectServices: ["demo.procedures.v1.RecordService"],
+				compatibility: { contract: "demo.procedures", major: 1 },
+			},
+			{
+				alias: "mounted",
+				protocol: "connect",
+				routePrefix: "/v1/connect",
+				connectServices: ["demo.procedures.v1.RecordService"],
 				compatibility: { contract: "demo.procedures", major: 1 },
 			},
 		]);
+	});
+
+	it("keeps a procedure outside the declared services on the list, refused", () => {
+		// The row that proves the bound exists: with `routePrefix: "/"` the first
+		// path segment is the service name, chosen by the caller, so without the
+		// declared list this alias would reach every service the upstream origin
+		// serves.
+		const outside = TRANSPORT_DEMO_ROUTES.find(
+			(route) => route.path === "demo.other.v1.SecretService/Read",
+		);
+		expect(outside?.carried).toBe(false);
+		expect(outside && transportCarries(outside)).toBe(false);
+	});
+
+	it("confirms every mutating route it would actually send", () => {
+		// The page's plugin name is editable, so a press on a carried non-read is
+		// a real write to whatever backend the operator named. Each one is armed
+		// first; a route the transport will not carry needs no confirmation
+		// because nothing leaves the browser.
+		for (const route of TRANSPORT_DEMO_ROUTES) {
+			expect(transportMutates(route), route.path).toBe(
+				route.method !== "GET" && route.carried,
+			);
+		}
+		expect(
+			TRANSPORT_DEMO_ROUTES.filter(transportMutates).length,
+		).toBeGreaterThan(0);
 	});
 
 	it("names every route against a declared alias", () => {

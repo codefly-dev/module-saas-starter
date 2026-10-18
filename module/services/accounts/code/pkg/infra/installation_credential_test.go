@@ -113,15 +113,13 @@ func TestSealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.T)
 	svc.SetModuleAuthorityReads(testStore, nil)
 	svc.SetWorkContextSealStore(testStore)
 	cluster := executiontest.New()
-	svc.SetExecutionBinding(cluster, cluster)
-	cluster.Approve("example", executiontest.Digest("example"), 1)
+	svc.SetExecutionBinding(cluster)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	issuer := &adapters.WorkContextAuthorityServer{}
 	issuer.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "example-key", PrivateKey: key, Authority: testStore, Seals: svc})
 	credential, _, err := issuer.StartModuleTask(testCtx, business.ModuleWorkContextAuthority{
 		PrincipalID: principal, Tenant: org, InstallationID: installation.Id, InstallationRevision: 1,
-		Execution: business.ExecutionIdentity{Running: business.RunningDigest(executiontest.Image("example")), Incarnation: 1},
 	})
 	require.NoError(t, err, "the module's principal holds an epoch from its installation (migration 35)")
 	verified, err := issuer.VerifyModuleWorkContext(testCtx, credential)

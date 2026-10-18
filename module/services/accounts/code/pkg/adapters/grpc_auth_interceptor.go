@@ -317,13 +317,25 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 		var err error
 		ctx, err = auth.WithVerifiedPublicOrigin(ctx, forwardedPublicOrigin)
 		if err != nil {
+			// The reason names the forwarded and configured origins; the caller
+			// keeps the generic answer.
+			wool.Get(ctx).In("grpcPolicyInterceptor").Warn("trusted public origin refused", wool.ErrField(err))
 			return ctx, status.Error(codes.PermissionDenied, "invalid trusted public origin")
+		}
+	}
+	if trustedForwarded {
+		if presenter := firstMetadataValue(md, "x-codefly-workload-presenter"); presenter != "" {
+			if _, err := business.ParseKubernetesSPIFFEID(presenter); err != nil {
+				return ctx, status.Error(codes.PermissionDenied, "invalid trusted workload presenter")
+			}
+			ctx = business.WithVerifiedWorkloadPresenter(ctx, presenter)
 		}
 	}
 	// Gateway credentials prove trust at this adapter boundary; application
 	// handlers must not receive or reuse the raw capabilities.
 	md = md.Copy()
 	md.Delete("x-codefly-gateway-token")
+	md.Delete("x-codefly-workload-presenter")
 	md.Delete("x-codefly-public-origin")
 	ctx = metadata.NewIncomingContext(ctx, md)
 	policy, classified := business.LookupRPCPolicy(fullMethod)

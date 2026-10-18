@@ -61,6 +61,7 @@ spec:
               - /saas.accounts.v1.ModuleCapabilitiesService/PublishEvent
               - /saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents
               - /saas.accounts.v1.ModuleCapabilitiesService/RequestApproval
+              - /saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority
               - /saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact
               - /saas.accounts.v1.ModuleCapabilitiesService/Subscribe
               - /saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe
@@ -73,6 +74,7 @@ spec:
               - /saas.accounts.v1.PrincipalService/GetAgentPrincipal
               - /saas.accounts.v1.PrincipalService/GetPrincipal
               - /saas.accounts.v1.SolutionEntitlementService/ListSolutionEntitlements
+              - /saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend
               - /saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings
               - /saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations
               - /saas.accounts.v1.UsageService/ConsumeUsage

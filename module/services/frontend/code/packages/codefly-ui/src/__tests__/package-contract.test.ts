@@ -131,3 +131,23 @@ describe("@codefly-dev/ui solution subpaths stay plugin-free", () => {
 		});
 	}
 });
+
+// The published vocabulary documents are bytes, not a build output: a consumer
+// that freezes a catalog freezes the digest of the exact document it was approved
+// under, so both must resolve out of `src` (which `files` ships) and exist.
+describe("@codefly-dev/ui published documents", () => {
+	const srcDir = codeflyUiSrcDir();
+	for (const [subpath, file] of [
+		["./dashboard-catalog.json", "dashboard/dashboard.catalog.generated.json"],
+		[
+			"./dashboard-data.schema.json",
+			"dashboard/dashboard-data.schema.generated.json",
+		],
+	] as const) {
+		it(`exports ${subpath} as a committed document`, () => {
+			const entry = exportsMap[subpath] as unknown;
+			expect(entry, `missing exports entry for ${subpath}`).toBe(`./src/${file}`);
+			expect(existsSync(join(srcDir, file)), `${file} is missing`).toBe(true);
+		});
+	}
+});

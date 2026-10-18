@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"encoding/json"
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -43,10 +44,9 @@ func (s *SolutionRegistryServer) ListSolutionRegistrations(
 }
 
 var solutionRegistrationStatusProto = map[business.SolutionRegistrationStatus]gen.SolutionRegistrationStatus{
-	business.SolutionRegistrationActive:       gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE,
-	business.SolutionRegistrationPending:      gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING,
-	business.SolutionRegistrationIncompatible: gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE,
-	business.SolutionRegistrationTombstoned:   gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED,
+	business.SolutionRegistrationActive:     gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE,
+	business.SolutionRegistrationPending:    gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING,
+	business.SolutionRegistrationTombstoned: gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED,
 }
 
 // solutionDeclaredKindProto maps the stored kind onto the wire. A kind the map
@@ -68,19 +68,10 @@ func solutionRegistrationProto(record *business.SolutionRegistration) *gen.Solut
 		UpdatedAt:  timestamppb.New(record.UpdatedAt),
 	}
 	if half := record.Frontend; half != nil {
-		out.Frontend = &gen.SolutionFrontendBinding{
-			Revision:        half.Revision,
-			Manifest:        half.Manifest,
-			ContractVersion: half.ContractVersion,
-		}
+		out.Frontend = &gen.SolutionFrontendBinding{Revision: half.Revision, Manifest: half.Manifest}
 	}
-	if half := record.Backend; half != nil {
-		out.Backend = &gen.SolutionBackendBinding{
-			Revision:        half.Revision,
-			Upstream:        half.Upstream,
-			ServiceAlias:    half.ServiceAlias,
-			ContractVersion: half.ContractVersion,
-		}
+	if group := record.Group; group != nil && record.Declared != nil && record.Declared.Kind == business.SolutionDeclaredKindSolution {
+		out.Group = &gen.SolutionGroup{Id: group.ID, Title: group.Title, Order: group.Order}
 	}
 	if record.TombstonedAt != nil {
 		out.TombstonedAt = timestamppb.New(*record.TombstonedAt)
@@ -140,7 +131,6 @@ func solutionHostBindingStateProto(
 	state := &gen.SolutionHostBindingState{
 		BindingId:         record.BindingID,
 		HostCoordinate:    record.HostCoordinate,
-		HostComponent:     record.HostComponent,
 		PendingGeneration: record.PendingGeneration(),
 		PendingReason:     record.PendingReason,
 		UpdatedAt:         timestamppb.New(record.UpdatedAt),
@@ -148,6 +138,7 @@ func solutionHostBindingStateProto(
 	if record.PendingSince != nil {
 		state.PendingSince = timestamppb.New(*record.PendingSince)
 	}
+
 	if desired := record.Desired; desired != nil {
 		state.Desired = solutionHostBindingGenerationProto(*desired)
 	}
@@ -196,3 +187,25 @@ func (h *solutionRegistryConnectHandler) ListSolutionHostBindings(ctx context.Co
 
 // SolutionRegistryErrorDomain is also the source-delegation ErrorInfo domain.
 const SolutionRegistryErrorDomain = "accounts.saas.codefly.dev"
+
+func (s *SolutionRegistryServer) GetRetainedSolutionFrontend(ctx context.Context, req *gen.GetRetainedSolutionFrontendRequest) (*gen.GetRetainedSolutionFrontendResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	retained, err := service.GetRetainedSolutionFrontend(ctx, req.GetBindingId(), req.GetAssetVersion())
+	if err != nil {
+		return nil, err
+	}
+	out := &gen.GetRetainedSolutionFrontendResponse{}
+	if retained != nil {
+		raw, err := json.Marshal(retained.Frontend)
+		if err != nil {
+			return nil, err
+		}
+		out.Frontend = &gen.SolutionFrontendGeneration{TargetId: retained.TargetID, Generation: retained.Generation, BindingId: req.GetBindingId(), Release: retained.Release, Frontend: string(raw), AssetVersion: req.GetAssetVersion()}
+	}
+	return out, nil
+}
+func (h *solutionRegistryConnectHandler) GetRetainedSolutionFrontend(ctx context.Context, req *connect.Request[gen.GetRetainedSolutionFrontendRequest]) (*connect.Response[gen.GetRetainedSolutionFrontendResponse], error) {
+	return unary(ctx, req, h.inner.GetRetainedSolutionFrontend)
+}

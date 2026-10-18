@@ -1,9 +1,14 @@
 import { toJsonString } from "@bufbuild/protobuf";
 import {
+	type ConnectProcedure,
+	connectProcedureTargetPath,
+	FRONTEND_SERVICE_ROOT_PREFIX,
+	type FrontendServiceAllowlistEntry,
 	type FrontendServiceProtocol,
 	frontendServiceTargetPath,
-	isConnectProcedurePath,
+	isConnectServiceName,
 	isFrontendServicePath,
+	resolveConnectProcedure,
 } from "@codefly-dev/saas-plugin-contract";
 import {
 	emptyFrontendPluginCapabilitiesRequest,
@@ -125,8 +130,33 @@ function allowedMethods(protocol: FrontendServiceProtocol): Set<string> {
 
 function safePath(request: Request, segments: readonly string[]): boolean {
 	const rawPath = new URL(request.url).pathname;
-	if (/%(?:00|25|2f|5c)/i.test(rawPath)) return false;
+	// The raw path, before the framework's catch-all decoding: a separator or a
+	// percent that arrived encoded fails closed rather than being decoded into
+	// a segment that looks safe. `%3a` is in the set for the same reason the
+	// colon is forwarded literal — an encoded colon names a resource whose own
+	// name carries one, not the custom verb the decoded form would read as, and
+	// admitting it would let a caller spell a verb the binding never declared.
+	if (/%(?:00|25|2f|3a|5c)/i.test(rawPath)) return false;
 	return isFrontendServicePath(segments);
+}
+
+/**
+ * Whether this host will proxy the resolved alias at all, independent of the
+ * path asked for. Both rules are the composition's, re-asserted here because
+ * the BFF reads the GENERATED allowlist rather than the composition that
+ * validated it: a build-time rule no runtime re-checks is one a stale or
+ * hand-edited projection walks straight past.
+ */
+function proxyableEntry(entry: FrontendServiceAllowlistEntry): boolean {
+	if (entry.protocol === "connect") {
+		// Connect without a declared service list reaches nothing: the path
+		// names the service, so an absent list is an unbounded alias.
+		const services = entry.connectServices ?? [];
+		return services.length > 0 && services.every(isConnectServiceName);
+	}
+	// The origin root is Connect-only. A REST alias declaring it would be a
+	// prefix-less proxy of its whole upstream.
+	return entry.routePrefix !== FRONTEND_SERVICE_ROOT_PREFIX;
 }
 
 function sameOrigin(request: Request): boolean {
@@ -250,9 +280,16 @@ function targetURL(
 	routePrefix: string,
 	path: readonly string[],
 	search: string,
+	procedure?: ConnectProcedure,
 ) {
 	const target = new URL(baseURL);
-	target.pathname = frontendServiceTargetPath(routePrefix, path);
+	// One source for the upstream path: on a Connect alias it is built from the
+	// procedure that was ADMITTED, not from the segments as they arrived, so the
+	// bound and the destination cannot disagree about which service is spoken
+	// to. On a REST alias the relative path lands under the declared prefix.
+	target.pathname = procedure
+		? connectProcedureTargetPath(routePrefix, procedure)
+		: frontendServiceTargetPath(routePrefix, path);
 	target.search = search;
 	return target;
 }
@@ -305,19 +342,29 @@ export async function handlePluginBffRequest(
 			? problem("plugin_service_not_found", 404, requestID)
 			: problem("backend_unavailable", 503, requestID);
 	}
+	// A resolved entry the composition's own rules would have refused is a
+	// projection this host cannot serve, not a bad request: nothing the caller
+	// could have asked differently would make the alias proxyable.
+	if (!proxyableEntry(resolution.value.entry)) {
+		return problem("backend_unavailable", 503, requestID);
+	}
 
 	const method = request.method.toUpperCase();
 	const capabilityProbe = isCapabilityProbe(params.path);
-	// A Connect alias carries procedures and nothing else: the protocol's path
-	// is `/<fully.qualified.Service>/<Method>`, so any other shape could not
-	// have resolved upstream anyway. Checking it here keeps a Connect alias from
-	// reading as a prefix-less proxy when its requirement declares the root.
-	if (
-		!capabilityProbe &&
-		resolution.value.entry.protocol === "connect" &&
-		!isConnectProcedurePath(params.path)
-	) {
-		return problem("invalid_path", 400, requestID);
+	// A Connect alias carries procedures of the services its requirement
+	// declared, and nothing else: the protocol's path is
+	// `/<fully.qualified.Service>/<Method>`, so the caller names the service and
+	// only the declared list bounds which one it may be. The reserved
+	// capability probe is exempt because its procedure is this contract's own
+	// fixed handshake at a fixed path — never caller-chosen.
+	let procedure: ConnectProcedure | undefined;
+	if (!capabilityProbe && resolution.value.entry.protocol === "connect") {
+		const resolved = resolveConnectProcedure(
+			resolution.value.entry.connectServices ?? [],
+			params.path,
+		);
+		if (!resolved) return problem("invalid_path", 400, requestID);
+		procedure = resolved;
 	}
 	const methods = capabilityProbe
 		? new Set(["GET"])
@@ -402,6 +449,7 @@ export async function handlePluginBffRequest(
 				resolution.value.entry.routePrefix,
 				params.path,
 				incomingURL.search,
+				procedure,
 			);
 		}
 		const upstream = await dependencies.fetch(upstreamTarget, {

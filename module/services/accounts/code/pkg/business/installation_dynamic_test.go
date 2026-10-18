@@ -230,7 +230,7 @@ func TestDynamicInstallationJobStampCannotBeForged(t *testing.T) {
 func TestDynamicInstallationMintRequiresConsent(t *testing.T) {
 	s, f, caller := dynamicInstallationFixture()
 	grant := s.ModulePrincipals()[caller.PrincipalID]
-	grant.Workload = ModuleWorkload{Namespace: "example", ServiceAccount: "example", Container: "app"}
+	grant.Workloads = []ModuleWorkload{ModuleWorkload{Namespace: "example", ServiceAccount: "example", Container: "app"}}
 	id := ModulePrincipalID(grant.Prefix)
 	s.SetModulePrincipals(ModulePrincipalRegistry{id: grant})
 	f.rows["org-a/"+id] = f.rows["org-a/principal"]

@@ -11364,25 +11364,6 @@
         }
       }
     },
-    "v1SolutionBackendBinding": {
-      "type": "object",
-      "properties": {
-        "revision": {
-          "type": "string",
-          "format": "int64"
-        },
-        "upstream": {
-          "type": "string"
-        },
-        "serviceAlias": {
-          "type": "string"
-        },
-        "contractVersion": {
-          "type": "string"
-        }
-      },
-      "description": "SolutionBackendBinding is the stored backend half: the upstream the gateway\nproxies to and the logical service alias it is addressed by."
-    },
     "v1SolutionDeclaredBinding": {
       "type": "object",
       "properties": {
@@ -11429,12 +11410,25 @@
         },
         "manifest": {
           "type": "string"
-        },
-        "contractVersion": {
-          "type": "string"
         }
       },
-      "description": "SolutionFrontendBinding is the stored frontend half. manifest is the document\nthe frontend validates while reading the projection; accounts stores it\nverbatim and keeps presence authority separate from runtime compatibility."
+      "description": "SolutionFrontendBinding is the stored frontend half: the `frontend` block of\nthe applied presence, copied by accounts in the transaction that applies the\ngeneration. manifest carries that block as JSON (title, order,\nexposed_module, host_contract, dashboard, surfaces) — the author-declared\nhalf of the manifest the gateway's registry projection builds, adding the\nhost's own constants. Present on either kind when its applied generation\ndeclares one; absent on a headless component."
+    },
+    "v1SolutionGroup": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "description": "SolutionGroup organises solutions in navigation and the catalogue. It is not\nan authorization subject, installation target or scope."
     },
     "v1SolutionRegistration": {
       "type": "object",
@@ -11456,9 +11450,6 @@
         "frontend": {
           "$ref": "#/definitions/v1SolutionFrontendBinding"
         },
-        "backend": {
-          "$ref": "#/definitions/v1SolutionBackendBinding"
-        },
         "updatedAt": {
           "type": "string",
           "format": "date-time"
@@ -11470,6 +11461,10 @@
         "declared": {
           "$ref": "#/definitions/v1SolutionDeclaredBinding",
           "description": "The binding and immutable target that declared this record."
+        },
+        "group": {
+          "$ref": "#/definitions/v1SolutionGroup",
+          "description": "Presentation from the composing workspace's applied declaration. Present\nonly for a solution, independently of its frontend. Membership grants no\naccess, consent or installation; viewer lists filter solutions first."
         }
       },
       "description": "SolutionRegistration is the canonical record. revision is drawn from one\nregistry-wide sequence, so revisions are comparable across records and a\nconsumer can order two snapshots without a wall clock."
@@ -11480,11 +11475,10 @@
         "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
         "SOLUTION_REGISTRATION_STATUS_ACTIVE",
         "SOLUTION_REGISTRATION_STATUS_PENDING",
-        "SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE",
         "SOLUTION_REGISTRATION_STATUS_TOMBSTONED"
       ],
       "default": "SOLUTION_REGISTRATION_STATUS_UNSPECIFIED",
-      "description": "SolutionRegistrationStatus is derived from declared state and complete,\ncompatible frontend/backend observations, never from an expiring lease.\n\n - SOLUTION_REGISTRATION_STATUS_ACTIVE: Both halves are present and their declared contract\nversions agree. This is the only status either surface serves.\n - SOLUTION_REGISTRATION_STATUS_PENDING: A half has not been observed. The record is durable but incomplete, so no\npage advertises it and the gateway has nothing to route to.\n - SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE: The two halves declare different contract versions, so activating them\ntogether would serve a page against a backend it was not built for.\n - SOLUTION_REGISTRATION_STATUS_TOMBSTONED: An applied removal keeps the declaration as a tombstone."
+      "description": "SolutionRegistrationStatus is derived from applied presence, never from an\nexpiring registration lease or the existence of a frontend.\n\n - SOLUTION_REGISTRATION_STATUS_ACTIVE: Presence is applied. Both modules and solutions may be headless.\n - SOLUTION_REGISTRATION_STATUS_PENDING: No applied declaration is available for this record.\n - SOLUTION_REGISTRATION_STATUS_TOMBSTONED: An applied removal keeps the declaration as a tombstone."
     },
     "v1SourceOperation": {
       "type": "object",

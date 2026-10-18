@@ -8,5 +8,7 @@ export function usePlatformCatalogue(includeTombstoned: boolean) {
 	return useQuery({
 		queryKey: ["platform-catalogue", includeTombstoned],
 		queryFn: () => service.listPlatformCatalogue({ includeTombstoned }),
+		// Applied declarations can change while the catalogue remains open.
+		refetchInterval: 15_000,
 	});
 }

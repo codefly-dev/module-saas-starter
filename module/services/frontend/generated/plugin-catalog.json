@@ -695,7 +695,7 @@
     {
       "id": "admin-solutions",
       "plugin": "core-users",
-      "label": "Solutions",
+      "label": "Modules & solutions",
       "path": "/admin/solutions",
       "icon": "Layers",
       "group": "Integrations",

@@ -81,7 +81,6 @@ func mintCapability(t *testing.T, kid string, priv ed25519.PrivateKey, c edgeCap
 	seals := workcontext.NewMemorySealSource()
 	require.NoError(t, seals.Put(c.Owner, workcontext.Seal{InstallationID: "installation-1", InstallationRevision: 1}))
 	require.NoError(t, seals.PutEpoch(c.Owner, 1))
-	require.NoError(t, seals.PutBearsNoExecution(c.Owner))
 	authority := &workcontext.Authority{
 		Issuer: workContextIssuer, KeyID: kid, Key: priv,
 		Revisions: workcontext.FixedRevision(1), Seals: seals, Now: c.Now,

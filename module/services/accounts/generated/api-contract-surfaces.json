@@ -30,6 +30,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
         "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
         "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
         "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
         "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
         "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
@@ -294,6 +295,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
         "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
         "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
         "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
         "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
         "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
@@ -436,6 +438,7 @@
       "name": "SolutionRegistryService",
       "fullName": "saas.accounts.v1.SolutionRegistryService",
       "procedures": [
+        "/saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend",
         "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
         "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
       ]

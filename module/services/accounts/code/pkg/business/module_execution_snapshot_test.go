@@ -24,7 +24,7 @@ func TestOwnerLookupUsesGrantSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	reviewed := reviewedPod()
 	reviewed.ServiceAccount = "beta"
-	service := boundService(&fakeExecutionReviewer{reviewed: reviewed, pod: runningPodWith()}, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
+	service := boundService(&fakeExecutionReviewer{reviewed: reviewed, pod: runningPodWith()})
 	ctx := context.Background()
 	id := ModulePrincipalID("alpha")
 	service.SetModulePrincipals(a)
@@ -77,7 +77,7 @@ func TestRegistryReplacementDuringReviewCannotAddOperationAuthority(t *testing.T
 	require.NoError(t, err)
 	service := &Service{}
 	reviewer := &replacingExecutionReviewer{fakeExecutionReviewer: fakeExecutionReviewer{reviewed: reviewedPod(), pod: runningPodWith()}}
-	service.SetExecutionBinding(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
+	service.SetExecutionBinding(reviewer)
 	reviewer.replace = func() {}
 	service.SetModulePrincipals(registry)
 	_, err = service.ModuleAuthorizeOperationContext(context.Background(), "alpha", "old-token", "operate")
@@ -94,7 +94,7 @@ func TestRegistryReplacementDuringReviewCannotAddOperationAuthority(t *testing.T
 
 // A commit during TokenReview must not reuse the request memo's entry revision.
 func TestModuleMintFencesARevisionCommittedDuringReview(t *testing.T) {
-	service := boundService(&fakeExecutionReviewer{reviewed: reviewedPod(), pod: runningPodWith()}, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
+	service := boundService(&fakeExecutionReviewer{reviewed: reviewedPod(), pod: runningPodWith()})
 	registry := service.ModulePrincipals()
 	grant := registry["principal-1"]
 	registry = ModulePrincipalRegistry{ModulePrincipalID("worker"): grant}
@@ -102,7 +102,7 @@ func TestModuleMintFencesARevisionCommittedDuringReview(t *testing.T) {
 	envelope := &fakeEnvelopeStore{latest: 3}
 	service.SetModuleEnvelopeStore(envelope)
 	reviewer := &replacingExecutionReviewer{fakeExecutionReviewer: fakeExecutionReviewer{reviewed: reviewedPod(), pod: runningPodWith()}, replace: func() { envelope.latest = 4 }}
-	service.SetExecutionBinding(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
+	service.SetExecutionBinding(reviewer)
 	authority, err := service.ModuleAuthorizeWorkContext(WithModuleEnvelopeRevisionMemo(context.Background()), "worker", "token")
 	require.ErrorIs(t, err, ErrModuleRegistryStale)
 	require.Equal(t, codes.Unavailable, status.Code(err))

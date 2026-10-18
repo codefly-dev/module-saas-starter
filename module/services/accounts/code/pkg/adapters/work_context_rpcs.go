@@ -382,17 +382,11 @@ func (s *WorkContextAuthorityServer) taskBoundary(
 	if seed.Publisher != identity.Publisher {
 		return "", status.Error(codes.PermissionDenied, "solution registration is owned by another publisher")
 	}
-	// The backend half is the half that mints, and "serving" is DELIVERED
-	// presence: the applied declared generation carries a backend half on a
-	// non-tombstoned declared row. It was a lease expiry, which nothing renews
-	// any more — the renewal path is deleted and a tombstone is the only
-	// withdrawal — so the refusal names the columns it read rather than leaving
-	// an operator to guess which half never arrived.
-	if !seed.BackendServing {
-		return "", status.Errorf(codes.FailedPrecondition,
-			"solution backend registration is not serving: the declared row for %q carries no backend half (%s is absent)",
-			identity.SolutionID, seed.MissingBackendHalf)
-	}
+	// "Serving" is DELIVERED presence and nothing else: the seed read above
+	// refused a tombstone and a missing record by name, and the applied
+	// generation is what the gateway resolves the solution's address from.
+	// There is no lease to renew — the renewal path is deleted and a tombstone
+	// is the only withdrawal.
 	boundary, err := business.SolutionRuntimeBoundary(seed.BindingID, orgID)
 	if err != nil {
 		return "", status.Error(codes.Internal, "cannot derive the solution runtime boundary")
@@ -1010,27 +1004,15 @@ var ErrWorkContextAuthorityUnconfigured = errors.New("Work Context authority is 
 // how long a superseded pod could hold one at most, not a session length.
 const moduleWorkContextTTL = 15 * time.Minute
 
-// attestedModuleExecution is the execution a module mint attests: the digest of
-// what BindExecution read off the requesting pod's container status, and the
-// approved build's incarnation. Core holds it against the approved build again
-// at the mint. A status naming no digest attests nothing, which core refuses for
-// a principal that bears an execution.
-func attestedModuleExecution(authority business.ModuleWorkContextAuthority) workcontext.Execution {
-	digest, ok := authority.Execution.AttestedDigest()
-	if !ok {
-		return workcontext.Execution{}
-	}
-	return workcontext.Execution{ImageDigest: digest, BuildIncarnation: authority.Execution.Incarnation}
-}
-
 // StartModuleTask mints the capability a composed module presents to the
 // module-facing surface, owned by the module's service principal and acting as
 // it directly.
 //
 // It is sealed to the installation the business mint resolved, the principal's
-// producer epoch, and the execution the requesting pod is running — so a
-// revoked installation, an advanced epoch or a superseded build refuses the
-// capability at its next use rather than at its expiry. Every use still re-reads
+// producer epoch — so a revoked installation or an advanced epoch refuses the
+// capability at its next use rather than at its expiry. It seals no build: what
+// a workload runs is deploy-time admission, and the mint bound the caller to a
+// workload its applied manifest lists. Every use still re-reads
 // and intersects the live installation under an authority fence.
 //
 // This method only signs already-resolved authority. The business layer owns
@@ -1047,7 +1029,6 @@ func (s *WorkContextAuthorityServer) StartModuleTask(
 			TaskID:             uuid.NewString(),
 			Audience:           ModuleWorkContextAudience,
 			InstallationID:     authority.InstallationID,
-			Execution:          attestedModuleExecution(authority),
 		},
 		Replay: workcontext.ReplayIdempotent,
 		TTL:    moduleWorkContextTTL,
@@ -1094,7 +1075,6 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 			Audience:           authority.Audience,
 			AuthorityScopes:    scopes,
 			InstallationID:     authority.InstallationID,
-			Execution:          attestedModuleExecution(authority.ModuleWorkContextAuthority),
 		},
 		Replay: workcontext.ReplayIdempotent,
 		TTL:    business.ModuleOperationContextTTL,
@@ -1125,10 +1105,6 @@ func (s *WorkContextAuthorityServer) VerifyModuleWorkContext(ctx context.Context
 		InstallationID:       &installation,
 		InstallationRevision: &revision,
 		ProducerEpoch:        &epoch,
-	}
-	if seal.ImageDigest != nil && seal.BuildIncarnation != nil {
-		digest, incarnation := seal.GetImageDigest(), seal.GetBuildIncarnation()
-		sealed.ImageDigest, sealed.BuildIncarnation = &digest, &incarnation
 	}
 	return business.ModuleCaller{
 		PrincipalID: principal,
@@ -1192,7 +1168,7 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	}
 	token, signed, err := s.remint(ctx, parent.Context(), req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
-		nil, workcontext.Execution{}, "")
+		nil, "")
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
@@ -1218,19 +1194,16 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 		return nil, err
 	}
 	// The owner is exchanging their own capability, so it is re-issued in the
-	// session they authenticated with. A hop in the chain that bears an
-	// execution cannot be attested by an owner, so such a chain is exchanged by
-	// its module through the module capability surface instead.
-	return s.exchangeVerifiedParent(ctx, parent.Context(), actor, req, workcontext.Execution{}, callerSession(ctx))
+	// session they authenticated with.
+	return s.exchangeVerifiedParent(ctx, parent.Context(), actor, req, callerSession(ctx))
 }
 
 // exchangeVerifiedParent runs AFTER the caller's authentication and
-// current-parent checks. lastExecution attests the chain's last hop when that
-// hop's principal bears an execution; session is the issuer-assigned session
-// the exchanged capability opens ("" for a fresh one).
+// current-parent checks. session is the issuer-assigned session the exchanged
+// capability opens ("" for a fresh one).
 func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	ctx context.Context, parent *basev0.WorkContextV1, actor *business.Principal,
-	req *gen.ExchangeWorkContextAudienceRequest, lastExecution workcontext.Execution, session string,
+	req *gen.ExchangeWorkContextAudienceRequest, session string,
 ) (*gen.IssuedWorkContext, error) {
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
@@ -1251,7 +1224,7 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	}
 	token, signed, err := s.remint(ctx, parent, req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
-		attenuated, lastExecution, session)
+		attenuated, session)
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
@@ -1408,7 +1381,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 		replayPolicy = workContextReplayPolicy(req.GetReplayPolicy())
 	}
 	token, signed, err := s.remint(ctx, parent, audience, replayPolicy, workContextTTL(req.GetTtlSeconds()),
-		attenuated, workcontext.Execution{}, "")
+		attenuated, "")
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}

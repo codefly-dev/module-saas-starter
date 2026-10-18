@@ -1940,3 +1940,17 @@ func TestAPISourceOperationsAdmissionDoesNotEnableSync(t *testing.T) {
 	}
 	t.Fatal("API descriptor missing")
 }
+
+// newUploadSourceIn connects an upload source in a named organization, for the
+// tests whose subject is cross-tenant behaviour rather than one tenant's.
+func newUploadSourceIn(t *testing.T, svc *business.Service, orgID string) *business.DatasourceSource {
+	t.Helper()
+	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: orgID, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides",
+		Credential: "secretkey", Upload: uploadConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return source
+}

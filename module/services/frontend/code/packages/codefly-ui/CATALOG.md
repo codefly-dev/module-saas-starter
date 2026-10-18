@@ -12,6 +12,7 @@ not evidence that all primitives, stories or production callers had migrated.
 | `layout` (rank 1) | Native and Base UI controls, compound CardRoot/TabsRoot, data-in Card/Tabs, SegmentedControl, Pagination, Field, table toolbar and empty state, page layout, status tones (Badge, Chip/ChipGroup, Banner), List/ListItem and DescriptionList, feedback, responsive Sidebar and Toaster; Disclosure/Accordion, Breadcrumb, RadioGroup/Radio, Surface, Tree and Timeline |
 | `content` (rank 2) | Markdown (GFM, no raw HTML, safe links including a caller-resolved one, images opt-in, optional source-byte offsets for an annotation layer), bounded collapsible JSON tree, code with lazily-loaded highlighting, whitespace-preserving text, and the `Content` switch over them with `auto` detection and an `inline` one-line variant |
 | `dashboard` (rank 3) | Declarative dashboard, point charts, multi-series metric charts, tiles, provenance and sparklines |
+| `dashboard-catalog.json`, `dashboard-data.schema.json` | The dashboard vocabulary as an A2UI catalog and the data model it binds to — documents, not components ([README](./README.md#the-chart-vocabulary-is-published-not-just-implemented)) |
 | `chat` (rank 3) | Resolved messages and injected send action |
 | `table` (rank 3) | DataTable driven by an injected TanStack table instance |
 | `board` (rank 3) | Board: a collection in columns by a field, dragged or moved from a menu, committing nothing |

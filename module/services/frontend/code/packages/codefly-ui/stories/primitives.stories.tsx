@@ -386,6 +386,21 @@ export const StatusBanners = {
 	),
 };
 
+// One sentence needs no title: the remark is the primary text and the tone
+// keeps its glyph.
+export const TitlelessBanners = {
+	render: () => (
+		<div>
+			<Banner tone="warning">
+				This PDF has fillable form fields. Their values may be visible without
+				being selectable page text.
+			</Banner>
+			<Banner tone="info">Reads never change the document.</Banner>
+			<Banner>Billing moves to the new portal on Monday.</Banner>
+		</div>
+	),
+};
+
 export const Lists = {
 	render: () => (
 		<div>

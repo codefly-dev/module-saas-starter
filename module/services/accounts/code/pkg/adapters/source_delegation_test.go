@@ -10,7 +10,6 @@ import (
 	"connectrpc.com/connect"
 
 	"accounts/pkg/business"
-	"accounts/pkg/business/executiontest"
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -236,10 +235,8 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 			require.Equal(t, delegationOrg, used[0].OrgID)
 			require.Equal(t, delegationSource, used[0].ResourceID)
 			payload := used[0].Payload
-			require.Equal(t, executiontest.Image("docstore"), payload["running_digest"],
-				"the mint names the build that obtained the delegated capability")
-			require.NotEmpty(t, payload["pod_uid"])
-			for _, key := range []string{"namespace", "service_account", "pod", "pod_uid", "container", "running_digest", "build_incarnation"} {
+			require.NotEmpty(t, payload["pod_uid"], "the mint names the workload that obtained the delegated capability")
+			for _, key := range []string{"namespace", "service_account", "pod", "pod_uid", "container"} {
 				delete(payload, key)
 			}
 			require.Equal(t, map[string]any{

@@ -92,6 +92,25 @@ environments:
           url: 621829027644.dkr.ecr.us-east-1.amazonaws.com/saas-starter
           auth: ecr
       namespace: saas-starter
+      # Which key service holds this environment's keys would be stated here,
+      # in the same vocabulary KEY_SERVICE_BACKEND uses in the `key-service`
+      # configuration group — see the commented block below for why the line
+      # cannot be written yet, and module/deployment/README.md, "Composing no
+      # Vault", for the route that works today:
+      #
+      #   vault  this module composes its `vault` service here, unless the
+      #          `cell-vault` handoff below names one the cell already runs.
+      #          The deployed render is durable and needs the seal declared in
+      #          module/services/vault/configurations/aws/vault.env.
+      #   kms    the keys live in the cell's cloud key-management service. This
+      #          module composes NO Vault: no StatefulSet, no PVC, no seal, no
+      #          token, and no egress to one. accounts opens no Vault connection
+      #          either, so the `vault` groups carry nothing here. Declaring a
+      #          `vault` managed service alongside it is refused — there is
+      #          nothing for a handoff to point at.
+      #
+      # Unstated — which is the only thing this file can say today — means
+      # `vault`, this module's behaviour before the selection existed.
       # Every module-managed AWS dependency requires an exact endpoint and
       # egress CIDR. Optional secret-references contain provider references,
       # never resolved values. See module/deployment/README.md.
@@ -103,9 +122,33 @@ environments:
       # that binding is a file. See module/deployment/README.md, "The cell's
       # Vault", and configurations/local/vault.env plus vault.secret.env for
       # what the `vault` groups must then carry. The in-mesh plaintext address
-      # also needs internal-transport/mesh-protected=true. Left undeclared,
-      # this module renders its own durable Vault here, which needs the seal
-      # declared in module/services/vault/configurations/aws/vault.env.
+      # also needs internal-transport/mesh-protected=true. It belongs with
+      # `key-service: vault` only; under `kms` there is no Vault to bind.
+      #
+      # EVERYTHING BELOW IS COMMENTED OUT BECAUSE THE CLI CANNOT PARSE IT. The
+      # environment block's schema is the CLI's own
+      # `pkg/environments.Environment`, decoded strictly and RECURSIVELY with no
+      # extension seam, and its managed-service type carries no `auth-mode` and
+      # no `egress-namespace`. Against codefly 0.1.181 either key is rejected
+      # with "field auth-mode not found in type
+      # environments.EnvironmentManagedService", which fails the whole workspace
+      # load — so writing this block would break every local run in this
+      # repository, not only an `aws` one.
+      #
+      # The same gap holds `key-service` (issue #1128), the per-environment
+      # statement of whether this module composes a Vault here at all:
+      #
+      #     key-service: vault   # this module's Vault, or the cell's below
+      #     key-service: kms     # the cell's cloud KMS holds the keys; no Vault
+      #
+      # `kms` withdraws the vault service, every dependency edge to it, and any
+      # handoff beside it. The module agent implements and tests all of it; the
+      # line becomes writable when the CLI's environment type accepts it, and
+      # an unstated selection on a deployed environment becomes a refusal then.
+      # Until then a composition with no Vault in ANY environment says so by
+      # leaving `vault` out of its `services:` list, which also withdraws the
+      # `vault` configuration group. See module/deployment/README.md,
+      # "Composing no Vault".
       # managed-services:
       #     store:
       #         kind: rds-postgresql

@@ -38,26 +38,21 @@ var (
 type SolutionRegistrationStatus string
 
 const (
-	SolutionRegistrationActive       SolutionRegistrationStatus = "active"
-	SolutionRegistrationPending      SolutionRegistrationStatus = "pending"
-	SolutionRegistrationIncompatible SolutionRegistrationStatus = "incompatible"
-	SolutionRegistrationTombstoned   SolutionRegistrationStatus = "tombstoned"
+	SolutionRegistrationActive     SolutionRegistrationStatus = "active"
+	SolutionRegistrationPending    SolutionRegistrationStatus = "pending"
+	SolutionRegistrationTombstoned SolutionRegistrationStatus = "tombstoned"
 )
 
-// SolutionFrontendHalf is a stored frontend observation. The frontend validates
-// the manifest and its runtime compatibility when reading the projection.
+// SolutionFrontendHalf is the `frontend` block of a module or solution's applied
+// presence, copied onto the record in the transaction that applies the
+// generation. Manifest carries the block as JSON — what the solution declared
+// (title, order, exposed module, host contract, dashboard, surfaces) — and the
+// gateway's registry projection builds the manifest the frontend renders from
+// it plus the host's own constants. Nothing is reported by a running process,
+// and a headless component of either kind has no half.
 type SolutionFrontendHalf struct {
-	Revision        int64
-	Manifest        string
-	ContractVersion string
-}
-
-// SolutionBackendHalf is the stored backend registration.
-type SolutionBackendHalf struct {
-	Revision        int64
-	Upstream        string
-	ServiceAlias    string
-	ContractVersion string
+	Revision int64
+	Manifest string
 }
 
 // SolutionDeclaredKind is what a declaration declares the presence of. Core
@@ -119,12 +114,20 @@ type SolutionRegistration struct {
 	Publisher  string
 	Revision   int64
 	Frontend   *SolutionFrontendHalf
-	Backend    *SolutionBackendHalf
+	Group      *SolutionGroup
 	// Declared is the binding that declared this record, or nil when the record
 	// has not been reconciled from a declaration.
 	Declared     *SolutionDeclaredBinding
 	UpdatedAt    time.Time
 	TombstonedAt *time.Time
+}
+
+// SolutionGroup is the registry's presentation projection. Only applying a
+// solution declaration writes it; no authority check reads group membership.
+type SolutionGroup struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Order int32  `json:"order"`
 }
 
 // SolutionRuntimeBoundarySeedStore reads the runtime-boundary seeds the Work
@@ -145,25 +148,18 @@ type SolutionRuntimeBoundarySeedStore interface {
 	SolutionRuntimeBoundarySeeds(ctx context.Context) ([]string, error)
 }
 
-// SolutionBoundarySeed is what the mint reads about one registration: the seed
-// its boundary is derived from, the publisher of record, and whether the half
-// that mints is currently serving.
-// SolutionBoundarySeed is what the mint reads about one declared solution.
+// SolutionBoundarySeed is what the mint reads about one declared solution: the
+// binding its boundary is derived from and the publisher of record.
 //
 // BindingID replaced an opaque `Seed` read off the registration row: the
 // boundary is derived from the declared presence binding, not from a
-// per-registration random.
-//
-// BackendServing is DELIVERED presence, never a heartbeat or a lease. The
-// branch deleted the renewal path, so a row is serving when its applied
-// declared generation carries a backend half; MissingBackendHalf says so for
-// the refusal, which names the two columns it read rather than saying only
-// "not serving".
+// per-registration random. Serving is DELIVERED presence and nothing else — a
+// declared, non-tombstoned row — and the read refuses a tombstone and a missing
+// record by name; where the solution is reached is the Codefly SDK's answer at
+// the gateway, which no record carries.
 type SolutionBoundarySeed struct {
-	BindingID          string
-	Publisher          string
-	BackendServing     bool
-	MissingBackendHalf string
+	BindingID string
+	Publisher string
 }
 
 // SolutionRuntimeBoundary derives the boundary a solution's Work Context is
@@ -258,39 +254,17 @@ func IsSolutionRuntimeBoundary(seeds []string, candidate, orgID string) bool {
 	return false
 }
 
-// Status reports declared availability, independent of a runtime clock.
-//
-// WHICH HALVES ARE REQUIRED DEPENDS ON THE KIND, and that is not a relaxation.
-// A solution serves a page and a backend, so both halves and agreeing contract
-// versions are what make it usable. A module has no browser remote at all: it is
-// reached at /v1/<alias>/*, nothing loads a manifest for it, and demanding a
-// frontend half would leave every module PENDING for ever — serving traffic the
-// gateway refuses while the registry reports it as waiting for a deployment that
-// is not coming. The incompatible case needs two contract versions to disagree,
-// so it cannot arise for a module either.
-//
-// A record with no declaration keeps the solution reading. It is the stricter of
-// the two, and an undeclared record is withdrawn by the cutover's own constraint
-// anyway, so this is the fail-closed direction.
+// Status reports declared availability, independent of a runtime clock or UI.
+// Both modules and solutions may be headless. Frontend declarations determine
+// whether a page exists; each organization's installation has its own status.
 func (r *SolutionRegistration) Status() SolutionRegistrationStatus {
-	if r.TombstonedAt != nil {
-		return SolutionRegistrationTombstoned
-	}
-	if r.Declared != nil && r.Declared.Kind == SolutionDeclaredKindModule {
-		if r.Backend == nil {
-			return SolutionRegistrationPending
-		}
-		return SolutionRegistrationActive
-	}
 	switch {
-	case r.Frontend != nil && r.Backend != nil &&
-		r.Frontend.ContractVersion != "" && r.Backend.ContractVersion != "" &&
-		r.Frontend.ContractVersion != r.Backend.ContractVersion:
-		return SolutionRegistrationIncompatible
-	case r.Frontend == nil || r.Backend == nil:
-		return SolutionRegistrationPending
-	default:
+	case r.TombstonedAt != nil:
+		return SolutionRegistrationTombstoned
+	case r.Declared != nil && (r.Declared.Kind == SolutionDeclaredKindModule || r.Declared.Kind == SolutionDeclaredKindSolution):
 		return SolutionRegistrationActive
+	default:
+		return SolutionRegistrationPending
 	}
 }
 

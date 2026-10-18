@@ -172,16 +172,28 @@ type DatasourceServiceClient interface {
 	// delegation to name, and nothing backfills one.
 	//
 	// It records nothing new about who may do what. For every module whose one
-	// operation binding declares source_delegation_scopes it revokes any active
-	// delegation of the source to that module as `replaced` and records a fresh
-	// one under the calling administrator — exactly what a reconnect does, and in
-	// one transaction, so a source never ends with two delegations or none.
+	// operation binding declares source_delegation_scopes and which holds NO
+	// active delegation of the source, it records one under the calling
+	// administrator, in one transaction.
+	//
+	// It is ADDITIVE. A module that already holds an active delegation is left
+	// exactly as it is: this used to revoke every one of them as `replaced` and
+	// re-record each under the caller, which took a personal source's delegation
+	// away from its owner and moved unrelated modules' authority onto the
+	// administrator. A personal source the caller does not own is refused
+	// (PERMISSION_DENIED), because the authority a reference borrows must be one
+	// that can perform the operation the trigger admits, and on such a source
+	// that is the owner's alone.
 	DelegateSourceTriggers(ctx context.Context, in *DelegateSourceTriggersRequest, opts ...grpc.CallOption) (*DelegateSourceTriggersResponse, error)
 	// GetSourceTriggerDeclaration reads the reconcile schedule this host declares
 	// for one source — the trigger a declared release carries — together with
 	// the identity its occurrences would run under and the children already
-	// minted against that identity. This host fires nothing on this schedule; the
-	// declaration is what an executing module admits occurrences from.
+	// minted against that identity. The declaration is what an executing module
+	// admits occurrences from.
+	//
+	// Reading it does not mean anything fires it. No composed runtime consumes
+	// the declaration yet, so this host still runs the reconcile schedule itself
+	// as an explicitly labelled stopgap, deleted when one does.
 	GetSourceTriggerDeclaration(ctx context.Context, in *GetSourceTriggerDeclarationRequest, opts ...grpc.CallOption) (*GetSourceTriggerDeclarationResponse, error)
 	// ReconcileSource performs one reconcile pass over a source: the host
 	// operation the declared schedule's occurrences admit, and the same work a
@@ -659,16 +671,28 @@ type DatasourceServiceServer interface {
 	// delegation to name, and nothing backfills one.
 	//
 	// It records nothing new about who may do what. For every module whose one
-	// operation binding declares source_delegation_scopes it revokes any active
-	// delegation of the source to that module as `replaced` and records a fresh
-	// one under the calling administrator — exactly what a reconnect does, and in
-	// one transaction, so a source never ends with two delegations or none.
+	// operation binding declares source_delegation_scopes and which holds NO
+	// active delegation of the source, it records one under the calling
+	// administrator, in one transaction.
+	//
+	// It is ADDITIVE. A module that already holds an active delegation is left
+	// exactly as it is: this used to revoke every one of them as `replaced` and
+	// re-record each under the caller, which took a personal source's delegation
+	// away from its owner and moved unrelated modules' authority onto the
+	// administrator. A personal source the caller does not own is refused
+	// (PERMISSION_DENIED), because the authority a reference borrows must be one
+	// that can perform the operation the trigger admits, and on such a source
+	// that is the owner's alone.
 	DelegateSourceTriggers(context.Context, *DelegateSourceTriggersRequest) (*DelegateSourceTriggersResponse, error)
 	// GetSourceTriggerDeclaration reads the reconcile schedule this host declares
 	// for one source — the trigger a declared release carries — together with
 	// the identity its occurrences would run under and the children already
-	// minted against that identity. This host fires nothing on this schedule; the
-	// declaration is what an executing module admits occurrences from.
+	// minted against that identity. The declaration is what an executing module
+	// admits occurrences from.
+	//
+	// Reading it does not mean anything fires it. No composed runtime consumes
+	// the declaration yet, so this host still runs the reconcile schedule itself
+	// as an explicitly labelled stopgap, deleted when one does.
 	GetSourceTriggerDeclaration(context.Context, *GetSourceTriggerDeclarationRequest) (*GetSourceTriggerDeclarationResponse, error)
 	// ReconcileSource performs one reconcile pass over a source: the host
 	// operation the declared schedule's occurrences admit, and the same work a
