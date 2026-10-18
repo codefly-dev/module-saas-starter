@@ -19,6 +19,14 @@ organisation installs it and grants team access independently through the same
 target-based entitlement projection. The organization administration destination
 is labelled "Modules & solutions" and retains `/admin/solutions`; its empty
 state directs an administrator to the platform operator when nothing is available.
+Each installed row links to `/admin/solutions/<installation id>`, that
+installation's setup page: what it is and whether it is READY (the host's
+`InstallationReadiness`, which is not the record's health), the unmet conditions
+with who clears each and the act that does, and the teams a grant reaches there.
+It reads the same `ListOrganizationInstallations` the row came from and selects
+its own installation out of it, so the page can never disagree with the row that
+linked to it. Granting a team on a solution offers, in the same step, the grants
+on the modules the host says it reaches on that person's session.
 The platform catalogue explains the delivery prerequisite. Headless components
 contribute no page.
 For a module page, relative data requests through the injected `apiBase` reach

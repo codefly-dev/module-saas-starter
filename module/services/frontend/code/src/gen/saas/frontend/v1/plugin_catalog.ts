@@ -68,6 +68,7 @@ export const FRONTEND_ROUTES = [
   { path: "/admin/roles/{roleId}", sourcePath: "src/app/admin/roles/[roleId]/page.tsx", match: "parameter", access: "admin" },
   { path: "/admin/sessions", sourcePath: "src/app/admin/sessions/page.tsx", match: "exact", access: "admin" },
   { path: "/admin/solutions", sourcePath: "src/app/admin/solutions/page.tsx", match: "exact", access: "admin" },
+  { path: "/admin/solutions/{installationId}", sourcePath: "src/app/admin/solutions/[installationId]/page.tsx", match: "parameter", access: "admin" },
   { path: "/admin/sso", sourcePath: "src/app/admin/sso/page.tsx", match: "exact", access: "admin" },
   { path: "/admin/teams", sourcePath: "src/app/admin/teams/page.tsx", match: "exact", access: "authenticated" },
   { path: "/admin/teams/{teamId}", sourcePath: "src/app/admin/teams/[teamId]/page.tsx", match: "parameter", access: "authenticated" },
