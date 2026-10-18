@@ -3069,7 +3069,12 @@ func configuredPolicyLogWitness(ctx context.Context) (*infra.WitnessPolicyLog, f
 	case (!bound || address == "") && !pinned:
 		return nil, nil, "the composition binds no policy-log witness for this environment and no witness key is pinned in the trust anchor", nil
 	case !bound || address == "":
-		return nil, nil, fmt.Sprintf("a witness key is pinned in the trust anchor but the composition binds no witness endpoint (%s/%s)", policyLogWitnessGroup, policyLogWitnessEndpointKey), nil
+		// The pin comes from the platform-owned anchor, so it — not the
+		// composition — decides that this environment HAS a witness. Serving here
+		// with no log wired would switch the serving gate off on a host whose
+		// database may already depend on the witness: a restore could then undo
+		// a witnessed narrowing with only a warning in the log.
+		return nil, nil, "", fmt.Errorf("a witness key is pinned in the trust anchor but the composition binds no witness endpoint (%s/%s): refusing to serve without the witness this environment is pinned to", policyLogWitnessGroup, policyLogWitnessEndpointKey)
 	case !pinned:
 		return nil, nil, "the composition binds a policy-log witness but no witness key is pinned in the trust anchor, and a key read from the witness itself is never trusted", nil
 	}
