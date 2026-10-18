@@ -275,6 +275,8 @@ export function recentEventsQueries(
 export interface RecentEvent {
 	id: string;
 	actorId: string;
+	/** The module whose own principal acted, as the host names it; else "". */
+	actorModule: string;
 	at: Date;
 }
 
@@ -286,6 +288,7 @@ export function newestEvents(
 	results: readonly (readonly {
 		id: string;
 		actorId: string;
+		actorModule?: string;
 		createdAt?: Timestamp;
 	}[])[],
 	limit = 5,
@@ -296,6 +299,7 @@ export function newestEvents(
 		byId.set(event.id, {
 			id: event.id,
 			actorId: event.actorId,
+			actorModule: event.actorModule ?? "",
 			at: timestampDate(event.createdAt),
 		});
 	}

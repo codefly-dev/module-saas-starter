@@ -767,10 +767,12 @@ export type AvailableSolution = Message<"saas.accounts.v1.AvailableSolution"> & 
    * True when the applied generation declares pages people open — the
    * `frontend` block the host projects into its navigation. Read from the same
    * applied record the navigation is built from, never from the kind: a module
-   * or a solution may declare pages, and either may be headless. Access to an
-   * installation is granted for its pages, so a catalogue offers a grant only
-   * where this is true; a headless component is reached through the components
-   * that use it, and no grant of its own exposes anything to a person.
+   * or a solution may declare pages, and either may be headless. It reports
+   * pages only: a grant on a headless installation can still matter, because a
+   * solution may call that component on a person's own session and the host
+   * then admits only a person with access there. The applied manifest does not
+   * record that session consumption yet, so this field alone does not decide
+   * whether access applies.
    *
    * @generated from field: bool has_pages = 10;
    */

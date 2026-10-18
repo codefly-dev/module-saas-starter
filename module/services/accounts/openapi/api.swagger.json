@@ -874,7 +874,7 @@
           "type": "string"
         },
         "hasPages": {
-          "description": "True when the applied generation declares pages people open — the\n`frontend` block the host projects into its navigation. Read from the same\napplied record the navigation is built from, never from the kind: a module\nor a solution may declare pages, and either may be headless. Access to an\ninstallation is granted for its pages, so a catalogue offers a grant only\nwhere this is true; a headless component is reached through the components\nthat use it, and no grant of its own exposes anything to a person.",
+          "description": "True when the applied generation declares pages people open — the\n`frontend` block the host projects into its navigation. Read from the same\napplied record the navigation is built from, never from the kind: a module\nor a solution may declare pages, and either may be headless. It reports\npages only: a grant on a headless installation can still matter, because a\nsolution may call that component on a person's own session and the host\nthen admits only a person with access there. The applied manifest does not\nrecord that session consumption yet, so this field alone does not decide\nwhether access applies.",
           "type": "boolean"
         },
         "installed": {

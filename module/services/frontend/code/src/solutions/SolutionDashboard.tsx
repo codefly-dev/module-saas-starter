@@ -486,7 +486,8 @@ function MetricInfo({
 		orgId,
 		recent.data?.map((event) => event.actorId) ?? [],
 	);
-	const who = (actorId: string) => resolveActor(actorId, directory).label;
+	const who = (event: { actorId: string; actorModule: string }) =>
+		resolveActor(event.actorId, directory, event.actorModule).label;
 
 	const summary = activity.data;
 	const counted = activity.isPending
@@ -506,7 +507,7 @@ function MetricInfo({
 			: recent.isPending
 				? "Loading…"
 				: newest
-					? `${formatMoment(newest.at)}, by ${who(newest.actorId)}`
+					? `${formatMoment(newest.at)}, by ${who(newest)}`
 					: "No events yet";
 
 	return (
@@ -577,8 +578,7 @@ function MetricInfo({
 								<ul className="space-y-0.5">
 									{recent.data.map((event) => (
 										<li key={event.id}>
-											{formatMoment(event.at, { year: false })} ·{" "}
-											{who(event.actorId)}
+											{formatMoment(event.at, { year: false })} · {who(event)}
 										</li>
 									))}
 								</ul>
