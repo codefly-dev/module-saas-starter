@@ -34,7 +34,12 @@ Delivery must provision a dedicated bucket, workload identity and private
 signing key, and — only where a warehouse mirror is configured — the warehouse
 ingestion credential. Bucket IAM must confine the workload
 to that bucket and forbid deleting or replacing `entries/` objects; enforce the
-immutable prefix with retention and IAM, in addition to application checks.
+immutable prefix with retention and IAM, in addition to application checks. The
+retention half is this service's at write time: every entry is created under a
+**Locked** object retention for `POLICY_LOG_RETENTION_DAYS` (a whole number of
+days, at most ten years), so the bucket must have object retention enabled, and
+a bucket that cannot hold the lock refuses every append. The head carries no
+retention, because it is rewritten on every append.
 The head's write authority is scoped to `head.json`. Bucket lifecycle deletion,
 rewriting an existing sequence, or restoring the head from a database backup
 would defeat the trust boundary and are not recovery procedures. Provision
@@ -209,13 +214,13 @@ that key. A witness that accepted an append it could not sign, store, or verify
 the history of would be worse than one that is down, because the caller would
 commit against it.
 
-`POLICY_LOG_BUCKET`, `POLICY_LOG_WAREHOUSE_ENDPOINT` and
+`POLICY_LOG_BUCKET`, `POLICY_LOG_RETENTION_DAYS`, `POLICY_LOG_WAREHOUSE_ENDPOINT` and
 `POLICY_LOG_WAREHOUSE_TOKEN` come from the `policy-log` configuration group and
 from nowhere else. There is no process-environment fallback, no default bucket
 and no development bypass, so an ambient value cannot make this service witness
 somewhere nobody provisioned — and the refusal names the missing keys, never the
-delivered values, because one of the three is a credential. The bucket is always
-required. The two warehouse settings are optional, but only together: both
+delivered values, because one of them is a credential. The bucket and its entry
+retention are always required. The two warehouse settings are optional, but only together: both
 delivered starts the mirror, neither starts the witness with no mirror, and one
 without the other is refused as a half-provisioned group. The native composition
 cannot yet start this service with its empty group.

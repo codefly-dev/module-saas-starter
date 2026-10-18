@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"policy-log/identity"
 	"policy-log/mirror"
@@ -44,13 +45,18 @@ const grpcEndpointName = "grpc"
 // provisions for this service. It is the ONLY source of these settings.
 const policyLogConfiguration = "policy-log"
 
-var settingKeys = struct{ bucket, warehouseEndpoint, warehouseToken string }{
+var settingKeys = struct{ bucket, retentionDays, warehouseEndpoint, warehouseToken string }{
 	bucket:            "POLICY_LOG_BUCKET",
+	retentionDays:     "POLICY_LOG_RETENTION_DAYS",
 	warehouseEndpoint: "POLICY_LOG_WAREHOUSE_ENDPOINT",
 	warehouseToken:    "POLICY_LOG_WAREHOUSE_TOKEN",
 }
 
-type settings struct{ bucket, warehouseEndpoint, warehouseToken string }
+type settings struct {
+	bucket                            string
+	retention                         time.Duration
+	warehouseEndpoint, warehouseToken string
+}
 
 // mirrored reports whether a warehouse mirror was configured. resolveSettings
 // guarantees the endpoint and token are delivered together or not at all.
@@ -90,6 +96,7 @@ func resolveSettings(value func(group, key string) (string, bool, error)) (setti
 		}
 		return got
 	}
+	retentionDays := read(settingKeys.retentionDays)
 	resolved := settings{
 		bucket:            read(settingKeys.bucket),
 		warehouseEndpoint: read(settingKeys.warehouseEndpoint),
@@ -103,6 +110,16 @@ func resolveSettings(value func(group, key string) (string, bool, error)) (setti
 	if resolved.bucket == "" {
 		missing = append(missing, settingKeys.bucket)
 	}
+	// The entry retention is the bucket's other half: how long every entry is
+	// Locked. Required, a whole number of days, and bounded — a Locked
+	// retention can never be shortened, so a malformed value is refused rather
+	// than rounded.
+	if days, err := strconv.Atoi(retentionDays); err != nil || days <= 0 ||
+		time.Duration(days)*24*time.Hour > gcs.MaxRetention || strconv.Itoa(days) != retentionDays {
+		missing = append(missing, settingKeys.retentionDays)
+	} else {
+		resolved.retention = time.Duration(days) * 24 * time.Hour
+	}
 	switch {
 	case resolved.warehouseEndpoint != "" && resolved.warehouseToken == "":
 		missing = append(missing, settingKeys.warehouseToken)
@@ -110,7 +127,7 @@ func resolveSettings(value func(group, key string) (string, bool, error)) (setti
 		missing = append(missing, settingKeys.warehouseEndpoint)
 	}
 	if len(missing) > 0 {
-		return settings{}, fmt.Errorf("configuration group %q delivered no %s: composition must provision the bucket, and the warehouse mirror whole or not at all, before this service can witness",
+		return settings{}, fmt.Errorf("configuration group %q delivered no usable %s: composition must provision the bucket and its entry retention, and the warehouse mirror whole or not at all, before this service can witness",
 			policyLogConfiguration, strings.Join(missing, ", "))
 	}
 	return resolved, nil
@@ -174,7 +191,7 @@ func run(ctx context.Context, stop func()) error {
 	if err != nil {
 		return err
 	}
-	store, err := gcs.New(ctx, resolved.bucket)
+	store, err := gcs.New(ctx, resolved.bucket, resolved.retention)
 	if err != nil {
 		return err
 	}

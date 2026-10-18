@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"policy-log/mirror"
 
@@ -24,8 +25,10 @@ func TestResolveSettingsNamesEveryMissingKeyAtOnce(t *testing.T) {
 	if err == nil {
 		t.Fatal("resolveSettings accepted a group that delivered nothing")
 	}
-	if !strings.Contains(err.Error(), settingKeys.bucket) {
-		t.Errorf("the refusal does not name the missing %s: %v", settingKeys.bucket, err)
+	for _, key := range []string{settingKeys.bucket, settingKeys.retentionDays} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("the refusal does not name the missing %s: %v", key, err)
+		}
 	}
 	// No bucket and a token with no endpoint: both defects in one refusal.
 	_, err = resolveSettings(lookup(func(_, key string) (string, error) {
@@ -50,8 +53,11 @@ func TestResolveSettingsNamesEveryMissingKeyAtOnce(t *testing.T) {
 // mirror — it is not read as a half-provisioned group.
 func TestABucketWithNoMirrorIsAStartableWitness(t *testing.T) {
 	resolved, err := resolveSettings(lookup(func(_, key string) (string, error) {
-		if key == settingKeys.bucket {
+		switch key {
+		case settingKeys.bucket:
 			return "example-witness-bucket", nil
+		case settingKeys.retentionDays:
+			return "2557", nil
 		}
 		return "", errors.New("not delivered")
 	}))
@@ -115,6 +121,7 @@ func TestAConfiguredMirrorIsBuiltAndStaysSilent(t *testing.T) {
 func TestResolveSettingsRefusesEachMissingKeyIndividually(t *testing.T) {
 	delivered := map[string]string{
 		settingKeys.bucket:            "example-witness-bucket",
+		settingKeys.retentionDays:     "2557",
 		settingKeys.warehouseEndpoint: "https://warehouse.example.com/ingest",
 		settingKeys.warehouseToken:    "example-warehouse-token",
 	}
@@ -192,6 +199,8 @@ func TestResolveSettingsAcceptsAWholeGroup(t *testing.T) {
 		switch key {
 		case settingKeys.bucket:
 			return "example-witness-bucket", nil
+		case settingKeys.retentionDays:
+			return "2557", nil
 		case settingKeys.warehouseEndpoint:
 			return "https://warehouse.example.com/ingest", nil
 		case settingKeys.warehouseToken:
@@ -203,7 +212,7 @@ func TestResolveSettingsAcceptsAWholeGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveSettings: %v", err)
 	}
-	if resolved.bucket != "example-witness-bucket" ||
+	if resolved.bucket != "example-witness-bucket" || resolved.retention != 2557*24*time.Hour ||
 		resolved.warehouseEndpoint != "https://warehouse.example.com/ingest" ||
 		resolved.warehouseToken != "example-warehouse-token" {
 		t.Fatalf("resolveSettings transposed a value: %+v", resolved)
@@ -348,8 +357,11 @@ var errUnreadable = errors.New("delivered but unreadable")
 // configured — a provisioned projection gone dark with the wrong cause logged.
 func TestAnUnreadableMirrorIsRefusedNotReadAsAbsent(t *testing.T) {
 	_, err := resolveSettings(lookup(func(_, key string) (string, error) {
-		if key == settingKeys.bucket {
+		switch key {
+		case settingKeys.bucket:
 			return "example-witness-bucket", nil
+		case settingKeys.retentionDays:
+			return "2557", nil
 		}
 		return "", errUnreadable
 	}))
@@ -359,6 +371,26 @@ func TestAnUnreadableMirrorIsRefusedNotReadAsAbsent(t *testing.T) {
 	for _, key := range []string{settingKeys.warehouseEndpoint, settingKeys.warehouseToken} {
 		if !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "could not be read") {
 			t.Errorf("the refusal does not name the unreadable %s: %v", key, err)
+		}
+	}
+}
+
+// TestTheEntryRetentionIsAWholeBoundedNumberOfDays: a Locked retention can
+// never be shortened, so anything but a plain positive day count within the
+// adapter's bound is refused by name rather than rounded or clamped.
+func TestTheEntryRetentionIsAWholeBoundedNumberOfDays(t *testing.T) {
+	for _, value := range []string{"0", "-1", "7y", "2557.5", " 2557", "02557", "4000"} {
+		_, err := resolveSettings(lookup(func(_, key string) (string, error) {
+			switch key {
+			case settingKeys.bucket:
+				return "example-witness-bucket", nil
+			case settingKeys.retentionDays:
+				return value, nil
+			}
+			return "", nil
+		}))
+		if err == nil || !strings.Contains(err.Error(), settingKeys.retentionDays) {
+			t.Errorf("retention %q was accepted or not named: %v", value, err)
 		}
 	}
 }
