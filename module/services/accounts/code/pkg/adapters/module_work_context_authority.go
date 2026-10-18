@@ -137,8 +137,6 @@ func (s *WorkContextAuthorityServer) resolveWorkContextAuthority(
 		return s.answerSeal(ctx, tenant, claims, question.Seal)
 	case *gen.ModuleResolveWorkContextAuthorityRequest_PrincipalEpoch:
 		return s.answerPrincipalEpoch(ctx, tenant, claims, question.PrincipalEpoch)
-	case *gen.ModuleResolveWorkContextAuthorityRequest_ApprovedBuild:
-		return s.answerApprovedBuild(ctx, tenant, claims, question.ApprovedBuild)
 	case *gen.ModuleResolveWorkContextAuthorityRequest_OperationBinding:
 		return s.answerOperationBinding(ctx, tenant, claims, question.OperationBinding)
 	case *gen.ModuleResolveWorkContextAuthorityRequest_AuthorizationRevision:
@@ -277,36 +275,6 @@ func (s *WorkContextAuthorityServer) answerPrincipalEpoch(
 	}), nil
 }
 
-func (s *WorkContextAuthorityServer) answerApprovedBuild(
-	ctx context.Context, tenant string, claims *basev0.WorkContextV1, question *gen.WorkContextApprovedBuildQuestion,
-) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
-	if !slices.Contains(chainPrincipals(claims), question.GetPrincipalId()) {
-		return nil, status.Error(codes.InvalidArgument, errUnaddressedWorkContextAuthority)
-	}
-	seals, _, _ := s.moduleAuthoritySources(tenant, question.GetPrincipalId())
-	digest, incarnation, err := seals.ApprovedBuild(ctx, question.GetPrincipalId())
-	switch {
-	// BEARS NO EXECUTION is the answer for a person's session, and it is not a
-	// failure. It stays distinct from an unknown principal, which the source
-	// refuses: answering "bears none" for an identity the host never heard of
-	// would hand a service principal a credential nothing can revoke by
-	// replacing its build.
-	case errors.Is(err, workcontext.ErrNoApprovedBuild):
-		return approvedBuildAnswer(&gen.WorkContextApprovedBuildAnswer{
-			State:       gen.WorkContextApprovedBuildState_WORK_CONTEXT_APPROVED_BUILD_STATE_BEARS_NO_EXECUTION,
-			PrincipalId: question.GetPrincipalId(),
-		}), nil
-	case err != nil:
-		return nil, unansweredWorkContextAuthority(ctx, "approved build", err)
-	}
-	return approvedBuildAnswer(&gen.WorkContextApprovedBuildAnswer{
-		State:            gen.WorkContextApprovedBuildState_WORK_CONTEXT_APPROVED_BUILD_STATE_APPROVED,
-		PrincipalId:      question.GetPrincipalId(),
-		ImageDigest:      digest,
-		BuildIncarnation: incarnation,
-	}), nil
-}
-
 func (s *WorkContextAuthorityServer) answerOperationBinding(
 	ctx context.Context, tenant string, claims *basev0.WorkContextV1, question *gen.WorkContextOperationBindingQuestion,
 ) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
@@ -417,12 +385,6 @@ func principalEpochAnswer(answer *gen.WorkContextPrincipalEpochAnswer) *gen.Modu
 	}
 }
 
-func approvedBuildAnswer(answer *gen.WorkContextApprovedBuildAnswer) *gen.ModuleResolveWorkContextAuthorityResponse {
-	return &gen.ModuleResolveWorkContextAuthorityResponse{
-		Answer: &gen.ModuleResolveWorkContextAuthorityResponse_ApprovedBuild{ApprovedBuild: answer},
-	}
-}
-
 func operationBindingAnswer(answer *gen.WorkContextOperationBindingAnswer) *gen.ModuleResolveWorkContextAuthorityResponse {
 	return &gen.ModuleResolveWorkContextAuthorityResponse{
 		Answer: &gen.ModuleResolveWorkContextAuthorityResponse_OperationBinding{OperationBinding: answer},
@@ -453,7 +415,6 @@ func decidedWorkContextAuthority(err error) bool {
 		business.ErrSourceDelegationContextStale,
 		business.ErrNoOperationBinding,
 		business.ErrUnknownExecutionPrincipal,
-		business.ErrExecutionNotApproved,
 	} {
 		if errors.Is(err, decided) {
 			return true

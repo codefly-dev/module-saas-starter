@@ -62,6 +62,8 @@ github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc/go.mod h1:VWPYY3FH4te7SzdN2xl9odNpWidJ1Grl/Hjs1SNoEF8=
 github.com/codefly-dev/core v0.19.5-0.20261014051947-55747e621a7b h1:ayhuRhAHa72A0NYMS4hkbHPA8Xrb3Iw7HvYUV35UIkI=
 github.com/codefly-dev/core v0.19.5-0.20261014051947-55747e621a7b/go.mod h1:0uX/7lTBVaGV0RI2Mb3mpEr/PPdx/jZqXHym/U8FVDI=
+github.com/codefly-dev/core v0.19.6-0.20261018034929-53b9a0abf370 h1:OAAjtn8BFqq1BX6jnNh95WWnyazLBA8W3YsTHKXcY4M=
+github.com/codefly-dev/core v0.19.6-0.20261018034929-53b9a0abf370/go.mod h1:0uX/7lTBVaGV0RI2Mb3mpEr/PPdx/jZqXHym/U8FVDI=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba h1:6nFaDYsLyA5x3WiGAk6pMI3c0naqxiPeaTHMqRPvbVs=
@@ -70,8 +72,12 @@ github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-2026101
 github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261014024718-5858903a66c8/go.mod h1:OxvwxMdo3HD190xFiMOPHtUsBC7/7Jt1evsEts/2HRs=
 github.com/codefly-dev/sdk-go v0.4.0 h1:3Jm0bP+UsLI4iZYp3wqVa42bcXBumMIIF/aeweKOAhY=
 github.com/codefly-dev/sdk-go v0.4.0/go.mod h1:vExvoK8jqWNiUjmphgaK/ir1+Tz717mNS6bc4FAHVks=
+github.com/codefly-dev/sdk-go v0.4.1-0.20261018040726-8bc474ee2813 h1:6Wi+TH72TO6j3TPY1EFcTZPAf1hbyHoa+eu2/UJPaq0=
+github.com/codefly-dev/sdk-go v0.4.1-0.20261018040726-8bc474ee2813/go.mod h1:8tmXzFk0duxZpfQuIs9sZXLP23pugE0Zdq3rwPF99dU=
 github.com/codefly-dev/sdk-go/workcontext v0.1.0 h1:oFU/Lg1xnlibRPqyKR0KGdgGttwH8EdZIuErqBaRZxo=
 github.com/codefly-dev/sdk-go/workcontext v0.1.0/go.mod h1:FeKytaeqEXRigN5UflAjVeoMoV2gEN2oJLgBBgpr0Jg=
+github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018040726-8bc474ee2813 h1:8SJhkpW3Lw3EG5+sSBWqOL5gU9ifyX1Gs2k0riPbnG0=
+github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018040726-8bc474ee2813/go.mod h1:ChY9jM2p/3QzvLG9189k+tOYPv1n2/ltVjvPq2XVKAc=
 github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211 h1:4KAPx8haCA/h4Kx5mB7D0rMriwLLKiOW9G9mMWuiQDw=
 github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211/go.mod h1:5mwz8oM8INcukJLc6C84zdRnmDQ/gkMNI8GxWMwgk+8=
 github.com/codefly-dev/service-redis/cache v0.2.0 h1:MKeyXFTIiZMnz5bdndb6YTsahws8DjmLTldtz/nH6EQ=

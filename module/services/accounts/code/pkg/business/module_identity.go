@@ -254,13 +254,11 @@ func (s *Service) RecordModuleWorkContextMint(
 // auditFields is the execution as a mint record carries it.
 func (e ExecutionIdentity) auditFields() map[string]any {
 	return map[string]any{
-		"namespace":         e.Namespace,
-		"service_account":   e.ServiceAccount,
-		"pod":               e.PodName,
-		"pod_uid":           e.PodUID,
-		"container":         e.ContainerName,
-		"running_digest":    string(e.Running),
-		"build_incarnation": int64(e.Incarnation),
+		"namespace":       e.Namespace,
+		"service_account": e.ServiceAccount,
+		"pod":             e.PodName,
+		"pod_uid":         e.PodUID,
+		"container":       e.ContainerName,
 	}
 }
 

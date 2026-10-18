@@ -131,7 +131,6 @@ func solutionHostBindingStateProto(
 	state := &gen.SolutionHostBindingState{
 		BindingId:         record.BindingID,
 		HostCoordinate:    record.HostCoordinate,
-		HostComponent:     record.HostComponent,
 		PendingGeneration: record.PendingGeneration(),
 		PendingReason:     record.PendingReason,
 		UpdatedAt:         timestamppb.New(record.UpdatedAt),
@@ -145,12 +144,11 @@ func solutionHostBindingStateProto(
 	}
 	if applied := record.Applied; applied != nil {
 		state.Applied = &gen.SolutionHostBindingAppliedGeneration{
-			Generation:       solutionHostBindingGenerationProto(applied.SolutionHostBindingGeneration),
-			Removed:          applied.Removed,
-			Routes:           applied.Routes,
-			SolutionId:       applied.SolutionID,
-			Release:          applied.Release,
-			EndpointDelivery: applied.EndpointDelivery,
+			Generation: solutionHostBindingGenerationProto(applied.SolutionHostBindingGeneration),
+			Removed:    applied.Removed,
+			Routes:     applied.Routes,
+			SolutionId: applied.SolutionID,
+			Release:    applied.Release,
 		}
 		// The observed half. A binding whose applied generation is a tombstone
 		// still names the record it withdrew, and that record's tombstone is the

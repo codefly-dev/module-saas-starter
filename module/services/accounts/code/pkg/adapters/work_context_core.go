@@ -41,7 +41,6 @@ const workContextDefaultTTL = 5 * time.Minute
 type workContextSealAnswers interface {
 	WorkContextSeal(ctx context.Context, orgID, principalID, installationID string) (string, uint64, error)
 	WorkContextPrincipalEpoch(ctx context.Context, orgID, principalID string) (uint64, error)
-	WorkContextApprovedBuild(ctx context.Context, orgID, principalID string) (string, uint64, error)
 	WorkContextRevision(ctx context.Context, orgID, ownerID string) (uint64, error)
 	WorkContextAudienceInstallation(ctx context.Context, orgID, audience string) (string, error)
 	WorkContextOperationBinding(ctx context.Context, orgID, bindingID string) (business.WorkContextOperationBinding, error)
@@ -76,17 +75,6 @@ func (s hostSealSource) PrincipalEpoch(ctx context.Context, principalID string) 
 		return 0, fmt.Errorf("%w: %w", workcontext.ErrNoSeal, err)
 	}
 	return epoch, err
-}
-
-// ApprovedBuild translates the host's "bears no execution" into core's sentinel,
-// and nothing else into it: every other error, a module principal with no
-// approved build included, stays a refusal.
-func (s hostSealSource) ApprovedBuild(ctx context.Context, principalID string) (string, uint64, error) {
-	digest, incarnation, err := s.answers.WorkContextApprovedBuild(ctx, s.tenant, principalID)
-	if errors.Is(err, business.ErrBearsNoExecution) {
-		return "", 0, workcontext.ErrNoApprovedBuild
-	}
-	return digest, incarnation, err
 }
 
 // OperationBinding resolves one operation binding by its id, exactly: today the
@@ -296,10 +284,6 @@ type delegationHop struct {
 	AgentID       string
 	DelegationID  string
 	GrantedScopes []*basev0.WorkScopeV1
-	// Execution is what this hop's principal is running, when it bears an
-	// execution — a module principal, attested from its authenticated workload.
-	// Empty for a person or a registered agent, which bear none.
-	Execution workcontext.Execution
 	// OperationBindingID is the unit of authority this hop exercises, when it
 	// exercises one; its revision and incarnation are read live by core.
 	OperationBindingID string
@@ -366,7 +350,6 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 			Audience:      start.Audience,
 			ReplayPolicy:  workcontext.ReplayIdempotent,
 			TTL:           ttl,
-			Execution:     hop.Execution,
 			// A hop naming none carries its parent's, which for the owner's
 			// session is none.
 			OperationBindingID: hop.OperationBindingID,
@@ -389,13 +372,9 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 // expressed on core, which derives only by adding a hop and never extends a
 // window: the capability is minted afresh from its owner, and every hop is
 // re-derived and re-checked against live state rather than copied.
-//
-// lastExecution attests the last hop's execution when that hop's principal bears
-// one; earlier hops cannot be attested by the caller and must bear none, so a
-// chain with a module principal anywhere but last is refused by core.
 func (s *WorkContextAuthorityServer) remint(
 	ctx context.Context, parent *basev0.WorkContextV1, audience, replay string, ttl time.Duration,
-	attenuated []*basev0.WorkScopeV1, lastExecution workcontext.Execution, session string,
+	attenuated []*basev0.WorkScopeV1, session string,
 ) (string, *basev0.WorkContextV1, error) {
 	// The seal follows the owner. A person's capability is sealed to the
 	// organization's installation of the audience it addresses — what an
@@ -431,7 +410,6 @@ func (s *WorkContextAuthorityServer) remint(
 		if attenuated != nil {
 			start.AuthorityScopes = attenuated
 		}
-		start.Execution = lastExecution
 		return s.mint(ctx, mintRequest{Start: start, Session: session, Replay: replay, TTL: ttl})
 	}
 	hops := make([]delegationHop, 0, len(chain))
@@ -448,7 +426,6 @@ func (s *WorkContextAuthorityServer) remint(
 	if attenuated != nil {
 		last.GrantedScopes = attenuated
 	}
-	last.Execution = lastExecution
 	last.OperationBindingID = parent.GetOperationBinding().GetBindingId()
 	return s.mint(ctx, mintRequest{Start: start, Hops: hops, Session: session, Replay: replay, TTL: ttl})
 }

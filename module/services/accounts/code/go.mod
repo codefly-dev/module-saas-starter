@@ -8,11 +8,11 @@ require (
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
-	github.com/codefly-dev/core v0.19.5-0.20261014051947-55747e621a7b
+	github.com/codefly-dev/core v0.19.6-0.20261018034929-53b9a0abf370
 	github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261014024718-5858903a66c8
-	github.com/codefly-dev/sdk-go v0.4.0
-	github.com/codefly-dev/sdk-go/workcontext v0.1.0
+	github.com/codefly-dev/sdk-go v0.4.1-0.20261018040726-8bc474ee2813
+	github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018040726-8bc474ee2813
 	github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211
 	github.com/codefly-dev/service-redis/cache v0.2.0
 	github.com/go-webauthn/webauthn v0.18.0

@@ -46,10 +46,6 @@ var ErrWorkContextPrincipalUnknown = errors.New("the principal has no authorizat
 // bound to and is refused.
 var ErrWorkContextNoAudienceInstallation = errors.New("the audience names no installation active in this organization")
 
-// ErrBearsNoExecution is WorkContextApprovedBuild's answer for a principal that
-// bears no execution. The adapter translates it to core's own sentinel.
-var ErrBearsNoExecution = errors.New("the principal bears no execution")
-
 // WorkContextSealStore is the row-backed half: a person's or a registered
 // principal's seal, and the organization's installation of a solution.
 type WorkContextSealStore interface {
@@ -144,39 +140,6 @@ func (s *Service) WorkContextPrincipalEpoch(ctx context.Context, orgID, principa
 		return 0, err
 	}
 	return store.WorkContextPrincipalEpoch(ctx, orgID, principalID)
-}
-
-// WorkContextApprovedBuild answers the execution principalID exercises.
-//
-// A module principal ALWAYS bears one: a known module with no approved build is
-// refused, exactly as BindExecution refuses it, never answered as "bears none" —
-// that answer would let a module capability verify with no execution at all.
-// A person or registered agent known to the organization bears none, and an
-// unknown principal is refused.
-func (s *Service) WorkContextApprovedBuild(ctx context.Context, orgID, principalID string) (string, uint64, error) {
-	if snapshot := s.moduleRegistrySnapshot(); snapshot != nil {
-		if grant, declared := snapshot.registry[principalID]; declared {
-			if s.executionAuthority == nil {
-				return "", 0, ErrExecutionUnbound
-			}
-			// Keyed by the PREFIX, which is the name the authority document
-			// gives the principal — exactly as BindExecution asks — never by
-			// this host's registry UUID, which no document carries.
-			approved, incarnation, err := s.executionAuthority.ApprovedBuild(ctx, grant.Prefix)
-			if err != nil {
-				return "", 0, err
-			}
-			digest, ok := digestPortion(string(approved))
-			if !ok {
-				return "", 0, fmt.Errorf("%w: the approved build for %s names no digest", ErrExecutionNotApproved, grant.Prefix)
-			}
-			return digest, incarnation, nil
-		}
-	}
-	if _, err := s.WorkContextPrincipalEpoch(ctx, orgID, principalID); err != nil {
-		return "", 0, err
-	}
-	return "", 0, ErrBearsNoExecution
 }
 
 // WorkContextRevision answers the authorization revision a capability owned by

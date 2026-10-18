@@ -15,9 +15,6 @@ import (
 
 func Signer(t testing.TB, keyID string) *solutionhost.InMemorySigner {
 	t.Helper()
-	if keyID == solutionhost.FixtureDeliveredBy {
-		return solutionhost.FixtureSigner()
-	}
 	seed := sha256.Sum256([]byte("delivery test key: " + keyID))
 	signer, err := solutionhost.NewInMemorySigner(keyID, ed25519.NewKeyFromSeed(seed[:]))
 	if err != nil {

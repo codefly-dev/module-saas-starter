@@ -8,23 +8,36 @@ import (
 	"github.com/codefly-dev/core/solutionhost"
 )
 
-// SolutionDeliveryObserverAuthorizer grants the protected endpoint publisher a
-// read of committed presence. It grants no ability to deliver documents.
+// SolutionDeliveryObserverAuthorizer grants the protected applied-state
+// observer a read of committed manifests. It grants no ability to deliver.
 type SolutionDeliveryObserverAuthorizer interface {
 	AuthorizeAppliedObserver(context.Context, string) error
 }
 
 // SolutionDeliveryApplied reports a committed generation, never an inbox receipt
-// or a desired generation. A publisher must compare every identity field with
-// its expected declaration before publishing corresponding endpoints.
+// or a desired generation, read from the binding's applied manifest. A reader
+// compares every identity field with the manifest it delivered: a receipt says
+// the carrier reached the inbox; only this says the module is served.
 type SolutionDeliveryApplied struct {
-	Host           solutionhost.HostTarget `json:"host"`
-	Binding        string                  `json:"binding"`
-	Generation     uint64                  `json:"generation"`
-	PresenceDigest string                  `json:"presenceDigest"`
-	Release        string                  `json:"release"`
-	Removed        bool                    `json:"removed"`
-	AppliedAt      time.Time               `json:"appliedAt"`
+	Host       solutionhost.HostTarget `json:"host"`
+	Binding    string                  `json:"binding"`
+	Generation uint64                  `json:"generation"`
+	// Digest is the applied manifest's digest (solutionhost.ModuleManifest.Digest).
+	Digest    string    `json:"digest"`
+	Release   string    `json:"release"`
+	Removed   bool      `json:"removed"`
+	AppliedAt time.Time `json:"appliedAt"`
+	// Pending is a newer generation this host received and withheld, with the
+	// host's own reason: "delivered" is not "applied", and the reader is told
+	// which.
+	Pending *SolutionDeliveryPending `json:"pending,omitempty"`
+}
+
+// SolutionDeliveryPending is a received generation this host has not applied
+// and why.
+type SolutionDeliveryPending struct {
+	Generation uint64 `json:"generation"`
+	Reason     string `json:"reason"`
 }
 
 // ReadSolutionDeliveryApplied authenticates before reading any durable binding.
@@ -45,27 +58,24 @@ func (s *Service) ReadSolutionDeliveryApplied(ctx context.Context, binding, cred
 		if record == nil || record.BindingID != binding || record.Applied == nil {
 			continue
 		}
-		applied := record.Applied
-		// The row's host fields may already describe a withheld desired update.
-		// All reported identity comes from the committed APPLIED document.
-		document, err := solutionhost.Parse([]byte(applied.Document))
+		manifest, err := record.AppliedManifest()
 		if err != nil {
-			return nil, fmt.Errorf("read applied presence: %w", err)
+			return nil, fmt.Errorf("read the applied manifest: %w", err)
 		}
-		digest, err := document.Digest()
-		if err != nil {
-			return nil, fmt.Errorf("digest applied presence: %w", err)
+		digest, err := manifest.Digest()
+		if err != nil || digest != record.Applied.Digest ||
+			manifest.Release.Identity() != record.Applied.Release || record.Applied.At.IsZero() {
+			return nil, fmt.Errorf("the applied record of binding %q is inconsistent with its manifest", binding)
 		}
-		if document.Binding != binding || document.Generation != applied.Generation ||
-			digest != applied.Digest || document.Removed != applied.Removed ||
-			document.Release.Identity() != applied.Release || applied.At.IsZero() {
-			return nil, fmt.Errorf("applied presence record is inconsistent")
+		applied := &SolutionDeliveryApplied{
+			Host: manifest.Host, Binding: binding, Generation: manifest.Generation,
+			Digest: digest, Release: record.Applied.Release, Removed: manifest.Removed,
+			AppliedAt: record.Applied.At,
 		}
-		return &SolutionDeliveryApplied{
-			Host: document.Host, Binding: binding, Generation: document.Generation,
-			PresenceDigest: digest, Release: applied.Release, Removed: document.Removed,
-			AppliedAt: applied.At,
-		}, nil
+		if pending := record.PendingGeneration(); pending != 0 && record.PendingReason != "" {
+			applied.Pending = &SolutionDeliveryPending{Generation: pending, Reason: record.PendingReason}
+		}
+		return applied, nil
 	}
 	return nil, ErrSolutionHostBindingNotDeclared
 }

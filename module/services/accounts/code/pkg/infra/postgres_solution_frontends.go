@@ -19,7 +19,7 @@ func (s *PostgresStore) GetRetainedSolutionFrontend(ctx context.Context, binding
  SELECT h.generation, h.digest, d.payload, h.decided_at, h.target_id::text
  FROM public.solution_generation_history h
  JOIN public.solution_targets t ON t.id = h.target_id AND t.binding_id = h.binding_id
- JOIN public.solution_delivery_documents d ON d.kind = 'presence'
+ JOIN public.solution_delivery_documents d ON d.kind = 'manifest'
    AND d.document_id = h.binding_id AND d.generation = h.generation AND d.content_hash = h.digest
  WHERE h.binding_id = $1 AND h.asset_version = $2 AND h.decision = 'applied'
    AND t.closed_generation IS NULL

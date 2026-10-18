@@ -15,7 +15,7 @@ import (
 // caller opened a WithControlPlane transaction, which getQueryExecutor picks up
 // from ctx.
 
-const solutionHostBindingColumns = `binding_id, host_coordinate, host_component,
+const solutionHostBindingColumns = `binding_id, host_coordinate,
 	desired_generation, desired_digest, desired_document, desired_seen_at,
 	applied_generation, applied_digest, applied_document, applied_removed, applied_routes,
 	applied_solution_id, applied_release, applied_domain, applied_at,
@@ -41,7 +41,7 @@ func scanSolutionHostBinding(row pgx.Row) (*business.SolutionHostBindingRecord, 
 		pendingSince      *time.Time
 	)
 	if err := row.Scan(
-		&record.BindingID, &record.HostCoordinate, &record.HostComponent,
+		&record.BindingID, &record.HostCoordinate,
 		&desiredGeneration, &desiredDigest, &desiredDocument, &desiredSeenAt,
 		&appliedGeneration, &appliedDigest, &appliedDocument, &appliedRemoved, &appliedRoutes,
 		&appliedSolutionID, &appliedRelease, &appliedDomain, &appliedAt,
@@ -171,15 +171,14 @@ func (s *PostgresStore) SaveSolutionHostBinding(
 	}
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO public.solution_host_bindings (
-			binding_id, host_coordinate, host_component,
+			binding_id, host_coordinate,
 			desired_generation, desired_digest, desired_document, desired_seen_at,
 			applied_generation, applied_digest, applied_document, applied_removed, applied_routes,
 			applied_solution_id, applied_release, applied_domain, applied_at,
 			pending_reason, pending_since, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (binding_id) DO UPDATE SET
 			host_coordinate = EXCLUDED.host_coordinate,
-			host_component = EXCLUDED.host_component,
 			desired_generation = EXCLUDED.desired_generation,
 			desired_digest = EXCLUDED.desired_digest,
 			desired_document = EXCLUDED.desired_document,
@@ -196,7 +195,7 @@ func (s *PostgresStore) SaveSolutionHostBinding(
 			pending_reason = EXCLUDED.pending_reason,
 			pending_since = EXCLUDED.pending_since,
 			updated_at = EXCLUDED.updated_at`,
-		record.BindingID, record.HostCoordinate, record.HostComponent,
+		record.BindingID, record.HostCoordinate,
 		desiredGeneration, desiredDigest, desiredDocument, desiredSeenAt,
 		appliedGeneration, appliedDigest, appliedDocument, appliedRemoved, appliedRoutes,
 		appliedSolutionID, appliedRelease, appliedDomain, appliedAt,

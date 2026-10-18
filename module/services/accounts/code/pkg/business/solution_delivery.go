@@ -2,8 +2,6 @@ package business
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -11,157 +9,104 @@ import (
 	"github.com/codefly-dev/core/solutionhost"
 )
 
-// The delivery inbox: how a signed document reaches this host, and why it is
-// persisted rather than read from a directory.
+// The delivery inbox: how a signed module manifest reaches this host, and why
+// it is persisted rather than read from a directory.
 //
-// A mount is the CURRENT desired set and nothing else. A document that arrived,
-// was recorded as desired, failed to apply and then disappeared from the mount
-// was never retried: the host had recorded that delivery wanted something and
-// had no way to want it again. The persisted representation also dropped the
-// carrier, so a restore could not re-verify what it had accepted — only trust
-// its own earlier judgement.
+// A module instance is declared by ONE signed document, core's
+// codefly/module-manifest/v1: where it runs, which workloads run as it, where
+// its endpoints are and what authority it asks for. Delivery POSTs its carrier;
+// the host verifies it on receipt, authorises the caller that handed it over,
+// decides it against the generation already applied for its binding, and
+// persists the bytes. The reconciler then reads its desired set from durable
+// state, which is what makes "delivery stopped talking" and "delivery said
+// remove it" different facts. Removal is a withdrawal GENERATION; nothing
+// deletes from the inbox.
+
+// SolutionDeliveryRecord is one row of the inbox: one generation of one
+// binding's manifest, with the attestation over exactly those bytes.
 //
-// So delivery POSTs a carrier, the host verifies it ON RECEIPT, and persists the
-// bytes. The reconciler then reads its desired set from durable state, which is
-// what makes "delivery stopped talking" and "delivery said remove it" different
-// facts. Removal stays a tombstone GENERATION; nothing deletes from the inbox.
-
-// SolutionDeliveryKind is which half of the lifecycle a document is.
-//
-// The two have different authorised writers and different identities, so they
-// are never interchangeable: the kind is part of every lookup and part of the
-// carrier authorisation decision.
-type SolutionDeliveryKind string
-
-const (
-	// SolutionDeliveryPresence declares what runs where.
-	SolutionDeliveryPresence SolutionDeliveryKind = "presence"
-	// SolutionDeliveryAuthority declares what a module instance is approved for.
-	SolutionDeliveryAuthority SolutionDeliveryKind = "authority"
-	// SolutionDeliveryEndpoints carries Codefly values for an applied presence.
-	SolutionDeliveryEndpoints SolutionDeliveryKind = "endpoints"
-)
-
-// Valid reports whether a kind is one this host serves. Checked at the edge, so
-// an unknown kind is a 404 on a path rather than a row with a kind nothing reads.
-func (kind SolutionDeliveryKind) Valid() bool {
-	return kind == SolutionDeliveryPresence || kind == SolutionDeliveryAuthority || kind == SolutionDeliveryEndpoints
-}
-
-// SolutionDeliveryCarrier is one received carrier: the canonical payload and the
-// attestation over exactly those bytes.
-//
-// The two travel together and are stored together. A payload without its envelope
-// is a document nobody can re-verify, which is the state that made a restore
-// unable to re-check what it had accepted.
-type SolutionDeliveryCarrier struct {
-	Kind SolutionDeliveryKind
-	// Raw is the delivered {document, envelope} carrier. Core's strict parser
-	// refuses unknown fields and missing envelopes before verification.
-	Raw []byte
-}
-
-// SolutionDeliveryRecord is one row of the inbox.
+// The payload and its envelope travel together and are stored together. A
+// payload without its envelope is a document nobody can re-verify.
 type SolutionDeliveryRecord struct {
-	Kind       SolutionDeliveryKind
-	DocumentID string
+	// Binding is the manifest's binding id.
+	Binding    string
 	Generation uint64
-	// ContentHash is sha256 of the canonical payload, `sha256:<64 hex>`.
+	// ContentHash is sha256 of the canonical payload, `sha256:<64 hex>` — the
+	// manifest's digest, since the payload is its canonical encoding.
 	ContentHash string
 	Payload     []byte
-	// Bundle retains its storage name, but holds the DSSE envelope verbatim
-	// so reconciliation can verify the same bytes under the current pins.
-	Bundle []byte
-	// SignerIdentity is what the verifier attested, and OwnershipDomain is what
-	// the document asserts. Both recorded at receipt so an operator can see who
-	// delivered what without re-running verification — and so a later narrowing
-	// of the policy reads as a disagreement with history rather than as a silent
-	// change in what the host would accept today.
+	// Envelope is the DSSE envelope verbatim, so reconciliation verifies the
+	// same bytes under the current pins.
+	Envelope []byte
+	// SignerIdentity is the pinned key id the verifier attested, and
+	// OwnershipDomain the domain the manifest speaks for, both recorded at
+	// receipt so an operator can see who delivered what.
 	SignerIdentity  string
 	OwnershipDomain string
 	ReceivedAt      time.Time
 }
 
-// SolutionDeliveryDisposition is what the host did with a carrier. Every value
-// maps to exactly one response code, and the mapping is the published contract.
+// SolutionDeliveryDisposition is what the host did with a carrier.
 type SolutionDeliveryDisposition string
 
 const (
-	// SolutionDeliveryAccepted: verified, new, and now durable desired state —
-	// whether or not it has been applied yet. 202.
+	// SolutionDeliveryAccepted: verified, admitted against the applied
+	// generation, and now durable desired state.
 	SolutionDeliveryAccepted SolutionDeliveryDisposition = "accepted"
-	// SolutionDeliveryReplayed: this exact (document, generation, content hash)
-	// is already durable. Writes nothing. 200.
+	// SolutionDeliveryReplayed: this exact generation is already durable.
+	// Writes nothing.
 	SolutionDeliveryReplayed SolutionDeliveryDisposition = "replayed"
 )
 
 // Delivery refusals. Each is a distinct fact with a distinct response code,
-// because a retry is right for some and wrong for the rest.
+// because a retry is right for some and wrong for the rest; the adapter maps
+// them and the wrapped core error names the cause.
 var (
-	// ErrSolutionDeliveryNotApplied asks the producer to retry its signed value
-	// after presence reconciliation. A receipt alone never activates a route.
-	ErrSolutionDeliveryNotApplied = errors.New("endpoint delivery is waiting for applied presence")
+	// ErrSolutionDeliveryMalformed: the carrier does not parse, or its payload
+	// is not the canonical encoding of a valid manifest of the one schema this
+	// host reads. 400, terminal.
+	ErrSolutionDeliveryMalformed = errors.New("module manifest carrier is malformed")
 
-	// ErrSolutionDeliveryMalformed: the carrier does not parse, or the payload
-	// is not the canonical encoding of the document it decodes to. 400,
-	// terminal. A signer and a host that disagree about which bytes represent
-	// the document disagree about what was approved.
-	ErrSolutionDeliveryMalformed = errors.New("solution delivery carrier is malformed")
+	// ErrSolutionDeliveryUnattested: the envelope does not verify under any
+	// key this host pins. 401, terminal.
+	ErrSolutionDeliveryUnattested = errors.New("module manifest is not signed by a key this host pins")
 
-	// ErrSolutionDeliveryUnattested: the bundle does not verify, or its identity
-	// is not one this host accepts. 403, terminal.
-	ErrSolutionDeliveryUnattested = errors.New("solution delivery carrier is not attested by an accepted signer")
+	// ErrSolutionDeliveryDomainNotGranted: the signer is pinned, but not for
+	// the ownership domain the manifest speaks for, or the binding was applied
+	// under another domain. 403, terminal.
+	ErrSolutionDeliveryDomainNotGranted = errors.New("module manifest speaks for an ownership domain its signer or binding does not hold")
 
-	// ErrSolutionDeliveryDomainNotGranted: the attested signer may not deliver
-	// under the ownership domain the document asserts. 403, terminal.
-	//
-	// Distinct from the above on purpose: the signature is genuine and the
-	// signer is accepted, and what failed is the scope of its authority. An
-	// operator fixes those two in different places.
-	ErrSolutionDeliveryDomainNotGranted = errors.New("attested signer may not deliver under this ownership domain")
+	// ErrSolutionDeliveryConflict: the generation is older than the applied
+	// one, rewrites a delivered one, or would bring a withdrawn binding back.
+	// 409, terminal: publish never produces one, so it is a stale or
+	// hand-edited delivery.
+	ErrSolutionDeliveryConflict = errors.New("module manifest generation conflicts with this binding's history")
 
-	// ErrSolutionDeliveryInvalid: the document parses but Validate refuses it.
-	// 422, terminal.
-	ErrSolutionDeliveryInvalid = errors.New("solution delivery document is invalid")
+	// ErrSolutionDeliveryRefused: a valid, attested manifest this host will not
+	// take — another host's, or one whose route alias is reserved or held by
+	// another binding. 422, terminal.
+	ErrSolutionDeliveryRefused = errors.New("module manifest is refused by this host")
 
-	// ErrSolutionDeliveryRewritten: this generation is already durable with
-	// DIFFERENT bytes. 409, terminal.
-	//
-	// It is a conflict rather than a bad request because the operator needs to
-	// see it as a rewrite of a delivered generation: publish never rewrites one,
-	// so reaching this means a hand-edited delivery tree.
-	ErrSolutionDeliveryRewritten = errors.New("solution delivery generation was already delivered with different content")
+	// ErrSolutionDeliveryHostState: the binding's applied record on this host
+	// cannot be read back. 503: the host's own state, which an operator
+	// repairs; the delivery is not at fault.
+	ErrSolutionDeliveryHostState = errors.New("this host's applied record for the binding is unusable")
 )
 
 // SolutionDeliveryStore is the inbox's persistence.
 type SolutionDeliveryStore interface {
 	// RecordDeliveredDocument inserts one received carrier. It reports whether
-	// the row was new: an exact replay writes nothing and is not an error.
-	//
-	// The unique index on (kind, document_id, generation) is what makes a
-	// rewrite detectable, so the implementation turns that collision into
-	// ErrSolutionDeliveryRewritten rather than overwriting.
+	// the row was new: an exact replay writes nothing and is not an error. A
+	// generation already durable with different bytes answers
+	// ErrSolutionDeliveryConflict.
 	RecordDeliveredDocument(ctx context.Context, record *SolutionDeliveryRecord) (inserted bool, err error)
 
-	// ListNewestDeliveredDocuments returns the newest generation per document
-	// for one kind — the desired set.
-	ListNewestDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
+	// ListNewestDeliveredDocuments returns the newest generation per binding —
+	// the desired set.
+	ListNewestDeliveredDocuments(ctx context.Context) ([]*SolutionDeliveryRecord, error)
 
-	// ListDeliveredDocuments returns every delivered generation of one kind:
-	// the history a terminal withdrawal is read from.
-	ListDeliveredDocuments(ctx context.Context, kind SolutionDeliveryKind) ([]*SolutionDeliveryRecord, error)
-}
-
-// SolutionDeliveryReader retrieves one exact historical delivery. Applied reads
-// must not substitute the newest desired generation for the committed one.
-type SolutionDeliveryReader interface {
-	ReadDeliveredDocument(context.Context, SolutionDeliveryKind, string, uint64) (*SolutionDeliveryRecord, error)
-}
-
-// SolutionDeliveryAppliedReader recovers the last workload-bearing presence
-// from committed decision history, never from desired or refused deliveries.
-type SolutionDeliveryAppliedReader interface {
-	ReadAppliedWorkloadPresence(context.Context, string, uint64) (*SolutionHostBindingGeneration, error)
+	// ReadDeliveredDocument retrieves one exact generation, or nil.
+	ReadDeliveredDocument(ctx context.Context, binding string, generation uint64) (*SolutionDeliveryRecord, error)
 }
 
 // SolutionDeliveryCounter is the inbox's size, where the store can answer it.
@@ -170,429 +115,179 @@ type SolutionDeliveryAppliedReader interface {
 // registry with no marker, and a mint then answers exactly as it did before
 // the marker existed.
 type SolutionDeliveryCounter interface {
-	// CountDeliveredDocuments is the number of delivered documents of every
-	// kind. The inbox is append-only, so it never decreases.
+	// CountDeliveredDocuments is the number of delivered manifests. The inbox
+	// is append-only, so it never decreases.
 	CountDeliveredDocuments(ctx context.Context) (uint64, error)
-	// CountUnappliedPresence is the number of delivered presence documents
-	// newer than what their binding has applied and not refused.
-	CountUnappliedPresence(ctx context.Context) (uint64, error)
+	// CountUnappliedManifests is the number of bindings whose newest delivered
+	// manifest is newer than what they applied and not refused.
+	CountUnappliedManifests(ctx context.Context) (uint64, error)
 }
 
-// SolutionDeliveryCarrierAuthorizer decides whether the CALLER may deliver this
-// kind of document.
+// SolutionDeliveryCarrierAuthorizer decides whether the CALLER may hand this
+// host a manifest.
 //
-// It is separate from bundle verification, and keeping them apart is the point.
-// The bundle says who SIGNED the content; this says who HANDED IT OVER. A valid
-// bundle does not make every caller a legitimate carrier — otherwise anyone who
-// could replay a captured carrier could re-deliver it, including a superseded
-// generation whose signature is still perfectly good.
+// Separate from signature verification, and keeping them apart is the point:
+// the envelope says who SIGNED the content; this says who HANDED IT OVER. A
+// valid signature does not make every caller a carrier — otherwise anyone who
+// captured a carrier could re-deliver it.
 type SolutionDeliveryCarrierAuthorizer interface {
-	// AuthorizeCarrier authorises the caller's credential for this kind, given
-	// the namespaces the document's own workloads declare.
-	//
-	// The namespaces are a parameter because presence and authority are
-	// authorised differently: authority is a fixed (service account, namespace)
-	// pair, while a presence carrier must come from the namespace the document
-	// itself declares. That makes the presence namespace a property of the
-	// SIGNED DOCUMENT rather than of host configuration a deployer can edit —
-	// the same reason the ownership domain lives inside the canonical bytes.
-	AuthorizeCarrier(ctx context.Context, credential string, kind SolutionDeliveryKind, declaredNamespaces []string) error
+	// AuthorizeCarrier authorises the caller's credential as the delivery
+	// account of namespace: the namespace the cell runs the manifest's module
+	// in, by rule (ModuleNamespaceRule).
+	AuthorizeCarrier(ctx context.Context, credential, namespace string) error
 }
 
-// ReceiveSolutionDelivery verifies, authorises and persists one delivered
-// carrier.
+// ReceiveSolutionDelivery verifies, authorises, admits and persists one
+// delivered module manifest carrier.
 //
 // The ORDER is the contract, and it is signature-first:
 //
 //  1. parse the carrier with core's strict ParseSigned;
-//  2. verify the envelope against the pinned keys and their ownership domains,
-//     WITH THE READER FOR THE KIND THE PATH NAMES;
-//  3. check the attested signer may speak for the domain the document asserts;
-//  4. authorise the CALLER as a carrier for this kind;
+//  2. verify the envelope against the pinned keys, the payload's canonical
+//     encoding, and the signer's pin for the manifest's ownership domain
+//     (core's VerifyDelivered);
+//  3. authorise the CALLER: the delivery account of the module's namespace —
+//     the manifest's module, or for a withdrawal the module of the binding's
+//     previously applied manifest;
+//  4. admit the generation against the binding's applied manifest (core's
+//     Admit: stale, rewritten, withdrawn, another host or domain) and its
+//     route alias against every applied manifest (core's CheckAlias);
 //  5. persist.
 //
-// Verification comes before carrier authorisation deliberately. The cheaper
-// check is the carrier's, so an efficiency argument would put it first — but
-// then an unauthenticated caller's malformed bytes would be refused with a
-// message about credentials, and a captured carrier replayed by an authorised
-// one would be refused with a message about signatures. Ordering by what the
-// operator needs to read beats ordering by cost.
+// Verification comes before carrier authorisation so an unauthenticated
+// caller's malformed bytes are refused for being malformed, and a captured
+// carrier replayed by an authorised one is refused for what it is.
 func (s *Service) ReceiveSolutionDelivery(
-	ctx context.Context, carrier SolutionDeliveryCarrier, credential string,
+	ctx context.Context, raw []byte, credential string,
 ) (SolutionDeliveryDisposition, *SolutionDeliveryRecord, error) {
-	if !carrier.Kind.Valid() {
-		return "", nil, fmt.Errorf("%w: unknown delivery kind %q", ErrSolutionDeliveryMalformed, carrier.Kind)
-	}
-	if s.deliveryVerifier == nil || s.deliveryStore == nil || s.deliveryCarrier == nil {
-		// Fail closed and say which half is missing. A deployment that wired
-		// the endpoint without a verifier must not accept documents.
+	if s.deliveryVerifier == nil || s.deliveryStore == nil || s.deliveryCarrier == nil || s.deliveryCoordinate == "" {
+		// Fail closed and say so. A deployment that wired the endpoint without
+		// a verifier or a coordinate must not accept documents.
 		return "", nil, fmt.Errorf("%w: the delivery endpoint is not fully wired on this host", ErrSolutionDeliveryUnattested)
 	}
-
-	signed, err := solutionhost.ParseSigned(carrier.Raw)
+	signed, err := solutionhost.ParseSigned(raw)
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
+	}
+	delivered, err := solutionhost.VerifyDelivered(ctx, signed, s.deliveryVerifier)
+	if err != nil {
+		return "", nil, classifySolutionDeliveryVerification(err)
+	}
+	manifest, err := delivered.Manifest()
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
 	}
 
-	received, err := s.receiveDeliveredDocument(ctx, carrier.Kind, signed)
+	records, err := s.ListSolutionHostBindings(ctx)
 	if err != nil {
 		return "", nil, err
 	}
-
-	// The attested signer must be entitled to the domain the document asserts.
-	// Checked here as well as by core's Admit, because a document that will be
-	// refused at admission should not become durable desired state in the first
-	// place — an inbox of documents nobody may act on is an inbox an operator
-	// has to triage.
-	if !s.signerMaySpeakFor(received.signer, received.ownershipDomain) {
-		return "", nil, fmt.Errorf("%w: signer %q, domain %q",
-			ErrSolutionDeliveryDomainNotGranted, received.signer, received.ownershipDomain)
-	}
-
-	if carrier.Kind == SolutionDeliveryAuthority {
-		if err := s.admitAuthorityTarget(ctx, received.payload); err != nil {
-			return "", nil, err
+	var record *SolutionHostBindingRecord
+	for _, candidate := range records {
+		if candidate.BindingID == manifest.Binding {
+			record = candidate
 		}
 	}
+	previous, previousErr := record.AppliedManifest()
 
-	if err := s.deliveryCarrier.AuthorizeCarrier(
-		ctx, credential, carrier.Kind, received.carrierNamespaces); err != nil {
+	// The carrier is the delivery account of the module's namespace. A
+	// withdrawal is delivered from where the binding was delivered from, so
+	// its module is the previously applied one.
+	module := manifest.Alias
+	if manifest.Removed && previous != nil {
+		module = previous.Alias
+	}
+	if err := s.deliveryCarrier.AuthorizeCarrier(ctx, credential, s.moduleNamespaces.Namespace(module)); err != nil {
 		return "", nil, err
 	}
 
-	record := &SolutionDeliveryRecord{
-		Kind:            carrier.Kind,
-		DocumentID:      received.documentID,
-		Generation:      received.generation,
-		ContentHash:     solutionDeliveryContentHash(received.payload),
-		Payload:         received.payload,
-		Bundle:          signed.Envelope,
-		SignerIdentity:  received.signer,
-		OwnershipDomain: received.ownershipDomain,
-		ReceivedAt:      time.Now().UTC(),
+	if previousErr != nil {
+		return "", nil, classifySolutionDeliveryAdmission(previousErr)
+	}
+	if _, err := solutionhost.Admit(s.deliveryCoordinate, previous, manifest); err != nil {
+		return "", nil, classifySolutionDeliveryAdmission(err)
+	}
+	if err := solutionhost.CheckAlias([]string{SolutionHostReservedRouteNamespace}, appliedManifests(records), manifest); err != nil {
+		return "", nil, classifySolutionDeliveryAdmission(err)
 	}
 
+	digest, err := manifest.Digest()
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
+	}
+	stored := &SolutionDeliveryRecord{
+		Binding:         manifest.Binding,
+		Generation:      manifest.Generation,
+		ContentHash:     digest,
+		Payload:         delivered.Payload(),
+		Envelope:        signed.Envelope,
+		SignerIdentity:  delivered.Signer().KeyID,
+		OwnershipDomain: manifest.Host.Domain,
+		ReceivedAt:      time.Now().UTC(),
+	}
 	var inserted bool
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var storeErr error
-		inserted, storeErr = s.deliveryStore.RecordDeliveredDocument(ctx, record)
+		inserted, storeErr = s.deliveryStore.RecordDeliveredDocument(ctx, stored)
 		return storeErr
 	}); err != nil {
 		return "", nil, err
 	}
 	if inserted {
-		// A new document changes what the host should apply and which module
-		// principals the registry holds, so a pass is requested now rather than
-		// at the next tick. An exact replay changes nothing and asks for none.
+		// A new generation changes what the host applies and which module
+		// principals the registry holds, so a pass is requested now rather
+		// than at the next tick. An exact replay changes nothing.
 		s.requestRegistryPass()
-		return SolutionDeliveryAccepted, record, nil
+		return SolutionDeliveryAccepted, stored, nil
 	}
-	return SolutionDeliveryReplayed, record, nil
-}
-
-// admitAuthorityTarget refuses an authority document — a grant or a tombstone —
-// that cannot speak for the binding it names: one addressed to another host,
-// or one asserting an ownership domain other than the binding's OWNER (the
-// domain of the presence generation this host admitted and applied — never a
-// delivered row core refused). The signer
-// check above only proves the signer may speak for the domain the document
-// ASSERTS; without this, an accepted signer for one domain could deliver a
-// tombstone naming another domain's binding and withdraw it permanently.
-// Reconciliation applies the same rule to what is already stored.
-func (s *Service) admitAuthorityTarget(ctx context.Context, payload []byte) error {
-	document, err := solutionhost.AuthorityFromVerified(payload)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
-	}
-	if s.deliveryCoordinate != "" && document.Host.Coordinate != s.deliveryCoordinate {
-		return fmt.Errorf("%w: authority %q targets host %q, and this host is %q",
-			ErrSolutionDeliveryDomainNotGranted, document.Authority, document.Host.Coordinate, s.deliveryCoordinate)
-	}
-	owners, err := s.admittedBindingOwners(ctx)
-	if err != nil {
-		return err
-	}
-	if domain, known := owners[document.PresenceBinding]; known && domain != document.OwnershipDomain {
-		return fmt.Errorf("%w: authority %q speaks for domain %q over binding %q, which domain %q owns",
-			ErrSolutionDeliveryDomainNotGranted, document.Authority, document.OwnershipDomain, document.PresenceBinding, domain)
-	}
-	return nil
+	return SolutionDeliveryReplayed, stored, nil
 }
 
 // SetSolutionDeliveryCoordinate names the host coordinate this host answers
-// for, so delivery refuses an authority document addressed to another host at
-// receipt. Boot wiring, beside SetSolutionDelivery.
+// for, which every admission is decided under. Boot wiring, beside
+// SetSolutionDelivery.
 func (s *Service) SetSolutionDeliveryCoordinate(coordinate string) {
 	s.deliveryCoordinate = coordinate
-}
-
-// receivedSolutionDelivery is one verified document read into the shape the
-// inbox stores. The two kinds are different documents with different identity
-// fields and different carrier rules, and this is where that difference ends:
-// everything past it is one row.
-type receivedSolutionDelivery struct {
-	documentID      string
-	generation      uint64
-	ownershipDomain string
-	signer          string
-	payload         []byte
-
-	// carrierNamespaces is what the CALLER is authorised against. It is empty
-	// for authority, which has one fixed writer namespace, and for presence it
-	// is the namespaces the document's own workloads declare — see
-	// presenceCarrierNamespaces for the generation that declares none.
-	carrierNamespaces []string
-}
-
-// receiveDeliveredDocument verifies the carrier with the reader for the kind
-// the PATH named.
-//
-// This dispatch is the defect it replaces, not a tidy-up. Both paths called
-// VerifyDelivered — the PRESENCE reader — so the two halves of the lifecycle
-// were exactly inverted at the endpoint:
-//
-//   - a genuine authority document POSTed to /authority was refused, because
-//     the presence reader checks the schema inside the signed bytes and an
-//     authority payload declares the authority schema;
-//   - a presence carrier POSTed to /authority was ACCEPTED and stored as
-//     kind=authority, because the presence reader is exactly what it satisfies.
-//
-// So the inbox could hold a presence document filed as authority and could
-// never hold an authority document at all. The kind in the path and the schema
-// inside the attested bytes have to be checked against each other, and core
-// gives one reader per kind precisely so that check is a function call rather
-// than a comparison a host writes itself.
-func (s *Service) receiveDeliveredDocument(
-	ctx context.Context, kind SolutionDeliveryKind, signed *solutionhost.Signed,
-) (*receivedSolutionDelivery, error) {
-	switch kind {
-	case SolutionDeliveryPresence:
-		return s.receiveDeliveredPresence(ctx, signed)
-	case SolutionDeliveryAuthority:
-		return s.receiveDeliveredAuthority(ctx, signed)
-	case SolutionDeliveryEndpoints:
-		return s.receiveDeliveredEndpoints(ctx, signed)
-	}
-	return nil, fmt.Errorf("%w: unknown delivery kind %q", ErrSolutionDeliveryMalformed, kind)
-}
-
-func (s *Service) receiveDeliveredPresence(
-	ctx context.Context, signed *solutionhost.Signed,
-) (*receivedSolutionDelivery, error) {
-	delivered, err := solutionhost.VerifyDelivered(ctx, signed, s.deliveryVerifier)
-	if err != nil {
-		return nil, classifySolutionDeliveryVerification(err)
-	}
-	document, err := delivered.Document()
-	if err != nil {
-		// The payload verified but does not decode to a document whose canonical
-		// encoding is those same bytes. Malformed rather than unattested: the
-		// attestation is sound and the bytes are not what they claim.
-		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
-	}
-	if err := document.Validate(); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryInvalid, err)
-	}
-	namespaces, err := s.presenceCarrierNamespaces(ctx, document)
-	if err != nil {
-		return nil, err
-	}
-	return &receivedSolutionDelivery{
-		documentID:        document.Binding,
-		generation:        document.Generation,
-		ownershipDomain:   document.OwnershipDomain,
-		signer:            delivered.DeliveredBy(),
-		payload:           delivered.Payload(),
-		carrierNamespaces: namespaces,
-	}, nil
-}
-
-func (s *Service) receiveDeliveredAuthority(
-	ctx context.Context, signed *solutionhost.Signed,
-) (*receivedSolutionDelivery, error) {
-	delivered, err := solutionhost.VerifyDeliveredAuthority(ctx, signed, s.deliveryVerifier)
-	if err != nil {
-		return nil, classifySolutionDeliveryVerification(err)
-	}
-	document, err := delivered.Document()
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
-	}
-	if err := document.Validate(); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryInvalid, err)
-	}
-	// The authority document's identity is its OWN id, never the presence
-	// binding it is granted over. One binding can be granted authority under
-	// successive authority IDs, and core's own fold is keyed on the binding
-	// precisely so a rename does not reinstate a withdrawal — which only works
-	// if the inbox keeps the authority ID it was delivered as.
-	return &receivedSolutionDelivery{
-		documentID:      document.Authority,
-		generation:      document.Generation,
-		ownershipDomain: document.OwnershipDomain,
-		signer:          delivered.DeliveredBy(),
-		payload:         delivered.Payload(),
-		// Authority has ONE writer namespace for the whole platform, so there
-		// is nothing read out of the document to authorise the carrier against.
-		carrierNamespaces: nil,
-	}, nil
 }
 
 // classifySolutionDeliveryVerification separates "the signer is wrong" from
 // "the bytes are wrong", because the two have different response codes and a
 // caller acts differently on each.
-//
-// Core verifies the envelope, reads the canonical document of the requested
-// kind, then checks the pinned key's ownership domains. Signature and domain
-// refusals are about the SIGNER. A schema
-// mismatch, a payload that is not its own canonical encoding, or a document
-// core will not parse are all facts about the bytes — which is why a genuine
-// authority document POSTed to /presence is 400 rather than 403. Answering 403
-// would send an operator to look at the signing identity for a delivery that
-// was signed perfectly well and simply sent to the wrong path.
 func classifySolutionDeliveryVerification(err error) error {
-	if errors.Is(err, solutionhost.ErrWrongDomain) {
+	switch {
+	case errors.Is(err, solutionhost.ErrWrongDomain):
 		return fmt.Errorf("%w: %w", ErrSolutionDeliveryDomainNotGranted, err)
-	}
-	if errors.Is(err, solutionhost.ErrUnsigned) {
+	case errors.Is(err, solutionhost.ErrUnsigned):
 		return fmt.Errorf("%w: %w", ErrSolutionDeliveryUnattested, err)
 	}
 	return fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
 }
 
-// presenceCarrierNamespaces is what a presence carrier is authorised against.
-//
-// Normally it is the namespaces the document's OWN workloads declare, through
-// their SPIFFE IDs — a property of the signed bytes rather than of host
-// configuration a deployer can edit.
-//
-// A generation that declares no workload declares no namespace, and there are
-// two of those: a TOMBSTONE, which declares absence and may carry nothing at
-// all, and a present generation that renders only a frontend surface. Refusing
-// the empty case outright made REMOVAL THROUGH THIS ENDPOINT IMPOSSIBLE — the
-// one document delivery must be able to hand over to withdraw a binding was the
-// one document the carrier check could never authorise.
-//
-// So the fallback is the binding's LAST WORKLOAD-BEARING APPLIED namespace: what this host
-// recorded, from a generation it had already verified and admitted, for the same
-// binding. That is a stronger anchor than the arriving document, because the
-// arriving document is the thing under check and the applied record is the
-// host's own state.
-//
-// It can still come back empty — a first generation for a binding nothing has
-// applied, or a binding whose applied history never declared a workload.
-// Empty is handed to the authorizer rather than resolved here, so the refusal
-// reads in one place: there is nothing to authorise this carrier against.
-func (s *Service) presenceCarrierNamespaces(
-	ctx context.Context, document *solutionhost.SolutionHostBinding,
-) ([]string, error) {
-	if declared := declaredNamespaces(document); len(declared) > 0 {
-		return declared, nil
+// classifySolutionDeliveryAdmission maps core's admission refusals onto this
+// host's delivery taxonomy, keeping core's own wording as the cause.
+func classifySolutionDeliveryAdmission(err error) error {
+	switch {
+	case errors.Is(err, solutionhost.ErrStaleGeneration),
+		errors.Is(err, solutionhost.ErrRewrittenGeneration),
+		errors.Is(err, solutionhost.ErrWithdrawn):
+		return fmt.Errorf("%w: %w", ErrSolutionDeliveryConflict, err)
+	case errors.Is(err, solutionhost.ErrWrongDomain):
+		return fmt.Errorf("%w: %w", ErrSolutionDeliveryDomainNotGranted, err)
+	case errors.Is(err, solutionhost.ErrAppliedUnusable):
+		return fmt.Errorf("%w: %w", ErrSolutionDeliveryHostState, err)
+	case errors.Is(err, solutionhost.ErrInvalid), errors.Is(err, solutionhost.ErrSchema):
+		return fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
 	}
-	records, err := s.ListSolutionHostBindings(ctx)
-	if err != nil {
-		// NOT an empty namespace set. A store this host cannot read must not
-		// turn into "authorise against nothing", which for a document that
-		// declares none is indistinguishable from a carrier check that passed.
-		return nil, err
-	}
-	for _, record := range records {
-		if record.BindingID != document.Binding || record.Applied == nil {
-			continue
-		}
-		applied, err := solutionhost.Parse([]byte(record.Applied.Document))
-		if err != nil {
-			// This host wrote that document itself, after verifying and
-			// admitting it. Unparseable means the host's own state is damaged,
-			// which is reported rather than treated as "no namespace".
-			return nil, fmt.Errorf("%w: binding %q applied generation %d does not parse back: %w",
-				ErrSolutionDeliveryInvalid, record.BindingID, record.Applied.Generation, err)
-		}
-		if namespaces := declaredNamespaces(applied); len(namespaces) > 0 {
-			return namespaces, nil
-		}
-		reader, ok := s.deliveryStore.(SolutionDeliveryAppliedReader)
-		if !ok {
-			return nil, fmt.Errorf("%w: applied carrier history is unavailable", ErrSolutionDeliveryInvalid)
-		}
-		var previous *SolutionHostBindingGeneration
-		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			var readErr error
-			previous, readErr = reader.ReadAppliedWorkloadPresence(ctx, document.Binding, record.Applied.Generation)
-			return readErr
-		}); err != nil {
-			return nil, err
-		}
-		if previous == nil {
-			return nil, nil
-		}
-		prior, err := solutionhost.Parse([]byte(previous.Document))
-		if err != nil {
-			return nil, fmt.Errorf("%w: parse applied carrier history: %w", ErrSolutionDeliveryInvalid, err)
-		}
-		digest, err := prior.Digest()
-		if err != nil || digest != previous.Digest || prior.Binding != document.Binding ||
-			prior.Generation != previous.Generation || prior.Generation > record.Applied.Generation ||
-			prior.Host != applied.Host || prior.OwnershipDomain != applied.OwnershipDomain || prior.Removed {
-			return nil, fmt.Errorf("%w: applied carrier history does not match binding %q", ErrSolutionDeliveryInvalid, document.Binding)
-		}
-		return declaredNamespaces(prior), nil
-	}
-	return nil, nil
-}
-
-// signerMaySpeakFor reports whether an attested signer is granted an ownership
-// domain, by the same mapping core's Admit is given.
-func (s *Service) signerMaySpeakFor(signer, domain string) bool {
-	for _, granted := range s.deliveryDomainsBySigner[signer] {
-		if granted == domain {
-			return true
-		}
-	}
-	return false
-}
-
-// declaredNamespaces is the set of namespaces the document's own workloads name,
-// read out of each workload identity's SPIFFE ID.
-//
-// A presence carrier is authorised against this rather than against a configured
-// constant, because a presence Job runs one per module tree in that module's own
-// namespace — a fixed value would refuse every genuine carrier. Reading it from
-// the signed document also keeps it out of configuration a deployer can edit.
-//
-// More than one distinct namespace is returned as more than one entry, and the
-// authorizer refuses that: the renderer uses one namespace per render and cannot
-// emit such a document, so one that exists was hand-built, and "the namespace
-// this was delivered from" would have no single answer.
-func declaredNamespaces(document *solutionhost.SolutionHostBinding) []string {
-	seen := map[string]bool{}
-	var namespaces []string
-	for _, workload := range document.Workloads {
-		identity, err := ParseKubernetesSPIFFEID(workload.Identity.SPIFFEID)
-		namespace := identity.Namespace
-		if err != nil || seen[namespace] {
-			continue
-		}
-		seen[namespace] = true
-		namespaces = append(namespaces, namespace)
-	}
-	return namespaces
-}
-
-// solutionDeliveryContentHash is the idempotency key's content half: sha256 over
-// the canonical payload, in the `sha256:<64 hex>` shape the schema requires.
-func solutionDeliveryContentHash(payload []byte) string {
-	sum := sha256.Sum256(payload)
-	return "sha256:" + hex.EncodeToString(sum[:])
+	// Another host's coordinate, a reserved or held route alias.
+	return fmt.Errorf("%w: %w", ErrSolutionDeliveryRefused, err)
 }
 
 // DeliveredSolutionHostBindings is the reconciler's source, reading the newest
 // generation per binding from the durable inbox.
 //
-// It replaces the mount, and it closes the gap a mount could not: a document
-// whose apply failed stays in the desired set and is retried on the next pass,
-// because the desired set is what the host was TOLD rather than what a directory
-// still happens to contain.
+// A document whose apply failed stays in the desired set and is retried on the
+// next pass, because the desired set is what the host was TOLD rather than
+// what a directory still happens to contain.
 type DeliveredSolutionHostBindings struct {
 	service *Service
 }
@@ -605,39 +300,39 @@ func NewDeliveredSolutionHostBindings(service *Service) *DeliveredSolutionHostBi
 // Documents returns the newest delivered generation per binding, as carriers.
 //
 // Each row is handed back as the carrier it arrived as, so the reconciler
-// re-verifies it on every pass rather than trusting the inbox. That is
-// deliberate and it is what makes a narrowed verification policy take effect: a
-// signer removed from the allowlist stops being able to keep its documents
-// applied, instead of its last delivery remaining authoritative forever.
+// re-verifies it on every pass rather than trusting the inbox: a key unpinned
+// since stops keeping its manifests applied.
 //
-// An unreadable inbox is an ERROR, not an empty desired set — the same rule the
-// mount had, for the same reason: removal is a tombstone generation precisely so
-// that losing the input can never be reconciled as "remove everything".
+// An unreadable inbox is an ERROR, not an empty desired set: removal is a
+// withdrawal generation precisely so that losing the input can never be
+// reconciled as "remove everything".
 func (d *DeliveredSolutionHostBindings) Documents(ctx context.Context) ([]SolutionHostBindingDocument, error) {
 	var records []*SolutionDeliveryRecord
 	if err := d.service.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
-		records, err = d.service.deliveryStore.ListNewestDeliveredDocuments(ctx, SolutionDeliveryPresence)
+		records, err = d.service.deliveryStore.ListNewestDeliveredDocuments(ctx)
 		return err
 	}); err != nil {
 		return nil, fmt.Errorf("read the delivery inbox: %w", err)
 	}
 	documents := make([]SolutionHostBindingDocument, 0, len(records))
 	for _, record := range records {
-		carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{
-			Document: record.Payload,
-			Envelope: record.Bundle,
-		})
+		carrier, err := solutionhost.MarshalSigned(carrierOf(record))
 		if err != nil {
 			// A row that cannot be put back into a carrier is a defect in what
 			// was stored, and it must not read as "delivery withdrew this".
 			return nil, fmt.Errorf("rebuild the carrier for %s generation %d: %w",
-				record.DocumentID, record.Generation, err)
+				record.Binding, record.Generation, err)
 		}
 		documents = append(documents, SolutionHostBindingDocument{
-			Source: fmt.Sprintf("inbox:%s@%d", record.DocumentID, record.Generation),
+			Source: fmt.Sprintf("inbox:%s@%d", record.Binding, record.Generation),
 			Data:   carrier,
 		})
 	}
 	return documents, nil
+}
+
+// carrierOf rebuilds a stored row's signed carrier.
+func carrierOf(record *SolutionDeliveryRecord) *solutionhost.Signed {
+	return &solutionhost.Signed{Document: record.Payload, Envelope: record.Envelope}
 }

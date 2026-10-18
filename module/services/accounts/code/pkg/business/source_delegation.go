@@ -688,14 +688,12 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 		// audience the delegation's binding names — so its hop attests the build
 		// its own pod is running, and the delegation is the operation binding the
 		// hop exercises (business.SourceDelegationBindingID), read live by every
-		// verifier. The caller authenticated with its module Work Context, whose
-		// seal names the build its pod was bound to at that mint and which core
-		// has just held against the approved build again.
+		// verifier. The caller authenticated with its module Work Context.
 		authority = SourceOperationContextAuthority{
 			ModuleWorkContextAuthority: ModuleWorkContextAuthority{
 				PrincipalID: caller.PrincipalID, Tenant: delegation.OrgID,
 				InstallationID: callerAuthority.InstallationID, InstallationRevision: callerAuthority.InstallationRevision,
-				ProducerEpoch: callerAuthority.ProducerEpoch, Execution: caller.SealedExecution(),
+				ProducerEpoch: callerAuthority.ProducerEpoch,
 			},
 			ModulePrefix:     grant.Prefix,
 			OwnerPrincipalID: delegation.PrincipalID,

@@ -39,6 +39,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codefly-dev/core/resources"
 	"github.com/codefly-dev/core/wool"
 	wooltel "github.com/codefly-dev/core/wool/otel"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
@@ -507,19 +508,19 @@ func doWork(ctx context.Context) (Clean, error) {
 	)
 	// NO MODULE OR SOLUTION SECRET IS READ HERE (#1056). A module proves which
 	// module it is with its pod's projected ServiceAccount token, which
-	// BindExecution reviews and holds against the build the authority document
-	// approves; MODULE_IDENTITY_SECRETS, MODULE_REGISTRATION_SECRETS and
+	// BindExecution reviews and holds against the workloads its applied module
+	// manifest lists; MODULE_IDENTITY_SECRETS, MODULE_REGISTRATION_SECRETS and
 	// SOLUTION_REGISTRATION_SECRETS are deleted with both registration mints.
-	// Execution binding is wired with delivery below, because its approved
-	// builds come from delivered authority: a host with no delivery mints for no
+	// Execution binding is wired with delivery below, because the workloads
+	// come from delivered manifests: a host with no delivery mints for no
 	// module.
 
-	// Declared solution presence (issue #952). Delivery POSTs one signed
-	// SolutionHostBinding carrier per solution instance to the delivery
-	// endpoint; this host verifies it on receipt and persists it, and the
-	// reconciler reads its desired set from that durable inbox on every pass,
-	// asks Core whether each document may be applied, and reconciles what it
-	// admits into the durable declaration registry.
+	// Declared module and solution presence (issue #952). Delivery POSTs one
+	// signed module manifest carrier per instance to the delivery endpoint;
+	// this host verifies, authorises and admits it on receipt and persists it,
+	// and the reconciler reads its desired set from that durable inbox on every
+	// pass, asks Core whether each manifest may be applied, and reconciles what
+	// it admits into the durable declaration registry.
 	//
 	// Unset SOLUTION_HOST_COORDINATE leaves the whole surface off — no
 	// reconciler and no delivery endpoint — and nothing on this host is
@@ -1871,13 +1872,12 @@ func configuredSolutionHostBindingReconciler(
 	coordinate := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_COORDINATE"))
 	if coordinate == "" {
 		// NO DECLARED-PRESENCE SURFACE ALSO MEANS NO EXECUTION BINDING, and
-		// that is the coherent answer rather than an oversight. The approved
-		// build is read from delivered authority documents, and a host with no
-		// coordinate has no delivery endpoint to receive one — so it approves
-		// nothing, `SetExecutionBinding` is never called, and `BindExecution`
-		// answers ErrExecutionUnbound for every caller. A module cannot mint
-		// here, which is the fail-closed direction: the alternative is a host
-		// that cannot establish what anyone is running and mints anyway.
+		// that is the coherent answer rather than an oversight. A module's
+		// workloads are read from delivered manifests, and a host with no
+		// coordinate has no delivery endpoint to receive one — so
+		// `SetExecutionBinding` is never called, and `BindExecution` answers
+		// ErrExecutionUnbound for every caller. A module cannot mint here,
+		// which is the fail-closed direction.
 		return nil, nil
 	}
 	// The ownership domains this host accepts delivery from. Required with the
@@ -1988,31 +1988,43 @@ func configuredSolutionHostBindingReconciler(
 	if err != nil {
 		return nil, err
 	}
-	service.SetSolutionDelivery(keyVerifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
+	// THE CELL'S NAMESPACE RULE, read off this host's own placement: the
+	// namespace it runs in and the module it was composed as. A carrier and a
+	// minting workload are both held to the namespace this rule spells for
+	// their module, so a host that cannot read its own placement refuses to
+	// boot rather than authorise against a guess.
+	hostNamespace, err := kubernetes.Namespace()
+	if err != nil {
+		return nil, err
+	}
+	namespaces, err := business.NewModuleNamespaceRule(hostNamespace, strings.TrimSpace(os.Getenv(resources.ModulePrefix)))
+	if err != nil {
+		return nil, err
+	}
+	service.SetModuleNamespaceRule(namespaces)
+	service.SetSolutionDelivery(keyVerifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes))
 	service.SetSolutionDeliveryCoordinate(coordinate)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
 	// the gateway because a solution runtime is an independently deployed
 	// workload that must not reach accounts' internal listener. A delivery Job
-	// is not that: it runs in-cluster as one of two known service accounts, so
-	// routing it through the edge would put accounts-audience tokens across the
-	// perimeter for no gain.
+	// is not that: it runs in-cluster as its module's `delivery` service
+	// account, so routing it through the edge would put accounts-audience
+	// tokens across the perimeter for no gain.
 	//
 	// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
 	adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
 
 	// The AUTHORITY CEILING is the module envelope a platform super_admin
-	// writes at runtime, read by every pass and every activation from the
-	// store — never a file read once here, and never out of a delivered
-	// document, because a document must never carry its own ceiling.
+	// writes at runtime, read by every pass from the store — never a file read
+	// once here, and never out of a delivered manifest, because a manifest
+	// requests authority and never approves its own.
 	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
-		Source:          business.NewDeliveredSolutionHostBindings(service),
-		Verifier:        keyVerifier,
-		Coordinate:      coordinate,
-		Domains:         domains,
-		DomainsBySigner: domainsBySigner,
-		Interval:        interval,
-		Envelopes:       service,
+		Source:     business.NewDeliveredSolutionHostBindings(service),
+		Verifier:   keyVerifier,
+		Coordinate: coordinate,
+		Interval:   interval,
+		Envelopes:  service,
 	})
 	if err != nil {
 		return nil, err
@@ -2021,30 +2033,13 @@ func configuredSolutionHostBindingReconciler(
 	// is in force within one pass instead of one interval.
 	service.SetModuleRegistryPassTrigger(reconciler.Trigger)
 
-	// EXECUTION-BOUND MINTING, wired here because this is where both of its
-	// independent sources exist.
-	//
-	// THIS IS THE LINE THAT WAS MISSING. `BindExecution`, the three digest
-	// types, the monotonicity guard and the TokenReview client were all built,
-	// guarded and unit-tested, and `SetExecutionBinding` was called from
-	// nowhere — so on a running host the reviewer was nil, `BindExecution`
-	// answered ErrExecutionUnbound for every caller, and the whole mechanism was
-	// unreachable. A check nothing calls is indistinguishable from a check that
-	// passes, which is why this is wired rather than merely available.
-	//
-	// THE TWO SOURCES ARE DELIBERATELY DIFFERENT ONES, and that is the entire
-	// design. The reviewer is the Kubernetes API, keyed by a pod UID that came
-	// from a TokenReview of a token the caller could not forge: it answers what
-	// the caller IS RUNNING. The authority answers what THIS HOST APPROVES, read
-	// from signed documents the caller has no influence over. Filling both sides
-	// from one source compares a value to itself and passes for every caller,
-	// including the superseded pod the check exists to refuse.
-	//
-	// It is the SAME client that reviews a delivery carrier, which is right
-	// rather than merely convenient: one api server, one in-cluster credential,
-	// one place a lost credential stops both halves at once instead of leaving
-	// one of them silently answering.
-	service.SetExecutionBinding(kubernetes, reconciler.ApprovedBuilds())
+	// EXECUTION-BOUND MINTING, wired here because this is where its inputs
+	// exist: the reviewer is the Kubernetes API (a TokenReview of a token the
+	// caller could not forge, and the pod it names), and the workloads it is
+	// held against come from the manifests this reconciler applies. It is the
+	// SAME client that reviews a delivery carrier: one api server, one
+	// in-cluster credential, one place a lost credential stops both halves.
+	service.SetExecutionBinding(kubernetes)
 	return reconciler, nil
 }
 

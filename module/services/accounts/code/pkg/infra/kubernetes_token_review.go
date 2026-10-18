@@ -247,6 +247,16 @@ func kubernetesClientFrom(endpoint string, authority []byte, tokenPath, namespac
 	}, nil
 }
 
+// Namespace is the namespace this host runs in, as the kubelet projected it
+// beside the token this client authenticates with.
+func (c *KubernetesClient) Namespace() (string, error) {
+	namespace, err := os.ReadFile(c.namespacePath)
+	if err != nil {
+		return "", fmt.Errorf("%w: cannot read this service's namespace: %w", ErrKubernetesUnavailable, err)
+	}
+	return strings.TrimSpace(string(namespace)), nil
+}
+
 // InClusterNamespace is the namespace this service runs in.
 func InClusterNamespace() (string, error) {
 	namespace, err := os.ReadFile(inClusterNamespacePath)
@@ -414,14 +424,12 @@ type podResponse struct {
 
 type specContainer struct {
 	Name          string `json:"name"`
-	Image         string `json:"image"`
 	RestartPolicy string `json:"restartPolicy"`
 }
 
 type containerStatus struct {
-	Name    string `json:"name"`
-	ImageID string `json:"imageID"`
-	State   struct {
+	Name  string `json:"name"`
+	State struct {
 		Running    *struct{} `json:"running"`
 		Waiting    *struct{} `json:"waiting"`
 		Terminated *struct{} `json:"terminated"`
@@ -441,7 +449,8 @@ func (status containerStatus) state() business.ContainerState {
 }
 
 // readPod reads one pod: its UID, phase, deletion, and every container with
-// its kind, live state and running image.
+// its kind and live state. No image is read: nothing at mint compares one
+// (build approval is deploy-time admission, outside this host).
 //
 // Only `get` is used, never `list`: the host asks about a pod it was told about
 // by a TokenReview, so it never needs to enumerate. That keeps the RBAC the
@@ -479,12 +488,11 @@ func (c *KubernetesClient) readPod(ctx context.Context, namespace, pod string) (
 		for _, declared := range group.spec {
 			container := business.ContainerExecution{
 				Name: declared.Name, Kind: group.kind, State: business.ContainerStateUnknown,
-				DeclaredImage: declared.Image,
-				Restartable:   group.kind == business.ContainerInit && declared.RestartPolicy == "Always",
+				Restartable: group.kind == business.ContainerInit && declared.RestartPolicy == "Always",
 			}
 			for _, status := range group.statuses {
 				if status.Name == declared.Name {
-					container.State, container.ImageID = status.state(), status.ImageID
+					container.State = status.state()
 				}
 			}
 			seen[declared.Name] = true
@@ -495,7 +503,7 @@ func (c *KubernetesClient) readPod(ctx context.Context, namespace, pod string) (
 		for _, status := range group.statuses {
 			if !seen[status.Name] {
 				read.Containers = append(read.Containers, business.ContainerExecution{
-					Name: status.Name, Kind: group.kind, State: status.state(), ImageID: status.ImageID,
+					Name: status.Name, Kind: group.kind, State: status.state(),
 				})
 			}
 		}
