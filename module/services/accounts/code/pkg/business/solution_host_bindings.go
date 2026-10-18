@@ -107,11 +107,41 @@ type SolutionHostBindingApplied struct {
 type SolutionHostBindingRecord struct {
 	BindingID      string
 	HostCoordinate string
-	Desired        *SolutionHostBindingGeneration
-	Applied        *SolutionHostBindingApplied
-	PendingReason  string
-	PendingSince   *time.Time
-	UpdatedAt      time.Time
+	// Domain is the ownership domain the binding first applied under. It is
+	// kept when live applied state is not — migration 41 cleared that and kept
+	// this — so a binding awaiting redelivery still belongs to its domain, and
+	// no other pinned domain can take its id (and its installations).
+	Domain        string
+	Desired       *SolutionHostBindingGeneration
+	Applied       *SolutionHostBindingApplied
+	PendingReason string
+	PendingSince  *time.Time
+	UpdatedAt     time.Time
+}
+
+// ownershipDomain is the domain the binding belongs to, or "" for a binding
+// no generation was ever applied for.
+func (r *SolutionHostBindingRecord) ownershipDomain() string {
+	switch {
+	case r == nil:
+		return ""
+	case r.Domain != "":
+		return r.Domain
+	case r.Applied != nil:
+		return r.Applied.Domain
+	}
+	return ""
+}
+
+// checkOwnershipDomain refuses a manifest for this binding under another
+// ownership domain than the one it belongs to — core's Admit does the same
+// against an applied manifest, and this holds when none remains.
+func (r *SolutionHostBindingRecord) checkOwnershipDomain(candidate *solutionhost.ModuleManifest) error {
+	if domain := r.ownershipDomain(); domain != "" && candidate.Host.Domain != domain {
+		return fmt.Errorf("%w: binding %q belongs to ownership domain %q, and this manifest speaks for %q",
+			ErrSolutionDeliveryDomainNotGranted, candidate.Binding, domain, candidate.Host.Domain)
+	}
+	return nil
 }
 
 // AppliedManifest is the manifest this host applied for the binding, the one

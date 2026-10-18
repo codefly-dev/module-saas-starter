@@ -390,6 +390,13 @@ func TestTheHostsRulesAreEnforcedAtDelivery(t *testing.T) {
 	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
 	require.Contains(t, recorder.Body.String(), `held by binding \"acme.test.ruleheld\"`)
 
+	// One principal is one live binding within a domain too.
+	samePrincipal := productionPathManifest(t, "ruleshared", 1)
+	samePrincipal.Authority = &solutionhost.Authority{Principal: "ruleheld"}
+	recorder = d.deliver(t, samePrincipal)
+	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
+	require.Contains(t, recorder.Body.String(), `principal \"ruleheld\" is held by binding \"acme.test.ruleheld\"`)
+
 	foreign := productionPathManifest(t, "ruleforeign", 1)
 	foreign.Binding, foreign.Host.Domain, foreign.Release.Publisher = "globex.test.ruleforeign", productionPathForeignDomain, "globex"
 	foreign.Authority = &solutionhost.Authority{Principal: "ruleheld"}
@@ -409,4 +416,43 @@ func TestTheHostsRulesAreEnforcedAtDelivery(t *testing.T) {
 		recorder = d.deliver(t, escaping)
 		require.Equal(t, http.StatusUnprocessableEntity, recorder.Code, address+": "+recorder.Body.String())
 	}
+}
+
+// A BINDING KEEPS ITS DOMAIN WHEN ITS LIVE STATE IS GONE. Migration 41 cleared
+// every live binding's applied manifest and kept the domain it applied under
+// (first_domain); until the owner redelivers, another pinned domain's
+// manifest for that binding id is refused, and the owner's is not. A binding
+// the host applies records its domain the same way.
+func TestABindingAwaitingRedeliveryKeepsItsDomain(t *testing.T) {
+	d := newProductionPathDelivery(t)
+	const binding = "acme.test.ruletakeover"
+	// The state migration 41 leaves: no applied manifest, the domain kept.
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.SaveSolutionHostBinding(ctx, &business.SolutionHostBindingRecord{
+			BindingID: binding, HostCoordinate: productionPathCoordinate, Domain: productionPathDomain, UpdatedAt: time.Now().UTC(),
+		})
+	}))
+
+	takeover := productionPathManifest(t, "ruletakeover", 1)
+	takeover.Binding, takeover.Host.Domain, takeover.Release.Publisher = binding, productionPathForeignDomain, "globex"
+	payload, err := solutionhost.SignedPayload(takeover)
+	require.NoError(t, err)
+	d.callerNamespace, d.callerAccount = productionPathNamespace(takeover.Alias), "delivery"
+	recorder := d.post(t, deliverytest.Carrier(t, payload, productionPathForeignSigner))
+	require.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+	require.Contains(t, recorder.Body.String(), `binding \"acme.test.ruletakeover\" belongs to ownership domain \"acme\"`)
+
+	owner := productionPathManifest(t, "ruletakeover", 1)
+	owner.Binding = binding
+	requireDelivered(t, d.deliver(t, owner))
+	require.NoError(t, newProductionPathReconciler(t, d.service).RunOnce(testCtx))
+	record := productionPathBindingRecord(t, d.service, binding)
+	require.NotNil(t, record.Applied, record.PendingReason)
+	require.Equal(t, productionPathDomain, record.Domain)
+
+	fresh := productionPathManifest(t, "ruledomainrecorded", 1)
+	requireDelivered(t, d.deliver(t, fresh))
+	require.NoError(t, newProductionPathReconciler(t, d.service).RunOnce(testCtx))
+	require.Equal(t, productionPathDomain, productionPathBindingRecord(t, d.service, fresh.Binding).Domain,
+		"an applied binding records the domain it applied under")
 }

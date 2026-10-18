@@ -211,13 +211,11 @@ record of intent this host holds today.
 
 **Absent facts are gaps, never values.** Every fact is a `oneof` of its value and
 a `CatalogueGap{reason, detail}`. Today no record on this host carries a
-declaration or an applied generation (they arrive with applied presence
-documents), an approval or a withdrawal (the deployment contract's signed
+declaration or an applied generation (they arrive with applied module
+manifests), an approval or a withdrawal (the deployment contract's signed
 approval, not built yet), an observation or a retirement (nothing observes the
 cluster or reports stop/fence evidence), an installation revision, or a build
-size (the presence document's `build_size` section, codefly-dev/core#708,
-computed by the CLI at build, codefly-dev/cli#901): the host counts no lines
-itself. So each reads `NOT_RECORDED` or `NOT_OBSERVED`.
+size (a module manifest carries none, and the host counts no lines itself). So each reads `NOT_RECORDED` or `NOT_OBSERVED`.
 
 **Authorization has three cases, not two**: an approval, `not_authorized` — a
 known absence the approval record states — and a gap, where the host cannot

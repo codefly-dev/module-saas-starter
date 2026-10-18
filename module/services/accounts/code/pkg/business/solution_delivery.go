@@ -210,6 +210,9 @@ func (s *Service) ReceiveSolutionDelivery(
 	if _, err := solutionhost.Admit(s.deliveryCoordinate, previous, manifest); err != nil {
 		return "", nil, classifySolutionDeliveryAdmission(err)
 	}
+	if err := record.checkOwnershipDomain(manifest); err != nil {
+		return "", nil, err
+	}
 	// The alias is held to the reserved namespaces and to every other binding
 	// as it stands once its newest delivered generation applies, so a
 	// withdrawal already delivered releases the alias it held.

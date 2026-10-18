@@ -248,6 +248,9 @@ func (s *Service) applySolutionHostBinding(
 			return err
 		}
 		decision, err := solutionhost.Admit(coordinate, applied, document)
+		if err == nil {
+			err = record.checkOwnershipDomain(document)
+		}
 		if err != nil {
 			// Returning the refusal is what leaves the running generation
 			// untouched.
@@ -333,6 +336,9 @@ func (s *Service) applySolutionHostBinding(
 			Routes:                        routes,
 			Domain:                        document.Host.Domain,
 			Release:                       document.Release.Identity(),
+		}
+		if record.Domain == "" {
+			record.Domain = document.Host.Domain
 		}
 		if document.Removed {
 			// A tombstone keeps the key it withdrew, so the removal stays

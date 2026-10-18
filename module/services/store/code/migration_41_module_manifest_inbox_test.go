@@ -58,6 +58,17 @@ func TestMigration41ModuleManifestInboxAndDown(t *testing.T) {
 	if _, err := db.Exec(`SELECT host_component FROM solution_host_bindings`); err == nil {
 		t.Fatal("host_component must be dropped")
 	}
+	// A binding keeps the domain it applied under when its live state is
+	// cleared, so no other domain can take its id before its owner redelivers.
+	var liveDomain, goneDomain string
+	mustQuery(t, db, `SELECT first_domain FROM solution_host_bindings WHERE binding_id='acme.test.live'`, &liveDomain)
+	mustQuery(t, db, `SELECT first_domain FROM solution_host_bindings WHERE binding_id='acme.test.gone'`, &goneDomain)
+	if liveDomain != "acme" || goneDomain != "acme" {
+		t.Fatalf("first_domain must keep each binding's applied domain, got %q and %q", liveDomain, goneDomain)
+	}
+	if _, err := db.Exec(`UPDATE solution_host_bindings SET first_domain = '' WHERE binding_id='acme.test.live'`); err == nil {
+		t.Fatal("first_domain must refuse an empty domain")
+	}
 
 	abs, err := filepath.Abs(ledger)
 	if err != nil {
@@ -82,5 +93,8 @@ func TestMigration41ModuleManifestInboxAndDown(t *testing.T) {
 	mustQuery(t, db, `SELECT host_component FROM solution_host_bindings WHERE binding_id='acme.test.gone'`, &component)
 	if component != "example-host" {
 		t.Fatalf("the down restores host_component from the coordinate, got %q", component)
+	}
+	if _, err := db.Exec(`SELECT first_domain FROM solution_host_bindings`); err == nil {
+		t.Fatal("the down must drop first_domain")
 	}
 }

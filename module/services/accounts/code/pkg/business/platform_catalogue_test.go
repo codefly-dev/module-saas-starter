@@ -241,7 +241,7 @@ func TestExecutionInventoryContractRequiresAContainer(t *testing.T) {
 // The read boundary withholds an affirmative verdict whose evidence is not
 // beside it. judgeCatalogueObserved is the only author of a verdict and applies
 // the same rule, so nothing should reach this check — but the states are filled
-// from records that do not exist yet (applied presence, the signed approval,
+// from records that do not exist yet (the signed approval,
 // cluster observation), and a filler that set a value case without re-judging
 // would otherwise publish a green cell. The boundary fails closed instead.
 func TestCatalogueReadBoundaryWithholdsUnsupportedAffirmativeVerdict(t *testing.T) {
@@ -422,7 +422,7 @@ func TestProjectPlatformCatalogue(t *testing.T) {
 		require.Equal(t, notRecorded, e.GetWithdrawing().GetCredentialRevocationStateGap().GetReason(), e.GetName())
 		require.Equal(t, notObserved, e.GetRetired().GetRetirementStateGap().GetReason(), e.GetName())
 		require.Equal(t, notRecorded, e.GetBuildSizeGap().GetReason(), e.GetName())
-		require.Contains(t, e.GetBuildSizeGap().GetDetail(), "codefly-dev/core#708")
+		require.Contains(t, e.GetBuildSizeGap().GetDetail(), "module manifest carries no build size")
 	}
 
 	module := byName["alpha"]

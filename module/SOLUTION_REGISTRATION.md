@@ -353,7 +353,7 @@ and answers, in this order:
 | 400 | `{"error":…}` | not a carrier, not a canonical valid manifest, or a replaced document schema |
 | 401 | `{"error":…}` | no key this host pins signed it, or the API server refused the token |
 | 403 | `{"error":…}` | not the module's `delivery` account, the signer or binding belongs to another ownership domain, or it claims a principal or publisher another domain's binding holds |
-| 409 | `{"error":…}` | a stale generation, a rewritten one (applied or only delivered), a withdrawn binding brought back, or a workload another binding holds (named) |
+| 409 | `{"error":…}` | a stale generation, a rewritten one (applied or only delivered), a withdrawn binding brought back, or a workload or principal another binding holds (named) |
 | 422 | `{"error":…}` | another host's manifest, a reserved or held route alias, or an endpoint address that is not its workload's in-cluster Service |
 | 503 | `{"error":…}` | the API server could not be asked, or this host's applied record is unusable: retry |
 
@@ -404,7 +404,9 @@ stand:
   domain D speaks for D's bindings only: a manifest may not ask for an
   `authority.principal`, or deploy a `release.publisher`, that a live binding of
   another ownership domain holds (403, naming the holder). The first domain to
-  hold one keeps it; a binding keeps its first domain (`Admit`).
+  hold one keeps it; a binding keeps its first domain (`Admit`). Within a domain
+  a principal is still one live binding: the registry would omit both, so a
+  second claim is refused (409) naming the holder.
 - **An endpoint is its workload's in-cluster Service.** Every
   `endpoints[].address` is `http(s)://<service>.<namespace>.svc.cluster.local:<port>`,
   where `<service>` is the endpoint's own service and `<namespace>` the module's
@@ -437,8 +439,11 @@ that reused the id. A replacement instance gets a new binding.
 
 `host.domain` is the slice of this host's binding space a manifest speaks for.
 The signer must be pinned for it (verification), and a binding keeps the domain
-its first applied generation declared (`Admit`), which the host also persists as
-`applied_domain`. `SOLUTION_HOST_OWNERSHIP_DOMAINS` bounds the domains any pin
+its first applied generation declared (`Admit`). The host persists that domain
+as `first_domain`, written once and kept when the live applied manifest is not —
+migration 41 cleared every live binding's applied state and kept it — so a
+manifest for the binding under another domain is refused (403) even while no
+applied manifest remains, at receipt and by the pass. `SOLUTION_HOST_OWNERSHIP_DOMAINS` bounds the domains any pin
 may grant: a pin naming another refuses the boot by name.
 
 ### Module authority: the manifest asks, the envelope grants

@@ -15,3 +15,4 @@ UPDATE public.solution_host_bindings SET host_component = host_coordinate;
 ALTER TABLE public.solution_host_bindings
     ALTER COLUMN host_component SET NOT NULL,
     ADD CONSTRAINT solution_host_bindings_host_component_check CHECK ((host_component <> ''::text));
+ALTER TABLE public.solution_host_bindings DROP COLUMN first_domain;

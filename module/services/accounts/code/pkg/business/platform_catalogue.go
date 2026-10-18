@@ -57,15 +57,15 @@ type PlatformCatalogue struct {
 }
 
 const (
-	catalogueNoDeclaration   = "This host holds no applied presence document for this entry, which is what records what the composition declares."
-	catalogueNoApplication   = "This host has applied no presence generation for this entry."
+	catalogueNoDeclaration   = "This host holds no applied module manifest for this entry, which is what records what the composition declares."
+	catalogueNoApplication   = "This host has applied no module manifest generation for this entry."
 	catalogueNoApproval      = "This host holds no approval record: signed platform approval of the execution inventory, bound to target and ownership scope, has not been built yet."
 	catalogueNotObserved     = "This host reads no observed cluster state, so what runs is unknown — never assumed to match."
 	catalogueNoVerdict       = "There is no approval record to judge the observed execution against."
 	catalogueNoWithdrawal    = "This host holds no withdrawal record; withdrawal is a change to the approval record, which does not exist yet."
 	catalogueNoRevocation    = "This host holds no credential-revocation record for this entry."
 	catalogueNoRetirement    = "No retirement controller reports to this host; without stop or fence evidence nothing is reported as retired."
-	catalogueNoBuildSize     = "Build size is the presence document's build_size section (codefly-dev/core#708), computed at build by the CLI; this host holds no presence document for this entry."
+	catalogueNoBuildSize     = "A module manifest carries no build size, and this host counts none itself."
 	catalogueModulePublisher = "A composed module is known by its principal prefix alone; the composition records no publisher."
 	catalogueUnregistered    = "No registration exists under this identifier; it is named only by its installations."
 	catalogueNoRevision      = "Installations carry no revision of their own on this host."

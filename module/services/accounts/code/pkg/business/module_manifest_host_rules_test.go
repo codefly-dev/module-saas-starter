@@ -40,7 +40,8 @@ func TestASecondManifestForAHeldWorkloadIsWithheld(t *testing.T) {
 // A FOREIGN DOMAIN CANNOT CLAIM A HELD PRINCIPAL OR PUBLISHER: a signer pinned
 // for one domain speaks for that domain's bindings, so a manifest of another
 // domain asking for a principal, or deploying a publisher, that one of them
-// holds is refused, naming the holder. The same domain is not foreign.
+// holds is refused, naming the holder. Within the domain a second claim on a
+// principal is a conflict.
 func TestAForeignDomainCannotClaimAHeldPrincipalOrPublisher(t *testing.T) {
 	held := fixtureManifest(t, "reports", 1)
 	held.Authority = &solutionhost.Authority{Principal: "reports"}
@@ -66,9 +67,13 @@ func TestAForeignDomainCannotClaimAHeldPrincipalOrPublisher(t *testing.T) {
 
 	require.NoError(t, testModuleNamespaceRule.checkManifestAgainstHost(foreign(), []*solutionhost.ModuleManifest{held}),
 		"a principal and a publisher of its own are the foreign domain's to claim")
+	// Within one domain a principal is still one live binding: the registry
+	// would omit both, so the second claim is a conflict naming the holder.
 	sameDomain := fixtureManifest(t, "ledger", 1)
 	sameDomain.Authority = &solutionhost.Authority{Principal: "reports"}
-	require.NoError(t, testModuleNamespaceRule.checkManifestAgainstHost(sameDomain, []*solutionhost.ModuleManifest{held}))
+	err = testModuleNamespaceRule.checkManifestAgainstHost(sameDomain, []*solutionhost.ModuleManifest{held})
+	require.ErrorIs(t, err, ErrSolutionDeliveryConflict)
+	require.ErrorContains(t, err, `principal "reports" is held by binding "acme.test.reports"`)
 	require.NoError(t, testModuleNamespaceRule.checkManifestAgainstHost(principal, []*solutionhost.ModuleManifest{withdrawalOf(t, held, 2)}),
 		"a withdrawn binding holds no principal")
 }

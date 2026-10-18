@@ -61,6 +61,9 @@ func admitSolutionHostBindings(
 		if err == nil {
 			decision, err = solutionhost.Admit(coordinate, previous, candidate)
 		}
+		if err == nil {
+			err = byBinding[candidate.Binding].checkOwnershipDomain(candidate)
+		}
 		if err != nil {
 			result.Withheld[candidate.Binding] = err.Error()
 			continue

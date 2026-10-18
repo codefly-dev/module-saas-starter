@@ -20,7 +20,9 @@ import (
 //  2. A signer speaks for its domain's bindings only: a manifest may not ask
 //     for an authority principal, or deploy a release publisher, that a live
 //     binding of another ownership domain holds. The first domain to hold one
-//     keeps it.
+//     keeps it. And one principal is one live binding even within a domain —
+//     the registry omits a principal two manifests ask for — so a second
+//     claim is a conflict naming the holder.
 //  3. An endpoint's address is the in-cluster Service of the workload it
 //     names, by the rule — "<scheme>://<service>.<namespace>.svc.cluster.local:<port>"
 //     — never a free host. A native run's endpoints are its own processes, on
@@ -52,12 +54,18 @@ func (rule ModuleNamespaceRule) checkManifestAgainstHost(candidate *solutionhost
 				}
 			}
 		}
-		if held.Host.Domain == candidate.Host.Domain {
-			continue
-		}
 		if candidate.Authority != nil && held.Authority != nil && held.Authority.Principal == candidate.Authority.Principal {
+			if held.Host.Domain == candidate.Host.Domain {
+				// The registry would omit both, so the second is refused here
+				// rather than taking the first's authority down with it.
+				return fmt.Errorf("%w: principal %q is held by binding %q, and one principal is one live binding",
+					ErrSolutionDeliveryConflict, candidate.Authority.Principal, held.Binding)
+			}
 			return fmt.Errorf("%w: principal %q is held by binding %q of domain %q, and this manifest speaks for domain %q",
 				ErrSolutionDeliveryDomainNotGranted, candidate.Authority.Principal, held.Binding, held.Host.Domain, candidate.Host.Domain)
+		}
+		if held.Host.Domain == candidate.Host.Domain {
+			continue
 		}
 		if held.Release.Publisher == candidate.Release.Publisher {
 			return fmt.Errorf("%w: release publisher %q is held by binding %q of domain %q, and this manifest speaks for domain %q",

@@ -427,7 +427,7 @@ brokers it to `ModuleCapabilitiesService/MintModuleOperationContext` and answers
 `expires_at`) with `cache-control: no-store` — snake_case, unlike the camelCase
 `/modules/_work-context`, because consumers were built against this shape. It relays two distinct refusals: `401` when the module is not proven
 (bad internal token, a missing or refused projected token, another workload, an
-unapproved build, an undeclared module) and `403` when a proven module names a
+undeclared module) and `403` when a proven module names a
 binding it may not mint with no person present. Every module exchange answers
 `503` when accounts could not establish what the pod is running (`Unavailable`):
 nothing was decided, and the module retries. What the
