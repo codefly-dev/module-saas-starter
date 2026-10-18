@@ -44,6 +44,7 @@ workspace-configuration-dependencies:
     - internal-transport
     - key-service
     - observability
+    - policy-log-witness
     - product-analytics
     - security
     - vault

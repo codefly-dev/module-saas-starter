@@ -19,7 +19,8 @@ No generated code was hand-written: the required no-change Codefly
 proto-generation check ran and came back byte-identical on two sibling services,
 and this service's own tree regenerates reproducibly. The host's client lives
 in accounts (`pkg/infra/policy_log_witness.go`), against a byte-identical copy
-of this service's proto; accounts does not yet declare the dependency. Nothing in this directory has
+of this service's proto; accounts reaches it through the `policy-log-witness`
+group the composition root binds per environment, never a declared dependency. Nothing in this directory has
 been deployed or booted, and the OpenAPI projection does not exist because the
 endpoint is private gRPC and reaches no gateway.
 

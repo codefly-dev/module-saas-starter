@@ -1122,11 +1122,15 @@ policy or the actor.
 `work.go` wires it only when composition has delivered BOTH the witness endpoint
 and the pinned key; a delivered key that cannot be used refuses the boot. With
 either absent the host is configured without a witness: it serves normally and
-refuses the four narrowings above, and says so at startup. accounts does not yet
-declare the dependency on `policy-log/grpc`, so today the client activates in no
-environment: declaring it pulls the witness into every local run, and the
-witness by its own contract refuses to boot on a workstation. That is an owner
-decision recorded on the issue, not a missing transport.
+refuses the four narrowings above, and says so at startup. accounts declares no
+service dependency on `policy-log/grpc`: the endpoint is read from the
+`policy-log-witness` workspace group, which this module ships EMPTY and the
+composition root binds (`endpoint=${endpoint:saas/policy-log/grpc}`) only in an
+environment that provisions the witness. The edge, and the mesh admission the
+render derives from it, therefore exist only there; a local run never starts a
+witness it could not boot, and its host stays fail-closed. The dial is
+plaintext only under `internal-transport/mesh-protected=true` to an in-cluster
+Service address, and is refused by name otherwise.
 
 Once composed, inability to reach the witness expires the serving gate's
 freshness window and refuses service; an appended operation without a local

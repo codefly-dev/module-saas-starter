@@ -25,6 +25,7 @@ import (
 	"accounts/pkg/jobs"
 	"accounts/pkg/keyservice"
 	"accounts/pkg/membership"
+	"accounts/pkg/meshtransport"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
 	"accounts/pkg/redisstate"
@@ -41,7 +42,6 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/resources"
-	"github.com/codefly-dev/core/standards"
 	"github.com/codefly-dev/core/wool"
 	wooltel "github.com/codefly-dev/core/wool/otel"
 	"github.com/codefly-dev/core/workloadidentity/native"
@@ -3056,18 +3056,35 @@ func configuredPolicyLogWitness(ctx context.Context) (*infra.WitnessPolicyLog, f
 	if err != nil {
 		return nil, nil, "", err
 	}
-	endpoint, resolveErr := codefly.For(ctx).Service("policy-log").Endpoint("grpc").API(standards.GRPC).ResolveNetworkInstance()
-	switch {
-	case resolveErr != nil && !pinned:
-		return nil, nil, "this service declares no dependency on the policy-log witness endpoint and no witness key is pinned in the trust anchor", nil
-	case resolveErr != nil:
-		return nil, nil, fmt.Sprintf("a witness key is pinned in the trust anchor but the policy-log witness endpoint does not resolve for this service: %v", resolveErr), nil
-	case !pinned:
-		return nil, nil, "the policy-log witness endpoint resolves but no witness key is pinned in the trust anchor, and a key read from the witness itself is never trusted", nil
+	// The composition root binds the witness, per environment, in the
+	// `policy-log-witness` group (`endpoint=${endpoint:saas/policy-log/grpc}`);
+	// the module ships it empty. A value that is there and cannot be read is a
+	// delivery fault and refuses the boot, never "no witness".
+	address, bound, readErr := codefly.For(ctx).WorkspaceValueIfSet(policyLogWitnessGroup, policyLogWitnessEndpointKey)
+	if readErr != nil {
+		return nil, nil, "", fmt.Errorf("%s/%s is delivered and cannot be read: %w", policyLogWitnessGroup, policyLogWitnessEndpointKey, readErr)
 	}
-	conn, err := grpc.NewClient(endpoint.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	address = strings.TrimSpace(address)
+	switch {
+	case (!bound || address == "") && !pinned:
+		return nil, nil, "the composition binds no policy-log witness for this environment and no witness key is pinned in the trust anchor", nil
+	case !bound || address == "":
+		return nil, nil, fmt.Sprintf("a witness key is pinned in the trust anchor but the composition binds no witness endpoint (%s/%s)", policyLogWitnessGroup, policyLogWitnessEndpointKey), nil
+	case !pinned:
+		return nil, nil, "the composition binds a policy-log witness but no witness key is pinned in the trust anchor, and a key read from the witness itself is never trusted", nil
+	}
+	// Plaintext only where the mesh carries the hop (handbook security posture,
+	// rule 1): the composition asserts internal-transport/mesh-protected=true
+	// and the witness is an in-cluster Service address. Otherwise refused by
+	// name — without the mesh the witness's "only my declared client" admission
+	// does not hold, and anyone on the path could append to it or replay a
+	// cursor. There is no loopback exception: no local run delivers a pin.
+	if err := policyLogWitnessTransport(codefly.For(ctx), address); err != nil {
+		return nil, nil, "", err
+	}
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("dial the policy-log witness at %s: %w", endpoint.Host, err)
+		return nil, nil, "", fmt.Errorf("dial the policy-log witness at %s: %w", address, err)
 	}
 	witness, err := infra.NewWitnessPolicyLog(policylogv1.NewWitnessServiceClient(conn), key)
 	if err != nil {
@@ -3075,4 +3092,28 @@ func configuredPolicyLogWitness(ctx context.Context) (*infra.WitnessPolicyLog, f
 		return nil, nil, "", err
 	}
 	return witness, conn.Close, "", nil
+}
+
+// policyLogWitnessGroup is the workspace configuration group the composition
+// root binds the witness's address in, per environment; the module ships it
+// empty. Read rather than declared as a service dependency, so the edge exists
+// only where an environment provisions the witness — a local run never starts
+// one it could not boot.
+const (
+	policyLogWitnessGroup       = "policy-log-witness"
+	policyLogWitnessEndpointKey = "endpoint"
+)
+
+// policyLogWitnessTransport admits the plaintext dial to the witness only under
+// the mesh assertion and to an in-cluster Service address, and refuses it by
+// name otherwise.
+func policyLogWitnessTransport(source meshtransport.Source, host string) error {
+	protected, err := meshtransport.Protected(source)
+	if err != nil {
+		return err
+	}
+	if !protected || !meshtransport.ClusterServiceHost(host) {
+		return fmt.Errorf("refusing cleartext gRPC to the policy-log witness at %q: %s", host, meshtransport.Remedy)
+	}
+	return nil
 }

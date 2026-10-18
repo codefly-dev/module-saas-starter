@@ -104,7 +104,13 @@ type policyLogWitnessKeyDocument struct {
 // is a host composition did not give a witness to; an error is a host that must
 // not start, because the key is there and says something this host cannot use.
 func ReadPolicyLogWitnessKey() (PolicyLogWitnessKey, bool, error) {
-	path := filepath.Join(SolutionHostTrustAnchorPath, policyLogWitnessKeyFileName)
+	// The anchor's one resolver: the fixed pod path, or a declared local anchor
+	// outside a pod — never a local anchor inside one.
+	directory, err := solutionHostTrustAnchorDir()
+	if err != nil {
+		return PolicyLogWitnessKey{}, false, err
+	}
+	path := filepath.Join(directory, policyLogWitnessKeyFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -168,9 +174,12 @@ const policyLogWitnessRetryPause = 100 * time.Millisecond
 // policyLogCursorSkew is how far a signed cursor's issued_at may sit from this
 // host's clock. A valid signature cannot tell a historical cursor from a
 // current one, so without a freshness bound a replayed old cursor would keep
-// `reached_at` fresh while the witness was gone. The bound is the staleness
-// window itself: a cursor older than that proves nothing the gate would accept.
-const policyLogCursorSkew = business.PolicyLogStaleAfter
+// `reached_at` fresh while the witness was gone. The cursor is asked for in the
+// same pass that judges it, so it is seconds old at most; the bound is the clock
+// skew two meshed pods can carry, not the staleness window — at the window, a
+// cursor just under it kept a host serving nearly two windows past the
+// witness's last signature.
+const policyLogCursorSkew = 10 * time.Second
 
 // WitnessPolicyLog is business.PolicyLog over the witness's gRPC API.
 type WitnessPolicyLog struct {
