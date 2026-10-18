@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"testing"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/auth/exchangeprobe"
+	"accounts/pkg/auth/oidc"
+	workosauth "accounts/pkg/auth/workos"
 	"accounts/pkg/business"
 
 	"github.com/stretchr/testify/require"
@@ -86,14 +89,19 @@ func (e fakeExchanger) Exchange(_ context.Context, code, redirectURI, codeVerifi
 	return business.ExchangedTokens{}, refused(400, "invalid_grant")
 }
 
-func (e fakeExchanger) WithClientSecret(secret string) business.CodeExchanger {
-	return fakeExchanger{provider: e.provider, secret: secret}
+func (e fakeExchanger) WithClientSecretFrom(derive func(string) (string, error)) (business.CodeExchanger, error) {
+	secret, err := derive(e.secret)
+	if err != nil {
+		return nil, err
+	}
+	return fakeExchanger{provider: e.provider, secret: secret}, nil
 }
 
 func TestRunCertifiesOnlyAgainstTheNegativeControl(t *testing.T) {
-	provider := &fakeProvider{accepted: "real-secret"}
+	const real = "sk_test_9fQ2xLmA7bR4tZ8wK1nV"
+	provider := &fakeProvider{accepted: real}
 	result := exchangeprobe.Run(context.Background(),
-		fakeExchanger{provider: provider, secret: "real-secret"}, "https://app.example/callback")
+		fakeExchanger{provider: provider, secret: real}, "https://app.example/callback")
 
 	require.Equal(t, exchangeprobe.Result{
 		Check: exchangeprobe.Check, Verdict: exchangeprobe.ClientAccepted, Status: 400,
@@ -101,25 +109,69 @@ func TestRunCertifiesOnlyAgainstTheNegativeControl(t *testing.T) {
 	}, result)
 	require.Equal(t, []string{exchangeprobe.SentinelCode, exchangeprobe.SentinelCode}, provider.codes)
 	require.Equal(t, []string{"https://app.example/callback", "https://app.example/callback"}, provider.redirects)
-	require.Equal(t, "real-secret", provider.secrets[0])
-	require.NotEqual(t, "real-secret", provider.secrets[1], "the control presents another secret")
-	require.NotContains(t, provider.secrets[1], "real-secret", "and one not derived from the real one")
+	require.Equal(t, real, provider.secrets[0])
+	control := provider.secrets[1]
+	require.NotEqual(t, real, control, "the control presents another secret")
+	require.True(t, strings.HasPrefix(control, "sk_test_"), "with the real one's prefix: %s", control)
+	require.Len(t, control, len(real), "and its length")
+	for i := len("sk_test_"); i < len(real); i++ {
+		require.Equal(t, class(real[i]), class(control[i]), "and its character classes")
+	}
+	differing := 0
+	for i := range real {
+		if real[i] != control[i] {
+			differing++
+		}
+	}
+	require.Greater(t, differing, len(real)/2, "but not its value")
+}
+
+func class(c byte) string {
+	switch {
+	case 'a' <= c && c <= 'z':
+		return "lower"
+	case 'A' <= c && c <= 'Z':
+		return "upper"
+	case '0' <= c && c <= '9':
+		return "digit"
+	}
+	return string(c)
+}
+
+func TestRunCannotCertifyWhenTheSecretLeavesNoRoomForAControl(t *testing.T) {
+	// Too few characters to randomise: no control, so nothing is certified.
+	provider := &fakeProvider{accepted: "sk_live_-_-_1"}
+	result := exchangeprobe.Run(context.Background(),
+		fakeExchanger{provider: provider, secret: "sk_live_-_-_1"}, "")
+	require.Equal(t, exchangeprobe.Unproven, result.Verdict)
+	require.Empty(t, result.Control)
+	require.Len(t, provider.secrets, 1)
+}
+
+func TestTheHostsExchangersCarryTheControl(t *testing.T) {
+	// A wrapper that dropped WithClientSecretFrom would leave every run unproven
+	// with no visible cause.
+	ex, err := oidc.NewExchanger(oidc.ExchangerConfig{TokenURL: "https://idp.example/token", ClientID: "id", ClientSecret: "s"})
+	require.NoError(t, err)
+	_, ok := oidc.AsBusinessExchanger(ex).(exchangeprobe.CredentialControl)
+	require.True(t, ok, "oidc")
+	var _ exchangeprobe.CredentialControl = (*workosauth.Exchanger)(nil)
 }
 
 func TestRunLeavesUnprovenAProviderThatJudgesTheCodeFirst(t *testing.T) {
 	// Answers invalid_grant whatever the secret: its answer says nothing about the client.
-	provider := &fakeProvider{accepted: "real-secret", ignoresSecret: true}
+	provider := &fakeProvider{accepted: "sk_test_0123456789abcdefghij", ignoresSecret: true}
 	result := exchangeprobe.Run(context.Background(),
-		fakeExchanger{provider: provider, secret: "wrong-secret"}, "")
+		fakeExchanger{provider: provider, secret: "sk_test_9876543210zyxwvutsrq"}, "")
 	require.Equal(t, exchangeprobe.Unproven, result.Verdict)
 	require.Equal(t, exchangeprobe.ClientAccepted, result.Control,
 		"a random secret read as accepted is exactly why nothing is certified")
 }
 
 func TestRunNeedsNoControlForARejectedClient(t *testing.T) {
-	provider := &fakeProvider{accepted: "real-secret"}
+	provider := &fakeProvider{accepted: "sk_test_0123456789abcdefghij"}
 	result := exchangeprobe.Run(context.Background(),
-		fakeExchanger{provider: provider, secret: "wrong-secret"}, "")
+		fakeExchanger{provider: provider, secret: "sk_test_9876543210zyxwvutsrq"}, "")
 	require.Equal(t, exchangeprobe.ClientRejected, result.Verdict)
 	require.Empty(t, result.Control)
 	require.Len(t, provider.secrets, 1)

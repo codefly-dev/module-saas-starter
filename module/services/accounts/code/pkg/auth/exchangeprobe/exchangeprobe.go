@@ -11,8 +11,8 @@
 // RFC 6749 orders client authentication before the grant, but does not bind a
 // provider to that order, and a provider that judges the code first answers
 // `invalid_grant` whatever the secret. So an accepted client is certified only
-// against a negative control: the same exchange presenting a random secret must
-// be refused as a client. A provider that answers both alike leaves the
+// against a negative control: the same exchange presenting a random secret of
+// the real one's shape must be refused as a client. A provider that answers both alike leaves the
 // credential unproven.
 //
 // Nothing else is reported: the verdicts, the HTTP status and the OAuth error
@@ -22,12 +22,12 @@ package exchangeprobe
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net"
 	"net/url"
+	"strings"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -82,9 +82,10 @@ type Result struct {
 }
 
 // CredentialControl is an exchanger that can present another client secret with
-// everything else unchanged — the negative control.
+// everything else unchanged — the negative control. derive receives the
+// configured secret only to copy its shape; it never leaves the process.
 type CredentialControl interface {
-	WithClientSecret(secret string) business.CodeExchanger
+	WithClientSecretFrom(derive func(configured string) (string, error)) (business.CodeExchanger, error)
 }
 
 // Run exchanges the sentinel code through exchanger and classifies the answer,
@@ -103,11 +104,11 @@ func Run(ctx context.Context, exchanger business.CodeExchanger, redirectURI stri
 	if !ok {
 		return result
 	}
-	secret, err := controlSecret()
+	controlExchanger, err := control.WithClientSecretFrom(controlSecretShapedLike)
 	if err != nil {
 		return result
 	}
-	_, err = control.WithClientSecret(secret).Exchange(ctx, SentinelCode, redirectURI, "")
+	_, err = controlExchanger.Exchange(ctx, SentinelCode, redirectURI, "")
 	result.Control = Classify(err).Verdict
 	if result.Control == ClientRejected {
 		result.Verdict = ClientAccepted
@@ -115,14 +116,48 @@ func Run(ctx context.Context, exchanger business.CodeExchanger, redirectURI stri
 	return result
 }
 
-// controlSecret is a random value no provider issued to this or any client.
-func controlSecret() (string, error) {
-	random := make([]byte, 24)
+// controlSecretShapedLike returns a random secret with configured's shape: its
+// prefix up to the last underscore (`sk_live_`) when that is no more than half
+// of it, then, character for character, a random one of the same class —
+// lower-case, upper-case or digit — with anything else kept. A provider that
+// checks a secret's format before its value therefore cannot refuse the control
+// on its shape alone. It never returns configured, and refuses a shape with too
+// few random characters to be a control at all.
+func controlSecretShapedLike(configured string) (string, error) {
+	keep := strings.LastIndexByte(configured, '_') + 1
+	if keep > len(configured)/2 {
+		keep = 0
+	}
+	random := make([]byte, len(configured))
 	if _, err := rand.Read(random); err != nil {
 		return "", err
 	}
-	return "token-exchange-probe-control-" + hex.EncodeToString(random), nil
+	control, varied := []byte(configured), 0
+	for i := keep; i < len(control); i++ {
+		var class string
+		switch c := control[i]; {
+		case 'a' <= c && c <= 'z':
+			class = "abcdefghijklmnopqrstuvwxyz"
+		case 'A' <= c && c <= 'Z':
+			class = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		case '0' <= c && c <= '9':
+			class = "0123456789"
+		default:
+			continue
+		}
+		control[i] = class[int(random[i])%len(class)]
+		varied++
+	}
+	if varied < minimumControlRandomCharacters || string(control) == configured {
+		return "", errors.New("exchangeprobe: the configured secret leaves no room for a control")
+	}
+	return string(control), nil
 }
+
+// minimumControlRandomCharacters keeps a shaped control from colliding with a
+// real secret by chance: 16 random characters is at least 53 bits even when
+// every one is a digit.
+const minimumControlRandomCharacters = 16
 
 // Classify reads ONE exchange's error as a verdict; Run alone certifies, because
 // ClientAccepted here means only "refused the grant, not the client" until the

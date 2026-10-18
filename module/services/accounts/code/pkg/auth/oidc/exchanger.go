@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/codefly-dev/core/wool"
 )
 
 // Exchanger converts an OAuth 2.0 authorization code into an access token
@@ -117,8 +119,14 @@ func (e *Exchanger) Exchange(ctx context.Context, code, redirectURI, codeVerifie
 		return nil, fmt.Errorf("oidc: read token response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		// Status and error code only: the body's description is the provider's
-		// free text, and this error reaches logs and the login response.
+		// The returned error carries the status and error code only: it travels up
+		// the login path, and the body's description is the provider's free text.
+		// Operators get the body here, as the WorkOS adapter logs it.
+		wool.Get(ctx).Warn(
+			"oidc token endpoint rejected the code exchange",
+			wool.Field("status", resp.StatusCode),
+			wool.Field("body", string(body)),
+		)
 		return nil, fmt.Errorf("oidc: %w", &auth.TokenEndpointError{
 			Status: resp.StatusCode,
 			Code:   auth.OAuthErrorCode(body),

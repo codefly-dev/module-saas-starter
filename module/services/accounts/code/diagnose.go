@@ -30,8 +30,9 @@ import (
 
 const diagnoseCommand = "diagnose"
 
-// diagnosticExchangeTimeout bounds the whole check: discovery, the exchange and
-// its negative control.
+// diagnosticExchangeTimeout bounds the exchange and its negative control. When
+// the stack discovers its endpoints first, that carries its own 15-second bound
+// (discoverOIDCValidator).
 const diagnosticExchangeTimeout = 30 * time.Second
 
 // runRequestedDiagnostic runs the diagnostic args name and reports its exit

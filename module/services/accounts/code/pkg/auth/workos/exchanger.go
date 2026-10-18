@@ -172,11 +172,15 @@ func (e *Exchanger) Exchange(
 
 var _ business.CodeExchanger = (*Exchanger)(nil)
 
-// WithClientSecret returns the same exchanger presenting secret in place of the
-// configured one — the token-exchange diagnostic's negative control, which must
-// differ from the real exchange in nothing else.
-func (e *Exchanger) WithClientSecret(secret string) business.CodeExchanger {
+// WithClientSecretFrom returns the same exchanger presenting derive(its own
+// secret) in place of it — the token-exchange diagnostic's negative control,
+// which must differ from the real exchange in nothing else.
+func (e *Exchanger) WithClientSecretFrom(derive func(configured string) (string, error)) (business.CodeExchanger, error) {
+	secret, err := derive(e.clientSecret)
+	if err != nil {
+		return nil, err
+	}
 	control := *e
 	control.clientSecret = secret
-	return &control
+	return &control, nil
 }

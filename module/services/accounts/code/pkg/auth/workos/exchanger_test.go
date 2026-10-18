@@ -252,7 +252,9 @@ func TestWithClientSecretChangesOnlyTheSecret(t *testing.T) {
 		Validator: &validator{claims: &auth.Claims{}},
 	})
 	require.NoError(t, err)
-	_, _ = exchanger.WithClientSecret("control").Exchange(context.Background(), "c", "", "")
+	control, err := exchanger.WithClientSecretFrom(func(configured string) (string, error) { return configured + "-control", nil })
+	require.NoError(t, err)
+	_, _ = control.Exchange(context.Background(), "c", "", "")
 	_, _ = exchanger.Exchange(context.Background(), "c", "", "")
-	require.Equal(t, []string{"client_123/control/c", "client_123/real/c"}, got, "the control leaves the original untouched")
+	require.Equal(t, []string{"client_123/real-control/c", "client_123/real/c"}, got, "the control leaves the original untouched")
 }

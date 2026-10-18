@@ -141,10 +141,11 @@ func TestExchanger_WithClientSecretChangesOnlyTheSecret(t *testing.T) {
 	ex, err := oidc.NewExchanger(oidc.ExchangerConfig{TokenURL: server.URL, ClientID: "id", ClientSecret: "real"})
 	require.NoError(t, err)
 	exchanger := oidc.AsBusinessExchanger(ex)
-	control := exchanger.(interface {
-		WithClientSecret(string) business.CodeExchanger
-	}).WithClientSecret("control")
+	control, err := exchanger.(interface {
+		WithClientSecretFrom(func(string) (string, error)) (business.CodeExchanger, error)
+	}).WithClientSecretFrom(func(configured string) (string, error) { return configured + "-control", nil })
+	require.NoError(t, err)
 	_, _ = control.Exchange(context.Background(), "c", "https://x", "")
 	_, _ = exchanger.Exchange(context.Background(), "c", "https://x", "")
-	require.Equal(t, []string{"id/control/c", "id/real/c"}, got, "the control leaves the original untouched")
+	require.Equal(t, []string{"id/real-control/c", "id/real/c"}, got, "the control leaves the original untouched")
 }

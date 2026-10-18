@@ -26,11 +26,15 @@ func (a *businessExchangerAdapter) Exchange(ctx context.Context, code, redirectU
 	}, nil
 }
 
-// WithClientSecret returns the same exchanger presenting secret in place of the
-// configured one — the token-exchange diagnostic's negative control, which must
-// differ from the real exchange in nothing else.
-func (a *businessExchangerAdapter) WithClientSecret(secret string) business.CodeExchanger {
+// WithClientSecretFrom returns the same exchanger presenting derive(its own
+// secret) in place of it — the token-exchange diagnostic's negative control,
+// which must differ from the real exchange in nothing else.
+func (a *businessExchangerAdapter) WithClientSecretFrom(derive func(configured string) (string, error)) (business.CodeExchanger, error) {
+	secret, err := derive(a.ex.clientSecret)
+	if err != nil {
+		return nil, err
+	}
 	control := *a.ex
 	control.clientSecret = secret
-	return &businessExchangerAdapter{ex: &control}
+	return &businessExchangerAdapter{ex: &control}, nil
 }

@@ -31,7 +31,8 @@ is read by the capability checks and does not create synthetic directory rows.
 `doWork`) certifies the identity provider's client authentication: it builds the
 provider stack with `buildProviderStack`, exchanges `exchangeprobe.SentinelCode`
 through its exchanger — and, when the provider refuses only the code, again with
-a random secret as a negative control (`WithClientSecret` on both exchangers) —
+a random secret of the real one's shape as a negative control
+(`WithClientSecretFrom` on both exchangers) —
 and prints one JSON line — verdicts, status, OAuth error code — with file
 descriptors 1 and 2 on the null device so nothing else reaches the caller.
 Callers detect the diagnostic by the sentinel string in the binary, so keep

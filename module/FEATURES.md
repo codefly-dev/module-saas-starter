@@ -164,8 +164,11 @@ authorization code through that stack's own exchanger, so it exercises the
 endpoint, request shape and credential a real login uses. RFC 6749 orders
 client authentication before the grant but does not bind a provider to it, so a
 provider that refused only the code is certified against a **negative control**:
-the same exchange presenting a random secret must be refused as a client. It
-prints one JSON line and exits without starting the service:
+the same exchange presenting a random secret of the real one's shape (its prefix,
+length and character classes) must be refused as a client. Each run is
+therefore one deliberately failed client authentication at the provider, which
+a provider that alerts on or rate-limits those will see. It prints one JSON
+line and exits without starting the service:
 
 ```json
 {"check":"token-exchange","verdict":"client-accepted","provider":"workos","status":400,"error":"invalid_grant","control":"client-rejected"}
