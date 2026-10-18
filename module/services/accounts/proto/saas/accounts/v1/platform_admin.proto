@@ -538,14 +538,12 @@ message ModuleEnvelope {
   // The revision, from 1. A delivered authority document names the revision
   // it was rendered against and is inside this one only.
   int64 revision = 1;
-  // The whole ceiling at this revision, as JSON: `revision`,
-  // `approved_builds`, and `principals` keyed by module prefix, each with the
-  // whole authority units this host admits (`bindings`: id, revision, scope,
-  // queue, namespace, binding_key, lookup_method), the workloads it may run as
-  // (`workload_identities`: spiffe_id, container), its `scope_ceilings` and its
-  // `grant` ceiling (tenant, cross_tenant, queues, namespaces,
-  // external_namespaces, resources, read_audiences, operation_audiences,
-  // artifact_policies).
+  // The whole ceiling at this revision, as JSON: `revision`, and `principals`
+  // keyed by module principal, each holding only its `grant` ceiling (tenant,
+  // cross_tenant, queues, namespaces, external_namespaces, resources,
+  // read_audiences, operation_audiences, artifact_policies). It names no
+  // workload and approves no build: which workloads a principal runs as is its
+  // applied module manifest's, and any other key is refused.
   string document = 2;
   // The platform administrator who wrote this revision.
   string written_by = 3;
@@ -558,6 +556,32 @@ message GetModuleEnvelopeResponse {
   // The current revision. Absent when no envelope has been written, which
   // grants no module anything.
   optional ModuleEnvelope envelope = 1;
+  // What the applied module manifests ask for: one entry per applied, live
+  // manifest that asks for authority, ordered by principal then binding.
+  repeated ModuleAuthorityRequest requested = 2;
+}
+
+// ModuleAuthorityRequest is the authority one applied module manifest asks
+// for. It is a request, never a grant: a principal holds only what the
+// envelope allows of it, and only while its manifest's carrier still verifies.
+message ModuleAuthorityRequest {
+  // The module principal the manifest asks under: the key its ceiling is
+  // filed under in the envelope's `principals`.
+  string principal = 1;
+  // The host binding whose applied manifest asks.
+  string binding = 2;
+  // The applied generation of that binding.
+  int64 generation = 3;
+  // The module's route alias.
+  string alias = 4;
+  // Whether the returned envelope declares a ceiling for the principal. A
+  // principal it declares none for is denied every Work Context. A declared
+  // ceiling can still leave out an operation binding the manifest asks for;
+  // the reconcile pass names each one in the host's log.
+  bool allowed = 5;
+  // What the manifest asks for, as JSON: its `authority` block (principal,
+  // bindings, queues, namespaces, resource_kinds).
+  string authority = 6;
 }
 
 message PutModuleEnvelopeRequest {
@@ -1002,7 +1026,8 @@ service PlatformAdminService {
   }
 
   // GetModuleEnvelope reads the current module envelope: the authority ceiling
-  // every module principal on this host is derived inside.
+  // every module principal on this host is derived inside, beside what the
+  // applied module manifests ask for of it.
   rpc GetModuleEnvelope(GetModuleEnvelopeRequest) returns (GetModuleEnvelopeResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED

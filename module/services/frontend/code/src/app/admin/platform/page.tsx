@@ -7,6 +7,7 @@ import {
 	Layers,
 	ListChecks,
 	Plug,
+	Scale,
 	ShieldCheck,
 	Workflow,
 } from "lucide-react";
@@ -22,6 +23,13 @@ const sections = [
 			"Every deployed module and solution: what it declares, what runs, where it is installed.",
 		href: "/admin/platform/catalogue",
 		icon: Layers,
+	},
+	{
+		title: "Module Authority",
+		description:
+			"The envelope every module's authority is derived inside, and the principals it does not allow.",
+		href: "/admin/platform/module-authority",
+		icon: Scale,
 	},
 	{
 		title: "Organizations",

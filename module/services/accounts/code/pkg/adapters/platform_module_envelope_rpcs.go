@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"connectrpc.com/connect"
@@ -30,9 +31,35 @@ func (s *PlatformAdminServer) GetModuleEnvelope(ctx context.Context, req *gen.Ge
 	if err != nil {
 		return nil, moduleEnvelopeError(err, "cannot read the module envelope")
 	}
+	requests, err := service.ModuleAuthorityRequests(ctx, actorID)
+	if err != nil {
+		return nil, moduleEnvelopeError(err, "cannot read what the applied module manifests ask for")
+	}
 	response := &gen.GetModuleEnvelopeResponse{}
+	var ceiling *business.ModuleEnvelope
 	if record != nil {
 		response.Envelope = moduleEnvelopeProto(record)
+		// A stored revision this binary no longer validates allows nothing:
+		// the reconcile pass refuses it the same way and names why.
+		ceiling, _ = business.ParseModuleEnvelope(record.Document)
+	}
+	for _, request := range requests {
+		authority, err := json.Marshal(request.Authority)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "cannot encode what an applied module manifest asks for")
+		}
+		allowed := false
+		if ceiling != nil {
+			_, allowed = ceiling.Principals[request.Principal]
+		}
+		response.Requested = append(response.Requested, &gen.ModuleAuthorityRequest{
+			Principal:  request.Principal,
+			Binding:    request.Binding,
+			Generation: int64(request.Generation), //nolint:gosec // a generation is a small positive counter
+			Alias:      request.Alias,
+			Allowed:    allowed,
+			Authority:  string(authority),
+		})
 	}
 	return response, nil
 }
