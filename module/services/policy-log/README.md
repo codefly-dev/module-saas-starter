@@ -40,6 +40,26 @@ retention half is this service's at write time: every entry is created under a
 days, at most ten years), so the bucket must have object retention enabled, and
 a bucket that cannot hold the lock refuses every append. The head carries no
 retention, because it is rewritten on every append.
+
+Uploading under a retention lock needs `storage.objects.setRetention`. Grant it
+**only** under an IAM condition on `resource.name.startsWith(".../objects/entries/")`,
+never bucket-wide and never through `roles/storage.objectAdmin`: with it on the
+head, a compromised workload could lock `head.json` far into the future and the
+log could never advance again. The head's write authority (create and delete,
+for the generation-matched replace) is conditioned on `head.json` alone, and
+nothing is granted delete under `entries/`. Enabling object retention on a
+bucket cannot be undone.
+
+A bucket without object retention, or an identity without `setRetention`,
+still boots — `witness.Open` only reads — and then refuses every append with a
+400 or 403 from the store. Those two symptoms name a provisioning defect, not
+a witness one.
+
+An entry written whose head commit was lost (a timeout after the entry landed)
+holds its sequence slot under the lock for the whole horizon, and it cannot be
+removed out of band. The log is unstuck by retrying that operation's identical
+entry — rebuildable from the orphaned object itself — which completes the head
+commit; every other operation is answered `ErrPending` until then.
 The head's write authority is scoped to `head.json`. Bucket lifecycle deletion,
 rewriting an existing sequence, or restoring the head from a database backup
 would defeat the trust boundary and are not recovery procedures. Provision

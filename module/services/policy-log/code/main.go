@@ -114,8 +114,10 @@ func resolveSettings(value func(group, key string) (string, bool, error)) (setti
 	// Locked. Required, a whole number of days, and bounded — a Locked
 	// retention can never be shortened, so a malformed value is refused rather
 	// than rounded.
+	// Bounded in DAYS before it is multiplied: a large count would overflow
+	// time.Duration into a short, accepted retention.
 	if days, err := strconv.Atoi(retentionDays); err != nil || days <= 0 ||
-		time.Duration(days)*24*time.Hour > gcs.MaxRetention || strconv.Itoa(days) != retentionDays {
+		days > int(gcs.MaxRetention/(24*time.Hour)) || strconv.Itoa(days) != retentionDays {
 		missing = append(missing, settingKeys.retentionDays)
 	} else {
 		resolved.retention = time.Duration(days) * 24 * time.Hour

@@ -379,7 +379,7 @@ func TestAnUnreadableMirrorIsRefusedNotReadAsAbsent(t *testing.T) {
 // never be shortened, so anything but a plain positive day count within the
 // adapter's bound is refused by name rather than rounded or clamped.
 func TestTheEntryRetentionIsAWholeBoundedNumberOfDays(t *testing.T) {
-	for _, value := range []string{"0", "-1", "7y", "2557.5", " 2557", "02557", "4000"} {
+	for _, value := range []string{"0", "-1", "7y", "2557.5", " 2557", "02557", "4000", "213504", "9223372036854775807"} {
 		_, err := resolveSettings(lookup(func(_, key string) (string, error) {
 			switch key {
 			case settingKeys.bucket:
