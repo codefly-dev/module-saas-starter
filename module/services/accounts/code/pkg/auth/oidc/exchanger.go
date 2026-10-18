@@ -1,6 +1,7 @@
 package oidc
 
 import (
+	"accounts/pkg/auth"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -116,7 +117,12 @@ func (e *Exchanger) Exchange(ctx context.Context, code, redirectURI, codeVerifie
 		return nil, fmt.Errorf("oidc: read token response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("oidc: token endpoint http %d: %s", resp.StatusCode, string(body))
+		// Status and error code only: the body's description is the provider's
+		// free text, and this error reaches logs and the login response.
+		return nil, fmt.Errorf("oidc: %w", &auth.TokenEndpointError{
+			Status: resp.StatusCode,
+			Code:   auth.OAuthErrorCode(body),
+		})
 	}
 
 	var tr TokenResponse

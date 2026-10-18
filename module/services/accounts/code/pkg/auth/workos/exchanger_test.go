@@ -213,3 +213,25 @@ func TestExchangeDoesNotLeakProviderErrorBody(t *testing.T) {
 	require.ErrorContains(t, err, "http 401")
 	require.NotContains(t, err.Error(), "do-not-leak")
 }
+
+func TestExchangeRefusalCarriesStatusAndCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"provider-detail-xyz"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	exchanger, err := workosauth.NewExchanger(workosauth.Config{
+		TokenURL:     server.URL,
+		ClientID:     "client_123",
+		ClientSecret: "secret_123",
+		Validator:    &validator{claims: &auth.Claims{}},
+	})
+	require.NoError(t, err)
+
+	_, err = exchanger.Exchange(context.Background(), "code", "https://app/callback", "")
+	var refused *auth.TokenEndpointError
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, auth.TokenEndpointError{Status: http.StatusBadRequest, Code: "invalid_grant"}, *refused)
+	require.NotContains(t, err.Error(), "provider-detail-xyz")
+}

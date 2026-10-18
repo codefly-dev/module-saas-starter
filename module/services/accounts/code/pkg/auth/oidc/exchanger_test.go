@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/auth/oidc"
 )
 
@@ -109,4 +110,19 @@ func TestExchanger_NewExchanger_Validation(t *testing.T) {
 		ClientID: "id",
 	})
 	require.Error(t, err, "secret required")
+}
+
+func TestExchanger_RefusalCarriesStatusAndCodeNeverTheBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"invalid_client","error_description":"client secret provider-detail-xyz is wrong"}`))
+	}))
+	defer server.Close()
+
+	ex, _ := oidc.NewExchanger(oidc.ExchangerConfig{TokenURL: server.URL, ClientID: "id", ClientSecret: "secret"})
+	_, err := ex.Exchange(context.Background(), "bad-code", "https://x", "")
+	var refused *auth.TokenEndpointError
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, auth.TokenEndpointError{Status: http.StatusUnauthorized, Code: "invalid_client"}, *refused)
+	require.NotContains(t, err.Error(), "provider-detail-xyz")
 }

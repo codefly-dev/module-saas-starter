@@ -147,6 +147,43 @@ Required Codefly `identity` configuration keys:
 Missing issuer, client id, or client secret fails startup with a precise error
 rather than at first login.
 
+### Certifying the client credential
+
+Startup proves the configuration is complete, not that the provider accepts
+it: a wrong client secret still boots, and `BeginOAuth` still answers, because
+neither touches the token endpoint. The accounts binary answers that question
+on demand, from inside its own container:
+
+```bash
+./app diagnose token-exchange    # in the accounts container, from its working directory
+```
+
+It builds the provider stack exactly as the service does — same configuration
+groups, same secret selection, same discovery — and exchanges a sentinel
+authorization code through that stack's own exchanger, so it exercises the
+endpoint, request shape and credential a real login uses. It prints one JSON
+line and exits without starting the service:
+
+```json
+{"check":"token-exchange","verdict":"client-accepted","provider":"workos","status":400,"error":"invalid_grant"}
+```
+
+| `verdict`         | Meaning |
+|-------------------|---------|
+| `client-accepted` | The provider authenticated the client and refused only the sentinel code (`invalid_grant`); a real code would exchange. |
+| `client-rejected` | The provider refused the client (`invalid_client`, or 401): every login fails at the exchange. Fix the client secret. |
+| `unclassified`    | The provider answered with nothing that proves either; `status` and `error` say what it did answer. |
+| `no-answer`       | No HTTP answer: DNS, connect or timeout. |
+| `not-configured`  | The configuration does not build a provider stack (the service would refuse to start); nothing was sent. |
+| `no-code-flow`    | The configured provider performs no code exchange (fixture, `header-jwt`). |
+
+The output is the whole disclosure: the verdict, the HTTP status and the OAuth
+`error` code, which is passed on only when it has a registered code's shape.
+Never the credential, never the provider's response body — while the check runs,
+the process's stdout and stderr point at the null device, so not even a log line
+the exchanger writes reaches the caller. It grants nothing a caller who can exec
+into the container does not already hold, and the image gains no HTTP client.
+
 ### Token lifecycle
 
 | Stage         | Mechanism                                                       |
