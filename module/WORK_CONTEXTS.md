@@ -485,9 +485,9 @@ operation context of that module. Contexts owned by a person or an installation
 take the row-backed check unchanged.
 
 `headless_scopes` is an optional list on each operation binding, in the same
-canonical shape as `invoke_scopes`, and it must be a subset of them — acting
-alone, a module can never do more with an audience than it could on a person's
-behalf:
+canonical shape as `invoke_scopes`. Beside `invoke_scopes` it must be a subset
+of them — acting alone, a module can never do more with an audience than it
+could on a person's behalf:
 
 ```json
 {"documents":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"model":{"audience":"modelservice","invoke_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["<profile name>"]}],"lookup_scopes":[{"resource_kind":"modelservice.profiles","actions":["read"],"resource_ids":["<profile name>"]}],"headless_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke","read"],"resource_ids":["<profile name>"]}]}}}}
@@ -496,6 +496,33 @@ behalf:
 Here the module may invoke and read that one profile both on a person's behalf
 and alone; a binding that should do less alone lists fewer actions or resources
 under `headless_scopes`.
+
+A binding may also be **headless-only**: `headless_scopes` and no
+`invoke_scopes` at all — background work no person ever asks for, such as
+recording evidence, exporting spans or embedding (#1156):
+
+```json
+{"documents":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"embed":{"audience":"modelservice","headless_scopes":[{"resource_kind":"modelservice.profiles","actions":["invoke"],"resource_ids":["<profile name>"]}]}}}}
+```
+
+It is the narrower grant, not a looser one: the binding holds no authority a
+person can exercise through it. It carries no `lookup_scopes` and no
+`source_delegation_scopes` — both act as a person and are bounded by an invoke
+grant it does not have, so declaring either beside no invoke is refused. Every
+person-delegated exchange (`ExchangeDelegatedOperationAudience` with a parent
+token, a delegation-bearing parent, or a delegation reference) refuses it by
+name with `PermissionDenied` ("… is headless-only …"), and a confined
+credential's ceiling never counts it as declared. Only this mint uses it. The
+envelope ceiling may grant an audience headless-only in the same shape. The
+reconciler derives a headless-only binding whenever the manifest's headless
+scopes survive the envelope and none of its invoke scopes do — it asks only
+`headless` operations, or asks invoke the envelope does not allow, or the
+envelope's audience is headless-only — and logs the omitted reason when nothing
+is left. Where invoke does survive, headless must still fit within it, so a
+manifest asking invoke `A` and headless `B` is omitted rather than granted
+headless alone. An organization installed before the
+binding was granted consented to no such binding: like any binding declared
+after an install, it reaches that organization when it installs again.
 
 The rules are fail-closed on purpose:
 
@@ -784,7 +811,8 @@ them.
 **What a composition must declare for either arm to mint at all.** The grant is
 the opt-in, exactly as for every other operation context: `source_delegation_scopes`
 for the reference arm, `headless_scopes` for the principal arm, each a subset of
-the binding's `invoke_scopes`. Beside them the binding names the `audience` the
+the binding's `invoke_scopes` (a headless-only binding, above, serves the
+principal arm alone). Beside them the binding names the `audience` the
 executing module admits under, which for this one case may be the module's own
 declared prefix:
 

@@ -89,7 +89,7 @@ const (
 // capability for its own audience would add nothing it does not hold. It is
 // refused by name, and BEFORE any binding is consulted: a binding may name its
 // own module when it is self-admitting (headless or delegation work, see
-// selfAdmittingBinding), and such a binding carries invoke scopes. Its purpose
+// selfAdmittingBinding), and such a binding may carry invoke scopes. Its purpose
 // is unattended work with nobody present, never a person's credential held by a
 // third party, so it must not admit a confined mint — and checking the
 // audience first is what keeps it from doing so.

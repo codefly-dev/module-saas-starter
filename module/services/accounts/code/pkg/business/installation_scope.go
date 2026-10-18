@@ -106,11 +106,15 @@ func intersectInstallationScope(g ModulePrincipalGrant, consent InstallationScop
 		if !ok || installed.Audience != binding.Audience {
 			continue
 		}
-		binding.InvokeScopes = intersectOperationScopes(binding.InvokeScopes, installed.InvokeScopes)
+		// A binding granted headless-only stays headless-only: it survives on
+		// its consented headless scopes. One granted invoke survives only on
+		// invoke, as before — consent never turns it into a headless-only one.
+		headlessOnly := binding.headlessOnly()
+		binding.InvokeScopes = nilIfEmpty(intersectOperationScopes(binding.InvokeScopes, installed.InvokeScopes))
 		binding.LookupScopes = nilIfEmpty(intersectOperationScopes(binding.LookupScopes, installed.LookupScopes))
 		binding.HeadlessScopes = nilIfEmpty(intersectOperationScopes(binding.HeadlessScopes, installed.HeadlessScopes))
 		binding.SourceDelegationScopes = nilIfEmpty(intersectOperationScopes(binding.SourceDelegationScopes, installed.SourceDelegationScopes))
-		if len(binding.InvokeScopes) > 0 {
+		if len(binding.InvokeScopes) > 0 || headlessOnly && binding.HeadlessScopes != nil {
 			out.OperationAudiences[id] = binding
 		}
 	}

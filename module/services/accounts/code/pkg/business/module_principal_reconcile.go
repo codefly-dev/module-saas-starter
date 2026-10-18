@@ -338,6 +338,12 @@ func (p *publishedModuleRegistry) oneWorkloadOnePrincipal() []error {
 // manifest asks for. Every list keeps only what both name; an operation binding
 // is granted only when the manifest asks for it on the envelope's audience, and
 // then only the scopes both name, per operation.
+//
+// A binding is granted through its invoke operation, its headless operation, or
+// both. One left with headless scopes and no invoke is HEADLESS-ONLY (#1156):
+// background work no person asks for, so it is granted no lookup and no source
+// delegation — both act as a person and are bounded by the invoke it lacks —
+// and every person-delegated exchange refuses it.
 func deriveModulePrincipalGrant(
 	prefix string, entry ModuleEnvelopePrincipal, manifest *solutionhost.ModuleManifest, workloads []ModuleWorkload,
 ) (ModulePrincipalGrant, []error, error) {
@@ -373,22 +379,27 @@ func deriveModulePrincipalGrant(
 			continue
 		}
 		invoke := scopeSet(asked.Operations[modulecontract.OperationInvoke])
-		if len(invoke) == 0 {
-			omit(asked.ID, errors.New("the manifest asks for no invoke scope, and a binding is granted through its invoke operation"))
+		headless := scopeSet(asked.Operations[modulecontract.OperationHeadless])
+		if len(invoke) == 0 && len(headless) == 0 {
+			omit(asked.ID, errors.New("the manifest asks for no invoke or headless scope, and a binding is granted through one of them"))
 			continue
 		}
 		derived := ModuleOperationAudience{
 			Audience:     allowed.Audience,
 			InvokeScopes: intersectUnitScopes(allowed.InvokeScopes, invoke),
 		}
-		if lookup := scopeSet(asked.Operations[modulecontract.OperationLookup]); len(lookup) > 0 {
-			derived.LookupScopes = intersectUnitScopes(allowed.LookupScopes, lookup)
-		}
-		if headless := scopeSet(asked.Operations[modulecontract.OperationHeadless]); len(headless) > 0 && allowed.HeadlessScopes != nil {
+		if len(headless) > 0 && allowed.HeadlessScopes != nil {
 			derived.HeadlessScopes = nilIfEmpty(intersectUnitScopes(allowed.HeadlessScopes, headless))
 		}
-		if allowed.SourceDelegationScopes != nil {
-			derived.SourceDelegationScopes = nilIfEmpty(intersectUnitScopes(allowed.SourceDelegationScopes, invoke))
+		// Lookup and source delegation act as a person, so they exist only
+		// beside a granted invoke: a headless-only binding carries neither.
+		if derived.InvokeScopes != nil {
+			if lookup := scopeSet(asked.Operations[modulecontract.OperationLookup]); len(lookup) > 0 {
+				derived.LookupScopes = intersectUnitScopes(allowed.LookupScopes, lookup)
+			}
+			if allowed.SourceDelegationScopes != nil {
+				derived.SourceDelegationScopes = nilIfEmpty(intersectUnitScopes(allowed.SourceDelegationScopes, invoke))
+			}
 		}
 		if err := validateOperationAudiences(prefix, map[string]ModuleOperationAudience{asked.ID: derived}); err != nil {
 			omit(asked.ID, fmt.Errorf("what the manifest asks for and what the envelope allows leave no valid audience: %w", err))
