@@ -151,7 +151,7 @@ func TestWorkContextsContractStatesTheGrantNamingDecision(t *testing.T) {
 		"the producing module owns what its ids mean",
 		"The host neither derives nor checks them",
 		"Name the resource by its **stable identity**, not by a digest of its current definition.",
-		"The module principal registry is derived, each reconcile pass, from the delivered authority documents inside the module envelope",
+		"The module principal registry is derived, each reconcile pass, from the applied module manifests and the module envelope",
 		"an entry change does not revoke them",
 		"Pinning a definition is the producer's own check",
 		"The host makes no such check",

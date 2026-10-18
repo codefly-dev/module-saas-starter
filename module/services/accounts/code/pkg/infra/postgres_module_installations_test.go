@@ -159,9 +159,9 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	// `example.api` here is how a composition declares it.
 	installerWorkload := executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "installer", Container: "app"}
 	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
-		p.InstallerPrincipalID: {Prefix: "example-installer", Tenant: p.OrgID, Workload: business.ModuleWorkload{
+		p.InstallerPrincipalID: {Prefix: "example-installer", Tenant: p.OrgID, Workloads: []business.ModuleWorkload{{
 			Namespace: installerWorkload.Namespace, ServiceAccount: installerWorkload.ServiceAccount, Container: installerWorkload.Container,
-		}},
+		}}},
 		business.ModulePrincipalID("example.api"): {Prefix: "example.api"},
 	})
 	installCapabilityFixture(t, svc, p.OrgID, p.OwnerPrincipalID)
@@ -183,12 +183,13 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	}))
 	svc.InstallDerivedModulePrincipals(registry, envelope, nil)
 	// The installer proves which module it is with its pod's projected token,
-	// bound to the build its authority approves (#1056).
+	// bound to a workload its manifest lists (#1056).
 	cluster := executiontest.New()
-	svc.SetExecutionBinding(cluster, cluster)
-	cluster.Approve("example-installer", executiontest.Digest("installer-v1"), 1)
-	installerToken := cluster.Run(installerWorkload, executiontest.Image("installer-v1"))
-	unapprovedToken := cluster.Run(installerWorkload, executiontest.Image("installer-unreviewed"))
+	svc.SetExecutionBinding(cluster)
+	installerToken := cluster.Run(installerWorkload)
+	undeclared := installerWorkload
+	undeclared.ServiceAccount = "intruder"
+	unapprovedToken := cluster.Run(undeclared)
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	previousAuthority := *adapters.WorkContextSingleton()

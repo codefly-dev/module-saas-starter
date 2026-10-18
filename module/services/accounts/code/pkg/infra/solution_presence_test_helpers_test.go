@@ -78,30 +78,6 @@ func declarePresence(t *testing.T, bindingID, alias string) string {
 	return targetID
 }
 
-// withdrawPresence applies a tombstone generation: it closes the target and
-// revokes every active installation of it, exactly as the reconcile pass does.
-// A test asserting that a withdrawal ends consent must go through this rather
-// than updating the row, or it proves only that an UPDATE works.
-func withdrawPresence(t *testing.T, bindingID, targetID, alias string, generation uint64) []business.RevokedInstallation {
-	t.Helper()
-	now := time.Now().UTC()
-	var revoked []business.RevokedInstallation
-	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		if err := testStore.CloseSolutionTarget(ctx, targetID, generation, now); err != nil {
-			return err
-		}
-		if err := testStore.SaveSolutionHostBinding(ctx,
-			appliedPresenceRecord(t, bindingID, alias, generation, now, true)); err != nil {
-			return err
-		}
-		var err error
-		revoked, err = testStore.RevokeInstallationsOfTarget(ctx, targetID,
-			"solution target was withdrawn", now)
-		return err
-	}))
-	return revoked
-}
-
 // appliedPresenceRecord is the binding row an applied generation leaves. The
 // ownership domain is non-empty deliberately: core refuses an applied record
 // without one, and an empty string passes a whole-or-absent constraint while
@@ -111,16 +87,12 @@ func appliedPresenceRecord(
 	t *testing.T, bindingID, alias string, generation uint64, now time.Time, removed bool,
 ) *business.SolutionHostBindingRecord {
 	t.Helper()
-	document := productionPathBinding(t, alias, "fixture", generation)
+	document := productionPathManifest(t, alias, generation)
 	document.Binding = bindingID
-	document.OwnershipDomain = "alpha"
-	document.Host = solutionhost.HostTarget{Coordinate: "acme/local/host", Component: "saas-starter"}
+	document.Host = solutionhost.HostTarget{Coordinate: "acme/local/host", Domain: "alpha"}
 	document.Release.Version = "1.0.0"
-	for i := range document.Artifacts {
-		document.Artifacts[i].Release = document.Release.Identity()
-	}
 	if removed {
-		document = productionPathTombstone(t, document, generation)
+		document = productionPathWithdrawal(t, document, generation)
 	}
 	raw, err := document.CanonicalBytes()
 	require.NoError(t, err)
@@ -145,7 +117,6 @@ func appliedPresenceRecord(
 	return &business.SolutionHostBindingRecord{
 		BindingID:      bindingID,
 		HostCoordinate: "acme/local/host",
-		HostComponent:  "saas-starter",
 		Desired:        &entry,
 		Applied:        applied,
 		UpdatedAt:      now,

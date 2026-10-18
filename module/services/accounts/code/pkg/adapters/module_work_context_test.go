@@ -12,7 +12,6 @@ import (
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -157,7 +156,7 @@ func TestMintModuleWorkContextRoundTripsToTheCallerIdentity(t *testing.T) {
 func TestMintModuleWorkContextIsUnavailableWithoutExecutionBinding(t *testing.T) {
 	store := installModuleWorkContextService(t, documentsPrincipals)
 	token := moduleToken(t, "documents")
-	service.SetExecutionBinding(nil, nil)
+	service.SetExecutionBinding(nil)
 	installModuleWorkContextAuthority(t)
 
 	resp, err := mintModuleWorkContext(t, "documents", token)
@@ -167,22 +166,19 @@ func TestMintModuleWorkContextIsUnavailableWithoutExecutionBinding(t *testing.T)
 	require.Zero(t, store.controlPlaneCalls, "nothing may be checked, signed or recorded")
 }
 
-// The capability seals identity, tenant, installation and execution — never the
-// grant. Sealing the grant as well would put the same authority in two places
+// The capability seals identity, tenant and installation — never the grant, and
+// no build: what a workload runs is deploy-time admission. Sealing the grant as well would put the same authority in two places
 // that disagree for a token lifetime, and an empty scope set denies at any
 // consumer that reads one. The module acts as itself: core carries no actor hop
 // for an owner acting directly.
 func TestStartModuleTaskSealsIdentityWithoutSealingAuthority(t *testing.T) {
 	installModuleWorkContextAuthority(t)
 	principalID := business.ModulePrincipalID("documents")
-	build := testBuildFor(principalID)
-	workContextSingleton.seals.(*sealAnswersFake).approve(principalID, build)
 
 	_, signed, err := WorkContextSingleton().StartModuleTask(context.Background(), business.ModuleWorkContextAuthority{
 		PrincipalID:    principalID,
 		Tenant:         moduleWorkContextTenant,
 		InstallationID: "installation-documents",
-		Execution:      business.ExecutionIdentity{Running: business.RunningDigest(build.ImageDigest), Incarnation: build.BuildIncarnation},
 	})
 
 	require.NoError(t, err)
@@ -193,28 +189,6 @@ func TestStartModuleTaskSealsIdentityWithoutSealingAuthority(t *testing.T) {
 	require.Empty(t, signed.GetAuthorityScopes())
 	require.Empty(t, signed.GetActorChain())
 	require.Equal(t, "installation-documents", signed.GetSeal().GetInstallationId())
-	require.Equal(t, build.ImageDigest, signed.GetSeal().GetImageDigest())
-	require.Equal(t, build.BuildIncarnation, signed.GetSeal().GetBuildIncarnation())
-}
-
-// A module that attests a build other than the one approved for it is minted
-// nothing: core compares the attested execution against the issuer's approved
-// build at the mint, so a superseded pod cannot obtain a capability sealed to the
-// current one.
-func TestStartModuleTaskRefusesASupersededBuild(t *testing.T) {
-	installModuleWorkContextAuthority(t)
-	principalID := business.ModulePrincipalID("documents")
-	workContextSingleton.seals.(*sealAnswersFake).approve(principalID, testBuildFor(principalID))
-	stale := testBuildFor("a superseded generation")
-
-	_, _, err := WorkContextSingleton().StartModuleTask(context.Background(), business.ModuleWorkContextAuthority{
-		PrincipalID:    principalID,
-		Tenant:         moduleWorkContextTenant,
-		InstallationID: "installation-documents",
-		Execution:      business.ExecutionIdentity{Running: business.RunningDigest(stale.ImageDigest), Incarnation: 1},
-	})
-
-	require.ErrorIs(t, err, workcontext.ErrRevoked)
 }
 
 // The audit spine must never carry an issuance that did not happen: the record is
@@ -312,33 +286,23 @@ func TestMintModuleWorkContextBindsTheTokenToItsOwnPrefix(t *testing.T) {
 // Every way a caller can fail to be the module it names, at the mint itself:
 // each mints nothing, records nothing, and answers a verdict — except an
 // unreachable API server, which is not one.
-func TestMintModuleWorkContextIsBoundToTheRunningBuild(t *testing.T) {
+func TestMintModuleWorkContextIsBoundToADeclaredWorkload(t *testing.T) {
 	declared := executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "module", Container: "app"}
 	tests := map[string]struct {
 		token func(cluster *executiontest.Cluster) string
 		want  codes.Code
 	}{
-		"a pod on an unapproved build": {func(c *executiontest.Cluster) string {
-			return c.Run(declared, executiontest.Image("documents-unreviewed"))
-		}, codes.PermissionDenied},
-		"a moved tag: asked for the approved image, running another": {func(c *executiontest.Cluster) string {
-			token := c.Run(declared, executiontest.Image("documents"))
-			c.Retag(token, executiontest.Image("documents-unreviewed"))
-			return token
-		}, codes.PermissionDenied},
 		"a token for another ServiceAccount": {func(c *executiontest.Cluster) string {
-			return c.Run(executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "intruder", Container: "app"},
-				executiontest.Image("documents"))
+			return c.Run(executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "intruder", Container: "app"})
 		}, codes.PermissionDenied},
 		"a token from another namespace": {func(c *executiontest.Cluster) string {
-			return c.Run(executiontest.Workload{Namespace: "other-tenant", ServiceAccount: "module", Container: "app"},
-				executiontest.Image("documents"))
+			return c.Run(executiontest.Workload{Namespace: "other-tenant", ServiceAccount: "module", Container: "app"})
 		}, codes.PermissionDenied},
 		"a token minted for another audience": {func(c *executiontest.Cluster) string {
-			return c.RunWithAudience(declared, executiontest.Image("documents"), "vault")
+			return c.RunWithAudience(declared, "vault")
 		}, codes.PermissionDenied},
 		"a replacement pod at the token's pod name": {func(c *executiontest.Cluster) string {
-			token := c.Run(declared, executiontest.Image("documents"))
+			token := c.Run(declared)
 			c.Replace(token)
 			return token
 		}, codes.PermissionDenied},
@@ -346,7 +310,7 @@ func TestMintModuleWorkContextIsBoundToTheRunningBuild(t *testing.T) {
 			return "documents-secret"
 		}, codes.PermissionDenied},
 		"the api server is unreachable": {func(c *executiontest.Cluster) string {
-			token := c.Run(declared, executiontest.Image("documents"))
+			token := c.Run(declared)
 			c.Unreachable = true
 			return token
 		}, codes.Unavailable},

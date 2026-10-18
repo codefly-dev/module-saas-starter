@@ -18,30 +18,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The delivery endpoint's PUBLISHED contract, exercised through the handler.
+// The delivery endpoint's PUBLISHED contract, exercised through the handler:
+// `POST /platform/_delivery/manifest`, one signed module manifest. These
+// requests go through the real ReceiveSolutionDelivery — core's verification,
+// admission and alias rules — with a fake inbox and carrier authorizer, so the
+// ordering and the code mapping are both under test.
 //
-// The response-code table in `solution_delivery_http.go` is what three
-// repositories agreed on, and a table in a comment is a claim until something
-// drives the handler and reads the codes back. These requests go through the
-// real `ReceiveSolutionDelivery` with fake collaborators, so the ordering and
-// the mapping are both under test rather than the mapping alone.
-//
-// THE ONE DISTINCTION THESE TESTS EXIST FOR is 401 versus 503: "the review ran
-// and refused" against "the review could not run". They are different facts with
-// opposite retry answers, and an earlier draft of the mapping got it wrong by
-// grouping on HTTP class. A test that only checked "it is an error" would have
-// passed against that draft.
+// The codes are what the delivery Job and a native run read: 200 for accepted
+// and replayed, 400 invalid, 401/403 carrier or signer, 409 stale, rewritten or
+// withdrawn, 422 refused, 503 retry.
+
+const (
+	deliveryTestKey        = "release-key"
+	deliveryTestDomain     = "acme"
+	deliveryTestCoordinate = "acme-test"
+)
 
 type fakeDeliveryStore struct {
 	inserted bool
 	err      error
 	calls    int
 	payloads [][]byte
+	newest   []*business.SolutionDeliveryRecord
 }
 
-func (f *fakeDeliveryStore) RecordDeliveredDocument(
-	_ context.Context, record *business.SolutionDeliveryRecord,
-) (bool, error) {
+func (f *fakeDeliveryStore) RecordDeliveredDocument(_ context.Context, record *business.SolutionDeliveryRecord) (bool, error) {
 	f.calls++
 	f.payloads = append(f.payloads, record.Payload)
 	if f.err != nil {
@@ -50,57 +51,68 @@ func (f *fakeDeliveryStore) RecordDeliveredDocument(
 	return f.inserted, nil
 }
 
-func (f *fakeDeliveryStore) ListNewestDeliveredDocuments(
-	context.Context, business.SolutionDeliveryKind,
-) ([]*business.SolutionDeliveryRecord, error) {
+func (f *fakeDeliveryStore) ListNewestDeliveredDocuments(context.Context) ([]*business.SolutionDeliveryRecord, error) {
+	return f.newest, nil
+}
+
+func (f *fakeDeliveryStore) ReadDeliveredDocument(context.Context, string, uint64) (*business.SolutionDeliveryRecord, error) {
 	return nil, nil
 }
 
-func (f *fakeDeliveryStore) ListDeliveredDocuments(
-	context.Context, business.SolutionDeliveryKind,
-) ([]*business.SolutionDeliveryRecord, error) {
-	return nil, nil
-}
-
+// fakeCarrierAuthorizer records the namespace the host asked the carrier to be
+// the delivery account of.
 type fakeCarrierAuthorizer struct {
-	err error
-	// seenNamespaces records what the document declared, because a presence
-	// carrier is authorised against the namespaces in the SIGNED document and
-	// not against host configuration.
-	seenNamespaces []string
-	calls          int
+	err       error
+	namespace string
+	calls     int
 }
 
-func (f *fakeCarrierAuthorizer) AuthorizeCarrier(
-	_ context.Context, _ string, _ business.SolutionDeliveryKind, declared []string,
-) error {
+func (f *fakeCarrierAuthorizer) AuthorizeCarrier(_ context.Context, _ string, namespace string) error {
 	f.calls++
-	f.seenNamespaces = declared
+	f.namespace = namespace
 	return f.err
+}
+
+// deliveryNoopStore satisfies business.Store with only the reads delivery
+// makes: the applied records and an inline control-plane transaction. Any other
+// method panics, because the embedded interface is nil.
+type deliveryNoopStore struct {
+	business.Store
+	records []*business.SolutionHostBindingRecord
+}
+
+func (deliveryNoopStore) WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s deliveryNoopStore) ListSolutionHostBindings(context.Context) ([]*business.SolutionHostBindingRecord, error) {
+	return s.records, nil
 }
 
 // deliveryHarness uses real signatures with a fake inbox and carrier authorizer.
 type deliveryHarness struct {
-	handler  http.Handler
-	verifier *solutionhost.Verifier
-	store    *fakeDeliveryStore
-	carrier  *fakeCarrierAuthorizer
+	handler http.Handler
+	store   *fakeDeliveryStore
+	carrier *fakeCarrierAuthorizer
 }
 
-func newDeliveryHarness(t *testing.T, signer string, domains map[string][]string) *deliveryHarness {
+func newDeliveryHarness(t *testing.T, pins map[string][]string, applied ...*solutionhost.ModuleManifest) *deliveryHarness {
 	t.Helper()
-	pinDomains := domains
-	if len(pinDomains) == 0 {
-		pinDomains = map[string][]string{signer: {"acme"}}
+	if pins == nil {
+		pins = map[string][]string{deliveryTestKey: {deliveryTestDomain}}
 	}
-	harness := &deliveryHarness{
-		verifier: deliverytest.Verifier(t, pinDomains),
-		store:    &fakeDeliveryStore{inserted: true},
-		carrier:  &fakeCarrierAuthorizer{},
+	harness := &deliveryHarness{store: &fakeDeliveryStore{inserted: true}, carrier: &fakeCarrierAuthorizer{}}
+	var records []*business.SolutionHostBindingRecord
+	for _, manifest := range applied {
+		records = append(records, appliedRecord(t, manifest))
 	}
-	service, err := business.NewService(deliveryNoopStore{})
+	service, err := business.NewService(deliveryNoopStore{records: records})
 	require.NoError(t, err)
-	service.SetSolutionDelivery(harness.verifier, harness.store, harness.carrier, domains)
+	service.SetSolutionDelivery(deliverytest.Verifier(t, pins), harness.store, harness.carrier)
+	service.SetSolutionDeliveryCoordinate(deliveryTestCoordinate)
+	rule, err := business.NewModuleNamespaceRule("platform-acme-staging-saas", "saas")
+	require.NoError(t, err)
+	service.SetModuleNamespaceRule(rule)
 	harness.handler = NewSolutionDeliveryHTTPHandler(service)
 	return harness
 }
@@ -113,294 +125,261 @@ func (h *deliveryHarness) post(path string, body []byte) *httptest.ResponseRecor
 	return recorder
 }
 
-// ---------------------------------------------------------------------------
-// The surface itself
-// ---------------------------------------------------------------------------
-
-// An unknown path under the reserved namespace is 404, never a fall-through to
-// some other handler.
-func TestDeliveryUnknownKindIs404(t *testing.T) {
-	harness := newDeliveryHarness(t, "signer", nil)
-	for _, path := range []string{
-		SolutionDeliveryPrefix + "nonsense",
-		SolutionDeliveryPrefix,
-		SolutionDeliveryPrefix + "presence/extra",
-	} {
-		recorder := harness.post(path, []byte("{}"))
-		require.Equal(t, http.StatusNotFound, recorder.Code, "path %s", path)
-	}
-	require.Zero(t, harness.store.payloads, "an unknown kind must not reach the inbox")
+func (h *deliveryHarness) deliver(t *testing.T, manifest *solutionhost.ModuleManifest) *httptest.ResponseRecorder {
+	t.Helper()
+	return h.post(SolutionDeliveryManifestPath, signedManifest(t, manifest, deliveryTestKey))
 }
 
-// A GET gets 405 WITH Allow, so a probe learns the method rather than reading a
-// 404 as "this host has no delivery endpoint at all".
-func TestDeliveryGetIs405WithAllow(t *testing.T) {
-	harness := newDeliveryHarness(t, "signer", nil)
-	request := httptest.NewRequest(http.MethodGet, SolutionDeliveryPrefix+"presence", nil)
+// testModuleManifest is a valid live manifest for module "reports" on the
+// test host.
+func testModuleManifest(t *testing.T, generation uint64) *solutionhost.ModuleManifest {
+	t.Helper()
+	manifest := &solutionhost.ModuleManifest{
+		Schema: solutionhost.SchemaModuleManifestV1, Binding: "acme.test.reports", Alias: "reports",
+		Kind: solutionhost.KindModule, Generation: generation,
+		Host:      solutionhost.HostTarget{Coordinate: deliveryTestCoordinate, Domain: deliveryTestDomain},
+		Release:   solutionhost.Release{Publisher: "acme", Name: "reports", Version: "1.0.0"},
+		Workloads: []solutionhost.Workload{{Service: "reports", Container: "reports"}},
+		Endpoints: []solutionhost.Endpoint{{Name: "rest", Service: "reports", API: "rest", Address: "http://reports:8080"}},
+	}
+	require.NoError(t, manifest.Validate())
+	return manifest
+}
+
+func withdrawal(t *testing.T, manifest *solutionhost.ModuleManifest, generation uint64) *solutionhost.ModuleManifest {
+	t.Helper()
+	removed := *manifest
+	removed.Generation, removed.Removed = generation, true
+	removed.Workloads, removed.Endpoints, removed.Authority, removed.Frontend = nil, nil, nil, nil
+	require.NoError(t, removed.Validate())
+	return &removed
+}
+
+// signedManifest is the carrier delivery ships: the canonical payload and a
+// DSSE envelope by keyID.
+func signedManifest(t *testing.T, manifest *solutionhost.ModuleManifest, keyID string) []byte {
+	t.Helper()
+	payload, err := solutionhost.SignedPayload(manifest)
+	require.NoError(t, err)
+	return deliverytest.Carrier(t, payload, keyID)
+}
+
+// appliedRecord is the host's record of having applied manifest.
+func appliedRecord(t *testing.T, manifest *solutionhost.ModuleManifest) *business.SolutionHostBindingRecord {
+	t.Helper()
+	digest, err := manifest.Digest()
+	require.NoError(t, err)
+	encoded, err := solutionhost.Marshal(manifest)
+	require.NoError(t, err)
+	return &business.SolutionHostBindingRecord{
+		BindingID: manifest.Binding, HostCoordinate: manifest.Host.Coordinate,
+		Applied: &business.SolutionHostBindingApplied{
+			SolutionHostBindingGeneration: business.SolutionHostBindingGeneration{Generation: manifest.Generation, Digest: digest, Document: string(encoded)},
+			Removed:                       manifest.Removed, SolutionID: manifest.Alias,
+			Release: manifest.Release.Identity(), Domain: manifest.Host.Domain,
+		},
+	}
+}
+
+type deliveryReceipt struct {
+	Disposition string `json:"disposition"`
+	Binding     string `json:"binding"`
+	Generation  uint64 `json:"generation"`
+	Digest      string `json:"digest"`
+	Signer      string `json:"signer"`
+	Error       string `json:"error"`
+}
+
+func receiptOf(t *testing.T, recorder *httptest.ResponseRecorder) deliveryReceipt {
+	t.Helper()
+	var receipt deliveryReceipt
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &receipt), recorder.Body.String())
+	return receipt
+}
+
+// The surface: one write path, POST, bounded.
+func TestDeliveryHasOneManifestPath(t *testing.T) {
+	harness := newDeliveryHarness(t, nil)
+	for _, path := range []string{
+		SolutionDeliveryPrefix + "presence", SolutionDeliveryPrefix + "authority", SolutionDeliveryPrefix + "endpoints",
+		SolutionDeliveryPrefix, SolutionDeliveryManifestPath + "/extra",
+	} {
+		require.Equal(t, http.StatusNotFound, harness.post(path, []byte("{}")).Code, "path %s", path)
+	}
+	request := httptest.NewRequest(http.MethodGet, SolutionDeliveryManifestPath, nil)
 	recorder := httptest.NewRecorder()
 	harness.handler.ServeHTTP(recorder, request)
-
 	require.Equal(t, http.StatusMethodNotAllowed, recorder.Code)
-	require.Equal(t, http.MethodPost, recorder.Header().Get("Allow"),
-		"without Allow, a caller cannot tell a wrong method from a missing endpoint")
+	require.Equal(t, http.MethodPost, recorder.Header().Get("Allow"))
+	require.Equal(t, http.StatusBadRequest, harness.post(SolutionDeliveryManifestPath, []byte(strings.Repeat("a", (1<<20)+1))).Code)
+	require.Zero(t, harness.store.calls)
 }
 
-// A body past the bound is 400 and never buffered whole.
-func TestDeliveryOversizedBodyIs400(t *testing.T) {
-	harness := newDeliveryHarness(t, "signer", nil)
-	recorder := harness.post(SolutionDeliveryPrefix+"presence",
-		[]byte(strings.Repeat("a", (1<<20)+1)))
+// A new generation is 200 "accepted" and an exact replay 200 "replayed": the
+// delivery Job and a native run read any other code as the host's verdict.
+func TestANewGenerationIsAcceptedAndAReplayIsReplayed(t *testing.T) {
+	manifest := testModuleManifest(t, 3)
+	digest, err := manifest.Digest()
+	require.NoError(t, err)
 
-	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	require.Zero(t, harness.store.payloads, "an oversized body must not reach the inbox")
-}
+	fresh := newDeliveryHarness(t, nil)
+	recorder := fresh.deliver(t, manifest)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	receipt := receiptOf(t, recorder)
+	require.Equal(t, deliveryReceipt{
+		Disposition: "accepted", Binding: manifest.Binding, Generation: 3, Digest: digest, Signer: deliveryTestKey,
+	}, receipt)
+	require.Equal(t, "platform-acme-staging-reports", fresh.carrier.namespace,
+		"the carrier is the delivery account of the module's namespace, by the cell's rule")
 
-// ---------------------------------------------------------------------------
-// The code table, refusal by refusal
-// ---------------------------------------------------------------------------
-
-// Malformed bytes are 400: terminal, because the bytes are wrong.
-func TestDeliveryMalformedCarrierIs400(t *testing.T) {
-	harness := newDeliveryHarness(t, "signer", nil)
-	recorder := harness.post(SolutionDeliveryPrefix+"presence", []byte("not a carrier"))
-
-	require.Equal(t, http.StatusBadRequest, recorder.Code)
-	require.Zero(t, harness.carrier.calls,
-		"a carrier that does not parse is refused before the caller is authorised")
-}
-
-// THE SPLIT THAT MATTERS. A carrier the host refused is 401 — terminal, because
-// the token is kubelet-projected and re-read per request, so a refusal is a
-// configuration fault and a retry asks the same question. A carrier the host
-// could not CHECK is 503 — retryable, because nothing was decided.
-//
-// Both in one test, because either alone is satisfied by collapsing them, which
-// is exactly the mistake the mapping's comment records.
-func TestCarrierRefusedIs401WhileUnreachableIs503(t *testing.T) {
-	carrier := signedPresenceCarrier(t, "acme", "acme-prod")
-
-	refused := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
-	refused.carrier.err = fmt.Errorf("%w: wrong service account", infra.ErrCarrierUnauthenticated)
-	recorder := refused.post(SolutionDeliveryPrefix+"presence", carrier)
-	require.Equal(t, http.StatusUnauthorized, recorder.Code,
-		"the review RAN and refused: a retry asks the same question")
-
-	unreachable := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
-	unreachable.carrier.err = fmt.Errorf("%w: dial tcp: connection refused", infra.ErrKubernetesUnavailable)
-	recorder = unreachable.post(SolutionDeliveryPrefix+"presence", carrier)
-	require.Equal(t, http.StatusServiceUnavailable, recorder.Code,
-		"the review COULD NOT RUN: nothing was decided, so the caller must retry")
-}
-
-// A caller in the wrong namespace or with the wrong service account is 403:
-// authenticated, and not the writer.
-func TestCarrierNotAuthorizedIs403(t *testing.T) {
-	harness := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
-	harness.carrier.err = fmt.Errorf("%w: namespace not declared", infra.ErrCarrierNotAuthorized)
-
-	recorder := harness.post(SolutionDeliveryPrefix+"presence",
-		signedPresenceCarrier(t, "acme", "acme-prod"))
-	require.Equal(t, http.StatusForbidden, recorder.Code)
-}
-
-// An unattested carrier is 403, and the signature is checked BEFORE the caller.
-//
-// That order is the contract: otherwise a captured carrier replayed by an
-// authorised caller would be refused with a message about credentials, and an
-// unauthenticated caller's bad signature with a message about signatures. The
-// operator reads the wrong cause in both directions.
-func TestUnattestedCarrierIs403AndIsRefusedBeforeTheCaller(t *testing.T) {
-	harness := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
-	*harness.verifier = solutionhost.Verifier{}
-
-	recorder := harness.post(SolutionDeliveryPrefix+"presence",
-		signedPresenceCarrier(t, "acme", "acme-prod"))
-	require.Equal(t, http.StatusForbidden, recorder.Code)
-	require.Zero(t, harness.carrier.calls,
-		"verification precedes carrier authorisation, so the operator reads the real cause")
-}
-
-// An accepted signer delivering under a domain it may not speak for is 403 —
-// distinct from being unattested, because the signature is perfectly good.
-func TestSignerOutsideItsDomainIs403(t *testing.T) {
-	harness := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"other-domain"}})
-
-	recorder := harness.post(SolutionDeliveryPrefix+"presence",
-		signedPresenceCarrier(t, "acme", "acme-prod"))
-	require.Equal(t, http.StatusForbidden, recorder.Code)
-	require.Zero(t, harness.store.calls, "nothing is persisted for a domain the signer cannot claim")
-}
-
-// A rewritten generation is 409: publish never rewrites one, so this is a
-// hand-edited delivery tree and no retry helps.
-func TestRewrittenGenerationIs409(t *testing.T) {
-	harness := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
-	harness.store.err = fmt.Errorf("%w: generation 3", business.ErrSolutionDeliveryRewritten)
-
-	recorder := harness.post(SolutionDeliveryPrefix+"presence",
-		signedPresenceCarrier(t, "acme", "acme-prod"))
-	require.Equal(t, http.StatusConflict, recorder.Code)
-}
-
-// An UNCLASSIFIED failure is 503, not 500, and this is a deliberate choice
-// rather than a default.
-//
-// An unmapped failure means the host does not know whether it verified the
-// carrier, and the honest answer to "did you accept this?" is "ask again". A 500
-// is what a Job's retry policy treats as terminal, so it would strand a delivery
-// the host might well accept on the next attempt.
-func TestUnclassifiedFailureIs503NotServerError(t *testing.T) {
-	harness := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
-	harness.store.err = errors.New("something nobody mapped")
-
-	recorder := harness.post(SolutionDeliveryPrefix+"presence",
-		signedPresenceCarrier(t, "acme", "acme-prod"))
-	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	require.NotEqual(t, http.StatusInternalServerError, recorder.Code,
-		"a 500 is terminal to a Job's retry policy, and the host does not know this is terminal")
-}
-
-// ---------------------------------------------------------------------------
-// Success, and the 202/200 split a pipeline's idempotency depends on
-// ---------------------------------------------------------------------------
-
-// A new generation is 202 with a receipt; an exact replay is 200. Both are
-// success, and the difference is whether anything CHANGED — which is what lets a
-// publishing pipeline tell "I delivered this" from "this was already here".
-func TestNewGenerationIs202AndAnExactReplayIs200(t *testing.T) {
-	carrier := signedPresenceCarrier(t, "acme", "acme-prod")
-
-	fresh := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
-	fresh.store.inserted = true
-	recorder := fresh.post(SolutionDeliveryPrefix+"presence", carrier)
-	require.Equal(t, http.StatusAccepted, recorder.Code)
-
-	// The tags are the WIRE CONTRACT, spelled here independently of the
-	// handler's own struct so this test pins the field names a consuming
-	// pipeline parses. Declared camelCase because that is what the endpoint
-	// emits — my first draft of this test guessed snake_case and failed, which
-	// is the test doing its job: a cross-repo contract that nothing spells out
-	// twice is a contract one side can rename silently.
-	var receipt struct {
-		Disposition string `json:"disposition"`
-		DocumentID  string `json:"documentId"`
-		Generation  uint64 `json:"generation"`
-		ContentHash string `json:"contentHash"`
-		Signer      string `json:"signer"`
-	}
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &receipt))
-	require.Equal(t, string(business.SolutionDeliveryAccepted), receipt.Disposition)
-	require.Equal(t, "signer", receipt.Signer, "the receipt names the ATTESTED signer, not the caller")
-	require.Regexp(t, `^sha256:[0-9a-f]{64}$`, receipt.ContentHash,
-		"the receipt carries the content hash a pipeline compares to decide whether to re-deliver")
-	require.Equal(t, uint64(3), receipt.Generation)
-	require.Equal(t, "acme.test.delivery-http", receipt.DocumentID)
-
-	replay := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
+	replay := newDeliveryHarness(t, nil, manifest)
 	replay.store.inserted = false
-	recorder = replay.post(SolutionDeliveryPrefix+"presence", carrier)
-	require.Equal(t, http.StatusOK, recorder.Code)
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &receipt))
-	require.Equal(t, string(business.SolutionDeliveryReplayed), receipt.Disposition)
+	recorder = replay.deliver(t, manifest)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, "replayed", receiptOf(t, recorder).Disposition)
 }
 
-// The bundle is verified over the carrier's PAYLOAD bytes, and the caller's
-// declared namespaces come from the signed document.
-//
-// Both are properties the handler cannot be trusted on by inspection: a verifier
-// handed the whole request body, or an authoriser handed namespaces from host
-// configuration, would behave identically on the happy path.
-func TestVerificationCoversThePayloadAndNamespacesComeFromTheDocument(t *testing.T) {
-	harness := newDeliveryHarness(t, "signer", map[string][]string{"signer": {"acme"}})
-	raw := signedPresenceCarrier(t, "acme", "acme-prod")
-	recorder := harness.post(SolutionDeliveryPrefix+"presence", raw)
-	require.Equal(t, http.StatusAccepted, recorder.Code)
+// A withdrawal is delivered from where its binding was delivered from: the
+// previously applied manifest's module, whatever alias the withdrawal names.
+func TestAWithdrawalIsCarriedFromTheAppliedModulesNamespace(t *testing.T) {
+	applied := testModuleManifest(t, 3)
+	harness := newDeliveryHarness(t, nil, applied)
+	removal := withdrawal(t, applied, 4)
+	removal.Alias = "renamed"
+	recorder := harness.deliver(t, removal)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, "platform-acme-staging-reports", harness.carrier.namespace)
+}
 
-	require.Len(t, harness.store.payloads, 1)
-	signed, err := solutionhost.ParseSigned(raw)
+// Each refusal, by its code, with the reason in the body, and nothing stored.
+func TestEveryRefusalHasItsCodeAndReason(t *testing.T) {
+	applied := testModuleManifest(t, 3)
+	rewritten := testModuleManifest(t, 3)
+	rewritten.Release.Version = "9.9.9"
+	elsewhere := testModuleManifest(t, 4)
+	elsewhere.Host.Coordinate = "another-host"
+	reserved := testModuleManifest(t, 1)
+	reserved.Binding, reserved.Alias = "acme.test.codefly", "codefly"
+	tombstone := withdrawal(t, applied, 4)
+	invalid, err := solutionhost.SignedPayload(testModuleManifest(t, 1))
 	require.NoError(t, err)
-	require.Equal(t, []byte(signed.Document), harness.store.payloads[0])
-	require.Equal(t, []string{"acme-prod"}, harness.carrier.seenNamespaces,
-		"the presence namespace is a property of the SIGNED document, not of host configuration")
-}
+	invalidPayload := strings.Replace(string(invalid), `"generation":1`, `"generation":0`, 1)
 
-// signedPresenceCarrier builds a carrier core's ParseSigned accepts, with a
-// real envelope the pinned verifier checks.
-//
-// Built through core's own types and `MarshalSigned` over `CanonicalBytes`, not
-// a hand-written JSON literal: the signing input IS the canonical encoding, and
-// a literal would drift the moment core's schema moved while still passing.
-// `Validate` is asserted here so a malformed fixture fails as a fixture rather
-// than as a 422 that looks like the handler refusing correctly.
-func signedPresenceCarrier(t *testing.T, domain, namespace string) []byte {
-	t.Helper()
-	document := &solutionhost.SolutionHostBinding{
-		Schema:           solutionhost.SchemaPresenceV1,
-		Kind:             solutionhost.KindSolution,
-		Binding:          "acme.test.delivery-http",
-		Generation:       3,
-		OwnershipDomain:  domain,
-		EnvelopeRevision: 1,
-		Host: solutionhost.HostTarget{
-			Coordinate: "acme/test/eu-west-1", Component: "saas-host",
-		},
-		Release: solutionhost.Release{
-			Publisher: "acme", Name: "delivery-http", Version: "1.4.0",
-			Digest: solutionhost.ReleaseDigest("sha256:" + strings.Repeat("ef", 32)),
-		},
-		Routes: []solutionhost.Route{{Alias: "delivery-http", Surface: solutionhost.SurfaceBackend}},
-		Artifacts: []solutionhost.Artifact{{
-			Surface: solutionhost.SurfaceBackend,
-			Name:    "api",
-			Release: "acme/delivery-http@1.4.0",
-			Digest:  solutionhost.RenderedDigest("sha256:" + strings.Repeat("ab", 32)),
-		}},
-		Workloads: []solutionhost.Workload{{
-			Name: "api", Artifact: "api", Container: "api",
-			Image: solutionhost.Image{
-				Repository: "registry.example/acme/delivery-http",
-				Digest:     solutionhost.ImageDigest("sha256:" + strings.Repeat("cd", 32)),
+	for name, tc := range map[string]struct {
+		applied []*solutionhost.ModuleManifest
+		pins    map[string][]string
+		body    func(t *testing.T) []byte
+		carrier error
+		code    int
+		reason  string
+	}{
+		"not a carrier": {body: func(*testing.T) []byte { return []byte("not a carrier") }, code: 400},
+		"an invalid manifest, genuinely signed": {
+			body: func(t *testing.T) []byte {
+				envelope := deliverytest.Envelope(t, []byte(invalidPayload), deliveryTestKey)
+				carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{Document: []byte(invalidPayload), Envelope: envelope})
+				require.NoError(t, err)
+				return carrier
 			},
-			// The namespace reaches the carrier authoriser from the SPIFFE ID,
-			// which is why there is no Namespace field to set: a workload's
-			// namespace is derived from its signed identity rather than
-			// declared beside it, so it cannot be edited without breaking the
-			// signature. That is the property
-			// TestVerificationCoversThePayloadAndNamespacesComeFromTheDocument
-			// asserts, and it holds because of where the value comes from.
-			Identity: solutionhost.WorkloadIdentity{
-				Audience: "https://test.acme.example/solutions",
-				Subject:  "system:serviceaccount:" + namespace + ":api",
-				SPIFFEID: "spiffe://acme.test/ns/" + namespace + "/sa/api",
-			},
-			NonAuthenticating: &[]string{"telemetry-sidecar"},
-		}},
+			code: 400, reason: "invalid",
+		},
+		"a signer no key pins": {
+			pins: map[string][]string{"another-key": {deliveryTestDomain}},
+			body: func(t *testing.T) []byte { return signedManifest(t, testModuleManifest(t, 1), deliveryTestKey) },
+			code: 401,
+		},
+		"a signer pinned for another domain": {
+			pins: map[string][]string{deliveryTestKey: {"other-domain"}},
+			body: func(t *testing.T) []byte { return signedManifest(t, testModuleManifest(t, 1), deliveryTestKey) },
+			code: 403,
+		},
+		"a carrier the api server refuses": {
+			carrier: fmt.Errorf("%w: token expired", infra.ErrCarrierUnauthenticated), code: 401,
+			body: func(t *testing.T) []byte { return signedManifest(t, testModuleManifest(t, 1), deliveryTestKey) },
+		},
+		"a carrier that is not the module's delivery account": {
+			carrier: fmt.Errorf("%w: platform-acme-staging-billing/delivery", infra.ErrCarrierNotAuthorized), code: 403,
+			body: func(t *testing.T) []byte { return signedManifest(t, testModuleManifest(t, 1), deliveryTestKey) },
+		},
+		"an api server that cannot answer": {
+			carrier: fmt.Errorf("%w: connection refused", infra.ErrKubernetesUnavailable), code: 503,
+			body: func(t *testing.T) []byte { return signedManifest(t, testModuleManifest(t, 1), deliveryTestKey) },
+		},
+		"a stale generation": {
+			applied: []*solutionhost.ModuleManifest{applied}, code: 409, reason: "older",
+			body: func(t *testing.T) []byte { return signedManifest(t, testModuleManifest(t, 2), deliveryTestKey) },
+		},
+		"a rewritten generation": {
+			applied: []*solutionhost.ModuleManifest{applied}, code: 409, reason: "rewritten",
+			body: func(t *testing.T) []byte { return signedManifest(t, rewritten, deliveryTestKey) },
+		},
+		"a withdrawn binding brought back": {
+			applied: []*solutionhost.ModuleManifest{tombstone}, code: 409, reason: "withdrawn",
+			body: func(t *testing.T) []byte { return signedManifest(t, testModuleManifest(t, 5), deliveryTestKey) },
+		},
+		"another host's manifest": {
+			applied: []*solutionhost.ModuleManifest{applied}, code: 422, reason: "another-host",
+			body: func(t *testing.T) []byte { return signedManifest(t, elsewhere, deliveryTestKey) },
+		},
+		"a reserved route alias": {
+			code: 422, reason: "codefly",
+			body: func(t *testing.T) []byte { return signedManifest(t, reserved, deliveryTestKey) },
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			harness := newDeliveryHarness(t, tc.pins, tc.applied...)
+			harness.carrier.err = tc.carrier
+			recorder := harness.post(SolutionDeliveryManifestPath, tc.body(t))
+			require.Equal(t, tc.code, recorder.Code, recorder.Body.String())
+			receipt := receiptOf(t, recorder)
+			require.NotEmpty(t, receipt.Error, "every refusal names its reason")
+			if tc.reason != "" {
+				require.Contains(t, receipt.Error, tc.reason)
+			}
+			require.Zero(t, harness.store.calls, "a refused manifest is never stored")
+		})
 	}
-	require.NoError(t, document.Validate(), "the fixture must be a valid binding")
-
-	canonical, err := solutionhost.SignedPayload(document)
-	require.NoError(t, err)
-	return deliverytest.Carrier(t, canonical, "signer")
 }
 
-// deliveryNoopStore satisfies business.Store without implementing it.
-//
-// The embedded interface is nil, so any method this test does not override
-// PANICS rather than returning a zero value — which is what caught that the
-// persist path really does open a control-plane transaction. A stub returning
-// zeroes would have let the write silently no-op and the 409 test would have
-// passed for the wrong reason.
-type deliveryNoopStore struct{ business.Store }
+// The signature is checked before the caller, so an operator reads the real
+// cause: a forged carrier is a signing problem, not a credential one.
+func TestVerificationPrecedesTheCarrier(t *testing.T) {
+	harness := newDeliveryHarness(t, map[string][]string{"another-key": {deliveryTestDomain}})
+	harness.carrier.err = infra.ErrCarrierUnauthenticated
+	recorder := harness.deliver(t, testModuleManifest(t, 1))
+	require.Equal(t, http.StatusUnauthorized, recorder.Code)
+	require.Zero(t, harness.carrier.calls)
+}
 
-// WithControlPlane runs the function inline.
-//
-// Overridden because the delivery write is wrapped in a control-plane
-// transaction, and the point of these tests is the HTTP contract rather than
-// transaction behaviour. Running it inline keeps the store error surfacing
-// exactly as the real path surfaces it, which is what the 409 and the
-// unclassified-failure cases depend on.
-func (deliveryNoopStore) WithControlPlane(
-	ctx context.Context, fn func(ctx context.Context) error,
-) error {
-	return fn(ctx)
+// A generation already in the inbox with other bytes is a rewrite even before
+// it is applied, and an unclassified failure is a retry that names its cause.
+func TestTheInboxDecidesUnappliedRewritesAndUnclassifiedFailuresAreRetries(t *testing.T) {
+	harness := newDeliveryHarness(t, nil)
+	harness.store.err = fmt.Errorf("%w: generation 3", business.ErrSolutionDeliveryConflict)
+	require.Equal(t, http.StatusConflict, harness.deliver(t, testModuleManifest(t, 3)).Code)
+
+	harness = newDeliveryHarness(t, nil)
+	harness.store.err = errors.New("something nobody mapped")
+	recorder := harness.deliver(t, testModuleManifest(t, 3))
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Contains(t, receiptOf(t, recorder).Error, "something nobody mapped")
+}
+
+// An alias moves between bindings once the leaving binding's withdrawal is
+// delivered: the inbox's newest generation releases it.
+func TestADeliveredWithdrawalReleasesItsAlias(t *testing.T) {
+	leaving := testModuleManifest(t, 3)
+	claimant := testModuleManifest(t, 1)
+	claimant.Binding = "acme.test.reports-next"
+
+	held := newDeliveryHarness(t, nil, leaving)
+	recorder := held.deliver(t, claimant)
+	require.Equal(t, http.StatusUnprocessableEntity, recorder.Code, "the alias is still held")
+
+	released := newDeliveryHarness(t, nil, leaving)
+	payload, err := solutionhost.SignedPayload(withdrawal(t, leaving, 4))
+	require.NoError(t, err)
+	released.store.newest = []*business.SolutionDeliveryRecord{{Binding: leaving.Binding, Generation: 4, Payload: payload}}
+	recorder = released.deliver(t, claimant)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 }

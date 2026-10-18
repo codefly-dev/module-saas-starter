@@ -53,12 +53,10 @@ func TestFrontendAppliedHistoryPreservesUpdatesRollbackAndWithdrawal(t *testing.
 	delivery.service.SetFrontendArtifactSource(source)
 	reconciler := newProductionPathReconciler(t, delivery.service)
 	alias := uniqueAlias("frontend")
-	namespace := "ns-" + alias
-	delivery.callerNamespace = namespace
-	document := productionPathBinding(t, alias, namespace, 1)
+	document := productionPathManifest(t, alias, 1)
 	document.Frontend = a
 	apply := func() error {
-		requireDelivered(t, delivery.post(t, business.SolutionDeliveryPresence, productionPathCarrier(t, document)))
+		requireDelivered(t, delivery.deliver(t, document))
 		return reconciler.RunOnce(testCtx)
 	}
 	require.NoError(t, apply())
@@ -122,10 +120,7 @@ func TestFrontendAppliedHistoryPreservesUpdatesRollbackAndWithdrawal(t *testing.
 	document.Generation = 6
 	document.Removed = true
 	document.Workloads = nil
-	document.Routes = nil
-	document.Modules = nil
 	document.Endpoints = nil
-	document.Artifacts = nil
 	require.NoError(t, apply())
 	for generation := uint64(1); generation <= 3; generation++ {
 		read(recovered, generation, false)
@@ -134,7 +129,7 @@ func TestFrontendAppliedHistoryPreservesUpdatesRollbackAndWithdrawal(t *testing.
 
 func TestFrontendRetentionIsNotDiagnosticHistoryLimit(t *testing.T) {
 	alias := uniqueAlias("retained")
-	binding := productionPathBinding(t, alias, "ns-"+alias, 1)
+	binding := productionPathManifest(t, alias, 1)
 	target := declarePresence(t, binding.Binding, alias)
 	now := time.Now().UTC()
 	revision := int64(1)
@@ -148,7 +143,7 @@ func TestFrontendRetentionIsNotDiagnosticHistoryLimit(t *testing.T) {
 			require.NoError(t, err)
 			digest, err := binding.Digest()
 			require.NoError(t, err)
-			_, err = testStore.RecordDeliveredDocument(ctx, &business.SolutionDeliveryRecord{Kind: business.SolutionDeliveryPresence, DocumentID: binding.Binding, Generation: generation, ContentHash: digest, Payload: data, Bundle: deliverytest.Envelope(t, data, solutionhost.FixtureDeliveredBy), SignerIdentity: productionPathSigner, OwnershipDomain: productionPathDomain, ReceivedAt: now})
+			_, err = testStore.RecordDeliveredDocument(ctx, &business.SolutionDeliveryRecord{Binding: binding.Binding, Generation: generation, ContentHash: digest, Payload: data, Envelope: deliverytest.Envelope(t, data, productionPathSigner), SignerIdentity: productionPathSigner, OwnershipDomain: productionPathDomain, ReceivedAt: now})
 			require.NoError(t, err)
 			decision := "applied"
 			reason := ""
