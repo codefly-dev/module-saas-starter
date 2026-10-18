@@ -34,6 +34,12 @@ message AuditEvent {
   // a call made from the host's own web session. It answers "what did they do
   // it through", which actor_id does not.
   string client_id = 15;
+  // actor_module names the module whose own principal is actor_id, by the
+  // prefix it is declared under in this host's module principal registry, so a
+  // reader can say "Module <name>" instead of an unresolved id. Empty for every
+  // other actor, and for a module this host no longer declares. Read at query
+  // time; nothing about it is stored on the row.
+  string actor_module = 16;
 }
 
 message QueryAuditLogRequest {

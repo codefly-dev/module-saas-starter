@@ -212,6 +212,10 @@ func (s *PostgresStore) RevokeInstallationsOfTarget(
 // answer and the one a diagnostic listing would get wrong by reporting the
 // refused desired generation beside it.
 //
+// `has pages` is the registration's frontend half, which the apply writes in the
+// same transaction as the applied generation (a generation that drops its
+// `frontend` block drops the half), so it describes the release offered here.
+//
 // `installed` is resolved in the same statement rather than by a second query per
 // row, for the reason the installation listing resolves health inline: a
 // catalogue of n rows must not cost n+1 round trips.
@@ -234,6 +238,7 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
 		SELECT t.id::text, t.binding_id, t.solution_id, r.declared_kind,
 		       b.applied_release, t.opened_generation, b.applied_generation,
+		       r.frontend_revision IS NOT NULL,
 		       ($1 <> '' AND EXISTS (
 		           SELECT 1 FROM public.installations i
 		            WHERE i.target_id = t.id AND i.org_id = $1::uuid AND i.status <> 'revoked'
@@ -262,7 +267,7 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 			appliedGeneration int64
 		)
 		if err := rows.Scan(&entry.TargetID, &entry.BindingID, &entry.RouteAlias, &entry.Kind,
-			&release, &openedGeneration, &appliedGeneration, &entry.Installed); err != nil {
+			&release, &openedGeneration, &appliedGeneration, &entry.HasPages, &entry.Installed); err != nil {
 			return nil, err
 		}
 		entry.OpenedGeneration = uint64(openedGeneration)

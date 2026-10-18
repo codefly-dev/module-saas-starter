@@ -19,6 +19,11 @@ organisation installs it and grants team access independently through the same
 target-based entitlement projection. The organization administration destination
 is labelled "Modules & solutions" and retains `/admin/solutions`; its empty
 state directs an administrator to the platform operator when nothing is available.
+Its Installed table's Access column offers "Grant access" (a holder and its level —
+today a team and the role it holds) on every active row; a row whose target
+declares no pages (`hasPages` false) shows one muted line explaining when a grant
+still matters instead of "nobody has access", because a solution may reach that
+component on a person's own session. A failed row offers "Retry installation".
 The platform catalogue explains the delivery prerequisite. Headless components
 contribute no page.
 For a module page, relative data requests through the injected `apiBase` reach

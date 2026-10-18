@@ -1434,12 +1434,18 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 
 	var events []*gen.AuditEvent
 	resolver := service.AuditEventResolver()
+	// A module acting on its own is recorded under its principal, which no
+	// directory row names; the registry does, by the prefix it is declared
+	// under. Read once per page, never stored on the row.
+	modules := service.ModulePrincipals()
 	for _, e := range entries {
 		resolved, err := resolver.Resolve(ctx, e.EventType)
 		if err != nil {
 			return nil, status.Error(codes.Unavailable, "audit event types unavailable")
 		}
-		events = append(events, infra.AuditEntryToProto(e, resolved))
+		event := infra.AuditEntryToProto(e, resolved)
+		event.ActorModule = auditActorModule(modules, e.ActorID)
+		events = append(events, event)
 	}
 
 	return &gen.QueryAuditLogResponse{
@@ -1447,6 +1453,17 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		NextPageToken: nextToken,
 		TotalCount:    totalCount,
 	}, nil
+}
+
+// auditActorModule names the module whose own principal actorID is, by its
+// declared prefix, or nothing for any other actor. Only the module's OWN
+// principal is named: a subject a module acted for is recorded under that
+// subject's id and named by the directory like any other person.
+func auditActorModule(modules business.ModulePrincipalRegistry, actorID string) string {
+	if module, ok := modules[actorID]; ok {
+		return module.Prefix
+	}
+	return ""
 }
 
 func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateAuditLogRequest) (*gen.AggregateAuditLogResponse, error) {

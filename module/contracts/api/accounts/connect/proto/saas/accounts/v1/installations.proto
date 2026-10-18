@@ -685,6 +685,16 @@ message AvailableSolution {
   // unique index over (org_id, target_id) would refuse the second install anyway,
   // and an administrator should not have to discover that by being refused.
   bool installed = 9;
+  // True when the applied generation declares pages people open — the
+  // `frontend` block the host projects into its navigation. Read from the same
+  // applied record the navigation is built from, never from the kind: a module
+  // or a solution may declare pages, and either may be headless. It reports
+  // pages only: a grant on a headless installation can still matter, because a
+  // solution may call that component on a person's own session and the host
+  // then admits only a person with access there. The applied manifest does not
+  // record that session consumption yet, so this field alone does not decide
+  // whether access applies.
+  bool has_pages = 10;
 }
 
 message ListAvailableSolutionsRequest {

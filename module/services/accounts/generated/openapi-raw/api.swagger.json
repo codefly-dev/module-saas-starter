@@ -7205,6 +7205,10 @@
         "clientId": {
           "type": "string",
           "description": "client_id names the registered client the call was made through, empty for\na call made from the host's own web session. It answers \"what did they do\nit through\", which actor_id does not."
+        },
+        "actorModule": {
+          "type": "string",
+          "description": "actor_module names the module whose own principal is actor_id, by the\nprefix it is declared under in this host's module principal registry, so a\nreader can say \"Module \u003cname\u003e\" instead of an unresolved id. Empty for every\nother actor, and for a module this host no longer declares. Read at query\ntime; nothing about it is stored on the row."
         }
       }
     },
@@ -7382,6 +7386,10 @@
         "installed": {
           "type": "boolean",
           "description": "True when this organization already has an ACTIVE installation of this\ntarget. A catalogue shows it as installed rather than offering it twice; the\nunique index over (org_id, target_id) would refuse the second install anyway,\nand an administrator should not have to discover that by being refused."
+        },
+        "hasPages": {
+          "type": "boolean",
+          "description": "True when the applied generation declares pages people open — the\n`frontend` block the host projects into its navigation. Read from the same\napplied record the navigation is built from, never from the kind: a module\nor a solution may declare pages, and either may be headless. It reports\npages only: a grant on a headless installation can still matter, because a\nsolution may call that component on a person's own session and the host\nthen admits only a person with access there. The applied manifest does not\nrecord that session consumption yet, so this field alone does not decide\nwhether access applies."
         }
       },
       "description": "AvailableSolution is one installable solution target: its immutable identity,\nthe release the host currently has applied for it, and where it is routed."

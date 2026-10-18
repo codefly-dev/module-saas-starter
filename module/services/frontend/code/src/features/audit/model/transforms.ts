@@ -24,6 +24,7 @@ export function toAuditEvent(e: ProtoAuditEvent): AuditEvent {
 		payload: e.payload,
 		ipAddress: e.ipAddress,
 		clientId: e.clientId,
+		actorModule: e.actorModule,
 		createdAt: e.createdAt
 			? timestampDate(e.createdAt).toISOString()
 			: undefined,
@@ -56,16 +57,20 @@ export interface ResolvedActor {
 	resolved: boolean;
 }
 
-// resolveActor renders an audit row's actor as a person, service, or agent
-// rather than as an opaque id. A principal that is revoked, cross-org, or past
-// the directory's page walk is absent from the map, so the fallback is the
-// unavailable label: normal screens must not expose opaque identifiers.
+// resolveActor renders an audit row's actor as a person, service, agent or
+// module rather than as an opaque id. A principal that is revoked, cross-org, or
+// past the directory's page walk is absent from the map, so the fallback is the
+// unavailable label: normal screens must not expose opaque identifiers. A
+// module acting on its own has no directory row; the host names it on the row
+// (`actorModule`), and it reads as "Module <name>".
 export function resolveActor(
 	actorId: string,
 	directory: PrincipalDirectory,
+	actorModule = "",
 ): ResolvedActor {
 	const displayName = directory.get(actorId);
 	if (displayName) return { label: displayName, resolved: true };
+	if (actorModule) return { label: `Module ${actorModule}`, resolved: true };
 	// A row with no actor id is automated work the server attributed to no
 	// principal; truncating "" would leave the cell blank.
 	if (!actorId) return { label: "System", resolved: false };

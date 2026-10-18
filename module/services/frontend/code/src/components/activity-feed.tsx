@@ -120,7 +120,8 @@ export function ActivityFeed({
 											<span className="font-medium">
 												{isYou
 													? "You"
-													: resolveActor(e.actorId, actorNames).label}
+													: resolveActor(e.actorId, actorNames, e.actorModule)
+															.label}
 											</span>{" "}
 											{e.actorType && e.actorType !== "user" ? (
 												// Only a non-human actor earns the tag: the sentence

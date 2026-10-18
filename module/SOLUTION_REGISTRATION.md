@@ -221,7 +221,20 @@ Four distinctions the projections keep:
   the caller's own organization (a platform super administrator, who passes
   every organization-admin check, is the inherited exception), unlike the
   internal `ListInstallations` the gateway reads for a projected tenant. It reads
-  the installations and their exposure on one repeatable-read snapshot.
+  the installations and their exposure on one repeatable-read snapshot. Each
+  installed target says whether its applied generation declares pages
+  (`has_pages`, from the registration's frontend half — the record navigation is
+  built from, never the kind). The administration page offers access on every
+  active row, and on a row without pages says once, muted, when a grant still
+  matters: a solution may call that component on a person's own session, and the
+  host then admits only a person with access there. The applied manifest does not
+  yet record that session consumption, so the page cannot tell which headless
+  components need a grant and does not hide the action.
+  A refusal from these RPCs carries the reason in words: a status wrapped beneath
+  the business error answers with its own message, never the chain's
+  `rpc error: code = … desc = …` text. A failed installation offers
+  `RetryInstallation` as "Retry installation", so recovering never needs an
+  uninstall.
 - An unreadable registry is still `503`, and a missing or malformed `client` still
   `400`. Neither ever renders as an empty list.
 

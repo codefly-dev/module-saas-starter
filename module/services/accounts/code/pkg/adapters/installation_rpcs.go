@@ -191,6 +191,7 @@ func availableSolutionProto(entry *business.AvailableSolutionTarget) *gen.Availa
 		OpenedGeneration:  entry.OpenedGeneration,
 		AppliedGeneration: entry.AppliedGeneration,
 		Installed:         entry.Installed,
+		HasPages:          entry.HasPages,
 	}
 }
 
@@ -310,8 +311,11 @@ func mapInstallationExposureError(err error) error {
 	if errors.Is(err, business.ErrPolicyLogUnreachable) {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
-	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
-		return status.Error(st.Code(), err.Error())
+	// The status's own message, not the chain's text: a wrapped status reads as
+	// "cannot grant scope: rpc error: code = FailedPrecondition desc = …", and
+	// an administrator is shown that message as the host's reason.
+	if st := innerStatus(err); st != nil && st.Code() != codes.Unknown && st.Code() != codes.OK {
+		return status.Error(st.Code(), st.Message())
 	}
 	return status.Error(codes.Internal, err.Error())
 }
@@ -336,7 +340,8 @@ func mapInstallationError(err error) error {
 	if errors.Is(err, business.ErrPolicyLogUnreachable) {
 		return status.Error(codes.Unavailable, err.Error())
 	}
-	if st, ok := status.FromError(err); ok {
+	// As above: the carried status's words, never the wrapping chain's.
+	if st := innerStatus(err); st != nil && st.Code() != codes.OK {
 		return st.Err()
 	}
 	return status.Error(codes.Internal, err.Error())

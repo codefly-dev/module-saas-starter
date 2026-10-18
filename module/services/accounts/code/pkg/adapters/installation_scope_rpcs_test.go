@@ -4,6 +4,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -36,6 +37,12 @@ func TestNarrowInstallationRequiresOrgAdminAndOwnOrganization(t *testing.T) {
 func TestInstallationNarrowingErrorMapping(t *testing.T) {
 	require.Equal(t, codes.Unavailable, status.Code(mapInstallationError(business.ErrPolicyLogUnreachable)))
 	require.Equal(t, codes.PermissionDenied, status.Code(mapInstallationError(status.Error(codes.PermissionDenied, "outside ceiling"))))
+	// A wrapped status keeps its code and answers in its own words, never as
+	// "cannot retry installation: rpc error: code = … desc = …".
+	wrapped := mapInstallationError(fmt.Errorf("cannot retry installation: %w",
+		status.Error(codes.FailedPrecondition, "the installation is not in a failed state")))
+	require.Equal(t, codes.FailedPrecondition, status.Code(wrapped))
+	require.Equal(t, "the installation is not in a failed state", status.Convert(wrapped).Message())
 }
 
 // HOST-INST-005: retry is an administration act, never an unauthenticated

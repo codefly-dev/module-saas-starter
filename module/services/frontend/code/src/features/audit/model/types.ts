@@ -16,6 +16,10 @@ export interface AuditEvent {
 	// from the host's own web session. Separate from actorId: one answers who
 	// acted, the other what they acted through.
 	clientId: string;
+	// The module whose own principal acted, named by the host from its module
+	// principal registry; empty for every other actor. A module's principal has
+	// no directory row, so without it the row would read "Actor unavailable".
+	actorModule: string;
 	createdAt?: string;
 }
 

@@ -51,7 +51,13 @@ type AuditEvent struct {
 	// client_id names the registered client the call was made through, empty for
 	// a call made from the host's own web session. It answers "what did they do
 	// it through", which actor_id does not.
-	ClientId      string `protobuf:"bytes,15,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	ClientId string `protobuf:"bytes,15,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	// actor_module names the module whose own principal is actor_id, by the
+	// prefix it is declared under in this host's module principal registry, so a
+	// reader can say "Module <name>" instead of an unresolved id. Empty for every
+	// other actor, and for a module this host no longer declares. Read at query
+	// time; nothing about it is stored on the row.
+	ActorModule   string `protobuf:"bytes,16,opt,name=actor_module,json=actorModule,proto3" json:"actor_module,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -189,6 +195,13 @@ func (x *AuditEvent) GetCategory() string {
 func (x *AuditEvent) GetClientId() string {
 	if x != nil {
 		return x.ClientId
+	}
+	return ""
+}
+
+func (x *AuditEvent) GetActorModule() string {
+	if x != nil {
+		return x.ActorModule
 	}
 	return ""
 }
@@ -1271,7 +1284,7 @@ var File_saas_accounts_v1_audit_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\n" +
-	"\x1csaas/accounts/v1/audit.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xdb\x04\n" +
+	"\x1csaas/accounts/v1/audit.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xfe\x04\n" +
 	"\n" +
 	"AuditEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
@@ -1294,7 +1307,8 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x0eschema_version\x18\f \x01(\x05R\rschemaVersion\x121\n" +
 	"\apayload\x18\r \x01(\v2\x17.google.protobuf.StructR\apayload\x12\x1a\n" +
 	"\bcategory\x18\x0e \x01(\tR\bcategory\x12\x1b\n" +
-	"\tclient_id\x18\x0f \x01(\tR\bclientId\x1a;\n" +
+	"\tclient_id\x18\x0f \x01(\tR\bclientId\x12!\n" +
+	"\factor_module\x18\x10 \x01(\tR\vactorModule\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x98\x05\n" +

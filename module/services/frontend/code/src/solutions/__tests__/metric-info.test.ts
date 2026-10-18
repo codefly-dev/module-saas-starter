@@ -328,6 +328,20 @@ describe("newestEvents", () => {
 		expect(newest.map((e) => e.id)).toEqual(["a", "c"]);
 		expect(newest[0].at.toISOString()).toBe("2026-09-24T14:32:00.000Z");
 	});
+
+	it("keeps the module the host named for a module acting on its own", () => {
+		const [event] = newestEvents([
+			[
+				{
+					id: "m",
+					actorId: "p9",
+					actorModule: "example-chat",
+					createdAt: at("2026-09-24T14:32:00Z"),
+				},
+			],
+		]);
+		expect(event.actorModule).toBe("example-chat");
+	});
 });
 
 it("formats a day bucket as its UTC calendar day", () => {

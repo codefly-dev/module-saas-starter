@@ -1423,7 +1423,17 @@ type AvailableSolution struct {
 	// target. A catalogue shows it as installed rather than offering it twice; the
 	// unique index over (org_id, target_id) would refuse the second install anyway,
 	// and an administrator should not have to discover that by being refused.
-	Installed     bool `protobuf:"varint,9,opt,name=installed,proto3" json:"installed,omitempty"`
+	Installed bool `protobuf:"varint,9,opt,name=installed,proto3" json:"installed,omitempty"`
+	// True when the applied generation declares pages people open — the
+	// `frontend` block the host projects into its navigation. Read from the same
+	// applied record the navigation is built from, never from the kind: a module
+	// or a solution may declare pages, and either may be headless. It reports
+	// pages only: a grant on a headless installation can still matter, because a
+	// solution may call that component on a person's own session and the host
+	// then admits only a person with access there. The applied manifest does not
+	// record that session consumption yet, so this field alone does not decide
+	// whether access applies.
+	HasPages      bool `protobuf:"varint,10,opt,name=has_pages,json=hasPages,proto3" json:"has_pages,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1517,6 +1527,13 @@ func (x *AvailableSolution) GetAppliedGeneration() uint64 {
 func (x *AvailableSolution) GetInstalled() bool {
 	if x != nil {
 		return x.Installed
+	}
+	return false
+}
+
+func (x *AvailableSolution) GetHasPages() bool {
+	if x != nil {
+		return x.HasPages
 	}
 	return false
 }
@@ -1733,7 +1750,7 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12!\n" +
 	"\ateam_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06teamId\x12!\n" +
-	"\arole_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"\xed\x02\n" +
+	"\arole_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"\x8a\x03\n" +
 	"\x11AvailableSolution\x12%\n" +
 	"\ttarget_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\x12\x1d\n" +
 	"\n" +
@@ -1745,7 +1762,9 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\x0frelease_version\x18\x06 \x01(\tR\x0ereleaseVersion\x12+\n" +
 	"\x11opened_generation\x18\a \x01(\x04R\x10openedGeneration\x12-\n" +
 	"\x12applied_generation\x18\b \x01(\x04R\x11appliedGeneration\x12\x1c\n" +
-	"\tinstalled\x18\t \x01(\bR\tinstalled\"\x88\x01\n" +
+	"\tinstalled\x18\t \x01(\bR\tinstalled\x12\x1b\n" +
+	"\thas_pages\x18\n" +
+	" \x01(\bR\bhasPages\"\x88\x01\n" +
 	"\x1dListAvailableSolutionsRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12'\n" +
 	"\tpage_size\x18\x02 \x01(\x05B\n" +

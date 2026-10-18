@@ -107,6 +107,20 @@ describe("solution installation facts", () => {
 		expect(row.inheritedTeams.map((t) => t.team)).toEqual(["Everyone"]);
 	});
 
+	it("reads whether people open its pages from the host, never from a name", () => {
+		const withPages = installed("t-1", false);
+		withPages.target = create(AvailableSolutionSchema, {
+			...target,
+			hasPages: true,
+		});
+		expect(installedRows([withPages])[0].pages).toBe("pages");
+		expect(installedRows([installed("t-1", true)])[0].pages).toBe("headless");
+		// A target the host no longer offers has no applied generation to ask.
+		expect(installedRows([installed("t-gone", false)])[0].pages).toBe(
+			"unknown",
+		);
+	});
+
 	it("reads an unreported health as a gap, not as healthy", () => {
 		expect(healthView(InstallationHealth.UNSPECIFIED)).toMatchObject({
 			kind: "gap",

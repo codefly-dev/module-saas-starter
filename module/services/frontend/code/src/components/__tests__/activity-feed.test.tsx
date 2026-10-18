@@ -157,6 +157,26 @@ describe("ActivityFeed actors", () => {
 		expect(screen.getByText("agent")).toBeTruthy();
 	});
 
+	it("names a module acting on its own as the module the host names", () => {
+		useAuditLogMock.mockReturnValue({
+			data: {
+				events: [
+					event(undefined, {
+						actorId: "c9d1e2f3-0000-5000-8000-000000000005",
+						actorType: "system",
+						actorModule: "example-chat",
+					}),
+				],
+			},
+			isLoading: false,
+		});
+
+		render(<ActivityFeed />);
+
+		expect(screen.getByText("Module example-chat")).toBeTruthy();
+		expect(screen.queryByText("Actor unavailable")).toBeNull();
+	});
+
 	it('leaves the signed-in user as "You" without a type tag', () => {
 		useAuditLogMock.mockReturnValue({
 			data: { events: [event(undefined)] },

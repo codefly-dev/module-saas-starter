@@ -16,6 +16,7 @@ import type { OrgRole, PlatformRole } from "@/lib/auth-session";
 import { canPresent } from "@/lib/plugins/presentation";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
+import { HEADLESS_ACCESS_NOTE } from "../model/installations";
 
 const session = vi.hoisted(() => ({
 	organizationId: "org-1",
@@ -70,6 +71,7 @@ const available = {
 			openedGeneration: "2",
 			appliedGeneration: "3",
 			installed: true,
+			hasPages: true,
 		},
 		{
 			targetId: LEDGER_TARGET,
@@ -81,6 +83,7 @@ const available = {
 			openedGeneration: "5",
 			appliedGeneration: "5",
 			installed: false,
+			hasPages: false,
 		},
 	],
 };
@@ -223,12 +226,12 @@ async function openInstall() {
 async function openGrant() {
 	fireEvent.click(
 		await screen.findByRole("button", {
-			name: "Grant a team access to expenses",
+			name: "Grant access to expenses",
 		}),
 	);
 	const dialog = await screen.findByRole("dialog");
 	await choose(dialog, "Team", "Support");
-	await choose(dialog, "Role", "Solution user — solution:use");
+	await choose(dialog, "Access level (role)", "Solution user — solution:use");
 	return dialog;
 }
 
@@ -290,7 +293,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		// Granted here and inherited from above are kept apart; only the first is
 		// removable here.
 		const granted = within(row).getByRole("list", {
-			name: "Teams granted expenses",
+			name: "Access granted to expenses",
 		});
 		expect(within(granted).getByText("Finance")).toBeTruthy();
 		expect(within(granted).queryByText("Everyone")).toBeNull();
@@ -557,12 +560,12 @@ describe("SolutionInstallationsPage admin container", () => {
 
 		fireEvent.click(
 			await screen.findByRole("button", {
-				name: "Grant a team access to expenses",
+				name: "Grant access to expenses",
 			}),
 		);
 		const dialog = await screen.findByRole("dialog");
 		await choose(dialog, "Team", "Support");
-		await choose(dialog, "Role", "Solution user — solution:use");
+		await choose(dialog, "Access level (role)", "Solution user — solution:use");
 		fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
 
 		await waitFor(() => expect(granted).toBeDefined());
@@ -582,7 +585,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBeTruthy();
 		expect(
 			within(
-				screen.getByRole("list", { name: "Teams granted expenses" }),
+				screen.getByRole("list", { name: "Access granted to expenses" }),
 			).getByText("Support"),
 		).toBeTruthy();
 		expect(
@@ -591,7 +594,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			).getByText("Agent disabled"),
 		).toBeTruthy();
 		expect(toast.success).toHaveBeenCalledExactlyOnceWith(
-			"Team grant recorded for expenses",
+			"Access granted to expenses",
 		);
 	});
 
@@ -612,12 +615,16 @@ describe("SolutionInstallationsPage admin container", () => {
 		renderInApp(<Page />);
 		fireEvent.click(
 			await screen.findByRole("button", {
-				name: "Grant a team access to expenses",
+				name: "Grant access to expenses",
 			}),
 		);
 		const dialog = await screen.findByRole("dialog");
 		await choose(dialog, "Team", "Support");
-		await choose(dialog, "Role", "Expense reader — expenses:read");
+		await choose(
+			dialog,
+			"Access level (role)",
+			"Expense reader — expenses:read",
+		);
 		fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
 		const alert = await within(dialog).findByRole("alert");
 		expect(alert.textContent).toContain(
@@ -673,7 +680,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		// Still granted: the host did not remove it.
 		expect(
 			within(
-				screen.getByRole("list", { name: "Teams granted expenses" }),
+				screen.getByRole("list", { name: "Access granted to expenses" }),
 			).getByText("Finance"),
 		).toBeTruthy();
 	});
@@ -907,13 +914,13 @@ describe("organization administration boundary", () => {
 			).toBeNull();
 			fireEvent.click(
 				await screen.findByRole("button", {
-					name: "Grant a team access to payables",
+					name: "Grant access to payables",
 				}),
 			);
 			const dialog = await screen.findByRole("dialog");
 			expect(within(dialog).queryByText("Support")).toBeNull();
 			await choose(dialog, "Team", "Organization two team");
-			await choose(dialog, "Role", "Organization two role");
+			await choose(dialog, "Access level (role)", "Organization two role");
 			fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
 			await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 			expect(grant).toHaveBeenCalledOnce();
@@ -1028,7 +1035,7 @@ describe("host read refusals and retained data", () => {
 		},
 		{
 			kind: "grant",
-			label: "Role",
+			label: "Access level (role)",
 			service: "PermissionService",
 			method: "ListRoles",
 			key: ["roles", "org-1"],
@@ -1050,9 +1057,7 @@ describe("host read refusals and retained data", () => {
 			fireEvent.click(
 				await screen.findByRole("button", {
 					name:
-						kind === "install"
-							? "Install ledger"
-							: "Grant a team access to expenses",
+						kind === "install" ? "Install ledger" : "Grant access to expenses",
 				}),
 			);
 			const dialog = await screen.findByRole("dialog");
@@ -1405,9 +1410,7 @@ describe("accessible validation and host text", () => {
 			fireEvent.click(
 				await screen.findByRole("button", {
 					name:
-						kind === "install"
-							? "Install ledger"
-							: "Grant a team access to expenses",
+						kind === "install" ? "Install ledger" : "Grant access to expenses",
 				}),
 			);
 			const dialog = await screen.findByRole("dialog");
@@ -1430,7 +1433,7 @@ describe("accessible validation and host text", () => {
 			else {
 				expectFieldError(first, "Choose a team");
 				expectFieldError(
-					within(dialog).getByRole("combobox", { name: "Role" }),
+					within(dialog).getByRole("combobox", { name: "Access level (role)" }),
 					"Choose the role the team is granted",
 				);
 			}
@@ -1541,8 +1544,67 @@ it("shows pending and failed installations and retries the failed step", async (
 	);
 	renderInApp(<Page />);
 	expect(await screen.findByText("Example setup refused")).toBeTruthy();
-	expect(screen.queryByRole("button", { name: /grant.*team/i })).toBeNull();
-	fireEvent.click(screen.getByRole("button", { name: "Retry expenses" }));
+	// A failed installation says what recovers it, in place of an access action
+	// and a health it does not have.
+	expect(
+		screen.getByText(/Retry installation runs the install step again/),
+	).toBeTruthy();
+	expect(screen.getByText("Not running")).toBeTruthy();
+	expect(
+		screen.getByText("Available once the installation succeeds"),
+	).toBeTruthy();
+	expect(screen.queryByRole("button", { name: /grant access/i })).toBeNull();
+	fireEvent.click(
+		screen.getByRole("button", { name: "Retry installation of expenses" }),
+	);
 	expect(await screen.findByText("Pending")).toBeTruthy();
-	expect(screen.queryByRole("button", { name: "Retry expenses" })).toBeNull();
+	expect(
+		screen.queryByRole("button", { name: "Retry installation of expenses" }),
+	).toBeNull();
+	expect(screen.getByText("Available after activation")).toBeTruthy();
+});
+
+// Access follows pages, as the host states them from the applied generation:
+// an installation with pages and no grant says nobody has access yet; one with
+// no pages says once why a grant may still matter, and never "nobody".
+it("explains access by whether the installation has pages of its own", async () => {
+	const both = structuredClone(installations);
+	both.installations[0].grantedTeams = [];
+	both.installations[0].inheritedTeams = [];
+	const headless = structuredClone(both.installations[0]);
+	headless.installation.id = "cccccccc-0000-4000-8000-000000000002";
+	headless.installation.targetId = LEDGER_TARGET;
+	headless.target = { ...available.solutions[1], installed: true };
+	both.installations.push(headless);
+	server.use(
+		http.post(rpc("InstallationService", "ListAvailableSolutions"), () =>
+			HttpResponse.json(available),
+		),
+		http.post(rpc("InstallationService", "ListOrganizationInstallations"), () =>
+			HttpResponse.json(both),
+		),
+	);
+	renderInApp(<Page />);
+	const table = await screen.findByRole("table", {
+		name: "Installed modules and solutions",
+	});
+	const withPages = within(table).getByText("expenses").closest("tr");
+	const withoutPages = within(table).getByText("ledger").closest("tr");
+	if (!withPages || !withoutPages) throw new Error("installed rows missing");
+
+	expect(within(withPages).getByText("No one has access yet")).toBeTruthy();
+	expect(within(withPages).queryByText(HEADLESS_ACCESS_NOTE)).toBeNull();
+	expect(
+		within(withPages).getByRole("button", { name: "Grant access to expenses" }),
+	).toBeTruthy();
+
+	expect(within(withoutPages).getByText(HEADLESS_ACCESS_NOTE)).toBeTruthy();
+	expect(within(withoutPages).queryByText("No one has access yet")).toBeNull();
+	expect(within(withoutPages).queryByText(/No team/)).toBeNull();
+	// Kept, because a solution may reach it on a person's own session.
+	expect(
+		within(withoutPages).getByRole("button", {
+			name: "Grant access to ledger",
+		}),
+	).toBeTruthy();
 });
