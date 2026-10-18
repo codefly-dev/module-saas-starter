@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"sync"
 	"testing"
 	"time"
@@ -16,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
-	"accounts/pkg/business/executiontest"
 )
 
 // sealAnswersFake answers core's live questions — seal, epoch, execution,
@@ -34,8 +31,6 @@ type sealAnswersFake struct {
 	revisions map[string]uint64
 	// epochs overrides the epoch (default 1) per principal.
 	epochs map[string]uint64
-	// builds names the principals that bear an execution.
-	builds map[string]workcontext.Execution
 	// unknown names principals the organization has no record of.
 	unknown map[string]bool
 	// unheld names installations no owner holds any more.
@@ -66,7 +61,6 @@ func newSealAnswersFake(revision uint64) *sealAnswersFake {
 		revision:    revision,
 		revisions:   map[string]uint64{},
 		epochs:      map[string]uint64{},
-		builds:      map[string]workcontext.Execution{},
 		unknown:     map[string]bool{},
 		unheld:      map[string]bool{},
 		uninstalled: map[string]bool{},
@@ -98,19 +92,6 @@ func (f *sealAnswersFake) WorkContextPrincipalEpoch(_ context.Context, orgID, pr
 		return epoch, nil
 	}
 	return 1, nil
-}
-
-func (f *sealAnswersFake) WorkContextApprovedBuild(_ context.Context, orgID, principalID string) (string, uint64, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.tenants = append(f.tenants, orgID)
-	if f.unknown[principalID] {
-		return "", 0, business.ErrWorkContextPrincipalUnknown
-	}
-	if build, ok := f.builds[principalID]; ok {
-		return build.ImageDigest, build.BuildIncarnation, nil
-	}
-	return "", 0, business.ErrBearsNoExecution
 }
 
 func (f *sealAnswersFake) WorkContextRevision(ctx context.Context, orgID, ownerID string) (uint64, error) {
@@ -229,7 +210,6 @@ type testCapability struct {
 	TTL    time.Duration
 	// Installation defaults to the fake's answer for the audience.
 	Installation string
-	Execution    workcontext.Execution
 }
 
 func mintTestCapability(t *testing.T, server *WorkContextAuthorityServer, c testCapability) (string, *basev0.WorkContextV1) {
@@ -262,7 +242,6 @@ func tryMintTestCapability(server *WorkContextAuthorityServer, c testCapability)
 			Audience:           c.Audience,
 			AuthorityScopes:    c.Scopes,
 			InstallationID:     c.Installation,
-			Execution:          c.Execution,
 		},
 		Hops:    c.Actors,
 		Session: c.Session,
@@ -283,15 +262,9 @@ func agentHop(principalID, delegationID string, scopes ...*basev0.WorkScopeV1) d
 }
 
 // moduleSealAnswers is sealAnswersFake for a test that mints module
-// capabilities: every principal bindModuleExecution approved bears the build its
-// pods run by default, at incarnation 1 — the same answer the fake cluster gives
-// BindExecution, so core's comparison at the mint is against an independent
-// statement of the same fact.
+// capabilities: a module principal's revision is the business service's.
 func moduleSealAnswers(revision uint64) *sealAnswersFake {
 	answers := newSealAnswersFake(revision)
-	for principal, grant := range moduleExecution.registry {
-		answers.builds[principal] = workcontext.Execution{ImageDigest: executiontest.Digest(grant.Prefix), BuildIncarnation: 1}
-	}
 	answers.moduleRevision = func(ctx context.Context, orgID, ownerID string) (uint64, bool, error) {
 		if _, declared := moduleExecution.registry[ownerID]; !declared || service == nil {
 			return 0, false, nil
@@ -302,42 +275,13 @@ func moduleSealAnswers(revision uint64) *sealAnswersFake {
 	return answers
 }
 
-// moduleAuthorityFor is the authority a business mint would resolve for prefix
-// in tenant: its installation and the execution its pods run by default.
-func moduleAuthorityFor(prefix, tenant string) business.ModuleWorkContextAuthority {
-	return business.ModuleWorkContextAuthority{
-		PrincipalID:    business.ModulePrincipalID(prefix),
-		Tenant:         tenant,
-		InstallationID: testInstallation(prefix),
-		Execution: business.ExecutionIdentity{
-			Running:     business.RunningDigest(executiontest.Digest(prefix)),
-			Incarnation: 1,
-		},
-	}
-}
-
-// approve records that principalID bears execution.
-func (f *sealAnswersFake) approve(principalID string, execution workcontext.Execution) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.builds[principalID] = execution
-}
-
-// testBuildFor is a well-formed image digest naming principalID's build.
-func testBuildFor(principalID string) workcontext.Execution {
-	sum := sha256.Sum256([]byte(principalID))
-	return workcontext.Execution{ImageDigest: "sha256:" + hex.EncodeToString(sum[:]), BuildIncarnation: 1}
-}
-
 // mintModuleIdentity mints principalID's own identity capability in tenant
-// through the shared issuer, approving a build for it first: the token a
-// composed module forwards to the capability surface.
+// through the shared issuer: the token a composed module forwards to the
+// capability surface.
 func mintModuleIdentity(t *testing.T, principalID, tenant string) string {
 	t.Helper()
-	answers, ok := workContextSingleton.seals.(*sealAnswersFake)
+	_, ok := workContextSingleton.seals.(*sealAnswersFake)
 	require.True(t, ok, "the shared issuer is not configured with sealAnswersFake")
-	build := testBuildFor(principalID)
-	answers.approve(principalID, build)
 	// Sealed to the installation the live module authority answers, when the
 	// test wires one, so the host's own sealed-versus-live comparison holds the
 	// credential to the installation it was minted for.
@@ -351,7 +295,6 @@ func mintModuleIdentity(t *testing.T, principalID, tenant string) string {
 		PrincipalID:    principalID,
 		Tenant:         tenant,
 		InstallationID: installation,
-		Execution:      business.ExecutionIdentity{Running: business.RunningDigest(build.ImageDigest), Incarnation: build.BuildIncarnation},
 	})
 	require.NoError(t, err)
 	return token

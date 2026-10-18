@@ -39,17 +39,16 @@ func envelopeJSONAt(t *testing.T, doc map[string]any, revision uint64) []byte {
 	return raw
 }
 
-// Only a pure grant skips the policy-log witness: approved builds added,
-// whole principals added, everything else the same value. With no policy log
+// Only a pure grant skips the policy-log witness: whole principals added,
+// everything else the same value. With no policy log
 // wired, a write that needs the witness is refused and writes nothing, so "it
 // landed" is the proof a change was applied unwitnessed.
 //
 // Every shape below is a real narrowing that a comparison by "more JSON means
 // more authority" let through: a resource list that appears restricts an
 // audience that was unrestricted, a required kind that appears refuses
-// artifacts that passed, a unit that gains a field is a different unit, a
-// tenant that is set removes every other organization, and two revisions past
-// 2^53 are one float.
+// artifacts that passed, and a tenant that is set removes every other
+// organization.
 func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 	s := newRegistryScenario(t, "rvf")
 	digest := "sha256:" + strings.Repeat("ab", 32)
@@ -75,8 +74,6 @@ func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 			"required_kinds": []any{"a"},
 		},
 	}
-	// The lookup unit sits at revision 2^53 so the float64 comparison can be probed.
-	principal(base)["bindings"].([]any)[1].(map[string]any)["revision"] = json.Number("9007199254740992")
 
 	current := s.currentRevision(t)
 	_, err := s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, envelopeJSONAt(t, base, current+1))
@@ -110,12 +107,6 @@ func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 		{"artifact policy gains a REQUIRED contract kind", func(doc map[string]any) {
 			grant(doc)["artifact_policies"].(map[string]any)["p1"].(map[string]any)["required_kinds"] = []any{"a", "b"}
 		}},
-		{"an admitted unit is replaced by a different unit under the same id (queue set)", func(doc map[string]any) {
-			principal(doc)["bindings"].([]any)[0].(map[string]any)["queue"] = "reports.render"
-		}},
-		{"an admitted unit's revision moves 2^53 -> 2^53+1", func(doc map[string]any) {
-			principal(doc)["bindings"].([]any)[1].(map[string]any)["revision"] = json.Number("9007199254740993")
-		}},
 		{"tenancy pinned: shared (every organization) -> one organization", func(doc map[string]any) { grant(doc)["tenant"] = s.tenant }},
 	}
 	for _, tc := range cases {
@@ -132,21 +123,19 @@ func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 		})
 	}
 
-	// And the pure grant: a build approved beside the ones already approved.
-	t.Run("an approved build added lands with no witness", func(t *testing.T) {
+	// And the pure grant: a whole principal added beside the ones granted.
+	t.Run("a principal added lands with no witness", func(t *testing.T) {
 		next := envelopeJSONClone(t, state)
-		builds, _ := next["approved_builds"].([]any)
-		next["approved_builds"] = append(builds, "sha256:"+strings.Repeat("cd", 32))
+		next["principals"].(map[string]any)["added-"+s.prefix] = map[string]any{"grant": map[string]any{"cross_tenant": true}}
 		current := s.currentRevision(t)
 		_, err := s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, envelopeJSONAt(t, next, current+1))
 		require.NoError(t, err)
 		require.Equal(t, current+1, s.currentRevision(t))
 		state = next
 	})
-	t.Run("an approved build removed needs the witness", func(t *testing.T) {
+	t.Run("a principal removed needs the witness", func(t *testing.T) {
 		next := envelopeJSONClone(t, state)
-		builds := next["approved_builds"].([]any)
-		next["approved_builds"] = builds[:len(builds)-1]
+		delete(next["principals"].(map[string]any), "added-"+s.prefix)
 		current := s.currentRevision(t)
 		_, err := s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, envelopeJSONAt(t, next, current+1))
 		require.ErrorIs(t, err, business.ErrPolicyLogUnreachable)
@@ -171,10 +160,7 @@ func TestAnEnvelopeThatWouldRevokeAnInstallationNeedsTheWitness(t *testing.T) {
 	current := s.currentRevision(t)
 	_, err := s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, envelopeJSONAt(t, shared, current+1))
 	require.NoError(t, err)
-	revision := current + 1
-	s.deliverPresence(t, s.primary, 1, revision)
-	s.pass(t)
-	s.deliverAuthority(t, s.authority(t, s.primary, 1, revision, false, s.grantsTo(s.primary)))
+	s.deliverManifest(t, s.primary, 1)
 	s.pass(t)
 	_, present := s.entry()
 	require.True(t, present)
@@ -205,4 +191,9 @@ func TestAnEnvelopeThatWouldRevokeAnInstallationNeedsTheWitness(t *testing.T) {
 	require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, status(orgB, active.Id),
 		"an unwitnessed envelope write must not revoke an installation")
 	s.delivery.service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
+}
+
+func jsonNumber(value uint64) string {
+	raw, _ := json.Marshal(value)
+	return string(raw)
 }

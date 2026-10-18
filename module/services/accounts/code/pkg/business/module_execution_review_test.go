@@ -17,14 +17,13 @@ import (
 // approved image, plus whatever else a test puts beside it.
 func runningPodWith(others ...ContainerExecution) *PodExecution {
 	return &PodExecution{UID: "uid-alpha", Phase: PodPhaseRunning, Containers: append([]ContainerExecution{{
-		Name: "worker", Kind: ContainerRegular, State: ContainerRunning, ImageID: approvedRef, DeclaredImage: approvedRef,
+		Name: "worker", Kind: ContainerRegular, State: ContainerRunning,
 	}}, others...)}
 }
 
 func bindAgainst(t *testing.T, pod *PodExecution) error {
 	t.Helper()
-	service := boundService(&fakeExecutionReviewer{reviewed: reviewedPod(), pod: pod},
-		&fakeExecutionAuthority{digest: approvedBare, incarnation: 3})
+	service := boundService(&fakeExecutionReviewer{reviewed: reviewedPod(), pod: pod})
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	return err
 }
@@ -35,12 +34,12 @@ func bindAgainst(t *testing.T, pod *PodExecution) error {
 // ServiceAccount proves neither — both are refused.
 func TestAWorkloadSharedByTwoPrincipalsMintsAsNeither(t *testing.T) {
 	shared := ModuleWorkload{ServiceAccount: "worker", Namespace: "acme-prod", Container: "worker"}
-	reviewer := &fakeExecutionReviewer{reviewed: reviewedPod(), running: &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true}}
+	reviewer := &fakeExecutionReviewer{reviewed: reviewedPod(), running: &testRunning{UID: "uid-alpha", Found: true}}
 	service := &Service{store: noopControlPlaneStore{}}
-	service.SetExecutionBinding(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
+	service.SetExecutionBinding(reviewer)
 	service.SetModulePrincipals(ModulePrincipalRegistry{
-		"principal-alpha": {Prefix: "alpha", Tenant: "11111111-1111-4111-8111-111111111111", Workload: shared},
-		"principal-beta":  {Prefix: "beta", Tenant: "22222222-2222-4222-8222-222222222222", Workload: shared},
+		"principal-alpha": {Prefix: "alpha", Tenant: "11111111-1111-4111-8111-111111111111", Workloads: []ModuleWorkload{shared}},
+		"principal-beta":  {Prefix: "beta", Tenant: "22222222-2222-4222-8222-222222222222", Workloads: []ModuleWorkload{shared}},
 	})
 	for _, principal := range []string{"principal-alpha", "principal-beta"} {
 		_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), principal, "token")
@@ -52,9 +51,9 @@ func TestAWorkloadSharedByTwoPrincipalsMintsAsNeither(t *testing.T) {
 	// The control: given distinct ServiceAccounts, alpha's token mints alpha
 	// and never beta.
 	service.SetModulePrincipals(ModulePrincipalRegistry{
-		"principal-alpha": {Prefix: "alpha", Tenant: "11111111-1111-4111-8111-111111111111", Workload: shared},
+		"principal-alpha": {Prefix: "alpha", Tenant: "11111111-1111-4111-8111-111111111111", Workloads: []ModuleWorkload{shared}},
 		"principal-beta": {Prefix: "beta", Tenant: "22222222-2222-4222-8222-222222222222",
-			Workload: ModuleWorkload{ServiceAccount: "beta", Namespace: "acme-prod", Container: "worker"}},
+			Workloads: []ModuleWorkload{ModuleWorkload{ServiceAccount: "beta", Namespace: "acme-prod", Container: "worker"}}},
 	})
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-alpha", "token")
 	require.NoError(t, err)
@@ -67,16 +66,15 @@ func TestAWorkloadSharedByTwoPrincipalsMintsAsNeither(t *testing.T) {
 // approval does not cover refuses the mint — whatever state it is in, for an
 // ephemeral (debug) container, a sidecar or a restartable init container.
 func TestAnyUnapprovedContainerInThePodMintsNothing(t *testing.T) {
-	other := "registry.example/sidecar@sha256:" + "3333333333333333333333333333333333333333333333333333333333333333"
 	for name, container := range map[string]ContainerExecution{
-		"a running sidecar":                        {Name: "sidecar", Kind: ContainerRegular, State: ContainerRunning, ImageID: other},
-		"a stopped sidecar that can restart":       {Name: "sidecar", Kind: ContainerRegular, State: ContainerTerminated, ImageID: other},
+		"a running sidecar":                        {Name: "sidecar", Kind: ContainerRegular, State: ContainerRunning},
+		"a stopped sidecar that can restart":       {Name: "sidecar", Kind: ContainerRegular, State: ContainerTerminated},
 		"a sidecar not yet reported":               {Name: "sidecar", Kind: ContainerRegular, State: ContainerStateUnknown},
-		"a running ephemeral container":            {Name: "debug", Kind: ContainerEphemeral, State: ContainerRunning, ImageID: other},
-		"an exited ephemeral container":            {Name: "debug", Kind: ContainerEphemeral, State: ContainerTerminated, ImageID: other},
-		"an init container still running":          {Name: "setup", Kind: ContainerInit, State: ContainerRunning, ImageID: other},
-		"a restartable init (sidecar)":             {Name: "proxy", Kind: ContainerInit, State: ContainerTerminated, ImageID: other, Restartable: true},
-		"a second container on the approved image": {Name: "twin", Kind: ContainerRegular, State: ContainerRunning, ImageID: approvedRef},
+		"a running ephemeral container":            {Name: "debug", Kind: ContainerEphemeral, State: ContainerRunning},
+		"an exited ephemeral container":            {Name: "debug", Kind: ContainerEphemeral, State: ContainerTerminated},
+		"an init container still running":          {Name: "setup", Kind: ContainerInit, State: ContainerRunning},
+		"a restartable init (sidecar)":             {Name: "proxy", Kind: ContainerInit, State: ContainerTerminated, Restartable: true},
+		"a second container on the approved image": {Name: "twin", Kind: ContainerRegular, State: ContainerRunning},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := bindAgainst(t, runningPodWith(container))
@@ -88,20 +86,18 @@ func TestAnyUnapprovedContainerInThePodMintsNothing(t *testing.T) {
 	// The control: an init container that ran to completion before the
 	// application started is tolerated, and never a source of the digest.
 	require.NoError(t, bindAgainst(t, runningPodWith(
-		ContainerExecution{Name: "migrate", Kind: ContainerInit, State: ContainerTerminated, ImageID: approvedRef})))
+		ContainerExecution{Name: "migrate", Kind: ContainerInit, State: ContainerTerminated})))
 }
 
 // FINDING 3. The authenticating container must be a REGULAR container that is
-// RUNNING, in a Running pod that is not being deleted. A stopped container's
-// status keeps its approved imageID; a completed init container named like the
-// declared one still reports one. Neither supplies the digest.
-func TestOnlyALiveRegularContainerSuppliesTheDigest(t *testing.T) {
+// RUNNING, in a Running pod that is not being deleted.
+func TestOnlyALiveRegularContainerAuthenticates(t *testing.T) {
 	stopped := runningPodWith()
 	stopped.Containers[0].State = ContainerTerminated
 	require.ErrorIs(t, bindAgainst(t, stopped), ErrExecutionNotRunning, "a terminated app")
 
 	initOnly := &PodExecution{UID: "uid-alpha", Phase: PodPhaseRunning, Containers: []ContainerExecution{{
-		Name: "worker", Kind: ContainerInit, State: ContainerTerminated, ImageID: approvedRef,
+		Name: "worker", Kind: ContainerInit, State: ContainerTerminated,
 	}}}
 	require.ErrorIs(t, bindAgainst(t, initOnly), ErrExecutionIdentityMismatch, "a completed init container named like the app")
 
@@ -130,13 +126,12 @@ func TestOnlyALiveRegularContainerSuppliesTheDigest(t *testing.T) {
 func TestAContainerThatStopsBetweenReviewAndReadMintsNothing(t *testing.T) {
 	pod := runningPodWith()
 	reviewer := &stoppingReviewer{fakeExecutionReviewer: fakeExecutionReviewer{reviewed: reviewedPod(), pod: pod}}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 3})
+	service := boundService(reviewer)
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 
 	require.ErrorIs(t, err, ErrExecutionNotRunning)
 	require.Equal(t, "uid-alpha", pod.UID, "the UID did not change, which is why the UID check alone admitted it")
-	require.Equal(t, approvedRef, pod.Containers[0].ImageID)
 }
 
 type stoppingReviewer struct{ fakeExecutionReviewer }
@@ -152,8 +147,7 @@ func (r *stoppingReviewer) ReviewToken(ctx context.Context, token, audience stri
 // projection, and none whose lifetime the review did not report.
 func TestATokenLongerLivedThanTheMinimumProjectionMintsNothing(t *testing.T) {
 	bind := func(reviewed *ReviewedExecutionToken) error {
-		service := boundService(&fakeExecutionReviewer{reviewed: reviewed, pod: runningPodWith()},
-			&fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
+		service := boundService(&fakeExecutionReviewer{reviewed: reviewed, pod: runningPodWith()})
 		_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 		return err
 	}

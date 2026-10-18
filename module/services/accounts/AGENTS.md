@@ -27,77 +27,81 @@ is read by the capability checks and does not create synthetic directory rows.
 
 ## Declared solution presence and the registry
 
-`solution_host_bindings` stores desired and applied `SolutionHostBinding`
-generations and pending reasons. Core owns document admission; each apply
-re-decides under the binding row lock. A refused or unreadable delivery does not
-withdraw the last applied generation. Withdrawal requires a tombstone generation.
-A replay after removal authenticates against the last workload-bearing applied
-presence, recovered from immutable generation decisions joined to exact signed
-inbox bytes. Desired-only or refused history cannot supply a carrier namespace;
-this lookup does not use the catalogue's diagnostic history limit.
+A module or solution is present because one signed **module manifest**
+(`codefly/module-manifest/v1`, core's `solutionhost.ModuleManifest`) declares it,
+per binding. `POST /platform/_delivery/manifest` verifies the carrier against the
+pinned keys, reviews the carrier's token — the `delivery` ServiceAccount of the
+module's namespace by the cell's rule (`business.ModuleNamespaceRule`, read off
+this host's own namespace and `CODEFLY__MODULE`), for a withdrawal the previously
+applied manifest's module — admits it with core's `Admit` and `CheckAlias`,
+holds it to the host's own rules (`checkManifestAgainstHost`: one workload runs
+as one manifest; a principal and a release publisher stay with the ownership
+domain that holds them; an endpoint address is its workload's in-cluster Service
+by the rule, or the loopback natively), and persists it in the append-only inbox
+(migration 41: one kind, `manifest`). It answers 200 `accepted`/`replayed`, 400,
+401, 403 (also a principal or publisher another domain holds), 409 (stale,
+rewritten, withdrawn, or a workload another binding holds, named), 422 (another
+host, a reserved or held alias, an endpoint off its Service) or 503, with the
+reason in the body and the log.
 
-`GET /platform/_delivery/applied/{binding}` reads only that committed generation,
-including tombstones, after an accounts-audience TokenReview of the protected
-endpoint publisher. A desired delivery receipt is not proof of apply. The
-observer's identity has no delivery write permission; other delivery identities
-have no observer permission. The wire and response taxonomy are documented in
-[../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md).
+Under a native `codefly run` the CLI hands the host the run's anchor
+(`CODEFLY_NATIVE_IDENTITY_ANCHOR`) and pins its fingerprint in the local
+profile (`local.nativeAnchorSha256`); the host refuses to boot unless they
+match, and then `infra.NativeWorkloadIdentity` — core's native attester —
+answers the carrier, applied-observer and mint reviews TokenReview answers in a
+cell, under the bare namespace rule. The full contract is in
+[../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence-one-signed-module-manifest-per-binding).
 
-`solution_registrations` is the durable read projection, keyed by the route alias.
-Every row names its declared binding, generation, release and immutable target.
-A binding ID identifies a deployment instance, while an alias identifies a route;
-consent names the target and cannot follow an alias to a replacement instance.
-Only observations for the same declared target may survive a re-declaration.
+`solution_host_bindings` stores desired and applied manifests and pending
+reasons. Each pass re-verifies the newest delivered manifest per binding, admits
+it against the applied one under the binding row lock, and applies it into the
+same targets, registrations and generation history as before. A refused or
+unreadable delivery does not withdraw the last applied generation; withdrawal is
+a `removed: true` generation and is terminal. A withdrawal recorded before
+migration 41 cannot be read as a manifest and still refuses every later
+generation (core's `ErrWithdrawn`).
 
-New frontend candidates require complete signed payload preparation before apply.
-A failed candidate preserves the applied predecessor. Migration 40 indexes new
-applied frontend identities; the targeted internal retained-frontend read joins
-exact signed history to a still-live target and keeps last ten or the configured
-lazy-load window. Pre-migration history is not backfilled. Full history is never
-broadcast in the route snapshot. See the prepared-payload section in
+`GET /platform/_delivery/applied/{binding}` reads only the committed manifest,
+including withdrawals, after an accounts-audience TokenReview of the protected
+observer: `{host, binding, generation, digest, release, removed, appliedAt,
+pending?}`. A desired delivery receipt is not proof of apply.
+
+`solution_registrations` is the durable read projection, keyed by the route
+alias. Every row names its declared binding, generation, release and immutable
+target. A binding ID identifies a deployment instance, while an alias identifies
+a route; consent names the target and cannot follow an alias to a replacement
+instance.
+
+New frontend candidates require complete signed payload preparation before
+apply. A failed candidate preserves the applied predecessor. The targeted
+retained-frontend read joins exact signed inbox history to a still-live target.
+See the prepared-payload section in
 [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md).
 
 The internal `SolutionRegistryService` exposes the registry and host-binding
-reads. The gateway reads the snapshot and brokers it to the frontend. Both cache
-briefly: gateway reconciliation is approximately 10 seconds with a refresh on
-cache miss; frontend snapshots expire after 5 seconds and a failed refresh
-reports unavailable. An undeclared record stays pending and is not served.
-Applied modules and solutions are active independently of their optional
-frontend block; headless backends remain usable. Registry availability does not
-replace the separate organisation installation status and consent checks.
+reads. The gateway reads the snapshot, parses each applied manifest and routes an
+alias to the HTTP endpoint the manifest declares for its own workloads, at the
+address the manifest carries. The `endpoint_delivery` and `host_component` proto
+fields are no longer populated; their removal is a contract-package change of its
+own. Applied modules and solutions are active independently of their optional
+frontend block; registry availability does not replace installation status and
+consent checks.
 
-The internal APPLIED read also carries opaque endpoint delivery bytes for the
-Codefly SDK. They come from the exact signed inbox generation, not a registry
-address column or the newest desired document. Accounts retains delivery
-provenance and applied-state authority; Codefly owns carrier interpretation.
-Migration 39 permits endpoint documents in the existing append-only inbox.
-Producer and consumer integration is in progress; this does not qualify the
-replacement transport or relax pod/build admission.
-
-An optional top-level `group` on an applied solution declaration is copied to
-the registration as presentation only, including for headless solutions.
-Migration 38 adds that nullable projection; modules and tombstones cannot carry
-it. Moving or clearing a group preserves the installation target and grants.
-The catalogue exposes it without backend topology; authority never reads it.
-
-Migration 26 destructively removes runtime-only state and makes declaration
-ownership mandatory. Its from-zero proof is `TestMigration25FromZero` in the
-store module; `TestMigration22FromZero` separately proves immutable installation
-targets and withdrawal serialization using a freshly created package database.
+An optional `group` on an applied solution manifest is copied to the
+registration as presentation only (migration 38). Moving or clearing a group
+preserves the installation target and grants; authority never reads it.
 
 Audit type admission remains available through
-`ModuleCapabilitiesService.DeclareAuditEventTypes`. Its validator and namespace
-admission use declared module authority. Namespace ownership, additive schema
-changes, immutable visibility and the operator's `external_namespaces` grant
-remain enforced. `ModuleEmitAuditEvent` can emit only a type owned by the caller's
-solution scope and an authorized namespace. `business.AuditEventResolver` resolves
-stored schemas for payload validation and PII redaction.
+`ModuleCapabilitiesService.DeclareAuditEventTypes`, under the derived module
+authority below.
 
-The principal directory lists stored identities. The module principal registry
-below supplies declared authority to capability checks only.
-
-See [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence)
-for the trust model, field ownership and delivery configuration.
+The module registry every capability check reads is **derived** each pass
+(`business.ModulePrincipalReconciler`) from the applied, live manifests whose
+stored carrier still verifies and the module envelope a platform super_admin
+writes: the manifest's `authority` is the request, the envelope's per-principal
+`grant` the ceiling, the entry their intersection, and its workloads the
+manifest's `(service, container)` spelled by the namespace rule. The envelope
+names no workload and approves no build.
 
 ## The solution's runtime boundary is derived from its delivered binding
 
@@ -207,13 +211,11 @@ record of intent this host holds today.
 
 **Absent facts are gaps, never values.** Every fact is a `oneof` of its value and
 a `CatalogueGap{reason, detail}`. Today no record on this host carries a
-declaration or an applied generation (they arrive with applied presence
-documents), an approval or a withdrawal (the deployment contract's signed
+declaration or an applied generation (they arrive with applied module
+manifests), an approval or a withdrawal (the deployment contract's signed
 approval, not built yet), an observation or a retirement (nothing observes the
 cluster or reports stop/fence evidence), an installation revision, or a build
-size (the presence document's `build_size` section, codefly-dev/core#708,
-computed by the CLI at build, codefly-dev/cli#901): the host counts no lines
-itself. So each reads `NOT_RECORDED` or `NOT_OBSERVED`.
+size (a module manifest carries none, and the host counts no lines itself). So each reads `NOT_RECORDED` or `NOT_OBSERVED`.
 
 **Authorization has three cases, not two**: an approval, `not_authorized` — a
 known absence the approval record states — and a gap, where the host cannot
@@ -310,48 +312,28 @@ registry on every reconcile pass (and on a delivery or an envelope write,
 without waiting for the tick) and installs it tagged with the envelope revision
 it was derived from — the only production writer — so installing, narrowing or
 withdrawing a module takes effect with no restart. An entry exists only while
-three inputs agree:
+two inputs agree:
 
 - **the module envelope** — the authority ceiling a platform super_admin writes
   through `PlatformAdminService/PutModuleEnvelope` (`requirePlatformRole`, so
   never through an impersonated session; audited as
   `saas.platform.module_envelope_written`; append-only and revisioned in
-  `module_envelopes`; fresh MFA required, an unenrolled administrator refused).
-  Per module prefix it lists the WHOLE authority units the host admits (id
-  `<presence binding>:<binding>:<operation>`, revision, scope, queue, namespace,
-  binding key, lookup method — the audience is the grant's), the workload
-  identities the principal may run as (SPIFFE ID and container), explicit
-  `admitted_bindings` for a principal with no consumed units, the scope
-  ceilings, and the grant ceiling below.
-- **a live authority document inside that envelope** — signed, delivered,
-  re-verified on every pass against the host's CURRENT signer-to-domain policy
-  (a document that no longer verifies is refused by name), over a presence
-  binding no ADMITTED tombstone in the whole inbox history ever withdrew — one
-  addressed to this host and speaking for the binding's OWNER, the domain of
-  the presence generation this host admitted and applied (never a delivered
-  row core's admission refused); a withdrawal is terminal for the
-  binding, whatever later generation or authority id follows, and a foreign
-  tombstone is refused at receipt and ignored in history — and held by core's
-  `ValidateAgainst` to the envelope's
-  own units (exact containment: a unit that differs from the admitted one in any
-  field puts the whole document outside, and it grants nothing).
-- **the applied presence document** the authority is granted over — the workload
-  running the approved build gives the entry's `workload` (namespace and service
-  account from its SPIFFE ID, read by the one strict parser
-  `ParseKubernetesSPIFFEID`, container from the presence), and only when the
-  envelope allows that exact identity, so a later presence generation cannot
-  move the principal to another workload. One workload (namespace and service
-  account) maps to exactly one principal: the envelope refuses an overlap when
-  written and the derivation omits it.
+  `module_envelopes`; fresh MFA required, an unenrolled administrator refused):
+  `{"revision", "principals": {"<principal>": {"grant": {…}}}}`. It names no
+  workload, no unit and no build; a document that does is refused by name.
+- **an applied, live module manifest asking for the principal** — its
+  `authority.principal` is the module's principal, and its stored carrier is
+  re-verified on every pass against the CURRENT pins (one that no longer
+  verifies grants nothing). Its workloads, spelled by the namespace rule, are
+  the entry's `workloads`. A withdrawal is terminal for the binding. One
+  workload (namespace and service account) maps to exactly one principal, and
+  two manifests asking for one principal are both omitted.
 
-The entry is the envelope's grant bounded by the document: queues and namespaces
-the document also declares, resources its scope ceilings name, and each
-operation audience only for a binding whose `invoke` unit the document grants,
-every operation's scopes intersected with the unit's scope. A principal granted
-by two live documents, whose workload is not allowed or has no single answer,
-or whose entry fails validation is **omitted by name, never widened**. Within an
-authority id the newest generation is the answer (the inbox is append-only);
-across ids a principal moves only to a document inside the envelope.
+The entry is the envelope's grant bounded by the manifest: queues, namespaces
+and resource kinds the manifest also asks for, and each operation binding only
+when the manifest asks for it on the envelope's audience with an `invoke`
+operation, every operation's scopes intersected with what the manifest asks.
+A principal whose entry fails validation is **omitted by name, never widened**.
 
 **The registry is fenced by the committed envelope revision.** Every module
 authority decision — `AuthorizeModuleCapability`, the work-context and
@@ -411,7 +393,7 @@ to act on who is not a member of the named tenant is `FAILED_PRECONDITION`. That
 The split is what lets a module drive the surface from a journal with retries. A
 departed person is final for that person and nothing a retry resolves, while a
 composition this host does not admit as a module principal, or whose workload
-it cannot bind to an approved build, is an operator's to fix and its work is
+it cannot bind to a workload its manifest lists, is an operator's to fix and its work is
 worth holding; conflated under
 one code a consumer has to choose which of the two it silently gets wrong.
 
@@ -473,12 +455,11 @@ module presents its pod's **projected ServiceAccount token** (audience
 `accounts`) as the request's bearer, and `ModuleAuthorizeWorkContext` refuses a
 prefix that is not a declared module principal, then runs `BindExecution` (see
 "Establishing what a caller is running" below): the token is reviewed, the pod it
-names is read, and the image that pod is RUNNING must equal the build the
-principal's authority document approves. Only then is a capability minted, owned
-and actored by the module principal (`aud=module-capabilities`), and a
-`saas.module.work_context_minted` audit event (v2) records it with the execution
-it was bound to — namespace, ServiceAccount, pod, pod UID, container, running
-image, approved incarnation. The response carries
+names is read, and its namespace and ServiceAccount must be a workload the
+principal's applied manifest lists. Only then is a capability minted, owned and
+actored by the module principal (`aud=module-capabilities`), and a
+`saas.module.work_context_minted` audit event records it with the workload it
+was bound to — namespace, ServiceAccount, pod, pod UID, container. The response carries
 `{token, expiresAt, principalId, tenant}`.
 
 - **No secret proves a module's identity (#1056).** `MODULE_IDENTITY_SECRETS`,
@@ -487,11 +468,10 @@ image, approved incarnation. The response carries
 - A refusal is a **verdict** (`PermissionDenied`/`Unauthenticated`, the same
   fixed message whichever check failed): a token the API server refused —
   another audience, another cluster, expired — a token for another ServiceAccount
-  or namespace than the principal declares, a replaced pod, or a pod running an
-  unapproved build. The cause is logged here, never returned.
+  or namespace than the principal's manifest lists, or a replaced pod. The cause is logged here, never returned.
 - A host that could not establish the execution answers **`Unavailable`**: the
   API server is unreachable, no execution binding is wired, or the container
-  reports no image yet. Execution binding is wired only with delivered authority
+  has not started yet. Execution binding is wired only with delivery
   (`configuredSolutionHostBindingReconciler`), so **a host with no delivery mints
   for no module**, and a module run outside Kubernetes has no token to present.
 - A tenant-pinned module keeps the envelope's `tenant`; requesting a different
@@ -502,9 +482,9 @@ image, approved incarnation. The response carries
 - **Every module credential is sealed.** Accounts mints and verifies Work
   Contexts with `core/workcontext` (`pkg/adapters/work_context_core.go`):
   `StartModuleTask` seals the installation the business mint resolved, its
-  revision, the principal's producer epoch and the build the requesting pod is
-  running, and `VerifyModuleWorkContext` returns a `ModuleCaller` whose `Sealed`
-  carries the first three. So an uninstall revokes a module capability at its
+  revision and the principal's producer epoch — no build — and
+  `VerifyModuleWorkContext` returns a `ModuleCaller` whose `Sealed` carries
+  them. So an uninstall revokes a module capability at its
   next use — core refuses it at verification, because its sealed installation is
   no longer active — and so does a reinstall under a new installation id, which
   an unsealed credential could not do. `checkAgainstSealed` still compares the
@@ -529,11 +509,8 @@ image, approved incarnation. The response carries
   organization** (migration 35). Installing a module and every change to its
   installation's revision advance it, so a capability sealed before a scope or
   status change is refused after it.
-- Every mint calls `BindExecution`: the projected token is reviewed and its
-  running pod/build checked against delivered approval, and the digest it read is
-  the execution the capability attests — core holds it against the approved
-  build again at the mint. The approved-build view is keyed by the module's
-  PREFIX, the name the authority document gives it, never by its registry UUID.
+- Every mint calls `BindExecution`: the projected token is reviewed and its pod
+  held to a workload the principal's applied manifest lists.
 - **The exact binding lookup exists; `moduleOperationContextStale` still
   searches** the current operation bindings for a compatible scope superset.
   Replacing this with `ExactOperationBinding` requires the sealed binding id.
@@ -558,180 +535,48 @@ job lifecycle regressions live in `pkg/infra/installation_review_test.go`; the
 actual signer/verifier regression is
 `pkg/adapters/installation_credential_test.go`.
 
-## Establishing what a caller is running
+## Establishing which workload a caller is
 
-`Service.BindExecution` answers what a caller IS RUNNING, from sources the
-caller does not control. The mint used to authenticate with a **shared secret**,
-which is a bearer token — whoever holds it is the module — so it could not answer
-this at all; that secret is deleted (#1056) and every module mint calls this.
+`BindExecution` (`pkg/business/module_execution_binding.go`) takes the projected
+token and the principal the caller names, and establishes the rest
+independently:
 
-The approval is looked up by the name the authority document gives the
-principal — its **prefix** — never by the registry key
-`ModulePrincipalID(prefix)`, a UUID no document carries. A token the API server
-reviewed and refused is `ErrExecutionTokenRejected`, a verdict; a review that
-could not run is `ErrExecutionUnbound`, not one.
+1. **Review** the token (TokenReview, audience `accounts`; natively, core's
+   native attester under the run's anchor): it names a namespace,
+   a ServiceAccount, a pod and a pod UID. A token the API server refused is a
+   verdict (`ErrExecutionTokenRejected`); an API server that could not answer is
+   `ErrExecutionUnbound`. A token naming no pod, or valid for longer than the
+   600-second projection, is refused.
+2. **Resolve** the reviewed `(namespace, ServiceAccount)` over the WHOLE
+   registry: exactly one principal must declare a workload with that pair, and it
+   must be the one asked for (`ErrExecutionWorkloadAmbiguous`,
+   `ErrExecutionIdentityMismatch`). The pair is the applied manifest's workload
+   by rule — the namespace is the module's, the ServiceAccount the service's — so
+   a principal runs as every workload its manifest lists. In a pod, the mesh
+   presenter's SPIFFE ID must name the same namespace and ServiceAccount.
+3. **Read** the pod the TOKEN named, never one the caller named: its UID must
+   be the token's, it must be Running and not being deleted, the manifest's
+   container for that workload must be a running regular container, and nothing
+   else that could read the token may be in the pod (a sidecar, a running or
+   restartable init container, an ephemeral container:
+   `ErrExecutionUnapprovedContainer`). A container not started yet is
+   `ErrExecutionUnbound`; one stopped is a verdict.
 
-**What a mint requires, in full** (review round 1 on #1056 found each missing):
+**No image is read or compared.** Build approval left the runtime path with the
+module manifest: what a workload runs is deploy-time admission, and a Work
+Context seals no build. So containerd's `status.imageID` aliasing (#1145) cannot
+refuse an approved build or admit a withdrawn one at mint.
 
-- **The workload identifies exactly one principal, and it is the one asked
-  for.** A token authenticates a ServiceAccount in a namespace, never a prefix.
-  The reviewed `(namespace, ServiceAccount)` is resolved over the WHOLE captured
-  registry, the same snapshot that supplied the container and tenant;
-  zero or several owners is `ErrExecutionWorkloadAmbiguous` /
-  `ErrExecutionIdentityMismatch`. Two principals sharing a ServiceAccount mint as
-  neither — before, either one's pod minted as both.
-- **The pod is one security boundary.** Every container in it can read the
-  projected token, so the pod may hold only the authenticating container plus
-  init containers that ran to completion. Any other regular container, an init
-  container still running or restartable (a native sidecar), and an ephemeral
-  (debug) container in ANY state is `ErrExecutionUnapprovedContainer`.
-  **The stronger rule this falls short of, and why:** admit every container the
-  applied, signed presence document declares for the workload, each RUNNING its
-  declared digest. Presence cannot express it today: core's
-  `solutionhost.Workload` (v0.17.2 through main) carries the authenticating
-  container with its digest and every other container as a NAME only
-  (`non_authenticating`), and the CLI renders exactly that. Admitting a sidecar
-  by name would let it run any image, so every other container is refused.
-  **The cost:** a module pod with a sidecar — a Cloud SQL Auth Proxy, or a
-  namespace still on istio sidecar injection — mints nothing until presence
-  carries a digest per container (a core field, the CLI render, this check).
-  In the cell today the Cloud SQL proxy sidecars are on accounts (the host, which
-  mints for no one) and on database Jobs, and delivered namespaces are ambient,
-  so no module serving pod is known to carry one.
-- **Only a live regular container supplies the digest.** The pod must be
-  `Running` with no `deletionTimestamp`, and the declared container must be a
-  regular container in state `running`; a stopped container keeps its approved
-  `imageID` in status and a completed init container still reports one, and
-  neither counts (`ErrExecutionNotRunning`). Not started yet — pod `Pending`,
-  container `waiting` — is `ErrExecutionUnbound`: retryable, not a verdict.
-- **The token lives at most 600 seconds** (`MaxExecutionTokenLifetime`,
-  Kubernetes' minimum `expirationSeconds`), read from the iat/exp of a token the
-  API server has just authenticated. A longer one, or one whose lifetime cannot
-  be read, is refused.
-
-**Presenter binding.** Production exchanges require the gateway-authenticated
-workload presenter in private request context. The internal gRPC adapter accepts
-`x-codefly-workload-presenter` only with the gateway-only provenance credential,
-refuses duplicate or malformed values, and removes the raw assertion before
-calling business code. `BindExecution` compares the complete SPIFFE ID against
-applied presence and its namespace/ServiceAccount against TokenReview. The
-protected waypoint must overwrite caller XFCC and be the only network peer
-admitted to the workload listener; a trusted-looking header is not that proof.
-
-**Replay, stated precisely.** Reusing a valid projection for legitimate work is
-allowed. A stolen token presented under a different mesh principal is refused;
-a pod UID, approved running build and current organisation installation are still
-required. Mesh identity names a ServiceAccount, so two pods sharing that identity
-remain indistinguishable as presenters. TokenReview, the 600-second lifetime
-bound, pod UID and build checks remain essential. This change does not establish
-pod-specific proof of possession or live mesh qualification.
-
-**Native development.** Only constructing the Kubernetes client from the local
-stand-in outside a real pod selects the native exemption. In-cluster construction
-requires presenter binding, and setting a local stand-in inside a pod fails
-startup. Business tests using an in-memory cluster model the native trust profile;
-production presenter tests use the real Kubernetes decoder and business mint path.
-
-**Three digest types, and conflating any two defeats the check.** They are
-separate Go types rather than three strings for exactly that reason:
-
-| | what it says | who can write it |
-| --- | --- | --- |
-| `ApprovedDigest` | what the authority document approves | signed, out of band — the caller has no influence |
-| `DeclaredDigest` | what the pod **spec** asks to run | whoever can create the pod |
-| `RunningDigest` | what the container **status** reports, as `imageID` | the kubelet |
-
-The check is **approved == running**. Comparing approved against declared is the
-classic defeat: a pod spec can name an approved image and run something else if
-the tag moved, and the comparison passes while the workload is unapproved.
-Comparing declared against running proves only that the pod got what it asked
-for, which says nothing about whether it was allowed to ask. `DeclaredDigest`
-exists with nothing compared against it so that a reader reaching for "the pod's
-image" has a name for the thing they must not use.
-
-**Three independent sources, so no one of them can satisfy the check.** Filling
-both sides from the same place — approved digest and running digest both out of
-the authority document — compares a value to itself and passes for every caller.
-Here the approved digest comes from the signed document, the running digest from
-the Kubernetes API, keyed by a pod UID that came from a TokenReview of a token
-the caller could not forge.
-
-**The order is load-bearing:** authenticate, then read the pod *the token named*,
-then compare. Reading the pod first would mean reading a pod the **caller**
-named, which is a caller-supplied input; the token is what makes the pod
-reference trustworthy. The audience is `accounts`, so a token minted for the API
-server's own audience authenticates the same service account while having been
-issued for something else.
-
-**The UID is what is compared, not the name.** A pod name is reused across
-generations of a workload and the UID is not, so a replacement pod at the same
-name is refused.
-
-**Two answers that must not be confused.** `ErrExecutionNotApproved` is a verdict
-about the caller. `ErrExecutionUnbound` means the host could not *tell* — an
-unreachable API, a container still pulling, no reviewer wired — and **nothing is
-issued**, because a mint that proceeded would issue an unbound capability exactly
-when binding was impossible. A legacy non-bound token is **refused**, not
-skipped: skipping would make the check opt-out by presenting an older token,
-which is the easiest possible bypass.
-
-**A tag is never an approval.** The comparison is on the digest portion and is an
-exact match on it — not a suffix test (`HasSuffix` passes when the approved
-digest is a suffix of a longer hex string) and not a `sha256:` prefix check
-(which would let any repository satisfy an approval granted for one image). A
-value with no digest never matches, because an approval is only ever a statement
-about immutable content.
-
-### The monotonicity contract, which is this host's to keep
-
-Core's `SealSource.ApprovedBuild` states the rule and says plainly that it
-compares values for **equality** and cannot detect a source that moves
-backwards. `MonotonicApprovedBuilds` enforces both clauses:
-
-1. for one principal, the incarnation never **decreases**;
-2. a change of **digest** comes with an **increase** in the incarnation.
-
-Clause 2 is the one core's own `MemorySealSource` missed: approve B at
-incarnation 5, then approve A again at 5, and every capability sealed to A at 5 —
-which the move to B revoked — verifies again. A swap-back at a fixed counter is
-the rewind the rule exists to prevent, reached through the field clause 1 does
-not cover. A violating write is **refused**, not clamped: clamping would serve a
-value the writer did not intend and the writer would never learn. A source that
-genuinely must rewind is reconstructing state rather than recording it, and
-belongs behind a fresh instance.
-
-**Three states, and collapsing two of them is the dangerous direction:** a record
-→ the approved pair; known but no record → `ErrNoApprovedBuild`, and the caller
-may act unbound; unknown → `ErrUnknownExecutionPrincipal`, refused. Collapsing
-unknown into "bears none" would mint an unbound capability for an identity the
-host has never heard of, so an **empty** authority refuses everyone rather than
-minting unbound capabilities for everyone.
-
-A principal bearing no approved build binds with **neither** field set, because
-core's seal makes `build_incarnation` and `image_digest` optional *and paired* —
-a digest without an incarnation is refused by its schema.
-
-**Wired (#1056):** every module mint calls `BindExecution`, and the approved
-digests come from the delivered authority documents through
-`ApprovedBuildReconciler`. `TestEveryModuleMintIsExecutionBound` (module/tools)
-holds the call chain. `module_operation_context.go`'s binding search
-still waits on a sealed operation binding: this host seals none into any
-capability, and its seal source answers every binding id as absent.
-- The module presents that token in `x-codefly-work-context` on every capability
-  call; accounts takes the calling principal and its bound tenant **from the
-  verified token, never from request metadata**. Work Contexts cap at 15 minutes,
-  so a long-running worker re-runs the exchange rather than holding one open.
-
-See [../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md) and
-[../../MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md) for the other
-exchanges that produce one.
+The presenter's trust domain is not compared: the manifest declares no SPIFFE ID
+and this host is given no trust domain, so the presenter is held to the reviewed
+namespace and ServiceAccount only. Delivering the cell's trust domain to the host
+is the follow-up that restores that term.
 
 ## Serving the live authority a callee verifies against
 
 `ModuleCapabilitiesService/ResolveWorkContextAuthority` answers the live values a
 composed module's verifier holds a presented capability's seal against: the
-installation and its revision, a principal's epoch, the approved build, the
-operation binding, the owner's authorization revision, and an approval grant
+installation and its revision, a principal's epoch, the operation binding, the owner's authorization revision, and an approval grant
 (this host records none, and says so). Without it a module can only run core's
 forwarding-hop `Inspector`, which checks no seal, epoch or revision and consumes
 no single-use token — so a revoked installation or an advanced epoch stays

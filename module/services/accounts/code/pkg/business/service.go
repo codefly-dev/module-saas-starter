@@ -157,17 +157,17 @@ type Service struct {
 	// asserted by its constant rather than by its behaviour.
 	audienceClock func() time.Time
 
-	// The delivery inbox's wiring. All three or none: ReceiveSolutionDelivery
+	// The delivery inbox's wiring. All of it or none: ReceiveSolutionDelivery
 	// fails closed and names the gap when any is absent, because a deployment
 	// that mounted the endpoint without a verifier must not accept documents.
-	deliveryVerifier        *solutionhost.Verifier
-	deliveryStore           SolutionDeliveryStore
-	deliveryCarrier         SolutionDeliveryCarrierAuthorizer
-	deliveryDomainsBySigner map[string][]string
-	// deliveryCoordinate is this host's coordinate, so an authority document
-	// addressed to another host is refused at receipt. Empty skips that check
-	// (the reconcile pass still applies it).
-	deliveryCoordinate     string
+	deliveryVerifier *solutionhost.Verifier
+	deliveryStore    SolutionDeliveryStore
+	deliveryCarrier  SolutionDeliveryCarrierAuthorizer
+	// deliveryCoordinate is this host's coordinate, which every admission is
+	// decided under.
+	deliveryCoordinate string
+	// moduleNamespaces spells the namespace a module's workloads run in.
+	moduleNamespaces       ModuleNamespaceRule
 	frontendSource         frontendpayload.Source
 	frontendLazyLoadWindow time.Duration
 
@@ -197,11 +197,10 @@ type Service struct {
 	moduleInstallations     ModuleInstallationResolver
 	moduleOperationBindings ModuleOperationBindingStore
 
-	// The independent sources execution-bound minting needs. Unset means
+	// The workload reviewer execution-bound minting needs. Unset means
 	// BindExecution answers ErrExecutionUnbound — never a mint that skips the
 	// check.
-	executionReviewer  ExecutionReviewer
-	executionAuthority ExecutionAuthority
+	executionReviewer ExecutionReviewer
 
 	// workContextSeals answers the row-backed half of a Work Context's seal
 	// (work_context_seal.go). Unset answers no seal, so no capability is
@@ -237,15 +236,9 @@ func (s *Service) SetPolicyLog(log PolicyLog, store PolicyLogStore) {
 	s.policyLogStore = store
 }
 
-// SetSolutionDelivery wires the delivery endpoint: the bundle verifier, the
-// inbox's persistence, the carrier authorizer, and which ownership domains each
-// attested signer may deliver under.
-//
-// The signer-to-domain mapping comes from the SAME document as the identity
-// allowlist — the verifier's own policy — rather than from this host's
-// environment. When the two were separable, a deployer who could set the
-// environment could widen what an accepted signer speaks for without touching
-// the independently-delivered policy at all.
+// SetSolutionDelivery wires the delivery endpoint: the pinned-key verifier,
+// the inbox's persistence and the carrier authorizer. Which ownership domains a
+// signer may deliver under is the verifier's own pin policy.
 //
 // Boot wiring, called once before the service listens, so these are plain
 // fields: an atomic that is only ever written once reads as a claim that
@@ -254,12 +247,10 @@ func (s *Service) SetSolutionDelivery(
 	verifier *solutionhost.Verifier,
 	store SolutionDeliveryStore,
 	carrier SolutionDeliveryCarrierAuthorizer,
-	domainsBySigner map[string][]string,
 ) {
 	s.deliveryVerifier = verifier
 	s.deliveryStore = store
 	s.deliveryCarrier = carrier
-	s.deliveryDomainsBySigner = maps.Clone(domainsBySigner)
 }
 
 // declaredModules is the module principal registry as it stands right now.

@@ -196,7 +196,6 @@ func (s *WorkContextAuthorityServer) startSourceOperation(
 			PrincipalKind:      business.PrincipalKindService,
 			DelegationID:       authority.Delegation.ID,
 			GrantedScopes:      actorScopes,
-			Execution:          attestedModuleExecution(authority.ModuleWorkContextAuthority),
 			OperationBindingID: authority.BindingID(),
 		}},
 		Replay: workcontext.ReplayIdempotent,

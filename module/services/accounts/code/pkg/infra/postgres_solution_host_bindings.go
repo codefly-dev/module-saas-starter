@@ -15,11 +15,11 @@ import (
 // caller opened a WithControlPlane transaction, which getQueryExecutor picks up
 // from ctx.
 
-const solutionHostBindingColumns = `binding_id, host_coordinate, host_component,
+const solutionHostBindingColumns = `binding_id, host_coordinate,
 	desired_generation, desired_digest, desired_document, desired_seen_at,
 	applied_generation, applied_digest, applied_document, applied_removed, applied_routes,
 	applied_solution_id, applied_release, applied_domain, applied_at,
-	pending_reason, pending_since, updated_at`
+	pending_reason, pending_since, updated_at, first_domain`
 
 func scanSolutionHostBinding(row pgx.Row) (*business.SolutionHostBindingRecord, error) {
 	var (
@@ -39,13 +39,14 @@ func scanSolutionHostBinding(row pgx.Row) (*business.SolutionHostBindingRecord, 
 		appliedAt         *time.Time
 		pendingReason     *string
 		pendingSince      *time.Time
+		firstDomain       *string
 	)
 	if err := row.Scan(
-		&record.BindingID, &record.HostCoordinate, &record.HostComponent,
+		&record.BindingID, &record.HostCoordinate,
 		&desiredGeneration, &desiredDigest, &desiredDocument, &desiredSeenAt,
 		&appliedGeneration, &appliedDigest, &appliedDocument, &appliedRemoved, &appliedRoutes,
 		&appliedSolutionID, &appliedRelease, &appliedDomain, &appliedAt,
-		&pendingReason, &pendingSince, &record.UpdatedAt,
+		&pendingReason, &pendingSince, &record.UpdatedAt, &firstDomain,
 	); err != nil {
 		return nil, err
 	}
@@ -77,6 +78,7 @@ func scanSolutionHostBinding(row pgx.Row) (*business.SolutionHostBindingRecord, 
 	}
 	record.PendingReason = derefString(pendingReason)
 	record.PendingSince = pendingSince
+	record.Domain = derefString(firstDomain)
 	return &record, nil
 }
 
@@ -169,17 +171,24 @@ func (s *PostgresStore) SaveSolutionHostBinding(
 	if record.PendingReason != "" {
 		pendingReason = &record.PendingReason
 	}
+	// The binding's domain is written once and never changed: the stored one
+	// wins over whatever a later save carries (first_domain, migration 41).
+	var firstDomain *string
+	if record.Domain != "" {
+		firstDomain = &record.Domain
+	} else if appliedDomain != nil {
+		firstDomain = appliedDomain
+	}
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO public.solution_host_bindings (
-			binding_id, host_coordinate, host_component,
+			binding_id, host_coordinate,
 			desired_generation, desired_digest, desired_document, desired_seen_at,
 			applied_generation, applied_digest, applied_document, applied_removed, applied_routes,
 			applied_solution_id, applied_release, applied_domain, applied_at,
-			pending_reason, pending_since, updated_at)
+			pending_reason, pending_since, updated_at, first_domain)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		ON CONFLICT (binding_id) DO UPDATE SET
 			host_coordinate = EXCLUDED.host_coordinate,
-			host_component = EXCLUDED.host_component,
 			desired_generation = EXCLUDED.desired_generation,
 			desired_digest = EXCLUDED.desired_digest,
 			desired_document = EXCLUDED.desired_document,
@@ -195,12 +204,13 @@ func (s *PostgresStore) SaveSolutionHostBinding(
 			applied_at = EXCLUDED.applied_at,
 			pending_reason = EXCLUDED.pending_reason,
 			pending_since = EXCLUDED.pending_since,
-			updated_at = EXCLUDED.updated_at`,
-		record.BindingID, record.HostCoordinate, record.HostComponent,
+			updated_at = EXCLUDED.updated_at,
+			first_domain = COALESCE(solution_host_bindings.first_domain, EXCLUDED.first_domain)`,
+		record.BindingID, record.HostCoordinate,
 		desiredGeneration, desiredDigest, desiredDocument, desiredSeenAt,
 		appliedGeneration, appliedDigest, appliedDocument, appliedRemoved, appliedRoutes,
 		appliedSolutionID, appliedRelease, appliedDomain, appliedAt,
-		pendingReason, record.PendingSince, record.UpdatedAt)
+		pendingReason, record.PendingSince, record.UpdatedAt, firstDomain)
 	return err
 }
 

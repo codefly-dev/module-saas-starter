@@ -344,9 +344,7 @@ func TestOrdinaryMintsAreUnchangedByTheBoundary(t *testing.T) {
 			Tenant:         renewOrgID,
 			PrincipalID:    renewOwnerID,
 			InstallationID: testInstallation("runtime.operations"),
-			Execution:      business.ExecutionIdentity{Running: business.RunningDigest(testBuildFor(renewOwnerID).ImageDigest), Incarnation: 1},
 		}
-		server.seals.(*sealAnswersFake).approve(renewOwnerID, testBuildFor(renewOwnerID))
 		_, moduleFirst, err := server.StartModuleTask(context.Background(), module)
 		require.NoError(t, err)
 		_, moduleSecond, err := server.StartModuleTask(context.Background(), module)

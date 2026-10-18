@@ -35,7 +35,7 @@ func (d *deliveredSet) Documents(context.Context) ([]business.SolutionHostBindin
 	return d.documents, nil
 }
 
-func (d *deliveredSet) put(t *testing.T, document *solutionhost.SolutionHostBinding) {
+func (d *deliveredSet) put(t *testing.T, document *solutionhost.ModuleManifest) {
 	t.Helper()
 	d.documents = []business.SolutionHostBindingDocument{{
 		Source: "mount/" + document.Binding + ".codefly.yaml",
@@ -50,11 +50,10 @@ const testSignerIdentity = "example-release"
 // canonical bytes verbatim, plus a DSSE envelope over them. Admission takes only
 // verified values, so a mount that handed over bare documents would be refused —
 // which is the behaviour TestSolutionHostBindingRefusesAnUnsignedDocument pins.
-func testCarrier(t *testing.T, document *solutionhost.SolutionHostBinding) []byte {
+func testCarrier(t *testing.T, document *solutionhost.ModuleManifest) []byte {
 	t.Helper()
-	// CanonicalBytes, not Marshal: the signing input is the canonical JSON, and
-	// PresenceFromVerified refuses a payload that is not the canonical encoding
-	// of the document it decodes to.
+	// The signing input is the canonical JSON: core refuses a payload that is
+	// not the canonical encoding of the manifest it decodes to.
 	canonical, err := solutionhost.SignedPayload(document)
 	if err != nil {
 		t.Fatalf("canonical bytes for %s: %v", document.Binding, err)
@@ -69,80 +68,41 @@ const testHostCoordinate = "acme/test/eu-west-1"
 // unseen binding ID under a domain of its own choosing.
 const testOwnershipDomain = "acme"
 
-// declaredBinding builds a present generation for one solution on this host. The
-// binding ID is dotted and the alias is a single lowercase segment, which is the
-// shape the renderer commits to (codefly-dev/cli#853): the binding ID is never
-// the registry key.
-func declaredBinding(t *testing.T, solutionID string, generation uint64) *solutionhost.SolutionHostBinding {
+// declaredBinding builds a live module manifest for one solution on this host.
+// The binding ID is dotted and the alias is a single lowercase segment, which
+// is the shape the renderer commits to: the binding ID is never the registry
+// key.
+func declaredBinding(t *testing.T, solutionID string, generation uint64) *solutionhost.ModuleManifest {
 	t.Helper()
-	document := &solutionhost.SolutionHostBinding{
-		Schema:           solutionhost.SchemaPresenceV1,
-		Kind:             solutionhost.KindSolution,
-		Binding:          "acme.test." + solutionID,
-		Generation:       generation,
-		OwnershipDomain:  testOwnershipDomain,
-		EnvelopeRevision: 1,
-		Host:             solutionhost.HostTarget{Coordinate: testHostCoordinate, Component: "saas-host"},
-		// Three digests, three distinct values. Presence v2 requires the release
-		// digest — a generation that omits it is one no authority document can be
-		// matched to — and core types the three separately so that comparing a
-		// rendered digest to an image digest is a compile error. Giving them
-		// different bytes here is what keeps a test from passing on a mix-up the
-		// types happen not to catch.
-		Release: solutionhost.Release{
-			Publisher: "acme", Name: solutionID, Version: "1.4.0",
-			Digest: solutionhost.ReleaseDigest("sha256:" + strings.Repeat("ef", 32)),
-		},
-		Routes: []solutionhost.Route{{Alias: solutionID, Surface: solutionhost.SurfaceBackend}},
-		Artifacts: []solutionhost.Artifact{{
-			Surface: solutionhost.SurfaceBackend,
-			Name:    "api",
-			Release: "acme/" + solutionID + "@1.4.0",
-			Digest:  solutionhost.RenderedDigest("sha256:" + strings.Repeat("ab", 32)),
-		}},
-		Workloads: []solutionhost.Workload{{
-			Name:      "api",
-			Artifact:  "api",
-			Container: "api",
-			Image: solutionhost.Image{
-				Repository: "registry.example/acme/" + solutionID,
-				Digest:     solutionhost.ImageDigest("sha256:" + strings.Repeat("cd", 32)),
-			},
-			Identity: solutionhost.WorkloadIdentity{
-				Audience: "https://test.acme.example/solutions",
-				Subject:  "system:serviceaccount:" + solutionID + ":api",
-				SPIFFEID: "spiffe://acme.test/ns/" + solutionID + "/sa/api",
-			},
-			// A sidecar that must never be accepted as the authenticating
-			// container. Core requires this list EXPLICITLY — empty declares
-			// "there are none", absent is refused — because a plain slice
-			// cannot tell those apart and a host that cannot tell has to choose
-			// between refusing every workload and trusting any container that
-			// asks. Naming one here rather than writing the empty list keeps
-			// the non-degenerate case in the reconciler's own fixtures.
-			NonAuthenticating: &[]string{"telemetry-sidecar"},
-		}},
+	document := &solutionhost.ModuleManifest{
+		Schema:     solutionhost.SchemaModuleManifestV1,
+		Kind:       solutionhost.KindSolution,
+		Binding:    "acme.test." + solutionID,
+		Alias:      solutionID,
+		Generation: generation,
+		Host:       solutionhost.HostTarget{Coordinate: testHostCoordinate, Domain: testOwnershipDomain},
+		Release:    solutionhost.Release{Publisher: "acme", Name: solutionID, Version: "1.4.0"},
+		Workloads:  []solutionhost.Workload{{Service: "api", Container: "api"}},
+		Endpoints:  []solutionhost.Endpoint{{Name: "rest", Service: "api", API: "rest", Address: "http://api." + solutionID + ".svc.cluster.local:8080"}},
 	}
 	if err := document.Validate(); err != nil {
-		t.Fatalf("test document is not a valid binding: %v", err)
+		t.Fatalf("test document is not a valid manifest: %v", err)
 	}
 	return document
 }
 
-func tombstoneOf(t *testing.T, document *solutionhost.SolutionHostBinding, generation uint64) *solutionhost.SolutionHostBinding {
+func tombstoneOf(t *testing.T, document *solutionhost.ModuleManifest, generation uint64) *solutionhost.ModuleManifest {
 	t.Helper()
 	removed := *document
 	removed.Generation = generation
-	removed.Routes = nil
-	removed.Artifacts = nil
 	removed.Workloads = nil
-	removed.Modules = nil
 	removed.Endpoints = nil
+	removed.Authority = nil
 	removed.Frontend = nil
 	removed.Group = nil
 	removed.Removed = true
 	if err := removed.Validate(); err != nil {
-		t.Fatalf("test tombstone is not valid: %v", err)
+		t.Fatalf("test withdrawal is not valid: %v", err)
 	}
 	return &removed
 }
@@ -156,12 +116,10 @@ func newTestReconciler(t *testing.T, source business.SolutionHostBindingSource) 
 	t.Helper()
 	reconciler, err := business.NewSolutionHostBindingReconciler(testService,
 		business.SolutionHostBindingReconcilerConfig{
-			Source:          source,
-			Verifier:        deliverytest.Verifier(t, map[string][]string{testSignerIdentity: {testOwnershipDomain}}),
-			Coordinate:      testHostCoordinate,
-			Domains:         []string{testOwnershipDomain},
-			DomainsBySigner: map[string][]string{testSignerIdentity: {testOwnershipDomain}},
-			Interval:        time.Minute,
+			Source:     source,
+			Verifier:   deliverytest.Verifier(t, map[string][]string{testSignerIdentity: {testOwnershipDomain}}),
+			Coordinate: testHostCoordinate,
+			Interval:   time.Minute,
 		})
 	if err != nil {
 		t.Fatalf("reconciler: %v", err)
@@ -578,9 +536,8 @@ func TestSolutionHostBinding_AnEmptyMountRemovesNothing(t *testing.T) {
 func TestSolutionHostBinding_ABindingRefusedAtItsFirstGenerationIsStillVisible(t *testing.T) {
 	solutionID := testDeclaredSolutionID(t)
 	unaddressable := declaredBinding(t, solutionID, 1)
-	unaddressable.Routes[0].Alias = solutionID + ".internal"
-	unaddressable.Artifacts[0].Surface = solutionhost.SurfaceBackend
-	unaddressable.Routes[0].Surface = solutionhost.SurfaceBackend
+	unaddressable.Alias = solutionID + ".internal"
+	unaddressable.Endpoints[0].Address = "http://api." + unaddressable.Alias + ".svc.cluster.local:8080"
 	mount := &deliveredSet{}
 	mount.put(t, unaddressable)
 
@@ -616,7 +573,8 @@ func TestSolutionHostBinding_ABindingRefusedAtItsFirstGenerationIsStillVisible(t
 func TestSolutionHostBinding_AStandingRefusalKeepsWhenItStarted(t *testing.T) {
 	solutionID := testDeclaredSolutionID(t)
 	unaddressable := declaredBinding(t, solutionID, 1)
-	unaddressable.Routes[0].Alias = solutionID + ".internal"
+	unaddressable.Alias = solutionID + ".internal"
+	unaddressable.Endpoints[0].Address = "http://api." + unaddressable.Alias + ".svc.cluster.local:8080"
 	mount := &deliveredSet{}
 	mount.put(t, unaddressable)
 	reconciler := newTestReconciler(t, mount)
@@ -771,8 +729,10 @@ func TestSolutionTarget_ARenameKeepsTheIdentityAndMovesTheAlias(t *testing.T) {
 	before := liveTarget(t, document.Binding)
 
 	renamed := declaredBinding(t, first, 2)
-	renamed.Routes[0].Alias = second
-	renamed.Artifacts[0].Release = renamed.Release.Identity()
+	renamed.Alias = second
+	// The module's namespace is its alias by the rule, so a rename moves its
+	// endpoints' Service with it.
+	renamed.Endpoints[0].Address = "http://api." + second + ".svc.cluster.local:8080"
 	mount.put(t, renamed)
 	if err := reconciler.RunOnce(testCtx); err != nil {
 		t.Fatalf("apply the rename: %v", err)
@@ -917,7 +877,7 @@ func TestSolutionTarget_RePresentingAWithdrawnBindingIsRefused(t *testing.T) {
 	if record == nil {
 		t.Fatal("the withdrawn binding lost its record")
 	}
-	if !strings.Contains(record.PendingReason, solutionhost.ErrTombstoned.Error()) {
+	if !strings.Contains(record.PendingReason, solutionhost.ErrWithdrawn.Error()) {
 		t.Fatalf("pending reason = %q, want it to name the terminal tombstone", record.PendingReason)
 	}
 	if record.Applied == nil || !record.Applied.Removed {
@@ -990,11 +950,9 @@ func testReconcilerAcceptingDomains(
 			Source: source,
 			// The key is pinned for every domain the host grants it, so only
 			// the rule under test can refuse.
-			Verifier:        deliverytest.Verifier(t, map[string][]string{testSignerIdentity: domains}),
-			Coordinate:      testHostCoordinate,
-			Domains:         domains,
-			DomainsBySigner: map[string][]string{testSignerIdentity: domains},
-			Interval:        time.Minute,
+			Verifier:   deliverytest.Verifier(t, map[string][]string{testSignerIdentity: domains}),
+			Coordinate: testHostCoordinate,
+			Interval:   time.Minute,
 		})
 	if err != nil {
 		t.Fatalf("reconciler: %v", err)
@@ -1048,7 +1006,7 @@ func TestSolutionHostBinding_ADomainChangeDoesNotTakeOverAnAppliedBinding(t *tes
 
 	// The same binding ID, a newer generation, a different owner.
 	takeover := declaredBinding(t, solutionID, 5)
-	takeover.OwnershipDomain = otherDomain
+	takeover.Host.Domain = otherDomain
 	mount.put(t, takeover)
 	if err := testReconcilerAcceptingDomains(t, mount, testOwnershipDomain, otherDomain).RunOnce(testCtx); err != nil {
 		t.Fatalf("a withheld document must not fail the pass: %v", err)

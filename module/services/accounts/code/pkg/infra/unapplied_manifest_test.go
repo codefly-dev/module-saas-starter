@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A presence the inbox holds at a generation its binding has not applied is
+// A manifest the inbox holds at a generation its binding has not applied is
 // counted until the binding reconciler applies it, and not after.
-func TestUnappliedPresenceIsCountedUntilItsBindingApplies(t *testing.T) {
+func TestUnappliedManifestIsCountedUntilItsBindingApplies(t *testing.T) {
 	s := newRegistryScenario(t, "unap")
 	// On the control plane, as its one production caller reads it: the
 	// request role sees neither table.
@@ -19,7 +19,7 @@ func TestUnappliedPresenceIsCountedUntilItsBindingApplies(t *testing.T) {
 		var count uint64
 		err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 			var err error
-			count, err = testStore.CountUnappliedPresence(ctx)
+			count, err = testStore.CountUnappliedManifests(ctx)
 			return err
 		})
 		return count, err
@@ -27,13 +27,11 @@ func TestUnappliedPresenceIsCountedUntilItsBindingApplies(t *testing.T) {
 	before, err := unapplied()
 	require.NoError(t, err)
 
-	current := s.currentRevision(t)
-	_, err = s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, s.envelope(t, current+1, envelopeOptions{resources: true}))
-	require.NoError(t, err)
-	s.deliverPresence(t, s.primary, 1, current+1)
+	s.putEnvelope(t, envelopeOptions{resources: true})
+	s.deliverManifest(t, s.primary, 1)
 	pending, err := unapplied()
 	require.NoError(t, err)
-	require.Equal(t, before+1, pending, "a delivered presence nothing has applied is pending")
+	require.Equal(t, before+1, pending, "a delivered manifest nothing has applied is pending")
 
 	if err := s.passReasons(t); err != nil {
 		t.Logf("reconcile refusals: %v", err)
@@ -43,5 +41,5 @@ func TestUnappliedPresenceIsCountedUntilItsBindingApplies(t *testing.T) {
 	require.Equal(t, uint64(1), record.Applied.Generation)
 	after, err := unapplied()
 	require.NoError(t, err)
-	require.Equal(t, before, after, "an applied presence is no longer pending")
+	require.Equal(t, before, after, "an applied manifest is no longer pending")
 }

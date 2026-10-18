@@ -1,15 +1,15 @@
 # Solution registration: trust model, authority, and compatibility
 
 A **solution** is an independently deployed module this host has no build-time
-knowledge of. Delivery declares its presence through a signed
-`SolutionHostBinding`; the host reconciles that declaration into durable state.
+knowledge of. Delivery declares its presence through one signed module manifest
+per binding; the host reconciles that declaration into durable state.
 The gateway reads that state for `/solutions/{id}/…`, and the frontend reads it
 for `/s/{id}`. This document states who may declare presence, what the host
 checks, and how presence differs from a tenant's authority to use a solution.
 
 An optional **solution group** organises the catalogue and member navigation.
 The composing platform supplies its stable `id`, display `title` and signed
-32-bit `order` on the solution's signed presence, independently of its frontend.
+32-bit `order` on the solution's signed manifest, independently of its frontend.
 Headless solutions therefore appear in catalogue groups without declaring a page.
 The host copies this metadata only when that generation applies, and clears it
 when omitted or withdrawn. A group owns no deployment, installation, consent,
@@ -48,27 +48,14 @@ Three mechanisms are routinely mistaken for a sandbox. None of them is one:
 
 ## Live route delivery
 
-The applied presence names the endpoints a component owns. Codefly supplies
-endpoint values separately through the signed delivery inbox. The internal
-applied-state read carries those bytes opaquely; the gateway passes them to
-`ResolveDeliveredNetworkInstance(applied, raw)`. Core validates the complete
-presence digest and the SDK resolves the selected endpoint. Neither Accounts
-nor the gateway interprets configuration carrier keys. Endpoint admission and
-subsequent applied-state reads use the host's existing signer-to-domain policy;
-a valid signature alone does not authorise the asserted ownership domain.
-
-The delivery inbox retains the signed bytes; the identity registry gains no
-address column. An exact historical lookup keeps a withheld desired generation
-from replacing the endpoint value of the applied generation. Missing, withdrawn
-or mismatched values cannot fall back to startup carriers. The existing registry
-refresh and guarded transport consume the result without a second registry or
-a configuration mount.
-
-This replacement is being integrated across the delivery producer, Core, SDK
-and host. It is not yet qualified end to end. Credential delivery remains a
-separate production requirement; endpoint values do not replace pod/build
-admission. Generation-versioned asset URLs still do not establish immutable
-JavaScript or retained lazy-loaded chunks.
+The applied manifest names every endpoint a component owns, with its address:
+resolved at render in a cell, at delivery in a native run. The internal
+applied-state read carries the applied manifest, and the gateway routes an
+alias to the one HTTP-family endpoint the manifest declares for its own
+workloads, at the address the signed manifest carries. Neither Accounts nor the
+gateway reads a startup carrier for it, and the registry gains no address
+column; a withheld desired generation never replaces the applied generation's
+addresses.
 
 ## 2. Declared authority
 
@@ -82,8 +69,8 @@ using the cluster-internal credential. Registry identity and the immutable targe
 are host facts, never assertions accepted from a browser or remote component.
 
 An upstream — a solution's backend or a module's endpoint, reached over plain
-HTTP inside the cell's mesh at the address the Codefly SDK resolves for the
-endpoint its applied presence declares — receives forwarded viewer credentials.
+HTTP inside the cell's mesh at the address its applied manifest declares for
+the endpoint — receives forwarded viewer credentials.
 The transport therefore checks resolved addresses at dial time, refusing public,
 link-local and metadata addresses. Composition-local addresses and the explicit
 loopback development case remain supported. A changed DNS answer cannot bypass
@@ -308,152 +295,170 @@ installation's authority-root scope node to the intended people or teams.
 Deployment presence supplies neither consent nor a scope grant. No migration
 creates those grants implicitly. See §4 for projections and traffic admission.
 
-## 7. Declared presence
+## 7. Declared presence: one signed module manifest per binding
 
-A `SolutionHostBinding` records which solution delivery intends to run on this
-host. The host records desired and applied generations separately, including the
-reason an unaccepted generation remains pending.
+A module or composed solution is present on this host because a signed
+**module manifest** declared it — never because its process announced itself.
+One `codefly/module-manifest/v1` per binding (core's
+`solutionhost.ModuleManifest`, documented in core's `docs/module-manifest.md`)
+says which instance it is, where it runs, which workloads run as it, where its
+endpoints are and what authority it asks for. It replaced the presence,
+authority and endpoint-delivery documents, which this host no longer reads in
+any version; a document of that family is refused with core's instruction to
+re-render it with a current Codefly CLI.
 
-### The document, and who owns which field
-
-`SolutionHostBinding` is defined by Core (`github.com/codefly-dev/core/solutionhost`,
-schema `codefly/solution-host-binding/v1`), rendered per solution instance by
-`codefly-dev/cli`, delivered by the GitOps bundle, and reconciled here. It is
-desired state and nothing else: it carries no observation, no health and no
-credential. The split is the point.
-
-| Fact | Owner | Where it lives |
+| Fact | Manifest field | What the host derives from the applied generation |
 | --- | --- | --- |
-| That a solution should be present at all | the declaration | `solution_host_bindings.applied_*` |
-| Which release runs | the declaration | `release`, recorded as `applied_release` |
-| Which route alias it answers on | the declaration | `routes[].alias` |
-| The workload identity to expect | the declaration | `workload` (the SPIFFE ID is the workload's mesh principal) |
-| The page a module or solution serves — title, order, exposed module, host contract, dashboard, client surfaces | the declaration | `frontend`, copied onto the record as `frontend_manifest` when the generation applies |
-| Where its backend is reached | the composition, through the Codefly SDK | nowhere: the gateway resolves it from the endpoints the document declares |
+| That the instance is present, at which generation | `binding`, `generation`, `removed` | `solution_host_bindings.applied_*`, the installable target, the registration |
+| The route it answers on | `alias` (one lowercase segment) | the registry key (`/solutions/<alias>`, `/v1/<alias>`) |
+| Solution or module | `kind` | the registration's declared kind |
+| The release it deploys | `release` | `applied_release` |
+| The host and ownership domain it speaks for | `host.coordinate`, `host.domain` | `applied_domain`; who may change the binding |
+| Its presentation | `group`, `frontend` | the catalogue group and frontend block |
+| The workloads that run as its principal | `workloads[] {service, container}` | the module registry entry's workloads, by the cell's rule |
+| Where its endpoints are | `endpoints[] {name, service, api, address}` | the gateway's route upstream |
+| What authority it asks for | `authority` | intersected with the administrator's envelope grant |
 
-The document carries no address. An address written into a delivery document is
-a resolution result that was true on one cluster until something moved, so the
-document declares endpoints by NAME and the Codefly CLI writes this gateway a
-`CODEFLY__ENDPOINT__…` carrier for each one a composed workload is reached
-through, locally and in a render. **Nothing is reported by a running process**:
-the mint carries no origin and no manifest (the two fields are reserved on
-`ModuleMintWorkContextRequest`), and the registry holds no address of any kind.
+The manifest carries no credential, no observation, no health and **no build
+approval**: no image digest is compared when a module mints. "Only approved
+images run" is deploy-time admission, outside this host.
 
-**The gateway resolves where every declared alias is reached, solution and
-module alike.** On each refresh it reads the endpoints the APPLIED presence
-declares for the service that runs its workload — the presence's own endpoints,
-HTTP-family only — and asks the Codefly SDK for each; exactly one answers, and
-that is where `/solutions/<alias>/*` and `/v1/<alias>/*` go, over plain HTTP.
-None, or more than one, leaves the alias unrouted (`503 … not active`). The
-install step is delivered to the same address over the same transport. A
-module or solution is **active** once its presence is applied, independently of
-its optional `frontend` block (`SolutionRegistrationStatus`). Accounts copies
-that block in the same apply transaction; the gateway builds the common manifest
-from it plus the host's constants — asset path, backend alias and capability
-path. Either kind can serve a page, and either can be headless. Each
-organisation's installation readiness and consent remain separate checks.
+### The delivery endpoint
 
+`POST /platform/_delivery/manifest` takes one carrier — core's
+`MarshalSigned` output, `{"document": <canonical JSON>, "envelope": <DSSE>}` —
+and answers, in this order:
 
-**The registry stops authorising routes it cannot confirm.** A replica serves
-from its snapshot and refreshes it every 10 s; a snapshot the registry has not
-confirmed for 120 s — the revocation lease — authorises no solution or module
-route (`503 solution registry snapshot is stale`), so an outage never serves a
-withdrawn presence indefinitely. A tombstone already held keeps answering as
-the registry would. While a module's declaration is live its alias is also a member of the
-host's closed audience vocabulary, so a solution can mint a viewer's Work
-Context for it; the tombstone that withdraws the module withdraws the audience.
-Addressability is all a presence grants: authority for the module's own calls is
-still the authority document's alone.
+1. **Parse** the carrier with core's strict `ParseSigned`.
+2. **Verify** it with `VerifyDelivered` against the pinned keys of the trust
+   anchor: the envelope's one signature under a pinned key id, the payload's
+   canonical encoding of a valid manifest, and the signer's pin for the
+   manifest's `host.domain`.
+3. **Authorise the carrier**: a TokenReview of the bearer token (audience
+   `accounts`) — or, in a native run, core's native attester under the run's
+   anchor — must name the `delivery` ServiceAccount of the namespace the cell
+   runs the manifest's module in — for a withdrawal, the module of the binding's
+   previously applied manifest.
+4. **Admit** it with core's `Admit` against the binding's applied manifest, and
+   its alias with core's `CheckAlias` against every other binding as it stands
+   once its newest delivered generation applies.
+5. **Hold it to the host's own rules** (below) against every other binding as
+   it stands once its newest delivered generation applies.
+6. **Persist** it in the append-only inbox and ask for a reconcile pass.
 
-### The registry key is the route alias
+| Answer | Body | Meaning |
+| --- | --- | --- |
+| 200 | `{"disposition":"accepted","binding","generation","digest","signer"}` | new and durable; a pass is requested |
+| 200 | `{"disposition":"replayed",…}` | this exact generation is already durable; nothing written |
+| 400 | `{"error":…}` | not a carrier, not a canonical valid manifest, or a replaced document schema |
+| 401 | `{"error":…}` | no key this host pins signed it, or the API server refused the token |
+| 403 | `{"error":…}` | not the module's `delivery` account, the signer or binding belongs to another ownership domain, or it claims a principal or publisher another domain's binding holds |
+| 409 | `{"error":…}` | a stale generation, a rewritten one (applied or only delivered), a withdrawn binding brought back, or a workload or principal another binding holds (named) |
+| 422 | `{"error":…}` | another host's manifest, a reserved or held route alias, or an endpoint address that is not its workload's in-cluster Service |
+| 503 | `{"error":…}` | the API server could not be asked, or this host's applied record is unusable: retry |
 
-A binding ID identifies one **deployment instance** — the renderer's is
-`<workspace>.<environment>.<instance>`, dotted — and a second instance of the same
-solution inherits nothing from the first, its alias included. It is therefore not
-the registry key: the key is the binding's route alias, because the alias is what
-this host routes on (`/solutions/<alias>/*`, and the key a remote loads under).
+**The signing input is the canonical JSON** (`SignedPayload`, the manifest's
+`CanonicalBytes`), never the YAML a delivery repository holds: core refuses a
+payload that is not the canonical encoding of the manifest it decodes to, even
+under a genuine signature. **An envelope must be present and be a JSON object**
+carrying exactly one signature under a pinned key id; No carrier may nominate
+its own key. **What the host stores is derived from the attested bytes**, never
+from a value read earlier, so the generation and digest in a row are over the
+bytes the signature covered.
 
-This host needs **exactly one** route alias on a present generation, and it must
-be a single lowercase path segment. Core's alias vocabulary is wider — it admits
-dots and slashes — so a binding that declares none, several, or a dotted one is
-refused with a reason naming the route rather than having one picked for it. The
-renderer commits to exactly one single-segment lowercase alias per binding, so
-this refusal is a guard, not a workflow.
+Every refusal names its cause in the body and in the host's log. Verification
+comes before carrier authorisation, so a forged carrier is reported as a signing
+problem and a captured carrier replayed by an authorised caller as what it is.
 
-A tombstone declares no route, which is why a binding's row keeps the key it last
-applied: it is the only way a removal knows what to withdraw.
+### The namespace rule
+
+A manifest declares no namespace. A cell runs a module's workloads in the
+namespace named after the module and as the ServiceAccount named after the
+service (core's `workloadidentity` rule); a cell composing several modules
+prefixes the module with its environment's namespace,
+`<environment namespace>-<module>`. The host reads which spelling applies off its
+**own** placement — the namespace it runs in and the module it was composed as
+(`CODEFLY__MODULE`) — and refuses to boot, naming both, when that placement
+follows neither. The module of a manifest is its `alias`.
+
+So a carrier for module `reports` on a host running as `saas` in
+`platform-acme-staging-saas` is `platform-acme-staging-reports/delivery`, and the
+workload `{service: api, container: api}` mints from
+`platform-acme-staging-reports/api`.
+
+### The host's own rules
+
+Core judges a manifest on its own and against its binding's history. Three
+rules need what only this host knows — the other bindings it holds and where its
+cell runs things — and are checked at receipt, so a second claim is refused with
+the binding that holds it, and again by every pass against the bindings as they
+stand:
+
+- **One workload, one manifest.** A workload is one (namespace, ServiceAccount)
+  by the namespace rule. Two live manifests on this host never both declare it,
+  so a reviewed token matches at most one manifest. The second is refused
+  (409) naming the binding that holds the workload; of two first deliveries
+  admitted by one pass, the first in delivery order keeps it. A withdrawal holds
+  nothing.
+- **A principal and a publisher stay with their domain.** A signer pinned for
+  domain D speaks for D's bindings only: a manifest may not ask for an
+  `authority.principal`, or deploy a `release.publisher`, that a live binding of
+  another ownership domain holds (403, naming the holder). The first domain to
+  hold one keeps it; a binding keeps its first domain (`Admit`). Within a domain
+  a principal is still one live binding: the registry would omit both, so a
+  second claim is refused (409) naming the holder.
+- **An endpoint is its workload's in-cluster Service.** Every
+  `endpoints[].address` is `http(s)://<service>.<namespace>.svc.cluster.local:<port>`,
+  where `<service>` is the endpoint's own service and `<namespace>` the module's
+  by the rule — no path, query or user info, never a free host. The metadata
+  server (`169.254.169.254`), another module's namespace and another workload's
+  Service are refused (422). In a native run an endpoint is the run's own
+  process on the loopback (`127.0.0.1`, `::1`, `localhost`) and nothing else.
 
 ### Prepare, then activate
 
-Every pass reads the durable inbox, then asks Core about the **whole** desired set —
-route-alias uniqueness and "declared once per set" are properties of the set, not
-of a document. Only then is anything written, and desired state is recorded for
-every delivered binding before any generation is applied, so what delivery wants
-and the reason it was refused are visible even when nothing passed.
-
-A refused document leaves the running generation untouched. The refusal is
-attributed to its binding rather than failing the pass, because the common
-refusal is a stale render: the renderer derives a generation from the previously
-delivered document, so a render from a checkout that cannot see the prior tree
-emits generation 1 and is correctly refused as stale. If that held back the whole
-set, one bad pipeline run would freeze every solution on the host. A refusal Core
-raises that this host cannot attribute to a document withholds the **whole** set —
-failing closed on a rule it does not recognise, rather than applying a subset Core
-never approved.
+Every pass reads the newest generation per binding from the durable inbox and
+verifies each carrier again under the current pins, so a key unpinned since
+stops keeping its manifests in force. Each manifest is admitted with `Admit`
+against its binding's applied record; aliases are judged with `CheckAlias`
+against the applied manifests, an applied manifest whose binding this pass
+admits a withdrawal or a new alias for holding nothing, so an alias moves between
+bindings in one pass. Desired state is recorded for every delivered binding
+before any generation is applied, so what delivery wants and why it was withheld
+are visible even when nothing passed. A refusal is attributed to its binding and
+leaves the running generation untouched.
 
 Two replicas converge without applying a generation twice: each apply re-decides
-under the binding row's lock, and `DecisionCurrent` — this generation is already
-applied — writes nothing. A restart resumes from the recorded applied generation
-rather than deriving it again.
+under the binding row's lock, and a replay writes nothing. An unreadable inbox is
+an **error**, never an empty desired set. Removal is a withdrawal generation
+(`removed: true`), and a withdrawal is **terminal**: a later generation of the
+binding is refused, so installations and grants never re-attach to a new instance
+that reused the id. A replacement instance gets a new binding.
 
-An unreadable inbox is an **error**, never an empty desired set, and an empty
-one removes nothing. Removal is a tombstone generation precisely so that a store
-this host cannot read can never be reconciled as "withdraw every solution".
-Nothing deletes from the inbox either, which is what keeps "delivery stopped
-talking" and "delivery said remove it" different facts.
+### The ownership domain
 
-### Reading the three states apart
+`host.domain` is the slice of this host's binding space a manifest speaks for.
+The signer must be pinned for it (verification), and a binding keeps the domain
+its first applied generation declared (`Admit`). The host persists that domain
+as `first_domain`, written once and kept when the live applied manifest is not —
+migration 41 cleared every live binding's applied state and kept it — so a
+manifest for the binding under another domain is refused (403) even while no
+applied manifest remains, at receipt and by the pass. `SOLUTION_HOST_OWNERSHIP_DOMAINS` bounds the domains any pin
+may grant: a pin naming another refuses the boot by name.
 
-`SolutionRegistryService/ListSolutionHostBindings` (`EXPOSURE_INTERNAL`) answers
-with desired, applied and observed state separately. That is the question the
-registry snapshot alone cannot answer: a binding whose first generation was
-refused has no registration record at all, so it is invisible there, and
-"declared but never observed" and "never declared" look identical.
+### Module authority: the manifest asks, the envelope grants
 
-### The ownership domain, and why the host persists it
-
-A document declares the **ownership domain** it speaks for: the slice of this
-host's binding space that delivery may add to, change and remove within. It is
-what lets a module-scoped render express a removal without "remove everything
-else" being expressible at all.
-
-Core requires the host to declare the domains it accepts whenever it knows its
-own coordinate, and refuses a document from an unstated one — **first generation
-included**. That is not belt-and-braces: the applied record cannot bound a
-binding's *first* generation, because there is nothing yet to compare against, so
-without the declaration any accepted delivery could claim an unseen binding ID
-under a domain of its own choosing and own it from then on.
-
-The host therefore **persists the domain each generation applied under**
-(`solution_host_bindings.applied_domain`) and hands it back to Core on every
-pass. Core refuses a later generation for a binding that arrives under a
-different domain, which is what stops one delivery taking over a binding another
-delivery owns. Two consequences worth stating, because neither is obvious:
-
-- **It is not re-derivable from configuration.** The host's configured list
-  answers "a domain this host accepts", not "the domain this binding was claimed
-  under", and those differ exactly when it matters — a host accepting two.
-- **An applied record without one is unusable, and unusable means the whole
-  set.** Core refuses an applied state with no domain, and a pass judges the
-  desired set as a whole, so a single domainless record does not degrade one
-  binding: the reconciler applies its first generation and then refuses
-  everything on every pass afterwards. The applied group's whole-or-absent CHECK
-  and a non-empty constraint keep that state out of the table.
-
-The core-owned half of the applied record is built by `solutionhost.AppliedFrom`
-rather than assembled here, so the next field Core makes required is a loud
-refusal at the apply instead of a silent omission that surfaces as a frozen
-reconciler.
+The module registry every capability decision reads is derived each pass from
+the applied, live manifests whose stored carrier still verifies and the
+administrator's module envelope. A manifest's `authority.principal` is the
+module's principal; its entry is the envelope's grant for that principal
+intersected with what the manifest asks for — queues, namespaces, resource kinds,
+and per operation binding the `invoke`, `lookup` and `headless` scopes — never
+more than either. A binding the envelope does not allow, or allows on another
+audience, is omitted by name. Two manifests asking for one principal, or two
+principals sharing a workload, are omitted. The envelope document is
+`{"revision": N, "principals": {"<principal>": {"grant": {…}}}}`; it names no
+workload and approves no build.
 
 ### Configuration
 
@@ -461,213 +466,30 @@ Every key is in the `federation` group.
 
 | Key | Meaning |
 | --- | --- |
-| `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it on the environment the renderer read. Never derived here — an invented coordinate matches nothing delivery wrote, so every document would be refused. It is also the one declaration that turns the surface **on**: empty means no reconciler and no delivery endpoint, and no new declared presence can be reconciled. |
-| `SOLUTION_HOST_OWNERSHIP_DOMAINS` | the ownership domains this host accepts delivery from. Required with the coordinate and refusing to boot when empty, for the same reason the coordinate is: it is the only thing bounding a binding's first generation. |
-| *(no setting in a pod)* | WHERE the pinned-key verification policy is read from is **not configurable in a deployment**: it is a constant, `infra.SolutionHostTrustAnchorPath`. In a pod there is no environment value, no flag and no overridable default; the one relocation, for a host started as a process, is refused in a pod and described below. Workspace environment is delivered by the **composition**, so an overridable path would let a composition point this verifier at a policy it wrote itself, sign its own presence documents, and pass every downstream check — against an anchor it chose. A deployment needing a different path changes the pod spec that mounts it, which the platform renders and the composition cannot supply. That document also carries the signer-to-domain mapping, keyed by `keyId`, so workspace environment cannot widen a key's authority independently of its pin. A signer granted a domain `SOLUTION_HOST_OWNERSHIP_DOMAINS` does not accept is refused **by name**. |
-| `SOLUTION_HOST_TRUST_POLICY` | how a delivered carrier's envelope is checked. `keys` is the only value. Required with the coordinate, with **no default** — every default is wrong somewhere. The trust anchor's **absence** is checked first and refuses the boot naming the anchor, so an unmounted anchor is never reported as a missing setting. |
-| `SOLUTION_HOST_BINDING_INTERVAL` | optional; how often the inbox is re-read. Empty uses 30s. |
+| `SOLUTION_HOST_COORDINATE` | the coordinate this host answers for, exactly as the operator declared it. It is the one declaration that turns the surface **on**: empty means no reconciler and no delivery endpoint. |
+| `SOLUTION_HOST_OWNERSHIP_DOMAINS` | the ownership domains this host accepts delivery under. Required with the coordinate. |
+| *(no setting in a pod)* | the pinned-key policy is read from the constant `infra.SolutionHostTrustAnchorPath`; a composition cannot move it. |
+| `SOLUTION_HOST_TRUST_POLICY` | `keys`, the only value; required with the coordinate. |
+| `SOLUTION_HOST_BINDING_INTERVAL` | optional; how often the inbox is re-read without a trigger. Empty uses 30s. |
 
-Declaring the coordinate without the ownership domains refuses to boot: this
-host would be unable to refuse a document claiming a binding it has never seen.
-So does declaring it with no trust anchor mounted at
-`infra.SolutionHostTrustAnchorPath`, and so does declaring it where no
-TokenReview can be performed — a delivered carrier is authorised by TokenReview,
-so a host that cannot reach its API server has no input at all and starting
-would leave it polling an inbox nothing can write to.
-
-**A process on a developer machine may relocate both, and a pod never can.**
-`codefly run` starts the host as a process, where the kubelet's paths do not
-exist and writing them needs root. Two settings name a local stand-in, and each
-is **refused at boot when the process runs in a pod** (`infra.InCluster()`), so
-neither is a way for a composition to move a deployed host's trust:
-
-- **`SOLUTION_HOST_LOCAL_CLUSTER`** — an absolute directory holding `server`
-  (the https origin of the local stand-in for the API server), `ca.crt`,
-  `token` and `namespace`. TokenReview and pod reads go there. It does not make
-  `InCluster()` true: the process is still not in a pod, and everything keyed
-  on that stays local.
-- **`SOLUTION_HOST_LOCAL_TRUST_ANCHOR`** — an absolute directory holding
-  `verification_policy.json`. A relocated anchor must be a **local** profile —
-  one bound to a cluster CA by its `local` block — so it can only ever admit a
-  developer's key for the one local cluster whose CA it names.
-
-Neither is a workspace setting and neither is in the table above: both are
-read from the process environment by the code that would otherwise read the
-kubelet's paths, never through a workspace configuration group.
-
-In a pod both constants stand exactly as described above.
-
-**There is no mount setting.** It was `SOLUTION_HOST_BINDINGS_DIR`, a projected
-ConfigMap volume, and both it and the directory reader are deleted. A mount is
-the CURRENT desired set and nothing more, so a document that arrived, was
-recorded as desired, failed to apply and then disappeared from the mount was
-never retried — the host had recorded that delivery wanted something and had no
-way to want it again — and the mount dropped the carrier, so a restore could not
-re-verify what it had accepted. While the setting existed the durable inbox was
-dead in every configuration: unset meant no reconciler at all, and set meant the
-source was the directory, so the table the delivery endpoint writes was read by
-nothing.
-
-### The authority half, and the one shape in which it is active
-
-Delivery has two kinds and the host serves both on their own paths:
-`POST /platform/_delivery/presence`, `POST /platform/_delivery/authority`, and
-`POST /platform/_delivery/endpoints`. Endpoint delivery follows committed
-presence: the producer retries the signed endpoint value if reconciliation is
-still pending (503). It needs no access to the separate protected observer. Its storage identity is Core's host/binding key plus the applied
-presence generation. Different endpoint bytes at that generation are a rewrite,
-not a refresh; a route address change requires a new presence generation.
-Each is verified with the reader for **its** kind, and the kind in the path is
-checked against the schema inside the attested bytes — which is a check rather
-than a convention, because the schema is part of the canonical encoding the
-signature covers, so a document's type is attested rather than asserted by the
-carrier. A document sent to the other kind's path is **400**: the bytes are
-wrong, not the signer, and a 403 would send an operator to look at a signing
-identity that signed the document perfectly well.
-
-An authority row is keyed by its **own** authority id, never by the presence
-binding it is granted over. One binding may be granted authority under successive
-authority ids, and the withdrawal fold is keyed on the binding precisely so that
-re-signing under a new id cannot reinstate a withdrawal — which only works if the
-inbox keeps the id each document was delivered as.
-
-**Neither half activates alone.** Authority is active only as a matched
-(authority, presence, build) tuple, which is what makes "approved for one exact
-build" a property of the system rather than of a field: an authority document for
-a build the host is not running activates nothing, and a presence document with
-no authority behind it activates nothing. The build is asked **about** rather
-than read out of either document — reading it out of the document that approves
-it would make the question answer itself.
-
-The **ceiling** is the module envelope: a durable, append-only, revisioned
-record (`module_envelopes`) a platform super_admin writes at runtime through
-`PlatformAdminService/PutModuleEnvelope`, audited and never through an
-impersonated session. Per module principal it admits whole authority units,
-the workload identities the principal may run as, scope ceilings and the grant
-ceiling, and lists the approved builds. Every reconcile
-pass and every activation reads the CURRENT revision and hands Core's
-`ValidateAgainst` its projection for the document being judged, so containment
-is Core's exact rule and a narrowing takes effect at the next check with no
-restart. It is never read out of a delivered document — "an envelope a document
-carried would be a document declaring its own ceiling".
-
-**Only a pure grant skips the policy-log witness.** A revision is a pure grant
-when, against the revision in force, every approved build is still approved,
-every principal is still there with a section that is the same JSON value,
-every other top-level key is the same value, and no installation loses its
-organization. What may differ is the revision, approved builds that were
-added, and whole principals that were added. Everything else is written under
-`WithPolicyLoggedNarrowing`, so a host restored from an older database cannot
-silently give it back.
-
-A principal's section is compared for equality and never for "at least as
-much", because in this schema more JSON does not mean more authority: a
-resource list that appears restricts an audience that was unrestricted, a
-required kind that appears refuses artifacts that passed, a tenant that is set
-removes every other organization, and a unit that gains a field is a different
-unit. So a changed section needs the witness, whatever changed. The
-classification reads installations on the control plane, and an apply that was
-classified a pure grant and then finds an installation to revoke stops and is
-taken again under the witness. A host with no witness configured therefore
-accepts pure grants and refuses everything else. Absence and damage are
-different answers: no revision written is a complete deployment that grants no
-module anything, while a revision that cannot be read leaves what the last pass
-installed serving, because reading a damaged ceiling as "no ceiling" withdraws
-every module on a transient error and reading it permissively widens them.
-
-The **module principal registry** every capability decision reads is derived
-from this ceiling each pass: for every live authority document inside it, each
-principal's entry is the envelope's grant bounded by what the document grants,
-with the workload read from the applied presence the document names
-([services/accounts/AGENTS.md](services/accounts/AGENTS.md#the-composed-module-service-principal)).
-
-**This host applies authority to nothing**, and that is stated rather than
-defaulted. Core requires either the applied authority record or an explicit
-marker that none exists, because "nothing applied" is the most permissive input
-the call takes; this host holds no such record, so the marker is the truth. The
-replay protection the fold would otherwise give comes from the inbox instead —
-the desired set is the **newest** generation per document, so a genuinely signed
-older generation re-delivered never becomes the answer. The one part the inbox
-cannot do by itself is refuse an authority withdrawn under one id and re-signed
-under another, so the host reads **every** delivered authority document over the
-binding and refuses when a tombstone is among them. Nothing deletes from the
-inbox, so a withdrawal stays visible forever.
-
-Two live authority documents over one binding are refused by name rather than
-resolved: whichever one a host picked would be a choice nobody reviewed.
-
-### What the host admits, and why it is now a signed carrier
-
-Core `cd443989` removed every path from unattested bytes to a host judgement.
-`Host.Admit` takes `*solutionhost.Delivered`, whose fields are unexported and
-whose only constructor is `VerifyDelivered(ctx, carrier, verifier)`. So "this
-document was attested" is held by the compiler rather than by a naming
-convention, and a host that forgot to verify cannot compile rather than
-discovering it in production.
-
-Core `67ee7220` closed the gap that left: a `Delivered` used to hand out the
-parsed document it would itself admit, so a caller that adjusted a field changed
-what was admitted while the attestation still covered the original bytes. It now
-stores the attested payload and re-derives per read.
-
-The host side of that:
-
-- **Delivery carries signed carriers**, `{document, envelope}`, not bare
-  documents. A bare document is refused — it is not a carrier — and that refusal
-  is pinned by a test.
-- **The signing input is the canonical JSON** (`CanonicalBytes()`), not the YAML
-  `Marshal` writes for a delivery repository. Core refuses a payload that is not
-  the canonical encoding of the document it decodes to *even when the attestation
-  over those bytes is genuine*, because a signer and a host that disagree about
-  which bytes represent the document disagree about what was approved.
-- **The verifier returns a signer identity, not a yes.** The host maps that
-  identity to the domains it may speak for, and Core refuses a document whose
-  asserted domain its attested signer may not. This closes the hole that a
-  document states its own ownership domain: without the policy, any signer the
-  host accepted at all could deliver under any domain it accepted and take over
-  bindings in it.
-- **An envelope must be present and be a JSON object.** Core verifies the DSSE
-  envelope with exactly one signature, a pinned `keyid`, a `payloadType` matching
-  the document's schema, and decoded payload bytes identical to `document`.
-  Missing, empty or `null` envelopes, extra signatures and carrier-supplied trust
-  material are refused. No carrier may nominate its own key.
-- **What the host stores is derived from the attested bytes**, every time, and
-  never from a document the reconcile pass has been holding. The generation in a
-  row and the digest beside it are therefore over the bytes the signature
-  covered, which is the property that makes the digest worth storing at all. A
-  carrier whose attested payload will not re-read is refused like any other,
-  rather than admitted from a value read earlier.
+Declaring the coordinate refuses to boot without the ownership domains, without
+a trust anchor, where no TokenReview can be performed, or where the host's own
+placement follows no namespace rule. A process on a developer machine may
+relocate the API server and the anchor (`SOLUTION_HOST_LOCAL_CLUSTER`,
+`SOLUTION_HOST_LOCAL_TRUST_ANCHOR`); both are refused in a pod (§8).
 
 #### The one trust policy
 
 | Policy | What it checks | Where it is usable |
 | --- | --- | --- |
-| `keys` | a DSSE envelope over canonical document bytes, verified with the platform-owned pinned public key; core also checks the key's ownership domains. | deployed hosts and local clusters use the same verifier. A person key requires the cluster-bound local profile in §8. |
+| `keys` | a DSSE envelope over canonical manifest bytes, verified with a pinned public key whose pin also names the ownership domains it may deliver under | deployed hosts and local clusters use the same verifier. A person key requires the cluster-bound local profile in §8. |
 
-The former signing mechanism was removed under the handbook decision
-`delivery-signed-with-platform-owned-keys`. An obsolete policy value is refused
-at boot with the instruction to use `keys`; there is no fallback or default.
-
-The anchor contains one document, **`verification_policy.json`**, provisioned
-independently of both delivery writers. A missing or invalid policy refuses boot:
-"this host cannot verify" and "delivery supplied an invalid signature" are
-separate facts an operator must be able to distinguish. The host never reads
-additional trust material beside this document.
-
-Each signer declares `name`, required `kind` (`release` or `person`), `keyId`,
-`publicKey` (PKIX PUBLIC KEY PEM, Ed25519 or ECDSA P-256), and `domains`. Names and
-key IDs are unique. Unknown fields are refused. Core validates the keys, kinds,
-IDs and domain lists; the host additionally requires a local profile for a person.
-The attested identity is **the key ID**, never the host's descriptive label.
-
-A refusal recorded against a binding is deliberately **coarse** — not a carrier,
-an envelope that did not verify, and a verified payload Core will not parse all read
-the same in the row. Which of the three it is tells an attacker which half of the
-door it got past; the full reason goes to the log.
-
-The host reads delivery from its durable inbox, preserving the canonical payload
-and DSSE envelope for verification on every reconciliation. The existing `bundle`
-storage column holds the envelope; it does not change the carrier's wire shape.
+The anchor holds one document, **`verification_policy.json`**. Each signer
+declares `name`, `kind` (`release` or `person`), `keyId`, `publicKey` (PKIX PEM,
+Ed25519 or ECDSA P-256) and `domains`. Unknown fields are refused. The attested
+identity is **the key ID**, never the descriptive label. Verification
+is offline: the host holds public keys only. Rotation means pin the new key id,
+deliver with it, then remove the old pin.
 
 ## 7b. The host's own control paths, and which part a consumer may hardcode
 
@@ -753,13 +575,12 @@ document, and every registrant hardcodes those paths today.
 | Path | Status | What it is |
 | --- | --- | --- |
 | `POST /platform/_credential` | **Settled, NOT YET LIVE** | the module/solution credential mint. On the **gateway**, which forwards `Authorization` verbatim; accounts performs the `TokenReview` on the pod's own token. |
-| `POST /platform/_delivery/presence` | **LIVE** | a signed presence document, `{schema, document, bundle}` |
-| `POST /platform/_delivery/authority` | **LIVE** | a signed authority document, same carrier |
-| `POST /platform/_delivery/endpoints` | Integration in progress | a signed Codefly endpoint value for the exact applied presence; no configuration mount |
-| `GET /platform/_delivery/applied/{binding}` | Implemented; deployment qualification pending | committed APPLIED presence, readable only by the protected endpoint publisher |
+| `POST /platform/_delivery/manifest` | Implemented; deployment qualification pending | one signed module manifest, `{document, envelope}` (§7) |
+| `GET /platform/_delivery/applied/{binding}` | Implemented; deployment qualification pending | the binding's committed APPLIED manifest, readable only by the protected applied-state observer |
 
-**The two delivery paths are now served by accounts**, which performs the
-`TokenReview` on the carrier's own token. The credential mint remains **NOT YET
+**The delivery path is served by accounts**, which performs the `TokenReview`
+on the carrier's own token. The presence, authority and endpoints paths are
+gone with the documents they carried, and answer 404. The credential mint remains **NOT YET
 LIVE** and is brokered by the gateway when it lands; a consumer calling it today
 gets a 404 on every deployment, not just one, which is the one mercy in the
 situation. Keep an override until this table says live for it, and do not treat
@@ -768,12 +589,13 @@ a 404 as "my path is wrong".
 The applied-state read uses the same Accounts delivery listener and reviews an
 `accounts`-audience projected token. Only ServiceAccount `endpoint-publisher` in
 namespace `istio-presenter` may read it. The ordinary delivery writer cannot use
-that read; the publisher cannot write presence or authority. Mesh policy must
+that read; the publisher cannot deliver a manifest. Mesh policy must
 independently admit only this GET from the protected publisher.
 
-A `200` read returns `{host: {coordinate, component}, binding, generation,
-presenceDigest, release, removed, appliedAt}`. The digest covers the complete
-canonical APPLIED presence; the time is RFC3339. Identity comes from the saved
+A `200` read returns `{host: {coordinate, domain}, binding, generation, digest,
+release, removed, appliedAt, pending?}`. The digest is the APPLIED manifest's
+(`ModuleManifest.Digest`); the time is RFC3339; `pending`, when present, is a
+newer generation this host received and withheld, `{generation, reason}`. Identity comes from the saved
 applied document, even when a newer desired generation is withheld. No applied
 generation is `404`, including a desired-only binding; a committed tombstone is
 `200` with `removed: true`. Missing/refused credentials are `401`, a different
@@ -843,92 +665,36 @@ generic solution routing and answer `502`.
 
 Published here because three repositories implement against it — the renderer
 that signs and posts, the infrastructure that provisions the identities, and this
-host that verifies — and because every item below was something at least one of
-them had wrong at some point.
+host that verifies.
 
-**The carrier is three keys**, exactly the renderer's `MarshalSigned` output:
-`{"schema":"codefly/solution-host-signed/v1","document":<canonical JSON>,"bundle":<bundle>}`.
-Parse it with core's `ParseSigned`, which requires `schema` — not by unmarshalling
-two of the three, which is how a hand-built carrier claiming any schema used to
-reach the bundle verifier before core's `Signed.validate()` closed it.
+**The carrier is two keys**, exactly core's `MarshalSigned` output:
+`{"document": <canonical JSON>, "envelope": <DSSE envelope>}`, parsed with core's
+strict `ParseSigned`.
 
-**Carrier authorisation is the SA and the namespace, and the two halves differ:**
+**The carrier is the `delivery` ServiceAccount of the module's namespace** — the
+namespace the cell runs the manifest's module in, by the rule in §7; for a
+withdrawal, the module of the binding's previously applied manifest. One delivery
+Job runs per module tree in that namespace. The namespace is derived from the
+signed manifest's alias and this host's own placement, never from configuration a
+deployer can edit.
 
-| half | ServiceAccount | namespace |
-| --- | --- | --- |
-| authority | `delivery` | `platform-authority` — a fixed pair |
-| presence | `delivery` | **the namespace the document's own workloads declare** |
+**The projected token's audience is `accounts`, exactly that literal**, the same
+audience the module mint reviews against. It is a constant, not a setting: a
+configurable audience would be another composition-supplied input to a trust
+decision.
 
-The presence namespace is deliberately not a constant. A presence Job runs one
-per module tree in that module's own namespace, so a fixed value would refuse
-every genuine carrier. It is read out of each workload's `identity.spiffe_id`
-(`spiffe://<trust domain>/ns/<namespace>/sa/<account>`), which makes it a property
-of the **signed document** rather than of host configuration a deployer can edit
-— the same reason the ownership domain lives inside the canonical bytes. A
-presence document whose workloads declare two namespaces is refused by name: the
-renderer uses one namespace per render and cannot emit such a document, so one
-that exists was hand-built.
+**The perimeter is not this check.** The delivery controller's destination list
+refuses a manifest's objects outside the namespaces it may write, at apply. The
+host's SA-and-namespace check is the second layer.
 
-A presence generation that declares **no** workload declares no namespace, and
-there are two of those: a tombstone, which declares absence and carries nothing,
-and a present generation that renders only a frontend surface. Such a carrier is
-authorised against the namespace this host **last applied** for that binding —
-its own recorded state, from a generation it already verified and admitted,
-rather than anything the arriving document asserts. Refusing the empty case
-outright made **removal through this endpoint impossible**: removal is a
-generation, so the one document delivery must be able to hand over to withdraw a
-binding was the one document the check could never authorise. It is still refused
-when neither answers — a first generation for a binding nothing has applied,
-declaring no workload — because then there is nothing to authorise it against at
-all.
+**Verification is offline**, using core's standard-library cryptography and the
+host's pinned public keys only. That matters in default-deny namespaces: an
+external lookup would **hang rather than fail fast**.
 
-Authority is the **only** half with a hardcoded pair, which is why it is written
-down rather than derived: get it wrong and the `TokenReview` *succeeds*, the
-identity is *genuine*, and the host refuses the real carrier for a name — which
-reads as an attack rather than a typo.
-
-**The projected token's audience is `accounts`, exactly that literal.** It is
-published here because the renderer renders whatever this document publishes, and
-an audience the two sides guess at separately is a `TokenReview` that succeeds for
-a token minted for something else. It is the same audience the credential mint
-reviews against, deliberately: accounts is the service performing the review in
-both cases, and a second audience would be another projected token to mis-mount.
-
-It is a constant in this host rather than a setting, and that is the point. A
-configurable audience is another composition-supplied input to a trust decision —
-whoever could set it could have a token minted for a service of their choosing
-reviewed here as if it had been minted for this one.
-
-**The perimeter is not this check.** A manifest claiming a namespace other than
-the one its delivery tree declares is refused by the delivery controller's own
-destination list, at apply. The host's SA-and-namespace check is the second
-layer. Both are worth having; neither is described as the only one.
-
-**Verification is OFFLINE**, using core's standard-library cryptography and
-only the host's pinned public keys. The verifier has no HTTP client and calls no
-third-party signing service. That matters in default-deny namespaces: an external
-lookup would **hang rather than fail fast**, although the signature is entirely
-checkable from the local pins and envelope.
-
-The release signer uses the platform's Vault Transit through the CLI; a developer
-uses an Ed25519 key held locally by the CLI. The host holds public keys only and
-never reaches either signer during verification. Rotation means pin the new key
-ID, deliver with it, then remove the old pin. Reconciliation verifies stored
-carriers under the current pins, so removing a pin also affects older deliveries.
-
-**The authenticating container is derived, not declared.** The renderer names the
-container matching the service, or the sole container, and refuses at render a
-multi-container workload where neither holds — rather than guessing.
-`non_authenticating` is always a non-nil list of every other container, init
-containers included, so "there are none" and "nobody said" stay distinguishable.
-
-What neither the renderer nor this host can check is that the projected
-`accounts`-audience token is mounted by **exactly** the authenticating container:
-a pod-bound token is the pod's. That is closed by the deployment's
-execution-admission policy, not by a document field, and until it is in place this
-host's container designation is a **record** rather than attestation — stated that
-way deliberately, because "the host knows which container may authenticate" would
-be a claim the mechanism does not yet support.
+**The authenticating container is the manifest's.** Each workload names the one
+container that authenticates; a pod holding any other container that could read
+the projected token — a sidecar, a running or restartable init container, an
+ephemeral container — mints nothing.
 
 ### Why the mint is brokered by the gateway rather than called on accounts
 
@@ -954,18 +720,17 @@ the native services to loopback. Native Accounts uses its explicit non-pod
 stand-in profile; this provides no mesh presenter and cannot be selected inside
 a real pod. No application serves or presents a local SVID.
 
-Binding a credential to an approved execution means reading what the workload
-actually runs: `TokenReview` on its projected service-account token, then the pod
-by the name that review returns, then the application container's `imageID`. That
-is Kubernetes. `codefly run` on a laptop has none of it, and the adversarial
-review is right that the delivery API does not preserve the old laptop behaviour —
-a host that reads pods is not a Kubernetes-free host any more.
+Binding a credential to an execution means asking the environment's mechanism
+which workload presented it: in a cell, `TokenReview` on its projected
+service-account token, then the pod by the name that review returns (no image is
+read: the mint is bound by rule, not by build); in a native run, core's native
+attester under the run's anchor (below).
 
 The `local` trust policy is deleted. A coordinate is an operator-declared
 string and cannot justify skipping a signature check. Local runs use Kubernetes
 and the same pinned-key verification as deployed hosts: one verifier, one policy
 shape, with a release key in a deployed policy and a person's key admitted only
-by a cluster-bound local policy.
+by a local policy bound to one cluster or one native run.
 
 ### The local profile's trust anchor
 
@@ -1101,74 +866,40 @@ creates TokenReviews.
 ### What a local run must therefore supply
 
 The host's requirements do not change for local; what changes is who provides
-them. A local run needs: a presence document whose `host.coordinate` is the
-coordinate the local host is configured with; an `execution.image.manifest_digest`
-read from the **locally built** image rather than a registry, which moves on every
-build and is fine because the generation moves with it; workloads running as Pods
-with projected service-account tokens for audience `accounts`; and the documents
-signed with the developer's pinned key and POSTed to the same
-`/platform/_delivery/*` endpoints. The local host is configured with its local
-coordinate and the local profile above: a policy bound to its cluster that lists that developer as a person.
+them. A local run delivers the same module manifest — signed with the developer's
+pinned key, its `host.coordinate` the local host's — to the same
+`POST /platform/_delivery/manifest`, and its endpoints carry the addresses the
+run allocated. The local host is configured with its local coordinate and the
+local profile above.
 
-Nothing on the host is conditional on any of it but the policy document on its
-trust anchor, which the composition does not write. That is the point.
+**A native run is attested by its launcher.** The Codefly CLI that renders
+module manifests (codefly-dev/cli#1014) starts a native run as the launcher of
+its processes and signs each one a credential of core's
+`workloadidentity/native` mechanism, naming the declared workload it started,
+instead of standing in for an API server. The host verifies those credentials
+against the run's anchor, the way a cell's host reviews a projected token, and
+the anchor is bound the way a cluster is: the CLI hands the host the anchor in
+`CODEFLY_NATIVE_IDENTITY_ANCHOR` (core refuses it inside a pod) and pins its key
+fingerprint in the local profile,
 
-### The three fields a local run looks unable to fill, and why it can
+```json
+{ "local": { "nativeAnchorSha256": "<core's native.Anchor.Fingerprint()>" }, "signers": [ … ] }
+```
 
-The renderer's objection to this decision was precise and worth recording with its
-answer, because it is the objection anyone will raise again: a present generation
-must declare at least one rendered artifact with a SHA-256 digest, and v2 adds a
-required OCI manifest digest and a SPIFFE ID — so a laptop appears to have to
-**invent digests**, which it must not.
+and the host refuses to boot unless the anchor it was handed is the one the
+profile pins. A profile binds to a cluster or to a native run, never both; a
+deployed policy, or one bound to a cluster, refuses a native anchor. Under a
+native run:
 
-It does not, once the local run uses pods:
+- the carrier is the `delivery` workload of the manifest's module, and the
+  applied observer is core's `AppliedObserver`;
+- a minting process is the workload its credential names: its module is the
+  namespace, its service the account, its instance the pod, and the containers
+  are what the launcher vouched for about that instance;
+- a module's namespace is its name (the bare rule), and an endpoint's address is
+  the run's loopback.
 
-- **`artifacts[].digest`** — to run pods the renderer must produce Kubernetes
-  manifests, and those are real bytes with a real digest. That is a rendered
-  artifact in the honest sense; it lives in a local tree rather than a delivery
-  repository, which the document never contradicts because there is deliberately
-  no artifact URI.
-- **`execution.image.manifest_digest`** — the locally built image's manifest
-  digest. Real, and it moves on every rebuild, which is correct rather than
-  awkward: the generation moves with it, so each rebuild is an ordinary apply.
-- **`execution.identity.spiffe_id`** — the one that looks impossible and is not.
-  Core validates this field for **well-formedness only**: the parsed scheme must
-  be `spiffe` and nothing more. It names the workload's **mesh principal** — the
-  SPIFFE ID the cell's mesh issues to its ServiceAccount — never an SVID the
-  workload serves or presents, so a local run populates it with the
-  service-account-derived identity, which *is* the identity the pod runs as,
-  and nothing on the host verifies a certificate against it. No local SPIRE, no
-  invention, and no schema exception.
-
-So presence v2 **can** describe a local run honestly. What it cannot describe
-honestly is a run of bare *processes* — which is an argument for running pods
-locally, not an argument for a second trust model.
-
-### A run of processes: the CLI answers as the cluster
-
-The argument above ends at "run pods locally". A run of processes is still the
-first loop a developer has, so `codefly run` supplies what the host reads from
-Kubernetes instead of the host learning a second path. The host's code is the
-same in both: TokenReview on the projected token, the pod by the name the review
-returns, the build that pod runs, pinned-key verification of every delivered
-carrier, the envelope as an independent ceiling.
-
-What the CLI stands in for, per run:
-
-- **the API server** — TokenReview and pod reads over TLS under a CA created for
-  that run, with projected tokens issued for the same audiences and rotated as
-  the kubelet rotates them. The host reaches it through
-  `SOLUTION_HOST_LOCAL_CLUSTER` (§7, Configuration).
-- **the trust anchor** — a local profile whose `local` block pins that run's CA,
-  read through `SOLUTION_HOST_LOCAL_TRUST_ANCHOR`.
-
-What is weaker than a cluster, stated rather than implied: the build a pod is
-said to run is the SHA-256 of the executable the CLI started, and the CLI is
-both the party that says so and the party that signs the presence naming it. No
-kubelet is a second witness. That is the authority a developer already has over
-their own machine, and it is bounded to it — the profile admits a person's key
-only for the one CA it names, and both relocations are refused in a pod, so no
-deployed host can be pointed at a stand-in.
+A local run on a cluster (pods with projected tokens) works as a cell does.
 
 ### Two rules that do not bend locally
 
@@ -1178,7 +909,7 @@ running. It is not. Removal is a tombstone generation, delivered, locally includ
 A reconciler that inverted this under a local flag would hold two opposite answers
 to "the desired set is empty" selected by configuration, and one misdetection would
 withdraw every solution on a deployed host silently, with the audit trail recording
-that it was asked to. `TestSolutionHostBinding_AnEmptyMountRemovesNothing` and its
+that it was asked to. A local run withdraws with a withdrawal manifest. `TestSolutionHostBinding_AnEmptyMountRemovesNothing` and its
 unreadable-mount sibling exist for that reason.
 
 **The envelope stays an independent upper bound.** Locally there is no reviewed
@@ -1271,12 +1002,11 @@ artifact acquisition or production mountless credential delivery.
 
 ### Admission with no consumed permissions
 
-A signed authority document can explicitly declare `bindings: []`. The operator
-envelope must then admit the exact principal and presence binding using
-`admitted_bindings`. Omitted or null binding lists are refused. This admission
-uses the existing principal registry and installation path; it grants no
-consumed operation. Applied presence, workload identity, container, approved
-build, envelope revision and live organisation consent still have to agree.
+A manifest's `authority` can ask for no operation binding at all. The envelope
+must still grant its principal; the registry entry then holds no consumed
+operation, and uses the existing installation path. The applied manifest, its
+workloads, the envelope revision and live organisation consent still have to
+agree.
 Installation-use consent and team grants remain required even for a no-op
 installation. An empty permission list does not make a page public.
 

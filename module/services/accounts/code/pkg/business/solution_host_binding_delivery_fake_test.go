@@ -11,35 +11,65 @@ import (
 
 // Every admission fixture is signed and verified, because core's Delivered
 // values can only be constructed by checking the envelope and ownership domain.
+
+const (
+	testDeliveryKey        = "example-release"
+	testDeliveryDomain     = "acme"
+	testDeliveryCoordinate = "acme-test"
+)
+
+// testModuleNamespaceRule is core's bare rule: a module's namespace is its
+// name.
+var testModuleNamespaceRule = ModuleNamespaceRule{}
+
 func fixtureSigner(t *testing.T) *solutionhost.Verifier {
-	return deliverytest.Verifier(t, map[string][]string{solutionhost.FixtureDeliveredBy: {solutionhost.FixtureDomain}})
+	return deliverytest.Verifier(t, map[string][]string{testDeliveryKey: {testDeliveryDomain}})
 }
 
-// signedCarrier wraps one document in the carrier delivery would ship: the
-// canonical bytes verbatim, plus a DSSE envelope over them.
-//
-// CanonicalBytes, not Marshal. Marshal renders YAML for a delivery repository;
-// the SIGNING input is the canonical JSON, and PresenceFromVerified refuses a
-// payload that is not the canonical encoding of the document it decodes to —
-// even when the attestation over those bytes is genuine, because a signer and a
-// host that disagree about which bytes represent the document disagree about
-// what was approved.
-func signedCarrier(t *testing.T, document *solutionhost.SolutionHostBinding) []byte {
+// fixtureManifest is a valid live manifest for one alias on the test host.
+func fixtureManifest(t *testing.T, alias string, generation uint64) *solutionhost.ModuleManifest {
 	t.Helper()
-	canonical, err := solutionhost.SignedPayload(document)
-	if err != nil {
-		t.Fatalf("canonical bytes for %q: %v", document.Binding, err)
+	manifest := &solutionhost.ModuleManifest{
+		Schema: solutionhost.SchemaModuleManifestV1, Binding: "acme.test." + alias, Alias: alias,
+		Kind: solutionhost.KindModule, Generation: generation,
+		Host:      solutionhost.HostTarget{Coordinate: testDeliveryCoordinate, Domain: testDeliveryDomain},
+		Release:   solutionhost.Release{Publisher: "acme", Name: alias, Version: "1.0.0"},
+		Workloads: []solutionhost.Workload{{Service: alias, Container: alias}},
 	}
-	return deliverytest.Carrier(t, canonical, solutionhost.FixtureDeliveredBy)
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("fixture manifest: %v", err)
+	}
+	return manifest
+}
+
+// withdrawalOf is the withdrawal of manifest at generation.
+func withdrawalOf(t *testing.T, manifest *solutionhost.ModuleManifest, generation uint64) *solutionhost.ModuleManifest {
+	t.Helper()
+	removed := *manifest
+	removed.Generation, removed.Removed = generation, true
+	removed.Workloads, removed.Endpoints, removed.Authority, removed.Frontend, removed.Group = nil, nil, nil, nil, nil
+	if err := removed.Validate(); err != nil {
+		t.Fatalf("fixture withdrawal: %v", err)
+	}
+	return &removed
+}
+
+// signedCarrier wraps one manifest in the carrier delivery ships: the
+// canonical bytes verbatim, plus a DSSE envelope over them.
+func signedCarrier(t *testing.T, manifest *solutionhost.ModuleManifest) []byte {
+	t.Helper()
+	canonical, err := solutionhost.SignedPayload(manifest)
+	if err != nil {
+		t.Fatalf("canonical bytes for %q: %v", manifest.Binding, err)
+	}
+	return deliverytest.Carrier(t, canonical, testDeliveryKey)
 }
 
 // carrierOver wraps arbitrary payload bytes, so a test can deliver bytes that
-// are deliberately not a valid document. The carrier is JSON, so a payload that
-// is not a JSON value cannot be carried at all — which is itself the shape of
-// the refusal a test about unreadable bytes is asserting.
+// are deliberately not a valid manifest.
 func carrierOver(t *testing.T, payload []byte) []byte {
 	t.Helper()
-	envelope := deliverytest.Envelope(t, payload, solutionhost.FixtureDeliveredBy)
+	envelope := deliverytest.Envelope(t, payload, testDeliveryKey)
 	carrier, err := solutionhost.MarshalSigned(&solutionhost.Signed{Document: payload, Envelope: envelope})
 	if err != nil {
 		t.Fatalf("marshal carrier: %v", err)
@@ -47,54 +77,52 @@ func carrierOver(t *testing.T, payload []byte) []byte {
 	return carrier
 }
 
-// delivered verifies documents through the real VerifyDelivered with the fixture
-// signer, producing the values admission takes.
-func delivered(t *testing.T, documents ...*solutionhost.SolutionHostBinding) []deliveredSolutionHostBinding {
+// delivered verifies manifests through the real VerifyDelivered, pairing each
+// carrier with the manifest re-derived from its attested bytes, as the pass
+// does.
+func delivered(t *testing.T, manifests ...*solutionhost.ModuleManifest) []deliveredSolutionHostBinding {
 	t.Helper()
-	return deliveredBy(t, fixtureSigner(t), documents...)
-}
-
-// deliveredBy is delivered with a pinned-key verifier, for a test about who
-// signed rather than about what was signed.
-//
-// It pairs each carrier with the document re-derived from its attested bytes,
-// the way the reconcile pass does, rather than with the document it was handed:
-// a helper that returned the caller's own pointer would let a test assert
-// against a value admission never reads. See deliveredSolutionHostBinding.
-func deliveredBy(
-	t *testing.T, verifier *solutionhost.Verifier, documents ...*solutionhost.SolutionHostBinding,
-) []deliveredSolutionHostBinding {
-	t.Helper()
-	out := make([]deliveredSolutionHostBinding, 0, len(documents))
-	for _, document := range documents {
-		carrier, err := solutionhost.ParseSigned(signedCarrier(t, document))
+	out := make([]deliveredSolutionHostBinding, 0, len(manifests))
+	for _, manifest := range manifests {
+		carrier, err := solutionhost.ParseSigned(signedCarrier(t, manifest))
 		if err != nil {
-			t.Fatalf("parse carrier for %q: %v", document.Binding, err)
+			t.Fatalf("parse carrier for %q: %v", manifest.Binding, err)
 		}
-		one, err := solutionhost.VerifyDelivered(context.Background(), carrier, verifier)
+		one, err := solutionhost.VerifyDelivered(context.Background(), carrier, fixtureSigner(t))
 		if err != nil {
-			t.Fatalf("verify carrier for %q: %v", document.Binding, err)
+			t.Fatalf("verify carrier for %q: %v", manifest.Binding, err)
 		}
-		attested, err := one.Document()
+		attested, err := one.Manifest()
 		if err != nil {
-			t.Fatalf("re-derive document for %q: %v", document.Binding, err)
+			t.Fatalf("re-derive manifest for %q: %v", manifest.Binding, err)
 		}
 		out = append(out, deliveredSolutionHostBinding{Delivered: one, Document: attested})
 	}
 	return out
 }
 
-// fixtureSignerHost is a host at one coordinate that accepts core's fixture
-// domain and lets the fixture signer speak for it.
-//
-// DomainsBySigner is required whenever a coordinate is set — core refuses the
-// call without it — so a test host that omitted it would fail with "declare a
-// signer policy" instead of the refusal it meant to assert, which is how a test
-// passes for the wrong reason.
-func fixtureSignerHost(coordinate string) solutionhost.Host {
-	return solutionhost.Host{
-		Coordinate:      coordinate,
-		Domains:         []string{solutionhost.FixtureDomain},
-		DomainsBySigner: map[string][]string{solutionhost.FixtureDeliveredBy: {solutionhost.FixtureDomain}},
+// appliedRecordOf is the host's record of having applied manifest.
+func appliedRecordOf(t *testing.T, manifest *solutionhost.ModuleManifest) *SolutionHostBindingRecord {
+	t.Helper()
+	digest, err := manifest.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := solutionhost.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var routes []string
+	solutionID := manifest.Alias
+	if !manifest.Removed {
+		routes = []string{manifest.Alias}
+	}
+	return &SolutionHostBindingRecord{
+		BindingID: manifest.Binding, HostCoordinate: manifest.Host.Coordinate,
+		Applied: &SolutionHostBindingApplied{
+			SolutionHostBindingGeneration: SolutionHostBindingGeneration{Generation: manifest.Generation, Digest: digest, Document: string(encoded)},
+			Removed:                       manifest.Removed, Routes: routes, SolutionID: solutionID,
+			Release: manifest.Release.Identity(), Domain: manifest.Host.Domain,
+		},
 	}
 }

@@ -51,7 +51,6 @@ func viewerSeals(t *testing.T, owner, installation string) *workcontext.MemorySe
 	seals := workcontext.NewMemorySealSource()
 	require.NoError(t, seals.Put(owner, workcontext.Seal{InstallationID: installation, InstallationRevision: 1}))
 	require.NoError(t, seals.PutEpoch(owner, 1))
-	require.NoError(t, seals.PutBearsNoExecution(owner))
 	return seals
 }
 

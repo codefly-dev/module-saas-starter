@@ -104,7 +104,6 @@ func TestStory_HOST_ID_001(t *testing.T) {
 	require.Equal(t, personID, verified.Context().GetOwnerPrincipalId())
 	require.NotEmpty(t, verified.Context().GetSeal().GetInstallationId(),
 		"sealed to the organization's installation of the module")
-	require.Empty(t, verified.Context().GetSeal().GetImageDigest(), "a person bears no execution")
 
 	// And a Work Context minted for another audience is refused.
 	_, err = verify("billing", tenantA)
@@ -331,14 +330,6 @@ func (s storySeals) Seal(ctx context.Context, principalID, installationID string
 
 func (s storySeals) PrincipalEpoch(ctx context.Context, principalID string) (uint64, error) {
 	return testService.WorkContextPrincipalEpoch(ctx, s.tenant, principalID)
-}
-
-func (s storySeals) ApprovedBuild(ctx context.Context, principalID string) (string, uint64, error) {
-	digest, incarnation, err := testService.WorkContextApprovedBuild(ctx, s.tenant, principalID)
-	if errors.Is(err, business.ErrBearsNoExecution) {
-		return "", 0, workcontext.ErrNoApprovedBuild
-	}
-	return digest, incarnation, err
 }
 
 func (storySeals) OperationBinding(context.Context, string) (workcontext.OperationBinding, error) {

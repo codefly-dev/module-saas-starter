@@ -74,24 +74,21 @@ alias the catalog *owns* is refused outright rather than half-served — the mat
 takes only the paths it matches, so serving the rest would split one prefix
 between two authorities.
 
-Where it goes is **resolved, never recorded**, and a solution is routed the
-same way. The registry holds no address. On each refresh the gateway reads the
-endpoints the APPLIED presence declares for the service that runs its workload
-(`appliedRouteEndpoints`: the presence's own HTTP-family endpoints, and only
-those) and asks the Codefly SDK
-(`codefly.For(...).Module().Service().Endpoint().API().ResolveDeliveredNetworkInstance(applied, raw)`)
-for each (`resolveRouteUpstreams`). The host-binding read supplies opaque Codefly
-endpoint delivery bytes beside APPLIED state. The SDK requires their complete
-presence digest to match this applied generation and owns their interpretation. The CLI selects exactly the endpoints composed workloads
-are reached through, so exactly one answers and that
-is where `/v1/<alias>` — and `/solutions/<alias>` — goes. None, or more than
-one, leaves the alias unrouted (`503 … registration not active`) and is logged
-once. In-cluster traffic after the gateway is plain HTTP; the mesh provides mTLS.
+Where it goes is **the applied manifest's**, and a solution is routed the same
+way. The registry holds no address. On each refresh the gateway parses the
+APPLIED module manifest of each binding (`appliedManifest`, which must name the
+registration's binding, generation and alias) and takes the HTTP-family
+endpoints it declares for its own workloads (`appliedRouteEndpoints`), each at
+the address the signed manifest carries (`manifestEndpointAddress`,
+`resolveRouteUpstreams`). The CLI writes exactly the endpoints composed
+workloads are reached through, so exactly one answers and that is where
+`/v1/<alias>` — and `/solutions/<alias>` — goes. None, or more than one, leaves
+the alias unrouted (`503 … registration not active`) and is logged once.
+In-cluster traffic after the gateway is plain HTTP; the mesh provides mTLS.
 
-A missing, withdrawn or mismatched projection never falls back to startup
-environment addresses. The signed delivery inbox supplies new values without
-changing this process or mounting configuration. Producer/Core/SDK integration
-is in progress; this read projection alone does not qualify a cell.
+A missing, withdrawn or mismatched manifest never falls back to startup
+environment addresses, and a withheld desired generation never replaces the
+applied generation's addresses.
 
 The two surfaces share one shape: the same cache, single carried resolution,
 upstream URL policy, guarded transport, tombstone rule and the 120 s
@@ -232,21 +229,20 @@ is not issued on an unanswered question.
 **The ceiling is the consumer's delivered authority, not a list an administrator
 keeps.** Accounts reads the registry grant of the principal the stated installation
 records (`business.ConsumerInvokeCeiling`): the invoke half of its operation
-audiences, derived from the consumer's signed authority document, the applied
-presence and the envelope, and intersected with the installation's consent. The
+audiences, derived from the consumer's applied module manifest and the envelope, and intersected with the installation's consent. The
 audience must be one of those bindings' audiences, and the scopes must fit one binding
 there. The installation's `allowed_audiences` and `allowed_scopes` then narrow when
 they name something and add no bound when empty: they are never a source of
 authority, so lists that are empty or wider than the grant admit nothing it does not.
 
-**What reaches that grant today.** The renderer derives an authority document from a
+**What reaches that grant today.** The renderer derives a manifest's `authority` from a
 module's `module.contract.codefly.yaml`, and from nothing else. A binding there may
 declare `invoke` alone — lookup is optional, and an invoke-only binding is kept — so a
 module that publishes a contract reaches this ceiling. **A solution's `api.consumes`
 in `solution.codefly.yaml` does not:** it feeds the generated SDK and
-`CODEFLY__API_CONSUMES`, never an authority document. A solution with no contract has
+`CODEFLY__API_CONSUMES`, never a manifest's `authority`. A solution with no contract has
 no registry grant, so every confined mint addressed through it is refused. Rendering a
-solution's declared consumption into its authority document is the delivery half of
+solution's declared consumption into its manifest's `authority` is the delivery half of
 issue #1083 and belongs to the renderer.
 
 What a refusal says, and who acts on it:
@@ -387,8 +383,8 @@ The listener puts the authenticated presenter in private request context and
 removes the raw headers. `moduleMintContext` sends that principal to accounts
 with the existing gateway-provenance credential, separately from the internal
 perimeter credential. A caller's presenter header is never copied into the RPC.
-Accounts verifies provenance and compares the presenter with applied presence
-and TokenReview before granting work authority.
+Accounts verifies provenance and compares the presenter's namespace and
+ServiceAccount with TokenReview before granting work authority.
 
 Native development has no waypoint and stamps no presenter. Accounts permits
 that absence only with its actual non-pod stand-in Kubernetes client; a local
@@ -407,7 +403,7 @@ pod's **projected ServiceAccount token** as `Authorization: Bearer <token>`
 (exactly one header, that scheme), body `{prefix, organization_id?}`, bounded
 at 4 KiB. Nothing is reported with it: a solution's address is resolved and its
 manifest comes from its presence
-([SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#the-document-and-who-owns-which-field)).
+([SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence-one-signed-module-manifest-per-binding)).
 Accounts answers `FailedPrecondition`
 for a workload that is admitted and installed nowhere, relayed as `412`. A shared module selects an organization; accounts
 requires its live installation and the envelope's `cross_tenant` grant. A
@@ -431,7 +427,7 @@ brokers it to `ModuleCapabilitiesService/MintModuleOperationContext` and answers
 `expires_at`) with `cache-control: no-store` — snake_case, unlike the camelCase
 `/modules/_work-context`, because consumers were built against this shape. It relays two distinct refusals: `401` when the module is not proven
 (bad internal token, a missing or refused projected token, another workload, an
-unapproved build, an undeclared module) and `403` when a proven module names a
+undeclared module) and `403` when a proven module names a
 binding it may not mint with no person present. Every module exchange answers
 `503` when accounts could not establish what the pod is running (`Unavailable`):
 nothing was decided, and the module retries. What the

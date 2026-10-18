@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
-	"accounts/pkg/business/executiontest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/stretchr/testify/require"
@@ -105,23 +104,23 @@ func mintEntrypoints() []mintEntrypoint {
 	}
 }
 
-func TestEveryModuleMintIsBoundToTheRunningBuild(t *testing.T) {
+func TestEveryModuleMintIsBoundToADeclaredWorkload(t *testing.T) {
 	refusals := map[string]func(t *testing.T, prefix string) string{
 		"a token the API server refuses": func(*testing.T, string) string { return "not-a-projected-token" },
 		"a pod of another workload": func(_ *testing.T, prefix string) string {
 			declared := moduleWorkload(moduleExecution.registry[business.ModulePrincipalID(prefix)])
 			declared.ServiceAccount = "intruder"
-			return moduleExecution.cluster.Run(declared, executiontest.Image(prefix))
+			return moduleExecution.cluster.Run(declared)
 		},
-		"a pod on an unapproved build": func(_ *testing.T, prefix string) string {
-			return moduleExecution.cluster.Run(moduleWorkload(moduleExecution.registry[business.ModulePrincipalID(prefix)]),
-				executiontest.Image(prefix+"-unreviewed"))
+		"a pod in another module's namespace": func(_ *testing.T, prefix string) string {
+			declared := moduleWorkload(moduleExecution.registry[business.ModulePrincipalID(prefix)])
+			declared.Namespace = "elsewhere"
+			return moduleExecution.cluster.Run(declared)
 		},
 		"a pod with a debug container beside the app": func(t *testing.T, prefix string) string {
 			token := moduleToken(t, prefix)
 			moduleExecution.cluster.AddContainer(token, business.ContainerExecution{
 				Name: "debug", Kind: business.ContainerEphemeral, State: business.ContainerRunning,
-				ImageID: executiontest.Image("debugger"),
 			})
 			return token
 		},

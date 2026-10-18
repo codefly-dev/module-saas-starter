@@ -115,19 +115,36 @@ import (
 var ErrSolutionHostLocalPolicyOutsideItsCluster = errors.New("solution host local policy is not bound to this cluster")
 
 // SolutionHostLocalProfile declares a verification policy LOCAL and binds it to
-// one cluster.
+// one cluster or one native run: exactly one of the two is named.
 type SolutionHostLocalProfile struct {
 	// ClusterCertificateAuthoritySHA256 is the lowercase hex SHA-256 of the DER
 	// bytes of the local cluster's API-server certificate authority — the
 	// certificate Kubernetes projects into every pod as the service account's
 	// `ca.crt`. Required: a local declaration naming no cluster would bind to
 	// every cluster, which is the property the declaration exists to remove.
-	ClusterCertificateAuthoritySHA256 string `json:"clusterCertificateAuthoritySha256"`
+	ClusterCertificateAuthoritySHA256 string `json:"clusterCertificateAuthoritySha256,omitempty"`
+
+	// NativeAnchorSHA256 binds the profile to one native run instead: the
+	// lowercase hex SHA-256 of the run's workload-identity anchor key (core's
+	// native.Anchor.Fingerprint), which the CLI writes beside the anchor it
+	// hands this host. A native run has no cluster; its launcher is the party
+	// that vouches for its processes, and the profile admits a developer's key
+	// only under the one run whose anchor it pins.
+	NativeAnchorSHA256 string `json:"nativeAnchorSha256,omitempty"`
 }
 
 var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func (profile *SolutionHostLocalProfile) validate() error {
+	if profile.NativeAnchorSHA256 != "" {
+		if profile.ClusterCertificateAuthoritySHA256 != "" {
+			return errors.New("verification policy declares itself local to a cluster and to a native run at once; a local profile is bound to exactly one")
+		}
+		if !sha256Hex.MatchString(profile.NativeAnchorSHA256) {
+			return fmt.Errorf("verification policy declares itself local to native run anchor %q, which is not a lowercase hex SHA-256", profile.NativeAnchorSHA256)
+		}
+		return nil
+	}
 	if !sha256Hex.MatchString(profile.ClusterCertificateAuthoritySHA256) {
 		return fmt.Errorf("verification policy declares itself local with cluster authority %q, which is not a lowercase hex SHA-256: "+
 			"a local profile is valid in exactly one cluster, the one whose certificate authority it pins, and a profile naming no cluster would bind to every one",

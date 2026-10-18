@@ -63,7 +63,6 @@ func TestSolutionHostBindingFirstDeliverySerializesTwoPasses(t *testing.T) {
 			return testStore.SaveSolutionHostBinding(ctx, &business.SolutionHostBindingRecord{
 				BindingID:      binding,
 				HostCoordinate: "acme.example/host",
-				HostComponent:  "accounts",
 				Desired: &business.SolutionHostBindingGeneration{
 					Generation: 1,
 					Digest:     fixtureDigest(binding + ":1"),

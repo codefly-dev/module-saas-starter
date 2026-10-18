@@ -152,23 +152,13 @@ admins already hold every permission. See `AUTHZ.md` "Built-in role catalog
 import".
 
 A platform super_admin then allows the binding for the **calling** principal in
-its `grant` in the module envelope, beside the whole authority units the host
-admits for it and the workload it may run as:
+its `grant` in the module envelope:
 
 ```json
 {
   "revision": 4,
-  "approved_builds": ["sha256:<the consumer's approved build>"],
   "principals": {
     "example-consumer": {
-      "bindings": [
-        {"id": "<presence binding>:run:invoke", "revision": 1, "scope": "example-producer.profiles:invoke,example-producer.profiles:read"},
-        {"id": "<presence binding>:run:lookup", "revision": 1, "scope": "example-producer.profiles:read"}
-      ],
-      "workload_identities": [
-        {"spiffe_id": "spiffe://<trust domain>/ns/<namespace>/sa/<service account>", "container": "<container>"}
-      ],
-      "scope_ceilings": [],
       "grant": {
         "tenant": "019f6bf7-5b4b-74e5-8c17-092259bb1661",
         "operation_audiences": {
@@ -198,11 +188,11 @@ admits for it and the workload it may run as:
 
 The producer's own principal lists `example-producer.profiles` under its
 grant's `resources`. The consumer's registry entry is this grant bounded by the
-authority document delivery signed for it: the `run` audience exists only while
-the document grants the `invoke` unit, each unit the document grants must be the
-admitted one field for field (a wider scope puts the whole document outside the
-envelope), and each operation keeps only the actions its unit grants —
-`resource_ids` stay the envelope's, because a unit cannot name one.
+`authority` its applied module manifest asks for: the `run` audience exists only
+while the manifest asks for the `run` binding on audience `example-producer` with
+an `invoke` operation, and each operation keeps only the actions the manifest
+asks for (`example-producer.profiles:read`, …) — `resource_ids` stay the
+envelope's, because a manifest cannot name one.
 
 `example-consumer` redeems it with `ExchangeDelegatedOperationAudience`,
 supplying its retained parent, the binding id `run`, and whether this is an
@@ -235,10 +225,8 @@ rejected with the reason rather than one call failing later.
 
 Name the resource by its **stable identity**, not by a digest of its current
 definition. The module principal registry is derived, each reconcile pass, from
-the delivered authority documents inside the module envelope, so re-issuing this
-entry is an envelope revision — and, because a delivered authority document is
-inside only the envelope revision it was rendered against, a redelivery of every
-module's authority at that revision. A grant that has to be re-issued whenever
+the applied module manifests and the module envelope, so re-issuing this entry is
+an envelope revision. A grant that has to be re-issued whenever
 the producer's definition moves leaves the consumer without access from the
 moment that definition moves until the new revision and its deliveries are
 applied, and each accounts replica derives its own registry on its own pass, so
@@ -275,9 +263,9 @@ answered by one set of functions for minting and verifying alike
 - **Epoch.** The owner's authorization revision in the organization. Membership
   and role changes advance a person's; installing a module and every change to
   its installation's revision advance a module principal's (migration 35).
-- **Execution.** A person and a registered agent bear none. A module principal
-  always bears one: its mint attests the digest `BindExecution` read off the
-  requesting pod, and core holds it against the approved build.
+- **No build.** A Work Context seals no build (core #812): a module's mint is
+  bound by `BindExecution` to a workload its applied manifest lists, and what a
+  workload runs is deploy-time admission.
 - **Revision.** The greater of the organization's and the owner's revision for a
   person; a module principal's is `ModuleOperationContextRevision` of its
   installed grant. Core keys its revision source by tenant, so the host binds it
@@ -332,7 +320,6 @@ serves it on the endpoint a module already depends on:
 | --- | --- | --- |
 | seal | the live installation and its revision, for the capability's owner | `UNHELD` — not active in the organization, or the principal is not a member |
 | principal epoch | one principal's live epoch, for the owner and every actor hop alike | `UNKNOWN` — no authorization record here |
-| approved build | the execution the issuer approves for one principal | `BEARS_NO_EXECUTION` — a person's session, which is correct |
 | operation binding | the binding the capability is sealed to, exactly | `ABSENT` — no such delegation, or one this organization does not entitle |
 | authorization revision | the revision a capability owned by that principal carries | — |
 | approval grant | the approval the capability's grant hop claims | `NOT_RECORDED` — this host records none |
@@ -356,8 +343,8 @@ That shape is the correction an independent review forced, and the reasoning is
 worth keeping. The first revision took the tenant and the audience as request
 fields and compared the audience to the caller's prefix. No **answer** depended
 on either field, so the comparison pinned nothing: a module could label the call
-with its own prefix and still read any principal's epoch, approved build or
-authorization revision in its tenant, which made the strongest check in the model
+with its own prefix and still read any principal's epoch or authorization
+revision in its tenant, which made the strongest check in the model
 a label. A presented, authenticated capability has nothing left to label.
 
 Consequences worth stating:
@@ -369,7 +356,7 @@ Consequences worth stating:
   grant to ask about. The arm exists so that the day it records approvals, the
   answer has a shape and a client that does not understand it refuses.
 - A module addressed by a name that is neither its prefix nor its alias — a
-  binding's declared `audience` is a name the authority document chooses — cannot
+  binding's declared `audience` is a name the module manifest chooses — cannot
   verify at full strength. That is deliberate: accepting a third name would mean
   believing a caller's claim that an audience is its own.
 
@@ -385,8 +372,7 @@ seal's whole value is that a callee's verdict and an issuance cannot disagree.
 
 - `FAILED_PRECONDITION` — the issuer **decided**, and the decision is no: the
   owner is no longer a member, the principal has no authorization record, a
-  module's installation is inactive, the delegation behind a binding is stale,
-  the approved build cannot be named. The capability is revoked; its holder mints
+  module's installation is inactive, the delegation behind a binding is stale. The capability is revoked; its holder mints
   again and does not retry.
 - `UNAVAILABLE` — nothing was decided. A lookup failed; a retry may succeed.
 - The three absence states above are neither: a verifier turns each into a
@@ -469,19 +455,18 @@ relaxation of the delegated exchange.
 
 The module authenticates exactly as for its own Work Context — its pod's
 projected ServiceAccount token (audience `accounts`), which `BindExecution` holds
-against the workload its principal declares and the build its authority document
-approves (#1056) — and names one of its installed operation bindings. What the
+against the workloads its principal's applied manifest lists (#1056) — and names one of its installed operation bindings. What the
 binding requires (one principal per ServiceAccount, every container of the pod
 approved, a running regular container in a running pod, a token of at most 600
 seconds) and the replay it does NOT close are stated in
-[services/accounts/AGENTS.md](services/accounts/AGENTS.md#establishing-what-a-caller-is-running). Nothing else is requestable.
+[services/accounts/AGENTS.md](services/accounts/AGENTS.md#establishing-which-workload-a-caller-is). Nothing else is requestable.
 The host mints a child Work Context with:
 
 - `aud` = the binding's `audience`;
 - authority scopes = **exactly** the binding's `headless_scopes`;
 - owner = the module's own service principal (kind `service`), acting directly:
   no actor hop, as core models an owner acting, with the seal naming its
-  installation and the build its pod runs;
+  installation;
 - tenant = the tenant the module envelope's grant declares for that principal;
 - a 60-second lifetime and the idempotent replay policy;
 - an authorization revision that is a digest of the module's whole derived
@@ -653,7 +638,7 @@ tenant) exactly; a read exchange always does.
 | Missing | `FAILED_PRECONDITION` | `DELEGATION_MISSING` | `412`, body `DELEGATION_MISSING` | The source has no active delegation to this module. A person must connect or reconnect it. |
 | Revoked | `PERMISSION_DENIED` | `DELEGATION_REVOKED` | `403`, body `DELEGATION_REVOKED` | The delegation was revoked, or was just found unsupported and revoked. |
 | Invalid | `PERMISSION_DENIED` | `DELEGATION_INVALID` | `403`, body `DELEGATION_INVALID` | No such delegation for this module — another module's is deliberately indistinguishable from one that does not exist. |
-| Unproven | `UNAUTHENTICATED` | — | `401` | The module's projected token was refused, belongs to another workload, or its pod runs an unapproved build. |
+| Unproven | `UNAUTHENTICATED` | — | `401` | The module's projected token was refused, or belongs to a workload no applied manifest of the principal lists. |
 | Unbound | `UNAVAILABLE` | — | `503` | The host could not establish what the module's pod is running; nothing was decided. |
 
 The gateway's refusal body is the plain-text reason, read from the

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,15 +41,12 @@ func (a *appliedReadAuthorizer) AuthorizeAppliedObserver(_ context.Context, cred
 }
 
 func TestAppliedObserverReportsOnlyCommittedGeneration(t *testing.T) {
-	signed, err := solutionhost.ParseSigned(signedPresenceCarrier(t, "acme", "acme-prod"))
-	require.NoError(t, err)
-	document, err := solutionhost.Parse(signed.Document)
-	require.NoError(t, err)
+	document := testModuleManifest(t, 3)
 	store := &appliedReadStore{}
 	observer := &appliedReadAuthorizer{}
 	service, err := business.NewService(store)
 	require.NoError(t, err)
-	service.SetSolutionDelivery(nil, nil, observer, nil)
+	service.SetSolutionDelivery(nil, nil, observer)
 	handler := NewSolutionDeliveryHTTPHandler(service)
 	read := func(binding string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodGet, SolutionDeliveryPrefix+"applied/"+binding, nil)
@@ -69,7 +67,7 @@ func TestAppliedObserverReportsOnlyCommittedGeneration(t *testing.T) {
 		document.Removed = removed
 		if removed {
 			document.Generation++
-			document.Workloads, document.Artifacts, document.Routes = nil, nil, nil
+			document.Workloads, document.Endpoints = nil, nil
 		}
 		wire, marshalErr := solutionhost.Marshal(document)
 		require.NoError(t, marshalErr)
@@ -87,9 +85,19 @@ func TestAppliedObserverReportsOnlyCommittedGeneration(t *testing.T) {
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &got))
 		require.Equal(t, business.SolutionDeliveryApplied{
 			Host: document.Host, Binding: document.Binding, Generation: document.Generation,
-			PresenceDigest: digest, Release: document.Release.Identity(), Removed: removed, AppliedAt: at,
+			Digest: digest, Release: document.Release.Identity(), Removed: removed, AppliedAt: at,
 		}, got)
 	}
+	// A newer generation received and withheld is reported with the host's
+	// reason: delivered is not applied.
+	record.Desired = &business.SolutionHostBindingGeneration{Generation: document.Generation + 1, Digest: "sha256:" + strings.Repeat("0", 64)}
+	record.PendingReason = "module manifest generation was rewritten"
+	var pending business.SolutionDeliveryApplied
+	response := read(document.Binding)
+	require.Equal(t, http.StatusOK, response.Code)
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &pending))
+	require.Equal(t, &business.SolutionDeliveryPending{Generation: document.Generation + 1, Reason: record.PendingReason}, pending.Pending)
+	record.Desired, record.PendingReason = nil, ""
 	valid := *record.Applied
 	for name, mutate := range map[string]func(*business.SolutionHostBindingApplied){
 		"malformed":  func(a *business.SolutionHostBindingApplied) { a.Document = "invalid" },
@@ -130,7 +138,7 @@ func TestAppliedObserverHTTPBoundary(t *testing.T) {
 	observer := &appliedReadAuthorizer{err: errors.New("unavailable")}
 	service, err := business.NewService(store)
 	require.NoError(t, err)
-	service.SetSolutionDelivery(nil, nil, observer, nil)
+	service.SetSolutionDelivery(nil, nil, observer)
 	handler := NewSolutionDeliveryHTTPHandler(service)
 	for _, tc := range []struct {
 		method, path string

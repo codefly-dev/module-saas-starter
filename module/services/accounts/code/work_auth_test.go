@@ -590,10 +590,8 @@ func TestNoModuleSecretAuthenticatesAMint(t *testing.T) {
 	service.SetModuleAuthorityReads(installations, nil)
 	service.SetModuleCapabilities(nil, nil, registry)
 	cluster := executiontest.New()
-	service.SetExecutionBinding(cluster, cluster)
-	cluster.Approve("documents", executiontest.Digest("documents-v1"), 3)
-	token := cluster.Run(executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "documents", Container: "app"},
-		executiontest.Image("documents-v1"))
+	service.SetExecutionBinding(cluster)
+	token := cluster.Run(executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "documents", Container: "app"})
 
 	_, err = service.ModuleAuthorizeWorkContext(context.Background(), "documents", "identity-secret")
 	require.ErrorIs(t, err, business.ErrModuleIdentityDenied, "a secret is not a token, and nothing reads the secret maps")
@@ -603,8 +601,8 @@ func TestNoModuleSecretAuthenticatesAMint(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, business.ModulePrincipalID("documents"), authority.PrincipalID)
 	require.Equal(t, tenant, authority.Tenant)
-	require.Equal(t, uint64(3), authority.Execution.Incarnation)
-	require.Equal(t, executiontest.Image("documents-v1"), string(authority.Execution.Running))
+	require.Equal(t, "acme-prod", authority.Execution.Namespace)
+	require.Equal(t, "documents", authority.Execution.ServiceAccount)
 }
 
 // keyServiceBackend selects the key-service backend on both carriers, for the

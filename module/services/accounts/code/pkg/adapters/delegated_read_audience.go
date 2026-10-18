@@ -182,7 +182,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	if delegated {
 		issued, err = authority.exchangeDelegatedParent(ctx, caller, parent, delegation, binding, time.Duration(ttl)*time.Second)
 	} else {
-		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, workcontext.Execution{}, "")
+		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, "")
 	}
 	if err != nil {
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
@@ -468,8 +468,7 @@ func sourceDelegationHops(actors []*basev0.WorkActorV1) []business.SourceDelegat
 // the caller's own binding. The caller — the module the delegation's binding
 // names as its audience — is the module that USES what is issued, so the
 // capability is minted afresh: the person's session, then the caller's hop
-// exercising the delegation as its operation binding, attesting the build its
-// verified credential was sealed to. Core resolves that binding live and refuses
+// exercising the delegation as its operation binding. Core resolves that binding live and refuses
 // it for any module the delegation does not entitle.
 func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
 	ctx context.Context, caller business.ModuleCaller, parent *basev0.WorkContextV1,
@@ -490,7 +489,7 @@ func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
 	authority := business.SourceOperationContextAuthority{
 		ModuleWorkContextAuthority: business.ModuleWorkContextAuthority{
 			PrincipalID: caller.PrincipalID, Tenant: parent.GetTenantId(),
-			InstallationID: *caller.Sealed.InstallationID, Execution: caller.SealedExecution(),
+			InstallationID: *caller.Sealed.InstallationID,
 		},
 		ModulePrefix:     grant.Prefix,
 		OwnerPrincipalID: parent.GetOwnerPrincipalId(),

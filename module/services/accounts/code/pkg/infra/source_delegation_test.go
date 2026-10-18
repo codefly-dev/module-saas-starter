@@ -38,20 +38,20 @@ const (
 	runtimeModuleToken    = "projected.runtime"
 )
 
-// bindDelegationModules runs one pod per module that mints here, each on its
-// approved build, and binds svc's mints to that cluster.
+// bindDelegationModules runs one pod per module that mints here, each as its
+// declared workload, and binds svc's mints to that cluster.
 func bindDelegationModules(svc *business.Service, registry business.ModulePrincipalRegistry) {
 	cluster := executiontest.New()
-	svc.SetExecutionBinding(cluster, cluster)
+	svc.SetExecutionBinding(cluster)
 	for prefix, token := range map[string]string{delegationModule: delegationModuleToken, otherModule: otherModuleToken, runtimeModule: runtimeModuleToken} {
 		grant, declared := registry[business.ModulePrincipalID(prefix)]
 		if !declared {
 			continue
 		}
-		cluster.Approve(prefix, executiontest.Digest(prefix), 1)
+		workload := grant.Workloads[0]
 		cluster.RunWithToken(token, executiontest.Workload{
-			Namespace: grant.Workload.Namespace, ServiceAccount: grant.Workload.ServiceAccount, Container: grant.Workload.Container,
-		}, executiontest.Image(prefix))
+			Namespace: workload.Namespace, ServiceAccount: workload.ServiceAccount, Container: workload.Container,
+		})
 	}
 }
 

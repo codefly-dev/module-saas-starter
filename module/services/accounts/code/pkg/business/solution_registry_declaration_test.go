@@ -50,7 +50,7 @@ func TestDeclaredPresenceWritesItsOwnFrontendBlock(t *testing.T) {
 				Frontend: &SolutionFrontendHalf{Manifest: "{}"},
 			}}
 			svc := &Service{store: store}
-			document := &solutionhost.SolutionHostBinding{Binding: "acme.test.example", Generation: 2,
+			document := &solutionhost.ModuleManifest{Binding: "acme.test.example", Generation: 2,
 				Kind:     solutionhost.KindSolution,
 				Release:  solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"},
 				Frontend: tc.frontend}
@@ -90,7 +90,7 @@ func TestTheDeclaredKindReachesTheRegistryRecord(t *testing.T) {
 		t.Run(string(tc.kind), func(t *testing.T) {
 			store := &declarationProjectionStore{}
 			svc := &Service{store: store}
-			document := &solutionhost.SolutionHostBinding{
+			document := &solutionhost.ModuleManifest{
 				Binding: "acme.test.example", Generation: 2, Kind: tc.kind,
 				Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"},
 			}
@@ -122,7 +122,7 @@ func TestDeclaredSolutionGroupFollowsAppliedGenerationWithoutChangingTarget(t *t
 				Group:    &SolutionGroup{ID: "operations", Title: "Operations", Order: 1},
 			}}
 			svc := &Service{store: store}
-			document := &solutionhost.SolutionHostBinding{
+			document := &solutionhost.ModuleManifest{
 				Binding: "acme.test.example", Generation: 2, Kind: solutionhost.KindSolution,
 				Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"}, Group: tc.group,
 			}
@@ -147,7 +147,7 @@ func TestWithdrawalClearsSolutionGroup(t *testing.T) {
 	now := time.Now()
 	_, err := svc.withdrawDeclaredSolutionRegistration(context.Background(),
 		&SolutionHostBindingRecord{BindingID: "acme.test.example", Applied: &SolutionHostBindingApplied{SolutionID: "example"}},
-		&solutionhost.SolutionHostBinding{Binding: "acme.test.example", Generation: 2, Kind: solutionhost.KindSolution, Removed: true,
+		&solutionhost.ModuleManifest{Binding: "acme.test.example", Generation: 2, Kind: solutionhost.KindSolution, Removed: true,
 			Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"}}, "target", now)
 	require.NoError(t, err)
 	require.Nil(t, store.saved.Group)
@@ -170,7 +170,7 @@ func TestADeclaredKindThisHostDoesNotRouteIsRefused(t *testing.T) {
 		t.Run(string("kind="+kind), func(t *testing.T) {
 			store := &declarationProjectionStore{}
 			svc := &Service{store: store}
-			document := &solutionhost.SolutionHostBinding{
+			document := &solutionhost.ModuleManifest{
 				Binding: "acme.test.example", Generation: 2, Kind: kind,
 				Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"},
 			}
@@ -213,8 +213,8 @@ func (s *countingDeclarationStore) LiveDeclaredBindings(context.Context) ([]Live
 // solution becoming addressable), and a withdrawal REMOVES one (a stale snapshot
 // keeps a withdrawn solution addressable for up to the bound).
 func TestTheApplyPathInvalidatesTheAudienceSnapshot(t *testing.T) {
-	document := func(kind solutionhost.Kind) *solutionhost.SolutionHostBinding {
-		return &solutionhost.SolutionHostBinding{
+	document := func(kind solutionhost.Kind) *solutionhost.ModuleManifest {
+		return &solutionhost.ModuleManifest{
 			Binding: "acme.test.example", Generation: 2, Kind: kind,
 			Release: solutionhost.Release{Publisher: "acme", Name: "example", Version: "1.0.0"},
 		}
