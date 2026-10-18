@@ -33,11 +33,23 @@ per binding. `POST /platform/_delivery/manifest` verifies the carrier against th
 pinned keys, reviews the carrier's token — the `delivery` ServiceAccount of the
 module's namespace by the cell's rule (`business.ModuleNamespaceRule`, read off
 this host's own namespace and `CODEFLY__MODULE`), for a withdrawal the previously
-applied manifest's module — admits it with core's `Admit` and `CheckAlias`, and
-persists it in the append-only inbox (migration 41: one kind, `manifest`). It
-answers 200 `accepted`/`replayed`, 400, 401, 403, 409 (stale, rewritten,
-withdrawn), 422 (another host, a reserved or held alias) or 503, with the reason
-in the body and the log. The full contract is in
+applied manifest's module — admits it with core's `Admit` and `CheckAlias`,
+holds it to the host's own rules (`checkManifestAgainstHost`: one workload runs
+as one manifest; a principal and a release publisher stay with the ownership
+domain that holds them; an endpoint address is its workload's in-cluster Service
+by the rule, or the loopback natively), and persists it in the append-only inbox
+(migration 41: one kind, `manifest`). It answers 200 `accepted`/`replayed`, 400,
+401, 403 (also a principal or publisher another domain holds), 409 (stale,
+rewritten, withdrawn, or a workload another binding holds, named), 422 (another
+host, a reserved or held alias, an endpoint off its Service) or 503, with the
+reason in the body and the log.
+
+Under a native `codefly run` the CLI hands the host the run's anchor
+(`CODEFLY_NATIVE_IDENTITY_ANCHOR`) and pins its fingerprint in the local
+profile (`local.nativeAnchorSha256`); the host refuses to boot unless they
+match, and then `infra.NativeWorkloadIdentity` — core's native attester —
+answers the carrier, applied-observer and mint reviews TokenReview answers in a
+cell, under the bare namespace rule. The full contract is in
 [../../SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence-one-signed-module-manifest-per-binding).
 
 `solution_host_bindings` stores desired and applied manifests and pending
@@ -531,7 +543,8 @@ actual signer/verifier regression is
 token and the principal the caller names, and establishes the rest
 independently:
 
-1. **Review** the token (TokenReview, audience `accounts`): it names a namespace,
+1. **Review** the token (TokenReview, audience `accounts`; natively, core's
+   native attester under the run's anchor): it names a namespace,
    a ServiceAccount, a pod and a pod UID. A token the API server refused is a
    verdict (`ErrExecutionTokenRejected`); an API server that could not answer is
    `ErrExecutionUnbound`. A token naming no pod, or valid for longer than the

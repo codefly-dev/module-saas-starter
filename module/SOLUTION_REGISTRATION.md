@@ -335,13 +335,16 @@ and answers, in this order:
    canonical encoding of a valid manifest, and the signer's pin for the
    manifest's `host.domain`.
 3. **Authorise the carrier**: a TokenReview of the bearer token (audience
-   `accounts`) must name the `delivery` ServiceAccount of the namespace the cell
+   `accounts`) — or, in a native run, core's native attester under the run's
+   anchor — must name the `delivery` ServiceAccount of the namespace the cell
    runs the manifest's module in — for a withdrawal, the module of the binding's
    previously applied manifest.
 4. **Admit** it with core's `Admit` against the binding's applied manifest, and
    its alias with core's `CheckAlias` against every other binding as it stands
    once its newest delivered generation applies.
-5. **Persist** it in the append-only inbox and ask for a reconcile pass.
+5. **Hold it to the host's own rules** (below) against every other binding as
+   it stands once its newest delivered generation applies.
+6. **Persist** it in the append-only inbox and ask for a reconcile pass.
 
 | Answer | Body | Meaning |
 | --- | --- | --- |
@@ -349,9 +352,9 @@ and answers, in this order:
 | 200 | `{"disposition":"replayed",…}` | this exact generation is already durable; nothing written |
 | 400 | `{"error":…}` | not a carrier, not a canonical valid manifest, or a replaced document schema |
 | 401 | `{"error":…}` | no key this host pins signed it, or the API server refused the token |
-| 403 | `{"error":…}` | not the module's `delivery` account, or the signer or binding belongs to another ownership domain |
-| 409 | `{"error":…}` | a stale generation, a rewritten one (applied or only delivered), or a withdrawn binding brought back |
-| 422 | `{"error":…}` | another host's manifest, or a reserved or held route alias |
+| 403 | `{"error":…}` | not the module's `delivery` account, the signer or binding belongs to another ownership domain, or it claims a principal or publisher another domain's binding holds |
+| 409 | `{"error":…}` | a stale generation, a rewritten one (applied or only delivered), a withdrawn binding brought back, or a workload another binding holds (named) |
+| 422 | `{"error":…}` | another host's manifest, a reserved or held route alias, or an endpoint address that is not its workload's in-cluster Service |
 | 503 | `{"error":…}` | the API server could not be asked, or this host's applied record is unusable: retry |
 
 **The signing input is the canonical JSON** (`SignedPayload`, the manifest's
@@ -382,6 +385,33 @@ So a carrier for module `reports` on a host running as `saas` in
 `platform-acme-staging-saas` is `platform-acme-staging-reports/delivery`, and the
 workload `{service: api, container: api}` mints from
 `platform-acme-staging-reports/api`.
+
+### The host's own rules
+
+Core judges a manifest on its own and against its binding's history. Three
+rules need what only this host knows — the other bindings it holds and where its
+cell runs things — and are checked at receipt, so a second claim is refused with
+the binding that holds it, and again by every pass against the bindings as they
+stand:
+
+- **One workload, one manifest.** A workload is one (namespace, ServiceAccount)
+  by the namespace rule. Two live manifests on this host never both declare it,
+  so a reviewed token matches at most one manifest. The second is refused
+  (409) naming the binding that holds the workload; of two first deliveries
+  admitted by one pass, the first in delivery order keeps it. A withdrawal holds
+  nothing.
+- **A principal and a publisher stay with their domain.** A signer pinned for
+  domain D speaks for D's bindings only: a manifest may not ask for an
+  `authority.principal`, or deploy a `release.publisher`, that a live binding of
+  another ownership domain holds (403, naming the holder). The first domain to
+  hold one keeps it; a binding keeps its first domain (`Admit`).
+- **An endpoint is its workload's in-cluster Service.** Every
+  `endpoints[].address` is `http(s)://<service>.<namespace>.svc.cluster.local:<port>`,
+  where `<service>` is the endpoint's own service and `<namespace>` the module's
+  by the rule — no path, query or user info, never a free host. The metadata
+  server (`169.254.169.254`), another module's namespace and another workload's
+  Service are refused (422). In a native run an endpoint is the run's own
+  process on the loopback (`127.0.0.1`, `::1`, `localhost`) and nothing else.
 
 ### Prepare, then activate
 
@@ -685,18 +715,17 @@ the native services to loopback. Native Accounts uses its explicit non-pod
 stand-in profile; this provides no mesh presenter and cannot be selected inside
 a real pod. No application serves or presents a local SVID.
 
-Binding a credential to an approved execution means reading what the workload
-actually runs: `TokenReview` on its projected service-account token, then the pod
-by the name that review returns, then the application container's `imageID`. That
-is Kubernetes. `codefly run` on a laptop has none of it, and the adversarial
-review is right that the delivery API does not preserve the old laptop behaviour —
-a host that reads pods is not a Kubernetes-free host any more.
+Binding a credential to an execution means asking the environment's mechanism
+which workload presented it: in a cell, `TokenReview` on its projected
+service-account token, then the pod by the name that review returns (no image is
+read: the mint is bound by rule, not by build); in a native run, core's native
+attester under the run's anchor (below).
 
 The `local` trust policy is deleted. A coordinate is an operator-declared
 string and cannot justify skipping a signature check. Local runs use Kubernetes
 and the same pinned-key verification as deployed hosts: one verifier, one policy
 shape, with a release key in a deployed policy and a person's key admitted only
-by a cluster-bound local policy.
+by a local policy bound to one cluster or one native run.
 
 ### The local profile's trust anchor
 
@@ -838,14 +867,34 @@ pinned key, its `host.coordinate` the local host's — to the same
 run allocated. The local host is configured with its local coordinate and the
 local profile above.
 
-**The carrier and the mint are still reviewed by TokenReview.** The Codefly CLI
-that renders module manifests (codefly-dev/cli#1014) starts a native run as the
-launcher of its processes and signs each one a credential of core's
-`workloadidentity/native` mechanism instead of standing in for an API server.
-This host does not attest that credential yet, so a native run on that CLI
-cannot deliver to it or mint from it until the host accepts the native attester
-beside TokenReview. A local run on a cluster (pods with projected tokens) works
-as a cell does.
+**A native run is attested by its launcher.** The Codefly CLI that renders
+module manifests (codefly-dev/cli#1014) starts a native run as the launcher of
+its processes and signs each one a credential of core's
+`workloadidentity/native` mechanism, naming the declared workload it started,
+instead of standing in for an API server. The host verifies those credentials
+against the run's anchor, the way a cell's host reviews a projected token, and
+the anchor is bound the way a cluster is: the CLI hands the host the anchor in
+`CODEFLY_NATIVE_IDENTITY_ANCHOR` (core refuses it inside a pod) and pins its key
+fingerprint in the local profile,
+
+```json
+{ "local": { "nativeAnchorSha256": "<core's native.Anchor.Fingerprint()>" }, "signers": [ … ] }
+```
+
+and the host refuses to boot unless the anchor it was handed is the one the
+profile pins. A profile binds to a cluster or to a native run, never both; a
+deployed policy, or one bound to a cluster, refuses a native anchor. Under a
+native run:
+
+- the carrier is the `delivery` workload of the manifest's module, and the
+  applied observer is core's `AppliedObserver`;
+- a minting process is the workload its credential names: its module is the
+  namespace, its service the account, its instance the pod, and the containers
+  are what the launcher vouched for about that instance;
+- a module's namespace is its name (the bare rule), and an endpoint's address is
+  the run's loopback.
+
+A local run on a cluster (pods with projected tokens) works as a cell does.
 
 ### Two rules that do not bend locally
 
