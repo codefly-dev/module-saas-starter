@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,74 +13,61 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A declared module is reached at the address the Codefly SDK resolves for the
-// endpoint its applied presence declares — never at an address a registration
+// A declared module is reached at the address its applied module manifest
+// carries for the endpoint it declares — never at an address a registration
 // records. These are the selection rule and the routing it feeds.
 
-// modulePresenceBinding is an applied module presence whose one workload runs
+// moduleManifestBinding is an applied module manifest whose one workload runs
 // service "documents", declaring the given endpoints.
-func modulePresenceBinding(t *testing.T, endpoints ...solutionhost.Endpoint) *accountsv1.SolutionHostBindingState {
+func moduleManifestBinding(t *testing.T, endpoints ...solutionhost.Endpoint) *accountsv1.SolutionHostBindingState {
 	t.Helper()
-	var document *solutionhost.SolutionHostBinding
-	for _, fixture := range solutionhost.FixturesOf(solutionhost.DocumentTypePresence) {
-		parsed, err := solutionhost.Parse(fixture.Document)
-		if err == nil && len(parsed.Workloads) == 1 {
-			document = parsed
-			break
-		}
+	manifest := &solutionhost.ModuleManifest{
+		Schema: solutionhost.SchemaModuleManifestV1, Binding: "acme.test.documents", Alias: "documents",
+		Kind: solutionhost.KindModule, Generation: 1,
+		Host:      solutionhost.HostTarget{Coordinate: "example-host", Domain: "example"},
+		Release:   solutionhost.Release{Publisher: "acme", Name: "documents", Version: "1.0.0"},
+		Workloads: []solutionhost.Workload{{Service: "documents", Container: "documents"}, {Service: "store", Container: "store"}},
+		Endpoints: endpoints,
 	}
-	require.NotNil(t, document, "Core must ship a readable one-workload presence fixture")
-	copied := *document
-	copied.Kind = solutionhost.KindModule
-	copied.Workloads = append([]solutionhost.Workload{}, document.Workloads...)
-	copied.Workloads[0].Artifact = "documents"
-	artifacts := append([]solutionhost.Artifact{}, document.Artifacts...)
-	for i := range artifacts {
-		if artifacts[i].Name == document.Workloads[0].Artifact {
-			artifacts[i].Name = "documents"
-		}
-	}
-	copied.Artifacts = artifacts
-	copied.Endpoints = endpoints
-	require.NoError(t, copied.Validate())
-	body, err := json.Marshal(&copied)
+	body, err := solutionhost.Marshal(manifest)
 	require.NoError(t, err)
 	return &accountsv1.SolutionHostBindingState{
-		BindingId: copied.Binding,
+		BindingId: manifest.Binding,
 		Applied: &accountsv1.SolutionHostBindingAppliedGeneration{SolutionId: "documents",
-			Generation: &accountsv1.SolutionHostBindingGeneration{Generation: copied.Generation, Document: string(body)}},
+			Generation: &accountsv1.SolutionHostBindingGeneration{Generation: manifest.Generation, Document: string(body)}},
 		Registration: &accountsv1.SolutionRegistration{SolutionId: "documents",
-			Declared: &accountsv1.SolutionDeclaredBinding{BindingId: copied.Binding, Generation: copied.Generation,
+			Declared: &accountsv1.SolutionDeclaredBinding{BindingId: manifest.Binding, Generation: manifest.Generation,
 				Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE}},
 	}
 }
 
 func endpointOf(service, name, api string) solutionhost.Endpoint {
-	return solutionhost.Endpoint{Name: name, Service: service, Module: "documents", API: api, Visibility: "internal"}
+	return solutionhost.Endpoint{Name: name, Service: service, API: api, Address: "http://" + service + ":8080"}
 }
 
-func TestAModulePresenceOffersTheEndpointsOfTheServiceItRuns(t *testing.T) {
-	binding := modulePresenceBinding(t,
-		endpointOf("documents", "grpc", "grpc"), endpointOf("documents", "rest", "rest"), endpointOf("store", "rest", "rest"))
-	document, ok := appliedPresence(binding)
+func TestAModuleManifestOffersTheHTTPEndpointsOfItsWorkloads(t *testing.T) {
+	binding := moduleManifestBinding(t, endpointOf("documents", "grpc", "grpc"), endpointOf("documents", "rest", "rest"))
+	_, ok := appliedManifest(binding)
 	require.True(t, ok)
 	require.Equal(t, []moduleEndpoint{
-		{Module: "documents", Service: "documents", Name: "rest", API: "rest", applied: document},
-	}, appliedRouteEndpoints(binding), "only the serving service's HTTP-family endpoints: not grpc, not another service's")
+		{Module: "documents", Service: "documents", Name: "rest", API: "rest", Address: "http://documents:8080"},
+	}, appliedRouteEndpoints(binding), "only HTTP-family endpoints: not grpc")
 
-	foreign := modulePresenceBinding(t, solutionhost.Endpoint{Name: "rest", Service: "documents", Module: "accounts", API: "rest", Visibility: "internal"})
-	require.Empty(t, appliedRouteEndpoints(foreign), "a presence may not name another module's endpoint as its own surface")
+	binding.Registration.SolutionId = "another"
+	binding.Applied.SolutionId = "another"
+	require.Empty(t, appliedRouteEndpoints(binding), "a manifest is routed only under its own alias")
+}
 
-	var solutionDocument solutionhost.SolutionHostBinding
-	require.NoError(t, json.Unmarshal([]byte(binding.Applied.Generation.Document), &solutionDocument))
-	solutionDocument.Kind = solutionhost.KindSolution
-	body, err := json.Marshal(&solutionDocument)
+// The production resolver answers the address the applied manifest carries,
+// and refuses an endpoint that carries none.
+func TestTheManifestAddressIsWhereAnEndpointLives(t *testing.T) {
+	endpoint := appliedRouteEndpoints(moduleManifestBinding(t, endpointOf("documents", "rest", "rest")))[0]
+	address, err := manifestEndpointAddress(context.Background(), endpoint)
 	require.NoError(t, err)
-	binding.Applied.Generation.Document = string(body)
-	document, ok = appliedPresence(binding)
-	require.True(t, ok)
-	require.Equal(t, []moduleEndpoint{{Module: "documents", Service: "documents", Name: "rest", API: "rest", applied: document}},
-		appliedRouteEndpoints(binding), "a solution's presence offers its endpoints by the same rule")
+	require.Equal(t, "http://documents:8080", address)
+	endpoint.Address = ""
+	_, err = manifestEndpointAddress(context.Background(), endpoint)
+	require.Error(t, err)
 }
 
 // Of the endpoints a presence offers, the gateway forwards to the one the

@@ -16,7 +16,6 @@ import (
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
-	codefly "github.com/codefly-dev/sdk-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
@@ -51,12 +50,12 @@ const (
 
 // solutionRegistrySnapshot joins only matching applied generations. The compact
 // registration has no endpoint field; the host-binding read carries Core's
-// complete presence document. No new wire schema duplicates that contract.
+// complete applied module manifest. No new wire schema duplicates that contract.
 type solutionRegistrySnapshot struct {
 	*accountsv1.ListSolutionRegistrationsResponse
 	// routeEndpoints is, per declared alias — a solution's or a module's — the
 	// endpoints its applied presence declares for the service that runs it
-	// (appliedRouteEndpoints): names, resolved by the Codefly SDK on refresh.
+	// (appliedRouteEndpoints), with the addresses the manifest carries.
 	routeEndpoints map[string][]moduleEndpoint
 }
 
@@ -162,9 +161,8 @@ type solutionRegistryCache struct {
 	// it at time.Now.
 	now func() time.Time
 
-	// resolveEndpoint answers where an endpoint lives. Production asks the
-	// Codefly SDK, which holds every address the composition handed this
-	// gateway; the registry holds none.
+	// resolveEndpoint answers where an endpoint lives. Production reads the
+	// address the applied manifest carries; the registry columns hold none.
 	resolveEndpoint func(context.Context, moduleEndpoint) (string, error)
 
 	mu      sync.RWMutex
@@ -313,10 +311,10 @@ func (c *solutionRegistryCache) reconcile(ctx context.Context) {
 
 // resolveRouteUpstreams resolves each declared alias — a solution's
 // /solutions/<alias> or a module's /v1/<alias> — to the one address this
-// gateway forwards it to: of the HTTP-family endpoints its applied presence
-// declares, the one the composition handed this gateway an address for — the
-// Codefly CLI writes exactly the endpoints the host reaches a composed
-// workload through. An address the upstream policy refuses is not a candidate
+// gateway forwards it to: of the HTTP-family endpoints its applied manifest
+// declares — the CLI writes exactly the endpoints the host reaches a composed
+// workload through, each with its address. An address the upstream policy
+// refuses is not a candidate
 // (it is logged, and another endpoint may still answer); none leaves the alias
 // unrouted; several are refused as ambiguous rather than chosen between. Each
 // alias's reason is logged once, and again only after it changes.
@@ -345,9 +343,9 @@ func (c *solutionRegistryCache) resolveRouteUpstreams(ctx context.Context, endpo
 		case len(resolved) == 0 && len(refused) > 0:
 			c.noteRouteRefusal(alias, fmt.Sprintf("its endpoints resolve only to addresses the upstream policy refuses (%v)", refused))
 		case len(resolved) == 0:
-			c.noteRouteRefusal(alias, "the composition handed this gateway no address for any endpoint its presence declares")
+			c.noteRouteRefusal(alias, "its applied manifest gives no address for any HTTP endpoint it declares")
 		default:
-			c.noteRouteRefusal(alias, fmt.Sprintf("the composition handed this gateway addresses for several endpoints (%v); which one the route forwards to has no single answer", named))
+			c.noteRouteRefusal(alias, fmt.Sprintf("its applied manifest declares several HTTP endpoints (%v); which one the route forwards to has no single answer", named))
 		}
 	}
 	return upstreams
@@ -376,17 +374,15 @@ func (e moduleEndpoint) String() string {
 
 // moduleEndpointResolver is the resolver every cache starts with. A test binary
 // replaces it with one standing in for the composition's carriers.
-var moduleEndpointResolver = sdkModuleEndpointAddress
+var moduleEndpointResolver = manifestEndpointAddress
 
-// sdkModuleEndpointAddress asks the Codefly SDK where an endpoint lives.
-func sdkModuleEndpointAddress(ctx context.Context, endpoint moduleEndpoint) (string, error) {
-	instance, err := codefly.For(ctx).
-		Module(endpoint.Module).Service(endpoint.Service).Endpoint(endpoint.Name).API(endpoint.API).
-		ResolveDeliveredNetworkInstance(endpoint.applied, endpoint.delivery)
-	if err != nil {
-		return "", err
+// manifestEndpointAddress is where the applied manifest says the endpoint
+// lives.
+func manifestEndpointAddress(_ context.Context, endpoint moduleEndpoint) (string, error) {
+	if endpoint.Address == "" {
+		return "", fmt.Errorf("the applied manifest gives %s no address", endpoint)
 	}
-	return instance.Address, nil
+	return endpoint.Address, nil
 }
 
 // routableUpstream holds a resolved address to the upstream URL policy: http or
