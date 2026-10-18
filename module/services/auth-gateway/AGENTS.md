@@ -464,5 +464,7 @@ module. Historical asset versions use Accounts' targeted internal read, with the
 same binding/target identity and lease checks. Preparation is serialized and
 bounded; four bundles cap cached content at 256 MiB, eight active handlers cap
 held reads, and route snapshots retain only metadata. New versioned assets never
-fall through to the mutable backend. The native read-only cache is wired through
-`artifact-cache/ROOT`; production artifact source wiring remains unqualified.
+fall through to the mutable backend. The source comes from the render-owned
+`artifact-cache` group: the native read-only cache `ROOT`, or in a Pod the
+published bundle `REPOSITORY`, read as the workload's identity. A live cell read
+of the published repository has not been qualified yet.

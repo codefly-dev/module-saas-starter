@@ -66,8 +66,8 @@ github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba h1:6nFaDYsLyA5x3WiGAk6pMI3c0naqxiPeaTHMqRPvbVs=
 github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba/go.mod h1:OQDNwz4rpEGfq7VC/FjvmQGlo9H8gH8fIDcZhKIe8iQ=
-github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261014024718-5858903a66c8 h1:oq3ISoHhFUQOIJKT+KXuQjCyR24Ktiso04tpTw0VOZo=
-github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261014024718-5858903a66c8/go.mod h1:OxvwxMdo3HD190xFiMOPHtUsBC7/7Jt1evsEts/2HRs=
+github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261018164351-a78da3f0bcb5 h1:pW3FRod3ZOQfur/uhuw3+lDK22USCl862+L0I0wMDes=
+github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261018164351-a78da3f0bcb5/go.mod h1:OxvwxMdo3HD190xFiMOPHtUsBC7/7Jt1evsEts/2HRs=
 github.com/codefly-dev/sdk-go v0.4.1-0.20261018052022-70dc7a546458 h1:hi+KhotTLMOJ/PUSzVO/Axfho7yZ2UOjrCFfrLI1EKU=
 github.com/codefly-dev/sdk-go v0.4.1-0.20261018052022-70dc7a546458/go.mod h1:Qg8SMzZxKSllwvZwShMrWgSetBVMjxP0s17mwWHWjk0=
 github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458 h1:wBOL7QsuoC0HsS43gsH2+tpsipk4os077C2VUDkMUHg=
