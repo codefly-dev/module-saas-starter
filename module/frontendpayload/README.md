@@ -6,8 +6,9 @@ extractor and snapshots private bytes before exposing a file. An unavailable or
 invalid source cannot replace an already prepared bundle.
 
 `RegistrySource` reads blobs from one operator-selected OCI repository through
-ORAS. Reader credentials are values. Redirects and foreign authentication realms
-are refused. HTTPS is explicit; plain HTTP requires the mesh Service assertion
+ORAS. Reader credentials are values. A redirect is followed only to the
+repository's own host (Artifact Registry answers every blob read that way);
+redirects elsewhere and foreign authentication realms are refused. HTTPS is explicit; plain HTTP requires the mesh Service assertion
 or a loopback development source. No registry is selected by default.
 
 `DirectorySource` reads Codefly's existing native artifact cache, whose files are
@@ -26,9 +27,16 @@ Both wire and cumulative expanded bytes are limited to 64 MiB. This checks the
 producer's declared inventory; it does not analyze arbitrary JavaScript imports.
 The prepared identity includes the complete signed frontend declaration.
 
-Native processes read the render-owned `artifact-cache/ROOT` workspace value
-through `ConfigureNative`; no root is inferred or created by the host. This
-adapter requires both local Codefly context and absence of Pod context. An absent
-source preserves pending delivery and never falls back to a backend's mutable
-asset directory. Registry source selection and custody remain the deployment
-operator's contract, not an implicit default.
+The source is selected from the render-owned `artifact-cache` group through
+`Configure`, and is never inferred or created by the host. A native process
+outside a Pod reads `ROOT`, the CLI's artifact cache. A deployed Pod reads
+`REPOSITORY`, the one repository the CLI's deployed render publishes every
+bundle to by digest, through `NewWorkloadRegistrySource`: HTTPS, read as the
+Pod's own workload identity (a labelled vendor stopgap, `workload.go`), with
+no stored credential. The two values never coexist. An absent group is no
+source: delivery stays pending and never falls back to a backend's mutable
+asset directory. Reader access to that repository is granted to the host's
+workloads by the cell's operator; retention is the repository's. A failed read
+names its class (the registry's status, a missing blob, a refused redirect, or
+the reader identity's refusal) and never the token or the transport's text. A
+live cell read has not been qualified yet.
