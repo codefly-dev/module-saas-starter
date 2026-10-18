@@ -42,6 +42,7 @@ import (
 	"github.com/codefly-dev/core/resources"
 	"github.com/codefly-dev/core/wool"
 	wooltel "github.com/codefly-dev/core/wool/otel"
+	"github.com/codefly-dev/core/workloadidentity/native"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
@@ -1956,53 +1957,67 @@ func configuredSolutionHostBindingReconciler(
 		}
 		interval = parsed
 	}
-	// The ONLY way a document reaches this host is the delivery endpoint, so a
-	// host that cannot review a carrier's credential has no input at all.
-	// Saying so at boot beats a reconciler that polls an inbox nothing can ever
-	// write to.
-	kubernetes, err := infra.NewKubernetesClient()
+	// WHO HANDS OVER A MANIFEST, WHO READS APPLIED STATE, AND WHICH WORKLOAD
+	// A MINTING PROCESS IS — answered by the environment's one mechanism. A
+	// native `codefly run` names its anchor (CODEFLY_NATIVE_IDENTITY_ANCHOR) and
+	// signs each process it started a credential of core's native mechanism;
+	// core refuses that anchor inside a pod. Everywhere else the cluster's API
+	// server reviews projected tokens.
+	nativeAttester, err := native.LoadAttester()
 	if err != nil {
-		return nil, fmt.Errorf("the declared-presence surface has no input: a delivered carrier is authorised by TokenReview, and this host cannot reach its api server: %w", err)
-	}
-	// A LOCAL PROFILE IS PROVEN AGAINST THIS CLUSTER BEFORE ANYTHING IS
-	// ADMITTED, and a host that cannot prove it does not start (issue #1063).
-	//
-	// A verification policy that declares itself local admits a developer's
-	// own identity, and it is bound to ONE cluster by that cluster's
-	// certificate authority. The proof uses only what the kubelet puts in this
-	// pod: the projected CA bundle must be exactly the pinned certificate, and
-	// the API server reached under that certificate alone must authenticate
-	// this pod's own token. On success the pinned, redirect-refusing transport
-	// becomes THIS client's for the life of the process, so the TokenReviews
-	// and pod reads wired below run under the same binding. A host in any other
-	// cluster fails here, by name. A deployed policy is bound to no cluster and
-	// this does nothing.
-	//
-	// Not left to this call alone: until it succeeds the verifier itself
-	// refuses every carrier under a local policy, so a boot path that forgot to
-	// ask would refuse developers, never admit them somewhere else.
-	if err := verifier.ProveLocalCluster(context.Background(), kubernetes); err != nil {
 		return nil, err
+	}
+	var (
+		carrier    business.SolutionDeliveryCarrierAuthorizer
+		reviewer   business.ExecutionReviewer
+		namespaces business.ModuleNamespaceRule
+	)
+	if nativeAttester != nil {
+		// The local profile is bound to THIS run's anchor, and until that is
+		// proven the verifier admits no carrier. A native run's namespace is its
+		// module: the bare rule.
+		if err := verifier.ProveNativeRun(nativeAttester.Anchor().Fingerprint()); err != nil {
+			return nil, err
+		}
+		identity := infra.NewNativeWorkloadIdentity(nativeAttester)
+		namespaces = business.NativeModuleNamespaceRule()
+		carrier, reviewer = identity, identity
+	} else {
+		// A host that cannot review a carrier's credential has no input at all;
+		// saying so at boot beats a reconciler polling an inbox nothing writes.
+		kubernetes, err := infra.NewKubernetesClient()
+		if err != nil {
+			return nil, fmt.Errorf("the declared-presence surface has no input: a delivered carrier is authorised by TokenReview, and this host cannot reach its api server: %w", err)
+		}
+		// A LOCAL PROFILE IS PROVEN AGAINST THIS CLUSTER BEFORE ANYTHING IS
+		// ADMITTED, and a host that cannot prove it does not start (issue
+		// #1063): the projected CA bundle must be exactly the pinned
+		// certificate, and the API server reached under it alone must
+		// authenticate this pod's own token. A deployed policy is bound to no
+		// cluster and this does nothing; until it succeeds the verifier refuses
+		// every carrier under a local policy.
+		if err := verifier.ProveLocalCluster(context.Background(), kubernetes); err != nil {
+			return nil, err
+		}
+		// THE CELL'S NAMESPACE RULE, read off this host's own placement: the
+		// namespace it runs in and the module it was composed as. A host that
+		// cannot read its own placement refuses to boot rather than authorise
+		// against a guess.
+		hostNamespace, err := kubernetes.Namespace()
+		if err != nil {
+			return nil, err
+		}
+		if namespaces, err = business.NewModuleNamespaceRule(hostNamespace, strings.TrimSpace(os.Getenv(resources.ModulePrefix))); err != nil {
+			return nil, err
+		}
+		carrier, reviewer = infra.NewSolutionDeliveryCarrierCheck(kubernetes), kubernetes
 	}
 	keyVerifier, err := verifier.Verifier()
 	if err != nil {
 		return nil, err
 	}
-	// THE CELL'S NAMESPACE RULE, read off this host's own placement: the
-	// namespace it runs in and the module it was composed as. A carrier and a
-	// minting workload are both held to the namespace this rule spells for
-	// their module, so a host that cannot read its own placement refuses to
-	// boot rather than authorise against a guess.
-	hostNamespace, err := kubernetes.Namespace()
-	if err != nil {
-		return nil, err
-	}
-	namespaces, err := business.NewModuleNamespaceRule(hostNamespace, strings.TrimSpace(os.Getenv(resources.ModulePrefix)))
-	if err != nil {
-		return nil, err
-	}
 	service.SetModuleNamespaceRule(namespaces)
-	service.SetSolutionDelivery(keyVerifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes))
+	service.SetSolutionDelivery(keyVerifier, store, carrier)
 	service.SetSolutionDeliveryCoordinate(coordinate)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
@@ -2034,12 +2049,13 @@ func configuredSolutionHostBindingReconciler(
 	service.SetModuleRegistryPassTrigger(reconciler.Trigger)
 
 	// EXECUTION-BOUND MINTING, wired here because this is where its inputs
-	// exist: the reviewer is the Kubernetes API (a TokenReview of a token the
-	// caller could not forge, and the pod it names), and the workloads it is
+	// exist: the reviewer is the environment's mechanism (a TokenReview of a
+	// token the caller could not forge and the pod it names, or natively the
+	// run's anchor and what the launcher vouches for), and the workloads it is
 	// held against come from the manifests this reconciler applies. It is the
-	// SAME client that reviews a delivery carrier: one api server, one
-	// in-cluster credential, one place a lost credential stops both halves.
-	service.SetExecutionBinding(kubernetes)
+	// SAME mechanism that authorises a delivery carrier: one source, one place
+	// a lost credential stops both halves.
+	service.SetExecutionBinding(reviewer)
 	return reconciler, nil
 }
 

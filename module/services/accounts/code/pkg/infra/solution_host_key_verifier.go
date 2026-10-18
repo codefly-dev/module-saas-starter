@@ -174,11 +174,29 @@ func (v *keyBundleVerifier) ProveLocalCluster(ctx context.Context, cluster Solut
 	if v.local == nil {
 		return nil
 	}
+	if v.local.NativeAnchorSHA256 != "" {
+		return fmt.Errorf("%w: the verification policy is bound to a native run, and this host is proving a cluster", ErrSolutionHostLocalPolicyOutsideItsCluster)
+	}
 	if cluster == nil {
 		return fmt.Errorf("%w: the verification policy is a local profile and this host has no cluster to prove it against", ErrSolutionHostLocalPolicyOutsideItsCluster)
 	}
 	if err := cluster.BindToAuthority(ctx, v.local.ClusterCertificateAuthoritySHA256); err != nil {
 		return fmt.Errorf("the verification policy on the trust anchor is a local profile bound to the cluster whose certificate authority is %s, and this host is not running in it — a host in any other cluster refuses a local profile: %w", v.local.ClusterCertificateAuthoritySHA256, err)
+	}
+	v.localClusterProven.Store(true)
+	return nil
+}
+
+// ProveNativeRun binds a LOCAL policy written for a native run to the run this
+// host was started under: the anchor's key fingerprint must be the one the
+// policy pins. Any other policy — a deployed one, or one bound to a cluster —
+// refuses, so a host is never pointed at a native anchor it was not given.
+func (v *keyBundleVerifier) ProveNativeRun(anchorFingerprint string) error {
+	if v.local == nil || v.local.NativeAnchorSHA256 == "" {
+		return fmt.Errorf("%w: this host runs under a native anchor, and its verification policy is not bound to one", ErrSolutionHostLocalPolicyOutsideItsCluster)
+	}
+	if anchorFingerprint != v.local.NativeAnchorSHA256 {
+		return fmt.Errorf("%w: the verification policy is bound to native run anchor %s, and this host runs under %s", ErrSolutionHostLocalPolicyOutsideItsCluster, v.local.NativeAnchorSHA256, anchorFingerprint)
 	}
 	v.localClusterProven.Store(true)
 	return nil

@@ -52,6 +52,11 @@ type solutionHostBundleVerifierWithPolicy interface {
 	// refuses a local profile. A deployed policy is bound to no cluster and this
 	// does nothing. Until it succeeds a local policy admits no carrier.
 	ProveLocalCluster(ctx context.Context, cluster SolutionHostClusterAuthority) error
+
+	// ProveNativeRun binds a LOCAL policy written for a native run to the run
+	// whose anchor fingerprint this host was started under, and refuses any
+	// other policy.
+	ProveNativeRun(anchorFingerprint string) error
 }
 
 // SolutionHostTrustAnchorPath is where the verification policy is read from,

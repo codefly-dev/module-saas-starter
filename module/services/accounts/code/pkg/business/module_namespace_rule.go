@@ -20,7 +20,13 @@ import (
 // a deployer could type is a value that could disagree with the cell.
 type ModuleNamespaceRule struct {
 	prefix string
+	// native is a native run's rule: the namespace is the module, and its
+	// endpoints are its own processes on the loopback.
+	native bool
 }
+
+// NativeModuleNamespaceRule is the rule under a native run.
+func NativeModuleNamespaceRule() ModuleNamespaceRule { return ModuleNamespaceRule{native: true} }
 
 // NewModuleNamespaceRule derives the rule from where this host runs: the
 // namespace it runs in and the module it was composed as. A namespace that is
