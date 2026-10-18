@@ -352,6 +352,21 @@ when the manifest asks for it on the envelope's audience with an `invoke`
 operation, every operation's scopes intersected with what the manifest asks.
 A principal whose entry fails validation is **omitted by name, never widened**.
 
+**A withheld binding is a deployment defect with a surface.** An operation
+binding an applied manifest asked for and the pass could not grant — the
+envelope allows no such binding, allows it on another audience, leaves it with
+no valid audience, or omitted the whole principal — is published beside the
+registry it is missing from, and read by two callers rather than being a WARN
+nothing reports. The reconcile pass records it as the asking binding's
+`pending_reason` (`ListSolutionHostBindings`), the row that already carries why
+this host could not take a delivery, and never as a refused generation: the
+generation was applied. A connect or reconnect of a datasource source that
+would record no delegation while anything is withheld refuses instead
+(`FailedPrecondition`, naming the module and the binding), because recording
+nothing there is indistinguishable from the legitimate "no composed module
+accepts a delegation here" and the person is otherwise told, by the next sync,
+to reconnect what they just reconnected.
+
 **No envelope is said by name, every pass.** A pass that finds no envelope
 (none written, or no envelope store) publishes an empty registry and, while any
 applied manifest asks for authority, returns `ErrModuleEnvelopeMissing` naming

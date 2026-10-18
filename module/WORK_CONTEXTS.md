@@ -537,6 +537,26 @@ previous row (`replaced`) and records a new one under the reconnecting person,
 atomically. Sources connected before a module declared a binding carry no
 delegation; nothing backfills one, so a person must reconnect them.
 
+**A connect that can record nothing is REFUSED, not reported as done.**
+Recording no delegation is correct for a deployment where no composed module
+accepts one, and that is the whole answer there. It is a lie when the module
+that does accept one is missing from the registry: the registry is derived as
+the applied manifests bounded by the envelope, and an envelope that withholds a
+binding a manifest asks for leaves that binding out by name. The connect then
+recorded nothing, reported success, and every sync afterwards refused with *the
+source has no active delegation to this module; a person must connect or
+reconnect it* — telling the person to do the thing they had just done. So the
+connect, the reconnect and the trigger backfill all refuse
+(`FailedPrecondition`) when they would record nothing while the registry is
+incomplete: any binding an applied manifest asked for and the pass could not
+grant, or a registry fenced behind a newer envelope revision. The refusal names
+every withheld binding — this host cannot tell which of them carried
+`source_delegation_scopes`, because the envelope that withheld it is what says
+so — and a platform super_admin fixes it by allowing that binding in the next
+envelope revision. The same reason is on the asking manifest's binding row
+(`ListSolutionHostBindings`: `pending_reason`, `pending_since`), which is where
+an operator reads a delivery this host could not take whole.
+
 **Which module and binding is declared, never requested.** An operation binding
 accepts delegations by declaring `source_delegation_scopes` — like
 `headless_scopes`, an optional list in the canonical scope shape that must be a

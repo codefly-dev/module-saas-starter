@@ -61,6 +61,41 @@ var (
 	ErrModuleEnvelopeMissing = errors.New("applied module manifests ask for authority and there is no module envelope")
 )
 
+// ModuleBindingOmission is one operation binding an applied, live manifest asks
+// for that a pass could not put in the registry: the envelope allows no such
+// binding, allows it on another audience, leaves it with no valid audience, or
+// omitted the whole principal.
+//
+// It is the pass's own refusal AND the record two readers act on, which is why
+// it is a value and not only a message. A connect that records no source
+// delegation must be able to tell "no composed module accepts one" from "the
+// one that would have is missing", and the enclosing pass hangs the reason on
+// the binding's own row — neither can parse it back out of a log line.
+type ModuleBindingOmission struct {
+	// Prefix is the module principal the manifest asks under, and BindingID the
+	// operation binding it asked for.
+	Prefix    string
+	BindingID string
+	// Manifest is the solution host binding the asking manifest arrived on and
+	// Generation the generation that asked: where an operator fixes it.
+	Manifest   string
+	Generation uint64
+	// Reason is why this pass could not grant it.
+	Reason error
+}
+
+func (o ModuleBindingOmission) Error() string {
+	return fmt.Sprintf("%s: %q binding %q (manifest %q generation %d): %s",
+		ErrModulePrincipalBindingOmitted, o.Prefix, o.BindingID, o.Manifest, o.Generation, o.Reason)
+}
+
+// Unwrap keeps errors.Is finding both the sentinel every omission of this kind
+// carries and the particular reason, exactly as the fmt.Errorf("%w: …: %w")
+// this value replaced did.
+func (o ModuleBindingOmission) Unwrap() []error {
+	return []error{ErrModulePrincipalBindingOmitted, o.Reason}
+}
+
 // ModulePrincipalReconciler derives the module registry each pass.
 type ModulePrincipalReconciler struct {
 	reconciler *SolutionHostBindingReconciler
@@ -79,6 +114,14 @@ type publishedModuleRegistry struct {
 	// delivered is the inbox's size when the inputs were read: the marker a
 	// mint compares to learn a delivery has not been read yet.
 	delivered *uint64
+	// withheld is every operation binding an applied manifest asked for that
+	// this registry does not hold, and authorityReasons the same fact grouped
+	// by asking manifest — a manifest granted its whole request is absent from
+	// it. Both are derived beside the registry and published with it: a reader
+	// that paired one pass's registry with another pass's omissions would
+	// answer about neither.
+	withheld         []ModuleBindingOmission
+	authorityReasons map[string]string
 }
 
 // modulePrincipalSource is the applied generation an entry was derived from.
@@ -89,7 +132,8 @@ type modulePrincipalSource struct {
 
 func (r *ModulePrincipalReconciler) publish(published *publishedModuleRegistry) {
 	r.last = published
-	r.reconciler.service.InstallDerivedModulePrincipals(published.registry, published.revision, published.delivered)
+	r.reconciler.service.InstallDerivedModulePrincipals(
+		published.registry, published.revision, published.delivered, published.withheld...)
 }
 
 // modulePrincipalInputs is one snapshot of the applied state and the inbox.
@@ -291,9 +335,85 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		next.sources[id] = modulePrincipalSource{binding: manifest.Binding, generation: manifest.Generation}
 	}
 	refusals = append(refusals, next.oneWorkloadOnePrincipal()...)
+	next.withheld, next.authorityReasons = withheldModuleAuthority(manifests, next.registry, refusals)
 
 	r.publish(next)
 	return errors.Join(refusals...)
+}
+
+// withheldModuleAuthority is what the manifests asked for and this registry
+// does not hold, from the two sides it is asked about: every omitted binding,
+// and the reason per asking manifest.
+//
+// It is derived from the published registry rather than accumulated as the
+// loop goes, because the loop is not the only thing that takes an entry out —
+// oneWorkloadOnePrincipal deletes whole principals after it, and an omission
+// list that missed those would report authority as granted that the registry
+// does not carry. The refusals supply the precise reason where there is one;
+// a principal that never reached the registry has none of its own.
+func withheldModuleAuthority(
+	manifests []*solutionhost.ModuleManifest, registry ModulePrincipalRegistry, refusals []error,
+) ([]ModuleBindingOmission, map[string]string) {
+	named := map[string]ModuleBindingOmission{}
+	for _, refusal := range refusals {
+		var omission ModuleBindingOmission
+		if errors.As(refusal, &omission) {
+			named[omission.Prefix+"\x00"+omission.BindingID] = omission
+		}
+	}
+	var withheld []ModuleBindingOmission
+	reasons := map[string]string{}
+	for _, manifest := range manifests {
+		if manifest.Authority == nil {
+			continue
+		}
+		prefix := manifest.Authority.Principal
+		held := registry[ModulePrincipalID(prefix)].OperationAudiences
+		var missing []string
+		for _, asked := range manifest.Authority.Bindings {
+			if _, granted := held[asked.ID]; granted {
+				continue
+			}
+			omission, reported := named[prefix+"\x00"+asked.ID]
+			if !reported {
+				omission = ModuleBindingOmission{
+					Prefix: prefix, BindingID: asked.ID, Manifest: manifest.Binding, Generation: manifest.Generation,
+					Reason: errors.New("the registry holds no entry for this module principal, so it granted none of its bindings"),
+				}
+			}
+			withheld = append(withheld, omission)
+			missing = append(missing, omission.Error())
+		}
+		if len(missing) > 0 {
+			reasons[manifest.Binding] = strings.Join(missing, "; ")
+		}
+	}
+	slices.SortFunc(withheld, func(a, b ModuleBindingOmission) int {
+		if c := strings.Compare(a.Prefix, b.Prefix); c != 0 {
+			return c
+		}
+		return strings.Compare(a.BindingID, b.BindingID)
+	})
+	return withheld, reasons
+}
+
+// WithheldAuthorityReasons names, per asking manifest, every binding of its
+// authority request the last pass could not grant. A manifest whose request was
+// granted whole is absent, so an empty answer is a pass that withheld nothing.
+//
+// The enclosing reconcile pass reads it to record the reason on the binding's
+// own row, which is where an operator already reads a delivery this host could
+// not take.
+func (r *ModulePrincipalReconciler) WithheldAuthorityReasons() map[string]string {
+	if r == nil {
+		return nil
+	}
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	if r.last == nil {
+		return nil
+	}
+	return maps.Clone(r.last.authorityReasons)
 }
 
 func (r *ModulePrincipalReconciler) lastRevision() uint64 {
@@ -430,8 +550,9 @@ func deriveModulePrincipalGrant(
 
 	var omitted []error
 	omit := func(id string, err error) {
-		omitted = append(omitted, fmt.Errorf("%w: %q binding %q (manifest %q generation %d): %w",
-			ErrModulePrincipalBindingOmitted, prefix, id, manifest.Binding, manifest.Generation, err))
+		omitted = append(omitted, ModuleBindingOmission{
+			Prefix: prefix, BindingID: id, Manifest: manifest.Binding, Generation: manifest.Generation, Reason: err,
+		})
 	}
 	for _, asked := range request.Bindings {
 		allowed, inside := ceiling.OperationAudiences[asked.ID]

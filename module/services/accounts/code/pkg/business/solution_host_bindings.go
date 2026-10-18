@@ -342,12 +342,27 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 	for _, accepted := range admission.Accepted {
 		settled[accepted.Document.Binding] = accepted.Decision == solutionhost.DecisionReplay
 	}
+	// A binding whose manifest asked for authority the module registry could not
+	// grant is a DEPLOYMENT DEFECT — the envelope withholding a binding the
+	// manifest asks for — and it belongs on that binding's own row beside the
+	// generation it applied, not only in this pass's log, where it was a WARN
+	// among boot noise nothing reported (issue #1165).
+	//
+	// The reason is the PREVIOUS pass's, and deliberately so: the registry is
+	// derived last, after the applies whose manifests it reads, while desired
+	// state is recorded first. Recording it through the write that is already
+	// made per binding costs one interval of lag on a reason only an operator
+	// can act on; a second write at the end of the pass would instead clear
+	// pending_since and set it again every pass, so a defect stuck for a day
+	// would read as one that started seconds ago — the reset
+	// recordSolutionHostBindingDesired documents refusing.
+	withheldAuthority := r.modulePrincipals.WithheldAuthorityReasons()
 	var failures []error
 	for _, one := range verified {
 		document := one.Document
-		reason := admission.Withheld[document.Binding]
 		if err := r.service.recordSolutionHostBindingDesired(
-			ctx, document, reason, settled[document.Binding], r.now(),
+			ctx, document, admission.Withheld[document.Binding], withheldAuthority[document.Binding],
+			settled[document.Binding], r.now(),
 		); err != nil {
 			failures = append(failures, fmt.Errorf("record desired generation for binding %q: %w", document.Binding, err))
 		}

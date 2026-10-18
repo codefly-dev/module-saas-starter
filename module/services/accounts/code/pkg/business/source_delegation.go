@@ -12,6 +12,10 @@ import (
 	"time"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
+	"github.com/codefly-dev/core/wool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // A source delegation is the record that a person, by connecting a datasource
@@ -300,6 +304,19 @@ func (s *Service) recordSourceDelegationsTx(
 ) (int, error) {
 	targets := s.declaredModules().SourceDelegationTargets()
 	if len(targets) == 0 {
+		// ZERO TARGETS IS TWO DIFFERENT ANSWERS, and reporting success for both
+		// is issue #1165. "No composed module accepts a source delegation" is a
+		// legitimate deployment and recording nothing is right. "The module that
+		// does accept one is missing from the registry because the envelope
+		// withheld its binding" is a deployment defect, and recording nothing
+		// there is how a person who reconnects a source is told, by the very
+		// next sync, to connect or reconnect it — the thing they just did.
+		//
+		// So the refusal is on the fact that distinguishes them: what the
+		// applied manifests asked for and the pass could not grant.
+		if err := s.refuseWithheldSourceDelegationAuthority(ctx); err != nil {
+			return 0, err
+		}
 		return 0, nil
 	}
 	role, err := s.store.SourceDelegationMemberRole(ctx, orgID, actorID)
@@ -354,10 +371,56 @@ func (s *Service) recordSourceDelegationsTx(
 }
 
 // recordSourceDelegationsOnConnectTx is the connect and reconnect call, whose
-// callers do not read the count.
+// callers do not read the count: a connect that recorded nothing it should have
+// recorded is refused inside recordSourceDelegationsTx, so the count is no
+// longer the one fact a caller here would have to act on.
 func (s *Service) recordSourceDelegationsOnConnectTx(ctx context.Context, actorID, orgID, sourceID string) error {
 	_, err := s.recordSourceDelegationsTx(ctx, actorID, orgID, sourceID, sourceDelegationReplace)
 	return err
+}
+
+// refuseWithheldSourceDelegationAuthority refuses a connect, reconnect or
+// backfill that would record no delegation because the module registry is
+// INCOMPLETE, rather than because this deployment composes no module that
+// accepts one.
+//
+// Two facts make it incomplete, and both are read from the pass that derived
+// the registry rather than re-derived here:
+//
+//   - the pass could not grant an operation binding an applied manifest asked
+//     for. This host cannot tell whether that binding was the one carrying
+//     `source_delegation_scopes` — it is the ENVELOPE that says so, and the
+//     envelope is what withheld it — so the refusal names every withheld
+//     binding and leaves the operator to fix the one that matters;
+//   - the registry is fenced: a newer envelope revision is committed than the
+//     one it was derived from, so it serves nothing and "no target" is not an
+//     answer about this host's modules at all.
+//
+// It is a refusal and not a warning because the alternative is the transaction
+// that shipped: the credential written, the success event emitted, no delegation
+// recorded, and nobody told. Rolling the connect back leaves the person
+// something to retry once an administrator has fixed the envelope.
+func (s *Service) refuseWithheldSourceDelegationAuthority(ctx context.Context) error {
+	withheld := s.withheldModuleBindings()
+	if len(withheld) == 0 && !s.moduleRegistryFenced() {
+		return nil
+	}
+	reason := "the module registry was derived from an envelope revision older than the one now committed, so it grants nothing"
+	if len(withheld) > 0 {
+		named := make([]string, 0, len(withheld))
+		for _, omission := range withheld {
+			named = append(named, fmt.Sprintf("%s/%s (%s)", omission.Prefix, omission.BindingID, omission.Reason))
+		}
+		reason = "the module envelope withheld operation bindings the applied module manifests ask for: " + strings.Join(named, ", ")
+	}
+	wool.Get(ctx).In("business.source_delegation").Error(
+		"refusing a connect that would record no source delegation while module authority is withheld",
+		wool.Field("reason", reason))
+	return status.Error(codes.FailedPrecondition,
+		"This source cannot be connected yet: no composed module can be delegated its sync, because "+reason+
+			". Connecting would record no delegation and every sync would then refuse with \"the source has no active "+
+			"delegation to this module; a person must connect or reconnect it\". A platform administrator fixes it by "+
+			"allowing the withheld binding in the module envelope (PlatformAdminService.PutModuleEnvelope); then connect again.")
 }
 
 // revokeSourceDelegationsTx revokes every active delegation the filter matches,
