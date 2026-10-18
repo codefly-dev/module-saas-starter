@@ -70,7 +70,11 @@ func Prepare(ctx context.Context, source Source, frontend *solutionhost.Frontend
 	payload := *frontend.Payload
 	reader, err := source.Open(ctx, payload.Digest)
 	if err != nil {
-		// Transport errors may include credentials or a private source locator.
+		// Transport errors may include credentials or a private source locator;
+		// only a source's own classified unavailability passes through.
+		if errors.Is(err, ErrUnavailable) {
+			return nil, err
+		}
 		return nil, ErrUnavailable
 	}
 	if reader == nil {
