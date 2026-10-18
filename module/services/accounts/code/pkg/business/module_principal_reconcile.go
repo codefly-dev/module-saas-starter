@@ -232,8 +232,9 @@ func (r *ModulePrincipalReconciler) lastRevision() uint64 {
 	return r.last.revision
 }
 
-// appliedManifestsVerified is every applied, live manifest whose stored carrier
-// still verifies under the current pins and is exactly the applied generation.
+// appliedManifestsVerified is every applied, live manifest asking for authority
+// whose stored carrier still verifies under the current pins and is exactly the
+// applied generation.
 // Re-verifying is what makes an unpinned key stop granting: its manifests stay
 // applied (a removal is a withdrawal generation, never a lost pin) but they
 // confer no authority.
@@ -256,6 +257,10 @@ func (r *ModulePrincipalReconciler) appliedManifestsVerified(
 		manifest, err := record.AppliedManifest()
 		if err != nil {
 			refuse(err)
+			continue
+		}
+		if manifest.Authority == nil {
+			// Asks for nothing, so there is nothing to re-verify it for.
 			continue
 		}
 		if service.deliveryStore == nil {

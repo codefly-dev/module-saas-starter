@@ -491,15 +491,6 @@ func (s *Service) committedModuleEnvelopeRevision(ctx context.Context) (uint64, 
 	return memo.revision, memo.err
 }
 
-// currentModuleGrant resolves a principal's grant from ONE registry snapshot
-// and fences that snapshot. found is false only for a principal the snapshot
-// does not hold and that is not fenced; a fenced or stale registry is an
-// error, so a caller never mistakes "not current" for "not a module".
-func (s *Service) currentModuleGrant(ctx context.Context, principalID string) (ModulePrincipalGrant, bool, error) {
-	grant, found, _, err := s.currentModuleGrantIn(ctx, principalID)
-	return grant, found, err
-}
-
 // currentModuleGrantIn is currentModuleGrant that also returns the fenced
 // snapshot, so a decision that needs a SECOND principal's grant — a delegator
 // beside its caller — reads it from the same registry the fence passed, never

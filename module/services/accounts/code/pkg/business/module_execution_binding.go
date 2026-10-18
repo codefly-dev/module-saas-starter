@@ -207,9 +207,11 @@ func (s *Service) BindExecution(
 	// THE DECLARED WORKLOADS, read before the token is reviewed, because they
 	// are what the review will be held against. A principal this host has no
 	// declaration for is refused as unknown.
+	// A workload stated in part would check the parts it has and skip the
+	// rest, so one is refused like none.
 	grant, declared := snapshot.registry[principalID]
-	if !declared || len(grant.Workloads) == 0 {
-		return nil, fmt.Errorf("%w: %s declares no workload identity", ErrUnknownExecutionPrincipal, principalID)
+	if !declared || len(grant.Workloads) == 0 || slices.ContainsFunc(grant.Workloads, func(w ModuleWorkload) bool { return !w.declared() }) {
+		return nil, fmt.Errorf("%w: %s declares no complete workload identity", ErrUnknownExecutionPrincipal, principalID)
 	}
 	modules := snapshot.registry
 
