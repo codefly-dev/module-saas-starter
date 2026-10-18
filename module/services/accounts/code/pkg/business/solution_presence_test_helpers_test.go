@@ -83,7 +83,6 @@ func declareCapabilityPresence(t *testing.T, bindingID, alias string) string {
 		return testStore.SaveSolutionHostBinding(ctx, &business.SolutionHostBindingRecord{
 			BindingID:      bindingID,
 			HostCoordinate: "acme/local/host",
-			HostComponent:  "saas-starter",
 			Desired:        &entry,
 			Applied: &business.SolutionHostBindingApplied{
 				SolutionHostBindingGeneration: entry,

@@ -13,7 +13,8 @@ import (
 func TestSignedSolutionGroupOrderIsRepresentedExactlyOrRefused(t *testing.T) {
 	for _, order := range []int64{-2147483649, -2147483648, 2147483647, 2147483648} {
 		t.Run(fmt.Sprint(order), func(t *testing.T) {
-			document := mustFixtureDocument(t, "valid")
+			document := fixtureManifest(t, "grouped", 1)
+			document.Kind = solutionhost.KindSolution
 			document.Group = &solutionhost.SolutionGroup{ID: "operations", Title: "Operations", Order: 0}
 			canonical, err := solutionhost.SignedPayload(document)
 			require.NoError(t, err)

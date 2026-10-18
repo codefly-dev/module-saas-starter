@@ -28,7 +28,7 @@ func parseRegistryFixture(raw string) (ModulePrincipalRegistry, error) {
 		if tenant, err := uuid.Parse(grant.Tenant); err == nil {
 			grant.Tenant = tenant.String()
 		}
-		grant.Workload = declared.Workload
+		grant.Workloads = []ModuleWorkload{declared.Workload}
 		if err := ValidateModulePrincipalGrant(prefix, grant); err != nil {
 			return nil, err
 		}

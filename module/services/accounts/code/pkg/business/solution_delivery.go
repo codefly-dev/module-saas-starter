@@ -207,7 +207,15 @@ func (s *Service) ReceiveSolutionDelivery(
 	if _, err := solutionhost.Admit(s.deliveryCoordinate, previous, manifest); err != nil {
 		return "", nil, classifySolutionDeliveryAdmission(err)
 	}
-	if err := solutionhost.CheckAlias([]string{SolutionHostReservedRouteNamespace}, appliedManifests(records), manifest); err != nil {
+	// The alias is held to the reserved namespaces and to every other binding
+	// as it stands once its newest delivered generation applies, so a
+	// withdrawal already delivered releases the alias it held.
+	newest, err := s.newestDeliveredManifests(ctx, manifest.Binding)
+	if err != nil {
+		return "", nil, err
+	}
+	holders := aliasHolders(appliedManifests(records), newest)
+	if err := solutionhost.CheckAlias([]string{SolutionHostReservedRouteNamespace}, holders, manifest); err != nil {
 		return "", nil, classifySolutionDeliveryAdmission(err)
 	}
 
@@ -241,6 +249,31 @@ func (s *Service) ReceiveSolutionDelivery(
 		return SolutionDeliveryAccepted, stored, nil
 	}
 	return SolutionDeliveryReplayed, stored, nil
+}
+
+// newestDeliveredManifests is the newest delivered manifest of every binding
+// but except, keyed by binding: the desired state an alias is judged against.
+// The rows were verified on receipt; one that no longer reads claims nothing
+// here, and the pass reports it against its binding.
+func (s *Service) newestDeliveredManifests(ctx context.Context, except string) (map[string]*solutionhost.ModuleManifest, error) {
+	var records []*SolutionDeliveryRecord
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		records, err = s.deliveryStore.ListNewestDeliveredDocuments(ctx)
+		return err
+	}); err != nil {
+		return nil, fmt.Errorf("read the delivery inbox: %w", err)
+	}
+	newest := make(map[string]*solutionhost.ModuleManifest, len(records))
+	for _, record := range records {
+		if record.Binding == except {
+			continue
+		}
+		if manifest, err := solutionhost.ManifestFromVerified(record.Payload); err == nil {
+			newest[record.Binding] = manifest
+		}
+	}
+	return newest, nil
 }
 
 // SetSolutionDeliveryCoordinate names the host coordinate this host answers
