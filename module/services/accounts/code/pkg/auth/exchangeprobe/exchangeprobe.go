@@ -6,13 +6,23 @@
 // the login uses — same endpoint, same request shape, same credential. The
 // provider cannot know the code, so a provider that authenticated the client
 // refuses the grant (`invalid_grant`), and one that did not refuses the client
-// (`invalid_client`, or a bare 401). Nothing else is reported: the verdict, the
-// HTTP status and the OAuth error code. Never the credential, never the
-// provider's response body.
+// (`invalid_client`, or a bare 401).
+//
+// RFC 6749 orders client authentication before the grant, but does not bind a
+// provider to that order, and a provider that judges the code first answers
+// `invalid_grant` whatever the secret. So an accepted client is certified only
+// against a negative control: the same exchange presenting a random secret must
+// be refused as a client. A provider that answers both alike leaves the
+// credential unproven.
+//
+// Nothing else is reported: the verdicts, the HTTP status and the OAuth error
+// code. Never the credential, never the provider's response body.
 package exchangeprobe
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -34,9 +44,16 @@ const SentinelCode = "token-exchange-probe-sentinel"
 type Verdict string
 
 const (
-	// ClientAccepted: the provider authenticated the client and refused only the
-	// sentinel code (RFC 6749 §5.2 `invalid_grant`). A real code would exchange.
+	// ClientAccepted: the provider refused only the sentinel code (400
+	// `invalid_grant`, RFC 6749 §5.2), and refused the same exchange as a client
+	// when it presented a random secret: it accepts this client's credential. Only
+	// client authentication is proven — not redirect registration, PKCE, or the
+	// validation of a token a real code would return.
 	ClientAccepted Verdict = "client-accepted"
+	// Unproven: the provider refused only the code, but the negative control did
+	// not show it authenticating the client — it answered a random secret alike,
+	// or the exchanger cannot present one.
+	Unproven Verdict = "unproven"
 	// ClientRejected: the provider refused the client itself — `invalid_client`,
 	// or a 401. Every login's code exchange fails the same way.
 	ClientRejected Verdict = "client-rejected"
@@ -59,20 +76,59 @@ type Result struct {
 	Provider string  `json:"provider,omitempty"`
 	Status   int     `json:"status,omitempty"`
 	Error    string  `json:"error,omitempty"`
+	// Control is how the provider answered the same exchange with a random secret;
+	// set only when the real exchange's answer needed it.
+	Control Verdict `json:"control,omitempty"`
 }
 
-// Run exchanges the sentinel code through exchanger and classifies the answer.
+// CredentialControl is an exchanger that can present another client secret with
+// everything else unchanged — the negative control.
+type CredentialControl interface {
+	WithClientSecret(secret string) business.CodeExchanger
+}
+
+// Run exchanges the sentinel code through exchanger and classifies the answer,
+// certifying an accepted client only against the negative control.
 func Run(ctx context.Context, exchanger business.CodeExchanger, redirectURI string) Result {
 	if exchanger == nil {
 		return Result{Check: Check, Verdict: NoCodeFlow}
 	}
 	_, err := exchanger.Exchange(ctx, SentinelCode, redirectURI, "")
-	return Classify(err)
+	result := Classify(err)
+	if result.Verdict != ClientAccepted {
+		return result
+	}
+	result.Verdict = Unproven
+	control, ok := exchanger.(CredentialControl)
+	if !ok {
+		return result
+	}
+	secret, err := controlSecret()
+	if err != nil {
+		return result
+	}
+	_, err = control.WithClientSecret(secret).Exchange(ctx, SentinelCode, redirectURI, "")
+	result.Control = Classify(err).Verdict
+	if result.Control == ClientRejected {
+		result.Verdict = ClientAccepted
+	}
+	return result
 }
 
-// Classify reads an exchange's error as a verdict. A nil error — the provider
-// accepted a code it never issued — proves nothing about the client and is
-// unclassified; so is any failure that is not the provider's own answer.
+// controlSecret is a random value no provider issued to this or any client.
+func controlSecret() (string, error) {
+	random := make([]byte, 24)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	return "token-exchange-probe-control-" + hex.EncodeToString(random), nil
+}
+
+// Classify reads ONE exchange's error as a verdict; Run alone certifies, because
+// ClientAccepted here means only "refused the grant, not the client" until the
+// negative control agrees. A nil error — the provider accepted a code it never
+// issued — proves nothing about the client and is unclassified; so is any
+// failure that is not the provider's own answer.
 func Classify(err error) Result {
 	result := Result{Check: Check, Verdict: Unclassified}
 	var refused *auth.TokenEndpointError
@@ -82,7 +138,7 @@ func Classify(err error) Result {
 		switch {
 		case refused.Code == "invalid_client" || refused.Status == 401:
 			result.Verdict = ClientRejected
-		case refused.Code == "invalid_grant":
+		case refused.Code == "invalid_grant" && refused.Status == 400:
 			result.Verdict = ClientAccepted
 		}
 	case err != nil && unanswered(err):

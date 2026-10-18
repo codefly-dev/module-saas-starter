@@ -11,6 +11,7 @@ import (
 
 	"accounts/pkg/auth"
 	"accounts/pkg/auth/oidc"
+	"accounts/pkg/business"
 )
 
 // Fake OAuth token endpoint that mirrors the standard response shape.
@@ -125,4 +126,25 @@ func TestExchanger_RefusalCarriesStatusAndCodeNeverTheBody(t *testing.T) {
 	require.ErrorAs(t, err, &refused)
 	require.Equal(t, auth.TokenEndpointError{Status: http.StatusUnauthorized, Code: "invalid_client"}, *refused)
 	require.NotContains(t, err.Error(), "provider-detail-xyz")
+}
+
+func TestExchanger_WithClientSecretChangesOnlyTheSecret(t *testing.T) {
+	var got []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		got = append(got, r.PostForm.Get("client_id")+"/"+r.PostForm.Get("client_secret")+"/"+r.PostForm.Get("code"))
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+	}))
+	defer server.Close()
+
+	ex, err := oidc.NewExchanger(oidc.ExchangerConfig{TokenURL: server.URL, ClientID: "id", ClientSecret: "real"})
+	require.NoError(t, err)
+	exchanger := oidc.AsBusinessExchanger(ex)
+	control := exchanger.(interface {
+		WithClientSecret(string) business.CodeExchanger
+	}).WithClientSecret("control")
+	_, _ = control.Exchange(context.Background(), "c", "https://x", "")
+	_, _ = exchanger.Exchange(context.Background(), "c", "https://x", "")
+	require.Equal(t, []string{"id/control/c", "id/real/c"}, got, "the control leaves the original untouched")
 }

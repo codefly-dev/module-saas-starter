@@ -235,3 +235,24 @@ func TestExchangeRefusalCarriesStatusAndCode(t *testing.T) {
 	require.Equal(t, auth.TokenEndpointError{Status: http.StatusBadRequest, Code: "invalid_grant"}, *refused)
 	require.NotContains(t, err.Error(), "provider-detail-xyz")
 }
+
+func TestWithClientSecretChangesOnlyTheSecret(t *testing.T) {
+	var got []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		got = append(got, body["client_id"]+"/"+body["client_secret"]+"/"+body["code"])
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	exchanger, err := workosauth.NewExchanger(workosauth.Config{
+		TokenURL: server.URL, ClientID: "client_123", ClientSecret: "real",
+		Validator: &validator{claims: &auth.Claims{}},
+	})
+	require.NoError(t, err)
+	_, _ = exchanger.WithClientSecret("control").Exchange(context.Background(), "c", "", "")
+	_, _ = exchanger.Exchange(context.Background(), "c", "", "")
+	require.Equal(t, []string{"client_123/control/c", "client_123/real/c"}, got, "the control leaves the original untouched")
+}

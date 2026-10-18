@@ -62,17 +62,18 @@ func configureWorkOSAgainst(t *testing.T, idp, secret string) {
 	setIdentityConfiguration(t, "IDENTITY_ALLOWED_REDIRECT_URIS", "https://app.example/callback")
 }
 
-// fakeTokenEndpoint authenticates the client against accepted and refuses the
-// sentinel code either way — with a body that quotes the presented secret, as
-// the worst provider would, so a leak of the body is a leak of the secret.
-func fakeTokenEndpoint(t *testing.T, accepted string) *httptest.Server {
+// fakeTokenEndpoint authenticates the client against accepted (unless
+// ignoresSecret) and refuses the sentinel code either way — with a body that
+// quotes the presented secret, as the worst provider would, so a leak of the
+// body is a leak of the secret.
+func fakeTokenEndpoint(t *testing.T, accepted string, ignoresSecret ...bool) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		require.Equal(t, exchangeprobe.SentinelCode, body["code"])
 		w.Header().Set("Content-Type", "application/json")
-		if body["client_secret"] != accepted {
+		if body["client_secret"] != accepted && len(ignoresSecret) == 0 {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"error":"invalid_client","error_description":"client secret ` + body["client_secret"] + ` is not valid"}`))
 			return
@@ -91,8 +92,18 @@ func TestTokenExchangeDiagnosticCertifiesAnAcceptedClient(t *testing.T) {
 
 	out := runDiagnosticChild(t)
 	require.Equal(t,
-		`{"check":"token-exchange","verdict":"client-accepted","provider":"workos","status":400,"error":"invalid_grant"}`+"\n",
+		`{"check":"token-exchange","verdict":"client-accepted","provider":"workos","status":400,"error":"invalid_grant","control":"client-rejected"}`+"\n",
 		out, "the result line and nothing else: no log line, no secret, no provider text")
+}
+
+func TestTokenExchangeDiagnosticLeavesUnprovenAProviderThatIgnoresTheSecret(t *testing.T) {
+	const secret = "sk_test_diagnostic_secret_value_ignored"
+	idp := fakeTokenEndpoint(t, secret, true)
+	configureWorkOSAgainst(t, idp.URL, secret)
+
+	require.Equal(t,
+		`{"check":"token-exchange","verdict":"unproven","provider":"workos","status":400,"error":"invalid_grant","control":"client-accepted"}`+"\n",
+		runDiagnosticChild(t))
 }
 
 func TestTokenExchangeDiagnosticReportsARejectedClientWithoutTheSecret(t *testing.T) {

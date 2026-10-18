@@ -25,3 +25,12 @@ func (a *businessExchangerAdapter) Exchange(ctx context.Context, code, redirectU
 		IDToken:     resp.IDToken,
 	}, nil
 }
+
+// WithClientSecret returns the same exchanger presenting secret in place of the
+// configured one — the token-exchange diagnostic's negative control, which must
+// differ from the real exchange in nothing else.
+func (a *businessExchangerAdapter) WithClientSecret(secret string) business.CodeExchanger {
+	control := *a.ex
+	control.clientSecret = secret
+	return &businessExchangerAdapter{ex: &control}
+}

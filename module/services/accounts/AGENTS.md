@@ -30,9 +30,12 @@ is read by the capability checks and does not create synthetic directory rows.
 `./app diagnose token-exchange` (`diagnose.go`, dispatched first thing in
 `doWork`) certifies the identity provider's client authentication: it builds the
 provider stack with `buildProviderStack`, exchanges `exchangeprobe.SentinelCode`
-through its exchanger, and prints one JSON line — verdict, status, OAuth error
-code — with file descriptors 1 and 2 on the null device so nothing else reaches
-the caller. A check that execs into the pod uses it instead of an HTTP client in
+through its exchanger — and, when the provider refuses only the code, again with
+a random secret as a negative control (`WithClientSecret` on both exchangers) —
+and prints one JSON line — verdicts, status, OAuth error code — with file
+descriptors 1 and 2 on the null device so nothing else reaches the caller.
+Callers detect the diagnostic by the sentinel string in the binary, so keep
+`SentinelCode`'s value. A check that execs into the pod uses it instead of an HTTP client in
 the image; [FEATURES.md](../../FEATURES.md#certifying-the-client-credential)
 lists the verdicts. Any `diagnose` argument exits without serving. The
 exchangers report a refusal as `auth.TokenEndpointError` (status and code,

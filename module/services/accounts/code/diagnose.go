@@ -20,7 +20,7 @@ import (
 // and it grants that caller nothing it does not have: it reads the identity
 // configuration this process reads, builds the provider stack this process
 // builds, exchanges a sentinel code through that stack's own exchanger, and
-// prints one JSON line — the verdict, the HTTP status and the OAuth error code.
+// prints one JSON line — the verdicts, the HTTP status and the OAuth error code.
 // Never the credential, never the provider's response body.
 //
 // The exchanger and everything beneath it log as they do when serving, and a
@@ -30,7 +30,8 @@ import (
 
 const diagnoseCommand = "diagnose"
 
-// diagnosticExchangeTimeout bounds the whole check: discovery, then the exchange.
+// diagnosticExchangeTimeout bounds the whole check: discovery, the exchange and
+// its negative control.
 const diagnosticExchangeTimeout = 30 * time.Second
 
 // runRequestedDiagnostic runs the diagnostic args name and reports its exit
