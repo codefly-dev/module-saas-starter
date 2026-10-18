@@ -97,6 +97,11 @@ type AvailableSolutionTarget struct {
 	// Installed reports whether the asking organisation already holds an ACTIVE
 	// installation of this target.
 	Installed bool
+	// HasPages reports whether the applied generation declares a frontend block:
+	// the registration's frontend half, the same record the navigation is built
+	// from. It is independent of Kind — either kind may declare pages, and
+	// either may be headless.
+	HasPages bool
 }
 
 // SolutionGenerationDecision is one entry in the generation history: a generation

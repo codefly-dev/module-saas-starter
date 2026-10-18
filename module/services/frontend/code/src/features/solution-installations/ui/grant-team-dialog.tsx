@@ -101,10 +101,11 @@ export function GrantTeamDialog({
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
 			<DialogContent className="sm:max-w-[480px]">
 				<DialogHeader>
-					<DialogTitle>Grant a team access to {solution}</DialogTitle>
+					<DialogTitle>Grant access to {solution}</DialogTitle>
 					<DialogDescription>
-						Record a role grant for this team at the installation. Availability
-						and effective access are reported by the host.
+						Choose who gets access and at which level: a team, and the role it
+						holds at this installation. Availability and effective access are
+						reported by the host.
 					</DialogDescription>
 				</DialogHeader>
 				<form onSubmit={submit} className="space-y-4" noValidate>
@@ -164,7 +165,7 @@ export function GrantTeamDialog({
 						name="roleId"
 						render={({ field }) => (
 							<Field
-								label="Role"
+								label="Access level (role)"
 								error={
 									roleReadError && !roleList.length
 										? roleReadError

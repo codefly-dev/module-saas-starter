@@ -79,20 +79,29 @@ func TestInstallationExposureErrorMapping(t *testing.T) {
 		name string
 		err  error
 		want codes.Code
+		// The message the administrator reads; empty means the error's own text.
+		message string
 	}{
 		// Another organization's installation id resolves to nothing under RLS.
-		{"unknown installation", business.NewStoreError(errors.New("installation x is not an active installation in this organization"), business.ErrTypeNotFound), codes.NotFound},
-		{"team outside organization", fmt.Errorf("cannot expose installation to team: %w", business.ErrSubjectOutsideOrganization), codes.PermissionDenied},
-		{"role exposes nothing", business.NewStoreError(business.ErrRoleDoesNotExposeSolution, business.ErrTypeValidation), codes.InvalidArgument},
+		{"unknown installation", business.NewStoreError(errors.New("installation x is not an active installation in this organization"), business.ErrTypeNotFound), codes.NotFound, ""},
+		{"team outside organization", fmt.Errorf("cannot expose installation to team: %w", business.ErrSubjectOutsideOrganization), codes.PermissionDenied, "subject does not belong to this organization"},
+		{"role exposes nothing", business.NewStoreError(business.ErrRoleDoesNotExposeSolution, business.ErrTypeValidation), codes.InvalidArgument, ""},
 		// The host's own refusal of an unwitnessed narrowing keeps its words.
-		{"unwitnessed narrowing", fmt.Errorf("cannot revoke scope: %w: this host has no policy log, so authority cannot be narrowed", business.ErrPolicyLogUnreachable), codes.FailedPrecondition},
-		{"store status", fmt.Errorf("cannot grant scope: %w", status.Error(codes.FailedPrecondition, `role "r" is not a role in this org`)), codes.FailedPrecondition},
+		{"unwitnessed narrowing", fmt.Errorf("cannot revoke scope: %w: this host has no policy log, so authority cannot be narrowed", business.ErrPolicyLogUnreachable), codes.FailedPrecondition, ""},
+		// A status carried beneath wrapping answers in its own words: the chain's
+		// text would read "cannot grant scope: rpc error: code = … desc = …".
+		{"store status", fmt.Errorf("cannot grant scope: %w", status.Error(codes.FailedPrecondition, `role "r" is not a role in this org`)), codes.FailedPrecondition, `role "r" is not a role in this org`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			mapped := mapInstallationExposureError(tc.err)
 			require.Equal(t, tc.want, status.Code(mapped))
-			require.Equal(t, tc.err.Error(), status.Convert(mapped).Message())
+			message := tc.message
+			if message == "" {
+				message = tc.err.Error()
+			}
+			require.Equal(t, message, status.Convert(mapped).Message())
+			require.NotContains(t, status.Convert(mapped).Message(), "rpc error")
 		})
 	}
 }

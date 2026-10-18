@@ -128,7 +128,29 @@ export function healthView(health: InstallationHealth): FactView {
 	}
 }
 
-/** One team grant at an installation, as the page lists and revokes it. */
+/**
+ * Whether people open this installation's own pages, as the host states it from
+ * the applied generation's `frontend` block — never inferred from a name or a
+ * kind: a module may have pages and a solution may be headless. `unknown` when
+ * the host no longer offers the installed target, so it cannot say.
+ */
+export type PageReach = "pages" | "headless" | "unknown";
+
+/**
+ * Said once beside the access of an installation with no pages. Access is still
+ * offered: a solution may call the component on a person's own session, and the
+ * host then admits the call only for a person who has access here. The host
+ * does not yet know which components are reached that way, so the page
+ * explains when a grant matters rather than hiding the one that does.
+ */
+export const HEADLESS_ACCESS_NOTE =
+	"No pages of its own. Grant access only if a solution calls it on a person's own session; modules and solutions that mint their own access need none.";
+
+/**
+ * One access grant at an installation, as the page lists and revokes it. Today
+ * the holder is a team and the level is the role it holds; the row names both
+ * so another kind of holder or level adds a field rather than a second shape.
+ */
 export interface TeamGrantRow {
 	key: string;
 	teamId: string;
@@ -149,6 +171,7 @@ export interface InstalledRow {
 	lifecycle: FactView;
 	failureReason: string;
 	installedAt: string | undefined;
+	pages: PageReach;
 	/** Granted at this installation's authority root: revocable here. */
 	grantedTeams: TeamGrantRow[];
 	/** Reaching it from a grant above: real reach, but not granted here. */
@@ -212,6 +235,7 @@ export function installedRows(
 					installedAt: installation.createdAt
 						? timestampDate(installation.createdAt).toISOString()
 						: undefined,
+					pages: !target ? "unknown" : target.hasPages ? "pages" : "headless",
 					grantedTeams: teamGrantRows(grantedTeams),
 					inheritedTeams: teamGrantRows(inheritedTeams),
 				},

@@ -694,6 +694,10 @@
         "actorId": {
           "type": "string"
         },
+        "actorModule": {
+          "description": "actor_module names the module whose own principal is actor_id, by the\nprefix it is declared under in this host's module principal registry, so a\nreader can say \"Module <name>\" instead of an unresolved id. Empty for every\nother actor, and for a module this host no longer declares. Read at query\ntime; nothing about it is stored on the row.",
+          "type": "string"
+        },
         "actorType": {
           "type": "string"
         },
@@ -868,6 +872,10 @@
         "bindingId": {
           "description": "The binding whose presence this target records. Carried so an operator can\ncorrelate a catalogue row with delivery; an installation does not join on it,\nbecause one binding may have several targets over time.",
           "type": "string"
+        },
+        "hasPages": {
+          "description": "True when the applied generation declares pages people open — the\n`frontend` block the host projects into its navigation. Read from the same\napplied record the navigation is built from, never from the kind: a module\nor a solution may declare pages, and either may be headless. Access to an\ninstallation is granted for its pages, so a catalogue offers a grant only\nwhere this is true; a headless component is reached through the components\nthat use it, and no grant of its own exposes anything to a person.",
+          "type": "boolean"
         },
         "installed": {
           "description": "True when this organization already has an ACTIVE installation of this\ntarget. A catalogue shows it as installed rather than offering it twice; the\nunique index over (org_id, target_id) would refuse the second install anyway,\nand an administrator should not have to discover that by being refused.",

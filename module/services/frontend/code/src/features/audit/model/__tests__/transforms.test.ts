@@ -97,6 +97,27 @@ describe("resolveActor", () => {
 		});
 	});
 
+	// A module acting on its own has no directory row; the host names it on the
+	// row, and it reads as the module rather than as an unavailable actor.
+	it("names a module acting on its own by the module the host names", () => {
+		expect(
+			resolveActor(
+				"c9d1e2f3-0000-5000-8000-000000000005",
+				directory,
+				"example-chat",
+			),
+		).toEqual({ label: "Module example-chat", resolved: true });
+		// A directory name still wins: the module name is for a principal the
+		// directory cannot name.
+		expect(
+			resolveActor(
+				"a3f81c2e-0000-4000-8000-000000000001",
+				directory,
+				"example-chat",
+			).label,
+		).toBe("Jane Doe");
+	});
+
 	it("falls back when the directory has not landed yet", () => {
 		expect(
 			resolveActor("a3f81c2e-0000-4000-8000-000000000001", new Map()).label,
@@ -128,6 +149,7 @@ function makeEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 		payload: {},
 		ipAddress: "127.0.0.1",
 		clientId: "",
+		actorModule: "",
 		...overrides,
 	};
 }

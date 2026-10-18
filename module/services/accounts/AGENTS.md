@@ -24,6 +24,10 @@ Context exchanges below; no secret does.
 
 The principal directory lists stored identities only. Declared module authority
 is read by the capability checks and does not create synthetic directory rows.
+`QueryAuditLog` instead names a module acting on its own on the row
+(`actor_module`, the prefix the module principal registry declares it under) at
+read time, so an audit reader shows "Module <name>" rather than an unavailable
+actor; a withdrawn module is no longer named.
 
 ## The one diagnostic the binary answers
 

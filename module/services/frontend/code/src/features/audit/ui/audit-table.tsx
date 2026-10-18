@@ -65,11 +65,20 @@ export function AuditTable({
 				// sort would order rows by raw uuid — visibly arbitrary against
 				// the names on screen. Sort by what the cell actually shows.
 				sortingFn: (a, b) =>
-					resolveActor(a.original.actorId, actorNames).label.localeCompare(
-						resolveActor(b.original.actorId, actorNames).label,
+					resolveActor(
+						a.original.actorId,
+						actorNames,
+						a.original.actorModule,
+					).label.localeCompare(
+						resolveActor(b.original.actorId, actorNames, b.original.actorModule)
+							.label,
 					),
 				cell: (info) => {
-					const actor = resolveActor(info.getValue(), actorNames);
+					const actor = resolveActor(
+						info.getValue(),
+						actorNames,
+						info.row.original.actorModule,
+					);
 					return (
 						<div className="flex flex-col gap-1">
 							<span

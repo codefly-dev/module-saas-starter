@@ -46,6 +46,7 @@ import {
 import {
 	availableRows,
 	type FactView,
+	HEADLESS_ACCESS_NOTE,
 	hostRefusal,
 	type InstalledRow,
 	installedRows,
@@ -99,7 +100,7 @@ function Fact({ view }: { view: FactView }) {
 /**
  * The organization's modules and solutions: what it may install, what it has installed and
  * at which release, and the runtime acts an administrator performs on them —
- * install, expose to a team, uninstall. Each act is the host's to accept or
+ * install, grant access, retry a failed install, uninstall. Each act is the host's to accept or
  * refuse, and a refusal is shown as the host words it.
  */
 export function SolutionInstallationsPage() {
@@ -123,8 +124,7 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 					</h1>
 					<p className="text-muted-foreground">
 						Install the modules and solutions this organization may use, review
-						their status and release, and choose which teams can access each
-						one.
+						their status and release, and choose who can access their pages.
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
@@ -410,7 +410,7 @@ function InstalledSection({
 									<TableHead>Revision</TableHead>
 									<TableHead>Status</TableHead>
 									<TableHead>Health</TableHead>
-									<TableHead>Teams</TableHead>
+									<TableHead>Access</TableHead>
 									<TableHead>Installed</TableHead>
 									<TableHead className="text-right">Action</TableHead>
 								</TableRow>
@@ -431,19 +431,27 @@ function InstalledSection({
 													{row.failureReason}
 												</p>
 											)}
+											{row.status === InstallationStatus.FAILED && (
+												<p className="mt-1 text-xs text-muted-foreground">
+													Retry installation runs the install step again;
+													nothing needs to be uninstalled first.
+												</p>
+											)}
 										</TableCell>
 										<TableCell>
 											{row.status === InstallationStatus.ACTIVE ? (
 												<Fact view={row.health} />
 											) : (
 												<span className="text-sm text-muted-foreground">
-													Unavailable
+													{row.status === InstallationStatus.FAILED
+														? "Not running"
+														: "Not running yet"}
 												</span>
 											)}
 										</TableCell>
 										<TableCell>
 											{row.status === InstallationStatus.ACTIVE ? (
-												<TeamExposure
+												<AccessExposure
 													row={row}
 													name={name(row)}
 													revoking={revoke.isPending}
@@ -456,23 +464,24 @@ function InstalledSection({
 												/>
 											) : (
 												<span className="text-sm text-muted-foreground">
-													Available after activation
+													{row.status === InstallationStatus.FAILED
+														? "Available once the installation succeeds"
+														: "Available after activation"}
 												</span>
 											)}
 										</TableCell>
 										<TableCell className="text-sm text-muted-foreground">
 											{formatDate(row.installedAt)}
 										</TableCell>
-										<TableCell className="text-right">
+										<TableCell className="space-x-2 text-right">
 											{row.status === InstallationStatus.FAILED && (
 												<Button
-													variant="outline"
 													size="sm"
 													disabled={retry.isPending || uninstall.isPending}
-													aria-label={`Retry ${name(row)}`}
+													aria-label={`Retry installation of ${name(row)}`}
 													onClick={() => runRetry(row)}
 												>
-													Retry
+													Retry installation
 												</Button>
 											)}
 											<Button
@@ -530,7 +539,7 @@ function InstalledSection({
 							{ installationId: granting.installationId, ...values },
 							{
 								onSuccess: () => {
-									toast.success(`Team grant recorded for ${name(granting)}`);
+									toast.success(`Access granted to ${name(granting)}`);
 									setGranting(null);
 								},
 								onError: (error) =>
@@ -548,11 +557,16 @@ function InstalledSection({
 }
 
 /**
- * Team exposure for one installation: the teams granted here, each removable;
- * the teams that reach it from a grant above, which are real reach but were not
- * granted here and so are not removed here; and the action that grants a team.
+ * Who can access one installation: the grants made here, each removable; the
+ * grants that reach it from above, which are real reach but were not made here
+ * and so are not removed here; and the action that grants access. A grant names
+ * its holder and its level (today a team and the role it holds).
+ *
+ * An installation with no pages of its own says so once, in a muted line, and
+ * keeps the action secondary: a solution may still call it on a person's own
+ * session, and then the host admits that person only through a grant here.
  */
-function TeamExposure({
+function AccessExposure({
 	row,
 	name,
 	revoking,
@@ -567,15 +581,22 @@ function TeamExposure({
 	onGrant: () => void;
 	onRevoke: (team: TeamGrantRow) => void;
 }) {
+	const headless = row.pages === "headless";
+	const nobody =
+		row.grantedTeams.length === 0 && row.inheritedTeams.length === 0;
 	return (
 		<div className="max-w-xs space-y-2">
-			{row.grantedTeams.length === 0 && row.inheritedTeams.length === 0 && (
-				<p className="text-sm text-muted-foreground">No team</p>
+			{headless ? (
+				<p className="text-xs text-muted-foreground">{HEADLESS_ACCESS_NOTE}</p>
+			) : (
+				nobody && (
+					<p className="text-sm text-muted-foreground">No one has access yet</p>
+				)
 			)}
 			{row.grantedTeams.length > 0 && (
 				<ul
 					className="flex flex-wrap gap-1"
-					aria-label={`Teams granted ${name}`}
+					aria-label={`Access granted to ${name}`}
 				>
 					{row.grantedTeams.map((team) => (
 						<li key={team.key}>
@@ -607,13 +628,13 @@ function TeamExposure({
 				</p>
 			)}
 			<Button
-				variant="outline"
+				variant={headless ? "ghost" : "outline"}
 				size="sm"
-				aria-label={`Grant a team access to ${name}`}
+				aria-label={`Grant access to ${name}`}
 				disabled={granting}
 				onClick={onGrant}
 			>
-				Grant a team
+				Grant access
 			</Button>
 		</div>
 	);
