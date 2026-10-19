@@ -112,6 +112,24 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.boundaries, _ = config.Authority.(business.SolutionRuntimeBoundarySeedStore)
 }
 
+// CheckAuthorizationRevision answers ONE question — is the authority this
+// Work Context asserts still current — for every context, by resolving each
+// SUBJECT with the resolver that knows it. Which resolver applies is decided
+// by a fact the context carries, never by the shape of its subjects:
+//
+//	the context's own binding names a delegation  -> the delegation
+//	the owner is itself a declared module         -> that module's installation
+//	a subject is a declared module (a hop)        -> the binding that hop names
+//	everyone else (people, agents)                -> the authority store
+//
+// Before this, a module hop that named no binding matched none of the three
+// checks that existed, so it fell to the store — which does not hold module
+// principals, answered "not found", and had the module calling report to its
+// caller a revocation that had never happened. That denied every call an
+// orchestrator makes to an owner it executes an operation for.
+//
+// Every refusal is PermissionDenied: a consumer must read a changed or forged
+// context as denied, never as an authority outage it may retry.
 func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	ctx context.Context,
 	req *gen.CheckAuthorizationRevisionRequest,
@@ -126,41 +144,58 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 		req.GetSubjects()[0].GetPrincipalId() != req.GetOwnerPrincipalId() {
 		return nil, status.Error(codes.InvalidArgument, "owner must be the first revision subject")
 	}
-	// ONE question — is this context's authority still current — answered by
-	// resolving each SUBJECT with the resolver that knows it, chosen by a fact
-	// the context carries rather than by the shape of its subjects.
-	//
-	// A module hop NAMES the binding it exercises. A binding naming a
-	// delegation is confirmed against that delegation; every other binding is
-	// confirmed against the module's own installation; and a person is
-	// confirmed in the authority store, which is where a person's roles live.
-	// A module principal is not in that store at all, so sending a hop there
-	// returned "not found", which the module calling reported as a revocation
-	// that never happened.
+	// The binding decides which authority backs this context's module hops, so
+	// a consumer states it — either the binding, or that there is none. A
+	// request saying neither is MALFORMED, not a context to judge: the signed
+	// capability never crosses this boundary, so an omitted field and a
+	// context that seals nothing would otherwise be the same request, and a
+	// consumer that simply forgot would have had a narrowed delegation
+	// confirmed against its module's far broader installation.
+	if req.GetOperationBindingId() == "" && !req.GetSealsNoBinding() {
+		return nil, status.Error(codes.InvalidArgument,
+			"state the context's operation binding, or assert seals_no_binding: absence must be said, not omitted")
+	}
+	if req.GetOperationBindingId() != "" && req.GetSealsNoBinding() {
+		return nil, status.Error(codes.InvalidArgument,
+			"a context either names an operation binding or seals none; this request says both")
+	}
+	if err := s.confirmCurrentAuthority(ctx, req); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// confirmCurrentAuthority is the one dispatch. Each branch is a resolver that
+// reads the authority it knows about, live; none of them infers a context's
+// kind from what the others declined.
+func (s *WorkContextAuthorityServer) confirmCurrentAuthority(
+	ctx context.Context, req *gen.CheckAuthorizationRevisionRequest,
+) error {
+	// A context owned by a declared module has no row-backed authority at all:
+	// it is its installation's, and confirmed against the module's current
+	// declaration.
 	if handled, err := checkModuleOperationContextRevision(ctx, req); handled {
-		return nil, err
+		return err
 	}
-	if handled, err := checkSourceDelegationContextRevision(ctx, req); handled {
-		return nil, err
-	}
-	if s == nil || s.consumer == nil {
-		return nil, status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
+	// A context whose binding names a source delegation is authorized by that
+	// delegation, whatever its subjects look like.
+	if business.NamesASourceDelegation(req.GetOperationBindingId()) {
+		if handled, err := checkSourceDelegationContextRevision(ctx, req); handled {
+			return err
+		}
 	}
 	seen := make(map[string]struct{}, len(req.GetSubjects()))
 	subjects := make([]business.WorkContextRevisionSubject, 0, len(req.GetSubjects()))
 	for _, subject := range req.GetSubjects() {
 		if subject == nil {
-			return nil, status.Error(codes.InvalidArgument, "revision subject must not be null")
+			return status.Error(codes.InvalidArgument, "revision subject must not be null")
 		}
 		principalID := subject.GetPrincipalId()
 		if _, duplicate := seen[principalID]; duplicate {
-			return nil, status.Error(codes.InvalidArgument, "revision subjects must be unique")
+			return status.Error(codes.InvalidArgument, "revision subjects must be unique")
 		}
 		seen[principalID] = struct{}{}
-		// A module hop, confirmed from the binding it names. The delegation
-		// resolver above has already claimed every context whose binding names
-		// a delegation, and every context of that shape naming none, so what
-		// reaches here names a module's own binding.
+		// A module hop, confirmed from the binding it names.
 		if service != nil && principalID != req.GetOwnerPrincipalId() && service.IsDeclaredModulePrincipal(principalID) {
 			if err := service.ConfirmModuleHopBinding(ctx, req.GetOrgId(), principalID,
 				req.GetOperationBindingId(), moduleScopesOf(subject)); err != nil {
@@ -168,42 +203,41 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 					wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()),
 					wool.Field("module", principalID), wool.Field("binding", req.GetOperationBindingId()),
 					wool.ErrField(err))
-				return nil, status.Error(codes.PermissionDenied, business.ErrModuleHopStale.Error())
+				return status.Error(codes.PermissionDenied, business.ErrModuleHopStale.Error())
 			}
 			continue
 		}
 		permissions, _, err := workContextScopes(subject.GetScopes(), recheckContentReads())
 		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
+			return status.Error(codes.InvalidArgument, err.Error())
 		}
 		subjects = append(subjects, business.WorkContextRevisionSubject{
 			PrincipalID: principalID,
 			Permissions: permissions,
 		})
 	}
-	ctx = accountsauth.WithVerifiedDatabaseIdentity(
-		ctx,
-		req.GetOwnerPrincipalId(),
-		req.GetOrgId(),
-	)
+	// Only a subject the STORE must answer for needs the store.
+	if len(subjects) == 0 {
+		return nil
+	}
+	if s == nil || s.consumer == nil {
+		return status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
+	}
+	ctx = accountsauth.WithVerifiedDatabaseIdentity(ctx, req.GetOwnerPrincipalId(), req.GetOrgId())
 	err := s.consumer.CheckWorkContextAuthorizationRevision(
-		ctx,
-		req.GetOrgId(),
-		req.GetOwnerPrincipalId(),
-		req.GetAuthorizationRevision(),
-		subjects,
+		ctx, req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetAuthorizationRevision(), subjects,
 	)
 	if err != nil {
-		// The refusal said nothing anywhere, so a module reporting "the
-		// caller's authorization was revoked" sent an operator looking for a
-		// revocation that had not happened. Name it where it is decided.
+		// Named where it is decided: a module reporting "the caller's
+		// authorization was revoked" otherwise sends an operator looking for a
+		// revocation that never happened.
 		wool.Get(ctx).In("CheckAuthorizationRevision").Warn("the authority this Work Context asserts is no longer current",
 			wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()),
 			wool.Field("sealed_revision", req.GetAuthorizationRevision()),
 			wool.Field("subjects", len(req.GetSubjects())), wool.ErrField(err))
-		return nil, mapConsumerAuthorityError(err)
+		return mapConsumerAuthorityError(err)
 	}
-	return &emptypb.Empty{}, nil
+	return nil
 }
 
 // moduleScopesOf is one subject's scopes in the module vocabulary.

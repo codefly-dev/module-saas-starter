@@ -1183,14 +1183,10 @@ func (s *Service) CheckSourceDelegationContextRevision(
 	if !ok {
 		return false, nil
 	}
-	// A binding that NAMES another operation is a module exercising its own
-	// installed binding, which the ordinary module-operation checks re-read in
-	// full. A context of this shape naming NO binding stays refused here: the
-	// binding travels in the request, so treating its absence as "not a
-	// delegation" would let a consumer that omits it have a narrowed
-	// delegation confirmed against the module's broader installation. That is
-	// what TestCheckAuthorizationRevisionFollowsTheSourceDelegation pins.
-	if bindingID != "" && !namesASourceDelegation(bindingID) {
+	// The caller dispatches on the binding, so this resolver is reached only
+	// for a context whose binding names a delegation. It still refuses one it
+	// cannot confirm, by name.
+	if !namesASourceDelegation(bindingID) {
 		return false, nil
 	}
 	if len(subjects) != 2 || subjects[0].PrincipalID != ownerPrincipalID {

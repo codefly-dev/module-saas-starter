@@ -334,11 +334,32 @@ func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
 		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
-	t.Run("refuses without the binding the context sealed", func(t *testing.T) {
+	// An omitted binding is now a MALFORMED request rather than a context to
+	// judge. The signed capability never crosses this boundary, so "I forgot
+	// the binding" and "this context seals none" were the same request, and a
+	// consumer that forgot had a narrowed delegation confirmed against its
+	// module's far broader installation. A consumer must now say which.
+	t.Run("refuses as malformed without the binding the context sealed", func(t *testing.T) {
 		_, request := mint(t)
 		request.OperationBindingId = nil
 		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
-		require.Equal(t, codes.PermissionDenied, status.Code(err))
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
+	t.Run("refuses a delegation context that asserts it seals none", func(t *testing.T) {
+		_, request := mint(t)
+		request.OperationBindingId = nil
+		asserted := true
+		request.SealsNoBinding = &asserted
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err),
+			"asserting no binding does not buy a laxer check: the hop is then confirmed from a binding it does not name")
+	})
+	t.Run("refuses a request that both names a binding and asserts none", func(t *testing.T) {
+		_, request := mint(t)
+		asserted := true
+		request.SealsNoBinding = &asserted
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
 	t.Run("refuses a binding naming another module", func(t *testing.T) {
 		_, request := mint(t)

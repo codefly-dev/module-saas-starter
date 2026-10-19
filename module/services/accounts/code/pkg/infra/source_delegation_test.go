@@ -721,11 +721,19 @@ func TestSourceDelegation_AModulesOwnBindingIsNotThisCheckersContext(t *testing.
 		require.NoError(t, err)
 	})
 
-	t.Run("a context of this shape naming no binding is still refused", func(t *testing.T) {
+	// Naming no binding is DECLINED here, not refused, because the decision
+	// moved to where it belongs: the request either names a binding or
+	// asserts it seals none, and one that says neither is refused as
+	// malformed before any resolver runs
+	// (TestCheckAuthorizationRevisionFollowsTheSourceDelegation, "refuses as
+	// malformed without the binding the context sealed"). That is what keeps
+	// a consumer who simply forgot from having a narrowed delegation confirmed
+	// against its module's broader installation.
+	t.Run("naming no binding is declined here, and refused as malformed at the request", func(t *testing.T) {
 		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
 			authority.OwnerPrincipalID, authority.Revision, subjects(authority), "")
-		require.True(t, handled, "the binding travels in the request: omitting it must not buy a laxer check")
-		require.Error(t, err)
+		require.False(t, handled)
+		require.NoError(t, err)
 	})
 }
 

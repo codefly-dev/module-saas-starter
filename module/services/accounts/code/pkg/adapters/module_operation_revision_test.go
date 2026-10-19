@@ -59,8 +59,13 @@ func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthoriza
 		AuthorizationRevision: signed.GetAuthorizationRevision(),
 		Subjects:              subjects,
 	}
+	// What every consumer does: say which binding the context names, or assert
+	// it names none. Absence is stated, never left to be inferred.
 	if binding := signed.GetOperationBinding().GetBindingId(); binding != "" {
 		request.OperationBindingId = &binding
+	} else {
+		none := true
+		request.SealsNoBinding = &none
 	}
 	return request
 }
@@ -198,11 +203,13 @@ func TestCheckAuthorizationRevisionLeavesNonModuleOwnersToTheStore(t *testing.T)
 	ownerID := "019fec91-1000-7000-8000-000000000002"
 	actorID := "019fec91-1000-7000-8000-000000000003"
 
+	sealsNone := true
 	_, err = server.CheckAuthorizationRevision(ctx, &gen.CheckAuthorizationRevisionRequest{
 		OrgId:                 moduleWorkContextTenant,
 		OwnerPrincipalId:      ownerID,
 		AuthorizationRevision: 7,
 		Subjects:              []*gen.WorkContextRevisionSubject{{PrincipalId: ownerID}, {PrincipalId: actorID}},
+		SealsNoBinding:        &sealsNone,
 	})
 
 	require.NoError(t, err)
