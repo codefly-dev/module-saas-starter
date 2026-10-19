@@ -66,8 +66,8 @@ func TestModuleEnvelopeWriteEvidenceByCredentialKind(t *testing.T) {
 	// into X-Scopes by the perimeter and split again here, so neither half may
 	// hold a separator.
 	t.Run("the two scopes name this ceiling and nothing else", func(t *testing.T) {
-		require.Equal(t, "platform.module_envelope:read", moduleEnvelopeReadScope)
-		require.Equal(t, "platform.module_envelope:write", moduleEnvelopeWriteScope)
+		require.Equal(t, "module_envelope:read", moduleEnvelopeReadScope)
+		require.Equal(t, "module_envelope:write", moduleEnvelopeWriteScope)
 		for _, scope := range []string{moduleEnvelopeReadScope, moduleEnvelopeWriteScope} {
 			require.NotContains(t, scope, ",")
 			require.Equal(t, 1, strings.Count(scope, ":"))

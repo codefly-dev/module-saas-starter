@@ -18,8 +18,8 @@ import (
 // They name this one ceiling and nothing else, so a key minted to write it can
 // do only that.
 const (
-	moduleEnvelopeReadScope  = "platform.module_envelope:read"
-	moduleEnvelopeWriteScope = "platform.module_envelope:write"
+	moduleEnvelopeReadScope  = "module_envelope:read"
+	moduleEnvelopeWriteScope = "module_envelope:write"
 )
 
 // requireModuleEnvelopeWrite decides what evidence this write needs, by the

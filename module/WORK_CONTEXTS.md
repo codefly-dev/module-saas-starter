@@ -16,7 +16,7 @@ A platform super_admin declares an optional `read_audiences` map in the
 principal's `grant` in the module envelope (`PlatformAdminService/PutModuleEnvelope`),
 for example:
 
-The envelope is written by a platform super_admin with fresh AAL2 evidence, or by an API key carrying `platform.module_envelope:write` and nothing else. A key has no second factor and never will, so that scope stands in its place: it names this ceiling alone, a key cannot mint another key, and the key's owner must still hold super_admin. Without it the ceiling was writable from a browser and nowhere else, which left the one record the design calls dynamic with no operator surface at all.
+The envelope is written by a platform super_admin with fresh AAL2 evidence, or by an API key carrying `module_envelope:write` and nothing else. A key has no second factor and never will, so that scope stands in its place: it names this ceiling alone, a key cannot mint another key, and the key's owner must still hold super_admin. Without it the ceiling was writable from a browser and nowhere else, which left the one record the design calls dynamic with no operator surface at all.
 
 ```json
 {"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","read_audiences":{"proof":{"audience":"example-producer","scopes":[{"resource_kind":"results"}]}}}

@@ -1038,6 +1038,7 @@ service PlatformAdminService {
       rate_limit: RATE_LIMIT_CLASS_SENSITIVE
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      scopes: "module_envelope:read"
       platform_role: PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN
     };
     option (google.api.http) = {get: "/v1/platform/module-envelope"};
@@ -1050,6 +1051,11 @@ service PlatformAdminService {
       exposure: EXPOSURE_AUTHENTICATED
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_RECENT_STEP_UP
+      // A session writes the ceiling with fresh AAL2 evidence. A machine
+      // credential has no second factor and never will, so it is admitted
+      // only when it carries this one scope, which names this ceiling and
+      // nothing else; the handler enforces it for an API key alone.
+      scopes: "module_envelope:write"
       audit: {
         events: "saas.platform.module_envelope_written"
         emission: AUDIT_EMISSION_SUCCESS

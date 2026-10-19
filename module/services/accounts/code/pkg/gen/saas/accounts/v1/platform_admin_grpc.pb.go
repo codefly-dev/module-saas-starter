@@ -10,7 +10,6 @@ import (
 	v11 "accounts/pkg/gen/saas/events/v1"
 	v1 "accounts/pkg/gen/saas/jobs/v1"
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"

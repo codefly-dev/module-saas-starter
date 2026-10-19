@@ -10139,7 +10139,9 @@
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_NONE",
         "permissions": [],
-        "scopes": [],
+        "scopes": [
+          "module_envelope:read"
+        ],
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
@@ -10798,7 +10800,9 @@
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_NONE",
         "permissions": [],
-        "scopes": [],
+        "scopes": [
+          "module_envelope:write"
+        ],
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
@@ -14758,6 +14762,26 @@
         "editor"
       ],
       "api_key_scope": false
+    },
+    {
+      "permission": "module_envelope:read",
+      "resource": "module_envelope",
+      "action": "read",
+      "description": "Read the module envelope, the authority ceiling every module principal is derived inside.",
+      "built_in_roles": [
+        "platform super_admin (via *:*)"
+      ],
+      "api_key_scope": true
+    },
+    {
+      "permission": "module_envelope:write",
+      "resource": "module_envelope",
+      "action": "write",
+      "description": "Write the next revision of the module envelope. Narrower than it sounds: it moves no module's own authority, only the ceiling each is derived inside, and a key carrying it can do nothing else.",
+      "built_in_roles": [
+        "platform super_admin (via *:*)"
+      ],
+      "api_key_scope": true
     },
     {
       "permission": "orgs:read",
