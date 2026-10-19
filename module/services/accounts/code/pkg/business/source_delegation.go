@@ -1183,12 +1183,15 @@ func (s *Service) CheckSourceDelegationContextRevision(
 	if !ok {
 		return false, nil
 	}
-	// A sealed binding that names some other operation is not this checker's
-	// context: it is a module exercising its own installed binding, which the
-	// ordinary module-operation checks re-read in full. An EMPTY binding id is
-	// still refused here rather than passed on, because a context of this shape
-	// that seals no binding at all is exactly what this check exists to catch.
-	if bindingID != "" && !namesASourceDelegation(bindingID) {
+	// The sealed binding is the discriminator, and it is the whole of it. A
+	// binding that names some other operation belongs to a module exercising
+	// its own installed binding, and NO binding at all belongs to a context
+	// that was never minted from a delegation: MintSourceOperationContext
+	// always seals one (SourceDelegationBindingID), so a delegation's context
+	// cannot arrive without it. Both take the ordinary module-operation
+	// checks, which re-read whatever binding is presented — including none —
+	// against the module's own entitlement.
+	if !namesASourceDelegation(bindingID) {
 		return false, nil
 	}
 	if len(subjects) != 2 || subjects[0].PrincipalID != ownerPrincipalID {
@@ -1241,9 +1244,10 @@ func (s *Service) ConfirmSourceDelegationParent(
 	if !ok {
 		return false, nil, nil
 	}
-	// As in CheckSourceDelegationContextRevision: a binding that names another
-	// operation belongs to the ordinary module-operation checks, not here.
-	if bindingID != "" && !namesASourceDelegation(bindingID) {
+	// As in CheckSourceDelegationContextRevision: only a binding that names a
+	// delegation makes this context one, and a delegation's mint always seals
+	// one, so anything else takes the ordinary module-operation checks.
+	if !namesASourceDelegation(bindingID) {
 		return false, nil, nil
 	}
 	if len(hops) != 1 || hops[0].DelegationID == "" {

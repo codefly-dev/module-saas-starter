@@ -721,10 +721,10 @@ func TestSourceDelegation_AModulesOwnBindingIsNotThisCheckersContext(t *testing.
 		require.NoError(t, err)
 	})
 
-	t.Run("a context of this shape sealing no binding at all is still refused", func(t *testing.T) {
+	t.Run("a context sealing no binding at all is declined: a delegation always seals one", func(t *testing.T) {
 		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
 			authority.OwnerPrincipalID, authority.Revision, subjects(authority), "")
-		require.True(t, handled, "a source delegation context that seals no binding is this check's to refuse")
-		require.Error(t, err)
+		require.False(t, handled, "MintSourceOperationContext always seals a binding, so no binding is not a delegation's context")
+		require.NoError(t, err)
 	})
 }

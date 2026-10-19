@@ -650,8 +650,9 @@ installed operation for a person has exactly that shape and seals its OWN
 binding, and claiming those refused every one of them as a stale delegation
 when no delegation was involved. Such a context is declined here and takes the
 ordinary module-operation checks, which re-read that binding in full. A context
-of this shape sealing NO binding at all is still refused here rather than
-passed on. The caller passes the operation binding the context sealed
+sealing NO binding is declined for the same reason: the mint always seals one
+(`SourceDelegationBindingID`), so a delegation's context cannot arrive without
+it. The caller passes the operation binding the context sealed
 (`operation_binding_id`),
 and the check confirms it only while that binding names the actor, the live
 binding read above holds, the delegation is active and from that owner, its
