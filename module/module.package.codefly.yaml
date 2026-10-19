@@ -188,6 +188,8 @@ claims:
   - {kind: permission, key: "invitations:write", owner: base}
   - {kind: permission, key: "knowledge:read", owner: base}
   - {kind: permission, key: "knowledge:write", owner: base}
+  - {kind: permission, key: "module_envelope:read", owner: base}
+  - {kind: permission, key: "module_envelope:write", owner: base}
   - {kind: permission, key: "orgs:read", owner: base}
   - {kind: permission, key: "orgs:write", owner: base}
   - {kind: permission, key: "roles:read", owner: base}
