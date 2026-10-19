@@ -5,7 +5,10 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
-import type { OrganizationInstallation } from "@/gen/saas/accounts/v1/installations_pb";
+import type {
+	GrantInstallationToTeamResponse,
+	OrganizationInstallation,
+} from "@/gen/saas/accounts/v1/installations_pb";
 import { InstallationStatus } from "@/gen/saas/accounts/v1/installations_pb";
 import { useAuth } from "@/lib/auth";
 import {
@@ -128,6 +131,12 @@ function InstallationSetup({
 	const grant = useGrantInstallationToTeam(orgId);
 	const [granting, setGranting] = useState(false);
 	const [refusal, setRefusal] = useState<string | null>(null);
+	// What the last grant carried, as the host reported it in the grant's own
+	// response. Kept rather than re-read: a module that holds nothing is the one
+	// thing a person used to learn by hitting a Forbidden later, so it is shown
+	// here, now, in the host's own words.
+	const [carried, setCarried] =
+		useState<GrantInstallationToTeamResponse | null>(null);
 	const name = row.target?.routeAlias || "this installation";
 
 	return (
@@ -308,17 +317,46 @@ function InstallationSetup({
 					)}
 					{offers.length > 0 && (
 						<Banner
-							tone="warning"
-							title="This grant does not yet carry the modules this reaches"
+							tone="info"
+							title="A grant here also carries the modules this reaches"
 						>
 							{entryKindText(row)} {name} reaches{" "}
 							{offers.map((offer) => offer.label).join(", ")} on the asking
 							person&apos;s own session, from its own applied declaration. A
-							grant here reaches only {name}: every one of those modules refuses
-							the team until the grant carries them. Carrying them is the
-							host&apos;s act, derived from that declaration and revoked with
-							this grant — never a per-module step a person performs. Not
-							available yet (codefly-dev/module-saas-starter#1167).
+							grant carries each of them: what {name} declares it consumes
+							there, intersected with the role you choose — never the whole role
+							— written at that module&apos;s own authority root and revoked
+							with this grant. There is no per-module step to perform.
+						</Banner>
+					)}
+					{carried && (
+						<Banner
+							tone={carried.unmet.length > 0 ? "warning" : "success"}
+							title="What that grant carried"
+							onDismiss={() => setCarried(null)}
+						>
+							<div className="space-y-2">
+								{carried.carried.length > 0 ? (
+									<ul className="list-disc space-y-1 pl-4">
+										{carried.carried.map((entry) => (
+											<li key={entry.audience}>
+												{entry.audience}: {entry.scopes.join(", ")}
+											</li>
+										))}
+									</ul>
+								) : (
+									<p>It carried no module access.</p>
+								)}
+								{carried.unmet.map((condition) => (
+									<p key={`${condition.kind}-${condition.subject}`}>
+										<span className="font-medium">
+											{conditionHeading(condition.kind)}
+											{condition.subject ? ` — ${condition.subject}` : ""}:
+										</span>{" "}
+										{condition.detail} {clearedByText(condition.clearedBy)}
+									</p>
+								))}
+							</div>
 						</Banner>
 					)}
 					<Button
@@ -354,8 +392,9 @@ function InstallationSetup({
 						grant.mutate(
 							{ installationId, teamId, roleId },
 							{
-								onSuccess: () => {
+								onSuccess: (response) => {
 									toast.success(`Team grant recorded for ${name}`);
+									setCarried(response);
 									setGranting(false);
 								},
 								onError: (error) => setRefusal(hostRefusal(error)),

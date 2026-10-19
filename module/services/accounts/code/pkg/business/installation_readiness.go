@@ -67,6 +67,13 @@ type ReachedModule struct {
 	Audience       string
 	InstallationID string
 	RouteAlias     string
+	// InvokeScopes is what the solution declares it consumes there, as the
+	// DERIVED registry holds it — the manifest's ask narrowed by the module
+	// envelope, which is what the solution can actually do. A scope the envelope
+	// withheld is not consumption, and readiness reports it as an omitted binding
+	// rather than letting it travel here. This is the set a grant of the solution
+	// CARRIES (derived_module_access.go).
+	InvokeScopes []ModuleOperationScope
 }
 
 // readinessFacts is one snapshot of everything readiness is derived from, read
@@ -211,18 +218,28 @@ func (f *readinessFacts) readinessFor(
 		return verdict(conditions), reached
 	}
 
-	seen := map[string]struct{}{}
+	seen := map[string]int{}
 	for _, binding := range asked.Authority.Bindings {
-		if _, derived := grant.OperationAudiences[binding.ID]; derived {
+		if derivedAudience, derived := grant.OperationAudiences[binding.ID]; derived {
 			// Only an invoke acts on the asking person's session, so only an
 			// invoke needs that person to hold a grant on the module. A
 			// headless-only binding is background work no person asks for and
 			// would be a grant nobody needs.
-			_, already := seen[binding.Audience]
-			if len(binding.Operations[modulecontract.OperationInvoke]) > 0 && !already {
-				seen[binding.Audience] = struct{}{}
-				reached = append(reached, f.reachedModule(binding.Audience, installedByPrincipal))
+			if len(binding.Operations[modulecontract.OperationInvoke]) == 0 {
+				continue
 			}
+			// Two bindings may redeem on the same audience. The person needs
+			// what EITHER of them does on their session, so the declared
+			// consumption of that module is the union across its bindings
+			// rather than whichever one was listed first.
+			if index, already := seen[binding.Audience]; already {
+				reached[index].InvokeScopes = append(reached[index].InvokeScopes, derivedAudience.InvokeScopes...)
+				continue
+			}
+			seen[binding.Audience] = len(reached)
+			entry := f.reachedModule(binding.Audience, installedByPrincipal)
+			entry.InvokeScopes = slices.Clone(derivedAudience.InvokeScopes)
+			reached = append(reached, entry)
 			continue
 		}
 		add(ReadinessCondition{

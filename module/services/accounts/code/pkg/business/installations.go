@@ -87,6 +87,19 @@ type InstallationStore interface {
 	// RolePermits reports whether a role visible to the tenant permits
 	// (resource, action), directly or by wildcard.
 	RolePermits(ctx context.Context, roleID, resource, action string) (bool, error)
+	// RolePermittedScopes answers RolePermits for a whole (resource, action) set
+	// in one statement, in the order asked, through the same match. It is what a
+	// derived role's permission set is built from (derived_module_access.go).
+	RolePermittedScopes(ctx context.Context, roleID string, resources, actions []string) ([]bool, error)
+	// EnsureDerivedRole writes the role this host derived for one (solution
+	// installation, reached module, chosen role) and returns its id, replacing
+	// its permission set so a moved declaration is reconciled rather than
+	// accumulated.
+	EnsureDerivedRole(ctx context.Context, role DerivedRole) (string, error)
+	// DerivedScopeGrants lists the grants caused by one grant, or by every grant
+	// at one installation's authority-root node, so a revocation removes exactly
+	// what it caused.
+	DerivedScopeGrants(ctx context.Context, orgID, causeGrantID, causeScopeNodeID string) ([]*gen.ScopeGrant, error)
 	// WithOrgReadSnapshot runs fn on one read-only REPEATABLE READ snapshot
 	// bound to orgID, so several reads describe one moment.
 	WithOrgReadSnapshot(ctx context.Context, orgID string, fn func(ctx context.Context) error) error
@@ -314,6 +327,19 @@ func (s *Service) uninstallSolutionTx(ctx context.Context, actorID, actorType, o
 	// the same transaction (outbox) so the revoke and its event are atomic.
 	if !transitioned {
 		return nil
+	}
+	// Every grant this installation's exposure CAUSED at the modules it reaches
+	// goes with the installation, in this transaction and this narrowing. The
+	// cause itself — a team's grant at this installation's own authority root —
+	// is left as it is, exactly as the scope node is, so a reinstall re-exposes
+	// the solution to the same teams; what must not survive is reach into
+	// ANOTHER module that only this installation's declaration justified.
+	//
+	// The cause is named by its NODE rather than by a path resolved after the
+	// row was revoked: the installation row carries its root node id, so nothing
+	// here has to read back a row it has already changed.
+	if err := s.revokeDerivedGrantsTx(ctx, actorID, orgID, "", installation.GetRootScopeNodeId()); err != nil {
+		return err
 	}
 	if err := s.publishLifecycleEvent(ctx, EventInstallationRevoked, orgID,
 		installation.GetRootScopeNodeId(), actorID, map[string]any{

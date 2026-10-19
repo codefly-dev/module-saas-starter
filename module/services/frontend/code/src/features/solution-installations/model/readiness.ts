@@ -102,6 +102,8 @@ export function conditionHeading(kind: ReadinessConditionKind): string {
 			return "A source holds no delegation to this module";
 		case ReadinessConditionKind.REACHED_MODULE_NOT_INSTALLED:
 			return "A module this reaches is not installed here";
+		case ReadinessConditionKind.CARRIED_MODULE_ACCESS_NOT_DERIVED:
+			return "The grant carried no access on a module this reaches";
 		default:
 			return "The host reported a condition this page does not know";
 	}
@@ -161,15 +163,16 @@ export interface ReachOffer {
 }
 
 /**
- * The modules a grant on this installation must also reach, from the host's own
+ * The modules a grant on this installation also reaches, from the host's own
  * list — the applied manifest's declaration, never derived here.
  *
- * A team granted the solution alone is refused by each of these on the viewer's
- * own session: four separate refusals on a validation cell, each a bare
- * Forbidden. Carrying them is the host's act, derived from that declaration and
- * revoked with the grant that caused it — never a per-module step a person
- * performs. Until the host carries it, the page states the set so a reader is
- * not left to discover it by being refused.
+ * A grant of this installation to a team CARRIES them: the host derives, per
+ * module, what the solution declares it consumes there intersected with the role
+ * the administrator chose, and grants that at the module's own authority root,
+ * revoked with the grant that caused it. It is never a per-module step a person
+ * performs — that trail, four bare `Forbidden`s on a validation cell, is what it
+ * replaces. The page states the set before anyone grants, so a reader knows what
+ * a grant will reach rather than learning it afterwards.
  */
 export function reachOffers(reached: ReachedModule[]): ReachOffer[] {
 	return reached.map((entry) => ({

@@ -102,6 +102,18 @@ func refuseImport(cat *rolecatalog.Catalog, plan *rolecatalog.Plan, force bool) 
 // snapshotBuiltinRoles reads every built-in role (org_id IS NULL) with its
 // permission set, plus the assignment count for catalog-managed roles (the only
 // ones a removal can target). Must run inside the control-plane transaction.
+//
+// A role THIS HOST DERIVED is excluded explicitly. The plan this snapshot feeds
+// UPDATES the rows it believes it manages and REMOVES the ones the catalog no
+// longer declares, so a derived role mistaken for a catalog role would have its
+// permission set rewritten — or be deleted, cascading away the carried grants
+// that hold it — under a live grant, silently, on the next import.
+//
+// A derived role is org-scoped and not built-in, so neither predicate above
+// selects one today and the clause changes nothing. It is written anyway because
+// what it protects against is a later edit to those predicates rather than a row
+// that exists now, and because the catalog's own `catalog_managed` flag is a
+// different question from "is this a role anybody authored at all".
 func (s *PostgresStore) snapshotBuiltinRoles(ctx context.Context) (rolecatalog.State, error) {
 	w := wool.Get(ctx).In("snapshotBuiltinRoles")
 	executor := s.getQueryExecutor(ctx)
@@ -111,7 +123,7 @@ func (s *PostgresStore) snapshotBuiltinRoles(ctx context.Context) (rolecatalog.S
 		       rp.resource, rp.action
 		FROM roles r
 		LEFT JOIN role_permissions rp ON rp.role_id = r.id
-		WHERE r.org_id IS NULL AND r.built_in = true
+		WHERE r.derived_from IS NULL AND r.org_id IS NULL AND r.built_in = true
 		ORDER BY r.name, rp.resource, rp.action`)
 	if err != nil {
 		return rolecatalog.State{}, w.Wrapf(err, "failed to snapshot built-in roles")

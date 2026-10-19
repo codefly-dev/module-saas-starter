@@ -113,7 +113,29 @@ function serve(installationsBody: JsonBodyType) {
 			rpc("InstallationService", "GrantInstallationToTeam"),
 			async ({ request }) => {
 				grants.push(await request.json());
-				return HttpResponse.json({ grant: { id: `grant-${grants.length}` } });
+				// The host answers with what the grant CARRIED and what it could
+				// not, which is what the page shows next.
+				return HttpResponse.json({
+					grant: { id: `grant-${grants.length}` },
+					carried: [
+						{
+							audience: "documents",
+							installationId: DOCS_INSTALLATION,
+							scopePath: "org.docs",
+							roleId: "derived-1",
+							scopes: ["evidence:read"],
+						},
+					],
+					unmet: [
+						{
+							kind: "READINESS_CONDITION_KIND_CARRIED_MODULE_ACCESS_NOT_DERIVED",
+							subject: "notes",
+							detail: "This organisation has not installed notes.",
+							clearedBy: "READINESS_CLEARED_BY_ORGANIZATION_ADMIN",
+							action: "READINESS_ACTION_NONE_AT_THIS_SURFACE",
+						},
+					],
+				});
 			},
 		),
 	);
@@ -210,11 +232,11 @@ it("sends a source with no delegation to the surface that reconnects it", async 
 	expect(link.getAttribute("href")).toBe("/admin/datasources");
 });
 
-// The four refusals on a validation cell. A grant here is ONE act and reaches
-// this installation; carrying the modules the solution declares it consumes is
-// the host's, derived from that declaration. Until the host carries it, the page
-// says so rather than offering a per-module step a person has to perform.
-it("grants once, and says plainly that the modules this reaches are not carried", async () => {
+// The four refusals on a validation cell. A grant here is ONE act: it carries
+// the access the solution declares it consumes on every module it reaches, so no
+// per-module step is offered, and the page reports what was carried and where
+// nothing could be — in the host's own words, from the grant's own response.
+it("grants once, and reports what that grant carried", async () => {
 	const grants = serve({
 		installations: [
 			installation({
@@ -235,7 +257,7 @@ it("grants once, and says plainly that the modules this reaches are not carried"
 
 	expect(
 		await screen.findByText(
-			"This grant does not yet carry the modules this reaches",
+			"A grant here also carries the modules this reaches",
 		),
 	).toBeTruthy();
 
@@ -268,4 +290,12 @@ it("grants once, and says plainly that the modules this reaches are not carried"
 			roleId: USE_ROLE,
 		},
 	]);
+
+	// What it carried, and the one module where it carried nothing — stated here
+	// rather than met later as a bare Forbidden on a page.
+	expect(await screen.findByText("What that grant carried")).toBeTruthy();
+	expect(await screen.findByText("documents: evidence:read")).toBeTruthy();
+	expect(
+		await screen.findByText(/This organisation has not installed notes\./),
+	).toBeTruthy();
 });

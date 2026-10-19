@@ -25,8 +25,12 @@ installation's setup page: what it is and whether it is READY (the host's
 with who clears each and the act that does, and the teams a grant reaches there.
 It reads the same `ListOrganizationInstallations` the row came from and selects
 its own installation out of it, so the page can never disagree with the row that
-linked to it. Granting a team on a solution offers, in the same step, the grants
-on the modules the host says it reaches on that person's session.
+linked to it. Granting a team a solution CARRIES, in the same act, the access the
+solution declares it consumes on every module it reaches: the page states the set
+before anyone grants, and after a grant it shows what was carried and — in the
+host's own words, from the grant's own response — any module where nothing could
+be carried. There is no per-module grant step for a person to perform
+([MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md#a-grant-of-a-solution-carries-the-module-access-it-declares-it-consumes)).
 The platform catalogue explains the delivery prerequisite. Headless components
 contribute no page.
 For a module page, relative data requests through the injected `apiBase` reach

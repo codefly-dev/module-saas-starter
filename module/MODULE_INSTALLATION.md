@@ -459,10 +459,86 @@ page states what is missing even when nobody was reading the boot log.
 
 `OrganizationInstallation.reached_modules` is the other half: the modules the
 applied manifest declares it invokes on the asking person's own session, each
-resolved to this organisation's installation of that module. A team granted a
-solution is refused by every module it reaches that the same team was not granted
-— on a validation cell that was four separate refusals, each a bare
-`Forbidden`. The set is the manifest's own declaration, so the grant step offers
-those grants together instead of leaving a person to find them by being refused.
-A headless-only binding is not in the set: it acts for no person, so no person's
-grant is needed.
+resolved to this organisation's installation of that module. A headless-only
+binding is not in the set: it acts for no person, so no person's grant is needed.
+That set is what a grant of the solution CARRIES, below.
+
+| Condition | Read from |
+| --- | --- |
+| `CARRIED_MODULE_ACCESS_NOT_DERIVED` | a grant of the solution that could carry nothing on a module it reaches: the chosen role permits none of what the solution consumes there, or the declared scope is narrowed to named resources |
+
+## A grant of a solution carries the module access it declares it consumes
+
+A solution reaches other modules **on the asking person's own session**. Its own
+consumer-invoke ceiling bounds what it may do there, but the person still has to
+hold authority on the reached module or the call is refused. On a validation cell
+a team granted one solution was then refused by the FOUR modules that solution
+reaches, in turn — four dialogs, each discovered by hitting a `Forbidden`. (The
+modules are named in codefly-dev/module-saas-starter#1167, not here: this host
+has no build-time knowledge of a solution or of what it composes with.)
+
+`GrantInstallationToTeam` now carries that access. Per module the solution
+reaches and this organisation has installed, it derives a role **this host owns**
+whose permissions are the solution's declared consumption for that module
+INTERSECTED WITH the role the administrator chose, and grants that role to the
+team at the **reached module's own authority-root node**. `carried` reports each
+one in the grant's response.
+
+The intersection is the point, not an optimisation. Writing the administrator's
+chosen role at each reached module's root is cheaper and was rejected: it WIDENS
+the person's own direct reach into that module to whatever the role permits
+there, so they could call the module directly and not only through the solution.
+What the derived role buys is that a person's direct reach into a reached module
+is what the SOLUTION declared.
+
+The declared consumption is read from the DERIVED registry's operation audience,
+not from the manifest's ask: a scope the module envelope withheld is not
+consumption, and readiness reports it as `OPERATION_BINDING_OMITTED` instead.
+
+**Where it is recorded.** As an ordinary scope grant at the reached module's
+authority-root node — the only thing that makes a module reachable — resolved by
+the same `ListAccessibleScopes` / `CheckAccess` union as every other grant, so
+there is no second answer to "what does this viewer reach". The one field that
+distinguishes it is `scope_grants.derived_from_grant_id`, which names the grant
+that caused it. The derived role carries its provenance in `roles.derived_from`:
+the installation, the audience, and the chosen role.
+
+**How it is revoked, with its cause.** `RevokeInstallationFromTeam` revokes every
+derived grant of the grant it removes, first and in the same policy-logged
+narrowing. `UninstallSolution` revokes every derived grant whose cause is a grant
+at that installation's authority root. Both go through `revokeScopeApply`, so each
+carries the same `scope.revoked` event and audit record as any other revocation.
+`derived_from_grant_id` is `ON DELETE CASCADE`, which closes the paths that go
+through neither — a bare `RevokeScope` of the cause, an organisation deletion — so
+a derived grant can never outlive its cause even where nothing thought to remove
+it. A derived grant **adds**: a team's own direct grant on a reached module has no
+cause, is a different row, and survives untouched.
+
+**A derived role is never conferred by hand.** `ListRoles` hides it, so no picker
+offers it; `GrantScope` refuses it unless the write names a cause (which is a
+parameter of the internal grant body, never a request field, so no caller can
+claim one); `AssignRole` refuses it, because an organisation-wide assignment
+would hand every member the module reach with no installation grant at all;
+`ShareRecord` refuses it; `UpdateRole` and `DeleteRole` refuse it, one because an
+edit would widen a live carried grant and the other because a delete would cascade
+it away with no revocation to explain it; `CreateRole` writes the provenance
+column NULL explicitly, so the tenant path cannot mint one; and the role catalog
+importer excludes derived roles from its snapshot, because its plan updates and
+removes the rows it believes it manages.
+
+**The two refusals, stated rather than approximated.** A chosen role that permits
+none of what the solution consumes there carries nothing and says so, reusing
+`ErrRoleDoesNotExposeSolution` — this host already refuses a role that would
+expose nothing, for the same reason. A declared scope narrowed to NAMED
+RESOURCES also carries nothing: `role_permissions` is (resource, action) with no
+resource-id column, so carrying it as the whole kind would grant more than the
+solution declared. Both travel back in the grant's own response as
+`CARRIED_MODULE_ACCESS_NOT_DERIVED` conditions, in the same vocabulary the setup
+page reads, because a refusal a person meets later as a `Forbidden` is the failure
+this replaces.
+
+**Reconciliation has no background pass.** The derived set is a function of the
+applied declaration, which a later generation may move. It is reconciled on the
+NEXT grant or revoke of its cause: re-deriving replaces the role's permission set,
+and a module no longer reached stops being re-derived. Until then, an applied
+generation that narrows a declaration does not narrow the carried grants.
