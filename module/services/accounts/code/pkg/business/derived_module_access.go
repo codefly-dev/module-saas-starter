@@ -15,9 +15,11 @@ import (
 // A solution reaches other modules on the ASKING PERSON'S OWN SESSION: the
 // consumer-invoke ceiling bounds what the solution may do there, but the person
 // still has to hold authority on the reached module, or the call is refused. On
-// a validation cell a team granted the wiki was then refused by documents,
-// robin, annotations and runtime in turn — four separate dialogs, each found by
+// a validation cell a team granted one solution was then refused by the FOUR
+// modules that solution reaches, in turn — four separate dialogs, each found by
 // hitting a `Forbidden`. Nothing anywhere said which modules a solution reaches.
+// (Which solution and which modules is in the issue, not here: this host has no
+// build-time knowledge of either.)
 //
 // The declaration that says so already exists and is already the thing the
 // passthrough is checked against, so installing the solution is the

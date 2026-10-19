@@ -472,8 +472,10 @@ That set is what a grant of the solution CARRIES, below.
 A solution reaches other modules **on the asking person's own session**. Its own
 consumer-invoke ceiling bounds what it may do there, but the person still has to
 hold authority on the reached module or the call is refused. On a validation cell
-a team granted the wiki was then refused by documents, robin, annotations and
-runtime in turn — four dialogs, each discovered by hitting a `Forbidden`.
+a team granted one solution was then refused by the FOUR modules that solution
+reaches, in turn — four dialogs, each discovered by hitting a `Forbidden`. (The
+modules are named in codefly-dev/module-saas-starter#1167, not here: this host
+has no build-time knowledge of a solution or of what it composes with.)
 
 `GrantInstallationToTeam` now carries that access. Per module the solution
 reaches and this organisation has installed, it derives a role **this host owns**
