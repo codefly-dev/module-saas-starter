@@ -39,11 +39,30 @@ const (
 // it is suspect, and it cannot be minted by another key
 // (requireInteractiveSession on CreateAPIKey), so a machine credential can
 // never widen itself into one. The write is recorded either way.
+//
+// "And nothing else" is requireExactScope, not requireScope. A scope check
+// that expands wildcards would let `*:*` — which real automation keys hold,
+// and which CheckScopeShape permits — write the ceiling every module
+// principal is derived inside, with no second factor and no key ever minted
+// for this. The replacement for a second factor has to be a scope somebody
+// deliberately granted by name, or it replaces nothing.
 func requireModuleEnvelopeWrite(ctx context.Context) error {
 	if credentialKindFromContext(ctx) == credentialKindAPIKey {
-		return requireScope(ctx, moduleEnvelopeWriteScope)
+		return requireExactScope(ctx, moduleEnvelopeWriteScope)
 	}
 	return requireRecentMFA(ctx)
+}
+
+// requireModuleEnvelopeRead is the read's half of the same rule, and it is
+// deliberately the same shape: a key says so by name, a session's authority
+// stays the platform role it already had. requireScope here would have done
+// two wrong things at once — admitted a read on `*:*`, and taken the read
+// away from a narrowly scoped session that holds the role.
+func requireModuleEnvelopeRead(ctx context.Context) error {
+	if credentialKindFromContext(ctx) == credentialKindAPIKey {
+		return requireExactScope(ctx, moduleEnvelopeReadScope)
+	}
+	return nil
 }
 
 // GetModuleEnvelope reads the current module envelope for a platform
@@ -60,7 +79,7 @@ func (s *PlatformAdminServer) GetModuleEnvelope(ctx context.Context, req *gen.Ge
 		return nil, err
 	}
 	// A session reads it as before; a key reads it only when it says so.
-	if err := requireScope(ctx, moduleEnvelopeReadScope); err != nil {
+	if err := requireModuleEnvelopeRead(ctx); err != nil {
 		return nil, err
 	}
 	record, err := service.GetModuleEnvelope(ctx, actorID)

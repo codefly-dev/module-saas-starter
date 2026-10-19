@@ -1176,18 +1176,37 @@ func (s *Service) CheckSourceDelegationContextRevision(
 	for _, subject := range subjects[min(1, len(subjects)):] {
 		actors = append(actors, subject.PrincipalID)
 	}
-	_, ok, err := s.sourceDelegationShape(ctx, orgID, ownerPrincipalID, actors)
+	grant, ok, err := s.sourceDelegationShape(ctx, orgID, ownerPrincipalID, actors)
 	if err != nil {
 		return true, err
 	}
 	if !ok {
 		return false, nil
 	}
-	// The caller dispatches on the binding, so this resolver is reached only
-	// for a context whose binding names a delegation. It still refuses one it
-	// cannot confirm, by name.
+	// A context whose binding is not a delegation's is DECLINED, so the
+	// ordinary module-operation checks run on it: a module calling an owner
+	// under its own installed binding has this same shape, with no delegation
+	// involved anywhere, and refusing it here is what denied the runtime's
+	// every such call.
+	//
+	// Unless this person has delegated to this module. Then the context's
+	// authority is that delegation's, and naming anything else is a lie that
+	// selects a checker which cannot fail: a delegation's hop scopes are built
+	// as a subset of exactly the module's own binding's invoke scopes, so the
+	// module-hop check passes by construction while the delegation's
+	// revocation, its owner, its source and the person's role go unread. A
+	// caller could otherwise keep using a revoked delegation by naming its
+	// module's binding instead. So the delegation is this resolver's whenever
+	// one exists between the two, revoked included.
 	if !namesASourceDelegation(bindingID) {
-		return false, nil
+		delegated, err := s.personHasDelegatedTo(ctx, orgID, ownerPrincipalID, grant.Prefix)
+		if err != nil {
+			return true, err
+		}
+		if !delegated {
+			return false, nil
+		}
+		return true, ErrSourceDelegationContextStale
 	}
 	if len(subjects) != 2 || subjects[0].PrincipalID != ownerPrincipalID {
 		return true, ErrSourceDelegationContextStale
@@ -1197,6 +1216,42 @@ func (s *Service) CheckSourceDelegationContextRevision(
 		return true, err
 	}
 	return true, nil
+}
+
+// personHasDelegatedTo reports whether this person has ever delegated a source
+// to this module in this organization — revoked rows included, because a
+// revoked delegation is exactly the one a caller would want to keep using by
+// naming another binding. modulePrefix is the actor's, as the registry
+// snapshot that claimed the shape reported it: a delegation records the
+// module's PREFIX while a context's hop names its PRINCIPAL, and comparing
+// the two spellings would match nothing and quietly admit every lie.
+//
+// It reads the organization's delegations rather than one row, because the
+// question is about the pair and a context names no source. An organization
+// holds a handful of delegations and this runs only for the shape that could
+// be a delegation's and did not name one, so the ordinary module-operation
+// context pays one org-scoped read and the lie pays a refusal.
+func (s *Service) personHasDelegatedTo(ctx context.Context, orgID, ownerPrincipalID, modulePrefix string) (bool, error) {
+	if orgID == "" || ownerPrincipalID == "" || modulePrefix == "" {
+		return false, nil
+	}
+	// Read inside the organization's transaction: source_delegations is
+	// tenant-scoped, so an unscoped read returns nothing and would report
+	// "never delegated" about every pair.
+	var delegations []*SourceDelegation
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		list, err := s.store.ListSourceDelegations(ctx, orgID, "", true)
+		delegations = list
+		return err
+	}); err != nil {
+		return false, err
+	}
+	for _, delegation := range delegations {
+		if delegation != nil && delegation.PrincipalID == ownerPrincipalID && delegation.ModulePrefix == modulePrefix {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // SourceDelegationHop is one actor hop of a verified Work Context, as the

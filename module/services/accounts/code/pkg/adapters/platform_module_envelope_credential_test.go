@@ -74,3 +74,33 @@ func TestModuleEnvelopeWriteEvidenceByCredentialKind(t *testing.T) {
 		}
 	})
 }
+
+// A wildcard scope is not a grant of this one. The scope that stands in for a
+// second factor has to be a scope somebody granted BY NAME: `*:*` is a scope
+// real automation keys hold, and admitting the ceiling write on it would admit
+// it on a credential nobody minted for this, with no step-up either. Both
+// methods follow the same rule, so neither is the soft way in.
+func TestAWildcardScopeDoesNotCarryTheEnvelopeScopes(t *testing.T) {
+	for _, granted := range []string{"*:*", "*:write", "module_envelope:*", "module_envelope:read"} {
+		t.Run(granted, func(t *testing.T) {
+			err := requireModuleEnvelopeWrite(withScopes(withCredentialKind(context.Background(), credentialKindAPIKey), []string{granted}))
+			require.Error(t, err, "a key holding %q must not write the ceiling", granted)
+			require.Equal(t, codes.PermissionDenied, status.Code(err))
+			require.Contains(t, err.Error(), "must be granted by name")
+		})
+	}
+	require.NoError(t, requireModuleEnvelopeWrite(withScopes(withCredentialKind(context.Background(), credentialKindAPIKey), []string{moduleEnvelopeWriteScope})))
+
+	for _, granted := range []string{"*:*", "*:read", "module_envelope:*", "module_envelope:write"} {
+		err := requireModuleEnvelopeRead(withScopes(withCredentialKind(context.Background(), credentialKindAPIKey), []string{granted}))
+		require.Error(t, err, "a key holding %q must not read the ceiling", granted)
+	}
+	require.NoError(t, requireModuleEnvelopeRead(withScopes(withCredentialKind(context.Background(), credentialKindAPIKey), []string{moduleEnvelopeReadScope})))
+}
+
+// A session's authority stays the platform role it already had: the read is
+// not taken away from a session holding super_admin that happens to present a
+// narrow scope list, which is what a plain requireScope would have done.
+func TestAScopedSessionKeepsTheEnvelopeRead(t *testing.T) {
+	require.NoError(t, requireModuleEnvelopeRead(withScopes(withCredentialKind(context.Background(), credentialKindSession), []string{"users:read"})))
+}

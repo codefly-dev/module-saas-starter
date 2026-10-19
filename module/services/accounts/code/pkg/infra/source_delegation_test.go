@@ -699,6 +699,15 @@ func TestSourceDelegation_DedicatedTenantCannotBorrowInstallation(t *testing.T) 
 // for ("the caller's authorization was revoked after the Work Context was
 // minted"), with no delegation involved anywhere. The checker must decline
 // such a context so the ordinary module-operation checks run on it.
+//
+// It may only decline it when there IS no delegation between that person and
+// that module. Where one exists, the delegation is the authority and the
+// context must name it: the module-hop check the context would otherwise
+// reach confirms a subset of the very binding whose invoke scopes the
+// delegation's hop was built from, so it cannot fail, and a revoked
+// delegation would stay usable to any caller willing to name a different
+// binding. Declining is for the pair that never delegated; the pair that did
+// is refused.
 func TestSourceDelegation_AModulesOwnBindingIsNotThisCheckersContext(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
@@ -714,26 +723,48 @@ func TestSourceDelegation_AModulesOwnBindingIsNotThisCheckersContext(t *testing.
 		require.NoError(t, err)
 	})
 
-	t.Run("another operation's binding is declined, not refused", func(t *testing.T) {
+	// Once this person HAS delegated to this module, naming the module's own
+	// binding is refused rather than declined: the context's authority is the
+	// delegation's, and the module-hop check it would otherwise reach confirms
+	// a subset of that same binding's invoke scopes — so it passes by
+	// construction, and a revoked delegation would go on being used by a
+	// caller that simply named another binding.
+	t.Run("another operation's binding is refused once the person has delegated to this module", func(t *testing.T) {
 		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
 			authority.OwnerPrincipalID, authority.Revision, subjects(authority), "runtime-admission")
-		require.False(t, handled, "a module's own installed binding belongs to the module-operation checks")
-		require.NoError(t, err)
+		require.True(t, handled, "the delegation owns this pair's contexts")
+		require.ErrorIs(t, err, business.ErrSourceDelegationContextStale)
 	})
 
-	// Naming no binding is DECLINED here, not refused, because the decision
-	// moved to where it belongs: the request either names a binding or
-	// asserts it seals none, and one that says neither is refused as
-	// malformed before any resolver runs
+	// And it stays refused after the delegation is revoked, which is the case
+	// the re-route would have confirmed.
+	t.Run("a revoked delegation cannot be used by naming the module's own binding", func(t *testing.T) {
+		_, err := w.svc.RevokeSourceDelegation(testCtx, w.admin, w.org, delegation.ID)
+		require.NoError(t, err)
+		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
+			authority.OwnerPrincipalID, authority.Revision, subjects(authority), "runtime-admission")
+		require.True(t, handled)
+		require.ErrorIs(t, err, business.ErrSourceDelegationContextStale)
+		// The delegation's own binding is refused too, by the delegation's
+		// own rules, so neither spelling survives revocation.
+		handled, err = w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
+			authority.OwnerPrincipalID, authority.Revision, subjects(authority), authority.BindingID())
+		require.True(t, handled)
+		require.Error(t, err)
+	})
+
+	// Naming no binding at all is refused for this pair for the same reason,
+	// and a request that states neither a binding nor seals_no_binding never
+	// reaches a resolver: it is malformed
 	// (TestCheckAuthorizationRevisionFollowsTheSourceDelegation, "refuses as
-	// malformed without the binding the context sealed"). That is what keeps
-	// a consumer who simply forgot from having a narrowed delegation confirmed
+	// malformed without the binding the context sealed"). Both halves keep a
+	// consumer who simply forgot from having a narrowed delegation confirmed
 	// against its module's broader installation.
-	t.Run("naming no binding is declined here, and refused as malformed at the request", func(t *testing.T) {
+	t.Run("naming no binding is refused for a pair that has a delegation", func(t *testing.T) {
 		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
 			authority.OwnerPrincipalID, authority.Revision, subjects(authority), "")
-		require.False(t, handled)
-		require.NoError(t, err)
+		require.True(t, handled)
+		require.ErrorIs(t, err, business.ErrSourceDelegationContextStale)
 	})
 }
 

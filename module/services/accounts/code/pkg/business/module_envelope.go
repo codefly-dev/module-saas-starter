@@ -612,14 +612,20 @@ func installationTenancyAllowed(envelope *ModuleEnvelope, principalID, orgID str
 // organization. What may differ is the revision and whole principals that were
 // added.
 //
-// A principal's section is compared for equality and never for "at least as
-// much". The schema does not let more JSON mean more authority: a resource
-// list that appears narrows an audience that was unrestricted, a required
-// kind that appears refuses artifacts that passed, a tenant that is set
-// removes every other organization. A comparison that tried
-// to tell those apart would be a second copy of every rule that reads the
-// envelope, wrong whenever one of them moved. So a changed section is a
-// narrowing, whatever changed.
+// A principal's section is compared member by member, and only ADDED members
+// are a gain (jsonOnlyGains): the deny-by-default lists — queues, namespaces,
+// external namespaces, resources, the four scope lists of an operation
+// audience — grant nothing until they name it, so a member appearing there
+// widens. Everything else is a narrowing, whatever changed, because the schema
+// does not let changed JSON mean more authority: a resource list that appears
+// narrows an audience that was unrestricted, a required kind that appears
+// refuses artifacts that passed, and a tenant that is set removes every other
+// organization. The one member that is an addition AND a narrowing is that
+// tenant, which is why apply re-checks every active installation against the
+// new ceiling (errModuleEnvelopeNarrowsAfterAll) rather than trusting this
+// classification alone. A comparison that tried to tell each case apart field
+// by field would be a second copy of every rule that reads the envelope, wrong
+// whenever one of them moved.
 //
 // A host with no envelope has granted nothing, so its first envelope narrows
 // nothing an envelope granted; installations are still checked.

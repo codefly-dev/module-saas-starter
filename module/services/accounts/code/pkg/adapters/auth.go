@@ -742,6 +742,27 @@ func grantsScope(granted []string, required string) bool {
 	return false
 }
 
+// requireExactScope admits a scope-bound caller only when the scope it names
+// is LITERALLY in the caller's granted list. requireScope would accept any
+// granted scope that covers it, wildcards included, so `*:*` — a scope real
+// automation keys hold — satisfies every scope there is. That is the right
+// rule for an ordinary permission and the wrong one for a scope whose whole
+// purpose is to be the only thing a credential may do: a ceiling write
+// admitted on `*:*` is admitted on a credential nobody minted for it, and
+// without the second factor the session path requires.
+func requireExactScope(ctx context.Context, required string) error {
+	if !scopeBound(ctx) {
+		return nil
+	}
+	for _, granted := range scopesFromContext(ctx) {
+		if granted == required {
+			return nil
+		}
+	}
+	return status.Errorf(codes.PermissionDenied,
+		"missing_scope: %s must be granted by name; a wildcard scope does not carry it", required)
+}
+
 // requireInteractiveSession admits only a caller the perimeter reported as an
 // interactive session. CreateAPIKey calls it first: an API key must never mint
 // another, because accounts cannot see the calling key's expiry and a key that
