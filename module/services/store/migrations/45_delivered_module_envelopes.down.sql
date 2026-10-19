@@ -3,7 +3,7 @@
 -- while any revision was delivered.
 DO $$ BEGIN
  IF EXISTS (SELECT 1 FROM public.module_envelopes WHERE written_by IS NULL) THEN
-  RAISE EXCEPTION 'module_envelopes holds delivered revisions; migration 42 cannot be reverted';
+  RAISE EXCEPTION 'module_envelopes holds delivered revisions; migration 45 cannot be reverted';
  END IF;
 END $$;
 ALTER TABLE public.module_envelopes
