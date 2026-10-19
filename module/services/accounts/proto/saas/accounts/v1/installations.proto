@@ -665,6 +665,12 @@ enum ReadinessConditionKind {
   // A module this target declares it reaches is not installed in this
   // organisation, so every call it makes there is refused.
   READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED = 7;
+  // A grant of this solution could not CARRY the access it declares it consumes
+  // on one reached module, so the team holds nothing there and the pages that
+  // reach it will be refused. `detail` says which of the two reasons it is: the
+  // chosen role permits none of what the solution consumes there, or the
+  // declared scope is narrowed to named resources, which a role cannot express.
+  READINESS_CONDITION_KIND_CARRIED_MODULE_ACCESS_NOT_DERIVED = 8;
 }
 
 // ReadinessClearedBy is who can clear a condition. It is stated rather than
@@ -727,14 +733,14 @@ message InstallationReadiness {
 // asking person's own session, and this organisation's installation of that
 // module.
 //
-// A solution granted to a team is refused by every module it reaches that the
+// A solution granted to a team was refused by every module it reaches that the
 // same team was not granted — four separate refusals on a validation cell, each
-// a bare Forbidden. The set is the applied manifest's own declaration, which is
-// what a grant on the solution must CARRY: derived from that declaration,
-// traceable to it, and revoked with it. Carrying it is not yet implemented, so
-// this field is a read, and a surface states the set rather than leaving a
-// person to find it by being refused. It is never a per-module grant step a
-// person performs — that is the trail this exists to end.
+// a bare Forbidden. The set is the applied manifest's own declaration, and a
+// grant of the solution now CARRIES it: GrantInstallationToTeam derives a grant
+// at each reached module from this very set, traceable to the solution's grant
+// and revoked with it (CarriedModuleAccess). This field stays a read, so the
+// setup page can state the set a grant will carry before anyone grants it. It is
+// never a per-module grant step a person performs — that is the trail this ends.
 message ReachedModule {
   // The audience the manifest names: the module reached.
   string audience = 1;
@@ -764,8 +770,47 @@ message GrantInstallationToTeamRequest {
   string role_id = 4 [(buf.validate.field).string.uuid = true];
 }
 
+// CarriedModuleAccess is one derived grant a solution's grant carried: the
+// access the solution declares it consumes on one module it reaches, intersected
+// with the role the administrator chose, written at that module's own
+// authority-root node.
+//
+// The role is this host's own, derived and owned by it: it appears in no picker,
+// cannot be edited, deleted, assigned organisation-wide or granted by hand, and
+// is revoked with the grant that caused it. What it permits is the intersection
+// and never the chosen role, which is the whole property — a person's own direct
+// reach into a reached module is exactly what the solution declared, not
+// whatever the administrator's role would have permitted there.
+message CarriedModuleAccess {
+  // The module reached, as the applied manifest's binding names its audience.
+  string audience = 1;
+  // This organisation's installation of that module, whose authority root the
+  // derived grant is written at.
+  string installation_id = 2;
+  // The node the derived grant was written at: that installation's authority
+  // root, resolved from the installation and never supplied by a caller.
+  string scope_path = 3;
+  // The derived role. Read it to learn what was carried; never grant it.
+  string role_id = 4;
+  // What the derived role permits, each written "<resource kind>:<action>" — the
+  // declared consumption intersected with the chosen role, in the words the
+  // declaration uses.
+  repeated string scopes = 5;
+}
+
 message GrantInstallationToTeamResponse {
   ScopeGrant grant = 1;
+  // The module access this grant carried, one entry per module the solution
+  // declares it reaches and this organisation has installed. A team granted a
+  // solution reaches every module the solution reaches on its members' own
+  // sessions, by construction: there is no per-module grant step for a person to
+  // discover by being refused.
+  repeated CarriedModuleAccess carried = 2;
+  // Where it carried nothing, and why — in the same response as the grant,
+  // because a refusal a person learns about by hitting a Forbidden later is the
+  // failure this replaces. Stated in the same condition vocabulary the setup
+  // page reads, so one reader works through one list.
+  repeated ReadinessCondition unmet = 3;
 }
 
 message RevokeInstallationFromTeamRequest {

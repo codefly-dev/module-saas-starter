@@ -1458,18 +1458,29 @@ func (x *RegisterScopeNodeResponse) GetNode() *ScopeNode {
 }
 
 type ScopeGrant struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	OrgId         string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	SubjectId     string                 `protobuf:"bytes,3,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
-	SubjectKind   SubjectKind            `protobuf:"varint,4,opt,name=subject_kind,json=subjectKind,proto3,enum=saas.accounts.v1.SubjectKind" json:"subject_kind,omitempty"`
-	ScopePath     string                 `protobuf:"bytes,5,opt,name=scope_path,json=scopePath,proto3" json:"scope_path,omitempty"`
-	RoleId        string                 `protobuf:"bytes,6,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
-	GrantedBy     string                 `protobuf:"bytes,7,opt,name=granted_by,json=grantedBy,proto3" json:"granted_by,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OrgId       string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	SubjectId   string                 `protobuf:"bytes,3,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
+	SubjectKind SubjectKind            `protobuf:"varint,4,opt,name=subject_kind,json=subjectKind,proto3,enum=saas.accounts.v1.SubjectKind" json:"subject_kind,omitempty"`
+	ScopePath   string                 `protobuf:"bytes,5,opt,name=scope_path,json=scopePath,proto3" json:"scope_path,omitempty"`
+	RoleId      string                 `protobuf:"bytes,6,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	GrantedBy   string                 `protobuf:"bytes,7,opt,name=granted_by,json=grantedBy,proto3" json:"granted_by,omitempty"`
+	ExpiresAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// The grant that CAUSED this one, when this grant was derived rather than
+	// written by an administrator: the exposure grant of a solution whose applied
+	// manifest declares it reaches this node's module on the asking person's own
+	// session. Empty for every grant an administrator wrote.
+	//
+	// A derived grant is an ordinary grant in every other respect — same node,
+	// same resolution, same events — so this is the one field that says a surface
+	// must name the solution rather than offer a revoke: it goes when its cause
+	// goes, and removing it by hand only breaks the solution until the next grant
+	// of that cause re-derives it.
+	DerivedFromGrantId string `protobuf:"bytes,10,opt,name=derived_from_grant_id,json=derivedFromGrantId,proto3" json:"derived_from_grant_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ScopeGrant) Reset() {
@@ -1563,6 +1574,13 @@ func (x *ScopeGrant) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *ScopeGrant) GetDerivedFromGrantId() string {
+	if x != nil {
+		return x.DerivedFromGrantId
+	}
+	return ""
 }
 
 type CollectionReadGrant struct {
@@ -3234,7 +3252,7 @@ const file_saas_accounts_v1_authorization_proto_rawDesc = "" +
 	"\vresource_id\x18\x06 \x01(\tR\n" +
 	"resourceId\"L\n" +
 	"\x19RegisterScopeNodeResponse\x12/\n" +
-	"\x04node\x18\x01 \x01(\v2\x1b.saas.accounts.v1.ScopeNodeR\x04node\"\xe1\x02\n" +
+	"\x04node\x18\x01 \x01(\v2\x1b.saas.accounts.v1.ScopeNodeR\x04node\"\x94\x03\n" +
 	"\n" +
 	"ScopeGrant\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
@@ -3250,7 +3268,9 @@ const file_saas_accounts_v1_authorization_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xac\x01\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x121\n" +
+	"\x15derived_from_grant_id\x18\n" +
+	" \x01(\tR\x12derivedFromGrantId\"\xac\x01\n" +
 	"\x13CollectionReadGrant\x122\n" +
 	"\x05grant\x18\x01 \x01(\v2\x1c.saas.accounts.v1.ScopeGrantR\x05grant\x12#\n" +
 	"\rsubject_label\x18\x02 \x01(\tR\fsubjectLabel\x12\x1b\n" +

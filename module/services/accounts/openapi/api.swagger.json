@@ -960,6 +960,35 @@
       },
       "type": "object"
     },
+    "v1CarriedModuleAccess": {
+      "description": "CarriedModuleAccess is one derived grant a solution's grant carried: the\naccess the solution declares it consumes on one module it reaches, intersected\nwith the role the administrator chose, written at that module's own\nauthority-root node.\n\nThe role is this host's own, derived and owned by it: it appears in no picker,\ncannot be edited, deleted, assigned organisation-wide or granted by hand, and\nis revoked with the grant that caused it. What it permits is the intersection\nand never the chosen role, which is the whole property — a person's own direct\nreach into a reached module is exactly what the solution declared, not\nwhatever the administrator's role would have permitted there.",
+      "properties": {
+        "audience": {
+          "description": "The module reached, as the applied manifest's binding names its audience.",
+          "type": "string"
+        },
+        "installationId": {
+          "description": "This organisation's installation of that module, whose authority root the\nderived grant is written at.",
+          "type": "string"
+        },
+        "roleId": {
+          "description": "The derived role. Read it to learn what was carried; never grant it.",
+          "type": "string"
+        },
+        "scopePath": {
+          "description": "The node the derived grant was written at: that installation's authority\nroot, resolved from the installation and never supplied by a caller.",
+          "type": "string"
+        },
+        "scopes": {
+          "description": "What the derived role permits, each written \"<resource kind>:<action>\" — the\ndeclared consumption intersected with the chosen role, in the words the\ndeclaration uses.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "v1CatalogueApplied": {
       "description": "CatalogueApplied is what delivery actually wrote.",
       "properties": {
@@ -2276,8 +2305,24 @@
     },
     "v1GrantInstallationToTeamResponse": {
       "properties": {
+        "carried": {
+          "description": "The module access this grant carried, one entry per module the solution\ndeclares it reaches and this organisation has installed. A team granted a\nsolution reaches every module the solution reaches on its members' own\nsessions, by construction: there is no per-module grant step for a person to\ndiscover by being refused.",
+          "items": {
+            "$ref": "#/definitions/v1CarriedModuleAccess",
+            "type": "object"
+          },
+          "type": "array"
+        },
         "grant": {
           "$ref": "#/definitions/v1ScopeGrant"
+        },
+        "unmet": {
+          "description": "Where it carried nothing, and why — in the same response as the grant,\nbecause a refusal a person learns about by hitting a Forbidden later is the\nfailure this replaces. Stated in the same condition vocabulary the setup\npage reads, so one reader works through one list.",
+          "items": {
+            "$ref": "#/definitions/v1ReadinessCondition",
+            "type": "object"
+          },
+          "type": "array"
         }
       },
       "type": "object"
@@ -4390,7 +4435,7 @@
       "type": "object"
     },
     "v1ReachedModule": {
-      "description": "ReachedModule is one module an installed target declares it reaches on the\nasking person's own session, and this organisation's installation of that\nmodule.\n\nA solution granted to a team is refused by every module it reaches that the\nsame team was not granted — four separate refusals on a validation cell, each\na bare Forbidden. The set is the applied manifest's own declaration, which is\nwhat a grant on the solution must CARRY: derived from that declaration,\ntraceable to it, and revoked with it. Carrying it is not yet implemented, so\nthis field is a read, and a surface states the set rather than leaving a\nperson to find it by being refused. It is never a per-module grant step a\nperson performs — that is the trail this exists to end.",
+      "description": "ReachedModule is one module an installed target declares it reaches on the\nasking person's own session, and this organisation's installation of that\nmodule.\n\nA solution granted to a team was refused by every module it reaches that the\nsame team was not granted — four separate refusals on a validation cell, each\na bare Forbidden. The set is the applied manifest's own declaration, and a\ngrant of the solution now CARRIES it: GrantInstallationToTeam derives a grant\nat each reached module from this very set, traceable to the solution's grant\nand revoked with it (CarriedModuleAccess). This field stays a read, so the\nsetup page can state the set a grant will carry before anyone grants it. It is\nnever a per-module grant step a person performs — that is the trail this ends.",
       "properties": {
         "audience": {
           "description": "The audience the manifest names: the module reached.",
@@ -4462,7 +4507,7 @@
     },
     "v1ReadinessConditionKind": {
       "default": "READINESS_CONDITION_KIND_UNSPECIFIED",
-      "description": "ReadinessConditionKind is what kind of thing is unmet. A reader acts on the\nwords in `detail`; the kind is for the surface to choose an action and for a\nconsumer to count one kind without parsing prose.\n\n - READINESS_CONDITION_KIND_INSTALL_STEP_PENDING: The solution has not acknowledged its standard install step yet.\n - READINESS_CONDITION_KIND_INSTALL_STEP_FAILED: It refused the install step, or never answered within the attempt budget.\n - READINESS_CONDITION_KIND_RECORD_UNHEALTHY: The installation record itself is not healthy: the InstallationHealth\nvalue, restated as a condition so one list holds every reason it will not\nwork rather than two places a reader has to join.\n - READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED: The module registry holds no principal for this target's module at all, so\nevery Work Context it asks for is denied.\n - READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED: An operation binding the applied manifest asks for derived nothing: the\nenvelope allows no such binding, or allows nothing of it. This is the\ncondition that reported HEALTHY on a validation cell while four bindings were\ndropped.\n - READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED: A source this organisation has connected holds no active delegation to a\nmodule that accepts them, so that module cannot read it on anyone's behalf.\n - READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED: A module this target declares it reaches is not installed in this\norganisation, so every call it makes there is refused.",
+      "description": "ReadinessConditionKind is what kind of thing is unmet. A reader acts on the\nwords in `detail`; the kind is for the surface to choose an action and for a\nconsumer to count one kind without parsing prose.\n\n - READINESS_CONDITION_KIND_INSTALL_STEP_PENDING: The solution has not acknowledged its standard install step yet.\n - READINESS_CONDITION_KIND_INSTALL_STEP_FAILED: It refused the install step, or never answered within the attempt budget.\n - READINESS_CONDITION_KIND_RECORD_UNHEALTHY: The installation record itself is not healthy: the InstallationHealth\nvalue, restated as a condition so one list holds every reason it will not\nwork rather than two places a reader has to join.\n - READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED: The module registry holds no principal for this target's module at all, so\nevery Work Context it asks for is denied.\n - READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED: An operation binding the applied manifest asks for derived nothing: the\nenvelope allows no such binding, or allows nothing of it. This is the\ncondition that reported HEALTHY on a validation cell while four bindings were\ndropped.\n - READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED: A source this organisation has connected holds no active delegation to a\nmodule that accepts them, so that module cannot read it on anyone's behalf.\n - READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED: A module this target declares it reaches is not installed in this\norganisation, so every call it makes there is refused.\n - READINESS_CONDITION_KIND_CARRIED_MODULE_ACCESS_NOT_DERIVED: A grant of this solution could not CARRY the access it declares it consumes\non one reached module, so the team holds nothing there and the pages that\nreach it will be refused. `detail` says which of the two reasons it is: the\nchosen role permits none of what the solution consumes there, or the\ndeclared scope is narrowed to named resources, which a role cannot express.",
       "enum": [
         "READINESS_CONDITION_KIND_UNSPECIFIED",
         "READINESS_CONDITION_KIND_INSTALL_STEP_PENDING",
@@ -4471,7 +4516,8 @@
         "READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED",
         "READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED",
         "READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED",
-        "READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED"
+        "READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED",
+        "READINESS_CONDITION_KIND_CARRIED_MODULE_ACCESS_NOT_DERIVED"
       ],
       "type": "string"
     },
@@ -4780,6 +4826,10 @@
       "properties": {
         "createdAt": {
           "format": "date-time",
+          "type": "string"
+        },
+        "derivedFromGrantId": {
+          "description": "The grant that CAUSED this one, when this grant was derived rather than\nwritten by an administrator: the exposure grant of a solution whose applied\nmanifest declares it reaches this node's module on the asking person's own\nsession. Empty for every grant an administrator wrote.\n\nA derived grant is an ordinary grant in every other respect — same node,\nsame resolution, same events — so this is the one field that says a surface\nmust name the solution rather than offer a revoke: it goes when its cause\ngoes, and removing it by hand only breaks the solution until the next grant\nof that cause re-derives it.",
           "type": "string"
         },
         "expiresAt": {

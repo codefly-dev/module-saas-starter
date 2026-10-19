@@ -199,6 +199,30 @@ the adapters' `markContentReads`):
   `CheckAuthorizationRevision` catches it because it re-resolves every
   permission before it compares revisions at all.
 
+## A derived role, and why it is not grantable
+
+`roles.derived_from` marks a role THIS HOST derived and owns, rather than one
+anybody authored: its permissions are a solution's declared consumption for ONE
+module it reaches, intersected with the role an administrator chose, and it is
+granted at that module's authority-root node with
+`scope_grants.derived_from_grant_id` naming the grant that caused it
+(`business/derived_module_access.go`;
+[../../MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md#a-grant-of-a-solution-carries-the-module-access-it-declares-it-consumes)
+carries the argument).
+
+It changes nothing in the decision above: a derived grant is an ordinary
+`scope_grants` row and `CheckAccess`, `ListAccessibleScopes` and
+`ListAccessibleResourceIDs` resolve it exactly as they resolve any other, so
+there is no second answer to "what does this viewer reach".
+
+What is different is that it may be conferred ONLY by the derivation. A derived
+role granted at some other node, or organisation-wide, would hand a subject the
+module reach of a solution they hold no installation grant on — the property the
+derivation exists to deny. So `ListRoles` hides it (no picker offers it),
+`GrantScope` refuses it unless the write names a cause, `AssignRole` and
+`ShareRecord` refuse it, `UpdateRole` and `DeleteRole` refuse it, `CreateRole`
+cannot mint one, and the role catalog importer leaves it alone.
+
 ## Deferred
 
 Boundary-level RLS inside module stores (an `app.current_boundaries` GUC) stays

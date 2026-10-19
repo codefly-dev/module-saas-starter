@@ -214,6 +214,13 @@ func readinessProto(readiness business.InstallationReadiness) *gen.InstallationR
 	return &gen.InstallationReadiness{Ready: readiness.Ready, Unmet: unmet}
 }
 
+// readinessConditionsProto carries a bare condition list — the one a grant
+// returns for what it could not carry — through the same mapping the readiness
+// verdict uses, so the two can never word the same condition differently.
+func readinessConditionsProto(conditions []business.ReadinessCondition) []*gen.ReadinessCondition {
+	return readinessProto(business.InstallationReadiness{Unmet: conditions}).GetUnmet()
+}
+
 // ListOrganizationInstallations serves an organization administrator's view of
 // its own organization's installations. Authenticated and org-admin, exactly as
 // ListAvailableSolutions is: the organization is a request field, and it is
@@ -281,12 +288,30 @@ func (s *InstallationServer) GrantInstallationToTeam(
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
 		return nil, err
 	}
-	grant, err := service.GrantInstallationToTeam(ctx, actorID,
+	granted, err := service.GrantInstallationToTeam(ctx, actorID,
 		req.GetOrgId(), req.GetInstallationId(), req.GetTeamId(), req.GetRoleId())
 	if err != nil {
 		return nil, mapInstallationExposureError(err)
 	}
-	return &gen.GrantInstallationToTeamResponse{Grant: grant}, nil
+	// What the grant CARRIED, and where it carried nothing, travel back with the
+	// grant. An administrator who has just exposed a solution learns here that a
+	// module it reaches holds nothing — instead of a person learning it later as
+	// a bare Forbidden on a page, which is the trail this replaces.
+	carried := make([]*gen.CarriedModuleAccess, 0, len(granted.Carried))
+	for _, entry := range granted.Carried {
+		carried = append(carried, &gen.CarriedModuleAccess{
+			Audience:       entry.Audience,
+			InstallationId: entry.InstallationID,
+			ScopePath:      entry.ScopePath,
+			RoleId:         entry.RoleID,
+			Scopes:         entry.Scopes,
+		})
+	}
+	return &gen.GrantInstallationToTeamResponse{
+		Grant:   granted.Grant,
+		Carried: carried,
+		Unmet:   readinessConditionsProto(granted.Unmet),
+	}, nil
 }
 
 // RevokeInstallationFromTeam removes a team's grant at an installation. It is a
