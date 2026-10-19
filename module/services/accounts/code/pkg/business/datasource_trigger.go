@@ -511,7 +511,7 @@ func (s *Service) SourceTriggerIdentities(ctx context.Context, orgID, sourceID s
 			BoundOrg:    delegation.OrgID,
 		})
 		if authErr == nil && authority != nil {
-			if binding, current := authority.Grant.currentSourceDelegationBinding(delegation); current {
+			if binding, state := authority.Grant.currentSourceDelegationBinding(delegation); state == sourceDelegationBindingOK {
 				reference.Audience = binding.Audience
 				reference.Scopes = operationScopeGrants(binding.SourceDelegationScopes)
 			}

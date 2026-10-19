@@ -281,9 +281,12 @@ func (s *Service) WorkContextOperationBinding(ctx context.Context, orgID, bindin
 		if err != nil {
 			return err
 		}
-		granted, current := delegator.Grant.currentSourceDelegationBinding(delegation)
-		if !current {
+		granted, state := delegator.Grant.currentSourceDelegationBinding(delegation)
+		switch state {
+		case sourceDelegationBindingChanged:
 			return ErrSourceDelegationContextStale
+		case sourceDelegationBindingUnavailable:
+			return ErrSourceDelegationBindingUnavailable
 		}
 		if usedBy != delegation.ModulePrefix && usedBy != granted.Audience {
 			return ErrNoOperationBinding

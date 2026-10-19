@@ -375,6 +375,13 @@ seal's whole value is that a callee's verdict and an issuance cannot disagree.
   module's installation is inactive, the delegation behind a binding is stale. The capability is revoked; its holder mints
   again and does not retry.
 - `UNAVAILABLE` — nothing was decided. A lookup failed; a retry may succeed.
+  A source delegation whose binding is not visible in the view a call resolved
+  is this, not a decision: the organisation's consent may not carry the binding,
+  or the registry may have been replaced mid-call, and neither says anything
+  durable about what a person delegated. **Only a binding that is still declared
+  and genuinely different revokes the delegation.** Conflating the two destroyed
+  a grant nine seconds after it was recorded, with an unchanged digest, and
+  every retry recreated it for the next call to destroy.
 - The three absence states above are neither: a verifier turns each into a
   refusal of the capability. An `UNSPECIFIED` state is a host that said nothing,
   which a client refuses on.
