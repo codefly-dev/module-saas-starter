@@ -90,10 +90,15 @@ type SourceDelegation struct {
 	ModulePrefix  string
 	BindingID     string
 	BindingDigest string
-	CreatedAt     time.Time
-	RevokedAt     *time.Time
-	RevokedReason string
-	RevokedBy     string
+	// ConsentedAudience and ConsentedScopes are what the person actually
+	// agreed to, recorded at connect time. Empty on a row written before they
+	// existed, which keeps exactly the digest rule it was written under.
+	ConsentedAudience string
+	ConsentedScopes   []ModuleOperationScope
+	CreatedAt         time.Time
+	RevokedAt         *time.Time
+	RevokedReason     string
+	RevokedBy         string
 }
 
 // Active reports whether the delegation has not been revoked.
@@ -266,9 +271,34 @@ func (g ModulePrincipalGrant) currentSourceDelegationBinding(delegation *SourceD
 		// the person's grant.
 		return ModuleOperationAudience{}, sourceDelegationBindingUnavailable
 	}
-	if SourceDelegationBindingDigest(binding) != delegation.BindingDigest {
-		// Declared, usable, and different from what the person delegated. This
-		// is the one durable answer, and the only one that revokes.
+	if SourceDelegationBindingDigest(binding) == delegation.BindingDigest {
+		return binding, sourceDelegationBindingOK
+	}
+	// The binding moved. That is not by itself a reason to revoke.
+	//
+	// The digest covers the WHOLE binding, so comparing it alone revoked on
+	// every edit to what the module asks for — including a NARROWING, which
+	// can never need consent because it is strictly less authority. A module
+	// asking for one action more therefore re-authorized every person who had
+	// ever connected a source, and the only remedy this product offers is a
+	// reconnect. One module upgrade meant everybody reconnects.
+	//
+	// Consent is about one question: is the binding now asking for MORE than
+	// this person agreed to? Same or narrower is honoured — at the NARROWER
+	// set, which is the live binding, so the person never gets more than they
+	// agreed to and never less than the module still asks for. Wider revokes,
+	// exactly as before.
+	if delegation.ConsentedAudience == "" && delegation.ConsentedScopes == nil {
+		// Recorded before consent was kept. Nothing to compare against, so the
+		// old rule stands rather than being guessed around.
+		return ModuleOperationAudience{}, sourceDelegationBindingChanged
+	}
+	if binding.Audience != delegation.ConsentedAudience {
+		// A different destination is a different delegation, whatever the
+		// scopes say.
+		return ModuleOperationAudience{}, sourceDelegationBindingChanged
+	}
+	if !operationScopesSubset(binding.SourceDelegationScopes, delegation.ConsentedScopes) {
 		return ModuleOperationAudience{}, sourceDelegationBindingChanged
 	}
 	return binding, sourceDelegationBindingOK
@@ -406,6 +436,9 @@ func (s *Service) recordSourceDelegationsTx(
 			ModulePrefix:  target.Prefix,
 			BindingID:     target.BindingID,
 			BindingDigest: SourceDelegationBindingDigest(target.Binding),
+			// Kept beside the digest so a later narrowing is honoured.
+			ConsentedAudience: target.Binding.Audience,
+			ConsentedScopes:   cloneOperationScopes(target.Binding.SourceDelegationScopes),
 		}
 		if err := s.store.InsertSourceDelegation(ctx, delegation); err != nil {
 			return recorded, fmt.Errorf("record source delegation: %w", err)
