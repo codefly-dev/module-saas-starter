@@ -2,7 +2,9 @@ package infra
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"accounts/pkg/business"
@@ -17,7 +19,8 @@ import (
 // for the caller to compare) rather than trusting the policy to.
 
 const sourceDelegationColumns = `id::text, org_id::text, source_id::text, principal_id::text, module_prefix,
-	binding_id, binding_digest, created_at, revoked_at, COALESCE(revoked_reason, ''), COALESCE(revoked_by::text, '')`
+	binding_id, binding_digest, COALESCE(consented_audience, ''), COALESCE(consented_scopes, 'null'::jsonb),
+	created_at, revoked_at, COALESCE(revoked_reason, ''), COALESCE(revoked_by::text, '')`
 
 func scanSourceDelegations(rows pgx.Rows) ([]*business.SourceDelegation, error) {
 	defer rows.Close()
@@ -25,9 +28,18 @@ func scanSourceDelegations(rows pgx.Rows) ([]*business.SourceDelegation, error) 
 	for rows.Next() {
 		var d business.SourceDelegation
 		var revokedAt *time.Time
+		var consentedScopes []byte
 		if err := rows.Scan(&d.ID, &d.OrgID, &d.SourceID, &d.PrincipalID, &d.ModulePrefix,
-			&d.BindingID, &d.BindingDigest, &d.CreatedAt, &revokedAt, &d.RevokedReason, &d.RevokedBy); err != nil {
+			&d.BindingID, &d.BindingDigest, &d.ConsentedAudience, &consentedScopes,
+			&d.CreatedAt, &revokedAt, &d.RevokedReason, &d.RevokedBy); err != nil {
 			return nil, err
+		}
+		// A row written before consent was recorded decodes to nil, which the
+		// check reads as "nothing to compare" and answers with the old rule.
+		if len(consentedScopes) > 0 {
+			if err := json.Unmarshal(consentedScopes, &d.ConsentedScopes); err != nil {
+				return nil, fmt.Errorf("source delegation %s: consented scopes do not decode: %w", d.ID, err)
+			}
 		}
 		d.RevokedAt = revokedAt
 		out = append(out, &d)
@@ -37,10 +49,12 @@ func scanSourceDelegations(rows pgx.Rows) ([]*business.SourceDelegation, error) 
 
 func (s *PostgresStore) InsertSourceDelegation(ctx context.Context, d *business.SourceDelegation) error {
 	return s.getQueryExecutor(ctx).QueryRow(ctx, `
-		INSERT INTO source_delegations (id, org_id, source_id, principal_id, module_prefix, binding_id, binding_digest)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7)
+		INSERT INTO source_delegations (id, org_id, source_id, principal_id, module_prefix, binding_id, binding_digest,
+			consented_audience, consented_scopes)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, NULLIF($8, ''), $9::jsonb)
 		RETURNING created_at`,
-		d.ID, d.OrgID, d.SourceID, d.PrincipalID, d.ModulePrefix, d.BindingID, d.BindingDigest).Scan(&d.CreatedAt)
+		d.ID, d.OrgID, d.SourceID, d.PrincipalID, d.ModulePrefix, d.BindingID, d.BindingDigest,
+		d.ConsentedAudience, consentedScopesJSON(d.ConsentedScopes)).Scan(&d.CreatedAt)
 }
 
 func (s *PostgresStore) RevokeSourceDelegations(
@@ -186,4 +200,18 @@ func (s *PostgresStore) SourceDelegationMemberRole(ctx context.Context, orgID, u
 		return "", nil
 	}
 	return role, err
+}
+
+// consentedScopesJSON encodes what the person agreed to for the row, or NULL
+// when nothing was recorded — which the check reads as "compare by digest", the
+// rule every row written before this column was written under.
+func consentedScopesJSON(scopes []business.ModuleOperationScope) any {
+	if scopes == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(scopes)
+	if err != nil {
+		return nil
+	}
+	return string(encoded)
 }

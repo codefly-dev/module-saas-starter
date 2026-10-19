@@ -12,6 +12,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -1236,6 +1237,16 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 // acts directly — and returns them, or nil when none were requested (the chain
 // is re-issued as it stands). Widening is refused here, before anything is
 // minted, rather than left for core's derivation to refuse with less to say.
+// attenuateEffective bounds requested — an installed binding's or a renewal's
+// declared scopes, which are policy CEILINGS — by what the parent actually
+// carries. A ceiling that names no resource ids over a parent narrowed to some
+// keeps the parent's ids: a module that minted its parent at the least
+// authority it needs (one model profile, one collection) is not refused for
+// having been careful. A module did exactly that — a parent of a read on one
+// profile, redeemed through a binding whose lookup ceiling is the kind — and
+// every turn was refused "widens authority" before the first model call. Only
+// a kind, an action or an id the parent never
+// carried is a widening, and that stays refused by name.
 func attenuateEffective(parent *basev0.WorkContextV1, requested []*basev0.WorkScopeV1) ([]*basev0.WorkScopeV1, error) {
 	if len(requested) == 0 {
 		return nil, nil
@@ -1244,10 +1255,43 @@ func attenuateEffective(parent *basev0.WorkContextV1, requested []*basev0.WorkSc
 	if chain := parent.GetActorChain(); len(chain) > 0 {
 		effective = chain[len(chain)-1].GetGrantedScopes()
 	}
-	if !workcontext.ScopesAttenuate(requested, effective) {
-		return nil, status.Error(codes.InvalidArgument, "audience exchange widens authority")
+	attenuated := make([]*basev0.WorkScopeV1, 0, len(requested))
+	for _, scope := range requested {
+		if workcontext.ScopeContained(scope, effective) {
+			attenuated = append(attenuated, scope)
+			continue
+		}
+		narrowed := narrowToParentIDs(scope, effective)
+		if narrowed == nil || !workcontext.ScopeContained(narrowed, effective) {
+			return nil, status.Errorf(codes.InvalidArgument, "audience exchange widens authority: the parent does not carry %s:%s", scope.GetResourceKind(), strings.Join(scope.GetActions(), ","))
+		}
+		attenuated = append(attenuated, narrowed)
 	}
-	return requested, nil
+	return attenuated, nil
+}
+
+// narrowToParentIDs is the one narrowing attenuation performs itself: a
+// kind-wide ceiling takes the resource ids the parent holds for that kind. It
+// reads the parent the way core's ScopeContained does — the first scope of the
+// kind — so what it returns is exactly what that check then verifies. nil when
+// the ceiling already names ids or the parent holds the kind unrestricted or
+// not at all.
+func narrowToParentIDs(scope *basev0.WorkScopeV1, effective []*basev0.WorkScopeV1) *basev0.WorkScopeV1 {
+	if len(scope.GetResourceIds()) != 0 {
+		return nil
+	}
+	for _, held := range effective {
+		if held.GetResourceKind() != scope.GetResourceKind() {
+			continue
+		}
+		if len(held.GetResourceIds()) == 0 {
+			return nil
+		}
+		narrowed := proto.Clone(scope).(*basev0.WorkScopeV1)
+		narrowed.ResourceIds = slices.Clone(held.GetResourceIds())
+		return narrowed
+	}
+	return nil
 }
 
 // StartChildSession delegates one more hop from a verified parent. The child's

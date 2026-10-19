@@ -143,6 +143,8 @@ func (s *WorkContextAuthorityServer) resolveWorkContextAuthority(
 		return s.answerAuthorizationRevision(ctx, tenant, claims, question.AuthorizationRevision)
 	case *gen.ModuleResolveWorkContextAuthorityRequest_ApprovalGrant:
 		return s.answerApprovalGrant(ctx, tenant, claims, question.ApprovalGrant)
+	case *gen.ModuleResolveWorkContextAuthorityRequest_ApprovedBuild:
+		return s.answerApprovedBuild(question.ApprovedBuild)
 	default:
 		// Unreachable while the schema requires the oneof, and answered rather
 		// than panicked on: a question this host does not understand is a
@@ -450,4 +452,45 @@ func unansweredWorkContextAuthority(ctx context.Context, question string, err er
 		return status.Error(codes.FailedPrecondition, errRefusedWorkContextAuthority)
 	}
 	return status.Error(codes.Unavailable, errUnansweredWorkContextAuthority)
+}
+
+// answerApprovedBuild answers the one question this host no longer has a record
+// behind: which execution it APPROVES for a principal.
+//
+// core carried an approved-build seal until v0.19.6 removed the concept — a
+// capability is no longer verified against the image its holder runs — so this
+// host approves no build for anybody, and `bears no execution` is the true
+// answer for every principal rather than a stand-in for one.
+//
+// It is answered rather than left to the switch's default because a consumer
+// still built against a core that asks is not wrong to ask. Falling through
+// gave it "no work context authority question was asked", which core reports as
+// the PARENT failing to verify — so a module one core version behind refused
+// every call with an error naming the caller's authority and never the skew.
+//
+// Measured on a validation cell: every chat route refused, for every person,
+// for hours, with "caller does not hold the required authority". Nothing was
+// wrong with anyone's authority; two repositories disagreed about whether a
+// question exists.
+//
+// `bears no execution` is also the SAFE answer, which is why it can be given
+// without a record: core's check reads it as "this principal bears no
+// execution the issuer approves", and a capability that nonetheless carries one
+// is REVOKED rather than admitted (checkExecutionAgainst). So a caller that
+// seals an execution still fails closed; only a caller that seals none — which
+// is every capability this host now mints — proceeds.
+func (s *WorkContextAuthorityServer) answerApprovedBuild(
+	question *gen.WorkContextApprovedBuildQuestion,
+) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
+	if question.GetPrincipalId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "approved build question names no principal")
+	}
+	return &gen.ModuleResolveWorkContextAuthorityResponse{
+		Answer: &gen.ModuleResolveWorkContextAuthorityResponse_ApprovedBuild{
+			ApprovedBuild: &gen.WorkContextApprovedBuildAnswer{
+				State:       gen.WorkContextApprovedBuildState_WORK_CONTEXT_APPROVED_BUILD_STATE_BEARS_NO_EXECUTION,
+				PrincipalId: question.GetPrincipalId(),
+			},
+		},
+	}, nil
 }

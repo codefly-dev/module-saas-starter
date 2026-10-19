@@ -13,7 +13,13 @@ import (
 // A nil scope on an INSTALL request means the full current ceiling; the store
 // always persists the resulting explicit scope, never a wildcard or a default.
 type InstallationScope struct {
-	Capabilities       bool                                `json:"capabilities"`
+	Capabilities bool `json:"capabilities"`
+	// Follows marks a scope that narrows nothing: the installation holds its
+	// module's grant (envelope ∩ manifest) as it moves. A module install records
+	// it; a person who narrows writes the axes out and clears it. It replaced
+	// the snapshot of the whole grant an install used to freeze here, which lost
+	// every operation a later generation declared until a person rewrote the row.
+	Follows            bool                                `json:"follows,omitempty"`
 	Queues             []string                            `json:"queues,omitempty"`
 	Namespaces         []string                            `json:"namespaces,omitempty"`
 	ExternalNamespaces []string                            `json:"external_namespaces,omitempty"`
@@ -26,8 +32,8 @@ type InstallationScope struct {
 // FullInstallationScope copies the delivered authority already bounded by the
 // envelope. No identity, workload, tenancy or cross_tenant field is installable.
 func FullInstallationScope(g ModulePrincipalGrant) InstallationScope {
-	s := InstallationScope{true, g.Queues, g.Namespaces, g.ExternalNamespaces, g.Resources,
-		g.ReadAudiences, g.OperationAudiences, g.ArtifactPolicies}
+	s := InstallationScope{Capabilities: true, Queues: g.Queues, Namespaces: g.Namespaces, ExternalNamespaces: g.ExternalNamespaces, Resources: g.Resources,
+		ReadAudiences: g.ReadAudiences, OperationAudiences: g.OperationAudiences, ArtifactPolicies: g.ArtifactPolicies}
 	raw, _ := json.Marshal(s)
 	var out InstallationScope
 	_ = json.Unmarshal(raw, &out)
@@ -91,7 +97,19 @@ func readOperationScopes(scopes []ModuleReadScope) []ModuleOperationScope {
 // intersectInstallationScope never mutates the registry snapshot. Bindings,
 // actions AND resource IDs remain bounded even if the envelope shrank after an
 // installation was written. Empty intersections remove the binding altogether.
+// ResolveInstallationScope spells a following scope out as the grant it
+// follows, so a narrowing is checked against what the installation holds today.
+func ResolveInstallationScope(scope, full InstallationScope) InstallationScope {
+	if scope.Follows {
+		return full
+	}
+	return scope
+}
+
 func intersectInstallationScope(g ModulePrincipalGrant, consent InstallationScope) ModulePrincipalGrant {
+	if consent.Follows {
+		return g
+	}
 	out := g
 	out.Queues = keepDeclared(g.Queues, consent.Queues)
 	out.Namespaces = keepDeclared(g.Namespaces, consent.Namespaces)

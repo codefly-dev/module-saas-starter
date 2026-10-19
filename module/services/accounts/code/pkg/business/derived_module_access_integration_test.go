@@ -282,7 +282,12 @@ func TestAGrantOfASolutionCarriesOnlyWhatItDeclaresItConsumes(t *testing.T) {
 	require.Equal(t, w.reachedAlias, carried.GetAudience())
 	require.Equal(t, w.reached, carried.GetInstallationId())
 	require.Equal(t, w.reachedRoot, carried.GetScopePath())
-	require.Equal(t, []string{carryKind + ":" + carryAction}, carried.GetScopes())
+	// The reach permission first, then what the solution declares: reaching a
+	// module through this host is authorized separately from what the call then
+	// does, and a derived role without `solution:use` was measured inert on a
+	// validation cell — three derived grants, every route they were meant to
+	// open answered Forbidden.
+	require.Equal(t, []string{business.ResourceTypeSolution + ":" + business.ActionUseSolution, carryKind + ":" + carryAction}, carried.GetScopes())
 	require.Empty(t, granted.GetUnmet())
 
 	// The derived grant names its cause, so a surface showing it can say why it
@@ -325,9 +330,18 @@ func TestAGrantOfASolutionCarriesOnlyWhatItDeclaresItConsumes(t *testing.T) {
 	// through the match every authority decision resolves a role with.
 	require.True(t, rolePermits(t, w.org, carried.GetRoleId(), carryKind, carryAction))
 	require.False(t, rolePermits(t, w.org, carried.GetRoleId(), carryKind, "write"))
-	require.False(t, rolePermits(t, w.org, carried.GetRoleId(),
+	// It DOES carry the reach permission — at the reached module's own
+	// authority root, which is the only node this grant lands on. Reaching a
+	// module through this host is authorized by (solution, use) at that
+	// module's installation root, separately from what the call then does;
+	// this assertion used to require the opposite, and a derived role built to
+	// it was measured inert on a validation cell: three derived grants, every
+	// route they were meant to open answered Forbidden. "Not a solution role"
+	// still holds in the sense that matters — the grant confers reach into
+	// ONE module and nothing beyond what the solution declares there.
+	require.True(t, rolePermits(t, w.org, carried.GetRoleId(),
 		business.ResourceTypeSolution, business.ActionUseSolution),
-		"a derived role is not a solution role: it confers reach into one module and nothing else")
+		"a derived role carries the reach permission at the module it opens, or it opens nothing")
 }
 
 // A role that permits none of what the solution consumes there carries nothing,

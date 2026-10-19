@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/codefly-dev/core/wool"
+
 	modulecontract "github.com/codefly-dev/core/contracts/module"
 	"github.com/codefly-dev/core/solutionhost"
 )
@@ -554,12 +556,73 @@ func deriveModulePrincipalGrant(
 	}
 	grant.ExternalNamespaces = keepDeclared(ceiling.ExternalNamespaces, grant.Namespaces)
 
+	// A manifest that asks for nothing on every axis published no contract: a
+	// generic module whose work is the composition's — the runtime, whose
+	// operations are the installations Codefly prepares for it, and whose
+	// contract therefore cannot name them. The envelope is the owner's written
+	// consent for this cell, so for such a module it stands whole: the ceiling
+	// is the grant, and nothing the owner did not write is granted. A manifest
+	// that asks is held to the intersection below, as before.
+	if asksNothing(request) {
+		grant.Queues, grant.Namespaces, grant.Resources = slices.Clone(ceiling.Queues), slices.Clone(ceiling.Namespaces), slices.Clone(ceiling.Resources)
+		grant.ExternalNamespaces = keepDeclared(ceiling.ExternalNamespaces, grant.Namespaces)
+		if len(ceiling.OperationAudiences) > 0 {
+			grant.OperationAudiences = maps.Clone(ceiling.OperationAudiences)
+		}
+		wool.Get(context.Background()).In("deriveModulePrincipalGrant").Info(
+			"the manifest publishes no contract, so the envelope stands whole for this module",
+			wool.Field("module", prefix), wool.Field("manifest", manifest.Binding), wool.Field("generation", manifest.Generation))
+		if err := ValidateModulePrincipalGrant(prefix, grant); err != nil {
+			return ModulePrincipalGrant{}, nil, err
+		}
+		return grant, nil, nil
+	}
+
 	var omitted []error
 	omit := func(id string, err error) {
 		omitted = append(omitted, ModuleBindingOmission{
 			Prefix: prefix, BindingID: id, Manifest: manifest.Binding, Generation: manifest.Generation, Reason: err,
 		})
 	}
+	// What the manifest declared and the envelope does not allow, SAID — for
+	// the three dimensions above, which until now narrowed in silence.
+	//
+	// `keepDeclared` is an intersection, so an envelope that simply does not
+	// mention a dimension removes it entirely. That is the right ceiling and
+	// the wrong silence: a module whose content resource kinds the envelope
+	// omits serves no content at all, to anybody, for ever, and the only
+	// symptom is every read refused with a message about the CALLER's scopes.
+	// A whole night of a staging diagnosis went into recovering that fact,
+	// which this pass already held at the moment it dropped it.
+	//
+	// LOGGED, not joined into the pass's error. These are not refusals of a
+	// binding: the pass's error is what a caller reads as "this derivation did
+	// not complete", and a cell where several modules declare a content kind
+	// the envelope never listed would fail every pass for ever — which is
+	// exactly what the first version of this did, and it froze the registry at
+	// whatever it had last derived. The ceiling is unchanged either way; only
+	// the operator's log gains the reason.
+	for _, dimension := range []struct {
+		name     string
+		declared []string
+		kept     []string
+	}{
+		{"queue", request.Queues, grant.Queues},
+		{"audit namespace", request.Namespaces, grant.Namespaces},
+		{"content resource kind", request.ResourceKinds, grant.Resources},
+	} {
+		for _, asked := range dimension.declared {
+			if slices.Contains(dimension.kept, asked) {
+				continue
+			}
+			wool.Get(context.Background()).In("deriveModulePrincipalGrant").Warn(
+				"the envelope allows none of a dimension this manifest declares, so this module holds none of it",
+				wool.Field("module", prefix), wool.Field("dimension", dimension.name),
+				wool.Field("declared", asked), wool.Field("manifest", manifest.Binding),
+				wool.Field("generation", manifest.Generation))
+		}
+	}
+
 	for _, asked := range request.Bindings {
 		allowed, inside := ceiling.OperationAudiences[asked.ID]
 		switch {
@@ -610,6 +673,13 @@ func deriveModulePrincipalGrant(
 
 // keepDeclared is allowed narrowed to what declared also names, in allowed's
 // order.
+// asksNothing reports a manifest authority that requests nothing on any axis:
+// no binding, queue, namespace or resource kind — the shape of a module that
+// published no contract.
+func asksNothing(request *solutionhost.Authority) bool {
+	return request == nil || len(request.Bindings) == 0 && len(request.Queues) == 0 && len(request.Namespaces) == 0 && len(request.ResourceKinds) == 0
+}
+
 func keepDeclared(allowed, declared []string) []string {
 	var kept []string
 	for _, value := range allowed {

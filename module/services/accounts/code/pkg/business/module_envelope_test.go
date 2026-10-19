@@ -270,11 +270,37 @@ func TestAManifestAskingForNoOperationGrantsNoConsumedOperations(t *testing.T) {
 	require.NoError(t, err)
 	grant, omitted, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix], testManifest(t, nil), []ModuleWorkload{testWorkload})
 	require.NoError(t, err)
-	require.Empty(t, omitted)
 	require.Empty(t, grant.OperationAudiences)
 	require.Empty(t, grant.Queues)
 	require.Empty(t, grant.Namespaces)
 	require.Empty(t, grant.Resources)
 	require.Empty(t, grant.ReadAudiences)
 	require.True(t, grant.CrossTenant)
+	// The ceiling is unchanged: this envelope allows none of what the manifest
+	// declares, and the grant holds none of it.
+	//
+	// The removals are REPORTED, but to the operator's log rather than through
+	// `omitted` — the pass's error is what a caller reads as "this derivation
+	// did not complete", and a cell where several modules declare a content
+	// kind the envelope never listed would otherwise fail every pass for ever
+	// and freeze the registry at whatever it last derived. That is a measured
+	// regression, not a hypothetical.
+	require.Empty(t, omitted, "a dimension the envelope does not allow is logged, never a refusal of the pass")
+}
+
+// A manifest that asks for nothing on any axis published no contract — the
+// shape of a module whose operations the composition prepares for it. For it
+// the envelope, the owner's written consent, stands whole.
+func TestAContractlessManifestHoldsTheEnvelopeWhole(t *testing.T) {
+	envelope := parseTestEnvelope(t)
+	manifest := testManifest(t, map[string][]string{"invoke": {"profiles:read"}})
+	manifest.Authority = &solutionhost.Authority{Principal: testModulePrefix}
+	grant, omitted, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix], manifest, []ModuleWorkload{testWorkload})
+	require.NoError(t, err)
+	require.Empty(t, omitted)
+	ceiling := envelope.Principals[testModulePrefix].Grant
+	require.Equal(t, ceiling.Queues, grant.Queues)
+	require.Equal(t, ceiling.Namespaces, grant.Namespaces)
+	require.Equal(t, ceiling.Resources, grant.Resources)
+	require.Equal(t, ceiling.OperationAudiences, grant.OperationAudiences)
 }

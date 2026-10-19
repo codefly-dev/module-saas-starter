@@ -1453,26 +1453,57 @@ func (s *Service) ReconnectDatasourceSource(ctx context.Context, actorID, orgID,
 	if err != nil {
 		return "", err
 	}
-	if source.Provider != DatasourceProviderGitHub || source.GitHubCredentialKind != githubCredentialKindPublic {
+	// A source that HOLDS a credential reaffirms it; it is not made to replace
+	// a secret this host already keeps.
+	//
+	// This used to refuse outright — "reconnect it with a replacement PAT" —
+	// and the reason given was a race: the credential could be swapped between
+	// the read and the delegation, so the delegation would cover a secret
+	// nobody consented to. That race is real, and the row lock below is what
+	// closes it: inside WithOrgTx the credential ref cannot move, so whatever
+	// it is when the delegation is recorded IS the credential the delegation
+	// covers. The refusal was guarding a window the lock had already shut.
+	//
+	// The cost of that refusal is not theoretical. A module's delegation scope
+	// ceiling moving — a module asking for one action more — invalidates every
+	// delegation recorded under the old one, and the ONLY remedy the product
+	// offers is this reconnect. Making it demand a secret the host is already
+	// holding turns a routine module upgrade into "every person who connected
+	// a source must find their PAT again", and on a validation cell it stopped
+	// an ingest dead with the credential sitting in the row the whole time.
+	//
+	// What is still refused: a source whose credential is GONE and whose
+	// repository GitHub will not serve anonymously. That is a real loss of
+	// authority and a replacement is the only answer.
+	if source.Provider != DatasourceProviderGitHub {
 		return "", status.Error(codes.FailedPrecondition,
-			"This source holds a saved credential. Reconnect it with a replacement PAT, or move it to the GitHub App.")
+			"This source's provider does not support reaffirming a saved credential. Reconnect it with a replacement credential.")
 	}
-	public, err := s.resolvePublicGitHubRepository(ctx, source.Repo, source.Branch)
-	if err != nil {
-		return "", err
-	}
-	if !public {
-		return "", status.Error(codes.FailedPrecondition,
-			"GitHub no longer serves this repository without a credential. Reconnect it with a repository-scoped fine-grained PAT.")
+	holdsCredential := source.GitHubCredentialKind != githubCredentialKindPublic
+	if !holdsCredential {
+		public, err := s.resolvePublicGitHubRepository(ctx, source.Repo, source.Branch)
+		if err != nil {
+			return "", err
+		}
+		if !public {
+			return "", status.Error(codes.FailedPrecondition,
+				"GitHub no longer serves this repository without a credential. Reconnect it with a repository-scoped fine-grained PAT.")
+		}
 	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		// Under the lock the ref cannot move, so this compares what the caller
+		// was shown with what the delegation will actually cover.
 		ref, err := s.store.LockDatasourceSourceCredentialRef(ctx, orgID, id)
 		if err != nil {
 			return err
 		}
-		if ref != "" {
+		switch {
+		case holdsCredential && ref == "":
 			return status.Error(codes.FailedPrecondition,
-				"This source was given a credential while it was being reconnected. Reconnect it with a replacement PAT.")
+				"This source's credential was removed while it was being reconnected. Reconnect it with a replacement PAT.")
+		case !holdsCredential && ref != "":
+			return status.Error(codes.FailedPrecondition,
+				"This source was given a credential while it was being reconnected. Press Reconnect again to reaffirm it.")
 		}
 		return s.recordSourceDelegationsOnConnectTx(ctx, actorID, orgID, source.ID)
 	}); err != nil {

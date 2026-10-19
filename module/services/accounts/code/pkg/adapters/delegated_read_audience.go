@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/codefly-dev/core/wool"
+
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -119,6 +121,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	parent := verified
 	var actor *business.Principal
 	audit := func(outcome, audience string, exchangeErr error) {
+		logDelegatedAudienceRefusal(ctx, request, audience, exchangeErr)
 		service.ObserveDelegatedAudienceExchange(ctx, business.DelegatedAudienceExchangeObservation{
 			Caller:      caller,
 			OwnerID:     parent.OwnerPrincipalId,
@@ -266,6 +269,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 	// which is why a refusal here is still a complete record.
 	granted := business.SourceOperationContextAuthority{}
 	audit := func(outcome string, exchangeErr error) {
+		logDelegatedAudienceRefusal(ctx, request, granted.Audience, exchangeErr)
 		service.ObserveDelegatedAudienceExchange(ctx, business.DelegatedAudienceExchangeObservation{
 			Caller:       caller,
 			OwnerID:      granted.OwnerPrincipalID,
@@ -340,6 +344,20 @@ func delegatedAudienceActorID(parent *basev0.WorkContextV1) string {
 		return parent.GetOwnerPrincipalId()
 	}
 	return actors[len(actors)-1].GetPrincipalId()
+}
+
+// logDelegatedAudienceRefusal records WHY an exchange was refused. The audit
+// row keeps the status code alone and the caller is told a bare code, which left
+// a refused turn with no record of its reason anywhere: a module saw
+// "operation exchange failed (invalid_argument)" and nothing named the scope. A
+// gRPC status message carries no credential — the parent never reaches an error.
+func logDelegatedAudienceRefusal(ctx context.Context, request delegatedAudienceRequest, audience string, err error) {
+	if err == nil {
+		return
+	}
+	wool.Get(ctx).In("ModuleCapabilities.exchangeDelegatedAudience").Warn("module operation exchange refused",
+		wool.Field("binding", request.bindingID), wool.Field("kind", request.kind), wool.Field("audience", audience),
+		wool.Field("lookup", request.lookup), wool.Field("code", status.Code(err).String()), wool.Field("reason", status.Convert(err).Message()))
 }
 
 func delegatedAudienceRefusalCode(err error) string {

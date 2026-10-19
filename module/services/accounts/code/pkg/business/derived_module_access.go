@@ -189,9 +189,24 @@ func planCarriedModuleAccess(reached []ReachedModule) ([]carriedModuleAccessPlan
 			})
 			continue
 		}
-		if len(module.InvokeScopes) == 0 {
-			continue
-		}
+		// A module declared with NO scopes is still reached, and still needs a
+		// grant.
+		//
+		// This used to `continue` here, silently. The case is a module a
+		// solution calls on the viewer's own bearer and mints no authority
+		// for — the declaration asks for nothing because there is nothing to
+		// ask for, and the consuming runtime refuses to ask. But reaching it
+		// at all is authorized at that module's installation, so with no grant
+		// there every one of its routes is refused and the derivation said
+		// nothing about a module it had quietly skipped.
+		//
+		// Measured on a validation cell: a solution reaching four modules
+		// derived three grants and the fourth module — the one declared with
+		// no scopes — had none, so its whole surface stayed dead with no
+		// readiness condition naming it.
+		//
+		// It is carried with an empty declaration, which carryModuleAccessTx
+		// turns into a role holding the reach permission alone.
 		plans = append(plans, carriedModuleAccessPlan{
 			audience: module.Audience, installationID: module.InstallationID, declared: module.InvokeScopes,
 		})
@@ -262,8 +277,32 @@ func (s *Service) carryModuleAccessTx(
 		if err != nil {
 			return nil, nil, err
 		}
-		permissions := make([]*gen.Permission, 0, len(resources))
-		scopes := make([]string, 0, len(resources))
+		// Every derived role carries the REACH permission, before anything it
+		// declares.
+		//
+		// Reaching a module through this host is authorized separately from
+		// what the call then does: the proxy admits a module route only for a
+		// viewer entitled to that module's installation, and entitlement is
+		// (ResourceTypeSolution, ActionUseSolution) at the installation's own
+		// authority root. The declared scopes answer "what may this call do",
+		// never "may this caller reach it at all".
+		//
+		// Without it every derived grant was INERT: measured on a validation
+		// cell, three derived grants carried exactly the declared module
+		// scopes, read correctly in the administrator's listing, and every
+		// route they were supposed to open answered Forbidden — because the
+		// one permission that opens a module was in neither the declaration
+		// nor the derivation.
+		//
+		// It is not taken from the chosen role and not intersected with it.
+		// The administrator granting the solution is what authorizes reaching
+		// what the solution reaches; that is the decision this derivation
+		// exists to carry, and a chosen role that happens not to spell
+		// `solution:use` is not a decision to withhold it.
+		permissions := make([]*gen.Permission, 0, len(resources)+1)
+		permissions = append(permissions, &gen.Permission{Resource: ResourceTypeSolution, Action: ActionUseSolution})
+		scopes := make([]string, 0, len(resources)+1)
+		scopes = append(scopes, ResourceTypeSolution+":"+ActionUseSolution)
 		for i, permits := range permitted {
 			if !permits {
 				continue
@@ -276,7 +315,11 @@ func (s *Service) carryModuleAccessTx(
 		// a grant that is written and reveals nothing is the one outcome an
 		// administrator must never be handed — so the refusal reuses that error's
 		// words rather than inventing a second vocabulary for the same mistake.
-		if len(permissions) == 0 {
+		// The reach permission is always present, so "carried nothing" is now
+		// "carried nothing the solution DECLARED" — which is still worth
+		// saying, and still not worth refusing, because the reach alone is
+		// what a module declared with no scopes legitimately carries.
+		if len(permissions) == 1 && len(resources) > 0 {
 			unmet = append(unmet, ReadinessCondition{
 				Kind:    gen.ReadinessConditionKind_READINESS_CONDITION_KIND_CARRIED_MODULE_ACCESS_NOT_DERIVED,
 				Subject: plan.audience,

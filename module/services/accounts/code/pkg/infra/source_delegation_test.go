@@ -584,20 +584,36 @@ func TestSourceDelegation_MissingForASourceConnectedBefore(t *testing.T) {
 
 // A binding whose delegation scopes change after the connect no longer confers
 // what the person delegated; the mint refuses and records why.
-func TestSourceDelegation_BindingChanged(t *testing.T) {
+// A binding that NARROWS what the person delegated is honoured, at the
+// narrower set. The fixture delegates `collections:[read,write]`; the module
+// now asks for `collections:[read]`. Until consent was recorded beside the
+// digest, any digest change revoked the delegation — this exact case included,
+// and this test required it to: a module asking for LESS re-authorized every
+// person who had ever connected a source, and the only remedy the product
+// offers is a reconnect. Consent is about MORE, never less.
+func TestSourceDelegation_BindingNarrowedIsHonouredAtTheNarrowerSet(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
 
-	widened, err := moduleregistrytest.Parse(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"","operation_audiences":{` +
+	narrowed, err := moduleregistrytest.Parse(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"","operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read"]}]}}}}`)
 	require.NoError(t, err)
-	_, err = w.service(t, widened).AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, business.SourceDelegationRef{SourceID: sourceID})
-	require.ErrorIs(t, err, business.ErrSourceDelegationRevoked)
-	require.Equal(t, business.SourceDelegationBindingChanged, w.only(t, w.org, sourceID, delegationModule).RevokedReason)
+	authority, err := w.service(t, narrowed).AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, business.SourceDelegationRef{SourceID: sourceID})
+	require.NoError(t, err, "a narrowing never needs consent: it is strictly less authority")
+	require.True(t, w.only(t, w.org, sourceID, delegationModule).Active(), "the delegation stands")
+	require.Len(t, authority.Scopes, 1)
+	require.Equal(t, "collections", authority.Scopes[0].ResourceKind)
+	require.Equal(t, []string{"read"}, authority.Scopes[0].Actions, "minted at the LIVE, narrower binding — never more than the person agreed to, never less than the module still asks for")
 }
+
+// A WIDENING past what the person delegated revokes — but it cannot be shown
+// here: this world's installation consent caps the live grant at what was
+// installed, so a registry that asks for more never reaches the delegation
+// check with more. Both directions are proven on the decision itself in
+// business (TestABindingNarrowingIsHonouredAndAWideningRevokes).
 
 // publicDelegationGitHub serves every repository to a request with no credential.
 type publicDelegationGitHub struct{ delegationGitHub }
