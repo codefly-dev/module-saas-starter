@@ -54,8 +54,13 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 	params.RegistryBindingID, params.RegistryPrincipalID = target.BindingID, principal
 	params.RouteAlias, params.Kind = target.RouteAlias, target.Kind
 	if params.Scope == nil {
-		full := FullInstallationScope(grant)
-		params.Scope = &full
+		// A module's installation follows its grant until a person narrows it
+		// (intersectInstallationScope); a solution's keeps the consented snapshot.
+		recorded := FullInstallationScope(grant)
+		if params.Kind == "module" {
+			recorded = InstallationScope{Capabilities: true, Follows: true}
+		}
+		params.Scope = &recorded
 	}
 	if err := validateInstallationScope(*params.Scope, grant); err != nil {
 		return nil, NewStoreError(err, ErrTypeValidation)

@@ -287,3 +287,20 @@ func TestAManifestAskingForNoOperationGrantsNoConsumedOperations(t *testing.T) {
 	// regression, not a hypothetical.
 	require.Empty(t, omitted, "a dimension the envelope does not allow is logged, never a refusal of the pass")
 }
+
+// A manifest that asks for nothing on any axis published no contract — the
+// shape of a module whose operations the composition prepares for it. For it
+// the envelope, the owner's written consent, stands whole.
+func TestAContractlessManifestHoldsTheEnvelopeWhole(t *testing.T) {
+	envelope := parseTestEnvelope(t)
+	manifest := testManifest(t, map[string][]string{"invoke": {"profiles:read"}})
+	manifest.Authority = &solutionhost.Authority{Principal: testModulePrefix}
+	grant, omitted, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix], manifest, []ModuleWorkload{testWorkload})
+	require.NoError(t, err)
+	require.Empty(t, omitted)
+	ceiling := envelope.Principals[testModulePrefix].Grant
+	require.Equal(t, ceiling.Queues, grant.Queues)
+	require.Equal(t, ceiling.Namespaces, grant.Namespaces)
+	require.Equal(t, ceiling.Resources, grant.Resources)
+	require.Equal(t, ceiling.OperationAudiences, grant.OperationAudiences)
+}

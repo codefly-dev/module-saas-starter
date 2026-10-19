@@ -556,6 +556,28 @@ func deriveModulePrincipalGrant(
 	}
 	grant.ExternalNamespaces = keepDeclared(ceiling.ExternalNamespaces, grant.Namespaces)
 
+	// A manifest that asks for nothing on every axis published no contract: a
+	// generic module whose work is the composition's — the runtime, whose
+	// operations are the installations Codefly prepares for it, and whose
+	// contract therefore cannot name them. The envelope is the owner's written
+	// consent for this cell, so for such a module it stands whole: the ceiling
+	// is the grant, and nothing the owner did not write is granted. A manifest
+	// that asks is held to the intersection below, as before.
+	if asksNothing(request) {
+		grant.Queues, grant.Namespaces, grant.Resources = slices.Clone(ceiling.Queues), slices.Clone(ceiling.Namespaces), slices.Clone(ceiling.Resources)
+		grant.ExternalNamespaces = keepDeclared(ceiling.ExternalNamespaces, grant.Namespaces)
+		if len(ceiling.OperationAudiences) > 0 {
+			grant.OperationAudiences = maps.Clone(ceiling.OperationAudiences)
+		}
+		wool.Get(context.Background()).In("deriveModulePrincipalGrant").Info(
+			"the manifest publishes no contract, so the envelope stands whole for this module",
+			wool.Field("module", prefix), wool.Field("manifest", manifest.Binding), wool.Field("generation", manifest.Generation))
+		if err := ValidateModulePrincipalGrant(prefix, grant); err != nil {
+			return ModulePrincipalGrant{}, nil, err
+		}
+		return grant, nil, nil
+	}
+
 	var omitted []error
 	omit := func(id string, err error) {
 		omitted = append(omitted, ModuleBindingOmission{
@@ -651,6 +673,13 @@ func deriveModulePrincipalGrant(
 
 // keepDeclared is allowed narrowed to what declared also names, in allowed's
 // order.
+// asksNothing reports a manifest authority that requests nothing on any axis:
+// no binding, queue, namespace or resource kind — the shape of a module that
+// published no contract.
+func asksNothing(request *solutionhost.Authority) bool {
+	return request == nil || len(request.Bindings) == 0 && len(request.Queues) == 0 && len(request.Namespaces) == 0 && len(request.ResourceKinds) == 0
+}
+
 func keepDeclared(allowed, declared []string) []string {
 	var kept []string
 	for _, value := range allowed {
