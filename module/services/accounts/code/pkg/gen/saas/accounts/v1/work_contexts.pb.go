@@ -8,15 +8,16 @@ package accountsv1
 
 import (
 	_ "accounts/pkg/gen/saas/policy/v1"
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
+
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
 )
 
 const (
@@ -950,10 +951,10 @@ type CheckAuthorizationRevisionRequest struct {
 	AuthorizationRevision uint64                        `protobuf:"varint,3,opt,name=authorization_revision,json=authorizationRevision,proto3" json:"authorization_revision,omitempty"`
 	Subjects              []*WorkContextRevisionSubject `protobuf:"bytes,4,rep,name=subjects,proto3" json:"subjects,omitempty"`
 	// operation_binding_id is the operation binding the context sealed, copied
-	// from its operation_binding.binding_id. It is how a consumer says which
-	// authority backs the context's module hops: a binding naming a source
-	// delegation is confirmed against that delegation, any other binding
-	// against the module's own installation.
+	// from its operation_binding.binding_id. A context minted from a source
+	// delegation exercises one (the delegation, used by its actor), and is
+	// confirmed only against that binding, re-read live; such a context checked
+	// without it is not confirmed. Empty for a context that seals none.
 	OperationBindingId *string `protobuf:"bytes,5,opt,name=operation_binding_id,json=operationBindingId,proto3,oneof" json:"operation_binding_id,omitempty"`
 	// seals_no_binding ASSERTS that the context names no operation binding at
 	// all. A consumer must send either this or operation_binding_id, and a
