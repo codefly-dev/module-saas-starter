@@ -584,15 +584,43 @@ func TestSourceDelegation_MissingForASourceConnectedBefore(t *testing.T) {
 
 // A binding whose delegation scopes change after the connect no longer confers
 // what the person delegated; the mint refuses and records why.
-func TestSourceDelegation_BindingChanged(t *testing.T) {
+// A binding that NARROWS what the person delegated is honoured, at the
+// narrower set. The fixture delegates `collections:[read,write]`; the module
+// now asks for `collections:[read]`. Until consent was recorded beside the
+// digest, any digest change revoked the delegation — this exact case included,
+// and this test required it to: a module asking for LESS re-authorized every
+// person who had ever connected a source, and the only remedy the product
+// offers is a reconnect. Consent is about MORE, never less.
+func TestSourceDelegation_BindingNarrowedIsHonouredAtTheNarrowerSet(t *testing.T) {
+	w := newDelegationWorld(t)
+	sourceID := w.connect(t, w.org, w.admin)
+
+	narrowed, err := moduleregistrytest.Parse(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"","operation_audiences":{` +
+		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
+		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
+		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
+		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read"]}]}}}}`)
+	require.NoError(t, err)
+	authority, err := w.service(t, narrowed).AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, business.SourceDelegationRef{SourceID: sourceID})
+	require.NoError(t, err, "a narrowing never needs consent: it is strictly less authority")
+	require.True(t, w.only(t, w.org, sourceID, delegationModule).Active(), "the delegation stands")
+	require.Len(t, authority.Scopes, 1)
+	require.Equal(t, "collections", authority.Scopes[0].ResourceKind)
+	require.Equal(t, []string{"read"}, authority.Scopes[0].Actions, "minted at the LIVE, narrower binding — never more than the person agreed to, never less than the module still asks for")
+}
+
+// A binding that WIDENS past what the person delegated revokes it: the fixture
+// delegates `collections:[read,write]`; the module now asks for `reports:[write]`
+// as well, which nobody agreed to. This is the one durable answer, exactly as before.
+func TestSourceDelegation_BindingWidenedRevokes(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
 
 	widened, err := moduleregistrytest.Parse(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"","operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
-		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
+		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]},{"resource_kind":"reports","actions":["write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
-		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read"]}]}}}}`)
+		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read","write"]},{"resource_kind":"reports","actions":["write"]}]}}}}`)
 	require.NoError(t, err)
 	_, err = w.service(t, widened).AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, business.SourceDelegationRef{SourceID: sourceID})
 	require.ErrorIs(t, err, business.ErrSourceDelegationRevoked)
