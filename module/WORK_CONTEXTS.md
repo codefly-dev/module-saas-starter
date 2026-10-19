@@ -666,31 +666,35 @@ binding itself — core's `Verifier`, and the host when it verifies a parent it
 issued — refuses a withdrawn delegation as a stale capability
 (`FAILED_PRECONDITION`), before any of these checks runs.
 
-**Open: one rule for every module hop.** The question "is this context's
-authority still current" has THREE implementations today — a module-owned
-context against its installation, a person-owned context actored by a module
-*with a delegation binding* against that delegation, and everything else
-against the authority store. A module hop that names no binding falls into the
-third, which does not hold module principals: it answers "not found", and the
-module calling reports a revocation that never happened. That is what an
-orchestrator executing a prepared runnable binding on a person's behalf hits on
-every call.
+**One rule for every module hop.** A module hop NAMES the binding it
+exercises, and that binding confirms it. The exchange seals the binding the
+caller ran under onto that caller's OWN hop (`remint`, which stamps it only
+where the hop's principal is the exchanging module — an agent hop carries
+none), and `CheckAuthorizationRevision` resolves it: a binding naming a
+delegation is confirmed against that delegation, any other binding against the
+module's installation (`ConfirmModuleHopBinding` — the module is still
+installed here, the installation still declares that binding, and the hop's
+scopes are still within it). A person is confirmed in the authority store,
+which is where a person's roles live.
 
-The rule that collapses the three into one is: **a module hop NAMES the binding
-it exercises**, exactly as a delegation's hop already does, and one resolver
-answers it from that binding — the delegation's scopes when the binding names a
-delegation, the installed binding's scopes otherwise. The pieces are already
-here: `grant.OperationAudiences` is keyed BY binding id, and the exchange
-already resolves one by id to attenuate with
-(`ModuleOperationAudience`). What is missing is the seal: `remint` carries the
-PARENT's `OperationBindingID` onto the new hop
-(`last.OperationBindingID = parent.GetOperationBinding().GetBindingId()`), so an
-ordinary exchange seals nothing when the parent named nothing. Sealing the
-binding the exchange resolved is what makes the single rule expressible.
+The rule replaces resolution by elimination. A module principal is NOT in the
+authority store — it is not a registered agent — so a hop sent there came back
+"not found", which the module calling reported to its caller as a revocation
+that had never happened: every call an orchestrator makes to an owner it
+executes an operation for was denied that way.
 
-Until that lands, the absent-binding case is REFUSED rather than guessed at:
-guessing wider is how a narrowed delegation would be confirmed against a
-broader installation.
+No revision is compared for a module hop, deliberately: the revision sealed
+into a context is the OWNER's, and the owner's resolver compares it. A module
+hop carries no revision of its own, which is why asking the store for one
+produced a mismatch rather than an answer.
+
+Where the binding comes from decides how its ABSENCE is read, and the two are
+not the same. The parent re-check reads it from the SIGNED parent, so a parent
+naming none was minted naming none and is simply not a delegation's. The
+revision check reads it from the CALLER's request, where absence could be an
+omission, so a context of that shape naming no binding stays refused: reading
+it as "not a delegation" would confirm a narrowed delegation against the
+module's broader installation.
 
 **The delegation authorizes the organization; `cross_tenant` is never
 consulted.** Neither the recording, the mint, the revision check nor the

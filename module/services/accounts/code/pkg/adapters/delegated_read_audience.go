@@ -185,7 +185,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	if delegated {
 		issued, err = authority.exchangeDelegatedParent(ctx, caller, parent, delegation, binding, time.Duration(ttl)*time.Second)
 	} else {
-		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, "")
+		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, "", moduleBindingSeal{PrincipalID: caller.PrincipalID, BindingID: request.bindingID})
 	}
 	if err != nil {
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)

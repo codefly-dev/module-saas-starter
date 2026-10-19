@@ -728,3 +728,41 @@ func TestSourceDelegation_AModulesOwnBindingIsNotThisCheckersContext(t *testing.
 		require.Error(t, err)
 	})
 }
+
+// A MODULE HOP NAMES THE BINDING IT EXERCISES, AND THAT BINDING CONFIRMS IT.
+//
+// This is the one rule, and the reason "is this context's authority still
+// current" can have ONE answer: a hop says which binding it runs under, so no
+// verifier has to work it out from the shape of the subjects. A module
+// principal is not in the authority store — it is not a registered agent — so
+// a hop sent there came back "not found", and the module calling reported to
+// its caller a revocation that had never happened. That denied every call an
+// orchestrator makes to an owner it executes an operation for.
+func TestAModuleHopIsConfirmedFromTheBindingItNames(t *testing.T) {
+	w := newDelegationWorld(t)
+	runtime := string(business.ModulePrincipalID(runtimeModule))
+	carried := []business.ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read", "write"}}}
+
+	// The confirming case is proven against a real installation on a cell
+	// rather than here: this world installs its modules through the delegation
+	// fixture, whose consent does not carry the runtime's own binding, so a
+	// positive assertion here would be about the fixture and not the rule.
+	t.Run("a hop naming no binding is not confirmed", func(t *testing.T) {
+		require.ErrorIs(t, w.svc.ConfirmModuleHopBinding(testCtx, w.org, runtime, "", carried), business.ErrModuleHopStale)
+	})
+	t.Run("a binding the installation does not declare is not confirmed", func(t *testing.T) {
+		require.ErrorIs(t, w.svc.ConfirmModuleHopBinding(testCtx, w.org, runtime, "invented", carried), business.ErrModuleHopStale)
+	})
+	t.Run("another module's binding is not this module's", func(t *testing.T) {
+		require.ErrorIs(t, w.svc.ConfirmModuleHopBinding(testCtx, w.org, runtime, delegationBinding, carried), business.ErrModuleHopStale)
+	})
+	t.Run("scopes outside the binding are not confirmed", func(t *testing.T) {
+		wider := append(append([]business.ModuleOperationScope(nil), carried...),
+			business.ModuleOperationScope{ResourceKind: "reports", Actions: []string{"write"}})
+		require.ErrorIs(t, w.svc.ConfirmModuleHopBinding(testCtx, w.org, runtime, "ingest", wider), business.ErrModuleHopStale)
+	})
+	t.Run("a principal no module declares is not confirmed", func(t *testing.T) {
+		require.ErrorIs(t, w.svc.ConfirmModuleHopBinding(testCtx, w.org, "019fec91-1000-7000-8000-00000000beef", "ingest", carried),
+			business.ErrModuleHopStale)
+	})
+}

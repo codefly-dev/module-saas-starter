@@ -1243,15 +1243,25 @@ func (s *Service) ConfirmSourceDelegationParent(
 	if !ok {
 		return false, nil, nil
 	}
-	// As in CheckSourceDelegationContextRevision: a binding naming another
-	// operation belongs to the ordinary module-operation checks; its absence
-	// stays refused here.
-	if bindingID != "" && !namesASourceDelegation(bindingID) {
+	// Here the binding comes from the PARENT ITSELF, which is signed: a parent
+	// that names no delegation was minted naming none, and an orchestrator
+	// executing work a person started presents exactly that — same subjects,
+	// no delegation anywhere. So the binding alone decides, and its absence is
+	// a fact rather than an omission.
+	//
+	// This is NOT the rule in CheckSourceDelegationContextRevision, where the
+	// binding arrives as a field of the CALLER's request: there a missing
+	// binding could be an omission, and treating it as "not a delegation"
+	// would confirm a narrowed delegation against a broader installation, so
+	// it stays refused. Same question, two sources of the same fact, and the
+	// trust in each is what differs.
+	if !namesASourceDelegation(bindingID) {
 		return false, nil, nil
 	}
 	if len(hops) != 1 || hops[0].DelegationID == "" {
 		return true, nil, ErrSourceDelegationContextStale
 	}
+
 	subjects := []ModuleOperationRevisionSubject{
 		{PrincipalID: ownerPrincipalID, Scopes: ownerScopes},
 		{PrincipalID: hops[0].PrincipalID, Scopes: hops[0].Scopes},

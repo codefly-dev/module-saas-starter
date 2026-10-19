@@ -372,9 +372,22 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 // expressed on core, which derives only by adding a hop and never extends a
 // window: the capability is minted afresh from its owner, and every hop is
 // re-derived and re-checked against live state rather than copied.
+// remint re-issues a parent for another audience. exercised is the operation
+// binding the exchanging MODULE runs under, and the principal it belongs to:
+// a hop that names its binding is a hop a verifier can confirm from that
+// binding alone, which is the one rule every module hop follows. It is stamped
+// only on that module's own hop — an agent hop carries no operation binding,
+// and core refuses one that does. Empty keeps the parent's, which is how an
+// owner's own session carries none.
+// moduleBindingSeal is the binding a module exercises on its own hop.
+type moduleBindingSeal struct {
+	PrincipalID string
+	BindingID   string
+}
+
 func (s *WorkContextAuthorityServer) remint(
 	ctx context.Context, parent *basev0.WorkContextV1, audience, replay string, ttl time.Duration,
-	attenuated []*basev0.WorkScopeV1, session string,
+	attenuated []*basev0.WorkScopeV1, session string, exercised moduleBindingSeal,
 ) (string, *basev0.WorkContextV1, error) {
 	// The seal follows the owner. A person's capability is sealed to the
 	// organization's installation of the audience it addresses — what an
@@ -427,6 +440,9 @@ func (s *WorkContextAuthorityServer) remint(
 		last.GrantedScopes = attenuated
 	}
 	last.OperationBindingID = parent.GetOperationBinding().GetBindingId()
+	if exercised.BindingID != "" && exercised.PrincipalID != "" && last.PrincipalID == exercised.PrincipalID {
+		last.OperationBindingID = exercised.BindingID
+	}
 	return s.mint(ctx, mintRequest{Start: start, Hops: hops, Session: session, Replay: replay, TTL: ttl})
 }
 
