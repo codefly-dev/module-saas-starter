@@ -705,7 +705,45 @@ func envelopePrincipalsKept(before, after json.RawMessage) bool {
 	}
 	for prefix, section := range was {
 		kept, exists := is[prefix]
-		if !exists || !sameJSONValue(section, kept) {
+		if !exists || !jsonOnlyGains(section, kept) {
+			return false
+		}
+	}
+	return true
+}
+
+// jsonOnlyGains reports that after is before with MEMBERS ADDED and nothing
+// else: every object key before holds is still there holding the same value,
+// recursively, and after may carry keys before did not.
+//
+// It is what lets a principal be widened without a witness. The rule this
+// serves is the one stated above — a write that grants, and that no
+// installation loses anything by, is not a narrowing — and a principal that
+// gains an arm of a binding it already had loses nobody anything: a restore
+// that undid it would leave LESS authority, which is the fail-closed
+// direction. Before this, such a write was classified a narrowing purely
+// because the principal's section was not byte-identical, so on a host with no
+// policy log (there is none: the warehouse cannot issue the receipt the
+// protocol requires) the only writable change was a whole new principal. A
+// module missing one arm of its ceiling could not be corrected at all.
+//
+// It stays deliberately narrow. An ARRAY must be identical, so adding an
+// action to a list of them, or a resource id to a scope, is still a narrowing
+// to be witnessed: an array's members are not independent — reordering,
+// replacing or extending one can change what the whole means — and this
+// cannot tell those apart. Only a member that did not exist is free.
+func jsonOnlyGains(before, after json.RawMessage) bool {
+	if sameJSONValue(before, after) {
+		return true
+	}
+	var was, is map[string]json.RawMessage
+	if json.Unmarshal(before, &was) != nil || json.Unmarshal(after, &is) != nil {
+		// Not both objects: anything but an exact match is a change, not a gain.
+		return false
+	}
+	for key, value := range was {
+		kept, exists := is[key]
+		if !exists || !jsonOnlyGains(value, kept) {
 			return false
 		}
 	}
