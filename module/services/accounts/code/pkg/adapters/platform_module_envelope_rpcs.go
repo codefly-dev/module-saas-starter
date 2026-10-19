@@ -14,6 +14,38 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
+// The scopes a machine credential must carry to touch the module envelope.
+// They name this one ceiling and nothing else, so a key minted to write it can
+// do only that.
+const (
+	moduleEnvelopeReadScope  = "platform.module_envelope:read"
+	moduleEnvelopeWriteScope = "platform.module_envelope:write"
+)
+
+// requireModuleEnvelopeWrite decides what evidence this write needs, by the
+// kind of credential presenting it.
+//
+// A SESSION writes the ceiling only with fresh AAL2 evidence: it replaces
+// host-wide authority, and an administrator with no enrolled factor is refused
+// rather than waved through.
+//
+// An API KEY presents no second factor and never will — there is no human at
+// it to step up. Refusing it outright is what left this ceiling writable by
+// nobody but a browser, with no operator surface at all: the design says an
+// administrator writes it at runtime, and then offered no way to. So a key is
+// admitted when, and only when, it carries the one scope that names this
+// write. That scope IS the second factor's replacement, and it is a narrower
+// one: a key is minted for this and nothing else, it is revocable the moment
+// it is suspect, and it cannot be minted by another key
+// (requireInteractiveSession on CreateAPIKey), so a machine credential can
+// never widen itself into one. The write is recorded either way.
+func requireModuleEnvelopeWrite(ctx context.Context) error {
+	if credentialKindFromContext(ctx) == credentialKindAPIKey {
+		return requireScope(ctx, moduleEnvelopeWriteScope)
+	}
+	return requireRecentMFA(ctx)
+}
+
 // GetModuleEnvelope reads the current module envelope for a platform
 // super_admin.
 func (s *PlatformAdminServer) GetModuleEnvelope(ctx context.Context, req *gen.GetModuleEnvelopeRequest) (*gen.GetModuleEnvelopeResponse, error) {
@@ -25,6 +57,10 @@ func (s *PlatformAdminServer) GetModuleEnvelope(ctx context.Context, req *gen.Ge
 		return nil, err
 	}
 	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
+	// A session reads it as before; a key reads it only when it says so.
+	if err := requireScope(ctx, moduleEnvelopeReadScope); err != nil {
 		return nil, err
 	}
 	record, err := service.GetModuleEnvelope(ctx, actorID)
@@ -78,11 +114,7 @@ func (s *PlatformAdminServer) PutModuleEnvelope(ctx context.Context, req *gen.Pu
 	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
 		return nil, err
 	}
-	// Writing the ceiling every module is derived inside replaces host-wide
-	// authority, so it demands fresh AAL2 evidence — and an administrator with
-	// no enrolled factor is refused rather than waved through, which is what
-	// the if-enrolled gate would do for a password-only session.
-	if err := requireRecentMFA(ctx); err != nil {
+	if err := requireModuleEnvelopeWrite(ctx); err != nil {
 		return nil, err
 	}
 	record, err := service.PutModuleEnvelope(ctx, actorID, uint64(req.GetExpectedRevision()), []byte(req.GetDocument())) //nolint:gosec // protovalidate holds expected_revision >= 0
