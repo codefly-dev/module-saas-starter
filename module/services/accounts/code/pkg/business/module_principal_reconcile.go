@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/codefly-dev/core/wool"
 	"maps"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/codefly-dev/core/wool"
 
 	modulecontract "github.com/codefly-dev/core/contracts/module"
 	"github.com/codefly-dev/core/solutionhost"
