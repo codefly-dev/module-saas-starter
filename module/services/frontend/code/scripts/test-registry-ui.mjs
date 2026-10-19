@@ -116,6 +116,26 @@ try {
 	dependencies.esbuild = JSON.parse(
 		await readFile(new URL("node_modules/esbuild/package.json", root), "utf8"),
 	).version;
+	// The PUBLIC half of the tree is held to what this host proved, not to
+	// whatever the public registry serves today. The plugin peers must still be
+	// DISCOVERED by npm (that is the proof: no workspace links, no file:
+	// dependencies, peerDependenciesMeta omitted as GitHub Packages omits it) —
+	// but their own public dependencies are pinned through `overrides` to the
+	// versions in this host's lockfile. Without that, a stranger's new major
+	// (`@hookform/resolvers@6` arrived with optional `@typeschema/*` peers that
+	// conflict with each other) turned this required gate red on every pull
+	// request while the host itself, locked at 3.x, was unaffected — a verdict
+	// about the public registry's afternoon, not about the published plugin.
+	const hostLock = JSON.parse(await readFile(new URL("package-lock.json", root), "utf8"));
+	const overrides = {};
+	for (const manifest of manifests.values()) {
+		for (const peer of Object.keys(manifest.peerDependencies ?? {})) {
+			const locked = hostLock.packages?.[`node_modules/${peer}`]?.version;
+			if (!peer.startsWith("@codefly-dev/") && locked && !(peer in dependencies)) {
+				overrides[peer] = locked;
+			}
+		}
+	}
 	await writeFile(
 		join(temporary, "package.json"),
 		JSON.stringify({
@@ -123,6 +143,7 @@ try {
 			private: true,
 			type: "module",
 			dependencies,
+			overrides,
 		}),
 	);
 	await writeFile(
