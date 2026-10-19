@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/codefly-dev/core/wool"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -124,16 +126,19 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 		req.GetSubjects()[0].GetPrincipalId() != req.GetOwnerPrincipalId() {
 		return nil, status.Error(codes.InvalidArgument, "owner must be the first revision subject")
 	}
-	// A context owned by a declared module's service principal has no
-	// row-backed authority to resolve: it is confirmed against the module's
-	// current declaration instead. Every other owner takes the store path below.
+	// ONE question — is this context's authority still current — and today
+	// three answers, one per shape of context. A module hop that names no
+	// binding belongs to none of them: the store below does not hold module
+	// principals, so it answers "not found", which a module reports as a
+	// revocation that never happened. The rule that collapses this is stated
+	// in module/WORK_CONTEXTS.md: a module hop NAMES the binding it
+	// exercises, as a delegation's hop already does, and one resolver answers
+	// it from that binding. Until the mint seals it, this refusal stands
+	// rather than being guessed at, because guessing wider is how a narrowed
+	// delegation would be confirmed against a broader installation.
 	if handled, err := checkModuleOperationContextRevision(ctx, req); handled {
 		return nil, err
 	}
-	// A context minted from a source delegation is owned by a person but
-	// actored by a declared module principal, which the store path cannot
-	// resolve (a module principal is not a registered agent). It is confirmed
-	// against the delegation it was minted from instead.
 	if handled, err := checkSourceDelegationContextRevision(ctx, req); handled {
 		return nil, err
 	}
@@ -173,6 +178,13 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 		subjects,
 	)
 	if err != nil {
+		// The refusal said nothing anywhere, so a module reporting "the
+		// caller's authorization was revoked" sent an operator looking for a
+		// revocation that had not happened. Name it where it is decided.
+		wool.Get(ctx).In("CheckAuthorizationRevision").Warn("the authority this Work Context asserts is no longer current",
+			wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()),
+			wool.Field("sealed_revision", req.GetAuthorizationRevision()),
+			wool.Field("subjects", len(req.GetSubjects())), wool.ErrField(err))
 		return nil, mapConsumerAuthorityError(err)
 	}
 	return &emptypb.Empty{}, nil

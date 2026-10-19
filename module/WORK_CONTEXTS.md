@@ -650,9 +650,10 @@ installed operation for a person has exactly that shape and seals its OWN
 binding, and claiming those refused every one of them as a stale delegation
 when no delegation was involved. Such a context is declined here and takes the
 ordinary module-operation checks, which re-read that binding in full. A context
-sealing NO binding is declined for the same reason: the mint always seals one
-(`SourceDelegationBindingID`), so a delegation's context cannot arrive without
-it. The caller passes the operation binding the context sealed
+of this shape naming NO binding stays refused here: the binding travels in the
+request, so treating its absence as "not a delegation" would let a consumer
+that omitted it have a narrowed delegation confirmed against its module's
+broader installation. The caller passes the operation binding the context sealed
 (`operation_binding_id`),
 and the check confirms it only while that binding names the actor, the live
 binding read above holds, the delegation is active and from that owner, its
@@ -664,6 +665,32 @@ at the next hop. Every refusal is `PermissionDenied`. A verifier that reads the
 binding itself — core's `Verifier`, and the host when it verifies a parent it
 issued — refuses a withdrawn delegation as a stale capability
 (`FAILED_PRECONDITION`), before any of these checks runs.
+
+**Open: one rule for every module hop.** The question "is this context's
+authority still current" has THREE implementations today — a module-owned
+context against its installation, a person-owned context actored by a module
+*with a delegation binding* against that delegation, and everything else
+against the authority store. A module hop that names no binding falls into the
+third, which does not hold module principals: it answers "not found", and the
+module calling reports a revocation that never happened. That is what an
+orchestrator executing a prepared runnable binding on a person's behalf hits on
+every call.
+
+The rule that collapses the three into one is: **a module hop NAMES the binding
+it exercises**, exactly as a delegation's hop already does, and one resolver
+answers it from that binding — the delegation's scopes when the binding names a
+delegation, the installed binding's scopes otherwise. The pieces are already
+here: `grant.OperationAudiences` is keyed BY binding id, and the exchange
+already resolves one by id to attenuate with
+(`ModuleOperationAudience`). What is missing is the seal: `remint` carries the
+PARENT's `OperationBindingID` onto the new hop
+(`last.OperationBindingID = parent.GetOperationBinding().GetBindingId()`), so an
+ordinary exchange seals nothing when the parent named nothing. Sealing the
+binding the exchange resolved is what makes the single rule expressible.
+
+Until that lands, the absent-binding case is REFUSED rather than guessed at:
+guessing wider is how a narrowed delegation would be confirmed against a
+broader installation.
 
 **The delegation authorizes the organization; `cross_tenant` is never
 consulted.** Neither the recording, the mint, the revision check nor the
