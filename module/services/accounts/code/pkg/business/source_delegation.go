@@ -1016,18 +1016,21 @@ func (s *Service) confirmSourceDelegationBinding(
 	defer releaseAuthority()
 
 	delegationID, usedBy, ok := parseSourceDelegationBindingID(bindingID)
-	if !ok || ModulePrincipalID(usedBy) != actorPrincipalID {
-		return nil, ErrSourceDelegationContextStale
+	if !ok {
+		return nil, staleBecause(ctx, "the binding id is not a source delegation's")
+	}
+	if ModulePrincipalID(usedBy) != actorPrincipalID {
+		return nil, staleBecause(ctx, "the binding id was sealed by another module than the one presenting it")
 	}
 	live, err := s.WorkContextOperationBinding(ctx, orgID, bindingID)
 	switch {
 	case errors.Is(err, ErrNoOperationBinding), errors.Is(err, ErrSourceDelegationContextStale),
 		errors.Is(err, ErrModuleInstallationInactive):
-		return nil, ErrSourceDelegationContextStale
+		return nil, staleBecause(ctx, "the issuer's records no longer entitle this module to that binding: "+err.Error())
 	case err != nil:
 		return nil, err
 	case live.Revoked:
-		return nil, ErrSourceDelegationContextStale
+		return nil, staleBecause(ctx, "the operation binding is revoked")
 	}
 	var delegation *SourceDelegation
 	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -1035,8 +1038,13 @@ func (s *Service) confirmSourceDelegationBinding(
 		if err != nil {
 			return err
 		}
-		if found == nil || !found.Active() || found.PrincipalID != ownerPrincipalID {
-			return ErrSourceDelegationContextStale
+		switch {
+		case found == nil:
+			return staleBecause(ctx, "no delegation of that id exists in this tenant")
+		case !found.Active():
+			return staleBecause(ctx, "the delegation is revoked")
+		case found.PrincipalID != ownerPrincipalID:
+			return staleBecause(ctx, "the delegation belongs to a different person than the context names as owner")
 		}
 		snapshot := s.moduleRegistrySnapshot()
 		delegator, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot,
@@ -1047,21 +1055,26 @@ func (s *Service) confirmSourceDelegationBinding(
 		granted, state := delegator.Grant.currentSourceDelegationBinding(found)
 		switch state {
 		case sourceDelegationBindingChanged:
-			return ErrSourceDelegationContextStale
+			return staleBecause(ctx, "the declaration behind this delegation changed since it was recorded")
 		case sourceDelegationBindingUnavailable:
 			return ErrSourceDelegationBindingUnavailable
 		}
 		for _, subject := range subjects {
 			if !operationScopesSubset(subject.Scopes, granted.SourceDelegationScopes) {
-				return ErrSourceDelegationContextStale
+				return staleBecause(ctx, "a presented subject carries scopes the delegation's binding does not grant")
 			}
 		}
 		facts, err := s.store.SourceDelegationFacts(ctx, orgID, ownerPrincipalID, found.SourceID)
 		if err != nil {
 			return err
 		}
-		if facts.revocation() != "" || facts.EffectiveRevision() != revision {
-			return ErrSourceDelegationContextStale
+		if reason := facts.revocation(); reason != "" {
+			return staleBecause(ctx, "the delegation's facts revoke it: "+reason)
+		}
+		if facts.EffectiveRevision() != revision {
+			return staleBecause(ctx, fmt.Sprintf(
+				"the person's authorization revision is %d and the context was sealed at %d",
+				facts.EffectiveRevision(), revision))
 		}
 		delegation = found
 		return nil
@@ -1203,4 +1216,23 @@ func (s *Service) ConfirmSourceDelegationParent(
 		return true, nil, ErrSourceDelegationContextStale
 	}
 	return true, delegation, nil
+}
+
+// staleBecause is ErrSourceDelegationContextStale with the branch that reached
+// it named in the operator's log.
+//
+// Eight independent conditions answered with one sentinel, and a consumer that
+// retried every one of them identically. On a cell this is the difference
+// between an operator reconnecting a source, writing an envelope, or reading a
+// contract — and nothing told them which. A staging night went into recovering
+// one of these by elimination.
+//
+// The ERROR is unchanged, deliberately: the sentinel is what the wire contract
+// and every errors.Is branch key on, and a consumer must keep reading a stale
+// context as stale. Only the log gains the reason, and it names conditions
+// rather than any person's identifiers.
+func staleBecause(ctx context.Context, because string) error {
+	wool.Get(ctx).In("confirmSourceDelegationBinding").Warn(
+		"a source delegation context was refused", wool.Field("because", because))
+	return ErrSourceDelegationContextStale
 }
