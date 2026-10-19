@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"github.com/codefly-dev/core/workcontext"
 	"slices"
 	"testing"
 
@@ -292,7 +293,6 @@ func TestDelegatedReadExchangeModuleAndParentBinding(t *testing.T) {
 		{name: "foreign module", owner: readOwner, tenant: readOrg, audience: "example", module: "foreign", moduleTenant: readOrg},
 		{name: "foreign module tenant", owner: readOwner, tenant: readOrg, audience: "example", module: "example", moduleTenant: "019f6bf7-0000-7000-8000-000000000001"},
 		{name: "foreign parent tenant", owner: readOwner, tenant: "019f6bf7-0000-7000-8000-000000000001", audience: "example", module: "example", moduleTenant: readOrg},
-		{name: "narrow resource cannot become kind wide", owner: readOwner, tenant: readOrg, audience: "example", module: "example", moduleTenant: readOrg, ids: []string{"one-result"}},
 		// The third widening axis. The binding is deployment-owned policy, so a
 		// kind the parent never carried must be refused as it is for actions and
 		// resource ids — asserted on the widening refusal itself, since every
@@ -319,6 +319,33 @@ func TestDelegatedReadExchangeModuleAndParentBinding(t *testing.T) {
 		})
 	}
 }
+
+// A binding's scopes are a ceiling, not a demand: a parent narrowed to one
+// resource id is redeemed at that id, never widened to the kind and never
+// refused for being narrower than the binding. The child carries exactly the
+// parent's ids.
+func TestDelegatedReadExchangeKeepsTheParentsResourceIDs(t *testing.T) {
+	_, _, client, _ := sourceReadFixture(t)
+	installReadBinding()
+	parent, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "example", Tenant: readOrg, Owner: readOwner, Task: "task", Session: "session",
+		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read"}, ResourceIds: []string{"one-result"}}}})
+	out, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent))
+	require.NoError(t, err)
+	child, err := workcontext.Decode(out.Msg.GetToken())
+	require.NoError(t, err)
+	effective := child.Context().GetAuthorityScopes()
+	if chain := child.Context().GetActorChain(); len(chain) > 0 {
+		effective = chain[len(chain)-1].GetGrantedScopes()
+	}
+	var held []string
+	for _, scope := range effective {
+		if scope.GetResourceKind() == "results" {
+			held = append(held, scope.GetResourceIds()...)
+		}
+	}
+	require.Equal(t, []string{"one-result"}, held, "the child must carry the parent's ids and nothing wider")
+}
+
 func TestDelegatedReadExchangeRechecksInstalledBinding(t *testing.T) {
 	_, facts, client, mint := sourceReadFixture(t)
 	installReadBinding()
