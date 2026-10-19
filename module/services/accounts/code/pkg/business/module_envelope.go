@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -255,6 +256,14 @@ func (s *Service) requestRegistryPass() {
 // newer one refuses must stop granting rather than keep granting because it was
 // accepted once. A stored revision that no longer parses is an ERROR, never "no
 // envelope" — a reconciler reading it keeps what it last installed.
+//
+// A DELIVERED revision is re-verified against the host's pinned keys too, the
+// way the manifest half of the same pass re-verifies every applied manifest.
+// Parsing proves the document is well formed, not that anybody may still state
+// it: unpinning a compromised release key is the operator's revocation lever,
+// and without this the ceiling that key signed would keep granting forever,
+// withdrawable only by an administrator's interactive write at a higher
+// revision. Its failure is an error for the same reason a parse failure is.
 func (s *Service) CurrentModuleEnvelope(ctx context.Context) (*ModuleEnvelope, error) {
 	if s.moduleEnvelopes == nil {
 		return nil, ErrModuleEnvelopeUnavailable
@@ -280,7 +289,34 @@ func (s *Service) CurrentModuleEnvelope(ctx context.Context) (*ModuleEnvelope, e
 	if envelope.Revision != record.Revision {
 		return nil, fmt.Errorf("stored module envelope revision %d carries document revision %d", record.Revision, envelope.Revision)
 	}
+	if err := s.reverifyDeliveredModuleEnvelope(ctx, record); err != nil {
+		return nil, err
+	}
 	return envelope, nil
+}
+
+// reverifyDeliveredModuleEnvelope re-verifies a delivered revision's signature
+// against the host's pinned keys. An interactively written revision carries no
+// carrier and is this host's own record, so there is nothing to verify; a
+// delivered one is somebody else's statement, held every read to the custody
+// that may make it.
+//
+// A host with no verifier wired cannot answer the question, so it refuses
+// rather than skipping: a cell that has received a delivered envelope has a
+// verifier by construction, and the shape that has not is a native profile,
+// whose envelope is written interactively.
+func (s *Service) reverifyDeliveredModuleEnvelope(ctx context.Context, record *ModuleEnvelopeRecord) error {
+	if len(record.Payload) == 0 && len(record.Envelope) == 0 {
+		return nil
+	}
+	if s.deliveryVerifier == nil {
+		return fmt.Errorf("module envelope revision %d was delivered and this host has no delivery verifier to re-verify it against", record.Revision)
+	}
+	signed := &solutionhost.Signed{Document: record.Payload, Envelope: record.Envelope}
+	if _, err := solutionhost.VerifyDeliveredEnvelope(ctx, signed, s.deliveryVerifier); err != nil {
+		return fmt.Errorf("delivered module envelope revision %d no longer verifies against this host's pinned keys: %w", record.Revision, err)
+	}
+	return nil
 }
 
 // GetModuleEnvelope returns the current revision as written, for a platform

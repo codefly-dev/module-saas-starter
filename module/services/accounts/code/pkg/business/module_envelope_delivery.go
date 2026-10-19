@@ -105,6 +105,9 @@ func (s *Service) ReceiveModuleEnvelopeDelivery(
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
 	}
+	if err := refuseDeliveredTenantPins(envelope); err != nil {
+		return nil, err
+	}
 	digest, err := candidate.Digest()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
@@ -184,6 +187,34 @@ func (s *Service) ReceiveModuleEnvelopeDelivery(
 	return receipt, nil
 }
 
+// refuseDeliveredTenantPins holds a delivered envelope to the one rule that is
+// the host's and not core's: it NAMES NO ORGANIZATION.
+//
+// It reads the PARSED envelope, deliberately. Looking the key up in the raw
+// grant made this a second decoder of a field ParseModuleEnvelope already
+// decodes, and the two disagreed about the only thing the rule is about:
+// encoding/json falls back to a case-insensitive field match, which
+// DisallowUnknownFields does not interrupt because a field was found, so a
+// grant carrying "Tenant" passed the raw lookup and was then parsed, stored
+// and applied as a tenant pin. The consequence was not cosmetic — a pinned
+// tenant makes moduleAvailableToOrganization false everywhere else, so the
+// delivery revoked every active installation of that module in every other
+// organization, from one capital letter in a rendered envelope.
+func refuseDeliveredTenantPins(envelope *ModuleEnvelope) error {
+	principals := make([]string, 0, len(envelope.Principals))
+	for principal := range envelope.Principals {
+		principals = append(principals, principal)
+	}
+	sort.Strings(principals)
+	for _, principal := range principals {
+		if tenant := envelope.Principals[principal].Grant.Tenant; tenant != "" {
+			return fmt.Errorf("%w: principal %q pins tenant %q: a delivered module envelope names no organization: an organization id is this host's own record; tenancy resolves through each organization's installation, and a pin to one organization is written interactively by a platform super_admin at a higher revision",
+				ErrSolutionDeliveryRefused, principal, tenant)
+		}
+	}
+	return nil
+}
+
 // deliveredModuleEnvelopeDocument is the host's envelope document for a
 // delivered one: `{"revision", "principals": {p: {"grant": g}}}`, each grant
 // as core carried it.
@@ -198,23 +229,13 @@ func deliveredModuleEnvelopeDocument(candidate *solutionhost.ModuleEnvelope) ([]
 	for principal := range candidate.Principals {
 		principals = append(principals, principal)
 	}
-	sort.Strings(principals)
+	// Not ordered: the wire map is json.Marshal's, which sorts its own keys.
 	wire := struct {
 		Revision   uint64                     `json:"revision"`
 		Principals map[string]json.RawMessage `json:"principals"`
 	}{Revision: candidate.Revision, Principals: make(map[string]json.RawMessage, len(principals))}
 	for _, principal := range principals {
 		grant := candidate.Principals[principal]
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(grant, &fields); err != nil {
-			return nil, fmt.Errorf("%w: the grant for principal %q: %w", ErrSolutionDeliveryMalformed, principal, err)
-		}
-		if tenant, set := fields["tenant"]; set {
-			if value := string(bytes.TrimSpace(tenant)); value != `""` && value != "null" {
-				return nil, fmt.Errorf("%w: principal %q pins tenant %s: a delivered module envelope names no organization: an organization id is this host's own record; tenancy resolves through each organization's installation, and a pin to one organization is written interactively by a platform super_admin at a higher revision",
-					ErrSolutionDeliveryRefused, principal, value)
-			}
-		}
 		section, err := json.Marshal(struct {
 			Grant json.RawMessage `json:"grant"`
 		}{Grant: grant})

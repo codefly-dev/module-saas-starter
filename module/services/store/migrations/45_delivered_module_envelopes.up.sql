@@ -15,7 +15,7 @@ ALTER TABLE public.module_envelopes
     ADD COLUMN signer text CONSTRAINT module_envelopes_signer_check CHECK ((signer <> ''::text)),
     ADD COLUMN ownership_domain text CONSTRAINT module_envelopes_ownership_domain_check CHECK ((ownership_domain <> ''::text)),
     ADD COLUMN delivered_payload bytea,
-    ADD COLUMN delivered_envelope jsonb,
+    ADD COLUMN delivered_envelope jsonb CONSTRAINT module_envelopes_delivered_envelope_object_check CHECK ((jsonb_typeof(delivered_envelope) = 'object'::text)),
     ADD CONSTRAINT module_envelopes_writer_check CHECK ((
         (written_by IS NOT NULL AND signer IS NULL AND ownership_domain IS NULL
             AND delivered_payload IS NULL AND delivered_envelope IS NULL)

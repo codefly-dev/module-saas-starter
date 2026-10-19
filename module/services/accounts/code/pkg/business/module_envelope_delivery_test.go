@@ -269,6 +269,27 @@ func TestADeliveredEnvelopeNamesNoOrganization(t *testing.T) {
 	shared := deliveredGrant(t, func(g map[string]any) { g["tenant"] = "" })
 	_, err = h.deliver(t, signedEnvelope(t, testDeliveredEnvelope(t, 1, testDeliveryDomain, shared), testDeliveryKey))
 	require.NoError(t, err, "an empty tenant is the shared tenancy, not an organization")
+
+	// The rule reads the PARSED envelope, so it sees the field the host will
+	// actually apply. A literal lookup in the raw grant was a second decoder
+	// of the one field this rule is about, and encoding/json's
+	// case-insensitive fallback made the two disagree: "Tenant" passed the
+	// lookup and was then stored and applied as a pin, which makes
+	// moduleAvailableToOrganization false everywhere else and revokes every
+	// active installation of that module in every other organization.
+	for _, spelling := range []string{"Tenant", "TENANT", "tEnAnT"} {
+		t.Run(spelling, func(t *testing.T) {
+			h := newEnvelopeDeliveryHarness(t, fixtureSigner(t))
+			variant := deliveredGrant(t, func(g map[string]any) {
+				delete(g, "tenant")
+				g[spelling] = testEnvelopeTenant
+			})
+			_, err := h.deliver(t, signedEnvelope(t, testDeliveredEnvelope(t, 1, testDeliveryDomain, variant), testDeliveryKey))
+			require.ErrorIs(t, err, ErrSolutionDeliveryRefused)
+			require.ErrorContains(t, err, "a delivered module envelope names no organization")
+			require.Empty(t, h.store.records)
+		})
+	}
 }
 
 func TestAGrantTheHostRefusesIsMalformedByName(t *testing.T) {
@@ -364,4 +385,60 @@ func TestADeliveredNarrowingIsWitnessedLikeAnInteractiveOne(t *testing.T) {
 	require.Equal(t, moduleEnvelopeDeliveryActor, log.appends[0].Actor)
 	require.Equal(t, uint64(2), log.appends[0].EnvelopeRevision)
 	require.True(t, bytes.Contains(h.store.records[1].Document, []byte(`"revision":2`)))
+}
+
+// UNPINNING THE KEY WITHDRAWS THE CEILING IT STATED.
+//
+// A delivered envelope is somebody else's statement, so every read holds it to
+// the custody that may make it — the way the manifest half of the same
+// reconcile pass re-verifies every applied manifest. Parsing proves the
+// document is well formed, not that its signer may still state it. Without
+// this, unpinning a compromised release key — the operator's revocation lever
+// — withdrew nothing: the registry is manifest intersect envelope, the
+// manifests are signed by other keys and keep re-verifying, so the ceiling the
+// compromised key stated would keep granting until an administrator wrote a
+// higher revision by hand.
+func TestADeliveredEnvelopeStopsGrantingOnceItsKeyIsUnpinned(t *testing.T) {
+	h := newEnvelopeDeliveryHarness(t, fixtureSigner(t))
+	_, err := h.deliver(t, signedEnvelope(t, testDeliveredEnvelope(t, 1, testDeliveryDomain, deliveredGrant(t, nil)), testDeliveryKey))
+	require.NoError(t, err)
+
+	envelope, err := h.service.CurrentModuleEnvelope(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, envelope, "the delivered ceiling is in force while its key is pinned")
+
+	// The key is rotated out of the host's pinned set, exactly as an operator
+	// revokes a compromised one.
+	rotated, err := solutionhost.NewPinnedKeySet(solutionhost.PinnedKey{
+		KeyID: "example-other-release", PublicKeyPEM: deliverytest.PublicKey(t, "example-other-release"),
+		Kind: solutionhost.KeyKindRelease, OwnershipDomains: []string{testDeliveryDomain},
+	})
+	require.NoError(t, err)
+	verifier, err := solutionhost.NewVerifier(rotated)
+	require.NoError(t, err)
+	h.service.SetSolutionDelivery(verifier, struct{ SolutionDeliveryStore }{}, h.carrier)
+
+	_, err = h.service.CurrentModuleEnvelope(context.Background())
+	require.Error(t, err, "a ceiling whose signer is no longer pinned must stop granting")
+	require.ErrorContains(t, err, "no longer verifies against this host's pinned keys")
+}
+
+// An interactively written revision carries no carrier: it is this host's own
+// record, there is nothing to re-verify, and a host with no verifier at all
+// (the native profile) still reads it.
+func TestAnInteractiveEnvelopeNeedsNoSignature(t *testing.T) {
+	h := newEnvelopeDeliveryHarness(t, fixtureSigner(t))
+	interactive := testEnvelopeDocument()
+	interactive["revision"] = 1
+	h.store.records = append(h.store.records, &ModuleEnvelopeRecord{
+		Revision: 1, Document: encodeEnvelope(t, interactive), WrittenBy: "someone", WrittenAt: time.Now(),
+	})
+	envelope, err := h.service.CurrentModuleEnvelope(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, envelope)
+
+	h.service.deliveryVerifier = nil
+	envelope, err = h.service.CurrentModuleEnvelope(context.Background())
+	require.NoError(t, err, "a host with no delivery verifier still reads its own interactive ceiling")
+	require.NotNil(t, envelope)
 }

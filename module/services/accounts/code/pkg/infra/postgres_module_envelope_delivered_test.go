@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Migration 42 on a real database: a module envelope row is a user's or a
+// Migration 45 on a real database: a module envelope row is a user's or a
 // delivery's, never both and never neither; a delivered revision may skip
 // ahead of the committed one and reads back with its signature; the table is
 // still append-only over the revision.

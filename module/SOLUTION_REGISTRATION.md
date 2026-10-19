@@ -480,13 +480,17 @@ of them.
 3. **Authorise the carrier** as the `delivery` account of **this host's own**
    namespace (the module it was composed as, `CODEFLY__MODULE`, by the namespace
    rule): the envelope is the host's document, not any one module's.
-4. **Hold it to the host's rules.** A delivered envelope **names no
-   organization**: a grant with a non-empty `tenant` is refused (422). An
-   organization id is this host's own record; a delivered grant's tenancy
-   resolves through each organization's installation (the shared tenancy, or
-   `cross_tenant` as granted), and a pin to one organization is written
-   interactively at a higher revision. Every grant is then held to the rules the
-   interactive write applies (400, naming the rule).
+4. **Hold it to the host's rules.** Every grant is first held to the rules the
+   interactive write applies (400, naming the rule), through that same parse —
+   and then to the one rule that is the host's and not core's. A delivered
+   envelope **names no organization**: a grant whose parsed `tenant` is set is
+   refused (422). An organization id is this host's own record; a delivered
+   grant's tenancy resolves through each organization's installation (the shared
+   tenancy, or `cross_tenant` as granted), and a pin to one organization is
+   written interactively at a higher revision. The rule reads the **parsed**
+   grant, never the raw key, so it sees the field the host will apply: a second
+   decoder disagreed with the first about letter case, and a pinned tenant
+   revokes that module's installation in every other organization.
 5. **Admit** the revision with core's `AdmitEnvelope` against the latest
    delivered one: an exact replay answers `replayed` and writes nothing; a lower
    revision, a rewritten one, another host (422) or another ownership domain
@@ -506,6 +510,15 @@ A `200` answers `{"disposition":"accepted"|"replayed","revision","digest","signe
 refusals use the manifest's codes. The row records the signer, the ownership
 domain, the canonical payload and the DSSE envelope, and no user; an
 interactive row records its user and no delivery (one `CHECK`).
+
+**A delivered revision is re-verified on every read**, against the host's
+pinned keys, the way the same reconcile pass re-verifies every applied
+manifest. Parsing proves the document is well formed, not that its signer may
+still state it, so unpinning a compromised release key withdraws the ceiling it
+stated: the read fails, and a reconciler reading it keeps what it last
+installed rather than widening. An interactively written revision carries no
+carrier — it is this host's own record — so there is nothing to verify, and a
+host with no verifier at all still reads it.
 
 A platform super_admin reads and writes it at `/admin/platform/module-authority`:
 the current revision, who wrote it and when, and every principal the applied
