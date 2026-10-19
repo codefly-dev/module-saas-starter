@@ -1187,23 +1187,26 @@ func (s *Service) CheckSourceDelegationContextRevision(
 	// ordinary module-operation checks run on it: a module calling an owner
 	// under its own installed binding has this same shape, with no delegation
 	// involved anywhere, and refusing it here is what denied the runtime's
-	// every such call.
+	// every such call. A module may hold both — a delegation for a person's
+	// source and its own binding for the operations it runs for that same
+	// person — so the pair existing is NOT the discriminator. Refusing on that
+	// would deny exactly the traffic the decline exists for.
 	//
-	// Unless this person has delegated to this module. Then the context's
-	// authority is that delegation's, and naming anything else is a lie that
-	// selects a checker which cannot fail: a delegation's hop scopes are built
-	// as a subset of exactly the module's own binding's invoke scopes, so the
-	// module-hop check passes by construction while the delegation's
-	// revocation, its owner, its source and the person's role go unread. A
-	// caller could otherwise keep using a revoked delegation by naming its
-	// module's binding instead. So the delegation is this resolver's whenever
-	// one exists between the two, revoked included.
+	// What is refused is the pair whose delegation has been REVOKED. Only then
+	// does declining admit something: a delegation's hop scopes are built as a
+	// subset of exactly the module's own binding's invoke scopes, so the
+	// module-hop check passes by construction, and a caller could keep using a
+	// revoked delegation indefinitely by naming its module's binding instead
+	// of the delegation's. After a revocation, every context of that pair that
+	// does not name a delegation is refused rather than re-routed; while the
+	// delegation stands, the module-hop check confirms authority the
+	// delegation grants anyway.
 	if !namesASourceDelegation(bindingID) {
-		delegated, err := s.personHasDelegatedTo(ctx, orgID, ownerPrincipalID, grant.Prefix)
+		revoked, err := s.personHasRevokedDelegationTo(ctx, orgID, ownerPrincipalID, grant.Prefix)
 		if err != nil {
 			return true, err
 		}
-		if !delegated {
+		if !revoked {
 			return false, nil
 		}
 		return true, ErrSourceDelegationContextStale
@@ -1218,20 +1221,26 @@ func (s *Service) CheckSourceDelegationContextRevision(
 	return true, nil
 }
 
-// personHasDelegatedTo reports whether this person has ever delegated a source
-// to this module in this organization — revoked rows included, because a
-// revoked delegation is exactly the one a caller would want to keep using by
-// naming another binding. modulePrefix is the actor's, as the registry
-// snapshot that claimed the shape reported it: a delegation records the
-// module's PREFIX while a context's hop names its PRINCIPAL, and comparing
-// the two spellings would match nothing and quietly admit every lie.
+// personHasRevokedDelegationTo reports whether this person has a REVOKED
+// delegation of any source to this module in this organization — the one state
+// in which declining a non-delegation binding admits something, because a
+// revoked delegation is what a caller would want to keep using by naming
+// another binding. An active delegation is not reported: a module legitimately
+// holds both a delegation and its own installed binding for the same person,
+// and refusing that pair would deny the operation calls the decline exists to
+// allow.
+//
+// modulePrefix is the actor's, as the registry snapshot that claimed the shape
+// reported it: a delegation records the module's PREFIX while a context's hop
+// names its PRINCIPAL, and comparing the two spellings would match nothing and
+// quietly admit every lie.
 //
 // It reads the organization's delegations rather than one row, because the
 // question is about the pair and a context names no source. An organization
 // holds a handful of delegations and this runs only for the shape that could
-// be a delegation's and did not name one, so the ordinary module-operation
+// be a delegation's and did not name one, so an ordinary module-operation
 // context pays one org-scoped read and the lie pays a refusal.
-func (s *Service) personHasDelegatedTo(ctx context.Context, orgID, ownerPrincipalID, modulePrefix string) (bool, error) {
+func (s *Service) personHasRevokedDelegationTo(ctx context.Context, orgID, ownerPrincipalID, modulePrefix string) (bool, error) {
 	if orgID == "" || ownerPrincipalID == "" || modulePrefix == "" {
 		return false, nil
 	}
@@ -1247,7 +1256,8 @@ func (s *Service) personHasDelegatedTo(ctx context.Context, orgID, ownerPrincipa
 		return false, err
 	}
 	for _, delegation := range delegations {
-		if delegation != nil && delegation.PrincipalID == ownerPrincipalID && delegation.ModulePrefix == modulePrefix {
+		if delegation != nil && !delegation.Active() &&
+			delegation.PrincipalID == ownerPrincipalID && delegation.ModulePrefix == modulePrefix {
 			return true, nil
 		}
 	}
