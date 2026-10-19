@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/codefly-dev/core/wool"
 	"maps"
 	"slices"
 	"sort"
@@ -571,8 +572,13 @@ func deriveModulePrincipalGrant(
 	// A whole night of a staging diagnosis went into recovering that fact,
 	// which this pass already held at the moment it dropped it.
 	//
-	// Reported, never relaxed: an operator reads the condition and writes the
-	// envelope. Nothing is granted that an administrator did not allow.
+	// LOGGED, not joined into the pass's error. These are not refusals of a
+	// binding: the pass's error is what a caller reads as "this derivation did
+	// not complete", and a cell where several modules declare a content kind
+	// the envelope never listed would fail every pass for ever — which is
+	// exactly what the first version of this did, and it froze the registry at
+	// whatever it had last derived. The ceiling is unchanged either way; only
+	// the operator's log gains the reason.
 	for _, dimension := range []struct {
 		name     string
 		declared []string
@@ -586,11 +592,14 @@ func deriveModulePrincipalGrant(
 			if slices.Contains(dimension.kept, asked) {
 				continue
 			}
-			omit(dimension.name+":"+asked, fmt.Errorf(
-				"the manifest declares the %s %q and the envelope allows it for no %s, so this module holds none of it",
-				dimension.name, asked, dimension.name))
+			wool.Get(context.Background()).In("deriveModulePrincipalGrant").Warn(
+				"the envelope allows none of a dimension this manifest declares, so this module holds none of it",
+				wool.Field("module", prefix), wool.Field("dimension", dimension.name),
+				wool.Field("declared", asked), wool.Field("manifest", manifest.Binding),
+				wool.Field("generation", manifest.Generation))
 		}
 	}
+
 	for _, asked := range request.Bindings {
 		allowed, inside := ceiling.OperationAudiences[asked.ID]
 		switch {

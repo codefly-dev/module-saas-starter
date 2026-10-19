@@ -276,25 +276,14 @@ func TestAManifestAskingForNoOperationGrantsNoConsumedOperations(t *testing.T) {
 	require.Empty(t, grant.Resources)
 	require.Empty(t, grant.ReadAudiences)
 	require.True(t, grant.CrossTenant)
-	// The ceiling is unchanged — this envelope allows none of what the
-	// manifest declares, and the grant holds none of it. What changed is that
-	// each removal is now REPORTED rather than silent: an envelope that simply
-	// does not mention a dimension removes it whole, and a module whose content
-	// resource kinds are removed that way serves no content to anybody, for
-	// ever, with every read refused in the caller's name.
-	reasons := make([]string, 0, len(omitted))
-	for _, omission := range omitted {
-		reasons = append(reasons, omission.Error())
-	}
-	require.Len(t, omitted, 3, "each declared dimension the envelope allows nothing for is named: %v", reasons)
-	for _, dimension := range []string{"queue", "audit namespace", "content resource kind"} {
-		require.Condition(t, func() bool {
-			for _, reason := range reasons {
-				if strings.Contains(reason, dimension+":") {
-					return true
-				}
-			}
-			return false
-		}, "no omission names the %s the manifest declared: %v", dimension, reasons)
-	}
+	// The ceiling is unchanged: this envelope allows none of what the manifest
+	// declares, and the grant holds none of it.
+	//
+	// The removals are REPORTED, but to the operator's log rather than through
+	// `omitted` — the pass's error is what a caller reads as "this derivation
+	// did not complete", and a cell where several modules declare a content
+	// kind the envelope never listed would otherwise fail every pass for ever
+	// and freeze the registry at whatever it last derived. That is a measured
+	// regression, not a hypothetical.
+	require.Empty(t, omitted, "a dimension the envelope does not allow is logged, never a refusal of the pass")
 }
