@@ -643,8 +643,16 @@ deleted; `DatasourceService/ListSourceDelegations` shows administrators who
 delegated what to which module binding, and when and why it ended.
 
 **Revision check.** `WorkContextService/CheckAuthorizationRevision` recognises a
-context owned by a person and actored by a declared module principal. The
-caller passes the operation binding the context sealed (`operation_binding_id`),
+context owned by a person, actored by a declared module principal, **and
+sealing a binding that names a delegation** (`source-delegation/...`). The
+subjects alone do not make a context this check's: a module executing its own
+installed operation for a person has exactly that shape and seals its OWN
+binding, and claiming those refused every one of them as a stale delegation
+when no delegation was involved. Such a context is declined here and takes the
+ordinary module-operation checks, which re-read that binding in full. A context
+of this shape sealing NO binding at all is still refused here rather than
+passed on. The caller passes the operation binding the context sealed
+(`operation_binding_id`),
 and the check confirms it only while that binding names the actor, the live
 binding read above holds, the delegation is active and from that owner, its
 binding is unchanged, its source exists and its person still holds the connect

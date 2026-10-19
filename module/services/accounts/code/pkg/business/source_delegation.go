@@ -1183,6 +1183,14 @@ func (s *Service) CheckSourceDelegationContextRevision(
 	if !ok {
 		return false, nil
 	}
+	// A sealed binding that names some other operation is not this checker's
+	// context: it is a module exercising its own installed binding, which the
+	// ordinary module-operation checks re-read in full. An EMPTY binding id is
+	// still refused here rather than passed on, because a context of this shape
+	// that seals no binding at all is exactly what this check exists to catch.
+	if bindingID != "" && !namesASourceDelegation(bindingID) {
+		return false, nil
+	}
 	if len(subjects) != 2 || subjects[0].PrincipalID != ownerPrincipalID {
 		return true, ErrSourceDelegationContextStale
 	}
@@ -1231,6 +1239,11 @@ func (s *Service) ConfirmSourceDelegationParent(
 		return true, nil, err
 	}
 	if !ok {
+		return false, nil, nil
+	}
+	// As in CheckSourceDelegationContextRevision: a binding that names another
+	// operation belongs to the ordinary module-operation checks, not here.
+	if bindingID != "" && !namesASourceDelegation(bindingID) {
 		return false, nil, nil
 	}
 	if len(hops) != 1 || hops[0].DelegationID == "" {

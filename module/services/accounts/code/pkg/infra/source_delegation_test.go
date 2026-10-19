@@ -690,3 +690,41 @@ func TestSourceDelegation_DedicatedTenantCannotBorrowInstallation(t *testing.T) 
 	require.Equal(t, uint64(1), authority.InstallationRevision)
 	require.Equal(t, w.org, authority.Tenant)
 }
+
+// A MODULE EXERCISING ITS OWN INSTALLED BINDING IS NOT A SOURCE DELEGATION.
+// Its context has the same subjects — a person owns it, a declared module
+// principal actors it — and the shape test alone claimed it, then refused it
+// because the binding it sealed is its own and not a delegation's. On a cell
+// that denied the runtime's every call to an owner it executes an operation
+// for ("the caller's authorization was revoked after the Work Context was
+// minted"), with no delegation involved anywhere. The checker must decline
+// such a context so the ordinary module-operation checks run on it.
+func TestSourceDelegation_AModulesOwnBindingIsNotThisCheckersContext(t *testing.T) {
+	w := newDelegationWorld(t)
+	sourceID := w.connect(t, w.org, w.admin)
+	delegation := w.only(t, w.org, sourceID, delegationModule)
+	authority, err := w.mint(business.SourceDelegationRef{DelegationID: delegation.ID})
+	require.NoError(t, err)
+	require.NoError(t, w.svc.RecordSourceOperationContextMint(testCtx, authority.SourceOperationContextAuthority))
+
+	t.Run("a delegation's own binding is still claimed and confirmed", func(t *testing.T) {
+		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
+			authority.OwnerPrincipalID, authority.Revision, subjects(authority), authority.BindingID())
+		require.True(t, handled)
+		require.NoError(t, err)
+	})
+
+	t.Run("another operation's binding is declined, not refused", func(t *testing.T) {
+		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
+			authority.OwnerPrincipalID, authority.Revision, subjects(authority), "runtime-admission")
+		require.False(t, handled, "a module's own installed binding belongs to the module-operation checks")
+		require.NoError(t, err)
+	})
+
+	t.Run("a context of this shape sealing no binding at all is still refused", func(t *testing.T) {
+		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
+			authority.OwnerPrincipalID, authority.Revision, subjects(authority), "")
+		require.True(t, handled, "a source delegation context that seals no binding is this check's to refuse")
+		require.Error(t, err)
+	})
+}
