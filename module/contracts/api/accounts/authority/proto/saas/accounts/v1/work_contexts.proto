@@ -280,10 +280,10 @@ message CheckAuthorizationRevisionRequest {
     (buf.validate.field).repeated.max_items = 17
   ];
   // operation_binding_id is the operation binding the context sealed, copied
-  // from its operation_binding.binding_id. It is how a consumer says which
-  // authority backs the context's module hops: a binding naming a source
-  // delegation is confirmed against that delegation, any other binding
-  // against the module's own installation.
+  // from its operation_binding.binding_id. A context minted from a source
+  // delegation exercises one (the delegation, used by its actor), and is
+  // confirmed only against that binding, re-read live; such a context checked
+  // without it is not confirmed. Empty for a context that seals none.
   optional string operation_binding_id = 5 [
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 512
