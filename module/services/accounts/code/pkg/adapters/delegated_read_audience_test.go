@@ -2,9 +2,10 @@ package adapters
 
 import (
 	"context"
-	"github.com/codefly-dev/core/workcontext"
 	"slices"
 	"testing"
+
+	"github.com/codefly-dev/core/workcontext"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"

@@ -3,9 +3,10 @@ package adapters
 import (
 	"context"
 	"errors"
-	"github.com/codefly-dev/core/wool"
 	"reflect"
 	"time"
+
+	"github.com/codefly-dev/core/wool"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -347,7 +348,7 @@ func delegatedAudienceActorID(parent *basev0.WorkContextV1) string {
 
 // logDelegatedAudienceRefusal records WHY an exchange was refused. The audit
 // row keeps the status code alone and the caller is told a bare code, which left
-// a refused turn with no record of its reason anywhere: robin reported
+// a refused turn with no record of its reason anywhere: a module saw
 // "operation exchange failed (invalid_argument)" and nothing named the scope. A
 // gRPC status message carries no credential — the parent never reaches an error.
 func logDelegatedAudienceRefusal(ctx context.Context, request delegatedAudienceRequest, audience string, err error) {

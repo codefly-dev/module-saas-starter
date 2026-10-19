@@ -1242,10 +1242,10 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 // carries. A ceiling that names no resource ids over a parent narrowed to some
 // keeps the parent's ids: a module that minted its parent at the least
 // authority it needs (one model profile, one collection) is not refused for
-// having been careful. Robin did exactly that — a parent of
-// `modelservice.profiles:read` on one profile, redeemed through a binding whose
-// lookup ceiling is the kind — and every turn was refused "widens authority"
-// before the first model call. Only a kind, an action or an id the parent never
+// having been careful. A module did exactly that — a parent of a read on one
+// profile, redeemed through a binding whose lookup ceiling is the kind — and
+// every turn was refused "widens authority" before the first model call. Only
+// a kind, an action or an id the parent never
 // carried is a widening, and that stays refused by name.
 func attenuateEffective(parent *basev0.WorkContextV1, requested []*basev0.WorkScopeV1) ([]*basev0.WorkScopeV1, error) {
 	if len(requested) == 0 {
