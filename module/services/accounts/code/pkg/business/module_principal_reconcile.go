@@ -560,6 +560,37 @@ func deriveModulePrincipalGrant(
 			Prefix: prefix, BindingID: id, Manifest: manifest.Binding, Generation: manifest.Generation, Reason: err,
 		})
 	}
+	// What the manifest declared and the envelope does not allow, SAID — for
+	// the three dimensions above, which until now narrowed in silence.
+	//
+	// `keepDeclared` is an intersection, so an envelope that simply does not
+	// mention a dimension removes it entirely. That is the right ceiling and
+	// the wrong silence: a module whose content resource kinds the envelope
+	// omits serves no content at all, to anybody, for ever, and the only
+	// symptom is every read refused with a message about the CALLER's scopes.
+	// A whole night of a staging diagnosis went into recovering that fact,
+	// which this pass already held at the moment it dropped it.
+	//
+	// Reported, never relaxed: an operator reads the condition and writes the
+	// envelope. Nothing is granted that an administrator did not allow.
+	for _, dimension := range []struct {
+		name     string
+		declared []string
+		kept     []string
+	}{
+		{"queue", request.Queues, grant.Queues},
+		{"audit namespace", request.Namespaces, grant.Namespaces},
+		{"content resource kind", request.ResourceKinds, grant.Resources},
+	} {
+		for _, asked := range dimension.declared {
+			if slices.Contains(dimension.kept, asked) {
+				continue
+			}
+			omit(dimension.name+":"+asked, fmt.Errorf(
+				"the manifest declares the %s %q and the envelope allows it for no %s, so this module holds none of it",
+				dimension.name, asked, dimension.name))
+		}
+	}
 	for _, asked := range request.Bindings {
 		allowed, inside := ceiling.OperationAudiences[asked.ID]
 		switch {
