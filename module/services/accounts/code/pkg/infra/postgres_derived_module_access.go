@@ -144,6 +144,11 @@ func (s *PostgresStore) EnsureDerivedRole(ctx context.Context, role business.Der
 //
 // Ordered so a revocation's policy-log entries and events are in a fixed order
 // rather than the order Postgres happened to return.
+//
+// Every relation is named with orgID explicitly, the cause and the node included.
+// The uninstall path runs this under the policy log's CONTROL-PLANE transaction,
+// where there is no RLS floor to fall back on, and the predicate the tenant
+// policy would have applied has to be in the statement instead.
 func (s *PostgresStore) DerivedScopeGrants(ctx context.Context, orgID, causeGrantID, causeScopeNodeID string) ([]*gen.ScopeGrant, error) {
 	w := wool.Get(ctx).In("DerivedScopeGrants", wool.Field("org_id", orgID))
 	var cause, causeNode any
@@ -161,9 +166,10 @@ func (s *PostgresStore) DerivedScopeGrants(ctx context.Context, orgID, causeGran
 		       d.derived_from_grant_id::text
 		  FROM scope_grants d
 		  JOIN scope_grants c ON c.id = d.derived_from_grant_id
-		 WHERE d.org_id = $1
+		 WHERE d.org_id = $1 AND c.org_id = $1
 		   AND ($2::uuid IS NULL OR d.derived_from_grant_id = $2::uuid)
-		   AND ($3::uuid IS NULL OR c.scope_path = (SELECT scope_path FROM scope_nodes WHERE id = $3::uuid))
+		   AND ($3::uuid IS NULL OR c.scope_path =
+		        (SELECT scope_path FROM scope_nodes WHERE id = $3::uuid AND org_id = $1))
 		 ORDER BY d.scope_path, d.role_id, d.subject_id`,
 		orgID, cause, causeNode)
 	if err != nil {
