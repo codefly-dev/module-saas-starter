@@ -167,6 +167,12 @@ var (
 	// ErrSourceDelegationInvalid: the delegation does not exist or belongs to
 	// another module. The two are deliberately indistinguishable.
 	ErrSourceDelegationInvalid = errors.New("source delegation is not usable by this module")
+	// ErrSourceDelegationBindingUnavailable: the delegation's binding is not
+	// visible in the view this call resolved — the organisation's consent does
+	// not carry it, or the registry was replaced mid-call. Transient and
+	// RETRYABLE, and deliberately not a revocation: see
+	// sourceDelegationBindingUnavailable.
+	ErrSourceDelegationBindingUnavailable = errors.New("source delegation binding is not available right now")
 	// ErrSourceDelegationNotFound: an administrator named a delegation that is
 	// not in their organization.
 	ErrSourceDelegationNotFound = errors.New("source delegation not found")
@@ -212,17 +218,60 @@ func (g ModulePrincipalGrant) sourceDelegationBinding() (string, ModuleOperation
 	return "", ModuleOperationAudience{}, false
 }
 
+// sourceDelegationBindingState is why a delegation's binding could not be used,
+// because the two reasons have opposite consequences and conflating them
+// destroys grants.
+type sourceDelegationBindingState int
+
+const (
+	// sourceDelegationBindingOK: the binding is declared and unchanged.
+	sourceDelegationBindingOK sourceDelegationBindingState = iota
+	// sourceDelegationBindingChanged: the module still declares this binding
+	// and it is DIFFERENT — the audience or the scopes the person delegated
+	// have moved. That is a durable fact about the declaration, so the
+	// delegation no longer describes anything and is revoked.
+	sourceDelegationBindingChanged
+	// sourceDelegationBindingUnavailable: the binding is not in THIS VIEW at
+	// all. A view is narrowed by the organisation's installation consent and is
+	// derived from a registry that is replaced on every reconcile pass, so its
+	// absence says nothing durable about what the person delegated: an
+	// administrator editing consent, a pass in flight, or a registry briefly
+	// empty behind its envelope fence all produce it.
+	//
+	// A delegation is a fact about a PERSON and a SOURCE. Revoking it because a
+	// derived view momentarily does not show the binding destroys that fact to
+	// report a condition that may be gone a second later — and it did: on
+	// a deployed cell, a delegation was revoked as "binding_changed" NINE SECONDS
+	// after being recorded, with a binding digest identical to the one stored,
+	// because the recording read the raw registry and the mint read the
+	// consent-narrowed one. The call is refused; the row is left alone.
+	sourceDelegationBindingUnavailable
+)
+
 // currentSourceDelegationBinding resolves the binding a delegation names as the
-// module declares it now, refusing one that is gone, invalid, no longer
-// accepting delegations, or changed in audience or scopes.
-func (g ModulePrincipalGrant) currentSourceDelegationBinding(delegation *SourceDelegation) (ModuleOperationAudience, bool) {
+// module declares it now, and says which kind of failure it hit: a binding that
+// CHANGED is durable and revokes, a binding this view cannot see is transient
+// and only refuses.
+func (g ModulePrincipalGrant) currentSourceDelegationBinding(delegation *SourceDelegation) (ModuleOperationAudience, sourceDelegationBindingState) {
 	binding, declared := g.OperationAudiences[delegation.BindingID]
-	if !declared || binding.SourceDelegationScopes == nil ||
-		validateOperationAudiences(g.Prefix, map[string]ModuleOperationAudience{delegation.BindingID: binding}) != nil ||
-		SourceDelegationBindingDigest(binding) != delegation.BindingDigest {
-		return ModuleOperationAudience{}, false
+	if !declared || binding.SourceDelegationScopes == nil {
+		// Not offered here. Either the module no longer asks for it, or this
+		// organisation's consent does not carry it, or this view is empty —
+		// and nothing at this point can tell those apart, so none of them may
+		// revoke.
+		return ModuleOperationAudience{}, sourceDelegationBindingUnavailable
 	}
-	return binding, true
+	if validateOperationAudiences(g.Prefix, map[string]ModuleOperationAudience{delegation.BindingID: binding}) != nil {
+		// Declared and unusable: a deployment defect, not a statement about
+		// the person's grant.
+		return ModuleOperationAudience{}, sourceDelegationBindingUnavailable
+	}
+	if SourceDelegationBindingDigest(binding) != delegation.BindingDigest {
+		// Declared, usable, and different from what the person delegated. This
+		// is the one durable answer, and the only one that revokes.
+		return ModuleOperationAudience{}, sourceDelegationBindingChanged
+	}
+	return binding, sourceDelegationBindingOK
 }
 
 // SourceDelegationTarget is one module binding a connect in an organization
@@ -707,10 +756,13 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 			return err
 		}
 		delegating := delegator.Grant
-		granted, current := delegating.currentSourceDelegationBinding(delegation)
-		if !current {
+		granted, state := delegating.currentSourceDelegationBinding(delegation)
+		switch state {
+		case sourceDelegationBindingChanged:
 			revokeAs, stale = SourceDelegationBindingChanged, delegation
 			return nil
+		case sourceDelegationBindingUnavailable:
+			return ErrSourceDelegationBindingUnavailable
 		}
 		// The audience link, and the whole reason a reference is safe to hold.
 		// Refused as invalid rather than as a different code, so a module that
@@ -851,10 +903,13 @@ func (s *Service) authorizeSourceDelegation(
 			return err
 		}
 		grant = installed.Grant
-		binding, current := grant.currentSourceDelegationBinding(delegation)
-		if !current {
+		binding, state := grant.currentSourceDelegationBinding(delegation)
+		switch state {
+		case sourceDelegationBindingChanged:
 			revokeAs, stale = SourceDelegationBindingChanged, delegation
 			return nil
+		case sourceDelegationBindingUnavailable:
+			return ErrSourceDelegationBindingUnavailable
 		}
 		facts, err := s.store.SourceDelegationFacts(ctx, delegation.OrgID, delegation.PrincipalID, delegation.SourceID)
 		if err != nil {
@@ -989,9 +1044,12 @@ func (s *Service) confirmSourceDelegationBinding(
 		if err != nil {
 			return err
 		}
-		granted, current := delegator.Grant.currentSourceDelegationBinding(found)
-		if !current {
+		granted, state := delegator.Grant.currentSourceDelegationBinding(found)
+		switch state {
+		case sourceDelegationBindingChanged:
 			return ErrSourceDelegationContextStale
+		case sourceDelegationBindingUnavailable:
+			return ErrSourceDelegationBindingUnavailable
 		}
 		for _, subject := range subjects {
 			if !operationScopesSubset(subject.Scopes, granted.SourceDelegationScopes) {
