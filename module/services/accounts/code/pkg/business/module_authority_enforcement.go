@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -134,24 +135,33 @@ func sharedTenant(envelope *ModuleEnvelope) (string, bool) {
 	return shared, shared != ""
 }
 
-// requestedCeiling is the widest ceiling for a manifest: exactly what its
-// authority block asks for, as the envelope would have to be written to allow
-// all of it (the same derivation an administrator's generator performs), with
-// the tenancy given. What the request cannot express — artifact policies and
-// read audiences — is kept from the entry the envelope holds, if any.
+// requestedCeiling is the widest ceiling for a manifest: everything the entry
+// the envelope holds already allows, widened to exactly what the authority
+// block asks for (the same derivation an administrator's generator performs),
+// with the tenancy given. Warn never grants less than the envelope does: a
+// binding only the envelope names — a runtime's installation bindings, which
+// no manifest can express — stays granted, and a binding both name is granted
+// as the manifest asks. What the request cannot express — artifact policies
+// and read audiences — is likewise kept from the held entry.
 func requestedCeiling(request *solutionhost.Authority, held ModuleEnvelopePrincipal, tenant string, crossTenant bool) ModuleEnvelopePrincipal {
 	grant := ModulePrincipalGrant{
 		ArtifactPolicies: held.Grant.ArtifactPolicies,
 		ReadAudiences:    held.Grant.ReadAudiences,
 		Tenant:           tenant,
 		CrossTenant:      crossTenant,
+		Queues:           sortedCopy(held.Grant.Queues),
+		Namespaces:       sortedCopy(held.Grant.Namespaces),
+		Resources:        sortedCopy(held.Grant.Resources),
+	}
+	if len(held.Grant.OperationAudiences) > 0 {
+		grant.OperationAudiences = maps.Clone(held.Grant.OperationAudiences)
 	}
 	if request == nil {
 		return ModuleEnvelopePrincipal{Grant: grant}
 	}
-	grant.Queues = sortedCopy(request.Queues)
-	grant.Namespaces = sortedCopy(request.Namespaces)
-	grant.Resources = sortedCopy(request.ResourceKinds)
+	grant.Queues = sortedUnion(held.Grant.Queues, request.Queues)
+	grant.Namespaces = sortedUnion(held.Grant.Namespaces, request.Namespaces)
+	grant.Resources = sortedUnion(held.Grant.Resources, request.ResourceKinds)
 	// A connect names one binding per module, so exactly one may accept
 	// delegations: the one the envelope already chose, or the only binding
 	// when the manifest declares one. With several and no choice, none does —
@@ -216,6 +226,24 @@ func scopesOf(units []string) []ModuleOperationScope {
 		scopes = append(scopes, ModuleOperationScope{ResourceKind: kind, Actions: actions})
 	}
 	return scopes
+}
+
+// sortedUnion is every distinct value of both lists, sorted; nil when both
+// are empty, like sortedCopy.
+func sortedUnion(left, right []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, values := range [][]string{left, right} {
+		for _, value := range values {
+			if seen[value] {
+				continue
+			}
+			seen[value] = true
+			out = append(out, value)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func sortedCopy(values []string) []string {
