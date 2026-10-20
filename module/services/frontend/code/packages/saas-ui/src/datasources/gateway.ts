@@ -347,6 +347,14 @@ export function datasourceClientOverTransport(
 				branch: input.branch,
 				paths: input.paths,
 				fileExtensions: input.fileExtensions ?? [],
+				// Sent whole and always: the host refuses an edit whose expectation
+				// no longer matches the stored scope, which is what stops a save
+				// from a form opened earlier overwriting a change made since.
+				expected: {
+					branch: input.expected.branch,
+					paths: input.expected.paths,
+					fileExtensions: input.expected.fileExtensions,
+				},
 			});
 			// An empty job id is the host saying the request changed nothing, so
 			// there is no sync to watch and nothing to announce. Announcing one

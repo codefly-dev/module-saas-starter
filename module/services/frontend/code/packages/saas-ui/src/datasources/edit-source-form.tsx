@@ -71,8 +71,24 @@ export function EditSourceForm({
 						{source.boundaryLabel
 							? `, its collection ${source.boundaryLabel}`
 							: ""}{" "}
-						and its credential stay as they are, and so do its sync history and
-						everything already ingested.
+						and its credential stay as they are, and so does its sync history.
+					</p>
+					{/*
+					 * Said separately, and said at all, because narrowing a filter is
+					 * the edit whose consequence is least obvious. Saving deletes
+					 * nothing: the host hands off the files in the new scope and emits
+					 * no removal for the ones that left it, so whether a consuming
+					 * module drops what the new snapshot no longer names is that
+					 * module's rule, not something this host decides or can report.
+					 * Promising that de-scoped content is retained would be a guess,
+					 * and promising it is removed would be a guess in the direction
+					 * someone clearing out files they should not have ingested would
+					 * act on.
+					 */}
+					<p className="type-caption-plain text-muted-foreground">
+						Saving does not delete anything that was already ingested. The next
+						sync hands off what the new scope covers; what becomes of files it
+						no longer covers is up to whatever reads this collection.
 					</p>
 				</div>
 

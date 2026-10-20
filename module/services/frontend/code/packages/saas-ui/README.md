@@ -395,7 +395,16 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   them rather than offering them disabled. Every field is submitted whole, as
   `updateSource` replaces rather than patches, which is why the fields arrive
   seeded from the source. A client without `updateSource` is offered no Edit at
-  all. The sync the host queues when the scope moves reports the
+  all. Because every field is a whole-field replacement, `EditSourceInput`
+  carries `expected` — the scope the dialog was seeded with — and the host
+  **refuses** a save whose expectation no longer matches the stored row rather
+  than applying it: a dialog left open across someone else's narrowing would
+  otherwise restore the wider scope and re-ingest everything they excluded. A
+  consumer calling `updateSource` itself must send the scope it last read, not a
+  blank one. The panel keeps the dialog open on that refusal and refetches the
+  list, so reopening it seeds from the current row. Saving deletes nothing that
+  was already ingested — the next sync hands off what the new scope covers, and
+  what becomes of files it no longer covers is the consuming module's rule. The sync the host queues when the scope moves reports the
   `reconfigured` trigger, and `describeSync` says so: a re-snapshot hands off
   the whole new scope, which beside an ordinary sync reads as a fault unless
   something names the cause.

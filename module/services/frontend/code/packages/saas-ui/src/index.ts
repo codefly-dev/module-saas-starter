@@ -109,6 +109,7 @@ export type {
 	DomainView,
 	EditSourceInput,
 	GroupBindingView,
+	SourceFetchScope,
 	SourceReconcileReceipt,
 	SourceSyncFailureReasonName,
 	SourceSyncPhaseName,

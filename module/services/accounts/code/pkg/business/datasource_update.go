@@ -14,6 +14,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ErrDatasourceSourceScopeChanged reports that a source's fetch scope moved
+// after the caller read it, so the whole-field replacement they asked for was
+// refused instead of applied over the newer scope.
+var ErrDatasourceSourceScopeChanged = errors.New("This source's branch or filters changed after this form was opened, so saving would have overwritten that change. Close it and edit the source again to work from its current scope.")
+
+// DatasourceFetchScope is what a source fetches: the three values an edit
+// replaces, together, so one can be stated as a whole.
+type DatasourceFetchScope struct {
+	Branch         string
+	Paths          []string
+	FileExtensions []string
+}
+
 // UpdateSourceInput is what a connected source may be re-aimed at: its branch
 // and its path and file-type filters. Every field is the whole value the source
 // is left with, never a patch — see UpdateSource.
@@ -23,6 +36,48 @@ type UpdateSourceInput struct {
 	Branch         string
 	Paths          []string
 	FileExtensions []string
+	// Expected is the scope the caller was shown, which the edit is accepted
+	// against. Required, and nil is refused rather than read as "apply it
+	// anyway": a whole-field replacement applied unconditionally is precisely
+	// how one editor's save erases another's.
+	Expected *DatasourceFetchScope
+}
+
+// sameFetchScope reports whether a scope is the one a source already holds.
+//
+// Both sides are normalized the same way before comparing, which is what makes
+// re-submitting the values a form was filled with a no-op rather than a change:
+// the stored row may hold a spelling an earlier normalizer let through (an
+// untrimmed prefix, an uppercase suffix), and comparing raw would report that
+// as a move and re-send the whole repository to the consuming module. The
+// comparison is deliberately more lenient than normalizeFileExtensions, which
+// refuses what it cannot store — a value already in the row has to stay
+// comparable even if it would not be accepted today, or the source it belongs
+// to could never be edited at all.
+func sameFetchScope(scope DatasourceFetchScope, source *DatasourceSource) bool {
+	return strings.TrimSpace(scope.Branch) == strings.TrimSpace(source.Branch) &&
+		slices.Equal(normalizePaths(scope.Paths), normalizePaths(source.Paths)) &&
+		slices.Equal(comparableFileExtensions(scope.FileExtensions), comparableFileExtensions(source.FileExtensions))
+}
+
+// comparableFileExtensions lowercases, trims and de-duplicates a file-type
+// filter for comparison only, in the order normalizeFileExtensions would have
+// produced, and refuses nothing.
+func comparableFileExtensions(values []string) []string {
+	var out []string
+	seen := make(map[string]struct{}, len(values))
+	for _, raw := range values {
+		value := strings.ToLower(strings.TrimSpace(raw))
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 // UpdateSource changes what an already-connected source fetches, keeping its
@@ -47,6 +102,15 @@ type UpdateSourceInput struct {
 // make an accidental omission silently preserve one; the contract says so, and
 // the caller repeats what it means to keep.
 //
+// That is also why the request carries the scope it expects to be replacing.
+// Stating a whole scope means every save asserts the complete state, so an
+// unconditional one applied late is indistinguishable from a deliberate revert:
+// a form opened while the source read one way and saved after someone else
+// narrowed it would restore the wider scope and re-ingest everything the other
+// person had just excluded, with nothing in the trail to show it was an
+// accident. Input.Expected is checked against the locked row, and a mismatch is
+// refused as ErrDatasourceSourceScopeChanged.
+//
 // Validation and normalization are the connect path's own — validRepo is not
 // re-run because the repository is not touched, but the branch is proven
 // readable with the source's existing credential before anything is written,
@@ -60,12 +124,23 @@ type UpdateSourceInput struct {
 // collection, and the sync's progress reports DatasourceSyncTriggerReconfigured
 // so a reader can tell that from an ordinary re-sync. A request that changes
 // nothing writes nothing, records nothing and returns an empty job id.
+//
+// Every decision that governs the write is taken against the row under lock,
+// inside the writing transaction: whether it is still there, whether it still
+// holds the scope the caller was shown, and whether the request moves it. Only
+// the GitHub branch check happens outside, because no transaction should be
+// held open across a provider call — and it is sound there because the
+// repository and the credential it validates against are not editable, and the
+// expectation proved under lock is what decides whether the branch moved at all.
 func (s *Service) UpdateSource(ctx context.Context, actorID string, input UpdateSourceInput) (*DatasourceSource, string, error) {
 	w := wool.Get(ctx).In("UpdateSource")
 	orgID := strings.TrimSpace(input.OrgID)
 	id := strings.TrimSpace(input.ID)
 	if orgID == "" || id == "" {
 		return nil, "", w.NewError("org id and source id are required")
+	}
+	if input.Expected == nil {
+		return nil, "", status.Error(codes.InvalidArgument, "the scope this edit expects to replace is required")
 	}
 	source, err := s.GetDatasourceSource(ctx, orgID, id)
 	if err != nil {
@@ -86,30 +161,56 @@ func (s *Service) UpdateSource(ctx context.Context, actorID string, input Update
 		return nil, "", w.Wrap(err)
 	}
 
-	// Compared after normalization, so re-submitting the form the source's own
-	// values filled in is not a change — and does not re-send the whole
-	// repository to the consuming module.
-	if branch == source.Branch &&
-		slices.Equal(paths, normalizePaths(source.Paths)) &&
-		slices.Equal(extensions, source.FileExtensions) {
-		return source, "", nil
-	}
-
-	previousBranch := source.Branch
-	if branch != previousBranch {
+	// The branch is proven readable before the transaction opens, and only when
+	// the request moves it away from the scope the caller was shown. That
+	// expectation is verified under lock below, so a branch that is about to be
+	// written has always been validated first.
+	expected := *input.Expected
+	if branch != strings.TrimSpace(expected.Branch) {
 		if err := s.validateGitHubBranch(ctx, source, branch); err != nil {
 			return nil, "", err
 		}
 	}
 
-	updated := *source
-	updated.Branch = branch
-	updated.Paths = paths
-	updated.FileExtensions = extensions
+	var (
+		updated DatasourceSource
+		changed bool
+	)
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		current, err := s.store.LockDatasourceSourceFetchScope(ctx, orgID, id)
+		if err != nil {
+			return err
+		}
+		// Deleted since the read above. Refusing here is what keeps an audit
+		// record and a queued sync from describing a source that is gone.
+		if current == nil {
+			return ErrDatasourceSourceNotFound
+		}
+		// The scope moved under the caller. Their request states a whole scope,
+		// so applying it now would overwrite whatever replaced what they saw —
+		// most often restoring a filter someone else had just narrowed, and
+		// re-ingesting everything it excluded.
+		if !sameFetchScope(expected, current) {
+			return ErrDatasourceSourceScopeChanged
+		}
+		// The boundary label is not in the locked projection (it comes from a
+		// join with no row to lock), so it is carried over from the read above;
+		// an edit cannot move the boundary, so it cannot have gone stale.
+		updated = *current
+		updated.BoundaryLabel = source.BoundaryLabel
+		// Decided against the locked row, so "nothing changed" is a fact about
+		// the stored scope and not about a copy of it read earlier.
+		if sameFetchScope(DatasourceFetchScope{Branch: branch, Paths: paths, FileExtensions: extensions}, current) {
+			return nil
+		}
+		previousBranch := current.Branch
+		updated.Branch = branch
+		updated.Paths = paths
+		updated.FileExtensions = extensions
 		if err := s.store.UpdateDatasourceSourceFetchScope(ctx, &updated); err != nil {
 			return err
 		}
+		changed = true
 		payload := map[string]any{
 			"repo":            updated.Repo,
 			"branch":          branch,
@@ -126,7 +227,15 @@ func (s *Service) UpdateSource(ctx context.Context, actorID string, input Update
 		}
 		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceUpdated, "datasource", updated.ID, orgID, payload)
 	}); err != nil {
+		// Both refusals are the caller's answer, not a persistence fault, so
+		// they reach the handler as themselves rather than wrapped in one.
+		if errors.Is(err, ErrDatasourceSourceNotFound) || errors.Is(err, ErrDatasourceSourceScopeChanged) {
+			return nil, "", err
+		}
 		return nil, "", w.Wrapf(err, "persist datasource source update")
+	}
+	if !changed {
+		return &updated, "", nil
 	}
 
 	jobID, err := s.enqueueReconfiguredSync(ctx, &updated)

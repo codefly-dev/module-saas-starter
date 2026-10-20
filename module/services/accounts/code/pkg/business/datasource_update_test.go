@@ -30,6 +30,18 @@ func editableSource(t *testing.T, svc *business.Service) *business.DatasourceSou
 	})
 }
 
+// scopeOf is the expectation an edit carries: the scope its author was shown.
+// Every UpdateSource below states one, because the host refuses an edit that
+// does not — a whole-field replacement applied unconditionally is how one
+// editor's save erases another's.
+func scopeOf(source *business.DatasourceSource) *business.DatasourceFetchScope {
+	return &business.DatasourceFetchScope{
+		Branch:         source.Branch,
+		Paths:          source.Paths,
+		FileExtensions: source.FileExtensions,
+	}
+}
+
 // The whole point of UpdateSource: the branch and filters move on the SAME row,
 // so the credential envelope, the collection and the repository are exactly
 // where they were. Editing used to mean delete plus re-add, which drops all
@@ -48,6 +60,7 @@ func TestUpdateSource_MovesTheScopeAndKeepsTheSourcesIdentity(t *testing.T) {
 		// normalizePaths, so an edit cannot store a scope a connect would refuse.
 		Paths:          []string{"/docs/", "docs", "guides"},
 		FileExtensions: []string{".MD", ".mdx"},
+		Expected:       scopeOf(source),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -123,6 +136,7 @@ func TestUpdateSource_UnchangedScopeWritesNothing(t *testing.T) {
 		Branch:         " main ",
 		Paths:          []string{"/docs/"},
 		FileExtensions: []string{".md"},
+		Expected:       scopeOf(source),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +164,7 @@ func TestUpdateSource_RefusesAnUnreadableBranchWithoutWriting(t *testing.T) {
 	gh.resolveErr = github.ErrNotFound
 	_, _, err := svc.UpdateSource(context.Background(), "actor-1", business.UpdateSourceInput{
 		OrgID: testOrg, ID: source.ID, Branch: "gone", Paths: source.Paths, FileExtensions: source.FileExtensions,
+		Expected: scopeOf(source),
 	})
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("error = %v, want FailedPrecondition", err)
@@ -188,6 +203,7 @@ func TestUpdateSource_FilterOnlyEditNeedsNoBranchValidation(t *testing.T) {
 
 	updated, jobID, err := svc.UpdateSource(context.Background(), "actor-1", business.UpdateSourceInput{
 		OrgID: testOrg, ID: source.ID, Branch: "main", Paths: []string{"docs", "guides"},
+		Expected: scopeOf(source),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -215,14 +231,21 @@ func TestUpdateSource_Validation(t *testing.T) {
 		code  codes.Code
 	}{
 		"no source id": {
-			input: business.UpdateSourceInput{OrgID: testOrg},
+			input: business.UpdateSourceInput{OrgID: testOrg, Expected: scopeOf(source)},
 		},
 		"unknown source": {
-			input: business.UpdateSourceInput{OrgID: testOrg, ID: business.NewIDString()},
+			input: business.UpdateSourceInput{OrgID: testOrg, ID: business.NewIDString(), Expected: scopeOf(source)},
+		},
+		// Nothing to compare the replacement against. Refused rather than
+		// applied: an unconditional whole-field write is the defect, not a
+		// convenience.
+		"no expected scope": {
+			input: business.UpdateSourceInput{OrgID: testOrg, ID: source.ID, Branch: "release"},
+			code:  codes.InvalidArgument,
 		},
 		// The connect path's own extension rule, not a second one.
 		"a path is not a file suffix": {
-			input: business.UpdateSourceInput{OrgID: testOrg, ID: source.ID, FileExtensions: []string{"docs/*.md"}},
+			input: business.UpdateSourceInput{OrgID: testOrg, ID: source.ID, FileExtensions: []string{"docs/*.md"}, Expected: scopeOf(source)},
 			code:  codes.InvalidArgument,
 		},
 	} {
@@ -240,7 +263,7 @@ func TestUpdateSource_Validation(t *testing.T) {
 	// A source that is not there is reported as such rather than as a refusal to
 	// edit something: the handler maps it to NotFound.
 	_, _, err := svc.UpdateSource(context.Background(), "actor-1",
-		business.UpdateSourceInput{OrgID: testOrg, ID: business.NewIDString()})
+		business.UpdateSourceInput{OrgID: testOrg, ID: business.NewIDString(), Expected: scopeOf(source)})
 	if !errors.Is(err, business.ErrDatasourceSourceNotFound) {
 		t.Fatalf("error = %v, want ErrDatasourceSourceNotFound", err)
 	}
@@ -267,7 +290,7 @@ func TestUpdateSource_RefusesANonGitHubSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err := svc.UpdateSource(context.Background(), "actor-1", business.UpdateSourceInput{
-		OrgID: testOrg, ID: crawler.ID, Branch: "main",
+		OrgID: testOrg, ID: crawler.ID, Branch: "main", Expected: scopeOf(crawler),
 	})
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("error = %v, want FailedPrecondition", err)
@@ -283,7 +306,7 @@ func TestUpdateSource_ReconfiguredModeForcesTheSnapshot(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
 	source := editableSource(t, svc)
 	if _, _, err := svc.UpdateSource(context.Background(), "actor-1", business.UpdateSourceInput{
-		OrgID: testOrg, ID: source.ID, Branch: "release",
+		OrgID: testOrg, ID: source.ID, Branch: "release", Expected: scopeOf(source),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -299,5 +322,127 @@ func TestUpdateSource_ReconfiguredModeForcesTheSnapshot(t *testing.T) {
 	}, business.DatasourceSyncHandoff{})
 	if progress.Trigger != business.DatasourceSyncTriggerReconfigured {
 		t.Fatalf("trigger = %v, want reconfigured — a reader cannot otherwise tell this change set covers a new scope", progress.Trigger)
+	}
+}
+
+// The row can be deleted between the read UpdateSource validates against and
+// the statement that writes it — they are separate transactions, and under READ
+// COMMITTED the second simply matches nothing. Both halves of the write path
+// refuse it, and each is asserted on its own, because a caller that commits an
+// audit record and queues a reconcile after an empty result does both for a
+// source that is gone and answers as though the edit had landed.
+//
+// Deleting the row BEFORE the call would prove none of this: UpdateSource's own
+// first read would answer not-found and neither statement would run. The
+// deletion is interleaved into the window a caller actually has.
+func TestUpdateSource_RefusesWhenTheSourceWasDeletedBeforeTheWrite(t *testing.T) {
+	for name, statement := range map[string]string{
+		"gone by the locked read": "LockDatasourceSourceFetchScope",
+		"gone by the update":      "UpdateDatasourceSourceFetchScope",
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := newDatasourceFakeStore()
+			producer := &recordingProducer{}
+			svc, audit := newDatasourceService(store, producer, nil)
+			source := editableSource(t, svc)
+			store.interleave(statement, func() { store.deleteSourceRow(source.ID) })
+
+			_, jobID, err := svc.UpdateSource(context.Background(), "actor-1", business.UpdateSourceInput{
+				OrgID: testOrg, ID: source.ID, Branch: "release", Expected: scopeOf(source),
+			})
+			if !errors.Is(err, business.ErrDatasourceSourceNotFound) {
+				t.Fatalf("error = %v, want ErrDatasourceSourceNotFound", err)
+			}
+			if jobID != "" {
+				t.Fatalf("job id = %q, want empty", jobID)
+			}
+			if jobs := producer.reconcileJobsFor(source.ID); len(jobs) != 0 {
+				t.Fatalf("reconcile jobs = %d, want 0: a deleted source has nothing to re-snapshot", len(jobs))
+			}
+			if entries := audit.entriesOf(business.EventDatasourceSourceUpdated); len(entries) != 0 {
+				t.Fatalf("updated events = %d, want 0: the trail must not record an edit to a source that is gone", len(entries))
+			}
+		})
+	}
+}
+
+// Every field is a whole-field replacement, so a save states the source's
+// complete scope. Applied late, that silently reverts whatever replaced what
+// the editor was shown — here, someone else's narrowing — and re-ingests
+// everything they had just excluded. The expectation is what refuses it.
+func TestUpdateSource_RefusesAnEditWhoseExpectedScopeMoved(t *testing.T) {
+	store := newDatasourceFakeStore()
+	producer := &recordingProducer{}
+	svc, audit := newDatasourceService(store, producer, nil)
+	source := editableSource(t, svc)
+	opened := scopeOf(source)
+
+	// Someone else narrows the source while the first editor's form is open.
+	if _, _, err := svc.UpdateSource(context.Background(), "actor-2", business.UpdateSourceInput{
+		OrgID: testOrg, ID: source.ID, Branch: "main", Paths: []string{"docs/internal"},
+		FileExtensions: source.FileExtensions, Expected: opened,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The first editor saves, carrying the scope they were shown. They only
+	// meant to move the branch, but their request also restates the wider paths.
+	_, jobID, err := svc.UpdateSource(context.Background(), "actor-1", business.UpdateSourceInput{
+		OrgID: testOrg, ID: source.ID, Branch: "release", Paths: opened.Paths,
+		FileExtensions: opened.FileExtensions, Expected: opened,
+	})
+	if !errors.Is(err, business.ErrDatasourceSourceScopeChanged) {
+		t.Fatalf("error = %v, want ErrDatasourceSourceScopeChanged", err)
+	}
+	if jobID != "" {
+		t.Fatalf("job id = %q, want empty", jobID)
+	}
+
+	// The narrowing stands, and only the one edit that was accepted is recorded.
+	stored, err := svc.GetDatasourceSource(context.Background(), testOrg, source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"docs/internal"}; !reflect.DeepEqual(stored.Paths, want) {
+		t.Fatalf("paths = %v, want %v: the refused save overwrote the narrowing", stored.Paths, want)
+	}
+	if stored.Branch != "main" {
+		t.Fatalf("branch = %q, want main: the refused save was applied", stored.Branch)
+	}
+	if entries := audit.entriesOf(business.EventDatasourceSourceUpdated); len(entries) != 1 {
+		t.Fatalf("updated events = %d, want 1 (the accepted edit only)", len(entries))
+	}
+	if jobs := producer.reconcileJobsFor(source.ID); len(jobs) != 1 {
+		t.Fatalf("reconcile jobs = %d, want 1 (the accepted edit only)", len(jobs))
+	}
+}
+
+// Re-submitting the values a form was filled with is a no-op even when the row
+// holds a spelling today's normalizers would not produce. An expectation is
+// only ever compared, never stored, so holding it to the strict rule would make
+// such a source impossible to edit at all.
+func TestUpdateSource_ComparesAnExpectationLenientlyEnoughToEditALegacyRow(t *testing.T) {
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, &recordingProducer{}, nil)
+	source := editableSource(t, svc)
+	// A row as an older normalizer left it: an untrimmed prefix and an uppercase
+	// suffix, neither of which normalizeFileExtensions would accept today.
+	store.setSourceScope(source.ID, "main", []string{"docs/"}, []string{".MD"})
+
+	updated, jobID, err := svc.UpdateSource(context.Background(), "actor-1", business.UpdateSourceInput{
+		OrgID: testOrg, ID: source.ID, Branch: "main", Paths: []string{"docs", "guides"},
+		FileExtensions: []string{".md"},
+		Expected: &business.DatasourceFetchScope{
+			Branch: "main", Paths: []string{"docs/"}, FileExtensions: []string{".MD"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("a legacy spelling made the source un-editable: %v", err)
+	}
+	if jobID == "" {
+		t.Fatal("no sync was enqueued for a change that moved what is fetched")
+	}
+	if want := []string{"docs", "guides"}; !reflect.DeepEqual(updated.Paths, want) {
+		t.Fatalf("paths = %v, want %v", updated.Paths, want)
 	}
 }

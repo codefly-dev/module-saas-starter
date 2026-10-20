@@ -145,3 +145,73 @@ func TestPostgresUpdateDatasourceSourceFetchScopeKeepsEverythingElse(t *testing.
 	require.Empty(t, empty.Paths)
 	require.Empty(t, empty.FileExtensions)
 }
+
+// The statement's own answer to "was it there?". UpdateSource reads the source
+// to validate against in one transaction and writes it in another, so under
+// READ COMMITTED the row can be deleted in between and the UPDATE simply
+// matches nothing. Reported as not-found, because the caller commits an audit
+// record and queues a reconcile on the strength of this returning nil.
+func TestPostgresUpdateDatasourceSourceFetchScopeReportsAMissingRow(t *testing.T) {
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+	source := installationSourceByID(t, seedDatasourceSource(t, org))
+
+	gone := *source
+	gone.ID = business.NewIDString()
+	gone.Branch = "release"
+	err := testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.UpdateDatasourceSourceFetchScope(ctx, &gone)
+	})
+	require.ErrorIs(t, err, business.ErrDatasourceSourceNotFound,
+		"an UPDATE that matched no row must not read as a successful edit")
+
+	// Another organization's id is equally no row of this one's, and the tenant
+	// policy is what makes it so — the same empty result, not a silent write.
+	foreign := *source
+	foreign.OrgID = seedOrg(t, seedUser(t))
+	foreign.Branch = "release"
+	err = testStore.WithOrgTx(testCtx, foreign.OrgID, func(ctx context.Context) error {
+		return testStore.UpdateDatasourceSourceFetchScope(ctx, &foreign)
+	})
+	require.ErrorIs(t, err, business.ErrDatasourceSourceNotFound)
+
+	reloaded := installationSourceByID(t, source.ID)
+	require.Equal(t, source.Branch, reloaded.Branch, "neither refusal may have written")
+}
+
+// The locked read is what an edit compares its expectation against, so it has
+// to return the row as stored — including the file-type filter that lives in the
+// config envelope rather than a column of its own — and nothing for a row that
+// is not there.
+func TestPostgresLockDatasourceSourceFetchScopeReadsTheStoredScope(t *testing.T) {
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+	template := installationSourceByID(t, seedDatasourceSource(t, org))
+
+	source := *template
+	source.ID = business.NewIDString()
+	source.Branch = "main"
+	source.Paths = []string{"docs"}
+	source.FileExtensions = []string{".md"}
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.InsertDatasourceSource(ctx, &source)
+	}))
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		locked, err := testStore.LockDatasourceSourceFetchScope(ctx, org, source.ID)
+		if err != nil {
+			return err
+		}
+		require.NotNil(t, locked)
+		require.Equal(t, "main", locked.Branch)
+		require.Equal(t, []string{"docs"}, locked.Paths)
+		require.Equal(t, []string{".md"}, locked.FileExtensions)
+
+		missing, err := testStore.LockDatasourceSourceFetchScope(ctx, org, business.NewIDString())
+		if err != nil {
+			return err
+		}
+		require.Nil(t, missing, "a row that is not there must read as absent, not as an empty scope")
+		return nil
+	}))
+}

@@ -112,6 +112,11 @@ it("seeds the edit dialog from the source and saves the whole scope", async () =
 		branch: "release",
 		paths: ["docs/", "guides/"],
 		fileExtensions: [".md"],
+		// The scope the dialog was seeded from, sent back so the host can refuse
+		// the save if the source no longer holds it. Without it a form left open
+		// across someone else's change would silently restore the scope it was
+		// showing.
+		expected: { branch: "main", paths: ["docs/"], fileExtensions: [".md"] },
 	});
 	// Editing a source is not connecting or deleting one: its identity, its
 	// credential and its history stay where they are.
@@ -206,4 +211,57 @@ it("states that a reconfigured sync re-snapshots the source", () => {
 	// An ordinary manual sync says nothing extra: the note is a fact about the
 	// pass the host reported, not decoration on every snapshot.
 	expect(describeSync({ ...base, trigger: "manual" }).detail).toBeUndefined();
+});
+
+// The one state where a reconfigured sync must NOT claim a re-snapshot: the
+// host compiled no change set, which a forced reconcile reaches when it parked
+// the source instead of snapshotting it — what happens when a narrowed scope is
+// still over the ingest cap. Narrowing paths is the documented recovery for
+// exactly that, so this is the reader who most needs to know nothing was handed
+// off, and substituting the scope note for that sentence told them the opposite.
+it("does not claim a re-snapshot on a reconfigured sync that handed nothing off", () => {
+	const unchanged: SourceSyncView = {
+		jobId: "job-resnapshot",
+		phase: "done",
+		trigger: "reconfigured",
+		queuedAt: "2026-10-20T10:00:00.000Z",
+		finishedAt: "2026-10-20T10:00:30.000Z",
+		attempt: 1,
+		maxAttempts: 24,
+	};
+	const report = describeSync(unchanged);
+	expect(report.state).toBe("unchanged");
+	expect(report.detail).toContain("nothing was handed off");
+	expect(report.detail).not.toContain("re-snapshots it");
+
+	// An ordinary sync that handed nothing off still reads as it always did.
+	expect(describeSync({ ...unchanged, trigger: "manual" }).detail).toBe(
+		"The source had not changed, so nothing was handed off.",
+	);
+});
+
+// Saving a scope the source no longer holds is refused by the host, and the
+// dialog has to survive it: the message tells the person to reopen the form,
+// which is only useful if the row behind it has been refreshed first.
+it("keeps the dialog open and refreshes the list when the scope moved", async () => {
+	const listSources = vi.fn(async () => [source]);
+	const client = fakeClient({
+		listSources,
+		updateSource: vi.fn(async () => {
+			throw new Error("This source's branch or filters changed after this form was opened");
+		}),
+	});
+	await openEditDialog(client);
+	fireEvent.change(screen.getByLabelText("Branch (optional)"), {
+		target: { value: "release" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+	const alert = await screen.findByText(/changed after this form was opened/);
+	expect(alert).toBeDefined();
+	// Still open, still holding what was typed, so nothing has to be retyped.
+	expect(fieldValue("Branch (optional)")).toBe("release");
+	// Refetched, so reopening the dialog seeds from the current row rather than
+	// re-sending the same stale expectation and being refused again.
+	await waitFor(() => expect(listSources.mock.calls.length).toBeGreaterThan(1));
 });

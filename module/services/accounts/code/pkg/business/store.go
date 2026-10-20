@@ -107,8 +107,15 @@ type Store interface {
 	InsertDatasourceSource(ctx context.Context, source *DatasourceSource) error
 	// UpdateDatasourceSourceFetchScope replaces what a Source fetches — branch,
 	// paths and the config envelope carrying its file-type filter — and nothing
-	// else. MUST run inside the caller's WithOrgTx.
+	// else. Reports ErrDatasourceSourceNotFound when no row matched, so a source
+	// deleted since the caller read it cannot be answered as a successful edit.
+	// MUST run inside the caller's WithOrgTx.
 	UpdateDatasourceSourceFetchScope(ctx context.Context, source *DatasourceSource) error
+	// LockDatasourceSourceFetchScope reads one Source under a row lock, or
+	// (nil, nil) when none matches, so an edit compares the scope it expects
+	// against the row as it is at the moment it writes. MUST run inside the
+	// caller's WithOrgTx.
+	LockDatasourceSourceFetchScope(ctx context.Context, orgID, id string) (*DatasourceSource, error)
 	WithSourceReadSnapshot(context.Context, string, func(context.Context) error) error
 	SourceReadRevision(context.Context, string, []string) (string, time.Time, error)
 	ListReadableSourcesPage(context.Context, string, []string, []string, string, int) ([]*gen.ReadableSourceCollection, error)

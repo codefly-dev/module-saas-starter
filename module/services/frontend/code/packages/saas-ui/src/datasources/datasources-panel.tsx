@@ -516,6 +516,16 @@ function DatasourcesPanelView({
 				fileExtensions: parsePaths(values.fileExtensions).map((value) =>
 					value.toLowerCase(),
 				),
+				// The scope this dialog was seeded from — the same object the form
+				// read its defaults out of, which is what the person was looking at
+				// while they typed. The host refuses the save if the source no
+				// longer holds it, so a dialog left open across someone else's
+				// change cannot silently undo it.
+				expected: {
+					branch: source.branch,
+					paths: source.paths,
+					fileExtensions: source.fileExtensions ?? [],
+				},
 			});
 			setEditing(null);
 			setSyncNotice(
@@ -535,6 +545,13 @@ function DatasourcesPanelView({
 			// The dialog stays open and shows the host's refusal — an unreadable
 			// branch is a correctable mistake, and closing it would discard what
 			// the person typed.
+			//
+			// The list is refreshed anyway: one of the refusals is "the source
+			// changed after you opened this", and the remedy the message gives is
+			// to reopen the form. Reopening it over a stale row would seed the
+			// same expectation and be refused again, so the row behind the dialog
+			// has to be current before they can act on what they were told.
+			await list.refetch();
 		}
 	};
 

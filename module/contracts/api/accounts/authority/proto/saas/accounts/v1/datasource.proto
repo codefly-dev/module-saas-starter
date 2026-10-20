@@ -391,6 +391,14 @@ message AddSourceResponse {
 // sent" from "sent empty", so a request that meant to leave a filter alone
 // must repeat it; naming that here is what keeps a clearing from reading as an
 // omission, and an omission from being silently preserved.
+//
+// Because every field is a whole-field replacement, every request asserts the
+// source's complete scope — so one is accepted only against the scope its
+// author was actually shown. `expected` carries that scope back, and a request
+// whose expectation no longer matches the stored row is REFUSED rather than
+// applied: without it, a form opened while the source read one way and saved
+// after someone else narrowed it would silently restore the wider scope and
+// re-ingest everything the other person had just excluded.
 message UpdateSourceRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string id = 2 [(buf.validate.field).string.uuid = true];
@@ -417,6 +425,46 @@ message UpdateSourceRequest {
         min_len: 2
         max_len: 33
         pattern: "^\\.[A-Za-z0-9][A-Za-z0-9._-]*$"
+      }
+    }
+  }];
+  // The scope the caller was shown, as it read it. Required: an unconditional
+  // whole-field replacement is exactly how one editor's save erases another's,
+  // so there is no "just apply it" mode to fall back to.
+  //
+  // It is the scope and not the row's `updated_at` because `updated_at` moves
+  // on every successful sync, which would refuse a perfectly good edit for the
+  // sole reason that the source had reconciled since the form was opened. What
+  // an editor needs guarded is what they were looking at.
+  SourceFetchScope expected = 6 [(buf.validate.field).required = true];
+}
+
+// SourceFetchScope is what a source fetches — the three values UpdateSource
+// replaces — carried on its own so a request can state the scope it expects to
+// be replacing as well as the one it wants.
+//
+// Its bounds are deliberately looser than the mutable fields': an expectation
+// is only ever compared against the stored row, never stored, so holding it to
+// today's shape would make a source that predates that shape impossible to
+// edit at all. Size is still bounded, because the comparison reads the whole
+// thing.
+message SourceFetchScope {
+  string branch = 1 [(buf.validate.field).string.max_len = 255];
+  repeated string paths = 2 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {
+      string: {
+        min_len: 1
+        max_len: 512
+      }
+    }
+  }];
+  repeated string file_extensions = 3 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: {
+      string: {
+        min_len: 1
+        max_len: 33
       }
     }
   }];

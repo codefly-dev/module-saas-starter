@@ -261,8 +261,17 @@ export function describeSync(
 				active: false,
 				percent: 100,
 				headline: "Up to date",
-				detail:
-					scopeNote ?? "The source had not changed, so nothing was handed off.",
+				// The scope note is ADDED here, never substituted. This branch is
+				// the one where nothing was handed off — a forced reconcile reaches
+				// it when the host parked the source instead of snapshotting it,
+				// which is exactly what happens when a narrowed scope is still over
+				// the ingest cap. Replacing the sentence with "this sync
+				// re-snapshots it at the branch and filters now saved" would claim
+				// the hand-off that did not happen, to the one reader who most needs
+				// to know it did not.
+				detail: scopeNote
+					? "The source was reconfigured, but nothing was handed off: this sync compiled no change set at the branch and filters now saved."
+					: "The source had not changed, so nothing was handed off.",
 			};
 		}
 		return {

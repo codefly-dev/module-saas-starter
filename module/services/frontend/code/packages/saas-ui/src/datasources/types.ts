@@ -181,6 +181,21 @@ export interface EditSourceInput {
 	branch: string;
 	paths: string[];
 	fileExtensions?: string[];
+	/**
+	 * The scope the editor was shown, exactly as it read it, which the host
+	 * accepts the replacement against. Required, because every field above is a
+	 * whole-field replacement: a save applied unconditionally after someone else
+	 * narrowed the source would restore the wider scope and re-ingest everything
+	 * they had just excluded. A mismatch is refused, not applied.
+	 */
+	expected: SourceFetchScope;
+}
+
+/** What a source fetches — the three values an edit replaces, as a whole. */
+export interface SourceFetchScope {
+	branch: string;
+	paths: string[];
+	fileExtensions: string[];
 }
 
 export interface SourceActivity {

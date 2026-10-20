@@ -128,16 +128,34 @@ func (h *datasourceConnectHandler) UpdateSource(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	source, jobID, err := h.svc.UpdateSource(ctx, actorID, business.UpdateSourceInput{
+	input := business.UpdateSourceInput{
 		OrgID:          req.Msg.OrgId,
 		ID:             req.Msg.Id,
 		Branch:         req.Msg.Branch,
 		Paths:          req.Msg.Paths,
 		FileExtensions: req.Msg.FileExtensions,
-	})
+	}
+	// The scope the caller was shown. The descriptor marks it required, so an
+	// absent one is already refused before this handler runs; it is mapped
+	// rather than defaulted so a request that somehow arrives without one is
+	// refused by the business rule too, never applied unconditionally.
+	if expected := req.Msg.GetExpected(); expected != nil {
+		input.Expected = &business.DatasourceFetchScope{
+			Branch:         expected.GetBranch(),
+			Paths:          expected.GetPaths(),
+			FileExtensions: expected.GetFileExtensions(),
+		}
+	}
+	source, jobID, err := h.svc.UpdateSource(ctx, actorID, input)
 	if err != nil {
 		if errors.Is(err, business.ErrDatasourceSourceNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		// The source moved under the editor. FailedPrecondition and not Aborted:
+		// retrying the same request would be refused again for the same reason,
+		// and what resolves it is reopening the form on the current scope.
+		if errors.Is(err, business.ErrDatasourceSourceScopeChanged) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 		return nil, translateGRPCError(err)
 	}
