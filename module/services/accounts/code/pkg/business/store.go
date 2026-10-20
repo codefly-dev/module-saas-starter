@@ -105,6 +105,10 @@ type Store interface {
 	//     Call it at the top level only — nesting it inside an existing
 	//     WithOrgTx/WithControlPlane violates the no-nesting rule.
 	InsertDatasourceSource(ctx context.Context, source *DatasourceSource) error
+	// UpdateDatasourceSourceFetchScope replaces what a Source fetches — branch,
+	// paths and the config envelope carrying its file-type filter — and nothing
+	// else. MUST run inside the caller's WithOrgTx.
+	UpdateDatasourceSourceFetchScope(ctx context.Context, source *DatasourceSource) error
 	WithSourceReadSnapshot(context.Context, string, func(context.Context) error) error
 	SourceReadRevision(context.Context, string, []string) (string, time.Time, error)
 	ListReadableSourcesPage(context.Context, string, []string, []string, string, int) ([]*gen.ReadableSourceCollection, error)

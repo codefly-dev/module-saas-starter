@@ -116,6 +116,37 @@ func (h *datasourceConnectHandler) AddSource(
 	return connect.NewResponse(&gen.AddSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source))}), nil
 }
 
+func (h *datasourceConnectHandler) UpdateSource(
+	ctx context.Context,
+	req *connect.Request[gen.UpdateSourceRequest],
+) (*connect.Response[gen.UpdateSourceResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	actorID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	source, jobID, err := h.svc.UpdateSource(ctx, actorID, business.UpdateSourceInput{
+		OrgID:          req.Msg.OrgId,
+		ID:             req.Msg.Id,
+		Branch:         req.Msg.Branch,
+		Paths:          req.Msg.Paths,
+		FileExtensions: req.Msg.FileExtensions,
+	})
+	if err != nil {
+		if errors.Is(err, business.ErrDatasourceSourceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, translateGRPCError(err)
+	}
+	return connect.NewResponse(&gen.UpdateSourceResponse{
+		Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source)),
+		JobId:      jobID,
+	}), nil
+}
+
 func (h *datasourceConnectHandler) GetDatasourceCatalog(
 	ctx context.Context,
 	req *connect.Request[gen.GetDatasourceCatalogRequest],

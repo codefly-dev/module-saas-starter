@@ -647,6 +647,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.datasource.source.updated": {
+      "address": "saas.datasource.source.updated",
+      "title": "saas.datasource.source.updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.source.updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.datasource.sync.completed": {
       "address": "saas.datasource.sync.completed",
       "title": "saas.datasource.sync.completed",
@@ -2528,6 +2539,13 @@
       },
       "title": "saas publishes saas.datasource.source.synced"
     },
+    "send:saas.datasource.source.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.source.updated"
+      },
+      "title": "saas publishes saas.datasource.source.updated"
+    },
     "send:saas.datasource.sync.completed": {
       "action": "send",
       "channel": {
@@ -3864,6 +3882,13 @@
       "saas.datasource.source.synced": {
         "name": "saas.datasource.source.synced",
         "title": "saas.datasource.source.synced",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.source.updated": {
+        "name": "saas.datasource.source.updated",
+        "title": "saas.datasource.source.updated",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

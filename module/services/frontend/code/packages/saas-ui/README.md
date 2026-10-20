@@ -386,7 +386,19 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   phase names and getting the terminal cases wrong. `<SourceSyncProgress source
   report />` is the card, and `useSourceSync(client, orgId, source)` the read.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
-  `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
+  `useUpdateSource`, `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
+- `<EditSourceForm source onSubmit … />`, behind the row's **Edit**, changes
+  what a connected source fetches: its branch and its path and file-type
+  filters, bound by the same schema the connect form uses. It offers the connect
+  form's *mutable* fields only — the repository and the collection are the
+  source's identity and the host refuses to move either, so the dialog states
+  them rather than offering them disabled. Every field is submitted whole, as
+  `updateSource` replaces rather than patches, which is why the fields arrive
+  seeded from the source. A client without `updateSource` is offered no Edit at
+  all. The sync the host queues when the scope moves reports the
+  `reconfigured` trigger, and `describeSync` says so: a re-snapshot hands off
+  the whole new scope, which beside an ordinary sync reads as a fault unless
+  something names the cause.
 
 ### Connecting through the GitHub App
 

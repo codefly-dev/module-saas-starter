@@ -198,6 +198,16 @@ export function describeSync(
 			? `Attempt ${view.attempt} of ${view.maxAttempts}`
 			: undefined;
 
+	// Why this sync's change set may be large. The host reports the trigger from
+	// the durable job it ran, so this is a fact about the pass rather than a
+	// guess from the counts: a re-snapshot after an edit hands off the whole new
+	// scope, which beside an ordinary sync's handful of files reads as a fault
+	// unless something says the source itself moved.
+	const scopeNote =
+		view.trigger === "reconfigured"
+			? "The source was reconfigured, so this sync re-snapshots it at the branch and filters now saved."
+			: undefined;
+
 	const base = {
 		step,
 		stepCount,
@@ -251,7 +261,8 @@ export function describeSync(
 				active: false,
 				percent: 100,
 				headline: "Up to date",
-				detail: "The source had not changed, so nothing was handed off.",
+				detail:
+					scopeNote ?? "The source had not changed, so nothing was handed off.",
 			};
 		}
 		return {
@@ -263,6 +274,7 @@ export function describeSync(
 			headline: view.changes.snapshot
 				? "Handed off a full snapshot"
 				: "Handed off the changed files",
+			...(scopeNote ? { detail: scopeNote } : {}),
 		};
 	}
 
@@ -291,6 +303,7 @@ export function describeSync(
 		active: true,
 		percent: percentFor(step, stepCount),
 		headline,
+		...(scopeNote ? { detail: scopeNote } : {}),
 	};
 }
 

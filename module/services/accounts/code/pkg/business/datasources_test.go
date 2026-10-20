@@ -137,6 +137,23 @@ func (f *datasourceFakeStore) InsertDatasourceSource(_ context.Context, source *
 	return nil
 }
 
+// UpdateDatasourceSourceFetchScope mirrors the store's narrow UPDATE: only the
+// three fetch-scope fields are written, so a business change that tried to move
+// a source's repository or credential through this call fails here as it would
+// against the statement.
+func (f *datasourceFakeStore) UpdateDatasourceSourceFetchScope(_ context.Context, source *business.DatasourceSource) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	stored, ok := f.sources[source.ID]
+	if !ok || stored.OrgID != source.OrgID {
+		return nil
+	}
+	stored.Branch = source.Branch
+	stored.Paths = source.Paths
+	stored.FileExtensions = source.FileExtensions
+	return nil
+}
+
 func (f *datasourceFakeStore) ListDatasourceSources(_ context.Context, orgID string) ([]*business.DatasourceSource, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -509,6 +526,21 @@ func (purposeCipher) DecryptSecret(_ context.Context, purpose, envelope string) 
 type recordingProducer struct {
 	mu   sync.Mutex
 	jobs []*jobsv1.NewJob
+}
+
+// reconcileJobsFor returns the reconcile jobs enqueued for one source, so a
+// test can assert the mode a pass ran in rather than that something was queued.
+func (p *recordingProducer) reconcileJobsFor(sourceID string) []*jobsv1.NewJob {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []*jobsv1.NewJob
+	for _, job := range p.jobs {
+		if job.GetTopic() == business.DatasourceReconcileTopic &&
+			job.GetAttributes()["datasource.source_id"] == sourceID {
+			out = append(out, job)
+		}
+	}
+	return out
 }
 
 func (p *recordingProducer) EnqueueJob(_ context.Context, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {

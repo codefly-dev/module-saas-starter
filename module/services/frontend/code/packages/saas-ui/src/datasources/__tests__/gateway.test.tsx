@@ -158,22 +158,38 @@ describe("createDatasourceClient", () => {
 			lookupReconcileSource: () => client.lookupReconcileSource("effect-1"),
 			reconnectSource: () => client.reconnectSource!("org-1", "ds-1"),
 			getSourceSync: () => client.getSourceSync!("org-1", "ds-1"),
+			updateSource: () =>
+				client.updateSource!({
+					orgId: "org-1",
+					id: "ds-1",
+					branch: "release",
+					paths: ["docs/"],
+				}),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
 			// The stub answers {} to everything; an operation whose answer must
 			// carry a record rejects on it, after the call this test counts.
 			beginAccountLink: () =>
-				client.beginAccountLink!("org-1", "github", "https://host.example.com/"),
+				client.beginAccountLink!(
+					"org-1",
+					"github",
+					"https://host.example.com/",
+				),
 			completeAccountLink: () =>
-				client.completeAccountLink!("org-1", "dl.s", "c").catch(() => undefined),
+				client.completeAccountLink!("org-1", "dl.s", "c").catch(
+					() => undefined,
+				),
 			listMyAccountLinks: () => client.listMyAccountLinks!("org-1"),
 			deleteAccountLink: () => client.deleteAccountLink!("org-1", "l1"),
 			getDirectory: () => client.getDirectory!("org-1"),
 			bindGroup: () =>
-				client.bindGroup!("org-1", "github", "acme/x", "t1").catch(() => undefined),
+				client.bindGroup!("org-1", "github", "acme/x", "t1").catch(
+					() => undefined,
+				),
 			unbindGroup: () => client.unbindGroup!("org-1", "b1"),
 			claimDomain: () =>
 				client.claimDomain!("org-1", "example.com").catch(() => undefined),
-			verifyDomain: () => client.verifyDomain!("org-1", "d1").catch(() => undefined),
+			verifyDomain: () =>
+				client.verifyDomain!("org-1", "d1").catch(() => undefined),
 			deleteDomain: () => client.deleteDomain!("org-1", "d1"),
 		} satisfies Partial<Record<keyof typeof client, () => Promise<unknown>>>;
 		expect(Object.keys(operations).sort()).toEqual(Object.keys(client).sort());
@@ -185,7 +201,10 @@ describe("createDatasourceClient", () => {
 	});
 
 	it("announces every sync it enqueues, so a progress view watches closely at once", async () => {
-		stubFetchSequence([reply({ jobId: "job-1" }), reply({ datasource: { id: "ds-new" } })]);
+		stubFetchSequence([
+			reply({ jobId: "job-1" }),
+			reply({ datasource: { id: "ds-new" } }),
+		]);
 		const client = createDatasourceClient({
 			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => "test-token",
@@ -271,7 +290,12 @@ describe("createDatasourceClient", () => {
 				progress: {
 					phase: "SOURCE_SYNC_PHASE_DONE",
 					trigger: "SOURCE_SYNC_TRIGGER_MANUAL",
-					changes: { files: 42, splitKnown: true, snapshot: true, commit: "c1" },
+					changes: {
+						files: 42,
+						splitKnown: true,
+						snapshot: true,
+						commit: "c1",
+					},
 				},
 			}),
 			reply({ code: "not_found", message: "datasource: sync not found" }, 404),
@@ -293,7 +317,9 @@ describe("createDatasourceClient", () => {
 			snapshot: true,
 			commit: "c1",
 		});
-		await expect(client.getSourceSync!("org-1", "ds-2")).resolves.toBeUndefined();
+		await expect(
+			client.getSourceSync!("org-1", "ds-2"),
+		).resolves.toBeUndefined();
 	});
 
 	it("calls the live DatasourceService through the gateway with the host token", async () => {
@@ -409,7 +435,11 @@ describe("createDatasourceClient", () => {
 		const [source] = oneSource.datasources;
 		stubFetch({
 			datasources: [
-				{ ...source, conformant: false, conformanceGap: "no cursor and no deletions" },
+				{
+					...source,
+					conformant: false,
+					conformanceGap: "no cursor and no deletions",
+				},
 			],
 		});
 		const client = createDatasourceClient({
@@ -791,7 +821,12 @@ it("asks the permission service for the resource the composition declared", asyn
 it("reports which scopes the viewer reads only as a platform administrator", async () => {
 	stubFetch({
 		scopes: [
-			{ nodeId: "granted", label: "Granted", kind: "collection", basis: "ACCESS_BASIS_GRANT" },
+			{
+				nodeId: "granted",
+				label: "Granted",
+				kind: "collection",
+				basis: "ACCESS_BASIS_GRANT",
+			},
 			{
 				nodeId: "platform",
 				label: "Platform",
@@ -809,6 +844,8 @@ it("reports which scopes the viewer reads only as a platform administrator", asy
 	});
 	const scopes = await client.listAccessibleScopes!("org-1");
 	expect(
-		Object.fromEntries(scopes.map((scope) => [scope.nodeId, scope.viaPlatformAdministrator])),
+		Object.fromEntries(
+			scopes.map((scope) => [scope.nodeId, scope.viaPlatformAdministrator]),
+		),
 	).toEqual({ granted: false, platform: true, unstated: false });
 });

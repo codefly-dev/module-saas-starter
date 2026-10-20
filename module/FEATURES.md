@@ -473,6 +473,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Webhooks (system view) | ✅    | List + delete from admin                                           |
 | Time-bound impersonation | ✅  | Access tokens are capped at five minutes by default                 |
 | Audit log viewer       | ✅    | Same UI as user-facing log, super-admin sees all orgs              |
+| Data sources           | ✅    | Connect a repository, edit what a connected source fetches in place (branch, paths, file types — `UpdateSource`, #1181), reconcile, reconnect, remove; collection read grants beside it |
 
 ### Compliance & legal
 

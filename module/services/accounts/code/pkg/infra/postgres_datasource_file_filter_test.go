@@ -91,3 +91,57 @@ func TestPostgresDatasourcePublicCredentialKindPersistsAndClearsWithAnEnvelope(t
 	require.Equal(t, "vault:v1:envelope", updated.CredentialSecretRef)
 	require.Equal(t, []string{".md"}, updated.FileExtensions, "the rest of the config is untouched")
 }
+
+// The fetch-scope update writes the three fields it owns and nothing else — and
+// in particular rebuilds the github config envelope from the whole source, not
+// from the file filter alone. Rebuilt from the filter, a public source's
+// credential-less record would be dropped by every edit, and from then on every
+// fetch would look for an envelope that was never stored.
+func TestPostgresUpdateDatasourceSourceFetchScopeKeepsEverythingElse(t *testing.T) {
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+	template := installationSourceByID(t, seedDatasourceSource(t, org))
+
+	source := *template
+	source.ID = business.NewIDString()
+	source.CredentialSecretRef = ""
+	source.GitHubInstallationID = ""
+	source.GitHubCredentialKind = "public"
+	source.Branch = "main"
+	source.Paths = []string{"docs"}
+	source.FileExtensions = []string{".md"}
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.InsertDatasourceSource(ctx, &source)
+	}))
+
+	moved := source
+	moved.Branch = "release"
+	moved.Paths = []string{"docs", "guides"}
+	moved.FileExtensions = []string{".md", ".mdx"}
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.UpdateDatasourceSourceFetchScope(ctx, &moved)
+	}))
+
+	reloaded := installationSourceByID(t, source.ID)
+	require.Equal(t, "release", reloaded.Branch)
+	require.Equal(t, []string{"docs", "guides"}, reloaded.Paths)
+	require.Equal(t, []string{".md", ".mdx"}, reloaded.FileExtensions)
+	require.Equal(t, "public", reloaded.GitHubCredentialKind,
+		"the config envelope must be rebuilt from the whole source, not from the file filter")
+	require.Equal(t, template.Repo, reloaded.Repo, "an edit cannot re-aim the source at another repository")
+	require.Equal(t, source.BoundaryNodeID, reloaded.BoundaryNodeID, "an edit cannot move the collection")
+	require.Empty(t, reloaded.CredentialSecretRef)
+
+	// Clearing is what an empty field means, exactly as on connect.
+	cleared := moved
+	cleared.Branch = ""
+	cleared.Paths = nil
+	cleared.FileExtensions = nil
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		return testStore.UpdateDatasourceSourceFetchScope(ctx, &cleared)
+	}))
+	empty := installationSourceByID(t, source.ID)
+	require.Empty(t, empty.Branch)
+	require.Empty(t, empty.Paths)
+	require.Empty(t, empty.FileExtensions)
+}

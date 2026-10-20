@@ -98,13 +98,16 @@ func scanDatasourceSourceInto(row pgx.Row, label *string) (*business.DatasourceS
 	return &d, nil
 }
 
-// InsertDatasourceSource writes a new connected Source. Runs under the caller's
-// WithOrgTx.
-func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *business.DatasourceSource) error {
-	paths := source.Paths
-	if paths == nil {
-		paths = []string{}
-	}
+// datasourceConfigJSON encodes a Source's provider-specific non-secret config
+// for the `config` column, or nil when the provider stores none.
+//
+// Shared by the insert and the in-place fetch-scope update so one encoding
+// decides what the column holds. For a github source the envelope carries the
+// credential kind as well as the file-type filter, and an update that rebuilt
+// the JSON from the filter alone would drop the marker that says the source
+// holds no credential — turning a public source into one whose every fetch
+// looks for an envelope that was never there.
+func datasourceConfigJSON(source *business.DatasourceSource) ([]byte, error) {
 	var payload any
 	switch {
 	case source.Provider == business.DatasourceProviderGitHub:
@@ -116,15 +119,51 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 	case source.Upload != nil:
 		payload = source.Upload
 	}
-	var config []byte
-	if payload != nil {
-		encoded, err := json.Marshal(payload)
-		if err != nil {
-			return err
-		}
-		config = encoded
+	if payload == nil {
+		return nil, nil
 	}
-	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+	return json.Marshal(payload)
+}
+
+// UpdateDatasourceSourceFetchScope replaces what a Source fetches — its branch,
+// its path prefixes and the config envelope carrying its file-type filter —
+// from the already-validated Source the caller holds. Nothing else is written:
+// the repository, the provider, the boundary and the credential envelope are
+// not in the statement, so this cannot re-aim a source at another repository or
+// another collection however it is called.
+//
+// The row's read revision is bumped by the baseline's own trigger on branch and
+// paths, which is what tells a consumer holding a snapshot that the source
+// moved. Runs under the caller's WithOrgTx.
+func (s *PostgresStore) UpdateDatasourceSourceFetchScope(ctx context.Context, source *business.DatasourceSource) error {
+	paths := source.Paths
+	if paths == nil {
+		paths = []string{}
+	}
+	config, err := datasourceConfigJSON(source)
+	if err != nil {
+		return err
+	}
+	_, err = s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET branch = NULLIF($3, ''), paths = $4, config = $5, updated_at = NOW()
+		 WHERE org_id = $1 AND id = $2`,
+		source.OrgID, source.ID, source.Branch, paths, config)
+	return err
+}
+
+// InsertDatasourceSource writes a new connected Source. Runs under the caller's
+// WithOrgTx.
+func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *business.DatasourceSource) error {
+	paths := source.Paths
+	if paths == nil {
+		paths = []string{}
+	}
+	config, err := datasourceConfigJSON(source)
+	if err != nil {
+		return err
+	}
+	_, err = s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO datasource_sources (
 			id, org_id, provider, repo, paths, branch, boundary_node_id,
 			credential_secret_ref, webhook_secret_ref, status, config,

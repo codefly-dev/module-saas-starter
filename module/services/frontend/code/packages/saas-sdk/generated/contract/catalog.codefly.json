@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:5f4f2ee00084591f5f89adab905afc503c4f0284c5952c243dcbf4141f57d082",
+      "digest": "sha256:db60c4ed0889750ac6e62f004d670a445bd5deb784cb4bf0412c454dbc9b16a9",
       "services": [
         {
           "name": "APIKeyService",
@@ -138,6 +138,7 @@
             "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation",
             "/saas.accounts.v1.DatasourceService/SyncSource",
             "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",
+            "/saas.accounts.v1.DatasourceService/UpdateSource",
             "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain"
           ]
         },

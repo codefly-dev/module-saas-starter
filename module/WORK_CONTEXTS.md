@@ -573,6 +573,12 @@ previous row (`replaced`) and records a new one under the reconnecting person,
 atomically. Sources connected before a module declared a binding carry no
 delegation; nothing backfills one, so a person must reconnect them.
 
+`UpdateSource` is not one of those acts and records no delegation. It changes
+what a source fetches, never its credential, so the authority its syncs already
+run under is exactly the authority they keep — and recording a fresh row for the
+editor would move a source's sync authority onto whoever last narrowed a path
+filter.
+
 **A connect that can record nothing is REFUSED, not reported as done.**
 Recording no delegation is correct for a deployment where no composed module
 accepts one, and that is the whole answer there. It is a lie when the module

@@ -28,6 +28,7 @@ const (
 	DatasourceService_DeclareSourceOperations_FullMethodName            = "/saas.accounts.v1.DatasourceService/DeclareSourceOperations"
 	DatasourceService_AddGitHubSource_FullMethodName                    = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
 	DatasourceService_AddSource_FullMethodName                          = "/saas.accounts.v1.DatasourceService/AddSource"
+	DatasourceService_UpdateSource_FullMethodName                       = "/saas.accounts.v1.DatasourceService/UpdateSource"
 	DatasourceService_GetDatasourceCatalog_FullMethodName               = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
 	DatasourceService_ListSources_FullMethodName                        = "/saas.accounts.v1.DatasourceService/ListSources"
 	DatasourceService_GetSource_FullMethodName                          = "/saas.accounts.v1.DatasourceService/GetSource"
@@ -93,6 +94,12 @@ type DatasourceServiceClient interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(ctx context.Context, in *AddSourceRequest, opts ...grpc.CallOption) (*AddSourceResponse, error)
+	// UpdateSource changes what an already-connected source fetches — its branch
+	// and its path and file-type filters — keeping its identity, its credential,
+	// its sync history and the collection it writes into. A change that moves
+	// what is fetched enqueues a sync, whose progress reports the reconfigured
+	// trigger so a reader can tell a re-snapshot from an ordinary one.
+	UpdateSource(ctx context.Context, in *UpdateSourceRequest, opts ...grpc.CallOption) (*UpdateSourceResponse, error)
 	// GetDatasourceCatalog returns the host's connector registry: every provider,
 	// its connect metadata, whether it conforms to the datasource connector
 	// envelope, and whether it accepts a new source, so a client can render the
@@ -298,6 +305,16 @@ func (c *datasourceServiceClient) AddSource(ctx context.Context, in *AddSourceRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AddSourceResponse)
 	err := c.cc.Invoke(ctx, DatasourceService_AddSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) UpdateSource(ctx context.Context, in *UpdateSourceRequest, opts ...grpc.CallOption) (*UpdateSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSourceResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_UpdateSource_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -592,6 +609,12 @@ type DatasourceServiceServer interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(context.Context, *AddSourceRequest) (*AddSourceResponse, error)
+	// UpdateSource changes what an already-connected source fetches — its branch
+	// and its path and file-type filters — keeping its identity, its credential,
+	// its sync history and the collection it writes into. A change that moves
+	// what is fetched enqueues a sync, whose progress reports the reconfigured
+	// trigger so a reader can tell a re-snapshot from an ordinary one.
+	UpdateSource(context.Context, *UpdateSourceRequest) (*UpdateSourceResponse, error)
 	// GetDatasourceCatalog returns the host's connector registry: every provider,
 	// its connect metadata, whether it conforms to the datasource connector
 	// envelope, and whether it accepts a new source, so a client can render the
@@ -746,6 +769,9 @@ func (UnimplementedDatasourceServiceServer) AddGitHubSource(context.Context, *Ad
 }
 func (UnimplementedDatasourceServiceServer) AddSource(context.Context, *AddSourceRequest) (*AddSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AddSource not implemented")
+}
+func (UnimplementedDatasourceServiceServer) UpdateSource(context.Context, *UpdateSourceRequest) (*UpdateSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateSource not implemented")
 }
 func (UnimplementedDatasourceServiceServer) GetDatasourceCatalog(context.Context, *GetDatasourceCatalogRequest) (*GetDatasourceCatalogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetDatasourceCatalog not implemented")
@@ -983,6 +1009,24 @@ func _DatasourceService_AddSource_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DatasourceServiceServer).AddSource(ctx, req.(*AddSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_UpdateSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).UpdateSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_UpdateSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).UpdateSource(ctx, req.(*UpdateSourceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1475,6 +1519,10 @@ var DatasourceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AddSource",
 			Handler:    _DatasourceService_AddSource_Handler,
+		},
+		{
+			MethodName: "UpdateSource",
+			Handler:    _DatasourceService_UpdateSource_Handler,
 		},
 		{
 			MethodName: "GetDatasourceCatalog",

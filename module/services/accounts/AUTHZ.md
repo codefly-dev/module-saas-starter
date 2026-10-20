@@ -73,6 +73,15 @@ Until installation identity (#474) lands there is no org-root/solution node to
 parent under, so a minted `collection` node is registered as a **root**; it will
 be reparented under the org's solution node when that identity exists.
 
+`UpdateSource` changes what an already-connected source fetches — its branch and
+its path and file-type filters — under the same `org_admin` tenancy and the same
+organization resource binding as `AddSource`. It deliberately cannot move the
+boundary: the collection a source writes into is what grants reach, so re-aiming
+one in place would replace a granted collection's contents without any grant
+changing. The repository and the credential are out of reach for the same
+reason — one is the source's identity, the other rebinds whose authority its
+syncs run under (a reconnect, through `SyncSource`).
+
 Who *triggered* a source's sync is not a datasource field. `ListSources` and
 `GetSource` project `Datasource` to any org member under no declared permission,
 while `SyncSource` is org-admin only and reading its actor goes through

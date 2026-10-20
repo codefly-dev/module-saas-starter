@@ -340,6 +340,21 @@ export function datasourceClientOverTransport(
 				throw error;
 			}
 		},
+		async updateSource(input) {
+			const response = await client.updateSource({
+				orgId: input.orgId,
+				id: input.id,
+				branch: input.branch,
+				paths: input.paths,
+				fileExtensions: input.fileExtensions ?? [],
+			});
+			// An empty job id is the host saying the request changed nothing, so
+			// there is no sync to watch and nothing to announce. Announcing one
+			// anyway would put a row into the "syncing" state that never moves.
+			if (!response.jobId) return undefined;
+			notifySourceSyncRequested(input.id);
+			return response.jobId;
+		},
 		async deleteSource(orgId, id) {
 			await client.deleteSource({ orgId, id });
 		},
@@ -377,6 +392,7 @@ const syncTriggerNames: Partial<Record<SourceSyncTrigger, SourceSyncTriggerName>
 	[SourceSyncTrigger.MANUAL]: "manual",
 	[SourceSyncTrigger.SCHEDULED]: "scheduled",
 	[SourceSyncTrigger.WEBHOOK]: "webhook",
+	[SourceSyncTrigger.RECONFIGURED]: "reconfigured",
 };
 
 const syncFailureNames: Partial<
