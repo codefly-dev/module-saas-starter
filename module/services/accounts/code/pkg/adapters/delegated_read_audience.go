@@ -301,6 +301,16 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 	}
 	granted, err = service.AuthorizeDelegationReferenceExchange(ctx, caller, delegationID, request.bindingID, request.lookup)
 	if err != nil {
+		// The caller hears one sentence for every way a delegation fails to
+		// authorize (delegationReferenceError); the operator must not. A
+		// source whose module binding widened since the person delegated, a
+		// delegation revoked, one that names another module: each is a
+		// different repair, so the refuser log names which before the mapping
+		// erases it.
+		wool.Get(ctx).In("ModuleCapabilities.exchangeDelegatedAudience").Warn(
+			"source delegation refused this work",
+			wool.Field("binding", request.bindingID), wool.Field("delegation", delegationID),
+			wool.Field("lookup", request.lookup), wool.Field("cause", err.Error()))
 		err = delegationReferenceError(err)
 		audit(business.DelegatedAudienceExchangeRefused, err)
 		return nil, err
