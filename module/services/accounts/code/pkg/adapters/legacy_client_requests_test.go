@@ -20,12 +20,11 @@ import (
 //
 // That is not hypothetical. A change to CheckAuthorizationRevision proposed
 // refusing a request that states neither operation_binding_id nor
-// seals_no_binding. robin's chat builds exactly that request
-// (modules/robin/services/chat/code/internal/authority/replay_host.go: OrgId,
-// OwnerPrincipalId, AuthorizationRevision and Subjects, and neither binding
-// field) and maps anything outside those three codes to ErrUnavailable. Every
-// module hop verification on a cell would have failed, reported as an
-// authority outage, with no statement of the cause anywhere.
+// seals_no_binding. A consumer generated before those fields builds exactly
+// that request — org, owner, revision and subjects, and neither binding field
+// — and a consumer that maps only the three denial codes reports anything
+// else as an authority outage. Every module hop verification on a cell would
+// have failed that way, with no statement of the cause anywhere.
 //
 // So a new requirement is a DECLARED CUTOVER, in two phases: ship the field and
 // port every consumer first, while the handler still answers the old shape;
@@ -52,5 +51,5 @@ func TestTheOldestSupportedClientIsStillAnswered(t *testing.T) {
 	_, err := WorkContextSingleton().CheckAuthorizationRevision(ctx, legacy)
 	require.NotEqual(t, codes.InvalidArgument, status.Code(err),
 		"a request from a consumer that predates the binding fields must be judged, not refused as malformed: "+
-			"InvalidArgument reaches robin's chat as an authority outage, not a denial. Read this test's comment.")
+			"InvalidArgument reaches such a consumer as an authority outage, not a denial. Read this test's comment.")
 }
