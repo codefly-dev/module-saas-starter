@@ -902,19 +902,14 @@
     height: calc(var(--appearance-spacing) * 14);
   }
 
-  .size-32 {
-    width: calc(var(--appearance-spacing) * 32);
-    height: calc(var(--appearance-spacing) * 32);
+  .size-\[12rem\] {
+    width: 12rem;
+    height: 12rem;
   }
 
-  .size-44 {
-    width: calc(var(--appearance-spacing) * 44);
-    height: calc(var(--appearance-spacing) * 44);
-  }
-
-  .size-56 {
-    width: calc(var(--appearance-spacing) * 56);
-    height: calc(var(--appearance-spacing) * 56);
+  .size-\[14rem\] {
+    width: 14rem;
+    height: 14rem;
   }
 
   .size-full {
@@ -2065,6 +2060,10 @@
 
   .p-6 {
     padding: calc(var(--appearance-spacing) * 6);
+  }
+
+  .p-\[0\.75rem\] {
+    padding: .75rem;
   }
 
   .p-\[3px\] {

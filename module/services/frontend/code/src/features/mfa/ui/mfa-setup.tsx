@@ -38,8 +38,8 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 	const [backupCodes, setBackupCodes] = useState<string[]>([]);
 	const [copied, setCopied] = useState(false);
 	// SetupTOTP is not idempotent: each call writes another unverified device
-	// row with another secret. So the request below is made once per opening,
-	// and this is the latch that holds it to once.
+	// row with another secret. So the session effect below runs its body once per
+	// opening, and this is the latch that holds it to once.
 	const requested = useRef(false);
 
 	const form = useForm<VerifyTOTPValues>({
@@ -58,6 +58,7 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 		// twice, and it is the copy that disappears before the reader acts on it.
 	});
 	const startSetup = setupMutation.mutate;
+	const resetSetup = setupMutation.reset;
 
 	const verifyMutation = useMutation({
 		mutationFn: (code: string) => mfaMutations.verifyTOTP(code),
@@ -72,32 +73,42 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 	});
 
 	const handleOpen = (isOpen: boolean) => {
-		if (!isOpen) {
-			onClose();
-			// Reset state on close
-			setStep("qr");
-			requested.current = false;
-			setupMutation.reset();
-			setProvisioningUri(null);
-			setSecret(null);
-			setBackupCodes([]);
-			form.reset();
-		}
+		if (!isOpen) onClose();
 	};
 
-	// It used to be called *during render*, guarded by `!provisioningUri &&
-	// !setupMutation.isPending`. That guard holds while a request is in flight
-	// and then stops holding: a failure leaves both of them false, so the next
-	// render asked again, and the re-render that answer caused asked again.
-	// Measured against a failing endpoint, that was 11,200 SetupTOTP calls in
-	// under a second — 11,200 unverified device rows — and a dialog that never
-	// showed the reader anything but a wait. An effect cannot spin like that,
+	// `open` becoming true IS the start of a session, and this is the only place
+	// that decides what a session starts with.
+	//
+	// The resets used to live in `handleOpen`, which Base UI calls only for a
+	// close the reader performed — so a parent that honours the `open` prop by
+	// flipping it never reached them, and reopening showed the previous session's
+	// QR code, or its one-time backup codes, with no new request made. Resetting
+	// on close instead of on open would also wipe the dialog's content out from
+	// under its closing animation.
+	//
+	// The request itself used to be made *during render*, guarded by
+	// `!provisioningUri && !setupMutation.isPending`. That guard holds while a
+	// request is in flight and then stops holding: a failure left both of them
+	// false, so the next render asked again, and the re-render that answer caused
+	// asked again. Measured against a failing endpoint, that was 11,200 SetupTOTP
+	// calls in under a second — 11,200 unverified device rows — under a dialog
+	// that showed the reader nothing but a wait. An effect cannot spin like that,
 	// and the failure below now has a retry the reader presses instead.
 	useEffect(() => {
-		if (!open || requested.current) return;
+		if (!open) {
+			requested.current = false;
+			return;
+		}
+		if (requested.current) return;
 		requested.current = true;
+		setStep("qr");
+		setProvisioningUri(null);
+		setSecret(null);
+		setBackupCodes([]);
+		form.reset();
+		resetSetup();
 		startSetup();
-	}, [open, startSetup]);
+	}, [open, startSetup, resetSetup, form]);
 
 	const copySecret = () => {
 		if (secret) {
@@ -122,8 +133,11 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 						<div className="space-y-4">
 							{/* One box of the same height for all three states, so the
 							    dialog does not resize under the reader when the code
-							    arrives or the request fails. */}
-							<div className="flex min-h-56 items-center justify-center">
+							    arrives or the request fails. Absolute, like the plate it
+							    reserves room for — `min-h-56` is a `--spacing` multiple, so
+							    a density skin would move the reservation and leave the jump
+							    it exists to prevent. */}
+							<div className="flex min-h-[14rem] items-center justify-center">
 								{provisioningUri ? (
 									<QRCode
 										value={provisioningUri}

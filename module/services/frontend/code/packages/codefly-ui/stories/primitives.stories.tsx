@@ -267,20 +267,20 @@ export const QRCodes = {
 	render: () => (
 		<div className="flex items-end gap-4">
 			<QRCode
-				size="sm"
-				value="otpauth://totp/Example:jane.doe@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example&digits=6&period=30"
+				size="md"
+				value="otpauth://totp/SaaSStarter:jane.doe@example.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSW&issuer=SaaSStarter&digits=6&period=30"
 				label="Scan to add the example account to an authenticator app"
 			/>
 			<QRCode
-				size="md"
-				value="https://example.com/invitations/accept?token=example"
-				label="Scan to open the example invitation"
+				size="lg"
+				value="otpauth://totp/SaaSStarter:jane.doe@example.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSW&issuer=SaaSStarter&digits=6&period=30"
+				label="Scan to add the example account, at the size a dialog uses"
 			/>
 			<QRCode
 				size="lg"
 				level="H"
-				value="https://example.com/invitations/accept?token=example"
-				label="Scan to open the example invitation, at the highest error-correction level"
+				value="otpauth://totp/SaaSStarter:jane.doe@example.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSW&issuer=SaaSStarter&digits=6&period=30"
+				label="The same account at the highest error-correction level, which is the densest grid this draws"
 			/>
 		</div>
 	),

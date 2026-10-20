@@ -1,34 +1,67 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
+import { QRCode } from "@/shared/ui";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 import { MFASetup } from "./mfa-setup";
 
 afterEach(cleanup);
 
-const SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
-const PROVISIONING_URI = `otpauth://totp/Example:jane.doe@example.com?secret=${SECRET}&issuer=Example&digits=6&period=30`;
+/**
+ * The real wire shape, not a hand-shortened one: `totpSecretBytes = 32` in the
+ * accounts service, base32-encoded without padding, is 52 characters. A 32
+ * character stand-in encodes to a smaller, sparser grid, so a fixture written
+ * that way renders a code the product never produces — which is how the
+ * original version of this test certified a density the reader never gets.
+ */
+const SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSW";
+const PROVISIONING_URI = `otpauth://totp/SaaSStarter:jane.doe@example.com?secret=${SECRET}&issuer=SaaSStarter&digits=6&period=30`;
+
+function setupReturns(secret: string, uri: string) {
+	return http.post(rpc("MFAService", "SetupTOTP"), () =>
+		HttpResponse.json({ secret, provisioningUri: uri }),
+	);
+}
+
+/**
+ * The module path of a rendered code, which is a function of exactly what was
+ * encoded. Taken from the `svg` itself because the dialog renders through a
+ * portal, so it is never inside the render root.
+ */
+function modules(code: Element): string {
+	const paths = [...code.querySelectorAll("path")];
+	return paths.at(-1)?.getAttribute("d") ?? "";
+}
 
 describe("MFASetup enrolment step", () => {
 	it("draws the code the provisioning URI encodes, and writes the secret out beside it", async () => {
-		server.use(
-			http.post(rpc("MFAService", "SetupTOTP"), () =>
-				HttpResponse.json({
-					secret: SECRET,
-					provisioningUri: PROVISIONING_URI,
-				}),
-			),
-		);
+		server.use(setupReturns(SECRET, PROVISIONING_URI));
 
 		renderInApp(<MFASetup open onClose={() => undefined} />);
 
-		// The code is an image a reader can be told about, not a placeholder box:
-		// the grid it draws has to be the one this URI encodes, so its cell count
-		// is the URI's and not some fixed figure's.
 		const code = await screen.findByRole("img", { name: /scan this code/i });
-		const viewBox = code.getAttribute("viewBox");
-		expect(viewBox).toBe("0 0 53 53");
+		expect(code.tagName.toLowerCase()).toBe("svg");
+
+		// What it drew is compared against the same kit component fed the URI
+		// directly, rather than against a remembered grid size: this proves the
+		// dialog handed the encoder the *provisioning URI* — not the bare secret,
+		// not a stale value — and it stays true when the encoder picks a different
+		// version for a different payload.
+		const reference = render(
+			<QRCode value={PROVISIONING_URI} label="reference" size="lg" />,
+		);
+		const referenceCode = reference.container.querySelector("svg");
+		expect(referenceCode).toBeTruthy();
+		expect(modules(code)).not.toBe("");
+		expect(modules(code)).toBe(modules(referenceCode as Element));
+
 		// A reader who cannot scan has to be able to type it instead.
 		expect(screen.getByText(SECRET)).toBeTruthy();
 	});
@@ -66,6 +99,38 @@ describe("MFASetup enrolment step", () => {
 		expect(
 			await screen.findByRole("img", { name: /scan this code/i }),
 		).toBeTruthy();
+		expect(calls).toBe(2);
+	});
+
+	it("starts a fresh enrolment when a parent reopens it by prop", async () => {
+		// Base UI reports only a close the reader performed, so a parent that
+		// closes this by flipping `open` never reaches `onOpenChange`. When the
+		// session state hung off that callback, reopening kept the first
+		// enrolment's code and secret on screen and made no new request — and a
+		// dialog closed on the backup-codes step reopened still showing them.
+		const secrets = [SECRET, `ZZZZ${SECRET.slice(4)}`];
+		let calls = 0;
+		server.use(
+			http.post(rpc("MFAService", "SetupTOTP"), () => {
+				const secret = secrets[Math.min(calls, secrets.length - 1)];
+				calls += 1;
+				return HttpResponse.json({
+					secret,
+					provisioningUri: PROVISIONING_URI.replace(SECRET, secret),
+				});
+			}),
+		);
+
+		const { rerender } = renderInApp(
+			<MFASetup open onClose={() => undefined} />,
+		);
+		expect(await screen.findByText(secrets[0])).toBeTruthy();
+
+		rerender(<MFASetup open={false} onClose={() => undefined} />);
+		rerender(<MFASetup open onClose={() => undefined} />);
+
+		expect(await screen.findByText(secrets[1])).toBeTruthy();
+		expect(screen.queryByText(secrets[0])).toBeNull();
 		expect(calls).toBe(2);
 	});
 });

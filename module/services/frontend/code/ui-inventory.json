@@ -1066,7 +1066,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "A scannable code on a plate that stays light in both modes: a QR reader may refuse an inverted code, so this is the one primitive here whose contrast is not the skin's to re-decide. The quiet zone is the specified four modules and rides inside the SVG.",
+      "reason": "A scannable code on a plate that stays light in both modes and is sized in absolute rem: a QR reader may refuse an inverted code, and a density skin rescaling --spacing would take a spacing-sized plate below the pixels-per-module a camera needs, so neither contrast nor edge is the skin's to re-decide here. The quiet zone is the specified four modules and rides inside the SVG.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/primitives.stories.tsx",
