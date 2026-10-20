@@ -1059,6 +1059,24 @@
       "remaining": "Verify explorer rendering and the tone fills under external skins."
     },
     {
+      "source": "packages/codefly-ui/src/layout/qr-code.tsx",
+      "imports": [
+        "qrcode.react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "A scannable code on a plate that stays light in both modes and is sized in absolute rem: a QR reader may refuse an inverted code, and a density skin rescaling --spacing would take a spacing-sized plate below the pixels-per-module a camera needs, so neither contrast nor edge is the skin's to re-decide here. The quiet zone is the specified four modules and rides inside the SVG.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "QRCodes"
+        }
+      ],
+      "coverage": "owner stories and unit tests; browser/skin verification pending",
+      "remaining": "Scan a rendered code with a real authenticator app, and confirm the plate under external skins."
+    },
+    {
       "source": "packages/codefly-ui/src/layout/radio-group.tsx",
       "imports": [
         "@base-ui/react/radio",

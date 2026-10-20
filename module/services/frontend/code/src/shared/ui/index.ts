@@ -37,6 +37,7 @@ export {
 	CardTitle,
 } from "@codefly-dev/ui/layout";
 export { Checkbox } from "@codefly-dev/ui/layout";
+export { ErrorState, type ErrorStateProps } from "@codefly-dev/ui/layout";
 export {
 	Dialog,
 	DialogContent,
@@ -57,6 +58,7 @@ export {
 } from "@codefly-dev/ui/layout";
 export { Input } from "@codefly-dev/ui/layout";
 export { Label } from "@codefly-dev/ui/layout";
+export { QRCode, type QRCodeProps } from "@codefly-dev/ui/layout";
 export {
 	Select,
 	SelectContent,
