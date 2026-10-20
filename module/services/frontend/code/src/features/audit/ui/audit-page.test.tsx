@@ -61,6 +61,34 @@ describe("AuditPage admin container", () => {
 		expect(screen.queryByText("Saas Auth Login")).toBeNull();
 	});
 
+	// AggregateAuditLog with no organisation is platform-wide and needs a
+	// platform administrator; an organisation admin saw every tile and chart
+	// "Failed to load" while the list (which named the organisation) loaded.
+	it("names the active organisation on every aggregate and the list", async () => {
+		const seen: Array<{ rpc: string; orgId: unknown }> = [];
+		server.use(
+			http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+				HttpResponse.json({ types: [] }),
+			),
+			http.post(rpc("AuditService", "AggregateAuditLog"), async ({ request }) => {
+				const body = (await request.json()) as { orgId?: unknown };
+				seen.push({ rpc: "aggregate", orgId: body.orgId });
+				return HttpResponse.json({ buckets: [] });
+			}),
+			http.post(rpc("AuditService", "QueryAuditLog"), async ({ request }) => {
+				const body = (await request.json()) as { orgId?: unknown };
+				seen.push({ rpc: "query", orgId: body.orgId });
+				return HttpResponse.json({ events: [auditEvent()], totalCount: 1 });
+			}),
+		);
+		renderInApp(<AuditPage />);
+		expect(await screen.findByText("203.0.113.7")).toBeTruthy();
+		expect(seen.some((call) => call.rpc === "aggregate")).toBe(true);
+		for (const call of seen) {
+			expect(call.orgId, `${call.rpc} named the organisation`).toBe("org-1");
+		}
+	});
+
 	// "Who did this" and "what did they do it through" are separate questions,
 	// so the client rides beside the actor rather than replacing it, and a call
 	// from the host's own session must show no client at all.
