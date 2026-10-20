@@ -316,17 +316,13 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 			continue
 		}
 		entry, allowed := envelope.Principals[prefix]
-		if !allowed {
-			omit(errors.New("the envelope declares no ceiling for it"))
-			continue
-		}
 		workloads := make([]ModuleWorkload, 0, len(manifest.Workloads))
 		for _, workload := range manifest.Workloads {
 			workloads = append(workloads, ModuleWorkload{
 				Namespace: rule.Namespace(manifest.Alias), ServiceAccount: workload.Service, Container: workload.Container,
 			})
 		}
-		grant, omitted, err := deriveModulePrincipalGrant(prefix, entry, manifest, workloads)
+		grant, omitted, err := deriveUnderEnforcement(r.reconciler.service.ModuleAuthorityEnforcementMode(), prefix, entry, allowed, manifest, workloads, envelope)
 		refusals = append(refusals, omitted...)
 		if err != nil {
 			omit(err)
