@@ -119,6 +119,7 @@
     --color-amber-400: oklch(82.8% .189 84.429);
     --color-amber-500: oklch(76.9% .188 70.08);
     --color-black: #000;
+    --color-white: #fff;
     --spacing: var(--appearance-spacing);
     --container-xs: 20rem;
     --container-sm: 24rem;
@@ -899,6 +900,21 @@
   .size-14 {
     width: calc(var(--appearance-spacing) * 14);
     height: calc(var(--appearance-spacing) * 14);
+  }
+
+  .size-32 {
+    width: calc(var(--appearance-spacing) * 32);
+    height: calc(var(--appearance-spacing) * 32);
+  }
+
+  .size-44 {
+    width: calc(var(--appearance-spacing) * 44);
+    height: calc(var(--appearance-spacing) * 44);
+  }
+
+  .size-56 {
+    width: calc(var(--appearance-spacing) * 56);
+    height: calc(var(--appearance-spacing) * 56);
   }
 
   .size-full {
@@ -1910,6 +1926,10 @@
     .bg-warning\/10 {
       background-color: color-mix(in oklab, var(--warning) 10%, transparent);
     }
+  }
+
+  .bg-white {
+    background-color: var(--color-white);
   }
 
   .bg-gradient-to-br {

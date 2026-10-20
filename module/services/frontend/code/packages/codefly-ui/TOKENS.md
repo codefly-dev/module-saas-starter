@@ -42,7 +42,12 @@ The chain is one direction, top to bottom — a skin is *data*, never CSS:
    default values, for a preview with no host
    ([README](./README.md#previewing-a-solution-without-a-host)).
 5. **Components** — kit components, host pages, and solution remotes reference
-   only those utilities / variables. None of them names a raw color.
+   only those utilities / variables. None of them names a raw color, with one
+   stated exception: `QRCode`'s plate. A QR reader may refuse an inverted code,
+   so dark modules on a light field is a requirement of the format rather than a
+   decision a skin is entitled to re-make, and that component says so where it
+   names the two colours. A second exception is a token this vocabulary is
+   missing, not a licence.
 
 ## Color tokens
 

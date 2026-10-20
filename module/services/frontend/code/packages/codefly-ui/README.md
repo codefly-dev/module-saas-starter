@@ -32,8 +32,8 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   `Tabs`) and the shadcn primitives promoted into the kit as their single sealed
   home (issue #451) — actions (`Button`), forms (`Input`, `Textarea`, `Label`,
   `Checkbox`, `Switch`, `Select`), data display (`Badge`, `Chip`, `List`,
-  `DescriptionList`, `Avatar`, `Table`, `Skeleton`, `Separator`), feedback
-  (`Banner`, `EmptyState`, `ErrorState`) and overlays (`Dialog`, `AlertDialog`, `Notice`, `Tooltip`,
+  `DescriptionList`, `Avatar`, `Table`, `Skeleton`, `Separator`, `QRCode`),
+  feedback (`Banner`, `EmptyState`, `ErrorState`) and overlays (`Dialog`, `AlertDialog`, `Notice`, `Tooltip`,
   `DropdownMenu`); `dashboard` is `<Dashboard>`, charts, `fromDashboardData`; `chat`
   is `<Chat>`. React only: no plugin runtime, no host context.
   `<Dashboard>` paints with the **metric tier** — `StatTile`/`KPIRow` for scalar

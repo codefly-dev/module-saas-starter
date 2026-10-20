@@ -57,6 +57,7 @@ import {
 	List,
 	ListItem,
 	DescriptionList,
+	QRCode,
 } from "../src/layout/index.js";
 import { FileTextIcon, TriangleAlertIcon, UserIcon } from "lucide-react";
 
@@ -259,6 +260,29 @@ export const Error = {
 			title="Unable to load resources."
 			detail="The data provider is unavailable."
 		/>
+	),
+};
+
+export const QRCodes = {
+	render: () => (
+		<div className="flex items-end gap-4">
+			<QRCode
+				size="sm"
+				value="otpauth://totp/Example:jane.doe@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example&digits=6&period=30"
+				label="Scan to add the example account to an authenticator app"
+			/>
+			<QRCode
+				size="md"
+				value="https://example.com/invitations/accept?token=example"
+				label="Scan to open the example invitation"
+			/>
+			<QRCode
+				size="lg"
+				level="H"
+				value="https://example.com/invitations/accept?token=example"
+				label="Scan to open the example invitation, at the highest error-correction level"
+			/>
+		</div>
 	),
 };
 

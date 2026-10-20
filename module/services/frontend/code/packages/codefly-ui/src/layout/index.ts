@@ -185,6 +185,7 @@ export {
 	PopoverTrigger,
 } from "./popover.js";
 export { Progress, type ProgressProps } from "./progress.js";
+export { QRCode, type QRCodeProps } from "./qr-code.js";
 export { Radio, RadioGroup } from "./radio-group.js";
 export {
 	SegmentedControl,
