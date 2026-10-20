@@ -6,7 +6,7 @@
     {
       "name": "accounts-connect-invoke-source-operation",
       "version": "0.1.0",
-      "digest": "70e00061ad57c8ed7a868b9cad536b61b8562ee4eba7dfabf0fd97e1d3f6f52d",
+      "digest": "a1d8bc6323d677237993387a8ad1a9e694060c097cb75aca6a164fe62c55caff",
       "service": "accounts",
       "endpoint": "connect",
       "method": "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",

@@ -173,7 +173,7 @@ func testSourceOperationReplayAndCurrentAuthority(t *testing.T, fenced bool) {
 	require.NoError(t, err)
 	request := &gen.InvokeSourceOperationRequest{OrgId: org, SourceId: source, Operation: declaration.Name, InputJson: `{"id":"one"}`, EffectId: "effect-one"}
 	if fenced {
-		request.ExpectedDeclarationDigest = declaration.Digest
+		request.ExpectedDeclarationDigest = proto.String(declaration.Digest)
 	}
 	digest, err := receipts.RequestDigest(request)
 	require.NoError(t, err)
@@ -220,9 +220,9 @@ func testSourceOperationReplayAndCurrentAuthority(t *testing.T, fenced bool) {
 	}
 	require.Len(t, audit.events, 2, "one observation per replay")
 	changedPrecondition := proto.CloneOf(request)
-	changedPrecondition.ExpectedDeclarationDigest = declaration.Digest
+	changedPrecondition.ExpectedDeclarationDigest = proto.String(declaration.Digest)
 	if fenced {
-		changedPrecondition.ExpectedDeclarationDigest = ""
+		changedPrecondition.ExpectedDeclarationDigest = nil
 	}
 	_, err = client.CallUnary(t.Context(), connect.NewRequest(changedPrecondition))
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "the declaration precondition is part of the effect fingerprint")
@@ -327,7 +327,7 @@ func TestSourceOperationDeclarationPreconditionBeforeDispatch(t *testing.T) {
 				replace()
 			}
 			ctx := stampVerifiedIdentity(t.Context(), actor, org, auth.Assurance{})
-			request := &gen.InvokeSourceOperationRequest{OrgId: org, SourceId: source, Operation: declaration.Name, InputJson: `{"id":"a"}`, EffectId: "first-call", ExpectedDeclarationDigest: declaration.Digest}
+			request := &gen.InvokeSourceOperationRequest{OrgId: org, SourceId: source, Operation: declaration.Name, InputJson: `{"id":"a"}`, EffectId: "first-call", ExpectedDeclarationDigest: proto.String(declaration.Digest)}
 			_, err = (&datasourceConnectHandler{svc: svc}).InvokeSourceOperation(ctx, connect.NewRequest(request))
 			require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 			require.Nil(t, store.attempt, "a stale declaration must not create a provider attempt")
@@ -338,11 +338,11 @@ func TestSourceOperationDeclarationPreconditionBeforeDispatch(t *testing.T) {
 func TestSourceOperationDeclarationPreconditionSyntax(t *testing.T) {
 	request := &gen.InvokeSourceOperationRequest{OrgId: "11111111-1111-4111-8111-111111111111", SourceId: "22222222-2222-4222-8222-222222222222", Operation: "read_item", InputJson: "{}"}
 	for _, digest := range []string{"", "sha256:" + strings.Repeat("a", 64)} {
-		request.ExpectedDeclarationDigest = digest
+		request.ExpectedDeclarationDigest = proto.String(digest)
 		require.NoError(t, Validate(request))
 	}
 	for _, digest := range []string{"*", "sha256:short", "sha256:" + strings.Repeat("A", 64)} {
-		request.ExpectedDeclarationDigest = digest
+		request.ExpectedDeclarationDigest = proto.String(digest)
 		require.Error(t, Validate(request))
 	}
 }
@@ -355,12 +355,12 @@ func TestSourceOperationLegacyEnvelopeAllowance(t *testing.T) {
 	require.NoError(t, err)
 	request.InputJson = `{"id":"` + strings.Repeat("a", sourceInputEnvelopeBytes-len(oldWire)) + `"}`
 	require.NoError(t, Validate(request))
-	require.True(t, sourceInvokeWireFits(request), "adding an omitted field must not shrink the old input bound")
+	require.True(t, sourceWireFits(request, sourceInputEnvelopeBytes), "adding an omitted field must not shrink the old input bound")
 	request.InputJson += " "
-	require.False(t, sourceInvokeWireFits(request))
+	require.False(t, sourceWireFits(request, sourceInputEnvelopeBytes))
 	request.InputJson = `{"id":"a"}`
-	request.ExpectedDeclarationDigest = "sha256:" + strings.Repeat("a", 64)
-	require.True(t, sourceInvokeWireFits(request))
+	request.ExpectedDeclarationDigest = proto.String("sha256:" + strings.Repeat("a", 64))
+	require.True(t, sourceWireFits(request, sourceInputEnvelopeBytes))
 }
 
 func TestSourceOperationJSONEnvelopeBoundAndScope(t *testing.T) {

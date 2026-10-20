@@ -28,7 +28,7 @@ changing it under an existing effect cannot replay a different request.
 Lookup still takes only the original effect ID and recovers retained evidence
 under current source-read authority after declaration replacement or removal.
 `input_json` is a string containing exactly one JSON object. The complete
-protojson request (proto field names, zero-valued fields omitted) is limited to
+protojson request (proto field names, unpopulated non-optional fields included) is limited to
 65,536 bytes. Declarations require a closed input-object schema; named template
 parameters become escaped path components, listed query fields become query
 parameters, and the remaining object becomes the body. GET and DELETE refuse a
