@@ -944,6 +944,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("application: %w", err)
 	}
 	service.SetOrganizationCreationPolicy(orgCreationPolicy)
+	enforcement, err := business.ParseModuleAuthorityEnforcement(applicationEnv("MODULE_AUTHORITY_ENFORCEMENT"))
+	if err != nil {
+		return nil, fmt.Errorf("application: %w", err)
+	}
+	service.SetModuleAuthorityEnforcement(enforcement)
 
 	emailConfig, err := configuredEmail(ctx, codefly.IsLocal())
 	if err != nil {
