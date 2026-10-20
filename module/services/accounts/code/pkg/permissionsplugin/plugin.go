@@ -1,5 +1,5 @@
 // Package permissionsplugin provides a framework.Plugin
-// implementation that exposes PrincipalService and DelegationService through
+// implementation that exposes the catalog-selected permissions services through
 // the selected REST plugin and contributes their migrations.
 //
 // Native gRPC and Connect registration is generated from the service catalog
@@ -117,7 +117,7 @@ func (p *Plugin) Name() string { return "permissions" }
 
 // RegisterREST implements framework.Plugin. Wires the
 // grpc-gateway REST handlers — auto-derived from the proto
-// HTTP annotations on PrincipalService / DelegationService.
+// HTTP annotations on the services assigned to this plugin in rest_bindings.yaml.
 //
 // REST endpoints exposed:
 //
@@ -129,6 +129,9 @@ func (p *Plugin) Name() string { return "permissions" }
 //	GET    /v1/delegations/{id}:wait        ← server-streaming
 //	POST   /v1/delegations/{id}:decide
 //	GET    /v1/delegations:pending
+//
+// InstallationService and WorkContextService also use their generated handlers;
+// the descriptor catalog owns their complete route inventory.
 func (p *Plugin) RegisterREST(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
 	if err := gen.RegisterPrincipalServiceHandlerFromEndpoint(ctx, mux, endpoint, opts); err != nil {
 		return err
@@ -137,6 +140,9 @@ func (p *Plugin) RegisterREST(ctx context.Context, mux *runtime.ServeMux, endpoi
 		return err
 	}
 	if err := gen.RegisterWorkContextServiceHandlerFromEndpoint(ctx, mux, endpoint, opts); err != nil {
+		return err
+	}
+	if err := gen.RegisterInstallationServiceHandlerFromEndpoint(ctx, mux, endpoint, opts); err != nil {
 		return err
 	}
 	return nil
