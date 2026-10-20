@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
