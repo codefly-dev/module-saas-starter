@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/codefly-dev/core/wool"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -110,6 +112,24 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.boundaries, _ = config.Authority.(business.SolutionRuntimeBoundarySeedStore)
 }
 
+// CheckAuthorizationRevision answers ONE question — is the authority this
+// Work Context asserts still current — for every context, by resolving each
+// SUBJECT with the resolver that knows it. Which resolver applies is decided
+// by a fact the context carries, never by the shape of its subjects:
+//
+//	the context's own binding names a delegation  -> the delegation
+//	the owner is itself a declared module         -> that module's installation
+//	a subject is a declared module (a hop)        -> the binding that hop names
+//	everyone else (people, agents)                -> the authority store
+//
+// Before this, a module hop that named no binding matched none of the three
+// checks that existed, so it fell to the store — which does not hold module
+// principals, answered "not found", and had the module calling report to its
+// caller a revocation that had never happened. That denied every call an
+// orchestrator makes to an owner it executes an operation for.
+//
+// Every refusal is PermissionDenied: a consumer must read a changed or forged
+// context as denied, never as an authority outage it may retry.
 func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	ctx context.Context,
 	req *gen.CheckAuthorizationRevisionRequest,
@@ -124,58 +144,108 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 		req.GetSubjects()[0].GetPrincipalId() != req.GetOwnerPrincipalId() {
 		return nil, status.Error(codes.InvalidArgument, "owner must be the first revision subject")
 	}
-	// A context owned by a declared module's service principal has no
-	// row-backed authority to resolve: it is confirmed against the module's
-	// current declaration instead. Every other owner takes the store path below.
+	// PHASE ONE of the cutover: a consumer that states NEITHER field is still
+	// judged, not refused as malformed. Requiring the assertion is phase two,
+	// after every consumer states it; refusing it now answers InvalidArgument
+	// to every consumer generated before the fields existed, and a consumer
+	// that maps only the denial codes reports that as an authority outage.
+	// TestTheOldestSupportedClientIsStillAnswered holds this open.
+	if req.GetOperationBindingId() != "" && req.GetSealsNoBinding() {
+		return nil, status.Error(codes.InvalidArgument,
+			"a context either names an operation binding or seals none; this request says both")
+	}
+	if err := s.confirmCurrentAuthority(ctx, req); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// confirmCurrentAuthority is the one dispatch. Each branch is a resolver that
+// reads the authority it knows about, live; none of them infers a context's
+// kind from what the others declined.
+func (s *WorkContextAuthorityServer) confirmCurrentAuthority(
+	ctx context.Context, req *gen.CheckAuthorizationRevisionRequest,
+) error {
+	// A context owned by a declared module has no row-backed authority at all:
+	// it is its installation's, and confirmed against the module's current
+	// declaration.
 	if handled, err := checkModuleOperationContextRevision(ctx, req); handled {
-		return nil, err
+		return err
 	}
-	// A context minted from a source delegation is owned by a person but
-	// actored by a declared module principal, which the store path cannot
-	// resolve (a module principal is not a registered agent). It is confirmed
-	// against the delegation it was minted from instead.
-	if handled, err := checkSourceDelegationContextRevision(ctx, req); handled {
-		return nil, err
-	}
-	if s == nil || s.consumer == nil {
-		return nil, status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
+	// A context whose binding names a source delegation is authorized by that
+	// delegation, whatever its subjects look like.
+	if business.NamesASourceDelegation(req.GetOperationBindingId()) {
+		if handled, err := checkSourceDelegationContextRevision(ctx, req); handled {
+			return err
+		}
 	}
 	seen := make(map[string]struct{}, len(req.GetSubjects()))
 	subjects := make([]business.WorkContextRevisionSubject, 0, len(req.GetSubjects()))
 	for _, subject := range req.GetSubjects() {
 		if subject == nil {
-			return nil, status.Error(codes.InvalidArgument, "revision subject must not be null")
+			return status.Error(codes.InvalidArgument, "revision subject must not be null")
 		}
 		principalID := subject.GetPrincipalId()
 		if _, duplicate := seen[principalID]; duplicate {
-			return nil, status.Error(codes.InvalidArgument, "revision subjects must be unique")
+			return status.Error(codes.InvalidArgument, "revision subjects must be unique")
 		}
 		seen[principalID] = struct{}{}
+		// A module hop, confirmed from the binding it names.
+		if service != nil && principalID != req.GetOwnerPrincipalId() && service.IsDeclaredModulePrincipal(principalID) {
+			if err := service.ConfirmModuleHopBinding(ctx, req.GetOrgId(), principalID,
+				req.GetOperationBindingId(), moduleScopesOf(subject)); err != nil {
+				wool.Get(ctx).In("CheckAuthorizationRevision").Warn("a module hop of this Work Context no longer stands",
+					wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()),
+					wool.Field("module", principalID), wool.Field("binding", req.GetOperationBindingId()),
+					wool.ErrField(err))
+				return status.Error(codes.PermissionDenied, business.ErrModuleHopStale.Error())
+			}
+			continue
+		}
 		permissions, _, err := workContextScopes(subject.GetScopes(), recheckContentReads())
 		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
+			return status.Error(codes.InvalidArgument, err.Error())
 		}
 		subjects = append(subjects, business.WorkContextRevisionSubject{
 			PrincipalID: principalID,
 			Permissions: permissions,
 		})
 	}
-	ctx = accountsauth.WithVerifiedDatabaseIdentity(
-		ctx,
-		req.GetOwnerPrincipalId(),
-		req.GetOrgId(),
-	)
+	// Only a subject the STORE must answer for needs the store.
+	if len(subjects) == 0 {
+		return nil
+	}
+	if s == nil || s.consumer == nil {
+		return status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
+	}
+	ctx = accountsauth.WithVerifiedDatabaseIdentity(ctx, req.GetOwnerPrincipalId(), req.GetOrgId())
 	err := s.consumer.CheckWorkContextAuthorizationRevision(
-		ctx,
-		req.GetOrgId(),
-		req.GetOwnerPrincipalId(),
-		req.GetAuthorizationRevision(),
-		subjects,
+		ctx, req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetAuthorizationRevision(), subjects,
 	)
 	if err != nil {
-		return nil, mapConsumerAuthorityError(err)
+		// Named where it is decided: a module reporting "the caller's
+		// authorization was revoked" otherwise sends an operator looking for a
+		// revocation that never happened.
+		wool.Get(ctx).In("CheckAuthorizationRevision").Warn("the authority this Work Context asserts is no longer current",
+			wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()),
+			wool.Field("sealed_revision", req.GetAuthorizationRevision()),
+			wool.Field("subjects", len(req.GetSubjects())), wool.ErrField(err))
+		return mapConsumerAuthorityError(err)
 	}
-	return &emptypb.Empty{}, nil
+	return nil
+}
+
+// moduleScopesOf is one subject's scopes in the module vocabulary.
+func moduleScopesOf(subject *gen.WorkContextRevisionSubject) []business.ModuleOperationScope {
+	scopes := make([]business.ModuleOperationScope, 0, len(subject.GetScopes()))
+	for _, scope := range subject.GetScopes() {
+		scopes = append(scopes, business.ModuleOperationScope{
+			ResourceKind: scope.GetResourceKind(),
+			Actions:      append([]string(nil), scope.GetActions()...),
+			ResourceIDs:  append([]string(nil), scope.GetResourceIds()...),
+		})
+	}
+	return scopes
 }
 
 // checkModuleOperationContextRevision confirms a context MintModuleOperationContext
@@ -1169,7 +1239,7 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	}
 	token, signed, err := s.remint(ctx, parent.Context(), req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
-		nil, "")
+		nil, "", moduleBindingSeal{})
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
@@ -1196,7 +1266,7 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	}
 	// The owner is exchanging their own capability, so it is re-issued in the
 	// session they authenticated with.
-	return s.exchangeVerifiedParent(ctx, parent.Context(), actor, req, callerSession(ctx))
+	return s.exchangeVerifiedParent(ctx, parent.Context(), actor, req, callerSession(ctx), moduleBindingSeal{})
 }
 
 // exchangeVerifiedParent runs AFTER the caller's authentication and
@@ -1204,7 +1274,7 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 // capability opens ("" for a fresh one).
 func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	ctx context.Context, parent *basev0.WorkContextV1, actor *business.Principal,
-	req *gen.ExchangeWorkContextAudienceRequest, session string,
+	req *gen.ExchangeWorkContextAudienceRequest, session string, exercised moduleBindingSeal,
 ) (*gen.IssuedWorkContext, error) {
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
@@ -1225,7 +1295,7 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	}
 	token, signed, err := s.remint(ctx, parent, req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
-		attenuated, session)
+		attenuated, session, exercised)
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
@@ -1425,7 +1495,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 		replayPolicy = workContextReplayPolicy(req.GetReplayPolicy())
 	}
 	token, signed, err := s.remint(ctx, parent, audience, replayPolicy, workContextTTL(req.GetTtlSeconds()),
-		attenuated, "")
+		attenuated, "", moduleBindingSeal{})
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}

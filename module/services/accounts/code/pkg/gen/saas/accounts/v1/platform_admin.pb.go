@@ -4123,7 +4123,7 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"&CATALOGUE_OBSERVED_VERDICT_UNSPECIFIED\x10\x00\x121\n" +
 	"-CATALOGUE_OBSERVED_VERDICT_RUNNING_AUTHORIZED\x10\x01\x12.\n" +
 	"*CATALOGUE_OBSERVED_VERDICT_RUNNING_DIFFERS\x10\x02\x123\n" +
-	"/CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED\x10\x032\xf5\"\n" +
+	"/CATALOGUE_OBSERVED_VERDICT_RUNNING_UNAUTHORIZED\x10\x032\xa2#\n" +
 	"\x14PlatformAdminService\x12\x8e\x01\n" +
 	"\vSearchUsers\x12$.saas.accounts.v1.SearchUsersRequest\x1a%.saas.accounts.v1.SearchUsersResponse\"2\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x03\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/platform/users\x12\xab\x01\n" +
 	"\vSuspendUser\x12$.saas.accounts.v1.SuspendUserRequest\x1a\x16.google.protobuf.Empty\"^\xc2\xf3\x18+\b\x02\x10\x010\x01:\x17\n" +
@@ -4158,9 +4158,9 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x11saas.job.replayed\x10\x02@\x03H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/platform/jobs/{source_job_id}:replay\x12\xab\x01\n" +
 	"\x12GetEventOperations\x12).saas.events.v1.GetEventOperationsRequest\x1a*.saas.events.v1.GetEventOperationsResponse\">\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02 \x12\x1e/v1/platform/events/operations\x12\xba\x01\n" +
 	"\x16ListEventSubscriptions\x12-.saas.events.v1.ListEventSubscriptionsRequest\x1a..saas.events.v1.ListEventSubscriptionsResponse\"A\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02#\x12!/v1/platform/events/subscriptions\x12\xb0\x01\n" +
-	"\x15ListPlatformCatalogue\x12..saas.accounts.v1.ListPlatformCatalogueRequest\x1a/.saas.accounts.v1.ListPlatformCatalogueResponse\"6\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/platform/catalogue\x12\xaa\x01\n" +
-	"\x11GetModuleEnvelope\x12*.saas.accounts.v1.GetModuleEnvelopeRequest\x1a+.saas.accounts.v1.GetModuleEnvelopeResponse\"<\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/platform/module-envelope\x12\xd6\x01\n" +
-	"\x11PutModuleEnvelope\x12*.saas.accounts.v1.PutModuleEnvelopeRequest\x1a+.saas.accounts.v1.PutModuleEnvelopeResponse\"h\xc2\xf3\x18=\b\x02\x10\x010\x03:)\n" +
+	"\x15ListPlatformCatalogue\x12..saas.accounts.v1.ListPlatformCatalogueRequest\x1a/.saas.accounts.v1.ListPlatformCatalogueResponse\"6\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/platform/catalogue\x12\xc0\x01\n" +
+	"\x11GetModuleEnvelope\x12*.saas.accounts.v1.GetModuleEnvelopeRequest\x1a+.saas.accounts.v1.GetModuleEnvelopeResponse\"R\xc2\xf3\x18*\b\x02\x10\x01\"\x14module_envelope:read0\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/platform/module-envelope\x12\xed\x01\n" +
+	"\x11PutModuleEnvelope\x12*.saas.accounts.v1.PutModuleEnvelopeRequest\x1a+.saas.accounts.v1.PutModuleEnvelopeResponse\"\x7f\xc2\xf3\x18T\b\x02\x10\x01\"\x15module_envelope:write0\x03:)\n" +
 	"%saas.platform.module_envelope_written\x10\x02@\x01H\x05P\x03X\x03`\x05x\x02\x82\xd3\xe4\x93\x02!:\x01*\x1a\x1c/v1/platform/module-envelopeB\xba\x01\n" +
 	"\x14com.saas.accounts.v1B\x12PlatformAdminProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 

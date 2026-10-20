@@ -224,6 +224,23 @@ func SourceDelegationBindingID(delegationID, usedBy string) string {
 	return sourceDelegationBindingPrefix + delegationID + "/" + usedBy
 }
 
+// namesASourceDelegation reports whether a sealed operation binding id names a
+// source delegation AT ALL. It is the shape test the source-delegation checks
+// need before they claim a context: a person-owned context actored by a module
+// is not a source delegation's merely because of its subjects — a module
+// executing its own installed operation on a person's behalf has exactly that
+// shape and seals its OWN binding. Claiming those and refusing them left the
+// runtime's every call to an owner denied as a stale delegation, which it was
+// not. The binding id is still only a pointer: it selects the checker here,
+// and every fact behind it is re-read by whichever checker runs. Its ABSENCE
+// selects nothing and is refused by the delegation checks, because the binding
+// travels in the request and a consumer that omitted it would otherwise have a
+// narrowed delegation confirmed against a broader installation.
+func namesASourceDelegation(id string) bool {
+	_, _, ok := parseSourceDelegationBindingID(id)
+	return ok
+}
+
 func parseSourceDelegationBindingID(id string) (delegationID, usedBy string, ok bool) {
 	rest, isDelegation := strings.CutPrefix(id, sourceDelegationBindingPrefix)
 	if !isDelegation {

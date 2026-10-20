@@ -288,6 +288,18 @@ message CheckAuthorizationRevisionRequest {
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 512
   ];
+  // seals_no_binding ASSERTS that the context names no operation binding at
+  // all. A consumer must send either this or operation_binding_id, and a
+  // request carrying neither is refused as malformed rather than confirmed.
+  //
+  // The distinction is the whole point. The signed capability never crosses
+  // this boundary (see above), so the host reads the binding from fields the
+  // consumer copied out of it — and an OMITTED field and a context that
+  // genuinely seals none are indistinguishable unless one of them is stated.
+  // While they were, a consumer that simply forgot the binding had a narrowed
+  // delegation confirmed against its module's much broader installation. Now
+  // absence is something a consumer asserts, and forgetting is an error.
+  optional bool seals_no_binding = 6;
 }
 
 // AuthorizeEvidenceReadRequest asks Accounts to authorize one filtered

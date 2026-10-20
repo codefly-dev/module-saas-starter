@@ -7700,7 +7700,9 @@
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_NONE",
         "permissions": [],
-        "scopes": [],
+        "scopes": [
+          "module_envelope:read"
+        ],
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
@@ -7722,7 +7724,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "e3ae6ee3f1b70dbabb131e3a486c403859c0f3540c61dca8132317bd1be9d7b3",
+      "policy_sha256": "df0fb1eff7e3f5d396f2ff960874bc188207b41e101ba148abf23d367db72bc4",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -8193,7 +8195,9 @@
         "exposure": "EXPOSURE_AUTHENTICATED",
         "tenant": "TENANT_REQUIREMENT_NONE",
         "permissions": [],
-        "scopes": [],
+        "scopes": [
+          "module_envelope:write"
+        ],
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
@@ -8217,7 +8221,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/platform_admin.proto",
-      "policy_sha256": "f291952d9b1fbb97dad7ac5752b5f20ebc2bd30ffe47b8859cd70ac7b066f68c",
+      "policy_sha256": "cb9aea00af11330e9cc94640ad9d0f4234ca80ae9b15eb3058db27a05943873e",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

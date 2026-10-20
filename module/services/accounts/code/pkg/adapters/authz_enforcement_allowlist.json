@@ -3,6 +3,12 @@
   "comment": "Ticketed exemptions for the declared-policy -> handler-enforcement lockstep gate (TestDeclaredPolicyEnforcedInLockstep, rpc_policy_lockstep_test.go). Every entry needs a procedure, a reason, and a ticket. An optional \"missing\" list narrows the exemption to specific floor capabilities so the rest of the declared floor stays enforced; omit it to exempt the whole procedure. Removing an entry re-arms the gate; adding one is a reviewable event. Mirrors module/tools/authz-coverage-allowlist.json.",
   "enforcement": [
     {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/PutModuleEnvelope",
+      "reason": "Declares RECENT_STEP_UP, which is true for a session and cannot be true for an API key: a machine credential has no second factor to step up. requireModuleEnvelopeWrite branches on the credential kind instead - requireRecentMFA for a session, requireExactScope(module_envelope:write) for a key, a scope that must be granted by name so no wildcard carries it. The scanner would otherwise credit mfa_recent_step_up to this procedure by unioning the two branches, which is the 'a capability some accepted principal happens to hold' credit this gate exists to forbid. Narrowed to mfa_recent_step_up: the SUPER_ADMIN platform floor stays lockstep-enforced. Saying 'step-up OR a named scope' needs an IDL that can express OR, which is the #447 declaration/handler parity work.",
+      "ticket": "#447",
+      "missing": ["mfa_recent_step_up"]
+    },
+    {
       "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
       "reason": "Legacy read-only stub. Enforces the SUPER_ADMIN floor via an inline service.Store().GetPlatformRole compare instead of requirePlatformRole, so the require*-based scanner cannot see it; the check is present and denies non-super-admins.",
       "ticket": "#429"

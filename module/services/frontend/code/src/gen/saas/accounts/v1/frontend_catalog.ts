@@ -53,6 +53,8 @@ export const PERMISSIONS = {
   INVITATIONS_WRITE: "invitations:write",
   KNOWLEDGE_READ: "knowledge:read",
   KNOWLEDGE_WRITE: "knowledge:write",
+  MODULE_ENVELOPE_READ: "module_envelope:read",
+  MODULE_ENVELOPE_WRITE: "module_envelope:write",
   ORGS_READ: "orgs:read",
   ORGS_WRITE: "orgs:write",
   ROLES_READ: "roles:read",
@@ -66,7 +68,7 @@ export const PERMISSIONS = {
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-export type PermissionResource = "api_keys" | "audit" | "billing" | "dashboards" | "datasource" | "entitlements" | "invitations" | "knowledge" | "orgs" | "roles" | "teams" | "users" | "webhooks";
+export type PermissionResource = "api_keys" | "audit" | "billing" | "dashboards" | "datasource" | "entitlements" | "invitations" | "knowledge" | "module_envelope" | "orgs" | "roles" | "teams" | "users" | "webhooks";
 export type PermissionAction = "invoke" | "read" | "share" | "write";
 export type PermissionGrant = Permission | `${PermissionResource}:*` | `*:${PermissionAction}`;
 
@@ -95,6 +97,8 @@ export const PERMISSION_DEFINITIONS: Readonly<Record<Permission, PermissionDefin
   [PERMISSIONS.INVITATIONS_WRITE]: { resource: "invitations", action: "write", description: "Create and revoke organization invitations.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.KNOWLEDGE_READ]: { resource: "knowledge", action: "read", description: "Read domain knowledge resources.", builtInRoles: ["admin (via *:*)", "editor", "viewer"], apiKeyScope: false },
   [PERMISSIONS.KNOWLEDGE_WRITE]: { resource: "knowledge", action: "write", description: "Create and update domain knowledge resources.", builtInRoles: ["admin (via *:*)", "editor"], apiKeyScope: false },
+  [PERMISSIONS.MODULE_ENVELOPE_READ]: { resource: "module_envelope", action: "read", description: "Read the module envelope, the authority ceiling every module principal is derived inside.", builtInRoles: ["platform super_admin (via *:*)"], apiKeyScope: true },
+  [PERMISSIONS.MODULE_ENVELOPE_WRITE]: { resource: "module_envelope", action: "write", description: "Write the next revision of the module envelope. Narrower than it sounds: it moves no module's own authority, only the ceiling each is derived inside, and a key carrying it can do nothing else.", builtInRoles: ["platform super_admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.ORGS_READ]: { resource: "orgs", action: "read", description: "Read organization metadata.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.ORGS_WRITE]: { resource: "orgs", action: "write", description: "Manage organization settings and members.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
   [PERMISSIONS.ROLES_READ]: { resource: "roles", action: "read", description: "List roles and assignments.", builtInRoles: ["admin (via *:*)"], apiKeyScope: true },
@@ -126,6 +130,8 @@ export const API_KEY_SCOPES = [
   PERMISSIONS.ENTITLEMENTS_READ,
   PERMISSIONS.INVITATIONS_READ,
   PERMISSIONS.INVITATIONS_WRITE,
+  PERMISSIONS.MODULE_ENVELOPE_READ,
+  PERMISSIONS.MODULE_ENVELOPE_WRITE,
   PERMISSIONS.ORGS_READ,
   PERMISSIONS.ORGS_WRITE,
   PERMISSIONS.ROLES_READ,
@@ -139,7 +145,7 @@ export const API_KEY_SCOPES = [
 ] as const;
 
 export type APIKeyScope = (typeof API_KEY_SCOPES)[number];
-export type APIKeyScopeResource = "api_keys" | "audit" | "billing" | "datasource" | "entitlements" | "invitations" | "orgs" | "roles" | "teams" | "users" | "webhooks";
+export type APIKeyScopeResource = "api_keys" | "audit" | "billing" | "datasource" | "entitlements" | "invitations" | "module_envelope" | "orgs" | "roles" | "teams" | "users" | "webhooks";
 export type APIKeyScopeAction = "invoke" | "read" | "write";
 export type APIKeyScopeGrant = APIKeyScope | `${APIKeyScopeResource}:*` | `*:${APIKeyScopeAction}`;
 

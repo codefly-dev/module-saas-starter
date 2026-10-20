@@ -37,6 +37,21 @@ type delegatedAudienceRequest struct {
 	lookup    bool
 }
 
+// operationBinding is the binding a context exchanged under this request may
+// seal as its OPERATION binding — the bindingID for an operation exchange, and
+// nothing for a read one. read_audiences and operation_audiences are separate
+// maps with separate validators and operator-chosen keys, so a read key
+// stamped as the operation binding is either confirmed against the wrong
+// binding's invoke scopes (when an operator happens to use one key in both) or
+// against no declared binding at all. Neither is the authority the read
+// exchange granted.
+func (r delegatedAudienceRequest) operationBinding() string {
+	if r.kind == "operation" {
+		return r.bindingID
+	}
+	return ""
+}
+
 func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context, encodedParent string, request delegatedAudienceRequest, resolve delegatedAudienceResolver) (*gen.IssuedWorkContext, error) {
 	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
 	if fenceErr != nil {
@@ -185,7 +200,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	if delegated {
 		issued, err = authority.exchangeDelegatedParent(ctx, caller, parent, delegation, binding, time.Duration(ttl)*time.Second)
 	} else {
-		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, "")
+		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, "", moduleBindingSeal{PrincipalID: caller.PrincipalID, BindingID: request.operationBinding()})
 	}
 	if err != nil {
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)

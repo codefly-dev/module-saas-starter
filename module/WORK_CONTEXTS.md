@@ -16,6 +16,8 @@ A platform super_admin declares an optional `read_audiences` map in the
 principal's `grant` in the module envelope (`PlatformAdminService/PutModuleEnvelope`),
 for example:
 
+The envelope is written by a platform super_admin with fresh AAL2 evidence, or by an API key carrying `module_envelope:write` and nothing else. A key has no second factor and never will, so that scope stands in its place: it names this ceiling alone, a key cannot mint another key, and the key's owner must still hold super_admin. Without it the ceiling was writable from a browser and nowhere else, which left the one record the design calls dynamic with no operator surface at all.
+
 ```json
 {"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","read_audiences":{"proof":{"audience":"example-producer","scopes":[{"resource_kind":"results"}]}}}
 ```
@@ -643,8 +645,18 @@ deleted; `DatasourceService/ListSourceDelegations` shows administrators who
 delegated what to which module binding, and when and why it ended.
 
 **Revision check.** `WorkContextService/CheckAuthorizationRevision` recognises a
-context owned by a person and actored by a declared module principal. The
-caller passes the operation binding the context sealed (`operation_binding_id`),
+context owned by a person, actored by a declared module principal, **and
+sealing a binding that names a delegation** (`source-delegation/...`). The
+subjects alone do not make a context this check's: a module executing its own
+installed operation for a person has exactly that shape and seals its OWN
+binding, and claiming those refused every one of them as a stale delegation
+when no delegation was involved. Such a context is declined here and takes the
+ordinary module-operation checks, which re-read that binding in full. A context
+of this shape naming NO binding stays refused here: the binding travels in the
+request, so treating its absence as "not a delegation" would let a consumer
+that omitted it have a narrowed delegation confirmed against its module's
+broader installation. The caller passes the operation binding the context sealed
+(`operation_binding_id`),
 and the check confirms it only while that binding names the actor, the live
 binding read above holds, the delegation is active and from that owner, its
 binding is unchanged, its source exists and its person still holds the connect
@@ -655,6 +667,36 @@ at the next hop. Every refusal is `PermissionDenied`. A verifier that reads the
 binding itself — core's `Verifier`, and the host when it verifies a parent it
 issued — refuses a withdrawn delegation as a stale capability
 (`FAILED_PRECONDITION`), before any of these checks runs.
+
+**One rule for every module hop.** A module hop NAMES the binding it
+exercises, and that binding confirms it. The exchange seals the binding the
+caller ran under onto that caller's OWN hop (`remint`, which stamps it only
+where the hop's principal is the exchanging module — an agent hop carries
+none), and `CheckAuthorizationRevision` resolves it: a binding naming a
+delegation is confirmed against that delegation, any other binding against the
+module's installation (`ConfirmModuleHopBinding` — the module is still
+installed here, the installation still declares that binding, and the hop's
+scopes are still within it). A person is confirmed in the authority store,
+which is where a person's roles live.
+
+The rule replaces resolution by elimination. A module principal is NOT in the
+authority store — it is not a registered agent — so a hop sent there came back
+"not found", which the module calling reported to its caller as a revocation
+that had never happened: every call an orchestrator makes to an owner it
+executes an operation for was denied that way.
+
+No revision is compared for a module hop, deliberately: the revision sealed
+into a context is the OWNER's, and the owner's resolver compares it. A module
+hop carries no revision of its own, which is why asking the store for one
+produced a mismatch rather than an answer.
+
+Where the binding comes from decides how its ABSENCE is read, and the two are
+not the same. The parent re-check reads it from the SIGNED parent, so a parent
+naming none was minted naming none and is simply not a delegation's. The
+revision check reads it from the CALLER's request, where absence could be an
+omission, so a context of that shape naming no binding stays refused: reading
+it as "not a delegation" would confirm a narrowed delegation against the
+module's broader installation.
 
 **The delegation authorizes the organization; `cross_tenant` is never
 consulted.** Neither the recording, the mint, the revision check nor the
