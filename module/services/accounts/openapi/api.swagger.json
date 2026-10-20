@@ -2643,6 +2643,10 @@
           "format": "date-time",
           "type": "string"
         },
+        "id": {
+          "description": "The invitation's own id, so a caller holding only the emailed token can\nname the invitation afterwards without keeping the token. It grants\nnothing on its own: the id credential is accepted only for a signed-in\ncaller whose primary email matches the invitation's.",
+          "type": "string"
+        },
         "role": {
           "$ref": "#/definitions/v1InvitationRole"
         },

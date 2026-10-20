@@ -325,11 +325,16 @@ func (x *Invitation) GetSendCount() uint32 {
 }
 
 type InvitationSummary struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        InvitationStatus       `protobuf:"varint,1,opt,name=status,proto3,enum=saas.accounts.v1.InvitationStatus" json:"status,omitempty"`
-	Role          InvitationRole         `protobuf:"varint,2,opt,name=role,proto3,enum=saas.accounts.v1.InvitationRole" json:"role,omitempty"`
-	EmailHint     string                 `protobuf:"bytes,3,opt,name=email_hint,json=emailHint,proto3" json:"email_hint,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Status    InvitationStatus       `protobuf:"varint,1,opt,name=status,proto3,enum=saas.accounts.v1.InvitationStatus" json:"status,omitempty"`
+	Role      InvitationRole         `protobuf:"varint,2,opt,name=role,proto3,enum=saas.accounts.v1.InvitationRole" json:"role,omitempty"`
+	EmailHint string                 `protobuf:"bytes,3,opt,name=email_hint,json=emailHint,proto3" json:"email_hint,omitempty"`
+	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// The invitation's own id, so a caller holding only the emailed token can
+	// name the invitation afterwards without keeping the token. It grants
+	// nothing on its own: the id credential is accepted only for a signed-in
+	// caller whose primary email matches the invitation's.
+	Id            string `protobuf:"bytes,5,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -390,6 +395,13 @@ func (x *InvitationSummary) GetExpiresAt() *timestamppb.Timestamp {
 		return x.ExpiresAt
 	}
 	return nil
+}
+
+func (x *InvitationSummary) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
 }
 
 type CreateInvitationRequest struct {
@@ -1035,14 +1047,15 @@ const file_saas_accounts_v1_invitations_proto_rawDesc = "" +
 	"\flast_sent_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"lastSentAt\x12\x1d\n" +
 	"\n" +
-	"send_count\x18\f \x01(\rR\tsendCount\"\xf3\x01\n" +
+	"send_count\x18\f \x01(\rR\tsendCount\"\x83\x02\n" +
 	"\x11InvitationSummary\x12D\n" +
 	"\x06status\x18\x01 \x01(\x0e2\".saas.accounts.v1.InvitationStatusB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06status\x12>\n" +
 	"\x04role\x18\x02 \x01(\x0e2 .saas.accounts.v1.InvitationRoleB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04role\x12\x1d\n" +
 	"\n" +
 	"email_hint\x18\x03 \x01(\tR\temailHint\x129\n" +
 	"\n" +
-	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x9b\x01\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x0e\n" +
+	"\x02id\x18\x05 \x01(\tR\x02id\"\x9b\x01\n" +
 	"\x17CreateInvitationRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x1d\n" +
 	"\x05email\x18\x02 \x01(\tB\a\xbaH\x04r\x02`\x01R\x05email\x12@\n" +

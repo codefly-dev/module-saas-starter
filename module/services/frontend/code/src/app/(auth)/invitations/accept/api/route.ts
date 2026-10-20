@@ -22,9 +22,18 @@ export async function POST(request: Request) {
 		body.invitationId && UUID.test(body.invitationId)
 			? body.invitationId
 			: undefined;
+	// Neither credential means the emailed token is gone and no invitation id
+	// came with the request. The token only ever lived in a fifteen-minute
+	// cookie this browser set from the link's query (see `proxy.ts`), so the
+	// cause is the cookie, not the invitation: say that, because "invalid or no
+	// longer available" reads as a revoked invitation and sends the person to
+	// ask the inviter for a link they already have.
 	if (!token && !invitationId) {
 		return NextResponse.json(
-			{ error: "This invitation link is invalid or no longer available." },
+			{
+				error:
+					"This invitation link timed out in this browser after fifteen minutes. Open it from the email again.",
+			},
 			{ status: 400 },
 		);
 	}

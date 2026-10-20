@@ -9136,6 +9136,10 @@
         "expiresAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "id": {
+          "type": "string",
+          "description": "The invitation's own id, so a caller holding only the emailed token can\nname the invitation afterwards without keeping the token. It grants\nnothing on its own: the id credential is accepted only for a signed-in\ncaller whose primary email matches the invitation's."
         }
       }
     },

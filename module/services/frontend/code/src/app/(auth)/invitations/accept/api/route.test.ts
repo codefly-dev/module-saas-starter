@@ -80,3 +80,31 @@ describe("the route reaches the gateway by its composed endpoint", () => {
 		expect(upstream).not.toHaveBeenCalled();
 	});
 });
+
+// The token the emailed link carries lives only in the cookie `proxy.ts` sets
+// for fifteen minutes. With neither that cookie nor an invitation id there is
+// nothing to ask the host about, and the refusal must say which of the two is
+// missing: "invalid or no longer available" reads as a revoked invitation and
+// sends the person to ask for a link they are already holding.
+describe("a request with neither credential", () => {
+	it("names the timed-out cookie instead of calling the invitation invalid", async () => {
+		const upstream = vi.spyOn(globalThis, "fetch");
+		const response = await POST(
+			new Request("https://app.example/invitations/accept/api", {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer access-token",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ action: "accept" }),
+			}),
+		);
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({
+			error:
+				"This invitation link timed out in this browser after fifteen minutes. Open it from the email again.",
+		});
+		expect(upstream).not.toHaveBeenCalled();
+	});
+});
