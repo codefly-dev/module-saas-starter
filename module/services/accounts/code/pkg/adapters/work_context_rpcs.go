@@ -144,17 +144,12 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 		req.GetSubjects()[0].GetPrincipalId() != req.GetOwnerPrincipalId() {
 		return nil, status.Error(codes.InvalidArgument, "owner must be the first revision subject")
 	}
-	// The binding decides which authority backs this context's module hops, so
-	// a consumer states it — either the binding, or that there is none. A
-	// request saying neither is MALFORMED, not a context to judge: the signed
-	// capability never crosses this boundary, so an omitted field and a
-	// context that seals nothing would otherwise be the same request, and a
-	// consumer that simply forgot would have had a narrowed delegation
-	// confirmed against its module's far broader installation.
-	if req.GetOperationBindingId() == "" && !req.GetSealsNoBinding() {
-		return nil, status.Error(codes.InvalidArgument,
-			"state the context's operation binding, or assert seals_no_binding: absence must be said, not omitted")
-	}
+	// PHASE ONE of the cutover: a consumer that states NEITHER field is still
+	// judged, not refused as malformed. Requiring the assertion is phase two,
+	// after every consumer states it; refusing it now answers InvalidArgument
+	// to every consumer generated before the fields existed, and a consumer
+	// that maps only the denial codes reports that as an authority outage.
+	// TestTheOldestSupportedClientIsStillAnswered holds this open.
 	if req.GetOperationBindingId() != "" && req.GetSealsNoBinding() {
 		return nil, status.Error(codes.InvalidArgument,
 			"a context either names an operation binding or seals none; this request says both")

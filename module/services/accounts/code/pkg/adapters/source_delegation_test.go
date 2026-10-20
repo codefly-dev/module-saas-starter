@@ -339,11 +339,16 @@ func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
 	// the binding" and "this context seals none" were the same request, and a
 	// consumer that forgot had a narrowed delegation confirmed against its
 	// module's far broader installation. A consumer must now say which.
-	t.Run("refuses as malformed without the binding the context sealed", func(t *testing.T) {
+	// PHASE TWO asserts InvalidArgument here. In phase one the request is
+	// judged instead, and a delegation context missing its binding is REFUSED
+	// by the delegation resolver rather than confirmed — which is the property
+	// that actually protects it, and the reason requiring the field can wait
+	// for every consumer to state it.
+	t.Run("a delegation context without its binding is refused, not confirmed", func(t *testing.T) {
 		_, request := mint(t)
 		request.OperationBindingId = nil
 		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
-		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
 	t.Run("refuses a delegation context that asserts it seals none", func(t *testing.T) {
 		_, request := mint(t)
