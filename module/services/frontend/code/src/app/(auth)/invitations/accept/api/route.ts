@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { gatewayBase } from "@/lib/gateway-endpoint";
+
 const INVITATION_COOKIE = "invitation_return_token";
 const UUID =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -37,7 +39,15 @@ export async function POST(request: Request) {
 				? "/v1/invitations:inspect"
 				: "/v1/invitations:inspect-id"
 			: "/v1/invitations:accept";
-	const upstream = await fetch(new URL(upstreamPath, request.url), {
+	const gateway = gatewayBase();
+	if (!gateway) {
+		console.error("invitation route: the composition states no API gateway endpoint");
+		return NextResponse.json(
+			{ error: "The invitation service is not reachable from this deployment." },
+			{ status: 503 },
+		);
+	}
+	const upstream = await fetch(`${gateway}${upstreamPath}`, {
 		method: "POST",
 		cache: "no-store",
 		headers: {

@@ -4,6 +4,12 @@ const cookieStore = vi.hoisted(() => ({
 	get: vi.fn(() => undefined),
 }));
 
+const { getEndpoints } = vi.hoisted(() => ({
+	getEndpoints: vi.fn(() => [
+		{ service: "auth-gateway", name: "rest", address: "http://auth-gateway.internal:8080" },
+	]),
+}));
+vi.mock("codefly", () => ({ getEndpoints }));
 vi.mock("next/headers", () => ({
 	cookies: async () => cookieStore,
 }));
@@ -42,10 +48,7 @@ describe("invitation acceptance API", () => {
 			status: "INVITATION_STATUS_REVOKED",
 		});
 		expect(upstream).toHaveBeenCalledWith(
-			new URL(
-				"/v1/invitations:inspect-id",
-				"https://app.example/invitations/accept/api",
-			),
+			"http://auth-gateway.internal:8080/v1/invitations:inspect-id",
 			expect.objectContaining({
 				headers: expect.objectContaining({
 					Authorization: "Bearer access-token",
@@ -55,5 +58,25 @@ describe("invitation acceptance API", () => {
 				}),
 			}),
 		);
+	});
+});
+
+// A server route dials the gateway the composition declares, never the origin
+// the incoming request names: that origin terminates TLS at the cell's edge and
+// is unreachable from inside the pod, and a Host header is client-controlled.
+// With no gateway declared the route refuses visibly instead of guessing.
+describe("the route reaches the gateway by its composed endpoint", () => {
+	it("refuses with 503 when the composition states no gateway", async () => {
+		getEndpoints.mockReturnValueOnce([]);
+		const upstream = vi.spyOn(globalThis, "fetch");
+		const response = await POST(
+			new Request("https://app.example/invitations/accept/api", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ action: "accept", invitationId: "11111111-1111-4111-8111-111111111111" }),
+			}),
+		);
+		expect(response.status).toBe(503);
+		expect(upstream).not.toHaveBeenCalled();
 	});
 });
