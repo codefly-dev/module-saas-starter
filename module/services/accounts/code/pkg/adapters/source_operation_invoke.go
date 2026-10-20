@@ -29,6 +29,14 @@ func sourceWireFits(message proto.Message, bound int) bool {
 	return err == nil && len(wire) <= bound
 }
 
+func sourceInvokeWireFits(message *gen.InvokeSourceOperationRequest) bool {
+	// Normalized valid legacy requests populate all five original fields.
+	// Omit the new zero-valued precondition so adding it does not reduce their
+	// existing input allowance. The SDK request fingerprint omits zeros too.
+	wire, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(message)
+	return err == nil && len(wire) <= sourceInputEnvelopeBytes
+}
+
 // sourceOperationResponse is the only committed wire/receipt constructor.
 func sourceOperationResponse(result *business.SourceOperationResult) (*gen.InvokeSourceOperationResponse, error) {
 	output := string(result.Output)
@@ -75,7 +83,7 @@ func (h *datasourceConnectHandler) InvokeSourceOperation(ctx context.Context, re
 	normalized := connect.NewRequest(proto.CloneOf(req.Msg))
 	normalized.Msg.EffectId = effect
 	normalized.Header().Set(receipts.EffectIDHeaderName, effect)
-	if !sourceWireFits(normalized.Msg, sourceInputEnvelopeBytes) {
+	if !sourceInvokeWireFits(normalized.Msg) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("source input exceeds wire bound"))
 	}
 	// Authenticated tenant is sealed before SDK replay; it never comes from the
@@ -104,7 +112,7 @@ func (h *datasourceConnectHandler) InvokeSourceOperation(ctx context.Context, re
 		defer cancel()
 		h.svc.AuditSourceOperation(auditCtx, actor, req.Msg.OrgId, req.Msg.SourceId, declaration, effect, outcome)
 	}()
-	_, declaration, err = h.svc.SourceOperationAuthority(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, req.Msg.Operation, effect, false)
+	_, declaration, err = h.svc.SourceOperationAuthority(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, req.Msg.Operation, effect, req.Msg.ExpectedDeclarationDigest, false)
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
@@ -118,13 +126,13 @@ func (h *datasourceConnectHandler) InvokeSourceOperation(ctx context.Context, re
 				return err
 			}
 		}
-		_, _, err := h.svc.SourceOperationAuthority(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, req.Msg.Operation, effect, false)
+		_, _, err := h.svc.SourceOperationAuthority(ctx, actor, req.Msg.OrgId, req.Msg.SourceId, req.Msg.Operation, effect, req.Msg.ExpectedDeclarationDigest, false)
 		return translateGRPCError(err)
 	})
 	return connecttransport.WrapUnary(guard, business.SourceOperationMethod, func(ctx context.Context, r *connect.Request[gen.InvokeSourceOperationRequest]) (*connect.Response[gen.InvokeSourceOperationResponse], error) {
 		dispatched = true
 		var out *gen.InvokeSourceOperationResponse
-		_, err := h.svc.InvokeSourceOperation(ctx, actor, r.Msg.OrgId, r.Msg.SourceId, r.Msg.Operation, []byte(r.Msg.InputJson), func(ctx context.Context, result *business.SourceOperationResult) error {
+		_, err := h.svc.InvokeSourceOperation(ctx, actor, r.Msg.OrgId, r.Msg.SourceId, r.Msg.Operation, r.Msg.ExpectedDeclarationDigest, []byte(r.Msg.InputJson), func(ctx context.Context, result *business.SourceOperationResult) error {
 			var err error
 			out, err = sourceOperationResponse(result)
 			if err != nil {
@@ -169,7 +177,7 @@ func (h *datasourceConnectHandler) LookupInvokeSourceOperation(ctx context.Conte
 	if err = requireSourceOperationScope(ctx, org, attempt.SourceID, "read"); err != nil {
 		return nil, err
 	}
-	if _, _, err = h.svc.SourceOperationAuthority(ctx, actor, org, attempt.SourceID, attempt.Operation, effect, true); err != nil {
+	if _, _, err = h.svc.SourceOperationAuthority(ctx, actor, org, attempt.SourceID, attempt.Operation, effect, "", true); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	store, _ := h.svc.SourceOperationReceipts()

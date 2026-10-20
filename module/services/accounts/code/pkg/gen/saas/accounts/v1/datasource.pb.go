@@ -7018,14 +7018,18 @@ func (x *ListSourceOperationsResponse) GetOperations() []*SourceOperation {
 // InvokeSourceOperationRequest carries exactly one JSON object in input_json.
 // effect_id must match x-codefly-effect-id; either location may supply it.
 type InvokeSourceOperationRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	SourceId      string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
-	Operation     string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
-	InputJson     string                 `protobuf:"bytes,4,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
-	EffectId      string                 `protobuf:"bytes,5,opt,name=effect_id,json=effectId,proto3" json:"effect_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	OrgId     string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	SourceId  string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	Operation string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
+	InputJson string                 `protobuf:"bytes,4,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
+	EffectId  string                 `protobuf:"bytes,5,opt,name=effect_id,json=effectId,proto3" json:"effect_id,omitempty"`
+	// Optional for legacy callers. A caller that admitted a declaration supplies
+	// its canonical digest; a replacement is refused before provider dispatch.
+	// This precondition participates in the receipt request fingerprint.
+	ExpectedDeclarationDigest string `protobuf:"bytes,6,opt,name=expected_declaration_digest,json=expectedDeclarationDigest,proto3" json:"expected_declaration_digest,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *InvokeSourceOperationRequest) Reset() {
@@ -7089,6 +7093,13 @@ func (x *InvokeSourceOperationRequest) GetInputJson() string {
 func (x *InvokeSourceOperationRequest) GetEffectId() string {
 	if x != nil {
 		return x.EffectId
+	}
+	return ""
+}
+
+func (x *InvokeSourceOperationRequest) GetExpectedDeclarationDigest() string {
+	if x != nil {
+		return x.ExpectedDeclarationDigest
 	}
 	return ""
 }
@@ -7920,14 +7931,15 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x1cListSourceOperationsResponse\x12A\n" +
 	"\n" +
 	"operations\x18\x01 \x03(\v2!.saas.accounts.v1.SourceOperationR\n" +
-	"operations\"\xf4\x01\n" +
+	"operations\"\xd5\x02\n" +
 	"\x1cInvokeSourceOperationRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12%\n" +
 	"\tsource_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bsourceId\x12;\n" +
 	"\toperation\x18\x03 \x01(\tB\x1d\xbaH\x1ar\x182\x16^[a-z][a-z0-9_]{0,63}$R\toperation\x12(\n" +
 	"\n" +
 	"input_json\x18\x04 \x01(\tB\t\xbaH\x06r\x04(\x80\x80\x04R\tinputJson\x12%\n" +
-	"\teffect_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03(\x80\x01R\beffectId\"\xba\x01\n" +
+	"\teffect_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03(\x80\x01R\beffectId\x12_\n" +
+	"\x1bexpected_declaration_digest\x18\x06 \x01(\tB\x1f\xbaH\x1cr\x1a2\x18^(sha256:[0-9a-f]{64})?$R\x19expectedDeclarationDigest\"\xba\x01\n" +
 	"\x16SourceOperationReceipt\x12\x1b\n" +
 	"\teffect_id\x18\x01 \x01(\tR\beffectId\x12!\n" +
 	"\fcommitted_at\x18\x02 \x01(\tR\vcommittedAt\x12\x16\n" +

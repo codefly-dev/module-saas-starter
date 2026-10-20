@@ -17,9 +17,18 @@ Released CLI v0.1.185 uses it to derive packages only on Connect. Discovery
 projects individual declaration schemas/effects/digests over this one binding.
 The caller never chooses a destination, HTTP header, credential or method.
 
-Invoke takes `org_id`, `source_id`, `operation`, `input_json`, and `effect_id`.
+Invoke takes `org_id`, `source_id`, `operation`, `input_json`, `effect_id`, and
+optional `expected_declaration_digest`. A consumer admitting a frozen operation
+supplies its canonical `sha256:` declaration digest. A different live declaration
+is refused with `SOURCE_DECLARATION_CHANGED` before creating an attempt or
+calling the provider, including after waiting for receipt serialization.
+Omitting the precondition retains the existing current-declaration behavior.
+The precondition is part of the SDK request fingerprint; adding, removing or
+changing it under an existing effect cannot replay a different request.
+Lookup still takes only the original effect ID and recovers retained evidence
+under current source-read authority after declaration replacement or removal.
 `input_json` is a string containing exactly one JSON object. The complete
-protojson request (proto field names, unpopulated fields included) is limited to
+protojson request (proto field names, zero-valued fields omitted) is limited to
 65,536 bytes. Declarations require a closed input-object schema; named template
 parameters become escaped path components, listed query fields become query
 parameters, and the remaining object becomes the body. GET and DELETE refuse a
