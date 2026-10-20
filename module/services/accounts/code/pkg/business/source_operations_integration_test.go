@@ -117,12 +117,12 @@ func TestSourceOperationRealReceiptReplayAndUnknownMutation(t *testing.T) {
 		request := &gen.InvokeSourceOperationRequest{OrgId: org, SourceId: source.ID, Operation: declaration.Name, InputJson: input, EffectId: effect}
 		ctx := auth.WithVerifiedDatabaseIdentity(testCtx, actor, org)
 		ctx = business.WithSourceOperationRecheck(ctx, func(ctx context.Context) error {
-			_, _, err := svc.SourceOperationAuthority(ctx, actor, org, source.ID, declaration.Name, effect, false)
+			_, _, err := svc.SourceOperationAuthority(ctx, actor, org, source.ID, declaration.Name, effect, "", false)
 			return err
 		})
 		return guard.Handle(ctx, business.SourceOperationMethod, effect, request, func(ctx context.Context) (proto.Message, error) {
 			var response *gen.InvokeSourceOperationResponse
-			_, err := svc.InvokeSourceOperation(ctx, actor, org, source.ID, declaration.Name, []byte(input), func(ctx context.Context, result *business.SourceOperationResult) error {
+			_, err := svc.InvokeSourceOperation(ctx, actor, org, source.ID, declaration.Name, "", []byte(input), func(ctx context.Context, result *business.SourceOperationResult) error {
 				response = &gen.InvokeSourceOperationResponse{OutputJson: string(result.Output), Receipt: &gen.SourceOperationReceipt{EffectId: effect, CommittedAt: result.CommittedAt.UTC().Format(time.RFC3339Nano), Status: "committed", ProviderStatus: uint32(result.ProviderStatus), OutputJson: string(result.Output)}}
 				return svc.RecordSourceOperationReceipt(ctx, response)
 			})
@@ -167,7 +167,7 @@ func TestSourceOperationRealReceiptReplayAndUnknownMutation(t *testing.T) {
 		_, err := svc.DeclareSourceOperations(requestCtx, actor, org, source.ID, nil)
 		require.NoError(t, err)
 		for _, effect := range []string{"committed", "unresolved"} {
-			_, _, err := svc.SourceOperationAuthority(requestCtx, actor, org, source.ID, declaration.Name, effect, true)
+			_, _, err := svc.SourceOperationAuthority(requestCtx, actor, org, source.ID, declaration.Name, effect, "", true)
 			require.NoError(t, err, "lookup authority must not require the removed declaration")
 			saved, found, err := receiptStore.Lookup(requestCtx, org, effect, business.SourceOperationMethod)
 			require.NoError(t, err)
@@ -332,7 +332,7 @@ func TestSourceOperationRealReceiptRetentionAndTombstones(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, attempt)
 		ctx := receipts.WithEffect(requestCtx, receipts.Effect{ID: effect, Tenant: org, Method: business.SourceOperationMethod, RequestDigest: attempt.RequestDigest})
-		_, err = svc.InvokeSourceOperation(ctx, actor, org, source.ID, d.Name, []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error {
+		_, err = svc.InvokeSourceOperation(ctx, actor, org, source.ID, d.Name, "", []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error {
 			t.Fatal("expired mutation redispatched")
 			return nil
 		})

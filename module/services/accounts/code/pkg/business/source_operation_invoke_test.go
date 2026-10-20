@@ -32,6 +32,14 @@ type operationStore struct {
 	declarations []operations.Declaration
 	attempts     map[string]business.SourceOperationAttempt
 	allowed      bool
+	beforeLock   func()
+}
+
+func (s *operationStore) LockDatasourceSourceCredentialRef(ctx context.Context, org, source string) (string, error) {
+	if s.beforeLock != nil {
+		s.beforeLock()
+	}
+	return s.datasourceFakeStore.LockDatasourceSourceCredentialRef(ctx, org, source)
 }
 
 func (s *operationStore) GetOrgMembership(context.Context, string, string) (*gen.OrgMembership, error) {
@@ -151,9 +159,12 @@ func (f *operationFixture) Declare(t *testing.T, declarations []operations.Decla
 	}
 }
 func (f *operationFixture) Invoke(ctx context.Context, name, effect string, input json.RawMessage) error {
-	digest := sha256.Sum256(append([]byte(name), input...))
+	return f.invokeExpected(ctx, name, effect, input, "")
+}
+func (f *operationFixture) invokeExpected(ctx context.Context, name, effect string, input json.RawMessage, expected string) error {
+	digest := sha256.Sum256(append([]byte(name+expected), input...))
 	ctx = receipts.WithEffect(ctx, receipts.Effect{ID: effect, Tenant: "org", Method: "/saas.accounts.v1.DatasourceService/InvokeSourceOperation", RequestDigest: digest[:]})
-	_, err := f.service.InvokeSourceOperation(ctx, "actor", "org", "source", name, input, func(context.Context, *business.SourceOperationResult) error { return nil })
+	_, err := f.service.InvokeSourceOperation(ctx, "actor", "org", "source", name, expected, input, func(context.Context, *business.SourceOperationResult) error { return nil })
 	return err
 }
 func (f *operationFixture) ProviderReply(code int, body string, lose bool) {
@@ -166,6 +177,53 @@ func (f *operationFixture) Credential() string { return f.secret }
 
 func TestAPIOperationsConformance(t *testing.T) {
 	connectortest.RunOperations(t, func(t *testing.T) connectortest.OperationsFixture { return newOperationFixture(t) })
+}
+
+func TestSourceOperationReplacedBeforeFirstInvocation(t *testing.T) {
+	f := newOperationFixture(t)
+	d := connectortest.OperationDeclaration()
+	f.Declare(t, []operations.Declaration{d})
+	admitted := f.store.declarations[0].Digest
+	d.Effect = operations.Mutation
+	f.Declare(t, []operations.Declaration{d})
+	require.NotEqual(t, admitted, f.store.declarations[0].Digest)
+	err := f.invokeExpected(t.Context(), d.Name, "first-call", json.RawMessage(`{"id":"a"}`), admitted)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), "a caller that admitted the old read must not execute the replacement")
+	require.Zero(t, f.calls)
+	require.Empty(t, f.store.attempts)
+}
+
+func TestSourceOperationExpectedDeclarationAtDispatch(t *testing.T) {
+	for _, change := range []string{"unchanged", "effect", "route", "schema", "under lock"} {
+		t.Run(change, func(t *testing.T) {
+			f := newOperationFixture(t)
+			d := connectortest.OperationDeclaration()
+			f.Declare(t, []operations.Declaration{d})
+			expected := f.store.declarations[0].Digest
+			switch change {
+			case "effect", "under lock":
+				d.Effect = operations.Mutation
+			case "route":
+				d.Path = "/replacement/{id}"
+			case "schema":
+				d.OutputSchema = json.RawMessage(`{"type":"object","properties":{"value":{"type":"string"}},"additionalProperties":false}`)
+			}
+			if change == "under lock" {
+				f.store.beforeLock = func() { f.Declare(t, []operations.Declaration{d}) }
+			} else {
+				f.Declare(t, []operations.Declaration{d})
+			}
+			err := f.invokeExpected(t.Context(), d.Name, "first-call", json.RawMessage(`{"id":"a"}`), expected)
+			if change == "unchanged" {
+				require.NoError(t, err)
+				require.Equal(t, 1, f.calls)
+				return
+			}
+			require.Equal(t, codes.FailedPrecondition, status.Code(err))
+			require.Zero(t, f.calls)
+			require.Empty(t, f.store.attempts)
+		})
+	}
 }
 
 func TestSourceOperationCurrentAuthorityAndDeclaration(t *testing.T) {
@@ -235,13 +293,13 @@ func TestReadOnlyCommitFailureCanRetrySameEffect(t *testing.T) {
 			f.Declare(t, []operations.Declaration{d})
 			digest := sha256.Sum256([]byte("request"))
 			ctx := receipts.WithEffect(t.Context(), receipts.Effect{ID: "commit-failed", Tenant: "org", Method: business.SourceOperationMethod, RequestDigest: digest[:]})
-			_, err := f.service.InvokeSourceOperation(ctx, "actor", "org", "source", d.Name, []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error { return errors.New("commit unavailable") })
+			_, err := f.service.InvokeSourceOperation(ctx, "actor", "org", "source", d.Name, "", []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error { return errors.New("commit unavailable") })
 			if effect == operations.ReadOnly {
 				require.Equal(t, codes.Unavailable, status.Code(err))
 			} else {
 				require.Equal(t, codes.FailedPrecondition, status.Code(err))
 			}
-			_, err = f.service.InvokeSourceOperation(ctx, "actor", "org", "source", d.Name, []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error { return nil })
+			_, err = f.service.InvokeSourceOperation(ctx, "actor", "org", "source", d.Name, "", []byte(`{"id":"a"}`), func(context.Context, *business.SourceOperationResult) error { return nil })
 			if effect == operations.ReadOnly {
 				require.NoError(t, err)
 				require.Equal(t, 2, f.calls)
