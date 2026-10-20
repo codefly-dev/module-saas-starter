@@ -1124,6 +1124,17 @@ identity their caller minted (issue #1094).
   fires the trigger, and this host holds none.
 - **Every provider syncs at connect**, not a whole interval later
   (`startFirstSync`).
+- **A snapshot declares what is in scope; it does not order a deletion.**
+  `snapshotAt` hands off the complete file list at one commit — every path that
+  passes the source's `paths` and `file_extensions` filters — and emits no
+  `removed` change for a file that merely left the scope. So what becomes of an
+  entry a consumer holds that a newer snapshot no longer names is **that
+  module's** decision, under its own provenance rules; this host neither prunes
+  it nor promises it survives. The consequence worth stating plainly, because
+  `UpdateSource` makes it reachable on purpose: **narrowing a source's filters
+  deletes nothing here.** It changes what the next snapshot declares, and a
+  surface must not tell an administrator that de-scoped content is either
+  retained or removed, because the host does not know which.
 - **What is not proven.** No live occurrence exists. Nothing in this repository
   composes a module that executes declared work, so the declaration is
   built, held to the contract's field names by test, and never yet admitted by

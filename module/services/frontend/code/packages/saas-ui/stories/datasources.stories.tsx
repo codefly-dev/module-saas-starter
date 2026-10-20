@@ -8,6 +8,7 @@ import {
 	DeclaredSourceCard,
 	type DeclaredSource,
 	describeSync,
+	EditSourceForm,
 	SourceExecutionRestricted,
 	SourceSyncProgress,
 	type SourceSyncView,
@@ -90,6 +91,25 @@ export const ConnectionValidation = {
 				onSubmit={() =>
 					setMessage("Connection is unavailable in this preview.")
 				}
+			/>
+		);
+	},
+};
+/**
+ * Editing a connected source. The fields arrive holding what the source already
+ * fetches, and the repository and collection are stated rather than offered:
+ * both are the source's identity, which the host refuses to move.
+ */
+export const EditSource = {
+	render: function EditSourceStory() {
+		const [message, setMessage] = useState<string>();
+		return (
+			<EditSourceForm
+				source={source}
+				isPending={false}
+				errorMessage={message}
+				onCancel={() => setMessage("Close this story to leave the preview.")}
+				onSubmit={() => setMessage("Editing is unavailable in this preview.")}
 			/>
 		);
 	},

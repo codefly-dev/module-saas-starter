@@ -7,6 +7,7 @@ export {
 	DatasourcesPanel,
 	type DatasourcesPanelProps,
 } from "./datasources/datasources-panel.js";
+export { EditSourceForm } from "./datasources/edit-source-form.js";
 // The credential block, presentational and controlled, exported for the same
 // reason `matchDeclaredSources` is: a consumer that renders the three states
 // in its own shell must be able to ASK for the credential without copying
@@ -47,6 +48,7 @@ export {
 	useDeleteSource,
 	useListSources,
 	useReconcileSource,
+	useUpdateSource,
 } from "./datasources/queries.js";
 // The effect identity a manual pass commits under, and the record of the
 // passes this browser admitted. Exported because the host's own
@@ -63,6 +65,8 @@ export {
 export {
 	type ConnectGitHubValues,
 	connectGitHubSchema,
+	type EditSourceValues,
+	editSourceSchema,
 } from "./datasources/schema.js";
 export { SourceExecutionRestricted } from "./datasources/source-execution-access.js";
 export {
@@ -103,7 +107,9 @@ export type {
 	DatasourceStatusName,
 	DatasourceView,
 	DomainView,
+	EditSourceInput,
 	GroupBindingView,
+	SourceFetchScope,
 	SourceReconcileReceipt,
 	SourceSyncFailureReasonName,
 	SourceSyncPhaseName,

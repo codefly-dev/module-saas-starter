@@ -39,6 +39,7 @@ import {
 } from "../solution/viewer.js";
 import { CollectionGrants } from "./collection-access.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
+import { EditSourceForm } from "./edit-source-form.js";
 import { messageOf } from "./errors.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import { readAppSetupReturn, scrubAppSetupReturn } from "./github-app-setup.js";
@@ -48,9 +49,10 @@ import {
 	useDeleteSource,
 	useListSources,
 	useReconcileSource,
+	useUpdateSource,
 } from "./queries.js";
 import type { AdmittedReconcilePass } from "./reconcile-passes.js";
-import type { ConnectGitHubValues } from "./schema.js";
+import type { ConnectGitHubValues, EditSourceValues } from "./schema.js";
 import { SourceSyncProgress, useSourceSync } from "./sync-progress.js";
 import type {
 	AccessibleScopeView,
@@ -219,6 +221,7 @@ function DatasourcesPanelView({
 	const [executionSource, setExecutionSource] = useState<DatasourceView | null>(
 		null,
 	);
+	const [editing, setEditing] = useState<DatasourceView | null>(null);
 	const [reconnecting, setReconnecting] = useState<DatasourceView | null>(null);
 	const [reconnectPending, setReconnectPending] = useState(false);
 	const [reconnectError, setReconnectError] = useState<string>();
@@ -226,6 +229,7 @@ function DatasourcesPanelView({
 	const completeAppSetup = client.completeGitHubAppSetup?.bind(client);
 	const migrateToApp = client.migrateGitHubSourceToApp?.bind(client);
 	const reconnectSource = client.reconnectSource?.bind(client);
+	const canEditSource = !!client.updateSource;
 
 	// The return leg, captured once during the first render: the redirect's
 	// parameters are a property of the URL the page loaded with, so the value has
@@ -325,6 +329,7 @@ function DatasourcesPanelView({
 	const addMutation = useAddGitHubSource(client);
 	const reconcileMutation = useReconcileSource(client);
 	const deleteMutation = useDeleteSource(client);
+	const updateMutation = useUpdateSource(client);
 
 	const handleConnect = (values: ConnectGitHubValues) => {
 		addMutation.mutate(
@@ -489,6 +494,64 @@ function DatasourcesPanelView({
 			setActionError(`Couldn't sync ${source.repo}: ${messageOf(error)}`);
 		} finally {
 			setSyncingIds((prev) => without(prev, source.id));
+		}
+	};
+
+	// Editing a source replaces what it fetches, so the notice reports what the
+	// host answered: the sync it queued because the scope moved, or that nothing
+	// changed. The second is not a failure and must not read as one — a person
+	// who reopened the dialog and saved it unchanged is owed that sentence, not
+	// a "sync queued" for a sync that never ran.
+	const handleEdit = async (values: EditSourceValues) => {
+		if (!editing) return;
+		const source = editing;
+		setSyncNotice(null);
+		setActionError(null);
+		try {
+			const jobId = await updateMutation.mutateAsync({
+				orgId,
+				id: source.id,
+				branch: values.branch ?? "",
+				paths: parsePaths(values.paths),
+				fileExtensions: parsePaths(values.fileExtensions).map((value) =>
+					value.toLowerCase(),
+				),
+				// The scope this dialog was seeded from — the same object the form
+				// read its defaults out of, which is what the person was looking at
+				// while they typed. The host refuses the save if the source no
+				// longer holds it, so a dialog left open across someone else's
+				// change cannot silently undo it.
+				expected: {
+					branch: source.branch,
+					paths: source.paths,
+					fileExtensions: source.fileExtensions ?? [],
+				},
+			});
+			setEditing(null);
+			setSyncNotice(
+				jobId
+					? {
+							title: "Sync queued",
+							body: `${source.repo} now fetches the scope you saved. The re-snapshot is queued; open History for ingestion results.`,
+						}
+					: {
+							title: "Nothing changed",
+							body: `${source.repo} already fetched exactly that, so no sync was queued.`,
+						},
+			);
+			if (jobId) onSyncEnqueued?.(jobId);
+			await list.refetch();
+		} catch {
+			// The dialog stays open and shows the host's refusal — an unreadable
+			// branch is a correctable mistake, and closing it would discard what
+			// the person typed.
+			//
+			// The list is refreshed anyway: one of the refusals is "the source
+			// changed after you opened this", and the remedy the message gives is
+			// to reopen the form. Reopening it over a stale row would seed the
+			// same expectation and be refused again, so the row behind the dialog
+			// has to be current before they can act on what they were told.
+			await list.refetch();
 		}
 	};
 
@@ -692,6 +755,14 @@ function DatasourcesPanelView({
 						canManage={canManage}
 						onActivity={client.listActivity ? setActivitySource : undefined}
 						onExecution={renderSourceExecution ? setExecutionSource : undefined}
+						onEdit={
+							canEditSource
+								? (source) => {
+										updateMutation.reset();
+										setEditing(source);
+									}
+								: undefined
+						}
 						onReconnect={
 							reconnectSource
 								? (source) => {
@@ -851,6 +922,19 @@ function DatasourcesPanelView({
 							setReconnectPending(false);
 						}
 					}}
+				/>
+			)}
+			{canManage && editing && canEditSource && (
+				<EditSourceForm
+					source={editing}
+					onSubmit={handleEdit}
+					onCancel={() => {
+						if (!updateMutation.isPending) setEditing(null);
+					}}
+					isPending={updateMutation.isPending}
+					errorMessage={
+						updateMutation.isError ? messageOf(updateMutation.error) : undefined
+					}
 				/>
 			)}
 			{canManage && showConnect && (
@@ -1049,6 +1133,7 @@ const wrapClass = "min-w-32 whitespace-normal";
 
 function SourcesTable({
 	canManage,
+	onEdit,
 	sources,
 	boundaries,
 	permissionsResolved,
@@ -1072,6 +1157,12 @@ function SourcesTable({
 	migratingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
 	onDelete: (source: DatasourceView) => void;
+	/**
+	 * Opens the edit dialog for a source. Absent when the client cannot edit one,
+	 * which drops the control rather than offering a dialog whose save would be
+	 * refused by a client that has no such call.
+	 */
+	onEdit?: (source: DatasourceView) => void;
 	onActivity?: (source: DatasourceView) => void;
 	/** Present only when a consumer handed the panel an execution view. */
 	onExecution?: (source: DatasourceView) => void;
@@ -1220,6 +1311,11 @@ function SourcesTable({
 													align="end"
 													className="w-auto min-w-44"
 												>
+													{onEdit && source.provider === "github" && (
+														<DropdownMenuItem onClick={() => onEdit(source)}>
+															Edit
+														</DropdownMenuItem>
+													)}
 													{onReconnect && source.provider === "github" && (
 														<DropdownMenuItem
 															onClick={() => onReconnect(source)}
