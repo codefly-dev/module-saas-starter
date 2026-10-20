@@ -4,6 +4,12 @@ const cookieStore = vi.hoisted(() => ({
 	get: vi.fn(() => ({ value: "verification-token" })),
 }));
 
+const { getEndpoints } = vi.hoisted(() => ({
+	getEndpoints: vi.fn(() => [
+		{ service: "auth-gateway", name: "rest", address: "http://auth-gateway.internal:8080" },
+	]),
+}));
+vi.mock("codefly", () => ({ getEndpoints }));
 vi.mock("next/headers", () => ({
 	cookies: async () => cookieStore,
 }));

@@ -9,7 +9,9 @@ import { checkRuntimeCompatibility } from "@/solutions/compatibility";
 
 import { assertDataGraph, type DataGraph } from "@codefly/saas-plugin-manifest";
 import type { DeclaredSource } from "@codefly-dev/saas-ui/solution";
-import { getEndpoints, getWorkspaceSecret } from "codefly";
+import { getWorkspaceSecret } from "codefly";
+
+import { gatewayOrigin } from "@/lib/gateway-endpoint";
 
 /**
  * Read-only projection of the host's declared solution registry. The gateway
@@ -338,18 +340,6 @@ const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
  * be derived from the incoming request (the client-controlled Host header):
  * routing a server-side fetch through Host is an SSRF sink.
  */
-function gatewayOrigin(): string | null {
-	const endpoint = getEndpoints().find(
-		(candidate) =>
-			candidate.service === "auth-gateway" && candidate.name === "rest",
-	);
-	if (!endpoint?.address) return null;
-	try {
-		return new URL(endpoint.address).origin;
-	} catch {
-		return null;
-	}
-}
 
 /** The cluster-internal credential the registry endpoints require. */
 function internalToken(): string | null {

@@ -1,4 +1,4 @@
-import { getEndpoints } from "codefly";
+import { gatewayBase } from "@/lib/gateway-endpoint";
 
 import {
 	resolveCodeflyGatewayContext,
@@ -55,20 +55,6 @@ function sameOrigin(request: Request, hostOrigin: string | undefined): boolean {
  * here would send a solution's platform procedure to a different URL than the
  * byte-identical call issued from a host page, against the same composition.
  */
-function gatewayBase(): string | null {
-	const endpoint = getEndpoints().find(
-		(candidate) =>
-			candidate.service === "auth-gateway" && candidate.name === "rest",
-	);
-	if (!endpoint?.address) {
-		return null;
-	}
-	try {
-		return new URL(endpoint.address).toString().replace(/\/$/, "");
-	} catch {
-		return null;
-	}
-}
 
 /**
  * Generic solution proxy. Forwards a browser request to the API gateway's

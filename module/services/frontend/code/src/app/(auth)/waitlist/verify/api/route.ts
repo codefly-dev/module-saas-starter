@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { gatewayBase } from "@/lib/gateway-endpoint";
+
 const COOKIE = "waitlist_verification_token";
 
 export async function POST(request: Request) {
@@ -12,7 +14,15 @@ export async function POST(request: Request) {
 			{ status: 400 },
 		);
 	}
-	const upstream = await fetch(new URL("/v1/waitlist:verify", request.url), {
+	const gateway = gatewayBase();
+	if (!gateway) {
+		console.error("waitlist route: the composition states no API gateway endpoint");
+		return NextResponse.json(
+			{ message: "The waitlist service is not reachable from this deployment." },
+			{ status: 503 },
+		);
+	}
+	const upstream = await fetch(`${gateway}/v1/waitlist:verify`, {
 		method: "POST",
 		cache: "no-store",
 		headers: { "Content-Type": "application/json" },
