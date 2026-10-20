@@ -71,6 +71,24 @@ function failureMessage(status: number): {
 	};
 }
 
+// A refusal this route wrote carries its own `error`, and it knows things the
+// status alone cannot say — that the emailed token's cookie timed out in this
+// browser, or that the deployment declares no gateway. An upstream failure
+// carries no `error`, so the status map below still answers for it.
+async function failureFrom(response: Response): Promise<{
+	message: string;
+	wrongAccount?: boolean;
+}> {
+	const fallback = failureMessage(response.status);
+	const body = (await response.json().catch(() => null)) as {
+		error?: unknown;
+	} | null;
+	if (typeof body?.error === "string" && body.error !== "") {
+		return { ...fallback, message: body.error };
+	}
+	return fallback;
+}
+
 function inspectedState(summary: {
 	status?: string | number;
 	emailHint?: string;
@@ -117,6 +135,12 @@ export function InvitationAcceptance() {
 		logout,
 	} = useAuth();
 	const [state, setState] = useState<State>({ kind: "loading" });
+	// The id the first inspect reported, which is how a sign-in longer than the
+	// emailed token's fifteen-minute cookie still ends in an acceptance: the
+	// return path names the invitation instead of relying on that cookie
+	// surviving. The id is no credential — accepting by it requires a signed-in
+	// account whose primary email matches the invitation's.
+	const [inspectedId, setInspectedId] = useState<string>();
 
 	useEffect(() => {
 		if (authLoading) return;
@@ -135,12 +159,16 @@ export function InvitationAcceptance() {
 			}),
 		})
 			.then(async (response) => {
-				if (!response.ok) throw failureMessage(response.status);
+				if (!response.ok) throw await failureFrom(response);
 				const summary = (await response.json()) as {
+					id?: string;
 					status?: string | number;
 					emailHint?: string;
 				};
 				if (!cancelled) {
+					if (summary.id && UUID.test(summary.id)) {
+						setInspectedId(summary.id);
+					}
 					setState(inspectedState(summary));
 				}
 			})
@@ -177,7 +205,7 @@ export function InvitationAcceptance() {
 				}),
 			});
 			if (!response.ok) {
-				setState({ kind: "error", ...failureMessage(response.status) });
+				setState({ kind: "error", ...(await failureFrom(response)) });
 				return;
 			}
 			const result = (await response.json()) as {
@@ -211,8 +239,9 @@ export function InvitationAcceptance() {
 		}
 	}
 
-	const returnPath = safeInvitationId
-		? `/invitations/accept?id=${encodeURIComponent(safeInvitationId)}`
+	const returnIdentifier = safeInvitationId ?? inspectedId;
+	const returnPath = returnIdentifier
+		? `/invitations/accept?id=${encodeURIComponent(returnIdentifier)}`
 		: "/invitations/accept";
 
 	if (state.kind === "loading" || authLoading) {

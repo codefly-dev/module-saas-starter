@@ -365,7 +365,16 @@ plaintext appears only in the transactional delivery command and the initial
 email URL; it is never returned from `CreateInvitation`. The frontend captures
 the query credential into a short-lived HttpOnly, SameSite cookie, immediately
 redirects to a redacted URL, sets `no-referrer`, and clears the cookie after
-acceptance. Acceptance always re-resolves the authenticated primary email and
+acceptance. **Acceptance does not depend on that cookie outliving the
+sign-in.** The cookie lives fifteen minutes, which a sign-up, an MFA enrolment
+or a passkey ceremony outlasts, so `InspectInvitation` reports the
+invitation's own id and the page sends the person back through
+`/invitations/accept?id=…` — the same path an in-app invitation notification
+uses. The id is no credential: accepting by it requires a signed-in account
+whose primary email matches the invitation's, exactly as `InspectInvitationById`
+does. A request that reaches the acceptance route with neither credential is
+refused as a link that timed out in this browser, never as an invalid
+invitation. Acceptance always re-resolves the authenticated primary email and
 performs the membership/status transition in one tenant transaction. Ordinary
 invitations allow only `member` or `admin`; ownership transfer remains a
 separate, unimplemented high-assurance operation.
