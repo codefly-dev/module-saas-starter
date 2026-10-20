@@ -79,7 +79,7 @@ func TestWarnGrantsWhatTheManifestAsksAndKeepsTheTenant(t *testing.T) {
 
 func TestWarnGrantsAnUnknownPrincipalOnlyATenantTheEnvelopeShares(t *testing.T) {
 	shared := &ModuleEnvelope{Principals: map[string]ModuleEnvelopePrincipal{
-		"robin": {Grant: ModulePrincipalGrant{Tenant: "00000000-0000-7000-8000-0000000000a1"}}, "model": {Grant: ModulePrincipalGrant{Tenant: "00000000-0000-7000-8000-0000000000a1"}},
+		"assistant": {Grant: ModulePrincipalGrant{Tenant: "00000000-0000-7000-8000-0000000000a1"}}, "inference": {Grant: ModulePrincipalGrant{Tenant: "00000000-0000-7000-8000-0000000000a1"}},
 	}}
 	grant, omitted, err := deriveUnderEnforcement(ModuleAuthorityWarn, "documents", ModuleEnvelopePrincipal{}, false,
 		enforcementManifest(), []ModuleWorkload{testWorkload}, shared)
@@ -88,7 +88,7 @@ func TestWarnGrantsAnUnknownPrincipalOnlyATenantTheEnvelopeShares(t *testing.T) 
 	require.Equal(t, "00000000-0000-7000-8000-0000000000a1", grant.Tenant)
 
 	split := &ModuleEnvelope{Principals: map[string]ModuleEnvelopePrincipal{
-		"robin": {Grant: ModulePrincipalGrant{Tenant: "00000000-0000-7000-8000-0000000000a1"}}, "model": {Grant: ModulePrincipalGrant{Tenant: "00000000-0000-7000-8000-0000000000b2"}},
+		"assistant": {Grant: ModulePrincipalGrant{Tenant: "00000000-0000-7000-8000-0000000000a1"}}, "inference": {Grant: ModulePrincipalGrant{Tenant: "00000000-0000-7000-8000-0000000000b2"}},
 	}}
 	_, _, err = deriveUnderEnforcement(ModuleAuthorityWarn, "documents", ModuleEnvelopePrincipal{}, false,
 		enforcementManifest(), []ModuleWorkload{testWorkload}, split)
