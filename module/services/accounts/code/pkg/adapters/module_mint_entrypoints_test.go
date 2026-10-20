@@ -216,3 +216,7 @@ func TestEveryModuleMintFencesAuthorityAfterSigning(t *testing.T) {
 func (*mintEnvelopeStore) ModuleInstallations(context.Context) ([]business.ModuleInstallationConsent, error) {
 	return nil, nil
 }
+
+func (*mintEnvelopeStore) LatestDeliveredModuleEnvelopeRecord(context.Context) (*business.ModuleEnvelopeRecord, error) {
+	panic("not used")
+}

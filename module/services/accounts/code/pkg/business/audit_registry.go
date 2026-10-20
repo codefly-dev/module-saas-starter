@@ -416,6 +416,11 @@ const (
 	// revision names the whole ceiling at that point, and the row it points at
 	// is the record of what changed.
 	EventModuleEnvelopeWritten EventType = "saas.platform.module_envelope_written"
+	// EventModuleEnvelopeDelivered records that the composition's release
+	// pipeline delivered a revision of the module envelope, signed by a pinned
+	// release key. Its actor is the system: the signer, its ownership domain
+	// and the payload digest name who stated the ceiling.
+	EventModuleEnvelopeDelivered EventType = "saas.platform.module_envelope_delivered"
 
 	EventBillingCheckoutStarted EventType = "saas.billing.checkout_started"
 	EventBillingPortalOpened    EventType = "saas.billing.portal_opened"
@@ -704,6 +709,13 @@ var auditEventCatalog = []AuditEventDefinition{
 		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "principals", Kind: FieldInt, Required: true}),
+	mutation(EventModuleEnvelopeDelivered, CategorySecurity, "A release-signed revision of the module envelope was delivered.",
+		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
+		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},
+		PayloadField{Name: "principals", Kind: FieldInt, Required: true},
+		PayloadField{Name: "signer", Kind: FieldString, Required: true},
+		PayloadField{Name: "ownership_domain", Kind: FieldString, Required: true},
+		PayloadField{Name: "digest", Kind: FieldString, Required: true}),
 	// The operator's justification is part of the record, not an optional
 	// enrichment: who and whom are already implied by the actor/resource pair,
 	// and why is the only thing this event can carry that the pair cannot.

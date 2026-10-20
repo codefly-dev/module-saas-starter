@@ -309,19 +309,23 @@ func classifySolutionDeliveryVerification(err error) error {
 	return fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
 }
 
-// classifySolutionDeliveryAdmission maps core's admission refusals onto this
+// classifySolutionDeliveryAdmission maps core's admission refusals — of a
+// manifest (Admit, CheckAlias) or an envelope (AdmitEnvelope) — onto this
 // host's delivery taxonomy, keeping core's own wording as the cause.
 func classifySolutionDeliveryAdmission(err error) error {
 	switch {
 	case errors.Is(err, solutionhost.ErrStaleGeneration),
 		errors.Is(err, solutionhost.ErrRewrittenGeneration),
-		errors.Is(err, solutionhost.ErrWithdrawn):
+		errors.Is(err, solutionhost.ErrWithdrawn),
+		errors.Is(err, solutionhost.ErrEnvelopeStaleRevision),
+		errors.Is(err, solutionhost.ErrEnvelopeRewrittenRevision):
 		return fmt.Errorf("%w: %w", ErrSolutionDeliveryConflict, err)
 	case errors.Is(err, solutionhost.ErrWrongDomain):
 		return fmt.Errorf("%w: %w", ErrSolutionDeliveryDomainNotGranted, err)
 	case errors.Is(err, solutionhost.ErrAppliedUnusable):
 		return fmt.Errorf("%w: %w", ErrSolutionDeliveryHostState, err)
-	case errors.Is(err, solutionhost.ErrInvalid), errors.Is(err, solutionhost.ErrSchema):
+	case errors.Is(err, solutionhost.ErrInvalid), errors.Is(err, solutionhost.ErrSchema),
+		errors.Is(err, solutionhost.ErrEnvelopeInvalid):
 		return fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
 	}
 	// Another host's coordinate, a reserved or held route alias.

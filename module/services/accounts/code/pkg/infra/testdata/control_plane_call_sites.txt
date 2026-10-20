@@ -80,10 +80,11 @@ pkg/business/module_capabilities.go: (*Service).moduleAuditSubjectIsMemberOf: Wi
 pkg/business/module_capabilities.go: (*Service).requireTenantMember: WithControlPlane
 pkg/business/module_envelope.go: (*Service).CurrentModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).GetModuleEnvelope: WithControlPlane
-pkg/business/module_envelope.go: (*Service).PutModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).committedModuleEnvelopeRevision: WithControlPlane
 pkg/business/module_envelope.go: (*Service).deliveredSince: WithControlPlane
 pkg/business/module_envelope.go: (*Service).moduleEnvelopeNarrows: WithControlPlane
+pkg/business/module_envelope.go: (*Service).writeModuleEnvelope: WithControlPlane
+pkg/business/module_envelope_delivery.go: (*Service).ReceiveModuleEnvelopeDelivery: WithControlPlane
 pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithControlPlane
 pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/module_installations.go: (*Service).ReconcileModuleInstallation: WithControlPlane

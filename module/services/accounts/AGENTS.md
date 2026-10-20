@@ -338,6 +338,11 @@ two inputs agree:
   `module_envelopes`; fresh MFA required, an unenrolled administrator refused):
   `{"revision", "principals": {"<principal>": {"grant": {…}}}}`. It names no
   workload, no unit and no build; a document that does is refused by name.
+  The composition can also deliver it: `POST /platform/_delivery/envelope`
+  admits a release-signed `codefly/module-envelope/v1` carried by the host's
+  own `delivery` account, naming no organization, above the committed
+  revision, through the same writer (audited as
+  `saas.platform.module_envelope_delivered`).
 - **an applied, live module manifest asking for the principal** — its
   `authority.principal` is the module's principal, and its stored carrier is
   re-verified on every pass against the CURRENT pins (one that no longer

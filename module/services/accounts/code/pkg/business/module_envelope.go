@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -77,11 +78,22 @@ type ModuleEnvelopePrincipal struct {
 
 // ModuleEnvelopeRecord is one stored revision: the document as written, and who
 // wrote it when.
+//
+// A revision is written by a platform administrator (WrittenBy) or DELIVERED
+// from the composition (module_envelope_delivery.go), never both. A delivered
+// revision leaves WrittenBy empty and carries the release key id that signed it,
+// the ownership domain it speaks for, the canonical payload the signature covers
+// and the DSSE envelope verbatim, so it can be re-verified and the next delivery
+// admitted against it.
 type ModuleEnvelopeRecord struct {
-	Revision  uint64
-	Document  []byte
-	WrittenBy string
-	WrittenAt time.Time
+	Revision        uint64
+	Document        []byte
+	WrittenBy       string
+	WrittenAt       time.Time
+	Signer          string
+	OwnershipDomain string
+	Payload         []byte
+	Envelope        []byte
 }
 
 // ModuleEnvelopeStore persists the ceiling. Append-only: a revision is written
@@ -93,10 +105,15 @@ type ModuleEnvelopeStore interface {
 	// LatestModuleEnvelopeRecord returns the highest revision, or nil when no
 	// envelope has ever been written.
 	LatestModuleEnvelopeRecord(ctx context.Context) (*ModuleEnvelopeRecord, error)
-	// AppendModuleEnvelopeRecord writes record.Revision only while the current
-	// revision is expectedRevision (0 = none written), and returns
-	// ErrModuleEnvelopeConflict otherwise. The store fills WrittenAt.
+	// AppendModuleEnvelopeRecord writes record.Revision, which must be above
+	// expectedRevision, only while the current revision is expectedRevision
+	// (0 = none written), and returns ErrModuleEnvelopeConflict otherwise. The
+	// store fills WrittenAt. An administrator writes the next revision; a
+	// delivery writes the revision its composition declared, which may skip.
 	AppendModuleEnvelopeRecord(ctx context.Context, record *ModuleEnvelopeRecord, expectedRevision uint64) error
+	// LatestDeliveredModuleEnvelopeRecord returns the highest DELIVERED
+	// revision with its payload and envelope, or nil when none was delivered.
+	LatestDeliveredModuleEnvelopeRecord(ctx context.Context) (*ModuleEnvelopeRecord, error)
 	// LatestModuleEnvelopeRevision is the highest revision written, 0 when
 	// none. It is the fence every capability check reads: a registry derived
 	// from an older revision than this serves nothing.
@@ -239,6 +256,14 @@ func (s *Service) requestRegistryPass() {
 // newer one refuses must stop granting rather than keep granting because it was
 // accepted once. A stored revision that no longer parses is an ERROR, never "no
 // envelope" — a reconciler reading it keeps what it last installed.
+//
+// A DELIVERED revision is re-verified against the host's pinned keys too, the
+// way the manifest half of the same pass re-verifies every applied manifest.
+// Parsing proves the document is well formed, not that anybody may still state
+// it: unpinning a compromised release key is the operator's revocation lever,
+// and without this the ceiling that key signed would keep granting forever,
+// withdrawable only by an administrator's interactive write at a higher
+// revision. Its failure is an error for the same reason a parse failure is.
 func (s *Service) CurrentModuleEnvelope(ctx context.Context) (*ModuleEnvelope, error) {
 	if s.moduleEnvelopes == nil {
 		return nil, ErrModuleEnvelopeUnavailable
@@ -264,7 +289,34 @@ func (s *Service) CurrentModuleEnvelope(ctx context.Context) (*ModuleEnvelope, e
 	if envelope.Revision != record.Revision {
 		return nil, fmt.Errorf("stored module envelope revision %d carries document revision %d", record.Revision, envelope.Revision)
 	}
+	if err := s.reverifyDeliveredModuleEnvelope(ctx, record); err != nil {
+		return nil, err
+	}
 	return envelope, nil
+}
+
+// reverifyDeliveredModuleEnvelope re-verifies a delivered revision's signature
+// against the host's pinned keys. An interactively written revision carries no
+// carrier and is this host's own record, so there is nothing to verify; a
+// delivered one is somebody else's statement, held every read to the custody
+// that may make it.
+//
+// A host with no verifier wired cannot answer the question, so it refuses
+// rather than skipping: a cell that has received a delivered envelope has a
+// verifier by construction, and the shape that has not is a native profile,
+// whose envelope is written interactively.
+func (s *Service) reverifyDeliveredModuleEnvelope(ctx context.Context, record *ModuleEnvelopeRecord) error {
+	if len(record.Payload) == 0 && len(record.Envelope) == 0 {
+		return nil
+	}
+	if s.deliveryVerifier == nil {
+		return fmt.Errorf("module envelope revision %d was delivered and this host has no delivery verifier to re-verify it against", record.Revision)
+	}
+	signed := &solutionhost.Signed{Document: record.Payload, Envelope: record.Envelope}
+	if _, err := solutionhost.VerifyDeliveredEnvelope(ctx, signed, s.deliveryVerifier); err != nil {
+		return fmt.Errorf("delivered module envelope revision %d no longer verifies against this host's pinned keys: %w", record.Revision, err)
+	}
+	return nil
 }
 
 // GetModuleEnvelope returns the current revision as written, for a platform
@@ -333,18 +385,59 @@ func (s *Service) PutModuleEnvelope(
 			ErrModuleEnvelopeInvalid, envelope.Revision, expectedRevision, expectedRevision+1), ErrTypeValidation)
 	}
 	record := &ModuleEnvelopeRecord{Revision: envelope.Revision, Document: bytes.Clone(document), WrittenBy: actorID}
+	err = s.writeModuleEnvelope(ctx, moduleEnvelopeWrite{
+		envelope: envelope, record: record, expectedRevision: expectedRevision,
+		actorID: actorID, actorType: ActorTypeUser,
+		audit: func(ctx context.Context) error {
+			return s.emitTx(ctx, actorID, ActorTypeUser, EventModuleEnvelopeWritten, "module_envelope",
+				strconv.FormatUint(record.Revision, 10), "", map[string]any{
+					"revision":          int64(record.Revision),  //nolint:gosec // a revision is a small positive counter
+					"previous_revision": int64(expectedRevision), //nolint:gosec // a revision is a small positive counter
+					"principals":        len(envelope.Principals),
+				})
+		},
+	})
+	if err != nil {
+		if errors.Is(err, ErrModuleEnvelopeConflict) {
+			return nil, NewStoreError(err, ErrTypeConflict)
+		}
+		return nil, wool.Get(ctx).In("PutModuleEnvelope").Wrapf(err, "cannot write the module envelope")
+	}
+	return record, nil
+}
+
+// moduleEnvelopeWrite is one revision on its way to the store and who writes
+// it: a platform administrator interactively, or a delivery.
+type moduleEnvelopeWrite struct {
+	envelope         *ModuleEnvelope
+	record           *ModuleEnvelopeRecord
+	expectedRevision uint64
+	// actorID and actorType attribute the policy-log entry and every
+	// installation the write revokes.
+	actorID, actorType string
+	// audit writes the writer's own event, inside the row's transaction.
+	audit func(ctx context.Context) error
+}
+
+// writeModuleEnvelope is the ONE writer of the ceiling, whoever wrote the
+// revision: it classifies the write, witnesses a narrowing in the policy log,
+// appends the row over the expected revision, revokes the installations the
+// new ceiling no longer allows, commits the writer's audit event with the row,
+// fences this replica and asks for a pass. Its callers authorise the writer
+// and validate the document; nothing here relaxes for either of them.
+func (s *Service) writeModuleEnvelope(ctx context.Context, w moduleEnvelopeWrite) error {
 	var policy map[string]any
-	if err := json.Unmarshal(document, &policy); err != nil {
-		return nil, err
+	if err := json.Unmarshal(w.record.Document, &policy); err != nil {
+		return err
 	}
 	entry := &PolicyLogEntry{OperationID: newPolicyLogOperationID("module-envelope"),
 		Decision: PolicyLogNarrowed, SubjectKind: PolicyLogModuleEnvelope, SubjectID: "module-envelope",
-		Policy: policy, EnvelopeRevision: envelope.Revision, Actor: actorID}
+		Policy: policy, EnvelopeRevision: w.envelope.Revision, Actor: w.actorID}
 	// witnessed is set before apply runs under the policy log; apply refuses
 	// to revoke anything while it is false.
 	witnessed := false
 	apply := func(ctx context.Context) error {
-		if err := s.moduleEnvelopes.AppendModuleEnvelopeRecord(ctx, record, expectedRevision); err != nil {
+		if err := s.moduleEnvelopes.AppendModuleEnvelopeRecord(ctx, w.record, w.expectedRevision); err != nil {
 			return err
 		}
 		installations, err := s.moduleEnvelopes.ModuleInstallations(ctx)
@@ -352,7 +445,7 @@ func (s *Service) PutModuleEnvelope(
 			return err
 		}
 		for _, installation := range installations {
-			if installationTenancyAllowed(envelope, installation.PrincipalID, installation.OrgID) {
+			if installationTenancyAllowed(w.envelope, installation.PrincipalID, installation.OrgID) {
 				continue
 			}
 			// An installation acknowledged between the classification and
@@ -362,16 +455,11 @@ func (s *Service) PutModuleEnvelope(
 			if !witnessed {
 				return errModuleEnvelopeNarrowsAfterAll
 			}
-			if err := s.uninstallSolutionTx(ctx, actorID, "user", installation.OrgID, installation.ID); err != nil {
+			if err := s.uninstallSolutionTx(ctx, w.actorID, w.actorType, installation.OrgID, installation.ID); err != nil {
 				return err
 			}
 		}
-		return s.emitTx(ctx, actorID, "user", EventModuleEnvelopeWritten, "module_envelope",
-			strconv.FormatUint(record.Revision, 10), "", map[string]any{
-				"revision":          int64(record.Revision),  //nolint:gosec // a revision is a small positive counter
-				"previous_revision": int64(expectedRevision), //nolint:gosec // a revision is a small positive counter
-				"principals":        len(envelope.Principals),
-			})
+		return w.audit(ctx)
 	}
 	// The policy log witnesses NARROWINGS — "a narrowing nothing witnessed is
 	// one a restore undoes silently". A write that only grants (a first
@@ -379,9 +467,9 @@ func (s *Service) PutModuleEnvelope(
 	// is not one: a restore that undoes it leaves less authority, which is the
 	// fail-closed direction, so it is applied and audited without a witness.
 	// Anything that removes or changes what was granted is witnessed as today.
-	narrows, err := s.moduleEnvelopeNarrows(ctx, envelope, document)
+	narrows, err := s.moduleEnvelopeNarrows(ctx, w.envelope, w.record.Document)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	underWitness := func(ctx context.Context) error {
 		witnessed = true
@@ -398,18 +486,15 @@ func (s *Service) PutModuleEnvelope(
 		}
 	}
 	if err := write(ctx); err != nil {
-		if errors.Is(err, ErrModuleEnvelopeConflict) {
-			return nil, NewStoreError(err, ErrTypeConflict)
-		}
-		return nil, wool.Get(ctx).In("PutModuleEnvelope").Wrapf(err, "cannot write the module envelope")
+		return err
 	}
 	// This replica fences its registry at once — it serves nothing derived
 	// from the replaced ceiling — and asks for the pass that derives the new
 	// one. Every other replica fences at its next authority decision, which
 	// reads the committed revision (fenceModuleRegistrySnapshot).
-	s.observeModuleEnvelopeRevision(record.Revision)
+	s.observeModuleEnvelopeRevision(w.record.Revision)
 	s.requestRegistryPass()
-	return record, nil
+	return nil
 }
 
 // ErrModuleRegistryStale reports a registry derived from an envelope revision
