@@ -558,8 +558,8 @@ extraction contracts.
 |----------------|--------|-----------------------------------------------------------------|
 | Structured logs| ✅    | `wool` everywhere; user/org/action context auto-attached         |
 | Audit trail    | ✅    | Separate from app logs; queryable                                |
-| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and Go runtime and request metrics pushed over OTLP to the cell's collector |
-| Tracing        | ✅    | Accounts and auth-gateway export OTLP to the cell's collector, whose address the platform delivers as `OTEL_EXPORTER_OTLP_ENDPOINT`, for the designated SigNoz backend |
+| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and Go runtime and request metrics pushed over OTLP to the HTTPS operations intake |
+| Tracing        | ✅    | Accounts and auth-gateway export OTLP to the HTTPS operations intake, whose address the platform delivers as `OTEL_EXPORTER_OTLP_ENDPOINT`, for the designated SigNoz backend |
 | Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser errors; trace sampling is fixed at zero |
 | Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; [SigNoz provisioning remains unsupported pending a pinned service qualification](SIGNOZ_PROVISIONING.md) |
 
@@ -750,7 +750,7 @@ Environment variables consumed by the api:
 | `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`  | The one telemetry variable, in the process environment: the cell collector's OTLP/gRPC address, delivered by the platform when the cell has a collector the workload may reach. Unset means nothing is exported over OTLP; `http://` is plaintext on the wire because the mesh supplies mTLS, `https://` is TLS |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`  | The OTLP/gRPC target in the process environment: the operations intake's HTTPS OTLP/gRPC address, delivered from the environment's optional `telemetry:` declaration to every service. Unset means nothing is exported over OTLP; `https://` uses TLS, while `http://` is available for local plaintext receivers |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
 | `TURNSTILE_SECRET_KEY`         | Server-only Siteverify credential                            |
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
@@ -764,18 +764,20 @@ also install an OTLP metrics provider for unsampled request and Go runtime
 metrics; no scrape endpoint is served.
 
 Delivery uses OpenTelemetry process variables, not a module configuration group.
-The platform can deliver scoped `service-config` values to admitted workloads;
-CLIs implementing [CLI #1097](https://github.com/codefly-dev/cli/pull/1097)
-can instead supply the standard variables to every service through the
-environment's optional `telemetry:` block. The current lifecycle CLI pin does
-not need that block for scoped `service-config` delivery. `OTEL_SERVICE_NAME`
-selects trace identity, falling back to the SDK's `module/service` identity.
+The environment's optional `telemetry:` declaration is the platform delivery
+contract. [CLI #1097](https://github.com/codefly-dev/cli/pull/1097) supplies the
+standard endpoint, service identity and resource variables to every service;
+services that do not instrument telemetry can ignore them. The endpoint names
+the HTTPS operations intake, rather than a collector deployed by this module.
+`OTEL_SERVICE_NAME` selects trace identity, falling back to the SDK's
+`module/service` identity.
 Metrics also consume `OTEL_RESOURCE_ATTRIBUTES`. Core currently forwards only
 `service.name` and `library.name` to traces, so arbitrary resource attributes
 are not yet attached to trace exports.
 
 | Build or reuse | Verified implementation | Decision |
 | --- | --- | --- |
+| Environment delivery (user choice, 2026-10-21) | Merged [CLI #1097](https://github.com/codefly-dev/cli/pull/1097) environment telemetry injection; operations intake owned by infrastructure | Reuse every-service standard OTEL delivery; remove the overlapping scoped in-cell carrier. Released CLI v0.1.197 includes both this delivery and the squash-merged lifecycle implementation. |
 | Tracing lifecycle and identity | Released SDK v0.4.1 [Init / ShutdownTelemetry](https://github.com/codefly-dev/sdk-go/blob/v0.4.1/codefly.go#L66), using Core wool/otel | Reuse SDK lifecycle; remove per-service tracing bootstrap and its duplicate tests. |
 | Endpoint declaration validation | Core [Endpoint](https://github.com/codefly-dev/core/blob/v0.18.0/resources/endpoint.go#L134) / [InterfaceEndpoint](https://github.com/codefly-dev/core/blob/v0.18.0/resources/module.go#L69) YAML decoders | Reuse the Core decoders before projecting deployment fields. |
 | Metrics export and runtime instruments | OpenTelemetry OTLP metrics exporter and runtime instrumentation v0.71.0; Core/SDK provide no metrics bootstrap | Keep service wiring with the standard exporter. The services remain separate Go modules; no additional shared framework is introduced. |

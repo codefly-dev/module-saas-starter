@@ -40,8 +40,7 @@ func isolateOTLPEnvironment(t *testing.T) {
 	}
 }
 
-// collectorAt is the platform's whole delivery: the one variable, set to the
-// collector's address.
+// collectorAt configures the endpoint carrier for a loopback export test.
 func collectorAt(t *testing.T, scheme, hostPort string) {
 	t.Helper()
 	isolateOTLPEnvironment(t)
@@ -53,7 +52,7 @@ func TestOTLPEndpointConfigured(t *testing.T) {
 	require.False(t, otlpEndpointConfigured(), "unset")
 	t.Setenv(otlpEndpointVariable, "   ")
 	require.False(t, otlpEndpointConfigured(), "a blank value is no endpoint: the metrics exporter trims it to unset")
-	t.Setenv(otlpEndpointVariable, "http://otel-collector.otel-collector.svc.cluster.local:4317")
+	t.Setenv(otlpEndpointVariable, "https://telemetry.example.com:443")
 	require.True(t, otlpEndpointConfigured())
 }
 

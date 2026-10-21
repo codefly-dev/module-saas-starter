@@ -55,10 +55,10 @@ Validate the result with `codefly doctor workspace --env local-dogfood`.
 
 Operational telemetry uses standard process variables rather than a configuration
 group. With no `OTEL_EXPORTER_OTLP_ENDPOINT`, the SDK exports no traces in any
-environment, and the services build no metrics exporter. To export, deliver the
-endpoint as scoped platform `service-config`. CLIs implementing
-[CLI #1097](https://github.com/codefly-dev/cli/pull/1097) also support the
-environment's optional `telemetry:` block, which applies to every service. SDK exporter failures are
+environment, and the services build no metrics exporter. To export, use the
+environment's optional `telemetry:` block with the HTTPS operations intake.
+[CLI #1097](https://github.com/codefly-dev/cli/pull/1097) delivers standard OTEL
+variables to every service. SDK exporter failures are
 logged without stopping the service; logs always go to stdout.
 
 `email` is required because this profile is not the `local` environment, and

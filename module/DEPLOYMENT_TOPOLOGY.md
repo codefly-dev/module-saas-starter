@@ -112,14 +112,17 @@ is tracked by `P1-CI-004`.
 
 The generated Codefly dependency declarations contain exact endpoint
 references. The module owns no collector: accounts and auth-gateway export traces
-and metrics to the cell's, whose address the platform delivers as the standard
-`OTEL_EXPORTER_OTLP_ENDPOINT` variable when the cell has a collector they may
-reach, and delivers nothing when it does not. Neither service needs public egress
-to reach a telemetry backend and no product configuration owns a collector port.
-The generated NetworkPolicy remains the hard endpoint/port enforcement boundary
-for the services the module declares, and it grants no egress to the cell's
-collector: that collector's namespace and port are not part of the environment
-declaration the generators read, so the module renders no rule for them.
+and metrics to the HTTPS operations intake. The environment's optional
+`telemetry:` declaration lets the CLI deliver the standard OTEL variables to
+every service. Without an endpoint the services export nothing.
+
+The generated NetworkPolicy remains the endpoint/port enforcement boundary for
+services the module declares. The module does not derive an operations-intake
+egress rule from the environment telemetry declaration. Auth-gateway has no
+public egress; an external HTTPS intake therefore requires exact destination
+access in the owning deployment policy, as well as the mesh's external egress
+permission and DNS resolution. Successful new-environment export remains a
+rollout prerequisite; this change does not broaden the module's public egress.
 
 The AWS overlay replaces stateful services with managed dependencies. A
 pod-selector rule cannot authorize an RDS, ElastiCache, external Vault, or S3

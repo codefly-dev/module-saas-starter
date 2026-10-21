@@ -39,8 +39,8 @@ func enableOTELMetrics(ctx context.Context) (*otelMetrics, error) {
 		return nil, err
 	}
 	// The exporter reads the collector from OTEL_EXPORTER_OTLP_ENDPOINT itself and
-	// takes the transport off the URL's scheme: http:// is plaintext on the wire,
-	// because the mesh supplies mTLS, and https:// is TLS.
+	// takes transport from the URL scheme: the operations intake uses https://
+	// with TLS; http:// remains available for local plaintext receivers.
 	exporter, err := otlpmetricgrpc.New(ctx)
 	if err != nil {
 		return nil, err

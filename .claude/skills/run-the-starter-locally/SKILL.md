@@ -27,8 +27,8 @@ codefly run service --fixture dev-admin
   select export: `OTEL_EXPORTER_OTLP_ENDPOINT` names the collector, with
   `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` supplying identity.
   CLIs implementing [CLI #1097](https://github.com/codefly-dev/cli/pull/1097)
-  also deliver these for every service through an environment's `telemetry:`
-  block; scoped platform `service-config` delivery needs no such block.
+  deliver these for every service through an environment's optional `telemetry:`
+  block, pointing at the HTTPS operations intake.
   Without an endpoint, SDK Init enables no tracing, including for `local`.
   No module configuration group is required.
 

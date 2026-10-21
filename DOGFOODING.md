@@ -219,11 +219,10 @@ the same Codefly-managed graph. For each of `email` (Resend),
 `configurations/local-dogfood/<group>.env.example` and
 `<group>.secret.env.example` to their Git-ignored names and fill them in
 ([LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md#configure-providers-through-codefly)).
-Operational telemetry has no configuration group. Supply the standard
-`OTEL_EXPORTER_OTLP_ENDPOINT` process variable through scoped platform
-`service-config` delivery. CLIs implementing
-[CLI #1097](https://github.com/codefly-dev/cli/pull/1097) also support the
-environment's optional `telemetry:` block.
+Operational telemetry has no configuration group. Use the environment's optional
+`telemetry:` block with the HTTPS operations intake.
+[CLI #1097](https://github.com/codefly-dev/cli/pull/1097) delivers the standard
+endpoint, service identity and resource variables to every service.
 With no endpoint, no traces or metrics are exported, including native local runs.
 Turnstile's published test keys drive the three abuse-protection cases:
 

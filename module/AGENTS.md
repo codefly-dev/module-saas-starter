@@ -105,13 +105,11 @@ Postgres 0.0.144 and Vault 0.0.42, which include their owners' outcome fixes.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-Lifecycle CI selects the exact CLI source candidate in
-`scripts/ci/install-codefly.sh` for every planner/executor job. It recognises
-the CLI-owned `artifact-cache` group without an authored default. This uses
-the canonical versioned Go install entrypoint; it does not require a CLI
-release for development qualification. The installer refuses release tags
-while the source candidate is selected. Restore a qualified released pin
-before publishing the host.
+CI selects released CLI v0.1.197 in `scripts/ci/install-codefly.sh` for every
+planner/executor job. This release includes the merged lifecycle/artifact-cache
+implementation and environment-wide standard OTEL delivery from the optional
+`telemetry:` declaration. The historical source candidate remains available only
+for explicit development qualification; release tags refuse source candidates.
 
 Accounts and auth-gateway use released SDK v0.4.1; other services retain their
 own released pins.
