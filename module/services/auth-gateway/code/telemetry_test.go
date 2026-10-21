@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"net"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +106,17 @@ func TestCodeflyServiceNameIsTheSDKProviderIdentity(t *testing.T) {
 // SDK Init must deliver a real span with the supplied service identity; its
 // public shutdown flushes the batch before the process exits.
 func TestSDKExportsTracesAndFlushesOnShutdown(t *testing.T) {
+	// SDK Init snapshots runtime configuration and consumer identity globally.
+	// Run the real SDK lifecycle in a child, as the diagnostic tests do, so
+	// later configuration tests can still vary their own process environment.
+	const childMarker = "SDK_TELEMETRY_TEST_CHILD"
+	if os.Getenv(childMarker) != "1" {
+		child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestSDKExportsTracesAndFlushesOnShutdown$", "-test.timeout=15s")
+		child.Env = append(os.Environ(), childMarker+"=1")
+		output, err := child.CombinedOutput()
+		require.NoError(t, err, "SDK trace exporter child: %s", output)
+		return
+	}
 	isolateOTLPEnvironment(t)
 	t.Setenv(resources.ModulePrefix, "saas-starter")
 	t.Setenv(resources.ServicePrefix, "auth-gateway")
