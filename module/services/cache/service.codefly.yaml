@@ -3,7 +3,17 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: redis
-    version: 0.0.97
+    # v0.0.99 is the floor, held by the gate in accounts/code's
+    # manifests_test.go. Below it, codefly-dev/service-redis runs every
+    # process's stdout/stderr through one shared, unsynchronized log writer,
+    # and a composition that runs replicas — this one declares
+    # with-read-replicas below — panics under load as one process's line is
+    # appended while another's is cut out of the buffer (service-redis
+    # d00ed105, serializing the writer; absent through v0.0.97).
+    #
+    # `agent.version` needs a published release rather than a tag, and v0.0.99
+    # is published.
+    version: 0.0.99
     publisher: codefly.dev
 endpoints:
     - name: read
