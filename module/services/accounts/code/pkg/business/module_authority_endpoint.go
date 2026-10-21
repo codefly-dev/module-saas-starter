@@ -41,13 +41,17 @@ const moduleAuthorityCapabilityService = "/saas.accounts.v1.ModuleCapabilitiesSe
 //     caller did not present and mutates nothing.
 //   - AuthorizeEvidenceRead — answers one bit about a (caller, owner, task,
 //     session) tuple the consumer already holds, and mutates nothing.
+//   - VerifyIdempotent — fully verifies a presented capability with Core and
+//     current subject permissions, returning only its verified identity and
+//     effective scopes. Refuses replay-consuming forms before verification.
 //
-// Both remain authority oracles over request-named principals, which is a real
+// The first two remain authority oracles over request-named principals, a real
 // residual property and the reason the set is this small and explicit rather
 // than "the WorkContextService consumer seams". Binding them to the calling
 // module's own Work Context would remove it; until then nothing may be added
 // here that writes.
 var moduleAuthorityReadOracles = map[string]struct{}{
+	"/saas.accounts.v1.WorkContextService/VerifyIdempotent":           {},
 	"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead":      {},
 	"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision": {},
 }
@@ -120,6 +124,7 @@ var moduleAuthorityProcedures = []string{
 	"/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe",
 	"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
 	"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
+	"/saas.accounts.v1.WorkContextService/VerifyIdempotent",
 }
 
 var moduleAuthorityIndex = func() map[string]struct{} {

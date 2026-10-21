@@ -160,7 +160,9 @@ message StartRootSessionWorkContextRequest {
 // ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,
 // and delegation lineage for another service boundary while attenuating the
 // effective authority to the requested scopes. The reissued capability opens the
-// caller's own authenticated Session, assigned by the issuer.
+// caller's own authenticated Session, assigned by the issuer. Bound installed-use
+// capabilities cannot use this owner exchange; only their captured module
+// operation may derive a child, preserving the captured dependencies.
 message ExchangeWorkContextAudienceRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string parent_work_context_token = 2 [
@@ -337,10 +339,58 @@ message ConsumeSingleUseWorkContextRequest {
   google.protobuf.Timestamp expires_at = 3 [(buf.validate.field).required = true];
 }
 
+// VerifyIdempotentWorkContextRequest asks the issuer to perform the complete
+// Core verification for a callee. Expectations come from the callee's trusted
+// configuration, never from decoding the presented capability.
+message VerifyIdempotentWorkContextRequest {
+  string work_context_token = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_bytes = 32768
+  ];
+  string expected_issuer = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  string expected_audience = 3 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+}
+
+// This is a request-local verification result, not a transferable credential.
+// Consumers reverify the original capability at their live-authority checks.
+message VerifyIdempotentWorkContextResponse {
+  string tenant_id = 1;
+  string owner_principal_id = 2;
+  string current_actor_principal_id = 3;
+  string task_id = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  repeated WorkContextScope effective_scopes = 6;
+}
+
 // WorkContextService is owned by the permissions plugin. It turns current SaaS
 // identity/RBAC facts into a short-lived Codefly Work Context; it does not own
 // product Task or Session lifecycle storage.
 service WorkContextService {
+  // VerifyIdempotent performs full Core verification and current subject
+  // permission checks. It refuses single-use and approval capabilities before
+  // any replay consumption. It never writes, and returns only facts contained
+  // in the verified capability. Resource-specific policy remains the callee's.
+  rpc VerifyIdempotent(VerifyIdempotentWorkContextRequest) returns (VerifyIdempotentWorkContextResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+
   // CheckAuthorizationRevision is the consumer-side revocation seam for a
   // previously issued Work Context. It succeeds only while every subject's
   // requested authority still resolves to the exact sealed revision.

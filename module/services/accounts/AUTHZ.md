@@ -129,9 +129,10 @@ It is narrow, and fails closed on every other axis:
   administrator's role is not the impersonator's to borrow. A Work Context
   cannot be minted while impersonating, so a module's forwarded viewer is always
   someone acting as themselves.
-- **Every delegated subject still reads independently.** A Work Context read
-  intersects the owner and every actor in its chain; an actor with no grant
-  fails the intersection whatever the owner's role.
+- **Every delegated subject still supplies authority.** A Work Context read
+  intersects the owner and every actor in its chain. Personal actors require
+  their own grant whatever the owner's role; the captured installed-use module
+  actor below instead supplies its live installed ceiling.
 - **It replaces the grant, never the declaration.** A module that declares no
   content resource reads nothing, administrator or not.
 
@@ -177,7 +178,8 @@ the adapters' `markContentReads`):
   back, and both module-facing reads already refuse a scope outside its own
   declaration, so the union would seal scopes no consumer can use and let one
   module's declaration decide what another module's capability may carry. A
-  host with no declared content widens nothing.
+  host with no declared content widens nothing. The captured installed-use
+  exception below admits a foreign content read through its exact owning route.
 - **A recheck consults no declaration at all** and admits every unscoped read.
   It is the superset of every mint on purpose: a recheck issues nothing, so it
   can admit nothing a mint did not already seal, while a recheck *narrower*
@@ -207,6 +209,36 @@ the adapters' `markContentReads`):
   re-checks by comparing that revision alone will not see the revocation;
   `CheckAuthorizationRevision` catches it because it re-resolves every
   permission before it compares revisions at all.
+
+### Captured installed-use admission and module actors
+
+2026-10-20 — Selected engineering contract; implementation qualification is
+pending. [The installed-use contract](../../WORK_CONTEXTS.md#person-owned-evidence-through-a-captured-installed-use)
+defines the complete admission, delegation and lifetime rules.
+
+A human root with no actor hops can use collection standing for foreign
+content only through one uniquely selected, current, person-invocable installed
+operation whose entire invoke leg is read-only and whose target declares that
+content. The origin and target must be live in the same tenant. Writes,
+resource-scoped asks, headless authority, recursive routes and ambiguous
+bindings confer no such standing. Execution and auxiliary operation permissions still need
+their own authority.
+
+For the authentic origin module actor added by that exchange, current-authority
+checks and both content-read oracles resolve the captured effective module
+ceiling instead of requiring a personal-agent row. That ceiling is intersected
+with the human's current per-node grants and every other applicable actor
+restriction. The actor must match the sealed child binding, origin, audience,
+tenant and captured installation and authority generations. Unbound, module-only
+and substituted actors fail closed. This is not an actor exemption or a
+collection grant to the module.
+
+The binding resolver checks the same captured lifetimes on every use; an
+authorization-revision comparison alone is insufficient. Withdrawing a route,
+installation, applied manifest or selected principal ceiling invalidates the
+captured use; removing and restoring identical authority does not resurrect it.
+Revoking the human's grant removes that node from search and refuses its exact
+record, including when another collection still supplies mint standing.
 
 ## A derived role, and why it is not grantable
 

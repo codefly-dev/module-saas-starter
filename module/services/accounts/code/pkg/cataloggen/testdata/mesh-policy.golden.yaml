@@ -82,6 +82,7 @@ spec:
               - /saas.accounts.v1.WorkContextService/CheckAuthorizationRevision
               - /saas.accounts.v1.WorkContextService/ConsumeSingleUse
               - /saas.accounts.v1.WorkContextService/StartInstallationTask
+              - /saas.accounts.v1.WorkContextService/VerifyIdempotent
 ---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy

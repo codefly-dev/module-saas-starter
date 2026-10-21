@@ -4380,6 +4380,14 @@ func (x *ModuleExchangeDelegatedReadAudienceRequest) GetParentWorkContextToken()
 //     renews, by exchanging again against the same reference. A revocation
 //     takes effect on the next exchange.
 //
+// For a captured installed-use human parent, the selected origin module becomes
+// the authentic service actor through Core Child. Owner, tenant and task stay
+// fixed; parent_session_id names the actual presented parent. Its distinct child
+// binding retains every captured installation, declaration and envelope lifetime.
+// The host checks that module authority separately from current human collection
+// and record grants. Other parent and source-delegation exchanges keep their
+// existing authority and lineage rules.
+//
 // Not a oneof, though the two are exclusive and it is the shape this would
 // otherwise take. Moving field 2 into one changes its presence and is a
 // breaking contract change (`buf breaking`), which this surface does not get to

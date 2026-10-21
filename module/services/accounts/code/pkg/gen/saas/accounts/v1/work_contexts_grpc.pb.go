@@ -21,6 +21,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	WorkContextService_VerifyIdempotent_FullMethodName           = "/saas.accounts.v1.WorkContextService/VerifyIdempotent"
 	WorkContextService_CheckAuthorizationRevision_FullMethodName = "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision"
 	WorkContextService_AuthorizeEvidenceRead_FullMethodName      = "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead"
 	WorkContextService_ConsumeSingleUse_FullMethodName           = "/saas.accounts.v1.WorkContextService/ConsumeSingleUse"
@@ -40,6 +41,11 @@ const (
 // identity/RBAC facts into a short-lived Codefly Work Context; it does not own
 // product Task or Session lifecycle storage.
 type WorkContextServiceClient interface {
+	// VerifyIdempotent performs full Core verification and current subject
+	// permission checks. It refuses single-use and approval capabilities before
+	// any replay consumption. It never writes, and returns only facts contained
+	// in the verified capability. Resource-specific policy remains the callee's.
+	VerifyIdempotent(ctx context.Context, in *VerifyIdempotentWorkContextRequest, opts ...grpc.CallOption) (*VerifyIdempotentWorkContextResponse, error)
 	// CheckAuthorizationRevision is the consumer-side revocation seam for a
 	// previously issued Work Context. It succeeds only while every subject's
 	// requested authority still resolves to the exact sealed revision.
@@ -87,6 +93,16 @@ type workContextServiceClient struct {
 
 func NewWorkContextServiceClient(cc grpc.ClientConnInterface) WorkContextServiceClient {
 	return &workContextServiceClient{cc}
+}
+
+func (c *workContextServiceClient) VerifyIdempotent(ctx context.Context, in *VerifyIdempotentWorkContextRequest, opts ...grpc.CallOption) (*VerifyIdempotentWorkContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyIdempotentWorkContextResponse)
+	err := c.cc.Invoke(ctx, WorkContextService_VerifyIdempotent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *workContextServiceClient) CheckAuthorizationRevision(ctx context.Context, in *CheckAuthorizationRevisionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
@@ -187,6 +203,11 @@ func (c *workContextServiceClient) RenewWorkContext(ctx context.Context, in *Ren
 // identity/RBAC facts into a short-lived Codefly Work Context; it does not own
 // product Task or Session lifecycle storage.
 type WorkContextServiceServer interface {
+	// VerifyIdempotent performs full Core verification and current subject
+	// permission checks. It refuses single-use and approval capabilities before
+	// any replay consumption. It never writes, and returns only facts contained
+	// in the verified capability. Resource-specific policy remains the callee's.
+	VerifyIdempotent(context.Context, *VerifyIdempotentWorkContextRequest) (*VerifyIdempotentWorkContextResponse, error)
 	// CheckAuthorizationRevision is the consumer-side revocation seam for a
 	// previously issued Work Context. It succeeds only while every subject's
 	// requested authority still resolves to the exact sealed revision.
@@ -236,6 +257,9 @@ type WorkContextServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedWorkContextServiceServer struct{}
 
+func (UnimplementedWorkContextServiceServer) VerifyIdempotent(context.Context, *VerifyIdempotentWorkContextRequest) (*VerifyIdempotentWorkContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyIdempotent not implemented")
+}
 func (UnimplementedWorkContextServiceServer) CheckAuthorizationRevision(context.Context, *CheckAuthorizationRevisionRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckAuthorizationRevision not implemented")
 }
@@ -282,6 +306,24 @@ func RegisterWorkContextServiceServer(s grpc.ServiceRegistrar, srv WorkContextSe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&WorkContextService_ServiceDesc, srv)
+}
+
+func _WorkContextService_VerifyIdempotent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyIdempotentWorkContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkContextServiceServer).VerifyIdempotent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkContextService_VerifyIdempotent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkContextServiceServer).VerifyIdempotent(ctx, req.(*VerifyIdempotentWorkContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _WorkContextService_CheckAuthorizationRevision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -453,6 +495,10 @@ var WorkContextService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.WorkContextService",
 	HandlerType: (*WorkContextServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "VerifyIdempotent",
+			Handler:    _WorkContextService_VerifyIdempotent_Handler,
+		},
 		{
 			MethodName: "CheckAuthorizationRevision",
 			Handler:    _WorkContextService_CheckAuthorizationRevision_Handler,

@@ -56,13 +56,15 @@ func (s *PostgresStore) LiveModuleAuthority(ctx context.Context, principalID, or
    SELECT i.id::text, i.revision, i.registry_binding_id, i.scope,
       COALESCE((SELECT revision FROM public.principal_authorization_revisions
         WHERE org_id = i.org_id AND principal_id = i.registry_principal_id), 0),
-      COALESCE((SELECT max(revision) FROM public.module_envelopes), 0)
+      COALESCE((SELECT max(revision) FROM public.module_envelopes), 0),
+      COALESCE((SELECT applied_generation FROM public.solution_host_bindings
+        WHERE binding_id = i.registry_binding_id AND NOT applied_removed), 0)
    FROM public.installations i
    JOIN public.solution_targets t ON t.id = i.target_id AND t.binding_id = i.registry_binding_id
    WHERE i.org_id = $1::uuid AND i.registry_principal_id = $2::uuid
      AND ($3 = '' OR i.id::text = $3) AND i.status = 'active'
      AND t.closed_generation IS NULL FOR SHARE OF i`, orgID, principalID, installationID,
-		).Scan(&live.InstallationID, &revision, &live.RegistryBindingID, &scope, &epoch, &envelope)
+		).Scan(&live.InstallationID, &revision, &live.RegistryBindingID, &scope, &epoch, &envelope, &live.AppliedManifestGeneration)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return business.ErrModuleInstallationInactive
 		}

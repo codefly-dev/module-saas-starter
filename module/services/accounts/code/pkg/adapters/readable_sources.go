@@ -70,9 +70,9 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 		return &gen.ListReadableSourceCollectionsResponse{}, nil
 	}
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, claims.GetOwnerPrincipalId(), claims.GetTenantId())
-	subjects := []string{claims.GetOwnerPrincipalId()}
-	for _, actor := range claims.GetActorChain() {
-		subjects = append(subjects, actor.GetPrincipalId())
+	subjects, err := authority.readSubjects(ctx, claims)
+	if err != nil {
+		return nil, err
 	}
 	// The capability's own sealed scopes decide which collection details this
 	// viewer may inspect: nothing is disclosed that the mint did not already

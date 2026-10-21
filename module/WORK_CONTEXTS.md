@@ -240,12 +240,65 @@ under [Operation contexts with no person
 present](#operation-contexts-with-no-person-present). Children exchanged from a
 person's parent, like the one above, are owned by that person and take the
 row-backed check instead, so an entry change does not revoke them; they expire
-within the minute on their own.
+within the minute on their own. The captured installed-use path below is a
+separate, stricter lifetime contract.
 
 Pinning a definition is the producer's own check, made on each request against
 what it has installed. The host makes no such check, so a producer that means a
 grant to cover one exact definition enforces that itself: the id here says which
 resource is meant, never which version of it.
+
+## Person-owned evidence through a captured installed use
+
+2026-10-20 — Selected engineering contract; implementation and composed
+qualification are in progress. This section defines the bounded exception to
+the ordinary human exchange above, not a claim that it is already delivered.
+
+A person with a live collection grant may request an unscoped content `read`
+in a consumer-audience root only when exactly one current person-invocable
+installed operation supplies a complete read-only invoke leg to the module
+that owns that content. The host uses the existing manifest, envelope and
+consent intersection. It does not take a read subset of a read/write operation,
+follow recursive bindings, or use legacy read-audience or headless grants.
+Ordinary same-audience and role-authorized admission remain separate paths.
+
+The host captures that route and, when independently authorized, at most one
+auxiliary operation route. Each dependency captures the installation identity and
+revision, applied manifest binding and generation, and the principal's last
+whole-ceiling change in the existing append-only envelope history. Removed and
+re-added authority has a different lifetime even if its content is identical.
+Unrelated principals' edits do not permanently revoke this use. Reconciliation
+publishes grants and provenance together; use checks committed envelope and
+manifest freshness before accepting the captured generations.
+
+Core's opaque `OperationBindingID` carries this bounded descriptor. Root and
+child have distinct IDs for their exercising principals but capture the same
+dependency lifetimes. A resolver returns the fixed binding revision only while
+all captured facts remain live. It never substitutes a newer same-scope route.
+No new grant store or independently maintained authority counter is introduced.
+
+Only the authenticated origin module can redeem the human root through
+`ExchangeDelegatedOperationAudience`. Existing Core `Authority.Child` adds that
+module as the authentic service actor, retaining the human owner, tenant, task,
+origin installation seal and live parent-session lineage, with bounded expiry.
+The captured binding additionally checks the target installation. Evidence
+children carry only the captured read-only invoke leg; auxiliary children carry
+only the captured independently authorized invoke or lookup leg, with no
+evidence-content scopes. An empty projection is refused, never retain-all.
+
+The host checks this actor against its captured effective module ceiling and
+the person against current per-node grants, teams and shares. It does not give
+the module a personal grant or omit it from the authorization intersection.
+Other actor forms retain their existing checks. Removing a grant stops
+subsequent disclosure of the affected content even while another grant permits
+the task to continue. Both child kinds conservatively depend on all captured
+installations and routes. An auxiliary operation scope alone never authorizes a content read.
+
+Bound children cannot redeem as roots. Other exchange, session, child and
+renewal surfaces must preserve this lifetime and permitted transition or refuse
+the input; stripping the binding or capturing a new generation is not renewal.
+Every callee verifies through the owner before use. Content consumers also
+recheck current visibility before a new prompt or evidence disclosure.
 
 ## The capability itself: core/workcontext
 
@@ -280,7 +333,8 @@ answered by one set of functions for minting and verifying alike
   with a capability on that session alone, which holds only because a caller can
   never choose it.
 
-Core derives only by adding a hop and never extends a window, so re-issuing a
+Outside the captured installed-use path above, Core derives only by adding a
+hop and never extends a window, so re-issuing a
 capability — a root session, an audience exchange, a renewal — mints it afresh
 from its owner and re-derives each hop, with the same delegation ids, against
 live state. The seal is re-resolved too, never copied from the parent: a

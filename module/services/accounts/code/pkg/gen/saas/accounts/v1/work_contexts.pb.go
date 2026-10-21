@@ -483,7 +483,9 @@ func (x *StartRootSessionWorkContextRequest) GetTtlSeconds() int32 {
 // ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,
 // and delegation lineage for another service boundary while attenuating the
 // effective authority to the requested scopes. The reissued capability opens the
-// caller's own authenticated Session, assigned by the issuer.
+// caller's own authenticated Session, assigned by the issuer. Bound installed-use
+// capabilities cannot use this owner exchange; only their captured module
+// operation may derive a child, preserving the captured dependencies.
 type ExchangeWorkContextAudienceRequest struct {
 	state                  protoimpl.MessageState  `protogen:"open.v1"`
 	OrgId                  string                  `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -1192,6 +1194,155 @@ func (x *ConsumeSingleUseWorkContextRequest) GetExpiresAt() *timestamppb.Timesta
 	return nil
 }
 
+// VerifyIdempotentWorkContextRequest asks the issuer to perform the complete
+// Core verification for a callee. Expectations come from the callee's trusted
+// configuration, never from decoding the presented capability.
+type VerifyIdempotentWorkContextRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	WorkContextToken string                 `protobuf:"bytes,1,opt,name=work_context_token,json=workContextToken,proto3" json:"work_context_token,omitempty"`
+	ExpectedIssuer   string                 `protobuf:"bytes,2,opt,name=expected_issuer,json=expectedIssuer,proto3" json:"expected_issuer,omitempty"`
+	ExpectedAudience string                 `protobuf:"bytes,3,opt,name=expected_audience,json=expectedAudience,proto3" json:"expected_audience,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *VerifyIdempotentWorkContextRequest) Reset() {
+	*x = VerifyIdempotentWorkContextRequest{}
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyIdempotentWorkContextRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyIdempotentWorkContextRequest) ProtoMessage() {}
+
+func (x *VerifyIdempotentWorkContextRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyIdempotentWorkContextRequest.ProtoReflect.Descriptor instead.
+func (*VerifyIdempotentWorkContextRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *VerifyIdempotentWorkContextRequest) GetWorkContextToken() string {
+	if x != nil {
+		return x.WorkContextToken
+	}
+	return ""
+}
+
+func (x *VerifyIdempotentWorkContextRequest) GetExpectedIssuer() string {
+	if x != nil {
+		return x.ExpectedIssuer
+	}
+	return ""
+}
+
+func (x *VerifyIdempotentWorkContextRequest) GetExpectedAudience() string {
+	if x != nil {
+		return x.ExpectedAudience
+	}
+	return ""
+}
+
+// This is a request-local verification result, not a transferable credential.
+// Consumers reverify the original capability at their live-authority checks.
+type VerifyIdempotentWorkContextResponse struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	TenantId                string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	OwnerPrincipalId        string                 `protobuf:"bytes,2,opt,name=owner_principal_id,json=ownerPrincipalId,proto3" json:"owner_principal_id,omitempty"`
+	CurrentActorPrincipalId string                 `protobuf:"bytes,3,opt,name=current_actor_principal_id,json=currentActorPrincipalId,proto3" json:"current_actor_principal_id,omitempty"`
+	TaskId                  string                 `protobuf:"bytes,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	ExpiresAt               *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	EffectiveScopes         []*WorkContextScope    `protobuf:"bytes,6,rep,name=effective_scopes,json=effectiveScopes,proto3" json:"effective_scopes,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *VerifyIdempotentWorkContextResponse) Reset() {
+	*x = VerifyIdempotentWorkContextResponse{}
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyIdempotentWorkContextResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyIdempotentWorkContextResponse) ProtoMessage() {}
+
+func (x *VerifyIdempotentWorkContextResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyIdempotentWorkContextResponse.ProtoReflect.Descriptor instead.
+func (*VerifyIdempotentWorkContextResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *VerifyIdempotentWorkContextResponse) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *VerifyIdempotentWorkContextResponse) GetOwnerPrincipalId() string {
+	if x != nil {
+		return x.OwnerPrincipalId
+	}
+	return ""
+}
+
+func (x *VerifyIdempotentWorkContextResponse) GetCurrentActorPrincipalId() string {
+	if x != nil {
+		return x.CurrentActorPrincipalId
+	}
+	return ""
+}
+
+func (x *VerifyIdempotentWorkContextResponse) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *VerifyIdempotentWorkContextResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *VerifyIdempotentWorkContextResponse) GetEffectiveScopes() []*WorkContextScope {
+	if x != nil {
+		return x.EffectiveScopes
+	}
+	return nil
+}
+
 var File_saas_accounts_v1_work_contexts_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
@@ -1342,12 +1493,27 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"context_id\x18\x02 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\tcontextId\x12A\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\texpiresAt*\x9b\x01\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\texpiresAt\"\xcd\x01\n" +
+	"\"VerifyIdempotentWorkContextRequest\x129\n" +
+	"\x12work_context_token\x18\x01 \x01(\tB\v\xbaH\br\x06\x10\x01(\x80\x80\x02R\x10workContextToken\x123\n" +
+	"\x0fexpected_issuer\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x0eexpectedIssuer\x127\n" +
+	"\x11expected_audience\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x10expectedAudience\"\xd0\x02\n" +
+	"#VerifyIdempotentWorkContextResponse\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12,\n" +
+	"\x12owner_principal_id\x18\x02 \x01(\tR\x10ownerPrincipalId\x12;\n" +
+	"\x1acurrent_actor_principal_id\x18\x03 \x01(\tR\x17currentActorPrincipalId\x12\x17\n" +
+	"\atask_id\x18\x04 \x01(\tR\x06taskId\x129\n" +
+	"\n" +
+	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12M\n" +
+	"\x10effective_scopes\x18\x06 \x03(\v2\".saas.accounts.v1.WorkContextScopeR\x0feffectiveScopes*\x9b\x01\n" +
 	"\x17WorkContextReplayPolicy\x12*\n" +
 	"&WORK_CONTEXT_REPLAY_POLICY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT\x10\x01\x12)\n" +
-	"%WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE\x10\x022\xfb\f\n" +
-	"\x12WorkContextService\x12\x83\x01\n" +
+	"%WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE\x10\x022\x97\x0e\n" +
+	"\x12WorkContextService\x12\x99\x01\n" +
+	"\x10VerifyIdempotent\x124.saas.accounts.v1.VerifyIdempotentWorkContextRequest\x1a5.saas.accounts.v1.VerifyIdempotentWorkContextResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x04X\x03`\x01\x12\x83\x01\n" +
 	"\x1aCheckAuthorizationRevision\x123.saas.accounts.v1.CheckAuthorizationRevisionRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12y\n" +
 	"\x15AuthorizeEvidenceRead\x12..saas.accounts.v1.AuthorizeEvidenceReadRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12z\n" +
 	"\x10ConsumeSingleUse\x124.saas.accounts.v1.ConsumeSingleUseWorkContextRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xca\x01\n" +
@@ -1382,7 +1548,7 @@ func file_saas_accounts_v1_work_contexts_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_work_contexts_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_saas_accounts_v1_work_contexts_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_saas_accounts_v1_work_contexts_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_saas_accounts_v1_work_contexts_proto_goTypes = []any{
 	(WorkContextReplayPolicy)(0),                // 0: saas.accounts.v1.WorkContextReplayPolicy
 	(*WorkContextScope)(nil),                    // 1: saas.accounts.v1.WorkContextScope
@@ -1397,8 +1563,10 @@ var file_saas_accounts_v1_work_contexts_proto_goTypes = []any{
 	(*CheckAuthorizationRevisionRequest)(nil),   // 10: saas.accounts.v1.CheckAuthorizationRevisionRequest
 	(*AuthorizeEvidenceReadRequest)(nil),        // 11: saas.accounts.v1.AuthorizeEvidenceReadRequest
 	(*ConsumeSingleUseWorkContextRequest)(nil),  // 12: saas.accounts.v1.ConsumeSingleUseWorkContextRequest
-	(*timestamppb.Timestamp)(nil),               // 13: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),                       // 14: google.protobuf.Empty
+	(*VerifyIdempotentWorkContextRequest)(nil),  // 13: saas.accounts.v1.VerifyIdempotentWorkContextRequest
+	(*VerifyIdempotentWorkContextResponse)(nil), // 14: saas.accounts.v1.VerifyIdempotentWorkContextResponse
+	(*timestamppb.Timestamp)(nil),               // 15: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),                       // 16: google.protobuf.Empty
 }
 var file_saas_accounts_v1_work_contexts_proto_depIdxs = []int32{
 	1,  // 0: saas.accounts.v1.StartTaskWorkContextRequest.authority_scopes:type_name -> saas.accounts.v1.WorkContextScope
@@ -1412,33 +1580,37 @@ var file_saas_accounts_v1_work_contexts_proto_depIdxs = []int32{
 	0,  // 8: saas.accounts.v1.StartChildSessionWorkContextRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
 	1,  // 9: saas.accounts.v1.RenewWorkContextRequest.attenuated_scopes:type_name -> saas.accounts.v1.WorkContextScope
 	0,  // 10: saas.accounts.v1.RenewWorkContextRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
-	13, // 11: saas.accounts.v1.IssuedWorkContext.expires_at:type_name -> google.protobuf.Timestamp
+	15, // 11: saas.accounts.v1.IssuedWorkContext.expires_at:type_name -> google.protobuf.Timestamp
 	1,  // 12: saas.accounts.v1.WorkContextRevisionSubject.scopes:type_name -> saas.accounts.v1.WorkContextScope
 	9,  // 13: saas.accounts.v1.CheckAuthorizationRevisionRequest.subjects:type_name -> saas.accounts.v1.WorkContextRevisionSubject
-	13, // 14: saas.accounts.v1.ConsumeSingleUseWorkContextRequest.expires_at:type_name -> google.protobuf.Timestamp
-	10, // 15: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:input_type -> saas.accounts.v1.CheckAuthorizationRevisionRequest
-	11, // 16: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:input_type -> saas.accounts.v1.AuthorizeEvidenceReadRequest
-	12, // 17: saas.accounts.v1.WorkContextService.ConsumeSingleUse:input_type -> saas.accounts.v1.ConsumeSingleUseWorkContextRequest
-	2,  // 18: saas.accounts.v1.WorkContextService.StartTask:input_type -> saas.accounts.v1.StartTaskWorkContextRequest
-	3,  // 19: saas.accounts.v1.WorkContextService.StartInstallationTask:input_type -> saas.accounts.v1.StartInstallationTaskRequest
-	4,  // 20: saas.accounts.v1.WorkContextService.StartRootSession:input_type -> saas.accounts.v1.StartRootSessionWorkContextRequest
-	5,  // 21: saas.accounts.v1.WorkContextService.ExchangeAudience:input_type -> saas.accounts.v1.ExchangeWorkContextAudienceRequest
-	6,  // 22: saas.accounts.v1.WorkContextService.StartChildSession:input_type -> saas.accounts.v1.StartChildSessionWorkContextRequest
-	7,  // 23: saas.accounts.v1.WorkContextService.RenewWorkContext:input_type -> saas.accounts.v1.RenewWorkContextRequest
-	14, // 24: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:output_type -> google.protobuf.Empty
-	14, // 25: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:output_type -> google.protobuf.Empty
-	14, // 26: saas.accounts.v1.WorkContextService.ConsumeSingleUse:output_type -> google.protobuf.Empty
-	8,  // 27: saas.accounts.v1.WorkContextService.StartTask:output_type -> saas.accounts.v1.IssuedWorkContext
-	8,  // 28: saas.accounts.v1.WorkContextService.StartInstallationTask:output_type -> saas.accounts.v1.IssuedWorkContext
-	8,  // 29: saas.accounts.v1.WorkContextService.StartRootSession:output_type -> saas.accounts.v1.IssuedWorkContext
-	8,  // 30: saas.accounts.v1.WorkContextService.ExchangeAudience:output_type -> saas.accounts.v1.IssuedWorkContext
-	8,  // 31: saas.accounts.v1.WorkContextService.StartChildSession:output_type -> saas.accounts.v1.IssuedWorkContext
-	8,  // 32: saas.accounts.v1.WorkContextService.RenewWorkContext:output_type -> saas.accounts.v1.IssuedWorkContext
-	24, // [24:33] is the sub-list for method output_type
-	15, // [15:24] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	15, // 14: saas.accounts.v1.ConsumeSingleUseWorkContextRequest.expires_at:type_name -> google.protobuf.Timestamp
+	15, // 15: saas.accounts.v1.VerifyIdempotentWorkContextResponse.expires_at:type_name -> google.protobuf.Timestamp
+	1,  // 16: saas.accounts.v1.VerifyIdempotentWorkContextResponse.effective_scopes:type_name -> saas.accounts.v1.WorkContextScope
+	13, // 17: saas.accounts.v1.WorkContextService.VerifyIdempotent:input_type -> saas.accounts.v1.VerifyIdempotentWorkContextRequest
+	10, // 18: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:input_type -> saas.accounts.v1.CheckAuthorizationRevisionRequest
+	11, // 19: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:input_type -> saas.accounts.v1.AuthorizeEvidenceReadRequest
+	12, // 20: saas.accounts.v1.WorkContextService.ConsumeSingleUse:input_type -> saas.accounts.v1.ConsumeSingleUseWorkContextRequest
+	2,  // 21: saas.accounts.v1.WorkContextService.StartTask:input_type -> saas.accounts.v1.StartTaskWorkContextRequest
+	3,  // 22: saas.accounts.v1.WorkContextService.StartInstallationTask:input_type -> saas.accounts.v1.StartInstallationTaskRequest
+	4,  // 23: saas.accounts.v1.WorkContextService.StartRootSession:input_type -> saas.accounts.v1.StartRootSessionWorkContextRequest
+	5,  // 24: saas.accounts.v1.WorkContextService.ExchangeAudience:input_type -> saas.accounts.v1.ExchangeWorkContextAudienceRequest
+	6,  // 25: saas.accounts.v1.WorkContextService.StartChildSession:input_type -> saas.accounts.v1.StartChildSessionWorkContextRequest
+	7,  // 26: saas.accounts.v1.WorkContextService.RenewWorkContext:input_type -> saas.accounts.v1.RenewWorkContextRequest
+	14, // 27: saas.accounts.v1.WorkContextService.VerifyIdempotent:output_type -> saas.accounts.v1.VerifyIdempotentWorkContextResponse
+	16, // 28: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:output_type -> google.protobuf.Empty
+	16, // 29: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:output_type -> google.protobuf.Empty
+	16, // 30: saas.accounts.v1.WorkContextService.ConsumeSingleUse:output_type -> google.protobuf.Empty
+	8,  // 31: saas.accounts.v1.WorkContextService.StartTask:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 32: saas.accounts.v1.WorkContextService.StartInstallationTask:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 33: saas.accounts.v1.WorkContextService.StartRootSession:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 34: saas.accounts.v1.WorkContextService.ExchangeAudience:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 35: saas.accounts.v1.WorkContextService.StartChildSession:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 36: saas.accounts.v1.WorkContextService.RenewWorkContext:output_type -> saas.accounts.v1.IssuedWorkContext
+	27, // [27:37] is the sub-list for method output_type
+	17, // [17:27] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_work_contexts_proto_init() }
@@ -1458,7 +1630,7 @@ func file_saas_accounts_v1_work_contexts_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_work_contexts_proto_rawDesc), len(file_saas_accounts_v1_work_contexts_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

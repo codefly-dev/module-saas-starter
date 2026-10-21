@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"accounts/pkg/auth"
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"slices"
@@ -49,15 +50,13 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 	if !workContextGrants(claims, req.ResourceType, req.Action, req.ResourceId) {
 		return nil, status.Error(codes.PermissionDenied, "record scope required")
 	}
-	if len(claims.GetActorChain()) > 0 && authority.journal == nil {
+	if len(claims.GetActorChain()) > 0 && authority.journal == nil && !business.IsInstalledUseBinding(claims.GetOperationBinding().GetBindingId()) {
 		return nil, status.Error(codes.Unavailable, "actor chain authority is not configured")
 	}
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, claims.GetOwnerPrincipalId(), claims.GetTenantId())
-	subjects := []string{claims.GetOwnerPrincipalId()}
-	for _, actor := range claims.GetActorChain() {
-		if !slices.Contains(subjects, actor.GetPrincipalId()) {
-			subjects = append(subjects, actor.GetPrincipalId())
-		}
+	subjects, err := authority.readSubjects(ctx, claims)
+	if err != nil {
+		return nil, err
 	}
 	current := func(ctx context.Context) error {
 		_, err := authority.requireCurrentAuthority(ctx, claims.GetTenantId(), claims)

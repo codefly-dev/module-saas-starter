@@ -16,6 +16,13 @@ type workContextConnectHandler struct {
 	inner *WorkContextAuthorityServer
 }
 
+func (h *workContextConnectHandler) VerifyIdempotent(
+	ctx context.Context,
+	req *connect.Request[gen.VerifyIdempotentWorkContextRequest],
+) (*connect.Response[gen.VerifyIdempotentWorkContextResponse], error) {
+	return unary(ctx, req, h.inner.VerifyIdempotent)
+}
+
 func (h *workContextConnectHandler) CheckAuthorizationRevision(
 	ctx context.Context,
 	req *connect.Request[gen.CheckAuthorizationRevisionRequest],

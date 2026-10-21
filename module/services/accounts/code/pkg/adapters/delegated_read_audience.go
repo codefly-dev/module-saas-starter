@@ -197,7 +197,9 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	// Re-issued in a fresh session: the module exchanging it holds no session
 	// of its own to bind.
 	var issued *gen.IssuedWorkContext
-	if delegated {
+	if business.IsInstalledUseBinding(parent.GetOperationBinding().GetBindingId()) {
+		issued, err = authority.exchangeInstalledUse(ctx, presented, caller, request, time.Duration(ttl)*time.Second)
+	} else if delegated {
 		issued, err = authority.exchangeDelegatedParent(ctx, caller, parent, delegation, binding, time.Duration(ttl)*time.Second)
 	} else {
 		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, "", moduleBindingSeal{PrincipalID: caller.PrincipalID, BindingID: request.operationBinding()})

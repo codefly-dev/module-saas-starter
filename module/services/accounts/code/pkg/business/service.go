@@ -302,6 +302,7 @@ func (s *Service) moduleRegistryFenced() bool {
 // it was derived from. Published together through one pointer, so a reader can
 // never pair one pass's registry with another pass's revision.
 type installedModuleRegistry struct {
+	sources          map[string]modulePrincipalSource
 	registry         ModulePrincipalRegistry
 	envelopeRevision uint64
 	// delivered is the size of the delivery inbox this registry was derived

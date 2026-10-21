@@ -117,8 +117,9 @@ type ModuleCapabilityAuthority struct {
 	// capability acts under. Carried so a caller that needs the installation —
 	// to scope a queue read, to attribute a produced record — uses the one that
 	// was CHECKED rather than re-reading and possibly getting a different one.
-	InstallationID       string
-	InstallationRevision uint64
+	InstallationID            string
+	InstallationRevision      uint64
+	AppliedManifestGeneration uint64
 
 	// ProducerEpoch is the principal's envelope epoch as re-read. A deferred
 	// producer records it so work it enqueues can be refused later if the
@@ -148,12 +149,13 @@ var ErrModuleTenantNotCurrent = errors.New("the credential's tenant is not the m
 
 // LiveModuleAuthority is what the live read answers.
 type LiveModuleAuthority struct {
-	RegistryBindingID    string
-	Scope                InstallationScope
-	EnvelopeRevision     *uint64
-	InstallationID       string
-	InstallationRevision uint64
-	ProducerEpoch        uint64
+	AppliedManifestGeneration uint64
+	RegistryBindingID         string
+	Scope                     InstallationScope
+	EnvelopeRevision          *uint64
+	InstallationID            string
+	InstallationRevision      uint64
+	ProducerEpoch             uint64
 }
 
 // AuthorizeModuleCapability is the one place a capability decision is made.
@@ -260,11 +262,12 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 	}
 	grant = intersectInstallationScope(grant, live.Scope)
 	authority := &ModuleCapabilityAuthority{
-		Caller:               caller,
-		Grant:                grant,
-		InstallationID:       live.InstallationID,
-		InstallationRevision: live.InstallationRevision,
-		ProducerEpoch:        live.ProducerEpoch,
+		Caller:                    caller,
+		Grant:                     grant,
+		InstallationID:            live.InstallationID,
+		InstallationRevision:      live.InstallationRevision,
+		AppliedManifestGeneration: live.AppliedManifestGeneration,
+		ProducerEpoch:             live.ProducerEpoch,
 	}
 	if err := authority.checkAgainstSealed(caller.Sealed); err != nil {
 		return nil, nil, err

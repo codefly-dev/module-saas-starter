@@ -41,7 +41,8 @@
       "fullName": "saas.accounts.v1.WorkContextService",
       "procedures": [
         "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
-        "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision"
+        "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
+        "/saas.accounts.v1.WorkContextService/VerifyIdempotent"
       ]
     }
   ],
@@ -529,7 +530,8 @@
         "/saas.accounts.v1.WorkContextService/StartChildSession",
         "/saas.accounts.v1.WorkContextService/StartInstallationTask",
         "/saas.accounts.v1.WorkContextService/StartRootSession",
-        "/saas.accounts.v1.WorkContextService/StartTask"
+        "/saas.accounts.v1.WorkContextService/StartTask",
+        "/saas.accounts.v1.WorkContextService/VerifyIdempotent"
       ]
     }
   ]

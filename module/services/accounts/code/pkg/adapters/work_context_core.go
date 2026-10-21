@@ -389,6 +389,9 @@ func (s *WorkContextAuthorityServer) remint(
 	ctx context.Context, parent *basev0.WorkContextV1, audience, replay string, ttl time.Duration,
 	attenuated []*basev0.WorkScopeV1, session string, exercised moduleBindingSeal,
 ) (string, *basev0.WorkContextV1, error) {
+	if business.IsInstalledUseBinding(parent.GetOperationBinding().GetBindingId()) {
+		return "", nil, installedUseRefusal()
+	}
 	// The seal follows the owner. A person's capability is sealed to the
 	// organization's installation of the audience it addresses — what an
 	// uninstall revokes — so a capability re-derived for an audience, renewed

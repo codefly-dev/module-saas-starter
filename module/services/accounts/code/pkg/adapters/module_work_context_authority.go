@@ -416,6 +416,7 @@ func decidedWorkContextAuthority(err error) bool {
 		business.ErrModuleTenantNotCurrent,
 		business.ErrSourceDelegationContextStale,
 		business.ErrNoOperationBinding,
+		business.ErrModuleHopStale,
 		business.ErrUnknownExecutionPrincipal,
 	} {
 		if errors.Is(err, decided) {

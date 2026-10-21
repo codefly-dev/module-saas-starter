@@ -126,3 +126,22 @@ func (s *PostgresStore) ModuleInstallations(ctx context.Context) ([]business.Mod
 	}
 	return out, rows.Err()
 }
+
+// ModuleEnvelopeHistory reads all immutable ceilings through the snapshot. A
+// remove/re-add between reconciles remains visible to the lifetime projection.
+func (s *PostgresStore) ModuleEnvelopeHistory(ctx context.Context, through uint64) ([]*business.ModuleEnvelopeRecord, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `SELECT revision, document::text FROM public.module_envelopes WHERE revision <= $1 ORDER BY revision`, through)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var records []*business.ModuleEnvelopeRecord
+	for rows.Next() {
+		record := &business.ModuleEnvelopeRecord{}
+		if err := rows.Scan(&record.Revision, &record.Document); err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
+}

@@ -35,6 +35,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// WorkContextServiceVerifyIdempotentProcedure is the fully-qualified name of the
+	// WorkContextService's VerifyIdempotent RPC.
+	WorkContextServiceVerifyIdempotentProcedure = "/saas.accounts.v1.WorkContextService/VerifyIdempotent"
 	// WorkContextServiceCheckAuthorizationRevisionProcedure is the fully-qualified name of the
 	// WorkContextService's CheckAuthorizationRevision RPC.
 	WorkContextServiceCheckAuthorizationRevisionProcedure = "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision"
@@ -66,6 +69,11 @@ const (
 
 // WorkContextServiceClient is a client for the saas.accounts.v1.WorkContextService service.
 type WorkContextServiceClient interface {
+	// VerifyIdempotent performs full Core verification and current subject
+	// permission checks. It refuses single-use and approval capabilities before
+	// any replay consumption. It never writes, and returns only facts contained
+	// in the verified capability. Resource-specific policy remains the callee's.
+	VerifyIdempotent(context.Context, *connect.Request[v1.VerifyIdempotentWorkContextRequest]) (*connect.Response[v1.VerifyIdempotentWorkContextResponse], error)
 	// CheckAuthorizationRevision is the consumer-side revocation seam for a
 	// previously issued Work Context. It succeeds only while every subject's
 	// requested authority still resolves to the exact sealed revision.
@@ -118,6 +126,12 @@ func NewWorkContextServiceClient(httpClient connect.HTTPClient, baseURL string, 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workContextServiceMethods := v1.File_saas_accounts_v1_work_contexts_proto.Services().ByName("WorkContextService").Methods()
 	return &workContextServiceClient{
+		verifyIdempotent: connect.NewClient[v1.VerifyIdempotentWorkContextRequest, v1.VerifyIdempotentWorkContextResponse](
+			httpClient,
+			baseURL+WorkContextServiceVerifyIdempotentProcedure,
+			connect.WithSchema(workContextServiceMethods.ByName("VerifyIdempotent")),
+			connect.WithClientOptions(opts...),
+		),
 		checkAuthorizationRevision: connect.NewClient[v1.CheckAuthorizationRevisionRequest, emptypb.Empty](
 			httpClient,
 			baseURL+WorkContextServiceCheckAuthorizationRevisionProcedure,
@@ -177,6 +191,7 @@ func NewWorkContextServiceClient(httpClient connect.HTTPClient, baseURL string, 
 
 // workContextServiceClient implements WorkContextServiceClient.
 type workContextServiceClient struct {
+	verifyIdempotent           *connect.Client[v1.VerifyIdempotentWorkContextRequest, v1.VerifyIdempotentWorkContextResponse]
 	checkAuthorizationRevision *connect.Client[v1.CheckAuthorizationRevisionRequest, emptypb.Empty]
 	authorizeEvidenceRead      *connect.Client[v1.AuthorizeEvidenceReadRequest, emptypb.Empty]
 	consumeSingleUse           *connect.Client[v1.ConsumeSingleUseWorkContextRequest, emptypb.Empty]
@@ -186,6 +201,11 @@ type workContextServiceClient struct {
 	exchangeAudience           *connect.Client[v1.ExchangeWorkContextAudienceRequest, v1.IssuedWorkContext]
 	startChildSession          *connect.Client[v1.StartChildSessionWorkContextRequest, v1.IssuedWorkContext]
 	renewWorkContext           *connect.Client[v1.RenewWorkContextRequest, v1.IssuedWorkContext]
+}
+
+// VerifyIdempotent calls saas.accounts.v1.WorkContextService.VerifyIdempotent.
+func (c *workContextServiceClient) VerifyIdempotent(ctx context.Context, req *connect.Request[v1.VerifyIdempotentWorkContextRequest]) (*connect.Response[v1.VerifyIdempotentWorkContextResponse], error) {
+	return c.verifyIdempotent.CallUnary(ctx, req)
 }
 
 // CheckAuthorizationRevision calls saas.accounts.v1.WorkContextService.CheckAuthorizationRevision.
@@ -236,6 +256,11 @@ func (c *workContextServiceClient) RenewWorkContext(ctx context.Context, req *co
 // WorkContextServiceHandler is an implementation of the saas.accounts.v1.WorkContextService
 // service.
 type WorkContextServiceHandler interface {
+	// VerifyIdempotent performs full Core verification and current subject
+	// permission checks. It refuses single-use and approval capabilities before
+	// any replay consumption. It never writes, and returns only facts contained
+	// in the verified capability. Resource-specific policy remains the callee's.
+	VerifyIdempotent(context.Context, *connect.Request[v1.VerifyIdempotentWorkContextRequest]) (*connect.Response[v1.VerifyIdempotentWorkContextResponse], error)
 	// CheckAuthorizationRevision is the consumer-side revocation seam for a
 	// previously issued Work Context. It succeeds only while every subject's
 	// requested authority still resolves to the exact sealed revision.
@@ -284,6 +309,12 @@ type WorkContextServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workContextServiceMethods := v1.File_saas_accounts_v1_work_contexts_proto.Services().ByName("WorkContextService").Methods()
+	workContextServiceVerifyIdempotentHandler := connect.NewUnaryHandler(
+		WorkContextServiceVerifyIdempotentProcedure,
+		svc.VerifyIdempotent,
+		connect.WithSchema(workContextServiceMethods.ByName("VerifyIdempotent")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workContextServiceCheckAuthorizationRevisionHandler := connect.NewUnaryHandler(
 		WorkContextServiceCheckAuthorizationRevisionProcedure,
 		svc.CheckAuthorizationRevision,
@@ -340,6 +371,8 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 	)
 	return "/saas.accounts.v1.WorkContextService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case WorkContextServiceVerifyIdempotentProcedure:
+			workContextServiceVerifyIdempotentHandler.ServeHTTP(w, r)
 		case WorkContextServiceCheckAuthorizationRevisionProcedure:
 			workContextServiceCheckAuthorizationRevisionHandler.ServeHTTP(w, r)
 		case WorkContextServiceAuthorizeEvidenceReadProcedure:
@@ -366,6 +399,10 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 
 // UnimplementedWorkContextServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkContextServiceHandler struct{}
+
+func (UnimplementedWorkContextServiceHandler) VerifyIdempotent(context.Context, *connect.Request[v1.VerifyIdempotentWorkContextRequest]) (*connect.Response[v1.VerifyIdempotentWorkContextResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.VerifyIdempotent is not implemented"))
+}
 
 func (UnimplementedWorkContextServiceHandler) CheckAuthorizationRevision(context.Context, *connect.Request[v1.CheckAuthorizationRevisionRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.CheckAuthorizationRevision is not implemented"))

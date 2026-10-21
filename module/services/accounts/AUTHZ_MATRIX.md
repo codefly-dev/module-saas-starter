@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **270 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **271 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -278,11 +278,12 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.WorkContextService/StartInstallationTask` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → SECRET | Headlessly mint a Work Context for an installation's agent principal under its owner of record. |
 | `/saas.accounts.v1.WorkContextService/StartRootSession` | unary | `POST /v1/work-contexts:root-session` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.work_context.root_session_started | FORBIDDEN / SENSITIVE | SECRET → SECRET | Exchange a current Work Context for another root Session under the same Task. |
 | `/saas.accounts.v1.WorkContextService/StartTask` | unary | `POST /v1/work-contexts:task` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.work_context.task_started | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Issue a signed Work Context for a new Task and root Session. |
+| `/saas.accounts.v1.WorkContextService/VerifyIdempotent` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | SECRET → CONFIDENTIAL | Verify an idempotent Work Context with Core and current authority, without consuming replay state. |
 
 ## Tier totals
 
 - `auth`: 43
-- `internal`: 54
+- `internal`: 55
 - `mfa`: 5
 - `org_admin`: 65
 - `org_member`: 56

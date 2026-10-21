@@ -6330,7 +6330,7 @@
         "parameters": [
           {
             "name": "body",
-            "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes. The reissued capability opens the\ncaller's own authenticated Session, assigned by the issuer.",
+            "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes. The reissued capability opens the\ncaller's own authenticated Session, assigned by the issuer. Bound installed-use\ncapabilities cannot use this owner exchange; only their captured module\noperation may derive a child, preserving the captured dependencies.",
             "in": "body",
             "required": true,
             "schema": {
@@ -8379,7 +8379,7 @@
           "format": "int32"
         }
       },
-      "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes. The reissued capability opens the\ncaller's own authenticated Session, assigned by the issuer."
+      "description": "ExchangeWorkContextAudienceRequest reissues the same immutable Task, owner,\nand delegation lineage for another service boundary while attenuating the\neffective authority to the requested scopes. The reissued capability opens the\ncaller's own authenticated Session, assigned by the issuer. Bound installed-use\ncapabilities cannot use this owner exchange; only their captured module\noperation may derive a child, preserving the captured dependencies."
     },
     "v1ExportAuditLogRequest": {
       "type": "object",

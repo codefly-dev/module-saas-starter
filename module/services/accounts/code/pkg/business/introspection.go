@@ -343,6 +343,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 })
 
 func withWorkContextConsumerDescriptions(descriptions map[string]string) map[string]string {
+	descriptions["WorkContextService/VerifyIdempotent"] = "Verify an idempotent Work Context with Core and current authority, without consuming replay state."
 	descriptions["WorkContextService/AuthorizeEvidenceRead"] =
 		"Authorize a filtered Evidence read from current tenant membership and RBAC facts."
 	descriptions["WorkContextService/CheckAuthorizationRevision"] =

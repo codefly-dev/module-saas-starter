@@ -190,14 +190,28 @@ func (s *WorkContextAuthorityServer) confirmCurrentAuthority(
 			return status.Error(codes.InvalidArgument, "revision subjects must be unique")
 		}
 		seen[principalID] = struct{}{}
+		if business.IsInstalledUseBinding(req.GetOperationBindingId()) {
+			if service == nil {
+				return installedUseError(nil)
+			}
+			if err := service.CheckInstalledUseRevisionSubject(ctx, req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetOperationBindingId(), principalID, moduleScopesOf(subject)); err != nil {
+				return installedUseError(err)
+			}
+			if principalID != req.GetOwnerPrincipalId() {
+				continue
+			}
+		}
 		// A module hop, confirmed from the binding it names.
 		if service != nil && principalID != req.GetOwnerPrincipalId() && service.IsDeclaredModulePrincipal(principalID) {
 			if err := service.ConfirmModuleHopBinding(ctx, req.GetOrgId(), principalID,
 				req.GetOperationBindingId(), moduleScopesOf(subject)); err != nil {
-				wool.Get(ctx).In("CheckAuthorizationRevision").Warn("a module hop of this Work Context no longer stands",
+				wool.Get(ctx).In("CheckAuthorizationRevision").Warn("could not confirm a module hop of this Work Context",
 					wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()),
 					wool.Field("module", principalID), wool.Field("binding", req.GetOperationBindingId()),
 					wool.ErrField(err))
+				if !decidedWorkContextAuthority(err) {
+					return status.Error(codes.Unavailable, "module hop authority is unavailable")
+				}
 				return status.Error(codes.PermissionDenied, business.ErrModuleHopStale.Error())
 			}
 			continue
@@ -526,7 +540,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 	// when this returns. The span holds the installation, its target and the
 	// envelope revision, not the in-memory registry a redelivery replaces; that
 	// half is re-checked after signing (business.ConsumerCeilingStillCurrent).
-	if _, confined := accountsauth.VerifiedResourceConfinement(ctx); confined && service != nil {
+	if service != nil {
 		var releaseAuthority func()
 		var fenceErr error
 		ctx, releaseAuthority, fenceErr = service.BeginModuleAuthorityUse(ctx)
@@ -566,9 +580,23 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
-	facts, err := s.resolveAuthority(
-		ctx, req.GetOrgId(), ownerID, req.GetActorPrincipalId(), permissions,
-	)
+	facts, err := s.resolveAuthority(ctx, req.GetOrgId(), ownerID, req.GetActorPrincipalId(), permissions)
+	var installedBinding string
+	// Existing role-authorized admission remains independent of installed-use
+	// standing. Only an owner permission refusal may try the bounded exception.
+	if status.Code(err) == codes.PermissionDenied && req.GetActorPrincipalId() == "" && service != nil {
+		var transit []string
+		installedBinding, transit, err = service.CaptureInstalledUse(ctx, req.GetOrgId(), ownerID, req.GetAudience(), operationScopesFromCore(scopes))
+		if err != nil {
+			return nil, installedUseError(err)
+		}
+		if installedBinding == "" {
+			return nil, installedUseRefusal()
+		}
+		own := mintContentReads(req.GetAudience())
+		permissions = markContentReads(permissions, func(kind string) bool { return own(kind) || slices.Contains(transit, kind) })
+		facts, err = s.resolveAuthority(ctx, req.GetOrgId(), ownerID, "", permissions)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -593,6 +621,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 			WorkspaceID:        req.GetWorkspaceId(),
 			ProjectID:          req.GetProjectId(),
 			InstallationID:     installation,
+			OperationBindingID: installedBinding,
 		},
 		// The capability opens the session the caller authenticated with, and
 		// never one the request named: see callerSession.
@@ -621,6 +650,11 @@ func (s *WorkContextAuthorityServer) StartTask(
 	// business.ConsumerCeilingStillCurrent for what this does and does not hold).
 	if consumerCeiling != nil {
 		if err := service.ConsumerCeilingStillCurrent(ctx, consumerCeiling); err != nil {
+			return nil, err
+		}
+	}
+	if installedBinding != "" {
+		if err := s.requireInstalledUseAuthority(ctx, req.GetOrgId(), signed); err != nil {
 			return nil, err
 		}
 	}
@@ -1636,6 +1670,9 @@ func (s *WorkContextAuthorityServer) verifyParent(
 		return nil, nil, refusedReadBack(ctx, err, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller"))
 	}
 	claims := parent.Context()
+	if business.IsInstalledUseBinding(claims.GetOperationBinding().GetBindingId()) {
+		return nil, nil, installedUseRefusal()
+	}
 	if claims.GetTenantId() != orgID || claims.GetOwnerPrincipalId() != ownerID {
 		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
 	}
@@ -1665,6 +1702,9 @@ func (s *WorkContextAuthorityServer) verifyActorParent(
 		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
 	}
 	claims := parent.Context()
+	if business.IsInstalledUseBinding(claims.GetOperationBinding().GetBindingId()) {
+		return nil, nil, installedUseRefusal()
+	}
 	actors := claims.GetActorChain()
 	if len(actors) == 0 {
 		return nil, nil, status.Error(
@@ -1697,6 +1737,9 @@ func (s *WorkContextAuthorityServer) requireCurrentAuthority(
 	orgID string,
 	parent *basev0.WorkContextV1,
 ) (*business.Principal, error) {
+	if business.IsInstalledUseBinding(parent.GetOperationBinding().GetBindingId()) {
+		return nil, s.requireInstalledUseAuthority(ctx, orgID, parent)
+	}
 	ownerID := parent.GetOwnerPrincipalId()
 	if len(parent.GetActorChain()) == 0 {
 		permissions := permissionsFromCoreScopes(parent.GetAuthorityScopes(), recheckContentReads())

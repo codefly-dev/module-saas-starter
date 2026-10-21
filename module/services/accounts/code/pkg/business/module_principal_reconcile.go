@@ -128,14 +128,20 @@ type publishedModuleRegistry struct {
 
 // modulePrincipalSource is the applied generation an entry was derived from.
 type modulePrincipalSource struct {
-	binding    string
-	generation uint64
+	binding            string
+	generation         uint64
+	envelopeGeneration uint64
 }
 
 func (r *ModulePrincipalReconciler) publish(published *publishedModuleRegistry) {
 	r.last = published
-	r.reconciler.service.InstallDerivedModulePrincipals(
-		published.registry, published.revision, published.delivered, published.withheld...)
+	service := r.reconciler.service
+	service.observeModuleEnvelopeRevision(published.revision)
+	service.modulePrincipals.Store(&installedModuleRegistry{
+		registry: maps.Clone(published.registry), envelopeRevision: published.revision,
+		delivered: published.delivered, withheld: slices.Clone(published.withheld),
+		sources: maps.Clone(published.sources),
+	})
 }
 
 // modulePrincipalInputs is one snapshot of the applied state and the inbox.
@@ -249,7 +255,8 @@ func (r *ModulePrincipalReconciler) degraded(applied []*SolutionHostBindingRecor
 		source := r.last.sources[id]
 		if generation, ok := live[source.binding]; ok && generation == source.generation {
 			kept.registry[id] = grant
-			kept.sources[id] = source
+			// Degraded snapshots retain ordinary authority, but cannot establish
+			// the complete durable history required by installed-use bindings.
 		}
 	}
 	return kept
@@ -330,7 +337,7 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		}
 		id := ModulePrincipalID(prefix)
 		next.registry[id] = grant
-		next.sources[id] = modulePrincipalSource{binding: manifest.Binding, generation: manifest.Generation}
+		next.sources[id] = modulePrincipalSource{binding: manifest.Binding, generation: manifest.Generation, envelopeGeneration: envelope.principalGenerations[prefix]}
 	}
 	refusals = append(refusals, next.oneWorkloadOnePrincipal()...)
 	next.withheld, next.authorityReasons = withheldModuleAuthority(manifests, next.registry, refusals)

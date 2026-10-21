@@ -281,6 +281,7 @@ var generatedAuthorizationByProcedure = map[string]generatedAuthorizationMetadat
 	"/saas.accounts.v1.WorkContextService/StartInstallationTask":                     {exposure: edgeExposureInternal, rateLimitClass: edgeRateLimitClassInternal, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "da507f51d53cc583d294aa8245df2be568c2e5ff945b9c7f31758347c980a869"},
 	"/saas.accounts.v1.WorkContextService/StartRootSession":                          {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassSensitive, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "ff7ba670e312f428af5fc42c0b60271e4850590791de9cbc2d50a4b7aa897127"},
 	"/saas.accounts.v1.WorkContextService/StartTask":                                 {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassSensitive, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "15449752ce6c1270f700224bb3dae80a3e5a114a69ce1393d91b066f9291763d"},
+	"/saas.accounts.v1.WorkContextService/VerifyIdempotent":                          {exposure: edgeExposureInternal, rateLimitClass: edgeRateLimitClassInternal, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "cb57ee7f4e96ab9548ead04103dfd3e9a96dce973c06a8bd62a9ac991eab1e16"},
 }
 
 var generatedRESTProcedureByRoute = map[string]string{

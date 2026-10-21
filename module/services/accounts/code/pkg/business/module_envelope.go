@@ -66,7 +66,8 @@ type ModuleEnvelope struct {
 	// Revision is this ceiling's revision, from 1.
 	Revision uint64
 	// Principals is the ceiling per module principal, keyed by principal.
-	Principals map[string]ModuleEnvelopePrincipal
+	Principals           map[string]ModuleEnvelopePrincipal
+	principalGenerations map[string]uint64
 }
 
 // ModuleEnvelopePrincipal is the ceiling for one module principal.
@@ -290,6 +291,10 @@ func (s *Service) CurrentModuleEnvelope(ctx context.Context) (*ModuleEnvelope, e
 		return nil, fmt.Errorf("stored module envelope revision %d carries document revision %d", record.Revision, envelope.Revision)
 	}
 	if err := s.reverifyDeliveredModuleEnvelope(ctx, record); err != nil {
+		return nil, err
+	}
+	envelope.principalGenerations, err = s.moduleEnvelopeGenerations(ctx, record.Revision)
+	if err != nil {
 		return nil, err
 	}
 	return envelope, nil

@@ -48,7 +48,7 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	// callee's verifier asks (#1107) — picking either side's number would be
 	// silently wrong, so this is read off the regenerated
 	// generated/authz-methods.json.
-	require.Equal(t, 54, internalCount) // includes the internal retained-frontend read
+	require.Equal(t, 55, internalCount) // includes the internal opaque Work Context verifier
 	require.Equal(t, 17, failClosedCount)
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(

@@ -88,6 +88,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
 		"/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
 		"/saas.accounts.v1.WorkContextService/StartInstallationTask",
+		"/saas.accounts.v1.WorkContextService/VerifyIdempotent",
 	}, internalWithoutHTTP, "the exact internal RPC inventory must remain off the REST surface")
 	require.True(t, streaming["/saas.accounts.v1.DelegationService/WaitForDelegation"], "server-streaming RPC must be present and marked streaming")
 	require.True(t, streaming["/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"], "server-streaming RPC must be present and marked streaming")

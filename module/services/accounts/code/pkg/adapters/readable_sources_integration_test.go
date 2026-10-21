@@ -11,6 +11,9 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"time"
 
 	"connectrpc.com/connect"
@@ -19,6 +22,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
+
+// The independent SQL harness uses the owner's snapshot seam instead of the
+// production credential pool. Both enforce the same private verified identity.
+type installedVerificationSQL struct{ *infra.PostgresStore }
+
+func (s installedVerificationSQL) ResolveWorkContextAuthority(ctx context.Context, org, owner, actor string, permissions []business.WorkContextPermission) (facts *business.WorkContextAuthorityFacts, err error) {
+	err = s.WithSourceReadSnapshot(ctx, org, func(ctx context.Context) error {
+		facts, err = s.PostgresStore.ResolveWorkContextAuthority(ctx, org, owner, actor, permissions)
+		return err
+	})
+	return
+}
 
 // Requires an independently migrated database. Never resolves a shared stack.
 func TestSourceReadPostgresSignedRPC(t *testing.T) {
@@ -62,6 +77,45 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	workContextSingleton.journal = store
 	verified := auth.WithVerifiedDatabaseIdentity(ctx, readOwner, readOrg)
 	var current *business.WorkContextAuthorityFacts
+	require.NoError(t, store.WithSourceReadSnapshot(verified, readOrg, func(ctx context.Context) error {
+		var err error
+		current, err = store.ResolveWorkContextAuthority(ctx, readOrg, readOwner, "", []business.WorkContextPermission{{ResourceKind: "documents", Action: "read"}})
+		return err
+	}))
+
+	t.Run("installed verification establishes the authenticated database identity", func(t *testing.T) {
+		// Retain only the collection grant: a flat read role would hide the defect.
+		exec(`DELETE FROM role_assignments WHERE org_id=$1 AND subject_id=$2`, readOrg, readOwner)
+		defer exec(`INSERT INTO role_assignments(org_id,subject_id,subject_kind,role_id) VALUES($1,$2,'principal',$3)`, readOrg, readOwner, role)
+		fixture, server := installedReadFixture(t)
+		server.authority = installedVerificationSQL{store}
+		live, err := server.authority.ResolveWorkContextAuthority(verified, readOrg, readOwner, "", []business.WorkContextPermission{{ResourceKind: "documents", Action: "read", ContentRead: true}})
+		require.NoError(t, err)
+		server.seals = installedReadSeals{newSealAnswersFake(live.EffectiveRevision()), fixture}
+		caller := stampVerifiedIdentity(ctx, readOwner, readOrg, auth.Assurance{})
+		parent, err := server.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: readOrg, TaskId: uuid.NewString(), Audience: "reader", AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}}})
+		require.NoError(t, err)
+		authenticated, err := server.verifyFor(ctx, parent.Token, "reader")
+		require.NoError(t, err)
+		child, err := server.exchangeInstalledUse(caller, authenticated, business.ModuleCaller{PrincipalID: business.ModulePrincipalID("reader"), BoundOrg: readOrg}, delegatedAudienceRequest{kind: "operation", bindingID: "evidence"}, time.Minute)
+		require.NoError(t, err)
+		// Match the SDK transport: internal perimeter credential, opaque token and
+		// audience only. There is deliberately no incoming owner/tenant identity.
+		internal := metadata.NewIncomingContext(ctx, metadata.Pairs("x-codefly-internal-token", "installed-read-test"))
+		answer, err := server.VerifyIdempotent(internal, &gen.VerifyIdempotentWorkContextRequest{WorkContextToken: child.Token, ExpectedIssuer: server.issuer, ExpectedAudience: "documents"})
+		require.NoError(t, err)
+		require.Equal(t, readOwner, answer.OwnerPrincipalId)
+		require.Equal(t, readOrg, answer.TenantId)
+		require.Equal(t, business.ModulePrincipalID("reader"), answer.CurrentActorPrincipalId)
+		exec(`DELETE FROM scope_grants WHERE org_id=$1 AND subject_id=$2`, readOrg, readOwner)
+		defer exec(`INSERT INTO scope_grants(org_id,subject_id,subject_kind,scope_path,role_id) VALUES($1,$2,'principal','root.collection',$3)`, readOrg, readOwner, role)
+		answer, err = server.VerifyIdempotent(internal, &gen.VerifyIdempotentWorkContextRequest{WorkContextToken: child.Token, ExpectedIssuer: server.issuer, ExpectedAudience: "documents"})
+		require.Nil(t, answer)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	})
+	SetInternalToken("source-read-test-perimeter")
+	// The mutations above advanced the real authorization revision.
 	require.NoError(t, store.WithSourceReadSnapshot(verified, readOrg, func(ctx context.Context) error {
 		var err error
 		current, err = store.ResolveWorkContextAuthority(ctx, readOrg, readOwner, "", []business.WorkContextPermission{{ResourceKind: "documents", Action: "read"}})
