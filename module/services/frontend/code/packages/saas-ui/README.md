@@ -203,7 +203,7 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
   `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
   (repo · status · paths · branch · boundary · live updates · last sync) with per-row **Sync**/**Delete** and
-  a **Connect GitHub** action. The last-sync cell shows whichever clock applies:
+  the connect actions the host's catalog admits. The last-sync cell shows whichever clock applies:
   `last_synced_at` for a provider that pulls, or `last ingest <date, time> ·
   <short commit>` for a github source, whose change sets the compiler enqueues
   (a webhook delivery, or a reconcile pass — a declared schedule's occurrence or
@@ -268,6 +268,21 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   it keeps syncing, but the host connects no new source of that provider. The
   flag is keyed on `conformance_gap`, so an older host that sends no
   conformance fields flags nothing.
+  What the panel offers to connect is the host's connector catalog
+  (`GetDatasourceCatalog`, read through the client's optional `getCatalog`): a
+  provider whose `accepts_new_sources` is true gets its connect action — **Connect
+  GitHub**, and **Connect object storage** when the client also implements
+  `addObjectStorageSource` — and every provider that takes no new source is
+  named under the header with the host's gap sentence (and, for a provider that
+  still accepts operations, that those can be connected). An empty catalog offers
+  nothing, because that is the host admitting nothing. A client without
+  `getCatalog`, or whose catalog read failed, offers **Connect GitHub** alone, as
+  before the catalog was read; the host refuses a provider it does not admit
+  either way.
+- `<ConnectObjectStorageForm onSubmit={…} … />` — endpoint (https only), region,
+  bucket, prefix, access key id, the secret access key the host encrypts at
+  receipt, and the target collection. It says what a bucket cannot: every object
+  is readable by whoever reads the collection, so one prefix per audience.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, webhook secret, and an access token only on the PAT path).
   Its Authentication choice always offers **Public repository (no token)**: the
@@ -386,8 +401,8 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   phase names and getting the terminal cases wrong. `<SourceSyncProgress source
   report />` is the card, and `useSourceSync(client, orgId, source)` the read.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
-  `useUpdateSource`, `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`,
-  `useMyAccountLinks`.
+  `useAddObjectStorageSource`, `useDatasourceCatalog`, `useUpdateSource`,
+  `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`, `useMyAccountLinks`.
 - `<EditSourceForm source onSubmit … />`, behind the row's **Edit**, changes
   what a connected source fetches: its branch and its path and file-type
   filters, bound by the same schema the connect form uses. It offers the connect

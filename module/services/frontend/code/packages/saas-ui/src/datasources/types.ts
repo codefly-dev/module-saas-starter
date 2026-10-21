@@ -203,6 +203,42 @@ export interface ConnectGitHubInput {
 }
 
 /**
+ * An object-storage source, ready for `addObjectStorageSource`: a bucket and a
+ * key prefix in a store, and the access key the host encrypts at receipt.
+ */
+export interface ConnectObjectStorageInput {
+	orgId: string;
+	endpoint: string;
+	region: string;
+	bucket: string;
+	prefix: string;
+	accessKeyId: string;
+	secretAccessKey: string;
+	targetCollection: string;
+	boundaryNodeId?: string;
+}
+
+/**
+ * One provider of the host's connector catalog (`GetDatasourceCatalog`). A
+ * surface offers a provider whose `acceptsNewSources` is true and flags the
+ * rest with their `gap`, which is the host's sentence for why it takes none.
+ */
+export interface DatasourceProviderView {
+	/** The connector's registry key, e.g. "github" or "upload". */
+	connector: string;
+	displayName: string;
+	description: string;
+	acceptsNewSources: boolean;
+	/** Empty when the provider accepts new sources. */
+	gap: string;
+	/**
+	 * Whether a source of it may be connected for its operations even though it
+	 * takes none to sync (the `api` provider).
+	 */
+	acceptsOperations: boolean;
+}
+
+/**
  * The person's own `api` source, ready for `addPersonalApiSource`: an API base
  * URL the person signs in to through the deployment's provider registration.
  * There is no credential field — the credential is the sign-in, which the
@@ -419,6 +455,13 @@ export interface DatasourceClient {
 	listActivity?(orgId: string, sourceId: string): Promise<SourceActivity[]>;
 	listSources(orgId: string): Promise<DatasourceView[]>;
 	addGitHubSource(input: ConnectGitHubInput): Promise<void>;
+	/**
+	 * The host's connector catalog. Optional, and without it a surface offers
+	 * GitHub alone, as it did before the catalog was read.
+	 */
+	getCatalog?(): Promise<DatasourceProviderView[]>;
+	/** Connects an object-storage source. Optional, like the catalog. */
+	addObjectStorageSource?(input: ConnectObjectStorageInput): Promise<void>;
 	/**
 	 * Creates the caller's own `api` source with the OAuth 2.0
 	 * authorization-code grant (`API_CREDENTIAL_KIND_OAUTH2` +

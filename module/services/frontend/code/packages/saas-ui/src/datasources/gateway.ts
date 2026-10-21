@@ -265,6 +265,39 @@ export function datasourceClientOverTransport(
 			// The host starts a GitHub source's first sync as it connects it.
 			notifySourceSyncRequested(response.datasource?.id ?? "");
 		},
+		async getCatalog() {
+			const response = await client.getDatasourceCatalog({});
+			return response.providers.map((provider) => ({
+				connector: provider.connector,
+				displayName: provider.displayName,
+				description: provider.description,
+				acceptsNewSources: provider.acceptsNewSources,
+				gap: provider.acceptsNewSources ? "" : provider.conformanceGap,
+				acceptsOperations: provider.acceptsOperations,
+			}));
+		},
+		async addObjectStorageSource(input) {
+			const response = await client.addSource({
+				orgId: input.orgId,
+				provider: DatasourceProvider.UPLOAD,
+				config: {
+					case: "upload",
+					value: {
+						endpoint: input.endpoint,
+						region: input.region,
+						bucket: input.bucket,
+						prefix: input.prefix,
+						accessKeyId: input.accessKeyId,
+					},
+				},
+				credential: input.secretAccessKey,
+				boundary: input.boundaryNodeId
+					? { case: "boundaryNodeId", value: input.boundaryNodeId }
+					: { case: "collectionLabel", value: input.targetCollection },
+			});
+			// The host starts every provider's first sync as it connects it.
+			notifySourceSyncRequested(response.datasource?.id ?? "");
+		},
 		async addPersonalApiSource(input) {
 			// No credential and no OAuth client: the authorization-code grant
 			// stores only its selector on the source, and the host resolves the

@@ -97,6 +97,17 @@ function stubFetch(responseBody: unknown): { calls: FetchCall[] } {
 	return stubFetchSequence([reply(responseBody)]);
 }
 
+const githubCatalog = {
+	providers: [
+		{
+			connector: "github",
+			displayName: "GitHub",
+			description: "A GitHub repository.",
+			acceptsNewSources: true,
+		},
+	],
+};
+
 const oneSource = {
 	datasources: [
 		{
@@ -177,6 +188,18 @@ describe("createDatasourceClient", () => {
 					expected: { branch: "main", paths: [], fileExtensions: [] },
 				}),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
+			getCatalog: () => client.getCatalog!(),
+			addObjectStorageSource: () =>
+				client.addObjectStorageSource!({
+					orgId: "org-1",
+					endpoint: "https://store.example.com",
+					region: "us-east-1",
+					bucket: "acme-docs",
+					prefix: "kb/",
+					accessKeyId: "AKIAEXAMPLE",
+					secretAccessKey: "secret",
+					targetCollection: "Example",
+				}),
 			// The stub answers {} to everything; an operation whose answer must
 			// carry a record rejects on it, after the call this test counts.
 			beginAccountLink: () =>
@@ -558,7 +581,9 @@ describe("DatasourcesPanel gateway binding", () => {
 	])(
 		"offers %s the management controls only when their credential names the tier",
 		async (_who, claims, manages) => {
-			stubFetch(oneSource);
+			// One body answers every call, so it carries the catalog too: GitHub
+			// is offered because the host's catalog admits it.
+			stubFetch({ ...oneSource, ...githubCatalog });
 			render(
 				<DatasourcesPanel
 					orgId="org-1"

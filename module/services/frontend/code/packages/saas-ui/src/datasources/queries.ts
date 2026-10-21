@@ -7,6 +7,7 @@ import {
 } from "./reconcile-passes.js";
 import type {
 	ConnectGitHubInput,
+	ConnectObjectStorageInput,
 	DatasourceClient,
 	EditSourceInput,
 	SourceReconcileReceipt,
@@ -35,6 +36,36 @@ export function useListSources(client: DatasourceClient, orgId: string) {
 		queryFn: () => client.listSources(orgId),
 		enabled: !!orgId,
 		refetchInterval: 5000,
+	});
+}
+
+/**
+ * The host's connector catalog, which providers a surface may offer. Disabled
+ * for a client that does not read it; the catalog changes only with a release.
+ */
+export function useDatasourceCatalog(client: DatasourceClient) {
+	const getCatalog = client.getCatalog?.bind(client);
+	return useQuery({
+		queryKey: ["datasource-catalog"],
+		queryFn: () => getCatalog?.() ?? [],
+		enabled: !!getCatalog,
+		retry: false,
+		staleTime: Number.POSITIVE_INFINITY,
+	});
+}
+
+export function useAddObjectStorageSource(client: DatasourceClient) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (input: ConnectObjectStorageInput) =>
+			client.addObjectStorageSource!(input),
+		onSuccess: (_result, input) => {
+			queryClient.invalidateQueries({ queryKey: sourcesKey(input.orgId) });
+			queryClient.invalidateQueries({
+				queryKey: ["collection-access", input.orgId],
+			});
+			queryClient.invalidateQueries({ queryKey: scopesKey(input.orgId) });
+		},
 	});
 }
 
