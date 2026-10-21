@@ -58,6 +58,16 @@ const SCOPE_PRESETS = [
 		],
 	},
 	{
+		id: "module_envelope",
+		label: "Module envelope only",
+		description:
+			"Write the authority ceiling modules are derived inside, and nothing else. For an operator or an automation that corrects a module's ceiling without a browser; a key cannot mint another key.",
+		scopes: [
+			{ resource: "module_envelope", action: "read" },
+			{ resource: "module_envelope", action: "write" },
+		],
+	},
+	{
 		id: "no_scopes",
 		label: "No scopes",
 		description:

@@ -33,14 +33,30 @@ service, and the alternative is a gateway that cannot start.
 
 ## Reading declared solution upstreams
 
+An installation delivery may race withdrawal or an unavailable registry. Failed
+route resolution carries no routing entry: return a retryable 503 before reading
+its fields, including in logs. A replacement binding must also fail the claim's
+target/binding comparison. The installation consumer stays alive in both cases.
+
 `GET /solutions/_registry` returns this replica's read projection: identity,
-publisher, revision, frontend manifest, declared target and status (`active`,
-`pending`, `incompatible`, `tombstoned`). It never exposes the backend upstream.
-The frontend reads it with the cluster-internal credential.
+publisher, revision, declared target and kind, status (`active`, `pending`,
+`tombstoned`) and, for either kind with a frontend block, the manifest the frontend renders
+its page from — built here (`solutionManifest`) from the `frontend` block of
+the applied presence, which accounts copies onto the record's frontend half,
+plus the host's own constants: the asset path, the backend alias, the
+capability path. It exposes no address: where a solution's backend is reached
+is resolved in this process and stays here. The frontend reads it with the
+cluster-internal credential.
 
 The gateway proxies `/solutions/{id}/…` using the same verified identity and
 header discipline as catalog routes, with per-viewer installation admission.
 Only public `/assets` and `/.well-known` paths accept unauthenticated GET/HEAD.
+A declared module with a frontend block uses that same public asset surface.
+Module data requests still use `/v1/<alias>/*`, with live installation admission;
+`/solutions/<alias>/*` never turns into a second module API surface. A headless
+current generation can retain previously admitted versioned assets while its
+target remains live; its own version opens no mutable asset path. Withdrawal and the registry lease apply to
+both kinds, including public assets.
 
 ## Composed-module REST routes
 
@@ -58,20 +74,28 @@ alias the catalog *owns* is refused outright rather than half-served — the mat
 takes only the paths it matches, so serving the rest would split one prefix
 between two authorities.
 
-Where it goes is **resolved, never recorded**. The registry holds no module
-address. On each refresh the gateway reads the endpoints the module's APPLIED
-presence declares for the service that runs it, and asks the Codefly SDK
-(`codefly.For(...).Module().Service().Endpoint().API().ResolveNetworkInstance()`)
-for each: the Codefly CLI writes this gateway's `CODEFLY__ENDPOINT__…` variables
-for exactly the endpoints composed solutions consume through the host, locally
-and in a render, so exactly one answers and that is where `/v1/<alias>` goes.
-None, or more than one, leaves the module unrouted (`503 module registration
-not active`) and is logged once. In-cluster traffic after the gateway is plain
-HTTP; the mesh provides mTLS.
+Where it goes is **the applied manifest's**, and a solution is routed the same
+way. The registry holds no address. On each refresh the gateway parses the
+APPLIED module manifest of each binding (`appliedManifest`, which must name the
+registration's binding, generation and alias) and takes the HTTP-family
+endpoints it declares for its own workloads (`appliedRouteEndpoints`), each at
+the address the signed manifest carries (`manifestEndpointAddress`,
+`resolveRouteUpstreams`). The CLI writes exactly the endpoints composed
+workloads are reached through, so exactly one answers and that is where
+`/v1/<alias>` — and `/solutions/<alias>` — goes. None, or more than one, leaves
+the alias unrouted (`503 … registration not active`) and is logged once.
+In-cluster traffic after the gateway is plain HTTP; the mesh provides mTLS.
 
-Otherwise it uses the **solution shape**: the same cache, single carried
-resolution, upstream URL policy, guarded transport, tombstone rule and 120 s
-presence revocation bound. Before forwarding a bearer it asks accounts for the viewer's
+A missing, withdrawn or mismatched manifest never falls back to startup
+environment addresses, and a withheld desired generation never replaces the
+applied generation's addresses.
+
+The two surfaces share one shape: the same cache, single carried resolution,
+upstream URL policy, guarded transport, tombstone rule and the 120 s
+revocation lease (`solutionRegistryLease`): a snapshot the registry has not
+confirmed for that long authorises neither surface (`503 solution registry
+snapshot is stale`), a tombstone already held still answers as a withdrawal,
+and the next read that succeeds renews it. Before forwarding a bearer it asks accounts for the viewer's
 live entitlement to the resolved target, without caching that decision. Accounts
 intersects the delivered authority, envelope and organization's installation
 scope. The path is forwarded unchanged; a module owns its `/v1/<alias>` surface.
@@ -205,21 +229,20 @@ is not issued on an unanswered question.
 **The ceiling is the consumer's delivered authority, not a list an administrator
 keeps.** Accounts reads the registry grant of the principal the stated installation
 records (`business.ConsumerInvokeCeiling`): the invoke half of its operation
-audiences, derived from the consumer's signed authority document, the applied
-presence and the envelope, and intersected with the installation's consent. The
+audiences, derived from the consumer's applied module manifest and the envelope, and intersected with the installation's consent. The
 audience must be one of those bindings' audiences, and the scopes must fit one binding
 there. The installation's `allowed_audiences` and `allowed_scopes` then narrow when
 they name something and add no bound when empty: they are never a source of
 authority, so lists that are empty or wider than the grant admit nothing it does not.
 
-**What reaches that grant today.** The renderer derives an authority document from a
+**What reaches that grant today.** The renderer derives a manifest's `authority` from a
 module's `module.contract.codefly.yaml`, and from nothing else. A binding there may
 declare `invoke` alone — lookup is optional, and an invoke-only binding is kept — so a
 module that publishes a contract reaches this ceiling. **A solution's `api.consumes`
 in `solution.codefly.yaml` does not:** it feeds the generated SDK and
-`CODEFLY__API_CONSUMES`, never an authority document. A solution with no contract has
+`CODEFLY__API_CONSUMES`, never a manifest's `authority`. A solution with no contract has
 no registry grant, so every confined mint addressed through it is refused. Rendering a
-solution's declared consumption into its authority document is the delivery half of
+solution's declared consumption into its manifest's `authority` is the delivery half of
 issue #1083 and belongs to the renderer.
 
 What a refusal says, and who acts on it:
@@ -341,55 +364,47 @@ bearer: identity is stripped there and no ext_authz check runs, so the gateway
 has nothing to bind, and both halves say no rather than one promising what the
 other drops.
 
-## Workload TLS endpoint and solution upstreams
+## The workload endpoint
 
-`workload` (`api: http`) serves the same mux over TLS 1.3 with required, verified
-client certificates when the `workload-identity` workspace group supplies
-`CERT_FILE`, `KEY_FILE`, `TRUST_BUNDLE_FILE`, and `ALLOWED_CALLERS_FILE`. If all
-four values are absent, the gateway boots with only its existing plain endpoints,
-does not resolve or open the workload endpoint, and logs once at info that no
-workload identity is projected. Solution mints remain unreachable over mTLS and
-solution proxying stays refused without a workload identity. Any partial set of
-values or missing/unreadable supplied file fails boot naming its key. Keep the
-`workload-identity` workspace dependency declared: renders use it to select
-consumers of the projection.
-The pinned SDK's `CertificateReloader` supplies both certificate callbacks.
-Every handshake checks a single SPIFFE URI against the live caller file; every
-request checks it again so keep-alive connections cannot outlive revocation.
-The caller file must be published atomically, as the kubelet publishes a
-ConfigMap volume (written whole, swapped behind one symlink); a mid-write mix
-of two lists is indistinguishable from a complete list, so an in-place rewrite
-is outside the contract. A truncated write is refused whole.
+`workload` (`api: http`) serves the gateway's full handler over plain HTTP on a
+port of its own, which Codefly allocates like the other two; a gateway that
+cannot resolve it does not start. The production listener requires the protected
+waypoint's exact `By=<waypoint>;URI=<presenter>` XFCC assertion, with a single
+canonical value. Missing, duplicate and malformed assertions are refused before
+the handler. `gateway/WORKLOAD_PRESENTER_PRINCIPAL` supplies the expected waypoint
+identity and is required outside native development. This header is trustworthy
+only with protected enrollment, HTTP sanitization, and destination policy that
+admits the waypoint alone; comparing `By` does not establish that network fact.
 
-On this endpoint every module mint (`/modules/_work-context`,
-`/modules/_operation-context`, `/modules/_source-operation-context`) conveys
-the verified SVID peer to accounts on the authenticated internal RPC. Accounts
-binds it to TokenReview and the applied presence before signing. Caller-supplied
-identity headers never attest a peer. Plain `rest` module mints still require
-the internal token and keep their existing behavior.
+The three module credential exchanges (`/modules/_work-context`,
+`/modules/_operation-context`, `/modules/_source-operation-context`) are served
+on this endpoint and nowhere else: on `rest` they are unexposed paths (`404`).
+The listener puts the authenticated presenter in private request context and
+removes the raw headers. `moduleMintContext` sends that principal to accounts
+with the existing gateway-provenance credential, separately from the internal
+perimeter credential. A caller's presenter header is never copied into the RPC.
+Accounts verifies provenance and compares the presenter's namespace and
+ServiceAccount with TokenReview before granting work authority.
 
-SPIFFE comparisons use the certificate's raw URI SAN, without URL normalization.
-The live caller file must end in a newline; an incomplete or invalid snapshot
-admits nobody, including on an existing connection. Entries trim only ASCII
-space, tab and CR, with `#` introducing a comment.
+Native development has no waypoint and stamps no presenter. Accounts permits
+that absence only with its actual non-pod stand-in Kubernetes client; a local
+flag on the gateway cannot disable the production Accounts check. These are
+source-level controls; the composed mesh path still requires traffic qualification.
 
-Solutions are proxied only over TLS 1.3 with the gateway SVID. The server's chain
-and single SPIFFE URI must match the applied presence read alongside its registry
-record. Missing or ambiguous identities fail closed. The existing DNS/address
-guard remains the only dial path. Module upstream transport remains unchanged.
+Solutions are proxied over plain HTTP to the address the Codefly SDK resolved,
+through the same guarded transport as a module (`registeredTransport`); the
+install step goes the same way. No SVID is served, presented or verified
+anywhere.
 
 ## Brokering a module's Work Context
 
-`POST /modules/_work-context` takes the
-cluster-internal token plus the module pod's **projected ServiceAccount token**
-as `Authorization: Bearer <token>` (exactly one header, that scheme), body
-`{prefix, organization_id?, upstream?, manifest?}`, bounded at 80 KiB.
-`upstream` and `manifest` are the dynamic half of the workload's registration
-([SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#the-document-and-who-owns-which-field)):
-they are accepted only on the `workload` endpoint and refused `400` on the
-plain one; the gateway checks the origin's shape — `https`, a host and a port, a host a
-registered upstream may name — refuses `400` before asking accounts otherwise,
-and forwards both unread beyond that. Accounts answers `FailedPrecondition`
+`POST /modules/_work-context`, on the workload endpoint, takes the module
+pod's **projected ServiceAccount token** as `Authorization: Bearer <token>`
+(exactly one header, that scheme), body `{prefix, organization_id?}`, bounded
+at 4 KiB. Nothing is reported with it: a solution's address is resolved and its
+manifest comes from its presence
+([SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md#7-declared-presence-one-signed-module-manifest-per-binding)).
+Accounts answers `FailedPrecondition`
 for a workload that is admitted and installed nowhere, relayed as `412`. A shared module selects an organization; accounts
 requires its live installation and the envelope's `cross_tenant` grant. A
 tenant-pinned module may omit the selector or name only its pinned tenant.
@@ -412,7 +427,7 @@ brokers it to `ModuleCapabilitiesService/MintModuleOperationContext` and answers
 `expires_at`) with `cache-control: no-store` — snake_case, unlike the camelCase
 `/modules/_work-context`, because consumers were built against this shape. It relays two distinct refusals: `401` when the module is not proven
 (bad internal token, a missing or refused projected token, another workload, an
-unapproved build, an undeclared module) and `403` when a proven module names a
+undeclared module) and `403` when a proven module names a
 binding it may not mint with no person present. Every module exchange answers
 `503` when accounts could not establish what the pod is running (`Unavailable`):
 nothing was decided, and the module retries. What the
@@ -443,3 +458,13 @@ handler and accounts' real internal tier and `authority` endpoint, each run as a
 helper test from its own module (`TestModuleAuthorityContractGateway` here,
 `TestModuleAuthorityContractHost` in accounts). Change a path, header, JSON
 field, status or refusal body here and that qualification is what fails.
+
+Current frontend payloads are prepared through the shared `frontendpayload`
+module. Historical asset versions use Accounts' targeted internal read, with the
+same binding/target identity and lease checks. Preparation is serialized and
+bounded; four bundles cap cached content at 256 MiB, eight active handlers cap
+held reads, and route snapshots retain only metadata. New versioned assets never
+fall through to the mutable backend. The source comes from the render-owned
+`artifact-cache` group: the native read-only cache `ROOT`, or in a Pod the
+published bundle `REPOSITORY`, read as the workload's identity. A live cell read
+of the published repository has not been qualified yet.

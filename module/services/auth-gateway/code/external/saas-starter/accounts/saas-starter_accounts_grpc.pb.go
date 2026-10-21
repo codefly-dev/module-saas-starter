@@ -1229,6 +1229,8 @@ type CheckAuthorizationRevisionRequest struct {
 	OwnerPrincipalId      string                        `protobuf:"bytes,2,opt,name=owner_principal_id,json=ownerPrincipalId,proto3" json:"owner_principal_id,omitempty"`
 	AuthorizationRevision uint64                        `protobuf:"varint,3,opt,name=authorization_revision,json=authorizationRevision,proto3" json:"authorization_revision,omitempty"`
 	Subjects              []*WorkContextRevisionSubject `protobuf:"bytes,4,rep,name=subjects,proto3" json:"subjects,omitempty"`
+	OperationBindingId    *string                       `protobuf:"bytes,5,opt,name=operation_binding_id,json=operationBindingId,proto3,oneof" json:"operation_binding_id,omitempty"`
+	SealsNoBinding        *bool                         `protobuf:"varint,6,opt,name=seals_no_binding,json=sealsNoBinding,proto3,oneof" json:"seals_no_binding,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -1289,6 +1291,20 @@ func (x *CheckAuthorizationRevisionRequest) GetSubjects() []*WorkContextRevision
 		return x.Subjects
 	}
 	return nil
+}
+
+func (x *CheckAuthorizationRevisionRequest) GetOperationBindingId() string {
+	if x != nil && x.OperationBindingId != nil {
+		return *x.OperationBindingId
+	}
+	return ""
+}
+
+func (x *CheckAuthorizationRevisionRequest) GetSealsNoBinding() bool {
+	if x != nil && x.SealsNoBinding != nil {
+		return *x.SealsNoBinding
+	}
+	return false
 }
 
 type AuthorizeEvidenceReadRequest struct {
@@ -1458,12 +1474,16 @@ const file_saas_starter_accounts_grpc_proto_rawDesc = "" +
 	"\fresource_ids\x18\x03 \x03(\tR\vresourceIds\"{\n" +
 	"\x1aWorkContextRevisionSubject\x12!\n" +
 	"\fprincipal_id\x18\x01 \x01(\tR\vprincipalId\x12:\n" +
-	"\x06scopes\x18\x02 \x03(\v2\".saas.accounts.v1.WorkContextScopeR\x06scopes\"\xe9\x01\n" +
+	"\x06scopes\x18\x02 \x03(\v2\".saas.accounts.v1.WorkContextScopeR\x06scopes\"\xfd\x02\n" +
 	"!CheckAuthorizationRevisionRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12,\n" +
 	"\x12owner_principal_id\x18\x02 \x01(\tR\x10ownerPrincipalId\x125\n" +
 	"\x16authorization_revision\x18\x03 \x01(\x04R\x15authorizationRevision\x12H\n" +
-	"\bsubjects\x18\x04 \x03(\v2,.saas.accounts.v1.WorkContextRevisionSubjectR\bsubjects\"\x8c\x02\n" +
+	"\bsubjects\x18\x04 \x03(\v2,.saas.accounts.v1.WorkContextRevisionSubjectR\bsubjects\x125\n" +
+	"\x14operation_binding_id\x18\x05 \x01(\tH\x00R\x12operationBindingId\x88\x01\x01\x12-\n" +
+	"\x10seals_no_binding\x18\x06 \x01(\bH\x01R\x0esealsNoBinding\x88\x01\x01B\x17\n" +
+	"\x15_operation_binding_idB\x13\n" +
+	"\x11_seals_no_binding\"\x8c\x02\n" +
 	"\x1cAuthorizeEvidenceReadRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12.\n" +
 	"\x13caller_principal_id\x18\x02 \x01(\tR\x11callerPrincipalId\x121\n" +
@@ -1583,6 +1603,7 @@ func file_saas_starter_accounts_grpc_proto_init() {
 	file_saas_starter_accounts_grpc_proto_msgTypes[1].OneofWrappers = []any{
 		(*AuthenticateRequest_Fixture)(nil),
 	}
+	file_saas_starter_accounts_grpc_proto_msgTypes[20].OneofWrappers = []any{}
 	file_saas_starter_accounts_grpc_proto_msgTypes[21].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

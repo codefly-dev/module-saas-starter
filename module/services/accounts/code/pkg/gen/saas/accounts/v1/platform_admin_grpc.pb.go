@@ -108,7 +108,8 @@ type PlatformAdminServiceClient interface {
 	// it declares, what runs, and which organizations have it installed.
 	ListPlatformCatalogue(ctx context.Context, in *ListPlatformCatalogueRequest, opts ...grpc.CallOption) (*ListPlatformCatalogueResponse, error)
 	// GetModuleEnvelope reads the current module envelope: the authority ceiling
-	// every module principal on this host is derived inside.
+	// every module principal on this host is derived inside, beside what the
+	// applied module manifests ask for of it.
 	GetModuleEnvelope(ctx context.Context, in *GetModuleEnvelopeRequest, opts ...grpc.CallOption) (*GetModuleEnvelopeResponse, error)
 	// PutModuleEnvelope writes the next revision of the module envelope. It takes
 	// effect at the next check with no restart: the module registry is derived
@@ -433,7 +434,8 @@ type PlatformAdminServiceServer interface {
 	// it declares, what runs, and which organizations have it installed.
 	ListPlatformCatalogue(context.Context, *ListPlatformCatalogueRequest) (*ListPlatformCatalogueResponse, error)
 	// GetModuleEnvelope reads the current module envelope: the authority ceiling
-	// every module principal on this host is derived inside.
+	// every module principal on this host is derived inside, beside what the
+	// applied module manifests ask for of it.
 	GetModuleEnvelope(context.Context, *GetModuleEnvelopeRequest) (*GetModuleEnvelopeResponse, error)
 	// PutModuleEnvelope writes the next revision of the module envelope. It takes
 	// effect at the next check with no restart: the module registry is derived

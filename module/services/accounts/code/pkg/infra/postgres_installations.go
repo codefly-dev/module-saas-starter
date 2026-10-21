@@ -1075,20 +1075,16 @@ func (s *PostgresStore) ListInstallationExposure(
 // RolePermits reports whether roleID — a role visible to the caller's tenant —
 // permits (resource, action), directly or through a wildcard, read through the
 // same role_permissions match every authority check uses.
+//
+// One pair of the set RolePermittedScopes answers for, so that the pair this
+// asks about and the set a derived role is built from can never be matched by
+// two predicates that mean to agree (postgres_derived_module_access.go).
 func (s *PostgresStore) RolePermits(ctx context.Context, roleID, resource, action string) (bool, error) {
-	var permits bool
-	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM roles r
-			  JOIN role_permissions rp ON rp.role_id = r.id
-			 WHERE r.id::text = $1
-			   AND (rp.resource = '*' OR rp.resource = $2)
-			   AND (rp.action = '*' OR rp.action = $3))`,
-		roleID, resource, action).Scan(&permits)
+	permitted, err := s.RolePermittedScopes(ctx, roleID, []string{resource}, []string{action})
 	if err != nil {
-		return false, fmt.Errorf("read role permissions: %w", err)
+		return false, err
 	}
-	return permits, nil
+	return len(permitted) == 1 && permitted[0], nil
 }
 
 // trailingColumns scans columns a query selects after a canonical column list

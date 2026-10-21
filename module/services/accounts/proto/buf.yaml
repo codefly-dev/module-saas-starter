@@ -64,8 +64,10 @@ breaking:
     # by one in the pull request body.
     ENUM_VALUE_NO_DELETE:
       # SolutionRegistrationStatus.SOLUTION_REGISTRATION_STATUS_EXPIRED (3):
-      # derived from a lapsed lease, and there is no lease. Reserved in the
-      # proto so the number is never reused.
+      # derived from a lapsed lease, and there is no lease. And
+      # SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE (4): two reported halves
+      # disagreeing on a contract version, and nothing is reported (#1118).
+      # Both reserved in the proto so the numbers are never reused.
       - saas/accounts/v1/solution_registry.proto
     # buf ignores are path-scoped, so neither entry can be narrowed to the single
     # message — the comments record the intended scope.
@@ -89,6 +91,8 @@ breaking:
       # the deleted writer RPCs' messages; SolutionFrontendRegistration and
       # SolutionBackendRegistration are the observations a deployment used to
       # submit. All four belong to the removed writer surface (#952).
+      # SolutionBackendBinding (#1118): the reported upstream half, deleted
+      # with the report — a solution's address is resolved, never recorded.
       - saas/accounts/v1/solution_registry.proto
       # ModuleMintRegistrationRequest/Response and
       # SolutionMintRegistrationRequest/Response (#1056): the registration
@@ -134,7 +138,10 @@ breaking:
       # SolutionBackendBinding.lease_expires_at (5) — presence is delivered, so
       # nothing renews a lease — and SolutionRegistration.runtime_boundary (9),
       # which is sealed into the Work Context instead of returned on a readable
-      # record (#952).
+      # record (#952). SolutionRegistration.backend (6) and
+      # SolutionFrontendBinding.contract_version (3) (#1118): the reported
+      # backend half and the version two reported halves were compared on;
+      # nothing is reported. Reserved by number and name.
       - saas/accounts/v1/solution_registry.proto
       # ModuleCurrentInstallationResponse.solution_identifier (3): a reusable
       # route alias, replaced by target_id and binding_id, which are identities.
@@ -142,7 +149,10 @@ breaking:
       # The `secret` (2) of the three module mint requests (#1056): a module
       # proves which module it is with its pod's projected ServiceAccount token
       # (`service_account_token`), held by accounts against the pod's running
-      # build. Reserved by number and name.
+      # build. ModuleMintWorkContextRequest.upstream (5) and .manifest (6)
+      # (#1118): the origin and manifest a running process reported at mint;
+      # the address is resolved and the manifest comes from the presence.
+      # Reserved by number and name.
       - saas/accounts/v1/module_registration.proto
       # StartInstallationTaskRequest.session_id (4) and
       # StartChildSessionWorkContextRequest.session_id (3) (#1082): the issuer

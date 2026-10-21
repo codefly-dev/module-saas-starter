@@ -109,3 +109,35 @@ func TestAnInstallationStepNamingNoInstallationIsNotSent(t *testing.T) {
 		})
 	}
 }
+
+// A registry refresh can race a queued installation, or be unavailable at boot.
+// The consumer must return a retryable result, never dereference a failed route.
+func TestInstallationDeliveryRefusesMissingRouteWithoutPanicking(t *testing.T) {
+	for _, state := range []string{"missing", "pending", "withdrawn", "unavailable", "replacement"} {
+		t.Run(state, func(t *testing.T) {
+			registry := newFakeSolutionRegistry()
+			if state != "missing" && state != "unavailable" {
+				registry.seedDeclared("example", "http://example.svc:8080")
+			}
+			switch state {
+			case "pending":
+				registry.records["example"].Declared = nil
+			case "withdrawn":
+				registry.tombstone("example")
+			case "unavailable":
+				registry.listErr = errors.New("registry unavailable")
+			}
+			cache := newSolutionRegistryCache(registry)
+			if state != "unavailable" {
+				require.NoError(t, cache.refresh(context.Background()))
+			}
+			gateway := &Gateway{solutions: cache}
+			claim := &installationStepClaim{RouteAlias: "example", TargetID: "previous-target", BindingID: "previous-binding"}
+			require.NotPanics(t, func() {
+				status, reason := gateway.deliverInstallationStep(context.Background(), claim)
+				require.Equal(t, http.StatusServiceUnavailable, status)
+				require.Empty(t, reason)
+			})
+		})
+	}
+}

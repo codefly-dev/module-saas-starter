@@ -1,17 +1,14 @@
-// Package executiontest stands in for the two independent sources a module mint
-// is bound by: a Kubernetes API that reviews projected ServiceAccount tokens and
-// reports what each pod is running, and an authority that approves one build per
-// module principal.
+// Package executiontest stands in for the independent source a module mint is
+// bound by: a Kubernetes API that reviews projected ServiceAccount tokens and
+// reports what each pod holds.
 //
-// It is a fake of those SOURCES, never of the check. BindExecution runs exactly
+// It is a fake of that SOURCE, never of the check. BindExecution runs exactly
 // as it does on a host — it is handed this Cluster through SetExecutionBinding —
 // so a test that mints through it exercises the real comparison: the token's
 // audience, its ServiceAccount and namespace against the principal's declared
-// workload, the live pod's UID against the token's, and the RUNNING image against
-// the approved build.
+// workloads, and the live pod's UID and containers against the token's.
 //
-// What the fake owns is only what Kubernetes and the authority document would
-// answer. In particular a token is valid for exactly the audience it was issued
+// What the fake owns is only what Kubernetes would answer. In particular a token is valid for exactly the audience it was issued
 // for, as the API server holds it: Review refuses any other with
 // business.ErrExecutionTokenRejected, which is what a TokenReview answers.
 package executiontest
@@ -30,12 +27,11 @@ import (
 // Audience is the audience accounts reviews a module's token for.
 const Audience = "accounts"
 
-// Cluster is the fake API server and approved-build authority.
+// Cluster is the fake API server.
 type Cluster struct {
-	mu        sync.Mutex
-	tokens    map[string]issuedToken
-	pods      map[podKey]*pod
-	approvals map[string]approval
+	mu     sync.Mutex
+	tokens map[string]issuedToken
+	pods   map[podKey]*pod
 	// Unreachable makes every review and pod read fail as an outage, the
 	// way an unreachable API server does.
 	Unreachable bool
@@ -60,17 +56,11 @@ type pod struct {
 	containers  []business.ContainerExecution
 }
 
-type approval struct {
-	digest      business.ApprovedDigest
-	incarnation uint64
-}
-
-// New returns an empty cluster with no pods and no approvals.
+// New returns an empty cluster with no pods.
 func New() *Cluster {
 	return &Cluster{
-		tokens:    map[string]issuedToken{},
-		pods:      map[podKey]*pod{},
-		approvals: map[string]approval{},
+		tokens: map[string]issuedToken{},
+		pods:   map[podKey]*pod{},
 	}
 }
 
@@ -81,22 +71,22 @@ type Workload struct {
 	Container      string
 }
 
-// Run schedules one pod for a workload whose container is RUNNING image, and
-// returns the token Kubernetes projects into it for the accounts audience.
-func (c *Cluster) Run(workload Workload, image string) string {
-	return c.RunWithAudience(workload, image, Audience)
+// Run schedules one pod for a workload whose container is running, and returns
+// the token Kubernetes projects into it for the accounts audience.
+func (c *Cluster) Run(workload Workload) string {
+	return c.RunWithAudience(workload, Audience)
 }
 
 // RunWithAudience is Run with the projected token minted for another audience,
 // the way a pod's token for some other service would be.
-func (c *Cluster) RunWithAudience(workload Workload, image, audience string) string {
-	return c.run("projected."+random(16), workload, image, audience)
+func (c *Cluster) RunWithAudience(workload Workload, audience string) string {
+	return c.run("projected."+random(16), workload, audience)
 }
 
 // RunWithLifetime is Run with a projected token valid for lifetime, the way a
 // projection rendered with another expirationSeconds would be.
-func (c *Cluster) RunWithLifetime(workload Workload, image string, lifetime time.Duration) string {
-	token := c.run("projected."+random(16), workload, image, Audience)
+func (c *Cluster) RunWithLifetime(workload Workload, lifetime time.Duration) string {
+	token := c.run("projected."+random(16), workload, Audience)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	issued := c.tokens[token]
@@ -107,11 +97,11 @@ func (c *Cluster) RunWithLifetime(workload Workload, image string, lifetime time
 
 // RunWithToken is Run for a test that names the token itself, so a fixture
 // shared by many tests can hold it as a constant.
-func (c *Cluster) RunWithToken(token string, workload Workload, image string) string {
-	return c.run(token, workload, image, Audience)
+func (c *Cluster) RunWithToken(token string, workload Workload) string {
+	return c.run(token, workload, Audience)
 }
 
-func (c *Cluster) run(token string, workload Workload, image, audience string) string {
+func (c *Cluster) run(token string, workload Workload, audience string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	name := workload.ServiceAccount + "-" + random(4)
@@ -121,7 +111,6 @@ func (c *Cluster) run(token string, workload Workload, image, audience string) s
 		phase: business.PodPhaseRunning,
 		containers: []business.ContainerExecution{{
 			Name: workload.Container, Kind: business.ContainerRegular, State: business.ContainerRunning,
-			ImageID: image, DeclaredImage: image,
 		}},
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -149,7 +138,7 @@ func (c *Cluster) AddContainer(token string, container business.ContainerExecuti
 }
 
 // SetContainerState changes the live state of one container of the pod a token
-// names, keeping its UID and image id: a stop between review and read.
+// names, keeping its UID: a stop between review and read.
 func (c *Cluster) SetContainerState(token, name string, state business.ContainerState) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -189,26 +178,6 @@ func (c *Cluster) Replace(token string) {
 	if running := c.podOf(token); running != nil {
 		running.uid = random(16)
 	}
-}
-
-// Retag makes the pod a token names RUN image while its spec still ASKS for
-// what it asked for: a moved tag.
-func (c *Cluster) Retag(token, image string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if running := c.podOf(token); running != nil {
-		for i := range running.containers {
-			running.containers[i].ImageID = image
-		}
-	}
-}
-
-// Approve records the build the authority document approves for a principal,
-// named as the document names it: by module prefix.
-func (c *Cluster) Approve(prefix, digest string, incarnation uint64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.approvals[prefix] = approval{digest: business.ApprovedDigest(digest), incarnation: incarnation}
 }
 
 // ReviewToken answers as a TokenReview does.
@@ -253,27 +222,6 @@ func (c *Cluster) ReadPod(_ context.Context, namespace, name string) (*business.
 	}, nil
 }
 
-// ApprovedBuild answers as the approved-build view does.
-func (c *Cluster) ApprovedBuild(_ context.Context, principal string) (business.ApprovedDigest, uint64, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	approved, ok := c.approvals[principal]
-	if !ok {
-		return "", 0, fmt.Errorf("%w: %s", business.ErrUnknownExecutionPrincipal, principal)
-	}
-	return approved.digest, approved.incarnation, nil
-}
-
-// Image is a digest-pinned reference for a fake build, and Digest its digest.
-func Image(build string) string { return "registry.example/" + build + "@" + Digest(build) }
-
-// Digest is a stable sha256-shaped digest for a named fake build.
-func Digest(build string) string {
-	sum := make([]byte, 32)
-	copy(sum, build)
-	return "sha256:" + hex.EncodeToString(sum)
-}
-
 func random(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
@@ -282,7 +230,7 @@ func random(n int) string {
 	return hex.EncodeToString(b)
 }
 
-var (
-	_ business.ExecutionReviewer  = (*Cluster)(nil)
-	_ business.ExecutionAuthority = (*Cluster)(nil)
-)
+var _ business.ExecutionReviewer = (*Cluster)(nil)
+
+// NativeDevelopment identifies this in-memory cluster fixture; it models no mesh.
+func (*Cluster) NativeDevelopment() bool { return true }

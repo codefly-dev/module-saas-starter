@@ -166,6 +166,38 @@ export interface ConnectGitHubInput {
 	webhookSecret: string;
 }
 
+/**
+ * What an edit of a connected source leaves it fetching, ready for
+ * `updateSource`. Every field is the whole value, not a patch: empty `paths`
+ * ingests the whole repository and empty `fileExtensions` admits every file
+ * type, exactly as on connect. The repository, the credential and the
+ * collection are absent because they are not editable — a source pointed at
+ * another repository, or writing into another collection, is a different
+ * source.
+ */
+export interface EditSourceInput {
+	orgId: string;
+	id: string;
+	branch: string;
+	paths: string[];
+	fileExtensions?: string[];
+	/**
+	 * The scope the editor was shown, exactly as it read it, which the host
+	 * accepts the replacement against. Required, because every field above is a
+	 * whole-field replacement: a save applied unconditionally after someone else
+	 * narrowed the source would restore the wider scope and re-ingest everything
+	 * they had just excluded. A mismatch is refused, not applied.
+	 */
+	expected: SourceFetchScope;
+}
+
+/** What a source fetches — the three values an edit replaces, as a whole. */
+export interface SourceFetchScope {
+	branch: string;
+	paths: string[];
+	fileExtensions: string[];
+}
+
 export interface SourceActivity {
 	id: string;
 	type: string;
@@ -204,8 +236,20 @@ export type SourceSyncPhaseName =
 	| "failed"
 	| "unknown";
 
-/** What started a sync: a tenant (or the connect), the periodic reconcile, or a webhook. */
-export type SourceSyncTriggerName = "manual" | "scheduled" | "webhook" | "unknown";
+/**
+ * What started a sync: a tenant (or the connect), the periodic reconcile, a
+ * webhook, or an edit of the source itself.
+ *
+ * `reconfigured` is the one that changes how a change set should be read: the
+ * source's branch or filters moved, so the files it brings differ because the
+ * source was re-aimed rather than because the repository changed.
+ */
+export type SourceSyncTriggerName =
+	| "manual"
+	| "scheduled"
+	| "webhook"
+	| "reconfigured"
+	| "unknown";
 
 /** Why a sync waits to retry, or failed — typed so a view offers the remedy. */
 export type SourceSyncFailureReasonName =
@@ -355,6 +399,18 @@ export interface DatasourceClient {
 		sourceId: string,
 		jobId?: string,
 	): Promise<SourceSyncView | undefined>;
+	/**
+	 * Changes what an already-connected source fetches — its branch and its path
+	 * and file-type filters — keeping its credential, its sync history and the
+	 * collection it writes into. Resolves to the id of the sync the host
+	 * enqueued because the change moved what is fetched, or undefined when the
+	 * request changed nothing.
+	 *
+	 * Optional, and without it the surfaces offer no Edit control at all: a
+	 * consumer adapting its own client to an older host keeps compiling, and the
+	 * panel never offers an edit its client cannot perform.
+	 */
+	updateSource?(input: EditSourceInput): Promise<string | undefined>;
 	deleteSource(orgId: string, id: string): Promise<void>;
 	/**
 	 * Enumerates the caller’s readable collection boundaries; failure must

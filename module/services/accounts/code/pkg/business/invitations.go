@@ -281,6 +281,7 @@ func (s *Service) summarizeInvitation(
 		}
 	}
 	return &gen.InvitationSummary{
+		Id:        inv.ID,
 		Status:    invitationStatusFromString(inv.Status),
 		Role:      invitationRoleFromString(inv.Role),
 		EmailHint: maskEmail(inv.Email),

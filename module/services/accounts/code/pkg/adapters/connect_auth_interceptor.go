@@ -24,6 +24,7 @@ var forwardedIdentityHeaders = []string{
 	"X-Acting-As-User-Id", "X-Act", "X-Scopes", "X-Credential-Kind", "X-MFA-Satisfied",
 	"X-Authentication-Methods", "X-Auth-Time", "X-Assurance-Level", "X-MFA-Verified-At",
 	"X-Client-Id",
+	"X-Codefly-Workload-Presenter",
 	// Which registered solution a Work Context mint is for, and the publisher
 	// its credential named (issue #1015). Neither names a person, but together
 	// they select the runtime boundary the capability is sealed under, so they
@@ -261,6 +262,9 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 		var err error
 		ctx, err = auth.WithVerifiedPublicOrigin(ctx, forwardedPublicOrigin)
 		if err != nil {
+			// The reason names the forwarded and configured origins; the caller
+			// keeps the generic answer.
+			wool.Get(ctx).In("connectPolicyInterceptor").Warn("trusted public origin refused", wool.ErrField(err))
 			return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("invalid trusted public origin"))
 		}
 	}

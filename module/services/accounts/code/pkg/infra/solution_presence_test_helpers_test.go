@@ -12,6 +12,7 @@ import (
 
 	"accounts/pkg/business"
 
+	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 )
 
@@ -62,7 +63,7 @@ func declarePresence(t *testing.T, bindingID, alias string) string {
 			return err
 		}
 		targetID = target.ID
-		return testStore.SaveSolutionHostBinding(ctx, appliedPresenceRecord(bindingID, alias, 1, now, false))
+		return testStore.SaveSolutionHostBinding(ctx, appliedPresenceRecord(t, bindingID, alias, 1, now, false))
 	}))
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		revision, err := testStore.NextSolutionRegistryRevision(ctx)
@@ -77,42 +78,30 @@ func declarePresence(t *testing.T, bindingID, alias string) string {
 	return targetID
 }
 
-// withdrawPresence applies a tombstone generation: it closes the target and
-// revokes every active installation of it, exactly as the reconcile pass does.
-// A test asserting that a withdrawal ends consent must go through this rather
-// than updating the row, or it proves only that an UPDATE works.
-func withdrawPresence(t *testing.T, bindingID, targetID, alias string, generation uint64) []business.RevokedInstallation {
-	t.Helper()
-	now := time.Now().UTC()
-	var revoked []business.RevokedInstallation
-	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		if err := testStore.CloseSolutionTarget(ctx, targetID, generation, now); err != nil {
-			return err
-		}
-		if err := testStore.SaveSolutionHostBinding(ctx,
-			appliedPresenceRecord(bindingID, alias, generation, now, true)); err != nil {
-			return err
-		}
-		var err error
-		revoked, err = testStore.RevokeInstallationsOfTarget(ctx, targetID,
-			"solution target was withdrawn", now)
-		return err
-	}))
-	return revoked
-}
-
 // appliedPresenceRecord is the binding row an applied generation leaves. The
 // ownership domain is non-empty deliberately: core refuses an applied record
 // without one, and an empty string passes a whole-or-absent constraint while
 // being exactly the value it rejects — so a helper that left it blank would
 // produce rows that store fine and freeze a reconciler.
 func appliedPresenceRecord(
-	bindingID, alias string, generation uint64, now time.Time, removed bool,
+	t *testing.T, bindingID, alias string, generation uint64, now time.Time, removed bool,
 ) *business.SolutionHostBindingRecord {
+	t.Helper()
+	document := productionPathManifest(t, alias, generation)
+	document.Binding = bindingID
+	document.Host = solutionhost.HostTarget{Coordinate: "acme/local/host", Domain: "alpha"}
+	document.Release.Version = "1.0.0"
+	if removed {
+		document = productionPathWithdrawal(t, document, generation)
+	}
+	raw, err := document.CanonicalBytes()
+	require.NoError(t, err)
+	digest, err := document.Digest()
+	require.NoError(t, err)
 	entry := business.SolutionHostBindingGeneration{
 		Generation: generation,
-		Digest:     fixtureDigest(bindingID),
-		Document:   "{}",
+		Digest:     digest,
+		Document:   string(raw),
 		At:         now,
 	}
 	applied := &business.SolutionHostBindingApplied{
@@ -120,7 +109,7 @@ func appliedPresenceRecord(
 		SolutionID:                    alias,
 		Removed:                       removed,
 		Domain:                        "alpha",
-		Release:                       "acme/" + alias + "@1.0.0",
+		Release:                       document.Release.Identity(),
 	}
 	if !removed {
 		applied.Routes = []string{alias}
@@ -128,7 +117,6 @@ func appliedPresenceRecord(
 	return &business.SolutionHostBindingRecord{
 		BindingID:      bindingID,
 		HostCoordinate: "acme/local/host",
-		HostComponent:  "saas-starter",
 		Desired:        &entry,
 		Applied:        applied,
 		UpdatedAt:      now,

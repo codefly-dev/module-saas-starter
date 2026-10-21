@@ -71,7 +71,6 @@ func TestStartTaskMintsWhatACoreVerifierReadsForAModule(t *testing.T) {
 	require.Equal(t, renewOrgID, claims.GetTenantId())
 	require.Equal(t, confinedSession, claims.GetSessionId(), "the session the credential authenticated, which the gateway pairs on")
 	require.Equal(t, testInstallation("documents"), claims.GetSeal().GetInstallationId())
-	require.Empty(t, claims.GetSeal().GetImageDigest(), "a person bears no execution")
 	require.Empty(t, claims.GetActorChain())
 	require.Equal(t, []*basev0.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}, claims.GetAuthorityScopes())
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -124,13 +123,12 @@ func TestConsumerInvokeCeilingIsReadUnderTheNamedInstallation(t *testing.T) {
 }
 
 // derivedCeiling is a consumer's operation audiences DERIVED the way production
-// derives them — envelope ∩ delivered authority document — not hand-written.
-func derivedCeiling(t *testing.T, units ...solutionhost.AuthorityBinding) map[string]ModuleOperationAudience {
+// derives them — envelope ∩ the applied manifest's request — not hand-written.
+func derivedCeiling(t *testing.T, operations map[string][]string) map[string]ModuleOperationAudience {
 	t.Helper()
 	envelope := parseTestEnvelope(t)
-	document := testAuthority(t, units...)
-	require.NoError(t, document.ValidateAgainst(envelope.authorityEnvelopeFor(document)))
-	grant, omitted, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix], document, units, testWorkload)
+	grant, omitted, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix],
+		testManifest(t, operations), []ModuleWorkload{testWorkload})
 	require.NoError(t, err)
 	require.Empty(t, omitted)
 	return grant.OperationAudiences
@@ -141,7 +139,7 @@ func derivedCeiling(t *testing.T, units ...solutionhost.AuthorityBinding) map[st
 // delivered unit asks profiles:read, and an audience the envelope lists that the
 // document never asked for is not declared.
 func TestTheDeclaredCeilingIsBoundedByTheEnvelopeAndTheDocument(t *testing.T) {
-	ceiling := derivedCeiling(t, testUnit("run", "invoke"), testUnit("run", "lookup"))
+	ceiling := derivedCeiling(t, map[string][]string{"invoke": {"profiles:read"}, "lookup": {"profiles:read"}})
 	read := []ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"read"}, ResourceIDs: []string{"standard"}}}
 
 	declared, inside := ConsumerCeilingAdmits(ceiling, testProducerAudience, read)
@@ -164,7 +162,7 @@ func TestTheDeclaredCeilingIsBoundedByTheEnvelopeAndTheDocument(t *testing.T) {
 // asking person and has nothing to look up — reaches the ceiling. It used to be
 // dropped by the reconciler and then refused as undeclared.
 func TestAnInvokeOnlyDeclarationReachesTheCeiling(t *testing.T) {
-	ceiling := derivedCeiling(t, testUnit("run", "invoke"))
+	ceiling := derivedCeiling(t, map[string][]string{"invoke": {"profiles:read"}})
 
 	declared, inside := ConsumerCeilingAdmits(ceiling, testProducerAudience,
 		[]ModuleOperationScope{{ResourceKind: "profiles", Actions: []string{"read"}, ResourceIDs: []string{"standard"}}})

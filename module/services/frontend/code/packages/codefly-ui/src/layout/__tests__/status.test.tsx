@@ -181,3 +181,87 @@ describe("Banner tone", () => {
 		expect(container.querySelector("[data-slot=banner-icon]")).toBeNull();
 	});
 });
+
+describe("Banner without a title", () => {
+	// One sentence about the region beside it. Inventing a title for it made the
+	// banner say the sentence twice, so callers hand-rolled the box instead.
+	const remark =
+		"This PDF has fillable form fields. Their values may be visible without being selectable page text.";
+
+	it("makes the remark the primary text rather than an aside", () => {
+		const { container } = render(<Banner tone="warning">{remark}</Banner>);
+		expect(container.querySelector("[data-slot=banner-title]")).toBeNull();
+		const text = screen.getByText(remark).className.split(/\s+/);
+		expect(text).toContain("type-banner-title");
+		expect(text).toContain("text-foreground");
+		expect(text).not.toContain("text-muted-foreground");
+	});
+
+	it.each(TONES.filter((tone) => tone !== "neutral"))(
+		"still gives %s its glyph, so one line is told apart by shape too",
+		(tone) => {
+			const { container } = render(<Banner tone={tone}>{remark}</Banner>);
+			const icon = container.querySelector("[data-slot=banner-icon]");
+			expect(icon?.querySelector("svg")).toBeTruthy();
+			expect(icon?.getAttribute("aria-hidden")).toBe("true");
+		},
+	);
+
+	it("interrupts for a fault and waits for anything else", () => {
+		render(
+			<>
+				<Banner tone="danger">Nothing reached the host.</Banner>
+				<Banner tone="warning">Reads never change the document.</Banner>
+			</>,
+		);
+		expect(screen.getByRole("alert").getAttribute("aria-live")).toBe(
+			"assertive",
+		);
+		expect(screen.getByRole("alert").textContent).toBe(
+			"Nothing reached the host.",
+		);
+		expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+	});
+
+	// Neutral has no glyph to keep. It is still the product speaking, announced
+	// when it appears and set apart by its surface, which is what separates it
+	// from a muted hint that only describes what is already there.
+	it("keeps a neutral remark a status, unmuted, with no glyph", () => {
+		const { container } = render(<Banner>Billing moves on Monday.</Banner>);
+		const banner = container.querySelector("[data-slot=banner]");
+		expect(banner?.getAttribute("role")).toBe("status");
+		expect(banner?.className).toContain("bg-primary/5");
+		expect(container.querySelector("[data-slot=banner-icon]")).toBeNull();
+		expect(screen.getByText("Billing moves on Monday.").className).toContain(
+			"text-foreground",
+		);
+	});
+
+	it("keeps the dismiss affordance", () => {
+		render(
+			<Banner tone="info" onDismiss={() => {}} dismissLabel="Dismiss the hint">
+				{remark}
+			</Banner>,
+		);
+		expect(
+			screen.getByRole("button", { name: "Dismiss the hint" }),
+		).toBeTruthy();
+	});
+
+	// Every existing call site passes a title, including the empty string a
+	// proto field defaults to; each keeps the title slot and the muted body.
+	it.each([
+		["a title", "Sync queued"],
+		["an empty title", ""],
+	])("leaves a banner with %s exactly as it was", (_name, title) => {
+		const { container } = render(
+			<Banner title={title}>2 changes are ready.</Banner>,
+		);
+		expect(
+			container.querySelector("[data-slot=banner-title]")?.textContent,
+		).toBe(title);
+		expect(screen.getByText("2 changes are ready.").className).toBe(
+			"text-muted-foreground",
+		);
+	});
+});

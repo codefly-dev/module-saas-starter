@@ -12,5 +12,5 @@ import (
 // concurrent removal or uninstall at an exact point around the write. Compiled
 // into tests only.
 func (s *Service) GrantScopeTxForTest(ctx context.Context, actorID string, req *gen.GrantScopeRequest) (*gen.ScopeGrant, error) {
-	return s.grantScopeTx(ctx, actorID, req)
+	return s.grantScopeTx(ctx, actorID, req, "")
 }

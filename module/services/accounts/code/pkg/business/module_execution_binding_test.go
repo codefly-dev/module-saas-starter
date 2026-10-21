@@ -6,41 +6,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-// Execution-bound minting, and every way the binding could be defeated.
-//
-// The digests here are realistic shapes rather than short strings, because the
-// comparison's correctness depends on the shapes: a container's `imageID` is a
-// digest-bearing REFERENCE, not a bare digest, and that is where a suffix test
-// or a prefix check goes wrong.
-
-const (
-	approvedRef = "registry.example.com/acme/worker@sha256:" +
-		"1111111111111111111111111111111111111111111111111111111111111111"
-	// The same digest as a bare value, which is the other legitimate spelling.
-	approvedBare = "sha256:" +
-		"1111111111111111111111111111111111111111111111111111111111111111"
-	// A different image, same registry and repository.
-	otherRef = "registry.example.com/acme/worker@sha256:" +
-		"2222222222222222222222222222222222222222222222222222222222222222"
-	// The approved digest as some runtimes report it.
-	pullableRef = "docker-pullable://registry.example.com/acme/worker@sha256:" +
-		"1111111111111111111111111111111111111111111111111111111111111111"
-)
+// Execution-bound minting, and every way the binding could be defeated. The
+// binding is the workload: the reviewed (namespace, ServiceAccount) against the
+// workloads the principal's applied manifest lists. No image is compared.
 
 // testRunning is the declared container as a pod read reports it: running,
 // regular, alone in a Running pod unless a test says otherwise.
 type testRunning struct {
-	UID           string
-	ImageID       string
-	DeclaredImage string
-	Found         bool
+	UID   string
+	Found bool
 }
 
 type fakeExecutionReviewer struct {
@@ -87,28 +67,9 @@ func (f *fakeExecutionReviewer) ReadPod(
 		}
 		read.Containers = append(read.Containers, ContainerExecution{
 			Name: name, Kind: ContainerRegular, State: ContainerRunning,
-			ImageID: f.running.ImageID, DeclaredImage: f.running.DeclaredImage,
 		})
 	}
 	return read, nil
-}
-
-type fakeExecutionAuthority struct {
-	digest      ApprovedDigest
-	incarnation uint64
-	err         error
-	// asked records which principal the approval was looked up by.
-	asked string
-}
-
-func (f *fakeExecutionAuthority) ApprovedBuild(
-	_ context.Context, principal string,
-) (ApprovedDigest, uint64, error) {
-	f.asked = principal
-	if f.err != nil {
-		return "", 0, f.err
-	}
-	return f.digest, f.incarnation, nil
 }
 
 // boundService wires the two independent sources AND declares the principal's
@@ -119,19 +80,17 @@ func (f *fakeExecutionAuthority) ApprovedBuild(
 // The declared workload matches reviewedPod() deliberately, so the tests below
 // that are about the IMAGE are not also about the identity. The ones about the
 // identity change one of these on purpose.
-func boundService(reviewer ExecutionReviewer, authority ExecutionAuthority) *Service {
-	return boundServiceFor(reviewer, authority, ModuleWorkload{
+func boundService(reviewer ExecutionReviewer) *Service {
+	return boundServiceFor(reviewer, ModuleWorkload{
 		ServiceAccount: "worker", Namespace: "acme-prod", Container: "worker",
 	})
 }
 
-func boundServiceFor(
-	reviewer ExecutionReviewer, authority ExecutionAuthority, workload ModuleWorkload,
-) *Service {
+func boundServiceFor(reviewer ExecutionReviewer, workload ModuleWorkload) *Service {
 	service := &Service{store: noopControlPlaneStore{}}
-	service.SetExecutionBinding(reviewer, authority)
+	service.SetExecutionBinding(reviewer)
 	service.SetModulePrincipals(ModulePrincipalRegistry{
-		"principal-1": ModulePrincipalGrant{Prefix: "worker", Tenant: "11111111-1111-4111-8111-111111111111", Workload: workload},
+		"principal-1": ModulePrincipalGrant{Prefix: "worker", Tenant: "11111111-1111-4111-8111-111111111111", Workloads: []ModuleWorkload{workload}},
 	})
 	return service
 }
@@ -152,21 +111,19 @@ func reviewedPod() *ReviewedExecutionToken {
 // The happy path, and the independence of the three sources
 // ---------------------------------------------------------------------------
 
-// A pod running the approved image binds, and the identity carries what was
+// A pod of a declared workload binds, and the identity carries what was
 // ESTABLISHED rather than what was presented.
-func TestApprovedRunningImageBinds(t *testing.T) {
+func TestADeclaredWorkloadBinds(t *testing.T) {
 	reviewer := &fakeExecutionReviewer{
 		reviewed: reviewedPod(),
-		running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
+		running:  &testRunning{UID: "uid-alpha", Found: true},
 	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 7})
+	service := boundService(reviewer)
 
 	identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.NoError(t, err)
-	require.Equal(t, RunningDigest(approvedRef), identity.Running)
-	require.Equal(t, uint64(7), identity.Incarnation,
-		"the incarnation comes from the authority document, never from the pod")
 	require.Equal(t, "uid-alpha", identity.PodUID)
+	require.Equal(t, "worker", identity.ContainerName)
 
 	// The pod read used the namespace and name the TOKEN named. A caller cannot
 	// point the host at a different pod, which is why the token comes first.
@@ -176,88 +133,9 @@ func TestApprovedRunningImageBinds(t *testing.T) {
 		"the token must have been minted for this host, not for the API server")
 }
 
-// Approved written as a full reference and running reported as a pullable URI
-// still bind: the comparison is on the digest portion, not on the spelling.
-func TestDigestComparisonIsOnTheDigestNotTheSpelling(t *testing.T) {
-	reviewer := &fakeExecutionReviewer{
-		reviewed: reviewedPod(),
-		running:  &testRunning{UID: "uid-alpha", ImageID: pullableRef, Found: true},
-	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedRef, incarnation: 1})
-
-	identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), identity.Incarnation)
-}
-
 // ---------------------------------------------------------------------------
 // Refusals: a verdict about the caller
 // ---------------------------------------------------------------------------
-
-// THE MOVED TAG, and the case that proves the three digest types are distinct by
-// execution rather than by comment.
-//
-// The pod's SPEC names exactly the approved image. Its STATUS reports something
-// else — which is what a moved tag produces, and what a mutable registry
-// reference makes possible at any time. Comparing approved against DECLARED
-// would pass here and admit an unapproved workload; comparing declared against
-// running would prove only that the pod got what it asked for.
-//
-// Approved == RUNNING is the only comparison that refuses it.
-func TestAPodThatAskedForTheApprovedImageAndRunsAnotherIsRefused(t *testing.T) {
-	reviewer := &fakeExecutionReviewer{
-		reviewed: reviewedPod(),
-		running: &testRunning{
-			UID: "uid-alpha",
-			// Asked for the approved image...
-			DeclaredImage: approvedRef,
-			// ...and is running a different one.
-			ImageID: otherRef,
-			Found:   true,
-		},
-	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
-
-	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
-	require.ErrorIs(t, err, ErrExecutionNotApproved)
-	// The refusal names BOTH, because an operator told only "not approved" would
-	// go reading the authority document when the registry is what moved.
-	require.Contains(t, err.Error(), approvedRef, "the refusal must name what was asked for")
-	require.Contains(t, err.Error(), otherRef, "and what is actually running")
-}
-
-// And the control: the same spec with a RUNNING image that matches is admitted,
-// so the test above is not passing because every declared image is refused.
-func TestAPodRunningWhatItAskedForAndWhatIsApprovedIsAdmitted(t *testing.T) {
-	reviewer := &fakeExecutionReviewer{
-		reviewed: reviewedPod(),
-		running: &testRunning{
-			UID: "uid-alpha", DeclaredImage: approvedRef, ImageID: approvedRef, Found: true,
-		},
-	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 4})
-
-	identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
-	require.NoError(t, err)
-	require.Equal(t, RunningDigest(approvedRef), identity.Running)
-	require.Equal(t, DeclaredDigest(approvedRef), identity.Declared,
-		"the declared image is carried for diagnosis, distinct from the running one")
-}
-
-// A pod running a DIFFERENT image from the same repository is refused. Same
-// registry, same repo, different digest — which is what a moved tag produces.
-func TestUnapprovedRunningImageIsRefused(t *testing.T) {
-	reviewer := &fakeExecutionReviewer{
-		reviewed: reviewedPod(),
-		running:  &testRunning{UID: "uid-alpha", ImageID: otherRef, Found: true},
-	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
-
-	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
-	require.ErrorIs(t, err, ErrExecutionNotApproved)
-	require.NotErrorIs(t, err, ErrExecutionUnbound,
-		"this is a verdict about the caller, not a failure to establish one")
-}
 
 // A replacement pod at the SAME NAME is refused, and this is the check the UID
 // exists for. A name comparison would admit it silently.
@@ -265,9 +143,9 @@ func TestReplacementPodAtTheSameNameIsRefused(t *testing.T) {
 	reviewer := &fakeExecutionReviewer{
 		reviewed: reviewedPod(),
 		// Same name, running the approved image, DIFFERENT uid.
-		running: &testRunning{UID: "uid-beta", ImageID: approvedRef, Found: true},
+		running: &testRunning{UID: "uid-beta", Found: true},
 	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 1})
+	service := boundService(reviewer)
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionIdentityMismatch)
@@ -282,9 +160,9 @@ func TestReplacementPodAtTheSameNameIsRefused(t *testing.T) {
 func TestNonBoundTokenIsRefusedRatherThanSkipped(t *testing.T) {
 	reviewer := &fakeExecutionReviewer{
 		reviewed: &ReviewedExecutionToken{ServiceAccount: "worker", Namespace: "acme-prod"},
-		running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
+		running:  &testRunning{UID: "uid-alpha", Found: true},
 	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare})
+	service := boundService(reviewer)
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionNotBoundToken)
@@ -297,9 +175,9 @@ func TestNonBoundTokenIsRefusedRatherThanSkipped(t *testing.T) {
 func TestUnknownPrincipalIsRefusedNotMintedUnbound(t *testing.T) {
 	reviewer := &fakeExecutionReviewer{
 		reviewed: reviewedPod(),
-		running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
+		running:  &testRunning{UID: "uid-alpha", Found: true},
 	}
-	service := boundService(reviewer, &fakeExecutionAuthority{err: ErrUnknownExecutionPrincipal})
+	service := boundService(reviewer)
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "stranger", "token")
 	require.ErrorIs(t, err, ErrUnknownExecutionPrincipal)
@@ -320,29 +198,16 @@ func TestNothingIsIssuedWhenTheApiIsUnavailable(t *testing.T) {
 
 	// Unreachable at the TokenReview.
 	service := boundService(
-		&fakeExecutionReviewer{reviewErr: unreachable},
-		&fakeExecutionAuthority{digest: approvedBare})
+		&fakeExecutionReviewer{reviewErr: unreachable})
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionUnbound)
-	require.NotErrorIs(t, err, ErrExecutionNotApproved)
 
 	// Unreachable at the pod read, after a successful review.
 	service = boundService(
-		&fakeExecutionReviewer{reviewed: reviewedPod(), runErr: unreachable},
-		&fakeExecutionAuthority{digest: approvedBare})
+		&fakeExecutionReviewer{reviewed: reviewedPod(), runErr: unreachable})
 	_, err = service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionUnbound)
 
-	// Unreadable authority document.
-	service = boundService(
-		&fakeExecutionReviewer{
-			reviewed: reviewedPod(),
-			running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
-		},
-		&fakeExecutionAuthority{err: unreachable})
-	_, err = service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
-	require.ErrorIs(t, err, ErrExecutionUnbound)
-	require.NotErrorIs(t, err, ErrExecutionNotApproved)
 }
 
 // A token the API server REVIEWED and refused — minted for another audience,
@@ -353,7 +218,7 @@ func TestARejectedTokenIsAVerdictNotAnOutage(t *testing.T) {
 	reviewer := &fakeExecutionReviewer{
 		reviewErr: fmt.Errorf("%w: token audiences [vault] do not include accounts", ErrExecutionTokenRejected),
 	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare})
+	service := boundService(reviewer)
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 
@@ -361,24 +226,6 @@ func TestARejectedTokenIsAVerdictNotAnOutage(t *testing.T) {
 	require.NotErrorIs(t, err, ErrExecutionUnbound)
 	require.Equal(t, executionTokenAudience, reviewer.askedAudience,
 		"the review must ask for this host's audience, so the API server refuses any other")
-}
-
-// The approval is looked up by the name the AUTHORITY DOCUMENT gives the
-// principal — its prefix — and never by this host's registry key. The registry
-// keys a principal by ModulePrincipalID(prefix), a UUID no document carries, so
-// asking the approved-build view for it found nothing for any module (#1056).
-func TestTheApprovalIsLookedUpByTheDocumentsNameForThePrincipal(t *testing.T) {
-	reviewer := &fakeExecutionReviewer{
-		reviewed: reviewedPod(),
-		running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
-	}
-	authority := &fakeExecutionAuthority{digest: approvedBare, incarnation: 2}
-	service := boundService(reviewer, authority)
-
-	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
-
-	require.NoError(t, err)
-	require.Equal(t, "worker", authority.asked, "the declared grant's prefix, as the authority document names it")
 }
 
 // A host with no reviewer wired cannot establish anything and says so, rather
@@ -389,21 +236,6 @@ func TestUnwiredHostCannotBindExecution(t *testing.T) {
 	require.ErrorIs(t, err, ErrExecutionUnbound)
 }
 
-// A container still pulling reports no imageID: nothing has been established, so
-// it is unbound rather than unapproved.
-func TestContainerWithNoImageIdIsUnboundNotUnapproved(t *testing.T) {
-	service := boundService(
-		&fakeExecutionReviewer{
-			reviewed: reviewedPod(),
-			running:  &testRunning{UID: "uid-alpha", ImageID: "", Found: true},
-		},
-		&fakeExecutionAuthority{digest: approvedBare})
-
-	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
-	require.ErrorIs(t, err, ErrExecutionUnbound)
-	require.NotErrorIs(t, err, ErrExecutionNotApproved)
-}
-
 // A missing container is a mismatch, not a non-match: the host established
 // nothing about what is running.
 func TestMissingContainerIsAMismatchNotANonMatch(t *testing.T) {
@@ -411,12 +243,10 @@ func TestMissingContainerIsAMismatchNotANonMatch(t *testing.T) {
 		&fakeExecutionReviewer{
 			reviewed: reviewedPod(),
 			running:  &testRunning{UID: "uid-alpha", Found: false},
-		},
-		&fakeExecutionAuthority{digest: approvedBare})
+		})
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionIdentityMismatch)
-	require.NotErrorIs(t, err, ErrExecutionNotApproved)
 }
 
 // No container named is refused rather than defaulting to the pod's first, and
@@ -437,10 +267,9 @@ func TestMissingContainerIsAMismatchNotANonMatch(t *testing.T) {
 func TestNoContainerDeclaredReadsNoPodAtAll(t *testing.T) {
 	reviewer := &fakeExecutionReviewer{
 		reviewed: reviewedPod(),
-		running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
+		running:  &testRunning{UID: "uid-alpha", Found: true},
 	}
-	service := boundServiceFor(reviewer, &fakeExecutionAuthority{digest: approvedBare},
-		ModuleWorkload{ServiceAccount: "worker", Namespace: "acme-prod"})
+	service := boundServiceFor(reviewer, ModuleWorkload{ServiceAccount: "worker", Namespace: "acme-prod"})
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrUnknownExecutionPrincipal)
@@ -452,137 +281,9 @@ func TestNoContainerDeclaredReadsNoPodAtAll(t *testing.T) {
 // Bearing no approved build: the third state
 // ---------------------------------------------------------------------------
 
-// A known principal bearing no approved build binds WITHOUT an execution, and
-// the pair stays whole-or-absent.
-//
-// Both fields absent together is what core's optional-and-paired seal requires:
-// a digest with no incarnation, or an incarnation with no digest, is refused by
-// its schema.
-// A principal the host knows but has approved no build for is REFUSED, and is
-// told apart from a principal the host has never heard of.
-//
-// This test asserted the opposite until the branch was deleted: it required
-// NoError and an empty Running digest, locking in "a capability may still be
-// minted, carrying NO execution". Nothing in production could reach that answer
-// — the only ExecutionAuthority never calls Declare() — so the permissive path
-// sat fully built and unit-tested, one Declare() call away from being live. The
-// test is ADAPTED rather than deleted, because the input it drives is still a
-// real answer from the authority and the question "what happens to it" still
-// needs one.
-func TestPrincipalBearingNoApprovedBuildIsRefusedNotMintedUnbound(t *testing.T) {
-	service := boundService(
-		&fakeExecutionReviewer{
-			reviewed: reviewedPod(),
-			running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
-		},
-		&fakeExecutionAuthority{err: ErrNoApprovedBuild})
-
-	identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
-	require.Error(t, err, "execution binding is unconditional: there is nothing to mint")
-	require.Nil(t, identity, "no identity is returned, so none can be sealed")
-	require.ErrorIs(t, err, ErrNoApprovedBuild,
-		"and NOT ErrUnknownExecutionPrincipal: declared-but-unapproved and never-heard-of are "+
-			"different operator problems, so the sentinels stay separate even though both refuse")
-	require.NotErrorIs(t, err, ErrUnknownExecutionPrincipal)
-}
-
-// THE INVARIANT, over every answer the authority can give: if BindExecution
-// returns an identity at all, that identity carries a running digest.
-//
-// Stated as a property rather than as another example, because the failure this
-// guards is someone re-introducing a "may act unbound" path — and a path like
-// that arrives with its own passing example test. What it cannot do is satisfy
-// this: a mintable identity with an empty Running digest fails here whatever
-// route produced it.
-//
-// Mutation-verified: making the ErrNoApprovedBuild case return
-// &ExecutionIdentity{...} with no Running digest (the code exactly as it was
-// before this fix) fails this test on that row, and returning one with a
-// Running digest copied from the pod's status fails the approved-digest
-// comparison instead. Removing the require.NotEmpty makes the whole test pass
-// against the old permissive branch, which is how I know the assertion is the
-// load-bearing line and not the table.
-func TestEveryBoundExecutionCarriesARunningDigest(t *testing.T) {
-	for _, answer := range []struct {
-		name      string
-		authority *fakeExecutionAuthority
-	}{
-		{"approved", &fakeExecutionAuthority{digest: approvedBare, incarnation: 3}},
-		{"known, no approved build", &fakeExecutionAuthority{err: ErrNoApprovedBuild}},
-		{"unknown principal", &fakeExecutionAuthority{err: ErrUnknownExecutionPrincipal}},
-		{"authority unreadable", &fakeExecutionAuthority{err: errors.New("authority is unreadable")}},
-	} {
-		t.Run(answer.name, func(t *testing.T) {
-			service := boundService(
-				&fakeExecutionReviewer{
-					reviewed: reviewedPod(),
-					running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
-				},
-				answer.authority)
-
-			identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
-			if err != nil {
-				require.Nil(t, identity,
-					"a refusal returns no identity, or a caller could seal the one it was handed anyway")
-				return
-			}
-			require.NotEmpty(t, identity.Running,
-				"a minted execution identity with no running digest is a capability no verifier can "+
-					"hold against a running image: execution binding is unconditional")
-		})
-	}
-}
-
 // ---------------------------------------------------------------------------
 // The digest comparison itself, where the subtle defeats live
 // ---------------------------------------------------------------------------
-
-// A tag is never an approval, however it is spelled.
-//
-// An approval is a statement about immutable content, and a tag is not one, so a
-// value with no digest must never match — including when both sides carry the
-// same tag, which a whole-string fallback would accept.
-func TestATagNeverMatches(t *testing.T) {
-	for _, pair := range []struct{ approved, running string }{
-		{"registry.example.com/acme/worker:v1", "registry.example.com/acme/worker:v1"},
-		{approvedBare, "registry.example.com/acme/worker:v1"},
-		{"registry.example.com/acme/worker:v1", approvedRef},
-		{"", approvedRef},
-		{approvedBare, ""},
-	} {
-		require.False(t, digestsEqual(pair.approved, pair.running),
-			"approved %q must not match running %q", pair.approved, pair.running)
-	}
-}
-
-// A suffix is not a match, which is the specific trap `strings.HasSuffix` sets:
-// an approved digest that is a suffix of a longer hex string would pass.
-func TestASuffixIsNotAMatch(t *testing.T) {
-	longer := "sha256:ff" + strings.TrimPrefix(approvedBare, "sha256:")
-	require.False(t, digestsEqual(approvedBare, "registry.example.com/acme/worker@"+longer),
-		"a digest that merely ENDS WITH the approved one is a different image")
-}
-
-// A shared prefix is not a match either: checking only that both start with
-// `sha256:` would let any repository satisfy an approval granted for one image.
-func TestASharedAlgorithmPrefixIsNotAMatch(t *testing.T) {
-	require.False(t, digestsEqual(approvedBare, otherRef))
-}
-
-// A non-hex or too-short value is not a digest, so it never matches — otherwise
-// any string containing a colon would pass as content-addressed.
-func TestANonDigestIsNotADigest(t *testing.T) {
-	for _, value := range []string{"sha256:short", "sha256:" + strings.Repeat("z", 64), "notadigest", "sha256:"} {
-		_, ok := digestPortion(value)
-		require.False(t, ok, "%q must not read as a digest", value)
-	}
-	// And the control: the real shapes DO read as digests, or the test above
-	// would pass against a function that rejects everything.
-	for _, value := range []string{approvedBare, approvedRef, pullableRef} {
-		_, ok := digestPortion(value)
-		require.True(t, ok, "%q must read as a digest", value)
-	}
-}
 
 // ---------------------------------------------------------------------------
 // The principal is a CLAIM, and the declared workload is what checks it
@@ -605,9 +306,9 @@ func TestACallerCannotNameAnotherPrincipalsPrefix(t *testing.T) {
 			PodName: "intruder-1", PodUID: "uid-intruder",
 			IssuedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute),
 		},
-		running: &testRunning{UID: "uid-intruder", ImageID: approvedRef, Found: true},
+		running: &testRunning{UID: "uid-intruder", Found: true},
 	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 7})
+	service := boundService(reviewer)
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionIdentityMismatch,
@@ -625,9 +326,9 @@ func TestACallerInAnotherNamespaceIsRefused(t *testing.T) {
 			PodName: "worker-7c9f", PodUID: "uid-alpha",
 			IssuedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute),
 		},
-		running: &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
+		running: &testRunning{UID: "uid-alpha", Found: true},
 	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 7})
+	service := boundService(reviewer)
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionIdentityMismatch)
@@ -641,14 +342,12 @@ func TestACallerInAnotherNamespaceIsRefused(t *testing.T) {
 func TestAnUndeclaredPrincipalIsUnknownRatherThanUnapproved(t *testing.T) {
 	reviewer := &fakeExecutionReviewer{
 		reviewed: reviewedPod(),
-		running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
+		running:  &testRunning{UID: "uid-alpha", Found: true},
 	}
-	service := boundService(reviewer, &fakeExecutionAuthority{digest: approvedBare, incarnation: 7})
+	service := boundService(reviewer)
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-unheard-of", "token")
 	require.ErrorIs(t, err, ErrUnknownExecutionPrincipal)
-	require.NotErrorIs(t, err, ErrNoApprovedBuild,
-		"an unknown principal must not read as one that bears no build, which would mint an unbound capability")
 }
 
 // A declaration missing any part of its workload is refused too, rather than
@@ -663,10 +362,9 @@ func TestAPartiallyDeclaredWorkloadAuthenticatesNobody(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			reviewer := &fakeExecutionReviewer{
 				reviewed: reviewedPod(),
-				running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
+				running:  &testRunning{UID: "uid-alpha", Found: true},
 			}
-			service := boundServiceFor(reviewer,
-				&fakeExecutionAuthority{digest: approvedBare, incarnation: 7}, workload)
+			service := boundServiceFor(reviewer, workload)
 
 			_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 			require.ErrorIs(t, err, ErrUnknownExecutionPrincipal)
@@ -675,25 +373,46 @@ func TestAPartiallyDeclaredWorkloadAuthenticatesNobody(t *testing.T) {
 }
 
 // THE CONTAINER COMES FROM THE DECLARATION, which is the last degree of freedom
-// the caller had over its own identity: a pod's containers do not all run the
-// same image, so naming a sibling picks which image the approval is tested
-// against. The pod's "worker" container runs the approved image; the principal
+// the caller had over its own identity. The pod holds "worker"; the principal
 // declares "declared-app", which the pod does not hold — so nothing binds, and
 // "worker" is not even tolerated beside it.
 func TestTheContainerReadIsTheDeclaredOneNotTheCallersChoice(t *testing.T) {
 	reviewer := &fakeExecutionReviewer{
 		reviewed: reviewedPod(),
-		running:  &testRunning{UID: "uid-alpha", ImageID: approvedRef, Found: true},
+		running:  &testRunning{UID: "uid-alpha", Found: true},
 	}
-	service := boundServiceFor(reviewer,
-		&fakeExecutionAuthority{digest: approvedBare, incarnation: 7},
-		ModuleWorkload{ServiceAccount: "worker", Namespace: "acme-prod", Container: "declared-app"})
+	service := boundServiceFor(reviewer, ModuleWorkload{ServiceAccount: "worker", Namespace: "acme-prod", Container: "declared-app"})
 
 	_, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.ErrorIs(t, err, ErrExecutionUnapprovedContainer,
-		"an approved image in a container the principal does not declare must not stand in for the declared one")
+		"a container the principal does not declare must not stand in for the declared one")
 
 	reviewer.container = "declared-app"
 	_, err = service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
 	require.NoError(t, err)
+}
+
+// NativeDevelopment identifies this in-memory cluster fixture; it models no mesh.
+func (*fakeExecutionReviewer) NativeDevelopment() bool { return true }
+
+// A principal runs as every workload its manifest lists: the same principal
+// binds from each of its services, and the container is the one declared for
+// the reviewed account.
+func TestEveryWorkloadOfTheManifestBindsItsPrincipal(t *testing.T) {
+	service := &Service{store: noopControlPlaneStore{}}
+	for _, account := range []string{"worker", "api"} {
+		reviewed := reviewedPod()
+		reviewed.ServiceAccount = account
+		reviewer := &fakeExecutionReviewer{reviewed: reviewed, running: &testRunning{UID: "uid-alpha", Found: true}, container: account}
+		service.SetExecutionBinding(reviewer)
+		service.SetModulePrincipals(ModulePrincipalRegistry{"principal-1": ModulePrincipalGrant{
+			Prefix: "worker", Tenant: "11111111-1111-4111-8111-111111111111", Workloads: []ModuleWorkload{
+				{ServiceAccount: "worker", Namespace: "acme-prod", Container: "worker"},
+				{ServiceAccount: "api", Namespace: "acme-prod", Container: "api"},
+			},
+		}})
+		identity, err := service.BindExecution(context.Background(), service.moduleRegistrySnapshot(), "principal-1", "token")
+		require.NoError(t, err, account)
+		require.Equal(t, account, identity.ContainerName)
+	}
 }

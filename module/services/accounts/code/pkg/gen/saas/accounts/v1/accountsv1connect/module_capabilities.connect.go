@@ -132,6 +132,9 @@ const (
 	// ModuleCapabilitiesServiceReplayEventsProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's ReplayEvents RPC.
 	ModuleCapabilitiesServiceReplayEventsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
+	// ModuleCapabilitiesServiceResolveWorkContextAuthorityProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's ResolveWorkContextAuthority RPC.
+	ModuleCapabilitiesServiceResolveWorkContextAuthorityProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority"
 )
 
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
@@ -258,6 +261,14 @@ type ModuleCapabilitiesServiceClient interface {
 	ListSubscriptions(context.Context, *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error)
 	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
 	ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error)
+	// ResolveWorkContextAuthority answers one live value a callee's verifier
+	// holds a capability's seal against: the installation it was sealed to and
+	// its revision, a principal's epoch, the build the issuer approves for a
+	// principal, an operation binding, the authorization revision a capability's
+	// owner carries, or an approval grant. It is the surface a composed module
+	// builds its seal, revision and grant sources on; see the block above
+	// ModuleResolveWorkContextAuthorityRequest for what a caller may ask.
+	ResolveWorkContextAuthority(context.Context, *connect.Request[v1.ModuleResolveWorkContextAuthorityRequest]) (*connect.Response[v1.ModuleResolveWorkContextAuthorityResponse], error)
 }
 
 // NewModuleCapabilitiesServiceClient constructs a client for the
@@ -463,6 +474,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ReplayEvents")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveWorkContextAuthority: connect.NewClient[v1.ModuleResolveWorkContextAuthorityRequest, v1.ModuleResolveWorkContextAuthorityResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceResolveWorkContextAuthorityProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ResolveWorkContextAuthority")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -500,6 +517,7 @@ type moduleCapabilitiesServiceClient struct {
 	unsubscribe                        *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
 	listSubscriptions                  *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
 	replayEvents                       *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
+	resolveWorkContextAuthority        *connect.Client[v1.ModuleResolveWorkContextAuthorityRequest, v1.ModuleResolveWorkContextAuthorityResponse]
 }
 
 // GetCurrentInstallation calls saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation.
@@ -673,6 +691,12 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req 
 	return c.replayEvents.CallUnary(ctx, req)
 }
 
+// ResolveWorkContextAuthority calls
+// saas.accounts.v1.ModuleCapabilitiesService.ResolveWorkContextAuthority.
+func (c *moduleCapabilitiesServiceClient) ResolveWorkContextAuthority(ctx context.Context, req *connect.Request[v1.ModuleResolveWorkContextAuthorityRequest]) (*connect.Response[v1.ModuleResolveWorkContextAuthorityResponse], error) {
+	return c.resolveWorkContextAuthority.CallUnary(ctx, req)
+}
+
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
@@ -797,6 +821,14 @@ type ModuleCapabilitiesServiceHandler interface {
 	ListSubscriptions(context.Context, *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error)
 	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
 	ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error)
+	// ResolveWorkContextAuthority answers one live value a callee's verifier
+	// holds a capability's seal against: the installation it was sealed to and
+	// its revision, a principal's epoch, the build the issuer approves for a
+	// principal, an operation binding, the authorization revision a capability's
+	// owner carries, or an approval grant. It is the surface a composed module
+	// builds its seal, revision and grant sources on; see the block above
+	// ModuleResolveWorkContextAuthorityRequest for what a caller may ask.
+	ResolveWorkContextAuthority(context.Context, *connect.Request[v1.ModuleResolveWorkContextAuthorityRequest]) (*connect.Response[v1.ModuleResolveWorkContextAuthorityResponse], error)
 }
 
 // NewModuleCapabilitiesServiceHandler builds an HTTP handler from the service implementation. It
@@ -998,6 +1030,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ReplayEvents")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceResolveWorkContextAuthorityHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceResolveWorkContextAuthorityProcedure,
+		svc.ResolveWorkContextAuthority,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ResolveWorkContextAuthority")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ModuleCapabilitiesServiceGetCurrentInstallationProcedure:
@@ -1064,6 +1102,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceListSubscriptionsHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceReplayEventsProcedure:
 			moduleCapabilitiesServiceReplayEventsHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceResolveWorkContextAuthorityProcedure:
+			moduleCapabilitiesServiceResolveWorkContextAuthorityHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1199,4 +1239,8 @@ func (UnimplementedModuleCapabilitiesServiceHandler) ListSubscriptions(context.C
 
 func (UnimplementedModuleCapabilitiesServiceHandler) ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ResolveWorkContextAuthority(context.Context, *connect.Request[v1.ModuleResolveWorkContextAuthorityRequest]) (*connect.Response[v1.ModuleResolveWorkContextAuthorityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ResolveWorkContextAuthority is not implemented"))
 }

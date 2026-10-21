@@ -58,6 +58,9 @@ const (
 	// DatasourceServiceAddSourceProcedure is the fully-qualified name of the DatasourceService's
 	// AddSource RPC.
 	DatasourceServiceAddSourceProcedure = "/saas.accounts.v1.DatasourceService/AddSource"
+	// DatasourceServiceUpdateSourceProcedure is the fully-qualified name of the DatasourceService's
+	// UpdateSource RPC.
+	DatasourceServiceUpdateSourceProcedure = "/saas.accounts.v1.DatasourceService/UpdateSource"
 	// DatasourceServiceGetDatasourceCatalogProcedure is the fully-qualified name of the
 	// DatasourceService's GetDatasourceCatalog RPC.
 	DatasourceServiceGetDatasourceCatalogProcedure = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
@@ -171,6 +174,12 @@ type DatasourceServiceClient interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error)
+	// UpdateSource changes what an already-connected source fetches — its branch
+	// and its path and file-type filters — keeping its identity, its credential,
+	// its sync history and the collection it writes into. A change that moves
+	// what is fetched enqueues a sync, whose progress reports the reconfigured
+	// trigger so a reader can tell a re-snapshot from an ordinary one.
+	UpdateSource(context.Context, *connect.Request[v1.UpdateSourceRequest]) (*connect.Response[v1.UpdateSourceResponse], error)
 	// GetDatasourceCatalog returns the host's connector registry: every provider,
 	// its connect metadata, whether it conforms to the datasource connector
 	// envelope, and whether it accepts a new source, so a client can render the
@@ -250,16 +259,28 @@ type DatasourceServiceClient interface {
 	// delegation to name, and nothing backfills one.
 	//
 	// It records nothing new about who may do what. For every module whose one
-	// operation binding declares source_delegation_scopes it revokes any active
-	// delegation of the source to that module as `replaced` and records a fresh
-	// one under the calling administrator — exactly what a reconnect does, and in
-	// one transaction, so a source never ends with two delegations or none.
+	// operation binding declares source_delegation_scopes and which holds NO
+	// active delegation of the source, it records one under the calling
+	// administrator, in one transaction.
+	//
+	// It is ADDITIVE. A module that already holds an active delegation is left
+	// exactly as it is: this used to revoke every one of them as `replaced` and
+	// re-record each under the caller, which took a personal source's delegation
+	// away from its owner and moved unrelated modules' authority onto the
+	// administrator. A personal source the caller does not own is refused
+	// (PERMISSION_DENIED), because the authority a reference borrows must be one
+	// that can perform the operation the trigger admits, and on such a source
+	// that is the owner's alone.
 	DelegateSourceTriggers(context.Context, *connect.Request[v1.DelegateSourceTriggersRequest]) (*connect.Response[v1.DelegateSourceTriggersResponse], error)
 	// GetSourceTriggerDeclaration reads the reconcile schedule this host declares
 	// for one source — the trigger a declared release carries — together with
 	// the identity its occurrences would run under and the children already
-	// minted against that identity. This host fires nothing on this schedule; the
-	// declaration is what an executing module admits occurrences from.
+	// minted against that identity. The declaration is what an executing module
+	// admits occurrences from.
+	//
+	// Reading it does not mean anything fires it. No composed runtime consumes
+	// the declaration yet, so this host still runs the reconcile schedule itself
+	// as an explicitly labelled stopgap, deleted when one does.
 	GetSourceTriggerDeclaration(context.Context, *connect.Request[v1.GetSourceTriggerDeclarationRequest]) (*connect.Response[v1.GetSourceTriggerDeclarationResponse], error)
 	// ReconcileSource performs one reconcile pass over a source: the host
 	// operation the declared schedule's occurrences admit, and the same work a
@@ -339,6 +360,12 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+DatasourceServiceAddSourceProcedure,
 			connect.WithSchema(datasourceServiceMethods.ByName("AddSource")),
+			connect.WithClientOptions(opts...),
+		),
+		updateSource: connect.NewClient[v1.UpdateSourceRequest, v1.UpdateSourceResponse](
+			httpClient,
+			baseURL+DatasourceServiceUpdateSourceProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("UpdateSource")),
 			connect.WithClientOptions(opts...),
 		),
 		getDatasourceCatalog: connect.NewClient[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse](
@@ -504,6 +531,7 @@ type datasourceServiceClient struct {
 	declareSourceOperations            *connect.Client[v1.DeclareSourceOperationsRequest, v1.DeclareSourceOperationsResponse]
 	addGitHubSource                    *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
 	addSource                          *connect.Client[v1.AddSourceRequest, v1.AddSourceResponse]
+	updateSource                       *connect.Client[v1.UpdateSourceRequest, v1.UpdateSourceResponse]
 	getDatasourceCatalog               *connect.Client[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse]
 	listSources                        *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
 	getSource                          *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
@@ -571,6 +599,11 @@ func (c *datasourceServiceClient) AddGitHubSource(ctx context.Context, req *conn
 // AddSource calls saas.accounts.v1.DatasourceService.AddSource.
 func (c *datasourceServiceClient) AddSource(ctx context.Context, req *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error) {
 	return c.addSource.CallUnary(ctx, req)
+}
+
+// UpdateSource calls saas.accounts.v1.DatasourceService.UpdateSource.
+func (c *datasourceServiceClient) UpdateSource(ctx context.Context, req *connect.Request[v1.UpdateSourceRequest]) (*connect.Response[v1.UpdateSourceResponse], error) {
+	return c.updateSource.CallUnary(ctx, req)
 }
 
 // GetDatasourceCatalog calls saas.accounts.v1.DatasourceService.GetDatasourceCatalog.
@@ -736,6 +769,12 @@ type DatasourceServiceHandler interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error)
+	// UpdateSource changes what an already-connected source fetches — its branch
+	// and its path and file-type filters — keeping its identity, its credential,
+	// its sync history and the collection it writes into. A change that moves
+	// what is fetched enqueues a sync, whose progress reports the reconfigured
+	// trigger so a reader can tell a re-snapshot from an ordinary one.
+	UpdateSource(context.Context, *connect.Request[v1.UpdateSourceRequest]) (*connect.Response[v1.UpdateSourceResponse], error)
 	// GetDatasourceCatalog returns the host's connector registry: every provider,
 	// its connect metadata, whether it conforms to the datasource connector
 	// envelope, and whether it accepts a new source, so a client can render the
@@ -815,16 +854,28 @@ type DatasourceServiceHandler interface {
 	// delegation to name, and nothing backfills one.
 	//
 	// It records nothing new about who may do what. For every module whose one
-	// operation binding declares source_delegation_scopes it revokes any active
-	// delegation of the source to that module as `replaced` and records a fresh
-	// one under the calling administrator — exactly what a reconnect does, and in
-	// one transaction, so a source never ends with two delegations or none.
+	// operation binding declares source_delegation_scopes and which holds NO
+	// active delegation of the source, it records one under the calling
+	// administrator, in one transaction.
+	//
+	// It is ADDITIVE. A module that already holds an active delegation is left
+	// exactly as it is: this used to revoke every one of them as `replaced` and
+	// re-record each under the caller, which took a personal source's delegation
+	// away from its owner and moved unrelated modules' authority onto the
+	// administrator. A personal source the caller does not own is refused
+	// (PERMISSION_DENIED), because the authority a reference borrows must be one
+	// that can perform the operation the trigger admits, and on such a source
+	// that is the owner's alone.
 	DelegateSourceTriggers(context.Context, *connect.Request[v1.DelegateSourceTriggersRequest]) (*connect.Response[v1.DelegateSourceTriggersResponse], error)
 	// GetSourceTriggerDeclaration reads the reconcile schedule this host declares
 	// for one source — the trigger a declared release carries — together with
 	// the identity its occurrences would run under and the children already
-	// minted against that identity. This host fires nothing on this schedule; the
-	// declaration is what an executing module admits occurrences from.
+	// minted against that identity. The declaration is what an executing module
+	// admits occurrences from.
+	//
+	// Reading it does not mean anything fires it. No composed runtime consumes
+	// the declaration yet, so this host still runs the reconcile schedule itself
+	// as an explicitly labelled stopgap, deleted when one does.
 	GetSourceTriggerDeclaration(context.Context, *connect.Request[v1.GetSourceTriggerDeclarationRequest]) (*connect.Response[v1.GetSourceTriggerDeclarationResponse], error)
 	// ReconcileSource performs one reconcile pass over a source: the host
 	// operation the declared schedule's occurrences admit, and the same work a
@@ -900,6 +951,12 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 		DatasourceServiceAddSourceProcedure,
 		svc.AddSource,
 		connect.WithSchema(datasourceServiceMethods.ByName("AddSource")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceUpdateSourceHandler := connect.NewUnaryHandler(
+		DatasourceServiceUpdateSourceProcedure,
+		svc.UpdateSource,
+		connect.WithSchema(datasourceServiceMethods.ByName("UpdateSource")),
 		connect.WithHandlerOptions(opts...),
 	)
 	datasourceServiceGetDatasourceCatalogHandler := connect.NewUnaryHandler(
@@ -1070,6 +1127,8 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 			datasourceServiceAddGitHubSourceHandler.ServeHTTP(w, r)
 		case DatasourceServiceAddSourceProcedure:
 			datasourceServiceAddSourceHandler.ServeHTTP(w, r)
+		case DatasourceServiceUpdateSourceProcedure:
+			datasourceServiceUpdateSourceHandler.ServeHTTP(w, r)
 		case DatasourceServiceGetDatasourceCatalogProcedure:
 			datasourceServiceGetDatasourceCatalogHandler.ServeHTTP(w, r)
 		case DatasourceServiceListSourcesProcedure:
@@ -1159,6 +1218,10 @@ func (UnimplementedDatasourceServiceHandler) AddGitHubSource(context.Context, *c
 
 func (UnimplementedDatasourceServiceHandler) AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.AddSource is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) UpdateSource(context.Context, *connect.Request[v1.UpdateSourceRequest]) (*connect.Response[v1.UpdateSourceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.UpdateSource is not implemented"))
 }
 
 func (UnimplementedDatasourceServiceHandler) GetDatasourceCatalog(context.Context, *connect.Request[v1.GetDatasourceCatalogRequest]) (*connect.Response[v1.GetDatasourceCatalogResponse], error) {

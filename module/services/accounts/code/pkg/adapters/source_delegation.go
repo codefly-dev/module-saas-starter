@@ -36,6 +36,10 @@ const (
 	// SourceDelegationInvalidReason: the delegation does not exist or belongs
 	// to another module.
 	SourceDelegationInvalidReason = "DELEGATION_INVALID"
+	// SourceDelegationUnavailableReason: the delegation's binding is not
+	// visible in the view this call resolved. Transient — the caller retries,
+	// and the delegation is untouched.
+	SourceDelegationUnavailableReason = "DELEGATION_UNAVAILABLE"
 )
 
 func sourceDelegationRefusal(code codes.Code, reason, message string) error {
@@ -69,7 +73,6 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	ctx = moduleMintWorkloadPeer(ctx)
 	authority, err := service.AuthorizeSourceOperationContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), business.SourceDelegationRef{
 		DelegationID: req.GetDelegationId(),
 		SourceID:     req.GetSourceId(),
@@ -117,6 +120,12 @@ func mapSourceDelegationError(err error) error {
 		return sourceDelegationRefusal(codes.PermissionDenied, SourceDelegationRevokedReason, "the source delegation is revoked")
 	case errors.Is(err, business.ErrSourceDelegationInvalid):
 		return sourceDelegationRefusal(codes.PermissionDenied, SourceDelegationInvalidReason, "the source delegation is not usable by this module")
+	case errors.Is(err, business.ErrSourceDelegationBindingUnavailable):
+		// Unavailable, not PermissionDenied: the caller should retry, and
+		// nothing about the person's grant has been decided. Reporting this as
+		// a denial is what made a transient condition look like a revocation.
+		return sourceDelegationRefusal(codes.Unavailable, SourceDelegationUnavailableReason,
+			"the delegation's binding is not available right now; the delegation is unchanged")
 	default:
 		return err
 	}
@@ -197,7 +206,6 @@ func (s *WorkContextAuthorityServer) startSourceOperation(
 			PrincipalKind:      business.PrincipalKindService,
 			DelegationID:       authority.Delegation.ID,
 			GrantedScopes:      actorScopes,
-			Execution:          attestedModuleExecution(authority.ModuleWorkContextAuthority),
 			OperationBindingID: authority.BindingID(),
 		}},
 		Replay: workcontext.ReplayIdempotent,

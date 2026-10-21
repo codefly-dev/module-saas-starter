@@ -35,7 +35,10 @@ already resolves one of three ways, none of which needs per-field redaction:
 - **Already a narrow message.** The broad-audience read returns a purpose-built
   type carrying only non-sensitive fields — `ListMembers`→`OrgMembership` and
   team `ListMembers`→`TeamMembership` (ids and role, **no email**),
-  `InspectInvitation`→`InvitationSummary` (deliberate `email_hint`),
+  `InspectInvitation`→`InvitationSummary` (deliberate `email_hint`; its `id`
+  names the invitation so a browser can return to it after a sign-in and
+  authorizes nothing on its own — the id credential is accepted only for a
+  signed-in caller whose primary email matches),
   `ListSubscriptions` (secret blanked), `GetOrgSettings` (branding only). This is
   the story's own preferred alternative — *split RPCs by visibility tier* — and
   it is already how the service is built.

@@ -262,7 +262,7 @@ func optionalFields(fields []PayloadField) []PayloadField {
 	return relaxed
 }
 
-// mintExecutionFields is the execution a module mint record names (#1056),
+// mintExecutionFields is the workload a module mint record names (#1056),
 // declared once so the mints that carry it cannot drift apart.
 func mintExecutionFields() []PayloadField {
 	return []PayloadField{
@@ -271,8 +271,6 @@ func mintExecutionFields() []PayloadField {
 		{Name: "pod", Kind: FieldString, Required: true},
 		{Name: "pod_uid", Kind: FieldString, Required: true},
 		{Name: "container", Kind: FieldString, Required: true},
-		{Name: "running_digest", Kind: FieldString, Required: true},
-		{Name: "build_incarnation", Kind: FieldInt, Required: true},
 	}
 }
 func enum(name string, values ...string) PayloadField {
@@ -418,6 +416,11 @@ const (
 	// revision names the whole ceiling at that point, and the row it points at
 	// is the record of what changed.
 	EventModuleEnvelopeWritten EventType = "saas.platform.module_envelope_written"
+	// EventModuleEnvelopeDelivered records that the composition's release
+	// pipeline delivered a revision of the module envelope, signed by a pinned
+	// release key. Its actor is the system: the signer, its ownership domain
+	// and the payload digest name who stated the ceiling.
+	EventModuleEnvelopeDelivered EventType = "saas.platform.module_envelope_delivered"
 
 	EventBillingCheckoutStarted EventType = "saas.billing.checkout_started"
 	EventBillingPortalOpened    EventType = "saas.billing.portal_opened"
@@ -470,6 +473,7 @@ const (
 	EventDatasourceSyncFailed           EventType = "saas.datasource.sync.failed"
 	EventDatasourceSourceSynced         EventType = "saas.datasource.source.synced"
 	EventDatasourceSourceRemoved        EventType = "saas.datasource.source.removed"
+	EventDatasourceSourceUpdated        EventType = "saas.datasource.source.updated"
 	EventDatasourceChangeSetCompiled    EventType = "saas.datasource.change_set_compiled"
 	EventDatasourceForcePushReconciled  EventType = "saas.datasource.force_push_reconciled"
 	EventDatasourceBranchDeleted        EventType = "saas.datasource.branch_deleted"
@@ -706,6 +710,13 @@ var auditEventCatalog = []AuditEventDefinition{
 		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "principals", Kind: FieldInt, Required: true}),
+	mutation(EventModuleEnvelopeDelivered, CategorySecurity, "A release-signed revision of the module envelope was delivered.",
+		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
+		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},
+		PayloadField{Name: "principals", Kind: FieldInt, Required: true},
+		PayloadField{Name: "signer", Kind: FieldString, Required: true},
+		PayloadField{Name: "ownership_domain", Kind: FieldString, Required: true},
+		PayloadField{Name: "digest", Kind: FieldString, Required: true}),
 	// The operator's justification is part of the record, not an optional
 	// enrichment: who and whom are already implied by the actor/resource pair,
 	// and why is the only thing this event can carry that the pair cannot.
@@ -823,6 +834,20 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed.",
 		enum("provider", DatasourceProviderGitHub, DatasourceProviderAPI, DatasourceProviderCrawler, DatasourceProviderUpload),
 		str("repo"), str("boundary")), 2),
+	// What a source fetches is what a consumer's collection holds, so the trail
+	// records both sides of the move: the branch it was on and the branch it is
+	// on now, with the filters as they stand. `previous_branch` is empty when
+	// the branch did not change, which is how the trail distinguishes a
+	// re-aimed source from one whose filters were narrowed in place.
+	//
+	// `boundary` is the collection the source feeds, spelled as on the document
+	// and source-removed events so one payload filter reads all three — and so
+	// the collection grant covers this event, which isCollectionBoundaryEvent
+	// reads this declaration for. An edit never moves the boundary, but it is
+	// the collection whose contents the next snapshot replaces, so whoever may
+	// read that collection is exactly who needs to see it.
+	mutation(EventDatasourceSourceUpdated, CategorySystem, "A connected datasource's branch or path filters were changed.",
+		str("repo"), str("branch"), str("previous_branch"), strs("paths"), strs("file_extensions"), str("boundary")),
 	observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...),
 	observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...),
 	observation(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",

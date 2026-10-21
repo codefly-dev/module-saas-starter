@@ -2,10 +2,12 @@ package business
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 )
 
 // Reconciling an admitted generation into the durable registry (issue #952).
@@ -27,7 +29,10 @@ func (s *Service) ListSolutionHostBindings(ctx context.Context) ([]*SolutionHost
 	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
 		records, err = s.store.ListSolutionHostBindings(ctx)
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list solution host bindings: %w", err)
@@ -42,9 +47,18 @@ func (s *Service) ListSolutionHostBindings(ctx context.Context) ([]*SolutionHost
 // generation it had applied, which is the whole point of preparing before
 // activating: the last generation that passed every check goes on serving, and
 // what delivery wants plus the reason it was refused sit beside it.
+//
+// TWO KINDS OF REASON reach the row and they are not interchangeable.
+// withheldReason is this generation's ADMISSION verdict: it refused the
+// generation, so it is the pending state AND a refusal in the generation trail.
+// authorityReason is the module registry's: the generation was applied and the
+// envelope withheld a binding its manifest asked for, so it is the pending
+// state — the row an operator reads for this module's health — and never a
+// trail row, because the generation was not refused and a status word claims
+// one thing.
 func (s *Service) recordSolutionHostBindingDesired(
-	ctx context.Context, document *solutionhost.SolutionHostBinding,
-	withheldReason string, settled bool, now time.Time,
+	ctx context.Context, document *solutionhost.ModuleManifest,
+	withheldReason, authorityReason string, settled bool, now time.Time,
 ) error {
 	digest, err := document.Digest()
 	if err != nil {
@@ -69,7 +83,6 @@ func (s *Service) recordSolutionHostBindingDesired(
 			record = &SolutionHostBindingRecord{BindingID: document.Binding}
 		}
 		record.HostCoordinate = document.Host.Coordinate
-		record.HostComponent = document.Host.Component
 		record.Desired = &desired
 		// A withheld document's reason is recorded here. An admitted one's is
 		// NOT cleared here unless the generation is already applied (settled):
@@ -77,8 +90,12 @@ func (s *Service) recordSolutionHostBindingDesired(
 		// it first would reset pending_since on every pass — so a refusal stuck
 		// for a day would read as one that started seconds ago, which is the
 		// opposite of what this field is for.
-		if withheldReason != "" || settled {
-			applyPendingReason(record, withheldReason, now)
+		pending := withheldReason
+		if pending == "" {
+			pending = authorityReason
+		}
+		if pending != "" || settled {
+			applyPendingReason(record, pending, now)
 		}
 		record.UpdatedAt = now
 		if err := s.store.SaveSolutionHostBinding(ctx, record); err != nil {
@@ -173,13 +190,12 @@ func pendingSince(record *SolutionHostBindingRecord, now time.Time) *time.Time {
 // generation in between. core answers DecisionCurrent for that, which is not an
 // error and writes nothing — only a rewrite of an applied generation is.
 func (s *Service) applySolutionHostBinding(
-	ctx context.Context, delivered *solutionhost.Delivered,
-	coordinate string, domains []string, domainsBySigner map[string][]string, now time.Time,
+	ctx context.Context, delivered *solutionhost.Delivered, coordinate string, now time.Time,
 ) error {
 	// Re-derived here rather than taken from the pass: apply owns its own
 	// read of the attested bytes, so there is no second value a caller could
 	// have adjusted between admission and the write.
-	document, err := delivered.Document()
+	document, err := delivered.Manifest()
 	if err != nil {
 		return err
 	}
@@ -198,6 +214,18 @@ func (s *Service) applySolutionHostBinding(
 	if !document.Removed {
 		if solutionID, err = solutionHostBindingRegistryKey(document); err != nil {
 			return err
+		}
+	}
+	// Complete preparation precedes database locks. A slow or corrupt source
+	// never withdraws the previous generation or holds its installation locks.
+	var prepared *frontendpayload.Bundle
+	if !document.Removed && document.Frontend != nil {
+		if document.Frontend.Payload == nil {
+			return fmt.Errorf("%w: frontend declares no signed payload", ErrSolutionFrontendNotPrepared)
+		}
+		prepared, err = frontendpayload.Prepare(ctx, s.frontendSource, document.Frontend)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrSolutionFrontendNotPrepared, err)
 		}
 	}
 
@@ -224,31 +252,24 @@ func (s *Service) applySolutionHostBinding(
 		if record == nil {
 			record = &SolutionHostBindingRecord{BindingID: document.Binding}
 		}
-		// core judges this one document against this one binding's applied
-		// state. The set-wide rules — alias collisions, a binding declared
-		// twice — were settled by the pass, and the partial unique index on the
-		// registry key is the durable backstop for two replicas racing.
-		host := solutionhost.Host{
-			Coordinate:      coordinate,
-			Domains:         domains,
-			DomainsBySigner: domainsBySigner,
-			Reserved:        []string{SolutionHostReservedRouteNamespace},
-		}
-		if state, ok := record.AppliedState(); ok {
-			host.Applied = []solutionhost.Applied{state}
-		}
-		// The VERIFIED value, not the document read out of it. core's Admit
-		// takes *Delivered precisely so a second judgement cannot be made on
-		// bytes whose attestation was checked once and then dropped on the way
-		// here.
-		admissions, err := host.Admit(delivered)
+		// core judges this manifest against this binding's LOCKED applied
+		// record. The alias rule was settled by the pass, and the partial unique
+		// index on the registry key is the durable backstop for two replicas
+		// racing.
+		applied, err := record.AppliedManifest()
 		if err != nil {
-			// One document, so core's set-level error and this document's own
-			// refusal are the same thing; returning it is what leaves the
-			// running generation untouched.
 			return err
 		}
-		if admissions[0].Decision == solutionhost.DecisionCurrent {
+		decision, err := solutionhost.Admit(coordinate, applied, document)
+		if err == nil {
+			err = record.checkOwnershipDomain(document)
+		}
+		if err != nil {
+			// Returning the refusal is what leaves the running generation
+			// untouched.
+			return err
+		}
+		if decision == solutionhost.DecisionReplay {
 			// Another replica applied it, or this pass raced its own previous
 			// one. Nothing to do, and deliberately not an error — but it is
 			// recorded, because "delivery kept saying the same thing" and
@@ -263,6 +284,12 @@ func (s *Service) applySolutionHostBinding(
 				Release:    document.Release.Identity(),
 				DecidedAt:  now,
 			})
+		}
+
+		// Bind the preparation result to the same signed payload re-admitted
+		// under this lock. A delivery cannot assert its own readiness.
+		if !document.Removed && document.Frontend != nil && document.Frontend.Payload != nil && !prepared.Matches(document.Frontend) {
+			return ErrSolutionFrontendNotPrepared
 		}
 
 		// The registry revision this apply produced. It is recorded on the
@@ -305,7 +332,6 @@ func (s *Service) applySolutionHostBinding(
 		}
 
 		record.HostCoordinate = document.Host.Coordinate
-		record.HostComponent = document.Host.Component
 		generation := SolutionHostBindingGeneration{
 			Generation: document.Generation,
 			Digest:     digest,
@@ -313,30 +339,19 @@ func (s *Service) applySolutionHostBinding(
 			At:         now,
 		}
 		record.Desired = &generation
-		// The half core owns is built by core. AppliedFrom is defined as "the
-		// record a host persists after applying a document", so deriving those
-		// fields here would be a second copy of its rules — and the copy is what
-		// drifts: presence v2 made the ownership domain a required part of this
-		// record, and a host that assembled it by hand fed core an applied state
-		// with no domain, which core refuses. The symptom was not a widened
-		// check. It was a reconciler that applied its first generation and then
-		// refused the WHOLE set on every pass afterwards, because one unusable
-		// applied record makes the set unjudgeable.
-		//
-		// Reading it from core instead means the next required field is a
-		// compile error or a loud refusal here, not a silent omission.
-		owned, err := solutionhost.AppliedFrom(document)
-		if err != nil {
-			return fmt.Errorf("build applied record for binding %q: %w", document.Binding, err)
+		var routes []string
+		if !document.Removed {
+			routes = []string{document.Alias}
 		}
 		record.Applied = &SolutionHostBindingApplied{
 			SolutionHostBindingGeneration: generation,
-			Removed:                       owned.Removed,
-			Routes:                        owned.Routes,
-			Domain:                        owned.Domain,
-			// Release is the host's own column: core's Applied does not carry it.
-			// It identifies the release whose presence this generation declares.
-			Release: document.Release.Identity(),
+			Removed:                       document.Removed,
+			Routes:                        routes,
+			Domain:                        document.Host.Domain,
+			Release:                       document.Release.Identity(),
+		}
+		if record.Domain == "" {
+			record.Domain = document.Host.Domain
 		}
 		if document.Removed {
 			// A tombstone keeps the key it withdrew, so the removal stays
@@ -436,7 +451,7 @@ func (s *Service) liveSolutionTargetForBinding(ctx context.Context, bindingID st
 // declareSolutionRegistration records the binding and immutable target that own
 // this alias. Only observations for that same declared target may survive.
 func (s *Service) declareSolutionRegistration(
-	ctx context.Context, document *solutionhost.SolutionHostBinding, solutionID, targetID string, now time.Time,
+	ctx context.Context, document *solutionhost.ModuleManifest, solutionID, targetID string, now time.Time,
 ) (int64, error) {
 	current, err := s.store.GetSolutionRegistrationForUpdate(ctx, solutionID)
 	if err != nil {
@@ -483,9 +498,25 @@ func (s *Service) declareSolutionRegistration(
 	}
 	if current != nil && current.Declared != nil && current.Declared.TargetID == targetID {
 		next.Publisher = current.Publisher
-		// A tombstone cleared the halves; a live record keeps the ones it has.
-		next.Frontend = current.Frontend
-		next.Backend = current.Backend
+	}
+	// Grouping belongs to this applied solution generation, independently of
+	// whether it has a page. Omitting it clears the old presentation without
+	// changing the installation target or any authority record. Core admission
+	// bounds order to int32 and refuses groups on modules and tombstones.
+	if document.Group != nil && kind == SolutionDeclaredKindSolution {
+		next.Group = &SolutionGroup{
+			ID: document.Group.ID, Title: document.Group.Title, Order: int32(document.Group.Order),
+		}
+	}
+	// The frontend half is THIS generation's `frontend` block and nothing
+	// older: a generation that drops the block takes the page with it, and
+	// nothing a running process reports can put one back.
+	if document.Frontend != nil {
+		block, err := json.Marshal(document.Frontend)
+		if err != nil {
+			return 0, fmt.Errorf("binding %q: cannot encode its frontend block: %w", document.Binding, err)
+		}
+		next.Frontend = &SolutionFrontendHalf{Revision: revision, Manifest: string(block)}
 	}
 	if err := s.store.SaveSolutionRegistration(ctx, next); err != nil {
 		return 0, err
@@ -507,7 +538,7 @@ func (s *Service) declareSolutionRegistration(
 // generation actually became.
 func (s *Service) withdrawDeclaredSolutionRegistration(
 	ctx context.Context, record *SolutionHostBindingRecord,
-	document *solutionhost.SolutionHostBinding, closedTargetID string, now time.Time,
+	document *solutionhost.ModuleManifest, closedTargetID string, now time.Time,
 ) (int64, error) {
 	if record.Applied == nil || record.Applied.SolutionID == "" {
 		// A removal for a binding this host never applied. The generation is
@@ -639,7 +670,7 @@ func solutionHostBindingResource(record *SolutionHostBindingRecord) string {
 // and performing that with nothing appended is the unwitnessed narrowing the
 // protocol forbids outright.
 func (s *Service) reconcileSolutionTarget(
-	ctx context.Context, document *solutionhost.SolutionHostBinding,
+	ctx context.Context, document *solutionhost.ModuleManifest,
 	solutionID, witnessedTargetClose string, now time.Time,
 ) (string, error) {
 	live, err := s.store.GetLiveSolutionTargetForUpdate(ctx, document.Binding)

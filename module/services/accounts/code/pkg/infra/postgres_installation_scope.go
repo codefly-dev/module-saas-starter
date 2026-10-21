@@ -56,7 +56,7 @@ func (s *PostgresStore) NarrowInstallationScope(ctx context.Context, orgID, id s
 		return err
 	}
 	grant, found := registry[principal]
-	if !found || grant.PresenceBinding != binding || !business.InstallationScopeWithin(scope, business.FullInstallationScope(grant)) || !business.InstallationScopeWithin(scope, old) {
+	if !found || grant.PresenceBinding != binding || !business.InstallationScopeWithin(scope, business.FullInstallationScope(grant)) || !business.InstallationScopeWithin(scope, business.ResolveInstallationScope(old, business.FullInstallationScope(grant))) {
 		return business.NewStoreError(fmt.Errorf("scope must narrow this installation within the current ceiling"), business.ErrTypeValidation)
 	}
 	encoded, err := json.Marshal(scope)

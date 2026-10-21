@@ -57,10 +57,13 @@ import { declaredIdentity, Fact, instant } from "./source-trigger-schedules";
  * the same host operation a declared schedule's occurrence admits, with an
  * effect identity this press chose.
  *
- * What the playground cannot show is a schedule firing, and that is the honest
- * state of the contract rather than a gap in the page: the clock belongs to the
- * module that executes declared work, and nothing in this repository
- * composes one.
+ * What the playground cannot show is a DECLARED schedule firing, and that is
+ * the honest state of the contract rather than a gap in the page: the clock
+ * belongs to the module that executes declared work, and nothing in this
+ * repository composes one. Because nothing does, this host fires the reconcile
+ * schedule itself as a labelled stopgap (issue #1112) — so a source does
+ * refresh on its interval, just not through the declaration this page shows.
+ * The schedules panel says which is which.
  */
 export function UnattendedWorkPlayground() {
 	const { organizationId: orgId = "" } = useAuth();
@@ -126,8 +129,14 @@ export function UnattendedWorkPlayground() {
 							<CardTitle>The source a release&apos;s triggers name</CardTitle>
 							<CardDescription>
 								A trigger names a reference, and the reference is the source.
-								The host resolves the live delegation from it on every mint, so
-								a reconnect does not invalidate what an operator installed.
+								The host resolves whichever module&apos;s live delegation is
+								active on it at every mint. That also means revoking one does
+								not stop an installed trigger for good: a reconnect records a
+								new delegation and the same reference resolves again, so a
+								revocation must be followed by not reconnecting, or by removing
+								the trigger. A reference that revocation ends permanently needs
+								an opaque, delegation-level reference the firing module can
+								name.
 							</CardDescription>
 						</CardHeader>
 						<CardContent>
@@ -188,7 +197,8 @@ function TriggerIdentityPanel({
 					<CardTitle>The declared trigger</CardTitle>
 					<CardDescription>
 						The source&apos;s reconcile interval is the configuration; this is
-						the trigger it declares. This host fires nothing on it.
+						the trigger it declares. Nothing fires this declaration yet, so the
+						host still runs the schedule itself as a stopgap.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-2 text-sm">

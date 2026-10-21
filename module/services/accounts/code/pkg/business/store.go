@@ -105,6 +105,17 @@ type Store interface {
 	//     Call it at the top level only — nesting it inside an existing
 	//     WithOrgTx/WithControlPlane violates the no-nesting rule.
 	InsertDatasourceSource(ctx context.Context, source *DatasourceSource) error
+	// UpdateDatasourceSourceFetchScope replaces what a Source fetches — branch,
+	// paths and the config envelope carrying its file-type filter — and nothing
+	// else. Reports ErrDatasourceSourceNotFound when no row matched, so a source
+	// deleted since the caller read it cannot be answered as a successful edit.
+	// MUST run inside the caller's WithOrgTx.
+	UpdateDatasourceSourceFetchScope(ctx context.Context, source *DatasourceSource) error
+	// LockDatasourceSourceFetchScope reads one Source under a row lock, or
+	// (nil, nil) when none matches, so an edit compares the scope it expects
+	// against the row as it is at the moment it writes. MUST run inside the
+	// caller's WithOrgTx.
+	LockDatasourceSourceFetchScope(ctx context.Context, orgID, id string) (*DatasourceSource, error)
 	WithSourceReadSnapshot(context.Context, string, func(context.Context) error) error
 	SourceReadRevision(context.Context, string, []string) (string, time.Time, error)
 	ListReadableSourcesPage(context.Context, string, []string, []string, string, int) ([]*gen.ReadableSourceCollection, error)
@@ -145,12 +156,18 @@ type Store interface {
 	// ordinal. Strictly increasing is the guarantee, not density: a gap is expected
 	// and is not a dropped payload.
 	AllocateDatasourceOrdinal(ctx context.Context, sourceID string) (int64, error)
+	// ListDatasourceSourcesDueForReconcile returns active sources whose
+	// next_reconcile_at has elapsed, for the host's reconcile sweep.
+	// Control-plane.
+	//
+	// STOPGAP (issue #1112): read only by Service.RunDatasourceReconcile, and
+	// deleted with it. See that function for the condition.
+	ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*DatasourceSource, error)
 	// BumpDatasourceReconcile moves the source's next-reconcile instant out by
-	// its interval without touching the cursor. There is no due query beside
-	// it and no sweep that would read one: the instant's PRESENCE is what the
-	// park and restore paths read as "this source is on its declared
-	// schedule", and one reconcile pass moves it so it does not drift
-	// arbitrarily far into the past. Control-plane.
+	// its interval without touching the cursor. The instant's PRESENCE is what
+	// the park and restore paths read as "this source is on its declared
+	// schedule", and both a reconcile pass and the stopgap sweep move it so it
+	// does not drift arbitrarily far into the past. Control-plane.
 	BumpDatasourceReconcile(ctx context.Context, sourceID string) error
 	// MarkDatasourceSourceDegraded parks a source the compiler cannot make
 	// progress on (an oversized snapshot manifest), recording the reason and

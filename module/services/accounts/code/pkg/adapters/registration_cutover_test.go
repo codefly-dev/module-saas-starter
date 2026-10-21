@@ -44,13 +44,23 @@ func TestDeletedRegistrationRPCsAreUnimplemented(t *testing.T) {
 
 func TestRegistrationDescriptorHasNoRuntimeWritersOrLease(t *testing.T) {
 	registry := gen.File_saas_accounts_v1_solution_registry_proto
-	for _, name := range []string{"SolutionFrontendBinding", "SolutionBackendBinding"} {
-		descriptor := registry.Messages().ByName(protoreflect.Name(name))
-		require.NotNil(t, descriptor)
-		require.Nil(t, descriptor.Fields().ByName("lease_expires_at"))
-	}
+	frontend := registry.Messages().ByName("SolutionFrontendBinding")
+	require.NotNil(t, frontend)
+	require.Nil(t, frontend.Fields().ByName("lease_expires_at"))
+	// Nothing a running process reports is on the wire (#1118): the reported
+	// backend half is deleted as a message, the record carries no `backend`,
+	// and the version two reported halves were compared on is gone with them.
+	require.Nil(t, frontend.Fields().ByName("contract_version"))
+	require.Nil(t, registry.Messages().ByName("SolutionBackendBinding"))
+	require.Nil(t, registry.Messages().ByName("SolutionRegistration").Fields().ByName("backend"))
 	for _, name := range []string{"PutSolutionRegistrationRequest", "DeleteSolutionRegistrationRequest"} {
 		require.Nil(t, registry.Messages().ByName(protoreflect.Name(name)))
 	}
-	require.Nil(t, registry.Enums().ByName("SolutionRegistrationStatus").Values().ByName("SOLUTION_REGISTRATION_STATUS_EXPIRED"))
+	status := registry.Enums().ByName("SolutionRegistrationStatus").Values()
+	require.Nil(t, status.ByName("SOLUTION_REGISTRATION_STATUS_EXPIRED"))
+	require.Nil(t, status.ByName("SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE"))
+	mint := gen.File_saas_accounts_v1_module_registration_proto.Messages().ByName("ModuleMintWorkContextRequest")
+	require.NotNil(t, mint)
+	require.Nil(t, mint.Fields().ByName("upstream"), "a mint reports no origin")
+	require.Nil(t, mint.Fields().ByName("manifest"), "a mint reports no manifest")
 }

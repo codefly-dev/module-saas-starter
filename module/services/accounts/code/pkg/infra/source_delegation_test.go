@@ -38,20 +38,20 @@ const (
 	runtimeModuleToken    = "projected.runtime"
 )
 
-// bindDelegationModules runs one pod per module that mints here, each on its
-// approved build, and binds svc's mints to that cluster.
+// bindDelegationModules runs one pod per module that mints here, each as its
+// declared workload, and binds svc's mints to that cluster.
 func bindDelegationModules(svc *business.Service, registry business.ModulePrincipalRegistry) {
 	cluster := executiontest.New()
-	svc.SetExecutionBinding(cluster, cluster)
+	svc.SetExecutionBinding(cluster)
 	for prefix, token := range map[string]string{delegationModule: delegationModuleToken, otherModule: otherModuleToken, runtimeModule: runtimeModuleToken} {
 		grant, declared := registry[business.ModulePrincipalID(prefix)]
 		if !declared {
 			continue
 		}
-		cluster.Approve(prefix, executiontest.Digest(prefix), 1)
+		workload := grant.Workloads[0]
 		cluster.RunWithToken(token, executiontest.Workload{
-			Namespace: grant.Workload.Namespace, ServiceAccount: grant.Workload.ServiceAccount, Container: grant.Workload.Container,
-		}, executiontest.Image(prefix))
+			Namespace: workload.Namespace, ServiceAccount: workload.ServiceAccount, Container: workload.Container,
+		})
 	}
 }
 
@@ -584,20 +584,36 @@ func TestSourceDelegation_MissingForASourceConnectedBefore(t *testing.T) {
 
 // A binding whose delegation scopes change after the connect no longer confers
 // what the person delegated; the mint refuses and records why.
-func TestSourceDelegation_BindingChanged(t *testing.T) {
+// A binding that NARROWS what the person delegated is honoured, at the
+// narrower set. The fixture delegates `collections:[read,write]`; the module
+// now asks for `collections:[read]`. Until consent was recorded beside the
+// digest, any digest change revoked the delegation — this exact case included,
+// and this test required it to: a module asking for LESS re-authorized every
+// person who had ever connected a source, and the only remedy the product
+// offers is a reconnect. Consent is about MORE, never less.
+func TestSourceDelegation_BindingNarrowedIsHonouredAtTheNarrowerSet(t *testing.T) {
 	w := newDelegationWorld(t)
 	sourceID := w.connect(t, w.org, w.admin)
 
-	widened, err := moduleregistrytest.Parse(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"","operation_audiences":{` +
+	narrowed, err := moduleregistrytest.Parse(`{"` + delegationModule + `":{"workload":{"service_account":"module","namespace":"acme-prod","container":"app"},"tenant":"","operation_audiences":{` +
 		`"` + delegationBinding + `":{"audience":"` + runtimeModule + `",` +
 		`"invoke_scopes":[{"resource_kind":"collections","actions":["read","write"]}],` +
 		`"lookup_scopes":[{"resource_kind":"collections","actions":["read"]}],` +
 		`"source_delegation_scopes":[{"resource_kind":"collections","actions":["read"]}]}}}}`)
 	require.NoError(t, err)
-	_, err = w.service(t, widened).AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, business.SourceDelegationRef{SourceID: sourceID})
-	require.ErrorIs(t, err, business.ErrSourceDelegationRevoked)
-	require.Equal(t, business.SourceDelegationBindingChanged, w.only(t, w.org, sourceID, delegationModule).RevokedReason)
+	authority, err := w.service(t, narrowed).AuthorizeSourceOperationContext(testCtx, delegationModule, delegationModuleToken, business.SourceDelegationRef{SourceID: sourceID})
+	require.NoError(t, err, "a narrowing never needs consent: it is strictly less authority")
+	require.True(t, w.only(t, w.org, sourceID, delegationModule).Active(), "the delegation stands")
+	require.Len(t, authority.Scopes, 1)
+	require.Equal(t, "collections", authority.Scopes[0].ResourceKind)
+	require.Equal(t, []string{"read"}, authority.Scopes[0].Actions, "minted at the LIVE, narrower binding — never more than the person agreed to, never less than the module still asks for")
 }
+
+// A WIDENING past what the person delegated revokes — but it cannot be shown
+// here: this world's installation consent caps the live grant at what was
+// installed, so a registry that asks for more never reaches the delegation
+// check with more. Both directions are proven on the decision itself in
+// business (TestABindingNarrowingIsHonouredAndAWideningRevokes).
 
 // publicDelegationGitHub serves every repository to a request with no credential.
 type publicDelegationGitHub struct{ delegationGitHub }
@@ -673,4 +689,123 @@ func TestSourceDelegation_DedicatedTenantCannotBorrowInstallation(t *testing.T) 
 	require.NotEmpty(t, authority.InstallationID)
 	require.Equal(t, uint64(1), authority.InstallationRevision)
 	require.Equal(t, w.org, authority.Tenant)
+}
+
+// A MODULE EXERCISING ITS OWN INSTALLED BINDING IS NOT A SOURCE DELEGATION.
+// Its context has the same subjects — a person owns it, a declared module
+// principal actors it — and the shape test alone claimed it, then refused it
+// because the binding it sealed is its own and not a delegation's. On a cell
+// that denied the runtime's every call to an owner it executes an operation
+// for ("the caller's authorization was revoked after the Work Context was
+// minted"), with no delegation involved anywhere. The checker must decline
+// such a context so the ordinary module-operation checks run on it.
+//
+// It may decline it while any delegation between that person and that module
+// still stands — a module holds both a delegation for a person's source and
+// its own binding for the operations it runs for that person, and refusing
+// that pair would deny exactly the calls the decline exists for. Once the
+// delegation is REVOKED it may not: the module-hop check the context would
+// reach confirms a subset of the very binding whose invoke scopes the
+// delegation's hop was built from, so it cannot fail, and the revoked
+// delegation would stay usable to any caller willing to name a different
+// binding.
+func TestSourceDelegation_AModulesOwnBindingIsNotThisCheckersContext(t *testing.T) {
+	w := newDelegationWorld(t)
+	sourceID := w.connect(t, w.org, w.admin)
+	delegation := w.only(t, w.org, sourceID, delegationModule)
+	authority, err := w.mint(business.SourceDelegationRef{DelegationID: delegation.ID})
+	require.NoError(t, err)
+	require.NoError(t, w.svc.RecordSourceOperationContextMint(testCtx, authority.SourceOperationContextAuthority))
+
+	t.Run("a delegation's own binding is still claimed and confirmed", func(t *testing.T) {
+		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
+			authority.OwnerPrincipalID, authority.Revision, subjects(authority), authority.BindingID())
+		require.True(t, handled)
+		require.NoError(t, err)
+	})
+
+	// A module holds BOTH a delegation for a person's source and its own
+	// installed binding for the operations it runs for that same person, so
+	// an active delegation must not make the second kind of context refusable:
+	// that is the traffic the decline exists for.
+	t.Run("another operation's binding is declined while the delegation stands", func(t *testing.T) {
+		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
+			authority.OwnerPrincipalID, authority.Revision, subjects(authority), "runtime-admission")
+		require.False(t, handled, "a module's own installed binding belongs to the module-operation checks")
+		require.NoError(t, err)
+	})
+
+	// Naming no binding is declined here for the same reason, and a request
+	// that states neither a binding nor seals_no_binding never reaches a
+	// resolver: it is malformed
+	// (TestCheckAuthorizationRevisionFollowsTheSourceDelegation, "refuses as
+	// malformed without the binding the context sealed"). That is what keeps
+	// a consumer who simply forgot from having a narrowed delegation confirmed
+	// against its module's broader installation.
+	t.Run("naming no binding is declined here, and refused as malformed at the request", func(t *testing.T) {
+		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
+			authority.OwnerPrincipalID, authority.Revision, subjects(authority), "")
+		require.False(t, handled)
+		require.NoError(t, err)
+	})
+
+	// Once the delegation is REVOKED, declining would admit something: the
+	// module-hop check confirms a subset of the very binding whose invoke
+	// scopes the delegation's hop was built from, so it passes by
+	// construction, and the revoked delegation would stay usable to any caller
+	// willing to name a different binding. After revocation every context of
+	// this pair that does not name a delegation is refused.
+	t.Run("a revoked delegation cannot be used by naming the module's own binding", func(t *testing.T) {
+		_, err := w.svc.RevokeSourceDelegation(testCtx, w.admin, w.org, delegation.ID)
+		require.NoError(t, err)
+		handled, err := w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
+			authority.OwnerPrincipalID, authority.Revision, subjects(authority), "runtime-admission")
+		require.True(t, handled)
+		require.ErrorIs(t, err, business.ErrSourceDelegationContextStale)
+		// The delegation's own binding is refused too, by the delegation's
+		// own rules, so neither spelling survives revocation.
+		handled, err = w.svc.CheckSourceDelegationContextRevision(testCtx, authority.Tenant,
+			authority.OwnerPrincipalID, authority.Revision, subjects(authority), authority.BindingID())
+		require.True(t, handled)
+		require.Error(t, err)
+	})
+
+}
+
+// A MODULE HOP NAMES THE BINDING IT EXERCISES, AND THAT BINDING CONFIRMS IT.
+//
+// This is the one rule, and the reason "is this context's authority still
+// current" can have ONE answer: a hop says which binding it runs under, so no
+// verifier has to work it out from the shape of the subjects. A module
+// principal is not in the authority store — it is not a registered agent — so
+// a hop sent there came back "not found", and the module calling reported to
+// its caller a revocation that had never happened. That denied every call an
+// orchestrator makes to an owner it executes an operation for.
+func TestAModuleHopIsConfirmedFromTheBindingItNames(t *testing.T) {
+	w := newDelegationWorld(t)
+	runtime := string(business.ModulePrincipalID(runtimeModule))
+	carried := []business.ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read", "write"}}}
+
+	// The confirming case is proven against a real installation on a cell
+	// rather than here: this world installs its modules through the delegation
+	// fixture, whose consent does not carry the runtime's own binding, so a
+	// positive assertion here would be about the fixture and not the rule.
+	t.Run("a hop naming no binding is not confirmed", func(t *testing.T) {
+		require.ErrorIs(t, w.svc.ConfirmModuleHopBinding(testCtx, w.org, runtime, "", carried), business.ErrModuleHopStale)
+	})
+	t.Run("a binding the installation does not declare is not confirmed", func(t *testing.T) {
+		require.ErrorIs(t, w.svc.ConfirmModuleHopBinding(testCtx, w.org, runtime, "invented", carried), business.ErrModuleHopStale)
+	})
+	t.Run("another module's binding is not this module's", func(t *testing.T) {
+		require.ErrorIs(t, w.svc.ConfirmModuleHopBinding(testCtx, w.org, runtime, delegationBinding, carried), business.ErrModuleHopStale)
+	})
+	t.Run("scopes outside the binding are not confirmed", func(t *testing.T) {
+		wider := append(append([]business.ModuleOperationScope(nil), carried...),
+			business.ModuleOperationScope{ResourceKind: "reports", Actions: []string{"write"}})
+		require.ErrorIs(t, w.svc.ConfirmModuleHopBinding(testCtx, w.org, runtime, "ingest", wider), business.ErrModuleHopStale)
+	})
+	t.Run("a principal no module declares is not confirmed", func(t *testing.T) {
+		require.ErrorIs(t, w.svc.ConfirmModuleHopBinding(testCtx, w.org, "019fec91-1000-7000-8000-00000000beef", "ingest", carried),
+			business.ErrModuleHopStale)
+	})
 }

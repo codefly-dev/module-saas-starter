@@ -129,7 +129,15 @@ for (const needle of [".text-success", "--appearance-light-success:", ".type-chi
 	if (!preview.includes(needle)) throw new Error(\`published preview.css lacks \${needle}\`);
 if (preview.includes("@tailwind") || preview.includes("@utility ")) throw new Error("published preview.css is not compiled");
 if (!read("@codefly-dev/ui/theme.css").includes("--color-success: var(--success)")) throw new Error("published theme.css lacks the status tokens");
-console.log("Packed kit stylesheets resolve and are complete");
+// The dashboard vocabulary is published as documents a consumer reads and
+// freezes by digest, so they must resolve from the package itself — not from the
+// workspace that built it.
+const catalog = JSON.parse(read("@codefly-dev/ui/dashboard-catalog.json"));
+if (catalog.catalogId !== "codefly-dev.ui:dashboard/v1") throw new Error(\`published catalog has catalogId \${catalog.catalogId}\`);
+if (!catalog.components?.Dashboard) throw new Error("published catalog does not name Dashboard");
+const dataModel = JSON.parse(read("@codefly-dev/ui/dashboard-data.schema.json"));
+if (!catalog.instructions?.includes(dataModel.$id)) throw new Error("published catalog does not name its data model");
+console.log("Packed kit stylesheets and dashboard documents resolve and are complete");
 `,
 	);
 	execFileSync(process.execPath, ["styles.mjs"], {

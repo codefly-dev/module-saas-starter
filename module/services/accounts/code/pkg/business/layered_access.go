@@ -126,7 +126,9 @@ func (s *Service) GrantScope(ctx context.Context, actorID string, req *gen.Grant
 	var grant *gen.ScopeGrant
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
 		var e error
-		grant, e = s.grantScopeTx(ctx, actorID, req)
+		// No cause: GrantScope is an administrator writing a grant. A derived
+		// role is refused here, in the store, exactly because this path exists.
+		grant, e = s.grantScopeTx(ctx, actorID, req, "")
 		return e
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot grant scope")
@@ -140,19 +142,27 @@ func (s *Service) GrantScope(ctx context.Context, actorID string, req *gen.Grant
 // record, all in that transaction. GrantScope runs it on its own;
 // GrantInstallationToTeam runs it in the transaction that locked the
 // installation, so the grant cannot land on an installation already uninstalled.
-func (s *Service) grantScopeTx(ctx context.Context, actorID string, req *gen.GrantScopeRequest) (*gen.ScopeGrant, error) {
+//
+// causeGrantID names the grant this one is DERIVED FROM, and is empty for every
+// grant an administrator writes. It is a parameter rather than a request field
+// on purpose: GrantScopeRequest crosses the network, and a field a caller could
+// set would let one claim a cause and so hand itself a derived role — the exact
+// hand-grant the derivation exists to make impossible. The store refuses a
+// derived role whenever this is empty (derived_module_access.go).
+func (s *Service) grantScopeTx(ctx context.Context, actorID string, req *gen.GrantScopeRequest, causeGrantID string) (*gen.ScopeGrant, error) {
 	if err := s.requireSubjectInOrgTx(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
 		return nil, err
 	}
 	grant := &gen.ScopeGrant{
-		Id:          NewIDString(),
-		OrgId:       req.OrgId,
-		SubjectId:   req.SubjectId,
-		SubjectKind: req.SubjectKind,
-		ScopePath:   req.ScopePath,
-		RoleId:      req.RoleId,
-		GrantedBy:   actorID,
-		ExpiresAt:   req.ExpiresAt,
+		Id:                 NewIDString(),
+		OrgId:              req.OrgId,
+		SubjectId:          req.SubjectId,
+		SubjectKind:        req.SubjectKind,
+		ScopePath:          req.ScopePath,
+		RoleId:             req.RoleId,
+		GrantedBy:          actorID,
+		ExpiresAt:          req.ExpiresAt,
+		DerivedFromGrantId: causeGrantID,
 	}
 	if e := s.store.GrantScope(ctx, grant); e != nil {
 		return nil, e

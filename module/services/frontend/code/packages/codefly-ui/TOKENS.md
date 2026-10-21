@@ -42,7 +42,16 @@ The chain is one direction, top to bottom — a skin is *data*, never CSS:
    default values, for a preview with no host
    ([README](./README.md#previewing-a-solution-without-a-host)).
 5. **Components** — kit components, host pages, and solution remotes reference
-   only those utilities / variables. None of them names a raw color.
+   only those utilities / variables. `QRCode`'s plate is the one stated
+   exception, and it declines two tokens rather than one. A QR reader may refuse
+   an inverted code, so dark modules on a light field is a requirement of the
+   format rather than a decision a skin is entitled to re-make; and a module too
+   small for a camera to resolve is not a denser look but a code that does not
+   scan, so the plate's edge and padding are absolute `rem` rather than
+   `--spacing` multiples a density skin rescales. The component says so where it
+   names both, and `qr-code.test.tsx` holds every size it ships above the
+   scanning floor. A third exception is a token this vocabulary is missing, not
+   a licence.
 
 ## Color tokens
 

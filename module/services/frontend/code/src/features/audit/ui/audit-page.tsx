@@ -76,7 +76,14 @@ export function AuditPage() {
 	// cannot be confused with the eventTypes FILTER below.
 	const { data: registeredTypes } = useAuditEventTypes();
 	// The table shows the same window the tiles and the series describe.
+	// Every read names the organisation the page is showing. The aggregate RPC
+	// treats a request with no organisation as platform-wide and requires a
+	// platform administrator for it, so an organisation admin who reads the
+	// list fine saw every tile and chart "Failed to load". A platform
+	// administrator with no organisation selected still reads platform-wide.
+	const orgId = organizationId ?? "";
 	const { data, isLoading } = useAuditLog({
+		orgId,
 		eventType,
 		eventTypes,
 		category,
@@ -89,8 +96,8 @@ export function AuditPage() {
 	const exportMutation = useExportAuditLog();
 
 	const scope = { eventType, eventTypes, category, namespace };
-	const current = { from: windows.current.from, to: windows.current.to };
-	const previous = { from: windows.previous.from, to: windows.previous.to };
+	const current = { orgId, from: windows.current.from, to: windows.current.to };
+	const previous = { orgId, from: windows.previous.from, to: windows.previous.to };
 
 	// One headline aggregate per window, grouped by category then event type
 	// and NOT filtered by category: every tile slices it client-side (exact,

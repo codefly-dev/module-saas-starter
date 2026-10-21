@@ -6,6 +6,7 @@ import type { Role } from "@/gen/saas/accounts/v1/common_pb";
 import {
 	type AvailableSolution,
 	InstallationHealth,
+	type InstallationReadiness,
 	InstallationStatus,
 	type OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
@@ -153,6 +154,13 @@ export interface InstalledRow {
 	grantedTeams: TeamGrantRow[];
 	/** Reaching it from a grant above: real reach, but not granted here. */
 	inheritedTeams: TeamGrantRow[];
+	/**
+	 * Whether the host says this installation will WORK, which the health above
+	 * does not answer. Carried on the row so the listing can say "needs setup"
+	 * and link to the page that lists why; undefined when a host older than the
+	 * readiness read served the row.
+	 */
+	readiness: InstallationReadiness | undefined;
 }
 
 const NOT_OFFERED: FactView = {
@@ -189,7 +197,14 @@ export function installedRows(
 	installations: OrganizationInstallation[],
 ): InstalledRow[] {
 	return installations.flatMap(
-		({ installation, health, target, grantedTeams, inheritedTeams }) => {
+		({
+			installation,
+			health,
+			target,
+			grantedTeams,
+			inheritedTeams,
+			readiness,
+		}) => {
 			if (!installation) return [];
 			return [
 				{
@@ -214,6 +229,7 @@ export function installedRows(
 						: undefined,
 					grantedTeams: teamGrantRows(grantedTeams),
 					inheritedTeams: teamGrantRows(inheritedTeams),
+					readiness,
 				},
 			];
 		},

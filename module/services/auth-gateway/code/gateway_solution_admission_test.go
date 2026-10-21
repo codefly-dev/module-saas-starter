@@ -527,7 +527,7 @@ func replacementArrivesMidRequest(
 	t.Helper()
 	predecessor = registerSolutionUpstream(t, gw, alias)
 	replacement = &fakeUpstream{body: "replacement-response"}
-	replacementSrv := newSolutionTestServer(t, gw, alias, replacement)
+	replacementSrv := newSolutionTestServer(t, replacement)
 	t.Cleanup(replacementSrv.Close)
 
 	registry := solutionRegistryFake(t, gw)

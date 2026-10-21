@@ -628,6 +628,129 @@ message OrganizationInstallation {
   // installation; RevokeInstallationFromTeam removes those.
   repeated CollectionReadGrant granted_teams = 5;
   repeated CollectionReadGrant inherited_teams = 6;
+  // Whether this installation will actually work, and what is unmet if it will
+  // not. Resolved live from the same facts health is resolved from plus the
+  // module registry and this organisation's sources; never stored.
+  InstallationReadiness readiness = 7;
+  // The modules this installed target declares it reaches, and this
+  // organisation's installation of each. Empty for a target whose applied
+  // manifest declares no operation binding it redeems on a person's behalf.
+  repeated ReachedModule reached_modules = 8;
+}
+
+// ReadinessConditionKind is what kind of thing is unmet. A reader acts on the
+// words in `detail`; the kind is for the surface to choose an action and for a
+// consumer to count one kind without parsing prose.
+enum ReadinessConditionKind {
+  READINESS_CONDITION_KIND_UNSPECIFIED = 0;
+  // The solution has not acknowledged its standard install step yet.
+  READINESS_CONDITION_KIND_INSTALL_STEP_PENDING = 1;
+  // It refused the install step, or never answered within the attempt budget.
+  READINESS_CONDITION_KIND_INSTALL_STEP_FAILED = 2;
+  // The installation record itself is not healthy: the InstallationHealth
+  // value, restated as a condition so one list holds every reason it will not
+  // work rather than two places a reader has to join.
+  READINESS_CONDITION_KIND_RECORD_UNHEALTHY = 3;
+  // The module registry holds no principal for this target's module at all, so
+  // every Work Context it asks for is denied.
+  READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED = 4;
+  // An operation binding the applied manifest asks for derived nothing: the
+  // envelope allows no such binding, or allows nothing of it. This is the
+  // condition that reported HEALTHY on a validation cell while four bindings were
+  // dropped.
+  READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED = 5;
+  // A source this organisation has connected holds no active delegation to a
+  // module that accepts them, so that module cannot read it on anyone's behalf.
+  READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED = 6;
+  // A module this target declares it reaches is not installed in this
+  // organisation, so every call it makes there is refused.
+  READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED = 7;
+  // A grant of this solution could not CARRY the access it declares it consumes
+  // on one reached module, so the team holds nothing there and the pages that
+  // reach it will be refused. `detail` says which of the two reasons it is: the
+  // chosen role permits none of what the solution consumes there, or the
+  // declared scope is narrowed to named resources, which a role cannot express.
+  READINESS_CONDITION_KIND_CARRIED_MODULE_ACCESS_NOT_DERIVED = 8;
+}
+
+// ReadinessClearedBy is who can clear a condition. It is stated rather than
+// implied by the action, because "nobody at this surface can" is itself the
+// answer a reader needs — an envelope that withholds a binding is the platform
+// operator's, and offering an administrator a button would be a lie.
+enum ReadinessClearedBy {
+  READINESS_CLEARED_BY_UNSPECIFIED = 0;
+  // The person reading the page, acting as themselves: their own delegation.
+  READINESS_CLEARED_BY_VIEWER = 1;
+  READINESS_CLEARED_BY_ORGANIZATION_ADMIN = 2;
+  READINESS_CLEARED_BY_PLATFORM_OPERATOR = 3;
+  // Nobody: the host is waiting for the solution itself to answer.
+  READINESS_CLEARED_BY_NOBODY = 4;
+}
+
+// ReadinessAction is what clears the condition, named as the act rather than as
+// a control, so a surface that cannot offer one still reports the same fact.
+enum ReadinessAction {
+  READINESS_ACTION_UNSPECIFIED = 0;
+  // No act at this surface clears it. The condition says where it is cleared.
+  READINESS_ACTION_NONE_AT_THIS_SURFACE = 1;
+  READINESS_ACTION_RETRY_INSTALL_STEP = 2;
+  READINESS_ACTION_RECONNECT_SOURCE = 3;
+  READINESS_ACTION_TRANSFER_OWNERSHIP = 4;
+  READINESS_ACTION_INSTALL_REACHED_MODULE = 5;
+  // Wait: the host is expecting an answer and no act brings it forward.
+  READINESS_ACTION_WAIT = 6;
+}
+
+// ReadinessCondition is one thing that is unmet, in the words of whoever owns
+// it, with who can clear it and what clears it.
+message ReadinessCondition {
+  ReadinessConditionKind kind = 1;
+  // What the condition is about: the binding, the source, the module. Empty when
+  // the condition is about the installation as a whole.
+  string subject = 2;
+  // Why it is unmet, as the part of the host that owns the fact words it. Never
+  // a generic "not ready": the reason is the whole value of the condition.
+  string detail = 3;
+  ReadinessClearedBy cleared_by = 4;
+  ReadinessAction action = 5;
+  // The source the action addresses, for RECONNECT_SOURCE. Empty otherwise.
+  string source_id = 6;
+}
+
+// InstallationReadiness is whether the installation will work, which is NOT
+// whether its record exists. InstallationHealth answers about the record — it
+// is active, its owner is an admin, its standing grant is there — and on
+// a validation cell it reported HEALTHY for ten installations while four declared
+// operation bindings had derived nothing. Readiness is the other question, and
+// it is false while any condition below is unmet.
+message InstallationReadiness {
+  // True only when `unmet` is empty.
+  bool ready = 1;
+  repeated ReadinessCondition unmet = 2;
+}
+
+// ReachedModule is one module an installed target declares it reaches on the
+// asking person's own session, and this organisation's installation of that
+// module.
+//
+// A solution granted to a team was refused by every module it reaches that the
+// same team was not granted — four separate refusals on a validation cell, each
+// a bare Forbidden. The set is the applied manifest's own declaration, and a
+// grant of the solution now CARRIES it: GrantInstallationToTeam derives a grant
+// at each reached module from this very set, traceable to the solution's grant
+// and revoked with it (CarriedModuleAccess). This field stays a read, so the
+// setup page can state the set a grant will carry before anyone grants it. It is
+// never a per-module grant step a person performs — that is the trail this ends.
+message ReachedModule {
+  // The audience the manifest names: the module reached.
+  string audience = 1;
+  // This organisation's ACTIVE installation of that module, which is where the
+  // team grant is written. Empty when it has not installed it — then the
+  // readiness condition says so and no grant is offered.
+  string installation_id = 2;
+  // The route alias of the installed module, for the reader. Empty with
+  // installation_id.
+  string route_alias = 3;
 }
 
 message ListOrganizationInstallationsResponse {
@@ -647,8 +770,47 @@ message GrantInstallationToTeamRequest {
   string role_id = 4 [(buf.validate.field).string.uuid = true];
 }
 
+// CarriedModuleAccess is one derived grant a solution's grant carried: the
+// access the solution declares it consumes on one module it reaches, intersected
+// with the role the administrator chose, written at that module's own
+// authority-root node.
+//
+// The role is this host's own, derived and owned by it: it appears in no picker,
+// cannot be edited, deleted, assigned organisation-wide or granted by hand, and
+// is revoked with the grant that caused it. What it permits is the intersection
+// and never the chosen role, which is the whole property — a person's own direct
+// reach into a reached module is exactly what the solution declared, not
+// whatever the administrator's role would have permitted there.
+message CarriedModuleAccess {
+  // The module reached, as the applied manifest's binding names its audience.
+  string audience = 1;
+  // This organisation's installation of that module, whose authority root the
+  // derived grant is written at.
+  string installation_id = 2;
+  // The node the derived grant was written at: that installation's authority
+  // root, resolved from the installation and never supplied by a caller.
+  string scope_path = 3;
+  // The derived role. Read it to learn what was carried; never grant it.
+  string role_id = 4;
+  // What the derived role permits, each written "<resource kind>:<action>" — the
+  // declared consumption intersected with the chosen role, in the words the
+  // declaration uses.
+  repeated string scopes = 5;
+}
+
 message GrantInstallationToTeamResponse {
   ScopeGrant grant = 1;
+  // The module access this grant carried, one entry per module the solution
+  // declares it reaches and this organisation has installed. A team granted a
+  // solution reaches every module the solution reaches on its members' own
+  // sessions, by construction: there is no per-module grant step for a person to
+  // discover by being refused.
+  repeated CarriedModuleAccess carried = 2;
+  // Where it carried nothing, and why — in the same response as the grant,
+  // because a refusal a person learns about by hitting a Forbidden later is the
+  // failure this replaces. Stated in the same condition vocabulary the setup
+  // page reads, so one reader works through one list.
+  repeated ReadinessCondition unmet = 3;
 }
 
 message RevokeInstallationFromTeamRequest {
@@ -685,6 +847,12 @@ message AvailableSolution {
   // unique index over (org_id, target_id) would refuse the second install anyway,
   // and an administrator should not have to discover that by being refused.
   bool installed = 9;
+  // What this target is, as its registration declared it: `module` or
+  // `solution`. Read from the registration in the same statement as the rest of
+  // the row; a reader is told rather than inferring it from the alias, because a
+  // module and a solution are set up differently and the page says which it is.
+  // Empty when the registration declared neither.
+  string kind = 10 [(buf.validate.field).string.max_len = 32];
 }
 
 message ListAvailableSolutionsRequest {

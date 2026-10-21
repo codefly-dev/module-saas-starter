@@ -173,11 +173,10 @@ composed module; it grants neither public ingress nor application authority.
 The retired `module` spelling is refused by current Codefly. Four do not
 carry this tier: `accounts/connect` and `auth-gateway/grpc` are tenant surfaces
 whose tiering interceptor refuses internal methods, `auth-gateway/rest`
-carries the brokered bootstrap routes (registration, Work Context mints) and the
-key set, and `auth-gateway/workload` serves the same gateway routes over mutual
-TLS to workloads that present a platform-issued SVID listed in its
-allowed-callers file, where a module mint must also come from the SPIFFE ID its
-delivered presence declares. The fifth, `accounts/authority`, is a gRPC endpoint with a listener of
+carries the key set and the public routes, and `auth-gateway/workload` serves
+the same gateway routes over plain HTTP to composed workloads, admitted by the
+cell's mesh alone; the module credential exchanges (the Work Context mints) are
+served there and nowhere else. The fifth, `accounts/authority`, is a gRPC endpoint with a listener of
 its own, and it is the internal tier **narrowed**:
 
 - **Only the module surface is served.** `business.ModuleAuthorityProcedures`

@@ -6,7 +6,9 @@ description: |
         gateway credential, so an Envoy in front of accounts must stamp
         that credential itself.
       - private HTTP API gateway behind the frontend entry
-      - workload API gateway with TLS 1.3 and verified workload identities
+      - workload API gateway: the same handler over plain HTTP on its own
+        port, reached by composed workloads inside the cell's mesh; the
+        module credential exchanges are served there and nowhere else
 agent:
     kind: codefly:service
     name: go-grpc
@@ -28,12 +30,12 @@ workspace-configuration-dependencies:
     # origin a token is accepted at are one operator-pinned value rather than
     # two headers that can disagree.
     - application
+    - artifact-cache
     - gateway
     - gateway-trust
     - internal-auth
     - observability
     - security
-    - workload-identity
 endpoints:
     - name: grpc
       visibility: internal

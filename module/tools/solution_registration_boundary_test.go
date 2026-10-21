@@ -242,8 +242,13 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// rename that does not move these lines is a rename that breaks every
 		// consumer silently.
 		"`POST /platform/_credential`",
-		"`POST /platform/_delivery/presence`",
-		"`POST /platform/_delivery/authority`",
+		"`POST /platform/_delivery/manifest`",
+		"`POST /platform/_delivery/envelope`",
+		// The delivered envelope's two host rules a composition is written
+		// against: it names no organization, and it lands above whatever an
+		// administrator wrote interactively.
+		"A delivered envelope **names no",
+		"or below a revision a platform administrator wrote interactively it is",
 		// The rule that makes hardcoding the path correct and hardcoding the
 		// origin wrong. Without it the table reads as an invitation to pin
 		// everything.
@@ -261,13 +266,11 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// something one of the three implementing repositories had wrong, and a
 		// rename that does not move these lines breaks a consumer silently.
 		//
-		// The authority pair is the only hardcoded (SA, namespace) in the
-		// scheme: a wrong constant there makes the TokenReview SUCCEED on a
-		// genuine identity and the host refuse the real carrier for a name.
-		"| authority | `delivery` | `platform-authority` — a fixed pair |",
-		// The presence namespace is NOT a constant, and the reason is the half
-		// that gets lost first: a fixed value refuses every genuine carrier.
-		"**the namespace the document's own workloads declare**",
+		// The carrier is one (SA, namespace) per module, and the namespace is
+		// read by rule, never configured: a fixed value refuses every genuine
+		// carrier.
+		"**The carrier is the `delivery` ServiceAccount of the module's namespace**",
+		"the namespace the cell runs the manifest's module in",
 		// Offline verification, and the failure shape that makes it matter.
 		"would **hang rather than fail fast**",
 		// That the host is the second layer, not the perimeter. Without this

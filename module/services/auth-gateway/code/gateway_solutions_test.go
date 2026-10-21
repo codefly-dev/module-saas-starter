@@ -5,27 +5,76 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 )
 
-// registerSolutionUpstream wires a fully registered solution — both halves,
-// admitted endpoints — into the registry behind gw and returns the upstream's capture
-// struct. Both halves matter: a solution with only one is deliberately not
-// routable (see TestGateway_Solution_BackendHalfAlone_NotRoutable).
+func TestGateway_SignedFrontendPayloadNeverFallsBackToMutableBackend(t *testing.T) {
+	for _, kind := range []accountsv1.SolutionDeclaredKind{
+		accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION,
+		accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE,
+	} {
+		t.Run(kind.String(), func(t *testing.T) {
+			gw, _, _, _ := newGatewayHarness(t)
+			upstream := registerSolutionUpstream(t, gw, "example")
+			record := solutionRegistryFake(t, gw).records["example"]
+			record.Declared.Kind = kind
+			var frontend solutionhost.Frontend
+			require.NoError(t, json.Unmarshal([]byte(record.Frontend.Manifest), &frontend))
+			frontend.Payload = &solutionhost.FrontendPayload{
+				Artifact: "frontend", Digest: solutionhost.PayloadDigest("sha256:" + strings.Repeat("ab", 32)), MediaType: "application/x-tar",
+			}
+			encoded, err := json.Marshal(frontend)
+			require.NoError(t, err)
+			record.Frontend.Manifest = string(encoded)
+			require.NoError(t, gw.solutions.refresh(context.Background()))
+			_, advertised := solutionManifest(record, false)
+			require.False(t, advertised)
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				for _, path := range []string{"assets", "assets/mf-manifest.json", "assets/deferred-chunk.js"} {
+					upstream.lastHeaders = nil
+					w := httptest.NewRecorder()
+					gw.ServeHTTP(w, httptest.NewRequest(method, "/solutions/example/"+path, nil))
+					require.Equal(t, http.StatusServiceUnavailable, w.Code)
+					require.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+					require.Nil(t, upstream.lastHeaders, "unverified executable bytes must not reach the host origin")
+				}
+			}
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/solutions/example/.well-known/capabilities", nil))
+			require.Equal(t, http.StatusOK, w.Code, "backend capability discovery is independent of frontend preparation")
+		})
+	}
+}
+
+// registerSolutionUpstream wires a declared, serving solution — its presence
+// applied with a frontend block, its endpoint addressed by the composition —
+// into the registry behind gw and returns the upstream's capture struct. Both
+// facts matter: a solution missing either is deliberately not routable.
 func registerSolutionUpstream(t *testing.T, gw *Gateway, id string) *fakeUpstream {
 	t.Helper()
 	fake := &fakeUpstream{body: "solution-response"}
-	srv := newSolutionTestServer(t, gw, id, fake)
-	t.Cleanup(srv.Close)
-	registerSolutionHalves(t, gw, id, srv.URL)
+	srv := newSolutionTestServer(t, fake)
+	declareSolution(t, gw, id, srv.URL)
 	return fake
+}
+
+// newSolutionTestServer serves a solution's backend the way the gateway now
+// reaches one: plain HTTP at the address the composition resolved, inside the
+// cell's mesh.
+func newSolutionTestServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 // solutionRegistryFake reaches the registry standing in for accounts behind gw.
@@ -36,17 +85,18 @@ func solutionRegistryFake(t *testing.T, gw *Gateway) *fakeSolutionRegistry {
 	return registry
 }
 
-// registerSolutionHalves writes both halves straight into the registry and
-// refreshes the gateway's cache, standing in for reconciled declarations.
-func registerSolutionHalves(t *testing.T, gw *Gateway, id, upstream string) {
+// declareSolution writes a declared solution record whose applied presence
+// carries a frontend block, addresses its endpoint at upstream the way the
+// composition's carrier would, and refreshes the gateway's cache.
+func declareSolution(t *testing.T, gw *Gateway, id, upstream string) {
 	t.Helper()
 	registry := solutionRegistryFake(t, gw)
 	registry.mu.Lock()
+	registry.route(id, upstream)
 	registry.revision++
 	registry.records[id] = &accountsv1.SolutionRegistration{
 		SolutionId: id, Publisher: "solution:" + id, Revision: registry.revision,
-		Frontend: &accountsv1.SolutionFrontendBinding{Manifest: `{"id":"` + id + `"}`},
-		Backend:  &accountsv1.SolutionBackendBinding{Upstream: upstream, ServiceAlias: id},
+		Frontend: &accountsv1.SolutionFrontendBinding{Revision: registry.revision, Manifest: fakeFrontendBlock(id)},
 		Declared: &accountsv1.SolutionDeclaredBinding{BindingId: "acme.test." + id, Generation: 1, Release: "acme/" + id + "@1.0.0", TargetId: fakeSolutionTarget(id),
 			Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION},
 	}
@@ -373,15 +423,32 @@ func TestGateway_Solution_PublicSurface_FailsOpenOnLimiterOutage(t *testing.T) {
 
 // --- durable registry behaviour (#534) ---
 
-// A solution that registered only its backend half is NOT routable. Serving it
-// would advertise a page whose required half never arrived; the audit finding
-// this fixes is exactly that the two halves could disagree.
-func TestGateway_Solution_BackendHalfAlone_NotRoutable(t *testing.T) {
+// A headless solution serves its protected backend without advertising a page.
+func TestGateway_Solution_NoFrontendBlock_BackendRoutable(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 
-	registerSolutionHalves(t, gw, "audit", "http://example.svc")
+	upstream := registerSolutionUpstream(t, gw, "audit")
 	registry := solutionRegistryFake(t, gw)
 	registry.records["audit"].Frontend = nil
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/ping", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "/v1/ping", upstream.lastPath)
+}
+
+// A declared solution the composition handed this gateway no address for is
+// registered and not serving: the Codefly SDK answers for its endpoint or
+// nothing does, and nothing on the record is a fallback.
+func TestGateway_Solution_NoCarrier_NotRoutable(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+
+	declareSolution(t, gw, "audit", "http://example.svc")
+	testModuleAddresses.Delete(fakeRouteEndpoint("audit").String())
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 
 	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/ping", nil)
@@ -393,23 +460,49 @@ func TestGateway_Solution_BackendHalfAlone_NotRoutable(t *testing.T) {
 	require.Contains(t, w.Body.String(), "not active")
 }
 
-// The two halves must agree on a contract version. A page built against one
-// backend contract must not be served against another.
-func TestGateway_Solution_MismatchedContractVersions_NotRoutable(t *testing.T) {
+// A snapshot the registry has not confirmed within the revocation lease stops
+// authorising routes: a withdrawal applied during the outage would be invisible
+// here. The answer names the stale registry, so an operator can tell it from
+// a replica that never loaded one, and routes resume on the next read that
+// succeeds. A tombstone already held keeps answering as the registry would.
+func TestGateway_Solution_StaleSnapshotStopsAuthorisingRoutes(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
-
-	registerSolutionHalves(t, gw, "audit", "http://example.svc")
+	fake := registerSolutionUpstream(t, gw, "audit")
+	module := declareModule(t, gw, "example-module")
 	registry := solutionRegistryFake(t, gw)
-	registry.records["audit"].Frontend.ContractVersion = "v2"
-	registry.records["audit"].Backend.ContractVersion = "v1"
+	registry.seedDeclared("gone", "http://gone.svc")
+	registry.tombstone("gone")
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 
-	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/ping", nil)
-	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
+	serve := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		return w
+	}
+	require.Equal(t, http.StatusOK, serve("/solutions/audit/v1/ping").Code)
 
-	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	// The registry goes away, and the snapshot ages past the lease.
+	registry.listErr = grpcstatus.Error(codes.Unavailable, "registry down")
+	gw.solutions.now = func() time.Time { return time.Now().Add(solutionRegistryLease + time.Second) }
+	fake.lastHeaders, module.lastHeaders = nil, nil
+	for _, path := range []string{"/solutions/audit/v1/ping", "/v1/example-module/things"} {
+		w := serve(path)
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, path)
+		require.Contains(t, w.Body.String(), "stale", path)
+	}
+	require.Nil(t, fake.lastHeaders, "nothing is forwarded on a stale snapshot")
+	require.Nil(t, module.lastHeaders, "nothing is forwarded on a stale snapshot")
+	_, resolution := gw.solutions.resolveRouting(context.Background(), "gone")
+	require.Equal(t, solutionUnregistered, resolution, "a withdrawal already held is still a withdrawal")
+
+	// The registry answers again: the next read that succeeds — the reconcile
+	// tick, here — renews the lease, and routes resume on the snapshot it read.
+	registry.listErr = nil
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	require.Equal(t, http.StatusOK, serve("/solutions/audit/v1/ping").Code)
+	require.NotNil(t, fake.lastHeaders)
 }
 
 // A registration survives the process that received it. A fresh cache — what a
@@ -417,7 +510,7 @@ func TestGateway_Solution_MismatchedContractVersions_NotRoutable(t *testing.T) {
 // nobody re-registering.
 func TestGateway_Solution_RestartRebuildsFromRegistry(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
-	registerSolutionHalves(t, gw, "audit", "http://10.0.0.7:8080")
+	declareSolution(t, gw, "audit", "http://10.0.0.7:8080")
 	registry := solutionRegistryFake(t, gw)
 
 	restarted := newSolutionRegistryCache(registry)
@@ -435,7 +528,7 @@ func TestGateway_Solution_ReplicasConvergeOnSameRevision(t *testing.T) {
 	other := newSolutionRegistryCache(registry)
 	require.NoError(t, other.refresh(context.Background()))
 
-	registerSolutionHalves(t, gw, "audit", "http://10.0.0.7:8080")
+	declareSolution(t, gw, "audit", "http://10.0.0.7:8080")
 
 	_, otherRevision, _ := other.snapshot()
 	_, writerRevision, _ := gw.solutions.snapshot()
@@ -459,7 +552,7 @@ func TestGateway_Solution_CacheMissRefreshesOnceWithinFloor(t *testing.T) {
 	registry := solutionRegistryFake(t, gw)
 	lagging := newSolutionRegistryCache(registry)
 	require.NoError(t, lagging.refresh(context.Background()))
-	registerSolutionHalves(t, gw, "audit", "http://10.0.0.7:8080")
+	declareSolution(t, gw, "audit", "http://10.0.0.7:8080")
 
 	// Past the refresh floor, so the miss is allowed to consult the registry.
 	lagging.now = func() time.Time { return time.Now().Add(solutionRefreshFloor) }
@@ -514,9 +607,9 @@ func TestGateway_Solution_RegistryOutageKeepsLastSnapshot(t *testing.T) {
 func TestGateway_Solution_RegistrySnapshot(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
 	registerSolutionUpstream(t, gw, "audit")
-	registerSolutionHalves(t, gw, "reports", "http://example.svc")
+	declareSolution(t, gw, "reports", "http://example.svc")
 	registry := solutionRegistryFake(t, gw)
-	registry.records["reports"].Backend = nil
+	registry.records["reports"].Frontend = nil
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 
 	noTok := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
@@ -537,6 +630,171 @@ func TestGateway_Solution_RegistrySnapshot(t *testing.T) {
 	require.Equal(t, "audit", snapshot.Solutions[0].ID)
 	require.Equal(t, "active", snapshot.Solutions[0].Status)
 	require.Equal(t, "reports", snapshot.Solutions[1].ID)
-	require.Equal(t, "pending", snapshot.Solutions[1].Status)
+	require.Equal(t, "active", snapshot.Solutions[1].Status)
+	require.Nil(t, snapshot.Solutions[1].Manifest, "a presence without its frontend block has no page to render")
 	require.NotContains(t, w.Body.String(), "upstream")
+}
+
+// The manifest the projection carries is built here, from the frontend block
+// the applied presence declared plus the host's own constants — never
+// reported by the running solution. Its shape is the one the frontend parses.
+func TestGateway_Solution_RegistrySnapshotBuildsTheManifestFromThePresence(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	declareSolution(t, gw, "audit", "http://example.svc")
+	registry := solutionRegistryFake(t, gw)
+	registry.records["audit"].Frontend.Manifest = `{"title":"Audit","order":3,"exposed_module":"./Page","host_contract":1,` +
+		`"dashboard":{"events":[]},"surfaces":[{"id":"footnote","client":"word","title":"Footnote","description":"Cite it","module":"/surfaces/footnote.js","contract":1,"applies":null,"events":["document.saved"]}]}`
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
+	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var snapshot solutionRegistryProjection
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &snapshot))
+	require.Len(t, snapshot.Solutions, 1)
+	require.NotNil(t, snapshot.Solutions[0].Manifest)
+	require.JSONEq(t, `{
+		"id":"audit","schemaVersion":1,
+		"nav":{"title":"Audit","path":"/s/audit","order":3},
+		"frontend":{"type":"module-federation","manifestUrl":"/assets/mf-manifest.json","exposedModule":"./Page","hostContract":1},
+		"backend":{"serviceAlias":"audit","capabilityPath":"/.well-known/capabilities"},
+		"dashboard":{"events":[]},
+		"surfaces":[{"id":"footnote","client":"word","title":"Footnote","description":"Cite it","module":"/surfaces/footnote.js","contract":1,"events":["document.saved"]}]
+	}`, *snapshot.Solutions[0].Manifest)
+
+	// A block this host cannot read renders nothing, rather than a manifest
+	// the frontend would refuse for a reason it cannot name.
+	registry.records["audit"].Frontend.Manifest = `{"title":`
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	var unreadable solutionRegistryProjection
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &unreadable))
+	require.Nil(t, unreadable.Solutions[0].Manifest)
+}
+
+// A module contributes a page through the same loader as a solution. Only its
+// public assets use /solutions; its authenticated API remains on /v1.
+func TestGateway_ModuleFrontendUsesCommonAssetsOnly(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	upstream := registerSolutionUpstream(t, gw, "shared-example")
+	registry := solutionRegistryFake(t, gw)
+	registry.records["shared-example"].Declared.Kind = accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	for _, tc := range []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodGet, "/assets/mf-manifest.json", http.StatusOK},
+		{http.MethodHead, "/assets/chunk.js", http.StatusOK},
+		{http.MethodGet, "/.well-known/capabilities", http.StatusOK},
+		{http.MethodGet, "/records", http.StatusForbidden},
+		{http.MethodPost, "/assets/write", http.StatusForbidden},
+		{http.MethodGet, "/assets/../records", http.StatusForbidden},
+	} {
+		t.Run(tc.method+tc.path, func(t *testing.T) {
+			upstream.lastHeaders = nil
+			r := httptest.NewRequest(tc.method, "/solutions/shared-example"+tc.path, nil)
+			r.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, r)
+			require.Equal(t, tc.status, w.Code)
+			if tc.status == http.StatusOK {
+				require.Equal(t, tc.path, upstream.lastPath)
+				require.Empty(t, upstream.lastHeaders.Get("Authorization"))
+			} else {
+				require.Nil(t, upstream.lastHeaders)
+			}
+		})
+	}
+	// The module stays routable as a backend when headless, but exposes no UI assets.
+	registry.records["shared-example"].Frontend = nil
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/solutions/shared-example/assets/chunk.js", nil))
+	require.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestGateway_ModuleFrontendWithdrawalAndLease(t *testing.T) {
+	for _, withdrawn := range []bool{false, true} {
+		t.Run(map[bool]string{false: "expired lease", true: "withdrawn"}[withdrawn], func(t *testing.T) {
+			gw, _, _, _ := newGatewayHarness(t)
+			upstream := registerSolutionUpstream(t, gw, "shared-example")
+			registry := solutionRegistryFake(t, gw)
+			registry.records["shared-example"].Declared.Kind = accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE
+			if withdrawn {
+				registry.tombstone("shared-example")
+			}
+			require.NoError(t, gw.solutions.refresh(context.Background()))
+			if !withdrawn {
+				registry.listErr = grpcstatus.Error(codes.Unavailable, "offline")
+				gw.solutions.now = func() time.Time { return time.Now().Add(solutionRegistryLease + time.Second) }
+			}
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/solutions/shared-example/assets/chunk.js", nil))
+			if withdrawn {
+				require.Equal(t, http.StatusBadGateway, w.Code)
+			} else {
+				require.Equal(t, http.StatusServiceUnavailable, w.Code)
+			}
+			require.Nil(t, upstream.lastHeaders)
+		})
+	}
+}
+
+func TestGateway_ModuleFrontendSnapshot(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "shared-example")
+	registry := solutionRegistryFake(t, gw)
+	registry.records["shared-example"].Declared.Kind = accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	r := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
+	r.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, r)
+	require.Equal(t, http.StatusOK, w.Code)
+	var snapshot solutionRegistryProjection
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &snapshot))
+	require.Len(t, snapshot.Solutions, 1)
+	require.Equal(t, "module", snapshot.Solutions[0].Kind)
+	require.Equal(t, fakeSolutionTarget("shared-example"), snapshot.Solutions[0].TargetID)
+	require.NotNil(t, snapshot.Solutions[0].Manifest)
+	require.Contains(t, *snapshot.Solutions[0].Manifest, "/assets/mf-manifest.json")
+}
+
+func TestGateway_FrontendAssetsCannotChangeGenerationUnderAStableURL(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	upstream := registerSolutionUpstream(t, gw, "example")
+	registry := solutionRegistryFake(t, gw)
+	record := registry.records["example"]
+	original := frontendAssetVersion(record)
+	request := func(version string) int {
+		upstream.lastHeaders = nil
+		r := httptest.NewRequest(http.MethodGet, "/solutions/example/assets/remoteEntry.js", nil)
+		r.Header.Set(frontendVersionHeader, version)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			require.Nil(t, upstream.lastHeaders)
+		}
+		return w.Code
+	}
+	require.Equal(t, http.StatusGone, request(original), "an unsigned legacy frontend cannot serve a versioned immutable URL")
+	record.Declared.Generation++
+	record.Declared.Release = "acme/example@2.0.0"
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	upgraded := frontendAssetVersion(record)
+	require.NotEqual(t, original, upgraded)
+	require.Equal(t, http.StatusGone, request(original), "a stale frontend replica must not serve new bytes under the previous URL")
+	require.Equal(t, http.StatusGone, request(upgraded))
+	record.Declared.Generation++
+	record.Declared.Release = "acme/example@1.0.0"
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	rolledBack := frontendAssetVersion(record)
+	require.NotEqual(t, original, rolledBack, "rollback is a new applied generation")
+	require.Equal(t, http.StatusGone, request(upgraded))
+	require.Equal(t, http.StatusGone, request(rolledBack))
 }

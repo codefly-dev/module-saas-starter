@@ -8,10 +8,11 @@ require (
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
-	github.com/codefly-dev/core v0.19.3
+	github.com/codefly-dev/core v0.19.6-0.20261018171306-0a8d16c5e32d
 	github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba
-	github.com/codefly-dev/sdk-go v0.4.0
-	github.com/codefly-dev/sdk-go/workcontext v0.1.0
+	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261018173826-0d423cb8bd17
+	github.com/codefly-dev/sdk-go v0.4.1-0.20261018052022-70dc7a546458
+	github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458
 	github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211
 	github.com/codefly-dev/service-redis/cache v0.2.0
 	github.com/go-webauthn/webauthn v0.18.0
@@ -97,6 +98,8 @@ require (
 	github.com/mattn/go-runewidth v0.0.28 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.2 // indirect
+	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -121,4 +124,5 @@ require (
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
+	oras.land/oras-go/v2 v2.6.2 // indirect
 )

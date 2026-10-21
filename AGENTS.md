@@ -73,6 +73,22 @@ digest" when the cause was a missing internal token and the digest was correct.
 exercise something — a suite needing Docker, a graph you could not boot, a release
 path you could not run — the PR body says so.
 
+**Prove reuse before you build.** The default answer is that the platform
+already has it and your change fills a gap or adds a helper on it, so the PR
+body names what you reused and what you deliberately did not. A second
+mechanism for a job one seam already does is refused however clean it is. Two
+tells you are reinventing: what you are writing re-answers a question an
+existing seam answered, and your reason for its placement is that a convenient
+loop was already there rather than that the responsibility belongs to it.
+
+**Build the simplest thing that works; size is the signal.** A coding task's
+budget is about **500 hand-written lines** — generated output does not count,
+tests count apart — and past **2,000** the change has become a second system,
+so **stop and ask the user** instead of finishing it. Two tells, checkable
+before the code exists: you cannot name the one responsibility the change adds,
+and it is growing to make the end goal pass rather than to put a behaviour
+where it belongs. Wanting it to work licenses no means to get there.
+
 ## Naming and confidentiality
 
 Everything in this repository — issues, PRs, docs, specs, code, comments, tests,
@@ -149,9 +165,10 @@ here. Its baseline shrinks and never grows: clean a file, delete its line.
 
 ## Where the depth lives
 
-A **solution** or composed module is independently deployed and **self-registers with
-this host at runtime** — a remote in the frontend, an upstream in the gateway — so the
-host renders and proxies it with no rebuild, and nothing here names a specific one.
+A **solution** or composed module is independently deployed. The host reconciles
+its signed delivery, projects its optional frontend and resolves its routes through
+the SDK. Registration is a delivery lifecycle event; runtime work exchanges do not
+refresh presence. Nothing here names a specific consumer.
 Depth sits with the code that owns it:
 
 | File | Covers |

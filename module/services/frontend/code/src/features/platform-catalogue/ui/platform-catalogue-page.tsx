@@ -8,6 +8,8 @@ import type {
 	CatalogueEntry,
 	CatalogueInstallation,
 } from "@/gen/saas/accounts/v1/platform_admin_pb";
+import { CatalogueEntryKind } from "@/gen/saas/accounts/v1/platform_admin_pb";
+import { groupSolutionNavigation } from "@/solutions/solution-groups";
 import {
 	mayKeepRetainedRows,
 	readOutcome,
@@ -160,6 +162,16 @@ export function PlatformCataloguePage() {
 	const stale = staleReadNotice(outcome, "the catalogue");
 	const entries = withheld ? [] : (catalogue.data?.entries ?? []);
 	const gaps = catalogueGaps(entries);
+	const sections = groupSolutionNavigation(
+		entries.map((entry) => ({
+			entry,
+			group:
+				entry.kind === CatalogueEntryKind.SOLUTION
+					? entry.registration?.group
+					: undefined,
+		})),
+	);
+	const hasGroups = sections.some((section) => section.key !== "ungrouped");
 
 	const toggle = (key: string) =>
 		setExpanded((current) => {
@@ -215,7 +227,7 @@ export function PlatformCataloguePage() {
 							{readOutcomeMessage(
 								outcome,
 								"the catalogue",
-								"Nothing is deployed: no module is composed and no solution is registered or installed.",
+								"No module or solution has been delivered to this platform. A platform operator must deploy one before an organization can install it.",
 							)}
 						</p>
 					) : (
@@ -232,69 +244,84 @@ export function PlatformCataloguePage() {
 								</TableRow>
 							</TableHeader>
 							<TableBody>
-								{entries.map((entry) => {
-									const key = entryKey(entry);
-									const open = expanded.has(key);
-									return (
-										<Fragment key={key}>
+								{sections.map((section) => (
+									<Fragment key={section.key}>
+										{hasGroups && (
 											<TableRow>
-												<TableCell>
-													{entry.installations.length > 0 && (
-														<Button
-															variant="ghost"
-															size="icon"
-															aria-expanded={open}
-															aria-label={`${open ? "Hide" : "Show"} installations of ${entry.name}`}
-															onClick={() => toggle(key)}
-														>
-															{open ? (
-																<ChevronDown className="h-4 w-4" />
-															) : (
-																<ChevronRight className="h-4 w-4" />
-															)}
-														</Button>
-													)}
-												</TableCell>
-												<TableCell>
-													<div className="flex items-center gap-2">
-														<span className="font-medium">{entry.name}</span>
-														<Badge variant="outline">
-															{kindLabel(entry.kind)}
-														</Badge>
-													</div>
-													<div className="mt-1">
-														<Fact view={publisherView(entry)} />
-													</div>
-												</TableCell>
-												{CATALOGUE_STATES.map((state) => (
-													<TableCell key={state} className="align-top">
-														<StateFacts
-															state={state}
-															facts={catalogueStates(entry)[state]}
-														/>
-													</TableCell>
-												))}
-												<TableCell className="text-sm">
-													{entry.installations.length}
-												</TableCell>
-												<TableCell>
-													<Fact view={buildSizeView(entry)} />
-												</TableCell>
+												<TableHead colSpan={COLUMNS} scope="rowgroup">
+													{section.key === "ungrouped"
+														? "Modules and other solutions"
+														: section.title}
+												</TableHead>
 											</TableRow>
-											{open && (
-												<TableRow>
-													<TableCell />
-													<TableCell colSpan={COLUMNS - 1}>
-														<InstallationsTable
-															name={entry.name}
-															installations={entry.installations}
-														/>
-													</TableCell>
-												</TableRow>
-											)}
-										</Fragment>
-									);
-								})}
+										)}
+										{section.items.map(({ entry }) => {
+											const key = entryKey(entry);
+											const open = expanded.has(key);
+											return (
+												<Fragment key={key}>
+													<TableRow>
+														<TableCell>
+															{entry.installations.length > 0 && (
+																<Button
+																	variant="ghost"
+																	size="icon"
+																	aria-expanded={open}
+																	aria-label={`${open ? "Hide" : "Show"} installations of ${entry.name}`}
+																	onClick={() => toggle(key)}
+																>
+																	{open ? (
+																		<ChevronDown className="h-4 w-4" />
+																	) : (
+																		<ChevronRight className="h-4 w-4" />
+																	)}
+																</Button>
+															)}
+														</TableCell>
+														<TableCell>
+															<div className="flex items-center gap-2">
+																<span className="font-medium">
+																	{entry.name}
+																</span>
+																<Badge variant="outline">
+																	{kindLabel(entry.kind)}
+																</Badge>
+															</div>
+															<div className="mt-1">
+																<Fact view={publisherView(entry)} />
+															</div>
+														</TableCell>
+														{CATALOGUE_STATES.map((state) => (
+															<TableCell key={state} className="align-top">
+																<StateFacts
+																	state={state}
+																	facts={catalogueStates(entry)[state]}
+																/>
+															</TableCell>
+														))}
+														<TableCell className="text-sm">
+															{entry.installations.length}
+														</TableCell>
+														<TableCell>
+															<Fact view={buildSizeView(entry)} />
+														</TableCell>
+													</TableRow>
+													{open && (
+														<TableRow>
+															<TableCell />
+															<TableCell colSpan={COLUMNS - 1}>
+																<InstallationsTable
+																	name={entry.name}
+																	installations={entry.installations}
+																/>
+															</TableCell>
+														</TableRow>
+													)}
+												</Fragment>
+											);
+										})}
+									</Fragment>
+								))}
 							</TableBody>
 						</Table>
 					)}

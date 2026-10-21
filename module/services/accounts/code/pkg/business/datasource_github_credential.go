@@ -342,7 +342,7 @@ func (s *Service) MigrateGitHubSourceToApp(ctx context.Context, actorID, orgID, 
 			return err
 		}
 		// Re-pointing the credential is a reconnect (see SyncDatasourceSource).
-		return s.recordSourceDelegationsTx(ctx, actorID, orgID, id)
+		return s.recordSourceDelegationsOnConnectTx(ctx, actorID, orgID, id)
 	}); err != nil {
 		return nil, err
 	}

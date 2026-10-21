@@ -232,7 +232,7 @@ func (c *cluster) hostForControl(t *testing.T) error {
 func localPolicy(t *testing.T, fingerprint string) *infra.SolutionHostVerificationPolicy {
 	return &infra.SolutionHostVerificationPolicy{
 		Local:   &infra.SolutionHostLocalProfile{ClusterCertificateAuthoritySHA256: fingerprint},
-		Signers: []infra.SolutionHostSigner{{Name: "developer", Kind: solutionhost.KeyKindPerson, KeyID: "example-developer", PublicKey: deliverytest.PublicKey(t, "example-developer"), Domains: []string{solutionhost.FixtureDomain}}},
+		Signers: []infra.SolutionHostSigner{{Name: "developer", Kind: solutionhost.KeyKindPerson, KeyID: "example-developer", PublicKey: deliverytest.PublicKey(t, "example-developer"), Domains: []string{verifierTestDomain}}},
 	}
 }
 
@@ -271,9 +271,9 @@ func TestALocalHostAdmitsAListedDeveloper(t *testing.T) {
 	require.NoError(t, verifier.ProveLocalCluster(context.Background(), local.host(t)))
 	delivered, err := verifyPresence(t, verifier, carrier)
 	require.NoError(t, err)
-	require.Equal(t, "example-developer", delivered.DeliveredBy())
+	require.Equal(t, "example-developer", delivered.Signer().KeyID)
 	require.Equal(t, solutionhost.KeyKindPerson, delivered.Signer().Kind)
-	require.Equal(t, map[string][]string{"example-developer": {solutionhost.FixtureDomain}}, verifier.SignerDomains())
+	require.Equal(t, map[string][]string{"example-developer": {verifierTestDomain}}, verifier.SignerDomains())
 }
 
 func TestTheSameDocumentIsRefusedByADeployedHost(t *testing.T) {

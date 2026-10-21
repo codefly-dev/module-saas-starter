@@ -1,4 +1,4 @@
-import { getEndpoints } from "codefly";
+import { gatewayBase } from "@/lib/gateway-endpoint";
 
 import {
 	duplicatedOAuthParameter,
@@ -155,18 +155,6 @@ function redirectTo(location: string): Response {
  * every other server-side caller here normalises it: the whole address minus a
  * trailing slash, never its origin, so a base path on the endpoint survives.
  */
-function gatewayBase(): string | null {
-	const endpoint = getEndpoints().find(
-		(candidate) =>
-			candidate.service === "auth-gateway" && candidate.name === "rest",
-	);
-	if (!endpoint?.address) return null;
-	try {
-		return new URL(endpoint.address).toString().replace(/\/$/, "");
-	} catch {
-		return null;
-	}
-}
 
 /**
  * A refusal the person has to read, because it cannot be delivered to the

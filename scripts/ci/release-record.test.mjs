@@ -56,7 +56,7 @@ test("an unreadable pin fails the record rather than shortening it", () => {
 
 test("the CLI version is the installer's default, not a copy kept here", () => {
   assert.equal(selectedCodeflyVersion('version="${CODEFLY_VERSION:-9.9.9}"\n'), "9.9.9");
-  assert.match(selectedCodeflyVersion(INSTALLER), /^\d+\.\d+\.\d+$/);
+  assert.match(selectedCodeflyVersion(INSTALLER), /^(?:\d+\.\d+\.\d+|source-[a-f0-9]{40})$/);
 });
 
 // The whole point of reading both sources is that the record cannot drift from

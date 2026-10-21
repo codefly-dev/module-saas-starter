@@ -57,6 +57,7 @@ import {
 	List,
 	ListItem,
 	DescriptionList,
+	QRCode,
 } from "../src/layout/index.js";
 import { FileTextIcon, TriangleAlertIcon, UserIcon } from "lucide-react";
 
@@ -262,6 +263,29 @@ export const Error = {
 	),
 };
 
+export const QRCodes = {
+	render: () => (
+		<div className="flex items-end gap-4">
+			<QRCode
+				size="md"
+				value="otpauth://totp/SaaSStarter:jane.doe@example.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSW&issuer=SaaSStarter&digits=6&period=30"
+				label="Scan to add the example account to an authenticator app"
+			/>
+			<QRCode
+				size="lg"
+				value="otpauth://totp/SaaSStarter:jane.doe@example.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSW&issuer=SaaSStarter&digits=6&period=30"
+				label="Scan to add the example account, at the size a dialog uses"
+			/>
+			<QRCode
+				size="lg"
+				level="H"
+				value="otpauth://totp/SaaSStarter:jane.doe@example.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSW&issuer=SaaSStarter&digits=6&period=30"
+				label="The same account at the highest error-correction level, which is the densest grid this draws"
+			/>
+		</div>
+	),
+};
+
 export const NotificationBanner = {
 	render: function BannerExample() {
 		const [visible, setVisible] = useState(true);
@@ -382,6 +406,21 @@ export const StatusBanners = {
 				title="Could not reach the source"
 				actions={<Button variant="outline">Retry</Button>}
 			/>
+		</div>
+	),
+};
+
+// One sentence needs no title: the remark is the primary text and the tone
+// keeps its glyph.
+export const TitlelessBanners = {
+	render: () => (
+		<div>
+			<Banner tone="warning">
+				This PDF has fillable form fields. Their values may be visible without
+				being selectable page text.
+			</Banner>
+			<Banner tone="info">Reads never change the document.</Banner>
+			<Banner>Billing moves to the new portal on Monday.</Banner>
 		</div>
 	),
 };

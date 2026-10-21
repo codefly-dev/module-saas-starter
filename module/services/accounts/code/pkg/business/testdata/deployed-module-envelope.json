@@ -1,0 +1,513 @@
+{
+ "principals": {
+  "assistant": {
+   "grant": {
+    "namespaces": [
+     "assistant"
+    ],
+    "operation_audiences": {
+     "configuration-write": {
+      "audience": "library",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "read",
+         "write"
+        ],
+        "resource_kind": "library"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library"
+       }
+      ]
+     },
+     "evidence": {
+      "audience": "library",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library"
+       }
+      ]
+     },
+     "inference": {
+      "audience": "inference",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "invoke",
+         "read"
+        ],
+        "resource_kind": "modelservice.profiles"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "modelservice.profiles"
+       }
+      ]
+     },
+     "notes": {
+      "audience": "notes",
+      "headless_scopes": [
+       {
+        "actions": [
+         "redact"
+        ],
+        "resource_kind": "notes.notes"
+       },
+       {
+        "actions": [
+         "write"
+        ],
+        "resource_kind": "notes.vocabularies"
+       }
+      ]
+     },
+     "telemetry": {
+      "audience": "telemetry",
+      "headless_scopes": [
+       {
+        "actions": [
+         "close",
+         "commit",
+         "declare",
+         "read",
+         "register"
+        ],
+        "resource_kind": "telemetry.evidence"
+       }
+      ]
+     },
+     "tracing-export": {
+      "audience": "telemetry",
+      "headless_scopes": [
+       {
+        "actions": [
+         "export"
+        ],
+        "resource_kind": "telemetry.spans"
+       }
+      ]
+     }
+    },
+    "resources": [
+     "assistant.answers",
+     "assistant.conversations",
+     "assistant.intents",
+     "assistant.runs",
+     "assistant.tasks"
+    ],
+    "tenant": "00000000-0000-7000-8000-000000000000"
+   }
+  },
+  "calc": {
+   "grant": {
+    "resources": [
+     "calc.evaluations"
+    ],
+    "tenant": "00000000-0000-7000-8000-000000000000"
+   }
+  },
+  "drafts": {
+   "grant": {
+    "operation_audiences": {
+     "library": {
+      "audience": "library",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library"
+       }
+      ]
+     },
+     "notes": {
+      "audience": "notes",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "read",
+         "write"
+        ],
+        "resource_kind": "notes.notes"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "notes.notes"
+       }
+      ]
+     }
+    },
+    "tenant": "00000000-0000-7000-8000-000000000000"
+   }
+  },
+  "executor": {
+   "grant": {
+    "operation_audiences": {
+     "apply-publication-producer": {
+      "audience": "library",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "ingest",
+         "read"
+        ],
+        "resource_kind": "library"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library"
+       }
+      ]
+     },
+     "close-sync": {
+      "audience": "library",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "read",
+         "write"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ]
+     },
+     "ingest-document": {
+      "audience": "library",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "read",
+         "write"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ]
+     },
+     "list-sync-page": {
+      "audience": "library",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "read",
+         "write"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ]
+     },
+     "plan-sync-pages": {
+      "audience": "library",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "read",
+         "write"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ]
+     }
+    },
+    "tenant": "00000000-0000-7000-8000-000000000000"
+   }
+  },
+  "inference": {
+   "grant": {
+    "operation_audiences": {
+     "telemetry": {
+      "audience": "telemetry",
+      "headless_scopes": [
+       {
+        "actions": [
+         "export"
+        ],
+        "resource_kind": "telemetry.spans"
+       }
+      ]
+     }
+    },
+    "resources": [
+     "modelservice.profiles"
+    ],
+    "tenant": "00000000-0000-7000-8000-000000000000"
+   }
+  },
+  "ledger": {
+   "grant": {
+    "tenant": "00000000-0000-7000-8000-000000000000"
+   }
+  },
+  "library": {
+   "grant": {
+    "namespaces": [
+     "document"
+    ],
+    "operation_audiences": {
+     "inference": {
+      "audience": "inference",
+      "headless_scopes": [
+       {
+        "actions": [
+         "invoke",
+         "read"
+        ],
+        "resource_kind": "modelservice.profiles"
+       }
+      ],
+      "invoke_scopes": [
+       {
+        "actions": [
+         "invoke",
+         "read"
+        ],
+        "resource_kind": "modelservice.profiles"
+       }
+      ]
+     },
+     "runtime-admission": {
+      "audience": "executor",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "execute",
+         "read",
+         "start"
+        ],
+        "resource_kind": "executor.tasks"
+       },
+       {
+        "actions": [
+         "read",
+         "write"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "executor.tasks"
+       },
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ],
+      "source_delegation_scopes": [
+       {
+        "actions": [
+         "execute",
+         "read",
+         "start"
+        ],
+        "resource_kind": "executor.tasks"
+       },
+       {
+        "actions": [
+         "read",
+         "write"
+        ],
+        "resource_kind": "library.ingest"
+       }
+      ]
+     }
+    },
+    "queues": [
+     "datasource"
+    ],
+    "resources": [
+     "library",
+     "library.collection",
+     "library.ingest"
+    ],
+    "tenant": "00000000-0000-7000-8000-000000000000"
+   }
+  },
+  "notes": {
+   "grant": {
+    "tenant": "00000000-0000-7000-8000-000000000000"
+   }
+  },
+  "pages": {
+   "grant": {
+    "operation_audiences": {
+     "executor": {
+      "audience": "executor",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "inspect",
+         "list",
+         "read"
+        ],
+        "resource_kind": "executor.tasks"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "executor.tasks"
+       }
+      ]
+     },
+     "library": {
+      "audience": "library",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "library"
+       }
+      ]
+     },
+     "notes": {
+      "audience": "notes",
+      "invoke_scopes": [
+       {
+        "actions": [
+         "read",
+         "review"
+        ],
+        "resource_kind": "assistant.answers"
+       },
+       {
+        "actions": [
+         "read",
+         "review"
+        ],
+        "resource_kind": "notes.notes"
+       },
+       {
+        "actions": [
+         "read",
+         "write"
+        ],
+        "resource_kind": "notes.selections"
+       }
+      ],
+      "lookup_scopes": [
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "assistant.answers"
+       },
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "notes.notes"
+       },
+       {
+        "actions": [
+         "read"
+        ],
+        "resource_kind": "notes.selections"
+       }
+      ]
+     }
+    },
+    "tenant": "00000000-0000-7000-8000-000000000000"
+   }
+  },
+  "telemetry": {
+   "grant": {
+    "namespaces": [
+     "telemetry"
+    ],
+    "resources": [
+     "telemetry.evidence",
+     "telemetry.spans",
+     "telemetry.store",
+     "telemetry.trace"
+    ],
+    "tenant": "00000000-0000-7000-8000-000000000000"
+   }
+  }
+ },
+ "revision": 12
+}

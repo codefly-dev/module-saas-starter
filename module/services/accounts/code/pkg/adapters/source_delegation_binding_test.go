@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
-	"accounts/pkg/business/executiontest"
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -115,7 +114,6 @@ func TestTheReferenceArmMintsWithTheUsingModulesHopAndTheDelegationsBinding(t *t
 	user := business.ModulePrincipalID("ingestservice")
 	require.Equal(t, user, hop.GetPrincipalId(), "the hop names the module that uses the capability, not the delegating one")
 	require.Equal(t, delegationID, hop.GetDelegationId())
-	require.Equal(t, executiontest.Digest("ingestservice"), hop.GetImageDigest(), "core attests the using module's own build")
 	require.Equal(t, business.SourceDelegationBindingID(delegationID, "ingestservice"), claims.GetOperationBinding().GetBindingId())
 	require.Equal(t, "installation-current", claims.GetSeal().GetInstallationId(), "sealed to the using module's installation")
 	require.Equal(t, uint64(42), claims.GetAuthorizationRevision(), "the person's ordinary revision")
@@ -194,6 +192,5 @@ func TestThePlainMintExercisesTheDelegationAsTheDelegatingModule(t *testing.T) {
 	require.NoError(t, err)
 	claims := verified.Context()
 	require.Equal(t, business.ModulePrincipalID("docstore"), claims.GetActorChain()[0].GetPrincipalId())
-	require.Equal(t, executiontest.Digest("docstore"), claims.GetActorChain()[0].GetImageDigest())
 	require.Equal(t, business.SourceDelegationBindingID(delegationID, "docstore"), claims.GetOperationBinding().GetBindingId())
 }

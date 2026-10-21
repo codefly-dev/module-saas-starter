@@ -69,11 +69,9 @@ func TestInstallerHTTPRejectsExpiredForeignAndWrongAudienceCapabilities(t *testi
 	post(token, 401)
 	post("not-a-token", 401)
 	// A signed capability for another consumer is not a module capability.
-	build := testBuildFor(caller.PrincipalID)
-	workContextSingleton.seals.(*sealAnswersFake).approve(caller.PrincipalID, build)
 	wrong, _ := mintTestCapability(t, WorkContextSingleton(), testCapability{
 		Audience: "other-consumer", Tenant: caller.BoundOrg, Owner: caller.PrincipalID,
-		OwnerKind: business.PrincipalKindService, Execution: build,
+		OwnerKind: business.PrincipalKindService,
 	})
 	post(wrong, 401)
 	require.Equal(t, 1, svc.calls)

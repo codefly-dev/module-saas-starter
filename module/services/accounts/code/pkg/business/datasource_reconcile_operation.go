@@ -131,7 +131,16 @@ func (s *Service) ReconcileDatasourceSource(ctx context.Context, actor, org, sou
 // occurrence's provenance, so an operator reading the queue can tell a
 // declared schedule's pass from a person's.
 func (s *Service) enqueueReconcileOccurrence(ctx context.Context, source *DatasourceSource, effectID string) (string, error) {
-	key := "datasource.reconcile:" + effectID
+	// The key names the organization and the source as well as the effect
+	// (issue #1112, m2). An effect identity is the CALLER's to choose and the
+	// GitHub job's scope is Global, so a key of the effect alone put every
+	// tenant's reconciles in one namespace: a caller in one organization could
+	// pick an identity already pending for a source in another and have the
+	// platform collapse the two, suppressing that organization's reconcile
+	// with no refusal anywhere. Both idempotency guarantees the operation
+	// needs are unaffected — two attempts of one occurrence still agree on all
+	// three parts, and the next occurrence still differs in the effect.
+	key := "datasource.reconcile:" + source.OrgID + ":" + source.ID + ":" + effectID
 	if source.Provider == DatasourceProviderGitHub {
 		return s.enqueueJobID(ctx, &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
@@ -199,10 +208,14 @@ func (s *Service) ReconcileSourceAuthority(ctx context.Context, actor, org, sour
 		if source == nil {
 			return status.Error(codes.NotFound, "datasource source not found")
 		}
-		// A shared source is an organization administrator's to reconcile; a
-		// personal one is its owner's. The same division the rest of this
-		// surface makes, and the same one a delegation re-checks: the person a
-		// reference borrows authority from holds exactly this role.
+		// The caller must be the source's own owner OR an organization
+		// administrator. This is the ROLE gate and it is deliberately the
+		// weaker of the two: a personal source belonging to another member
+		// passes here, and is refused by ReconcileDatasourceSource, which is
+		// where the owner-only rule lives. Stated because the two read alike
+		// and the difference matters — a reader who took this for the
+		// owner-only check would believe an administrator cannot reach another
+		// member's personal source at all, and they can reach this far.
 		if source.PersonalOwnerUserID != actor && !IsOrgAdminRole(orgRoleToString(member.Role)) {
 			return status.Error(codes.PermissionDenied, "source owner or organization administrator required")
 		}

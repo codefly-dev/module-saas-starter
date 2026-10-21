@@ -10,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/codefly-dev/core/wool"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -109,6 +112,24 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 	s.boundaries, _ = config.Authority.(business.SolutionRuntimeBoundarySeedStore)
 }
 
+// CheckAuthorizationRevision answers ONE question — is the authority this
+// Work Context asserts still current — for every context, by resolving each
+// SUBJECT with the resolver that knows it. Which resolver applies is decided
+// by a fact the context carries, never by the shape of its subjects:
+//
+//	the context's own binding names a delegation  -> the delegation
+//	the owner is itself a declared module         -> that module's installation
+//	a subject is a declared module (a hop)        -> the binding that hop names
+//	everyone else (people, agents)                -> the authority store
+//
+// Before this, a module hop that named no binding matched none of the three
+// checks that existed, so it fell to the store — which does not hold module
+// principals, answered "not found", and had the module calling report to its
+// caller a revocation that had never happened. That denied every call an
+// orchestrator makes to an owner it executes an operation for.
+//
+// Every refusal is PermissionDenied: a consumer must read a changed or forged
+// context as denied, never as an authority outage it may retry.
 func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	ctx context.Context,
 	req *gen.CheckAuthorizationRevisionRequest,
@@ -123,58 +144,108 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 		req.GetSubjects()[0].GetPrincipalId() != req.GetOwnerPrincipalId() {
 		return nil, status.Error(codes.InvalidArgument, "owner must be the first revision subject")
 	}
-	// A context owned by a declared module's service principal has no
-	// row-backed authority to resolve: it is confirmed against the module's
-	// current declaration instead. Every other owner takes the store path below.
+	// PHASE ONE of the cutover: a consumer that states NEITHER field is still
+	// judged, not refused as malformed. Requiring the assertion is phase two,
+	// after every consumer states it; refusing it now answers InvalidArgument
+	// to every consumer generated before the fields existed, and a consumer
+	// that maps only the denial codes reports that as an authority outage.
+	// TestTheOldestSupportedClientIsStillAnswered holds this open.
+	if req.GetOperationBindingId() != "" && req.GetSealsNoBinding() {
+		return nil, status.Error(codes.InvalidArgument,
+			"a context either names an operation binding or seals none; this request says both")
+	}
+	if err := s.confirmCurrentAuthority(ctx, req); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// confirmCurrentAuthority is the one dispatch. Each branch is a resolver that
+// reads the authority it knows about, live; none of them infers a context's
+// kind from what the others declined.
+func (s *WorkContextAuthorityServer) confirmCurrentAuthority(
+	ctx context.Context, req *gen.CheckAuthorizationRevisionRequest,
+) error {
+	// A context owned by a declared module has no row-backed authority at all:
+	// it is its installation's, and confirmed against the module's current
+	// declaration.
 	if handled, err := checkModuleOperationContextRevision(ctx, req); handled {
-		return nil, err
+		return err
 	}
-	// A context minted from a source delegation is owned by a person but
-	// actored by a declared module principal, which the store path cannot
-	// resolve (a module principal is not a registered agent). It is confirmed
-	// against the delegation it was minted from instead.
-	if handled, err := checkSourceDelegationContextRevision(ctx, req); handled {
-		return nil, err
-	}
-	if s == nil || s.consumer == nil {
-		return nil, status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
+	// A context whose binding names a source delegation is authorized by that
+	// delegation, whatever its subjects look like.
+	if business.NamesASourceDelegation(req.GetOperationBindingId()) {
+		if handled, err := checkSourceDelegationContextRevision(ctx, req); handled {
+			return err
+		}
 	}
 	seen := make(map[string]struct{}, len(req.GetSubjects()))
 	subjects := make([]business.WorkContextRevisionSubject, 0, len(req.GetSubjects()))
 	for _, subject := range req.GetSubjects() {
 		if subject == nil {
-			return nil, status.Error(codes.InvalidArgument, "revision subject must not be null")
+			return status.Error(codes.InvalidArgument, "revision subject must not be null")
 		}
 		principalID := subject.GetPrincipalId()
 		if _, duplicate := seen[principalID]; duplicate {
-			return nil, status.Error(codes.InvalidArgument, "revision subjects must be unique")
+			return status.Error(codes.InvalidArgument, "revision subjects must be unique")
 		}
 		seen[principalID] = struct{}{}
+		// A module hop, confirmed from the binding it names.
+		if service != nil && principalID != req.GetOwnerPrincipalId() && service.IsDeclaredModulePrincipal(principalID) {
+			if err := service.ConfirmModuleHopBinding(ctx, req.GetOrgId(), principalID,
+				req.GetOperationBindingId(), moduleScopesOf(subject)); err != nil {
+				wool.Get(ctx).In("CheckAuthorizationRevision").Warn("a module hop of this Work Context no longer stands",
+					wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()),
+					wool.Field("module", principalID), wool.Field("binding", req.GetOperationBindingId()),
+					wool.ErrField(err))
+				return status.Error(codes.PermissionDenied, business.ErrModuleHopStale.Error())
+			}
+			continue
+		}
 		permissions, _, err := workContextScopes(subject.GetScopes(), recheckContentReads())
 		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
+			return status.Error(codes.InvalidArgument, err.Error())
 		}
 		subjects = append(subjects, business.WorkContextRevisionSubject{
 			PrincipalID: principalID,
 			Permissions: permissions,
 		})
 	}
-	ctx = accountsauth.WithVerifiedDatabaseIdentity(
-		ctx,
-		req.GetOwnerPrincipalId(),
-		req.GetOrgId(),
-	)
+	// Only a subject the STORE must answer for needs the store.
+	if len(subjects) == 0 {
+		return nil
+	}
+	if s == nil || s.consumer == nil {
+		return status.Error(codes.Unavailable, "Work Context consumer authority is unavailable")
+	}
+	ctx = accountsauth.WithVerifiedDatabaseIdentity(ctx, req.GetOwnerPrincipalId(), req.GetOrgId())
 	err := s.consumer.CheckWorkContextAuthorizationRevision(
-		ctx,
-		req.GetOrgId(),
-		req.GetOwnerPrincipalId(),
-		req.GetAuthorizationRevision(),
-		subjects,
+		ctx, req.GetOrgId(), req.GetOwnerPrincipalId(), req.GetAuthorizationRevision(), subjects,
 	)
 	if err != nil {
-		return nil, mapConsumerAuthorityError(err)
+		// Named where it is decided: a module reporting "the caller's
+		// authorization was revoked" otherwise sends an operator looking for a
+		// revocation that never happened.
+		wool.Get(ctx).In("CheckAuthorizationRevision").Warn("the authority this Work Context asserts is no longer current",
+			wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()),
+			wool.Field("sealed_revision", req.GetAuthorizationRevision()),
+			wool.Field("subjects", len(req.GetSubjects())), wool.ErrField(err))
+		return mapConsumerAuthorityError(err)
 	}
-	return &emptypb.Empty{}, nil
+	return nil
+}
+
+// moduleScopesOf is one subject's scopes in the module vocabulary.
+func moduleScopesOf(subject *gen.WorkContextRevisionSubject) []business.ModuleOperationScope {
+	scopes := make([]business.ModuleOperationScope, 0, len(subject.GetScopes()))
+	for _, scope := range subject.GetScopes() {
+		scopes = append(scopes, business.ModuleOperationScope{
+			ResourceKind: scope.GetResourceKind(),
+			Actions:      append([]string(nil), scope.GetActions()...),
+			ResourceIDs:  append([]string(nil), scope.GetResourceIds()...),
+		})
+	}
+	return scopes
 }
 
 // checkModuleOperationContextRevision confirms a context MintModuleOperationContext
@@ -382,17 +453,11 @@ func (s *WorkContextAuthorityServer) taskBoundary(
 	if seed.Publisher != identity.Publisher {
 		return "", status.Error(codes.PermissionDenied, "solution registration is owned by another publisher")
 	}
-	// The backend half is the half that mints, and "serving" is DELIVERED
-	// presence: the applied declared generation carries a backend half on a
-	// non-tombstoned declared row. It was a lease expiry, which nothing renews
-	// any more — the renewal path is deleted and a tombstone is the only
-	// withdrawal — so the refusal names the columns it read rather than leaving
-	// an operator to guess which half never arrived.
-	if !seed.BackendServing {
-		return "", status.Errorf(codes.FailedPrecondition,
-			"solution backend registration is not serving: the declared row for %q carries no backend half (%s is absent)",
-			identity.SolutionID, seed.MissingBackendHalf)
-	}
+	// "Serving" is DELIVERED presence and nothing else: the seed read above
+	// refused a tombstone and a missing record by name, and the applied
+	// generation is what the gateway resolves the solution's address from.
+	// There is no lease to renew — the renewal path is deleted and a tombstone
+	// is the only withdrawal.
 	boundary, err := business.SolutionRuntimeBoundary(seed.BindingID, orgID)
 	if err != nil {
 		return "", status.Error(codes.Internal, "cannot derive the solution runtime boundary")
@@ -1010,27 +1075,15 @@ var ErrWorkContextAuthorityUnconfigured = errors.New("Work Context authority is 
 // how long a superseded pod could hold one at most, not a session length.
 const moduleWorkContextTTL = 15 * time.Minute
 
-// attestedModuleExecution is the execution a module mint attests: the digest of
-// what BindExecution read off the requesting pod's container status, and the
-// approved build's incarnation. Core holds it against the approved build again
-// at the mint. A status naming no digest attests nothing, which core refuses for
-// a principal that bears an execution.
-func attestedModuleExecution(authority business.ModuleWorkContextAuthority) workcontext.Execution {
-	digest, ok := authority.Execution.AttestedDigest()
-	if !ok {
-		return workcontext.Execution{}
-	}
-	return workcontext.Execution{ImageDigest: digest, BuildIncarnation: authority.Execution.Incarnation}
-}
-
 // StartModuleTask mints the capability a composed module presents to the
 // module-facing surface, owned by the module's service principal and acting as
 // it directly.
 //
 // It is sealed to the installation the business mint resolved, the principal's
-// producer epoch, and the execution the requesting pod is running — so a
-// revoked installation, an advanced epoch or a superseded build refuses the
-// capability at its next use rather than at its expiry. Every use still re-reads
+// producer epoch — so a revoked installation or an advanced epoch refuses the
+// capability at its next use rather than at its expiry. It seals no build: what
+// a workload runs is deploy-time admission, and the mint bound the caller to a
+// workload its applied manifest lists. Every use still re-reads
 // and intersects the live installation under an authority fence.
 //
 // This method only signs already-resolved authority. The business layer owns
@@ -1047,7 +1100,6 @@ func (s *WorkContextAuthorityServer) StartModuleTask(
 			TaskID:             uuid.NewString(),
 			Audience:           ModuleWorkContextAudience,
 			InstallationID:     authority.InstallationID,
-			Execution:          attestedModuleExecution(authority),
 		},
 		Replay: workcontext.ReplayIdempotent,
 		TTL:    moduleWorkContextTTL,
@@ -1094,7 +1146,6 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 			Audience:           authority.Audience,
 			AuthorityScopes:    scopes,
 			InstallationID:     authority.InstallationID,
-			Execution:          attestedModuleExecution(authority.ModuleWorkContextAuthority),
 		},
 		Replay: workcontext.ReplayIdempotent,
 		TTL:    business.ModuleOperationContextTTL,
@@ -1125,10 +1176,6 @@ func (s *WorkContextAuthorityServer) VerifyModuleWorkContext(ctx context.Context
 		InstallationID:       &installation,
 		InstallationRevision: &revision,
 		ProducerEpoch:        &epoch,
-	}
-	if seal.ImageDigest != nil && seal.BuildIncarnation != nil {
-		digest, incarnation := seal.GetImageDigest(), seal.GetBuildIncarnation()
-		sealed.ImageDigest, sealed.BuildIncarnation = &digest, &incarnation
 	}
 	return business.ModuleCaller{
 		PrincipalID: principal,
@@ -1192,7 +1239,7 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	}
 	token, signed, err := s.remint(ctx, parent.Context(), req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
-		nil, workcontext.Execution{}, "")
+		nil, "", moduleBindingSeal{})
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
@@ -1218,19 +1265,16 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 		return nil, err
 	}
 	// The owner is exchanging their own capability, so it is re-issued in the
-	// session they authenticated with. A hop in the chain that bears an
-	// execution cannot be attested by an owner, so such a chain is exchanged by
-	// its module through the module capability surface instead.
-	return s.exchangeVerifiedParent(ctx, parent.Context(), actor, req, workcontext.Execution{}, callerSession(ctx))
+	// session they authenticated with.
+	return s.exchangeVerifiedParent(ctx, parent.Context(), actor, req, callerSession(ctx), moduleBindingSeal{})
 }
 
 // exchangeVerifiedParent runs AFTER the caller's authentication and
-// current-parent checks. lastExecution attests the chain's last hop when that
-// hop's principal bears an execution; session is the issuer-assigned session
-// the exchanged capability opens ("" for a fresh one).
+// current-parent checks. session is the issuer-assigned session the exchanged
+// capability opens ("" for a fresh one).
 func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	ctx context.Context, parent *basev0.WorkContextV1, actor *business.Principal,
-	req *gen.ExchangeWorkContextAudienceRequest, lastExecution workcontext.Execution, session string,
+	req *gen.ExchangeWorkContextAudienceRequest, session string, exercised moduleBindingSeal,
 ) (*gen.IssuedWorkContext, error) {
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
@@ -1251,7 +1295,7 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	}
 	token, signed, err := s.remint(ctx, parent, req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
-		attenuated, lastExecution, session)
+		attenuated, session, exercised)
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
@@ -1263,6 +1307,16 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 // acts directly — and returns them, or nil when none were requested (the chain
 // is re-issued as it stands). Widening is refused here, before anything is
 // minted, rather than left for core's derivation to refuse with less to say.
+// attenuateEffective bounds requested — an installed binding's or a renewal's
+// declared scopes, which are policy CEILINGS — by what the parent actually
+// carries. A ceiling that names no resource ids over a parent narrowed to some
+// keeps the parent's ids: a module that minted its parent at the least
+// authority it needs (one model profile, one collection) is not refused for
+// having been careful. A module did exactly that — a parent of a read on one
+// profile, redeemed through a binding whose lookup ceiling is the kind — and
+// every turn was refused "widens authority" before the first model call. Only
+// a kind, an action or an id the parent never
+// carried is a widening, and that stays refused by name.
 func attenuateEffective(parent *basev0.WorkContextV1, requested []*basev0.WorkScopeV1) ([]*basev0.WorkScopeV1, error) {
 	if len(requested) == 0 {
 		return nil, nil
@@ -1271,10 +1325,43 @@ func attenuateEffective(parent *basev0.WorkContextV1, requested []*basev0.WorkSc
 	if chain := parent.GetActorChain(); len(chain) > 0 {
 		effective = chain[len(chain)-1].GetGrantedScopes()
 	}
-	if !workcontext.ScopesAttenuate(requested, effective) {
-		return nil, status.Error(codes.InvalidArgument, "audience exchange widens authority")
+	attenuated := make([]*basev0.WorkScopeV1, 0, len(requested))
+	for _, scope := range requested {
+		if workcontext.ScopeContained(scope, effective) {
+			attenuated = append(attenuated, scope)
+			continue
+		}
+		narrowed := narrowToParentIDs(scope, effective)
+		if narrowed == nil || !workcontext.ScopeContained(narrowed, effective) {
+			return nil, status.Errorf(codes.InvalidArgument, "audience exchange widens authority: the parent does not carry %s:%s", scope.GetResourceKind(), strings.Join(scope.GetActions(), ","))
+		}
+		attenuated = append(attenuated, narrowed)
 	}
-	return requested, nil
+	return attenuated, nil
+}
+
+// narrowToParentIDs is the one narrowing attenuation performs itself: a
+// kind-wide ceiling takes the resource ids the parent holds for that kind. It
+// reads the parent the way core's ScopeContained does — the first scope of the
+// kind — so what it returns is exactly what that check then verifies. nil when
+// the ceiling already names ids or the parent holds the kind unrestricted or
+// not at all.
+func narrowToParentIDs(scope *basev0.WorkScopeV1, effective []*basev0.WorkScopeV1) *basev0.WorkScopeV1 {
+	if len(scope.GetResourceIds()) != 0 {
+		return nil
+	}
+	for _, held := range effective {
+		if held.GetResourceKind() != scope.GetResourceKind() {
+			continue
+		}
+		if len(held.GetResourceIds()) == 0 {
+			return nil
+		}
+		narrowed := proto.Clone(scope).(*basev0.WorkScopeV1)
+		narrowed.ResourceIds = slices.Clone(held.GetResourceIds())
+		return narrowed
+	}
+	return nil
 }
 
 // StartChildSession delegates one more hop from a verified parent. The child's
@@ -1408,7 +1495,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 		replayPolicy = workContextReplayPolicy(req.GetReplayPolicy())
 	}
 	token, signed, err := s.remint(ctx, parent, audience, replayPolicy, workContextTTL(req.GetTtlSeconds()),
-		attenuated, workcontext.Execution{}, "")
+		attenuated, "", moduleBindingSeal{})
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}

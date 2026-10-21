@@ -19,17 +19,30 @@ import (
 // caller opened a WithControlPlane transaction.
 
 // LatestModuleEnvelopeRecord returns the highest revision, or nil when none has
-// been written.
+// been written. A delivered revision reads with an empty WrittenBy.
 func (s *PostgresStore) LatestModuleEnvelopeRecord(ctx context.Context) (*business.ModuleEnvelopeRecord, error) {
+	return s.latestModuleEnvelopeRecord(ctx, "")
+}
+
+// LatestDeliveredModuleEnvelopeRecord returns the highest DELIVERED revision,
+// or nil when none has been delivered.
+func (s *PostgresStore) LatestDeliveredModuleEnvelopeRecord(ctx context.Context) (*business.ModuleEnvelopeRecord, error) {
+	return s.latestModuleEnvelopeRecord(ctx, "WHERE written_by IS NULL")
+}
+
+func (s *PostgresStore) latestModuleEnvelopeRecord(ctx context.Context, where string) (*business.ModuleEnvelopeRecord, error) {
 	var (
 		record   business.ModuleEnvelopeRecord
 		revision int64
+		envelope *string
 	)
 	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
-		SELECT revision, document::text, written_by::text, written_at
-		  FROM public.module_envelopes
+		SELECT revision, document::text, COALESCE(written_by::text, ''), written_at,
+		       COALESCE(signer, ''), COALESCE(ownership_domain, ''), delivered_payload, delivered_envelope::text
+		  FROM public.module_envelopes `+where+`
 		 ORDER BY revision DESC
-		 LIMIT 1`).Scan(&revision, &record.Document, &record.WrittenBy, &record.WrittenAt)
+		 LIMIT 1`).Scan(&revision, &record.Document, &record.WrittenBy, &record.WrittenAt,
+		&record.Signer, &record.OwnershipDomain, &record.Payload, &envelope)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -37,11 +50,16 @@ func (s *PostgresStore) LatestModuleEnvelopeRecord(ctx context.Context) (*busine
 		return nil, err
 	}
 	record.Revision = uint64(revision) //nolint:gosec // the column is CHECKed positive
+	if envelope != nil {
+		record.Envelope = []byte(*envelope)
+	}
 	return &record, nil
 }
 
-// AppendModuleEnvelopeRecord writes the next revision while the current one is
-// expectedRevision.
+// AppendModuleEnvelopeRecord writes a revision above expectedRevision while the
+// current one is expectedRevision: an administrator writes the next one, a
+// delivery the one its composition declared. A row is a user's or a delivery's,
+// never both (module_envelopes_writer_check).
 //
 // Two guards, one per way a write can be stale. The WHERE clause refuses a
 // writer whose expected revision is not the current one — it read a ceiling
@@ -52,18 +70,25 @@ func (s *PostgresStore) LatestModuleEnvelopeRecord(ctx context.Context) (*busine
 func (s *PostgresStore) AppendModuleEnvelopeRecord(
 	ctx context.Context, record *business.ModuleEnvelopeRecord, expectedRevision uint64,
 ) error {
-	if record.Revision != expectedRevision+1 {
-		return fmt.Errorf("%w: revision %d does not follow %d", business.ErrModuleEnvelopeConflict, record.Revision, expectedRevision)
+	if record.Revision <= expectedRevision {
+		return fmt.Errorf("%w: revision %d is not above %d", business.ErrModuleEnvelopeConflict, record.Revision, expectedRevision)
+	}
+	var envelope *string
+	if record.Envelope != nil {
+		encoded := string(record.Envelope)
+		envelope = &encoded
 	}
 	if _, err := s.getQueryExecutor(ctx).Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('module-envelope-installation',0))`); err != nil {
 		return err
 	}
 	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
-		INSERT INTO public.module_envelopes (revision, document, written_by)
-		SELECT $1, $2::jsonb, $3::uuid
+		INSERT INTO public.module_envelopes
+		       (revision, document, written_by, signer, ownership_domain, delivered_payload, delivered_envelope)
+		SELECT $1, $2::jsonb, NULLIF($3, '')::uuid, NULLIF($5, ''), NULLIF($6, ''), $7, $8::jsonb
 		 WHERE COALESCE((SELECT max(revision) FROM public.module_envelopes), 0) = $4
 		RETURNING written_at`,
 		int64(record.Revision), string(record.Document), record.WrittenBy, int64(expectedRevision), //nolint:gosec // revisions are small positive counters
+		record.Signer, record.OwnershipDomain, record.Payload, envelope,
 	).Scan(&record.WrittenAt)
 	if errors.Is(err, pgx.ErrNoRows) || isUniqueViolation(err) {
 		return fmt.Errorf("%w: revision %d is no longer the current one", business.ErrModuleEnvelopeConflict, expectedRevision)

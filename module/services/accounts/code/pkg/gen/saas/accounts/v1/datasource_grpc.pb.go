@@ -28,6 +28,7 @@ const (
 	DatasourceService_DeclareSourceOperations_FullMethodName            = "/saas.accounts.v1.DatasourceService/DeclareSourceOperations"
 	DatasourceService_AddGitHubSource_FullMethodName                    = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
 	DatasourceService_AddSource_FullMethodName                          = "/saas.accounts.v1.DatasourceService/AddSource"
+	DatasourceService_UpdateSource_FullMethodName                       = "/saas.accounts.v1.DatasourceService/UpdateSource"
 	DatasourceService_GetDatasourceCatalog_FullMethodName               = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
 	DatasourceService_ListSources_FullMethodName                        = "/saas.accounts.v1.DatasourceService/ListSources"
 	DatasourceService_GetSource_FullMethodName                          = "/saas.accounts.v1.DatasourceService/GetSource"
@@ -93,6 +94,12 @@ type DatasourceServiceClient interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(ctx context.Context, in *AddSourceRequest, opts ...grpc.CallOption) (*AddSourceResponse, error)
+	// UpdateSource changes what an already-connected source fetches — its branch
+	// and its path and file-type filters — keeping its identity, its credential,
+	// its sync history and the collection it writes into. A change that moves
+	// what is fetched enqueues a sync, whose progress reports the reconfigured
+	// trigger so a reader can tell a re-snapshot from an ordinary one.
+	UpdateSource(ctx context.Context, in *UpdateSourceRequest, opts ...grpc.CallOption) (*UpdateSourceResponse, error)
 	// GetDatasourceCatalog returns the host's connector registry: every provider,
 	// its connect metadata, whether it conforms to the datasource connector
 	// envelope, and whether it accepts a new source, so a client can render the
@@ -172,16 +179,28 @@ type DatasourceServiceClient interface {
 	// delegation to name, and nothing backfills one.
 	//
 	// It records nothing new about who may do what. For every module whose one
-	// operation binding declares source_delegation_scopes it revokes any active
-	// delegation of the source to that module as `replaced` and records a fresh
-	// one under the calling administrator — exactly what a reconnect does, and in
-	// one transaction, so a source never ends with two delegations or none.
+	// operation binding declares source_delegation_scopes and which holds NO
+	// active delegation of the source, it records one under the calling
+	// administrator, in one transaction.
+	//
+	// It is ADDITIVE. A module that already holds an active delegation is left
+	// exactly as it is: this used to revoke every one of them as `replaced` and
+	// re-record each under the caller, which took a personal source's delegation
+	// away from its owner and moved unrelated modules' authority onto the
+	// administrator. A personal source the caller does not own is refused
+	// (PERMISSION_DENIED), because the authority a reference borrows must be one
+	// that can perform the operation the trigger admits, and on such a source
+	// that is the owner's alone.
 	DelegateSourceTriggers(ctx context.Context, in *DelegateSourceTriggersRequest, opts ...grpc.CallOption) (*DelegateSourceTriggersResponse, error)
 	// GetSourceTriggerDeclaration reads the reconcile schedule this host declares
 	// for one source — the trigger a declared release carries — together with
 	// the identity its occurrences would run under and the children already
-	// minted against that identity. This host fires nothing on this schedule; the
-	// declaration is what an executing module admits occurrences from.
+	// minted against that identity. The declaration is what an executing module
+	// admits occurrences from.
+	//
+	// Reading it does not mean anything fires it. No composed runtime consumes
+	// the declaration yet, so this host still runs the reconcile schedule itself
+	// as an explicitly labelled stopgap, deleted when one does.
 	GetSourceTriggerDeclaration(ctx context.Context, in *GetSourceTriggerDeclarationRequest, opts ...grpc.CallOption) (*GetSourceTriggerDeclarationResponse, error)
 	// ReconcileSource performs one reconcile pass over a source: the host
 	// operation the declared schedule's occurrences admit, and the same work a
@@ -286,6 +305,16 @@ func (c *datasourceServiceClient) AddSource(ctx context.Context, in *AddSourceRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AddSourceResponse)
 	err := c.cc.Invoke(ctx, DatasourceService_AddSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) UpdateSource(ctx context.Context, in *UpdateSourceRequest, opts ...grpc.CallOption) (*UpdateSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSourceResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_UpdateSource_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -580,6 +609,12 @@ type DatasourceServiceServer interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(context.Context, *AddSourceRequest) (*AddSourceResponse, error)
+	// UpdateSource changes what an already-connected source fetches — its branch
+	// and its path and file-type filters — keeping its identity, its credential,
+	// its sync history and the collection it writes into. A change that moves
+	// what is fetched enqueues a sync, whose progress reports the reconfigured
+	// trigger so a reader can tell a re-snapshot from an ordinary one.
+	UpdateSource(context.Context, *UpdateSourceRequest) (*UpdateSourceResponse, error)
 	// GetDatasourceCatalog returns the host's connector registry: every provider,
 	// its connect metadata, whether it conforms to the datasource connector
 	// envelope, and whether it accepts a new source, so a client can render the
@@ -659,16 +694,28 @@ type DatasourceServiceServer interface {
 	// delegation to name, and nothing backfills one.
 	//
 	// It records nothing new about who may do what. For every module whose one
-	// operation binding declares source_delegation_scopes it revokes any active
-	// delegation of the source to that module as `replaced` and records a fresh
-	// one under the calling administrator — exactly what a reconnect does, and in
-	// one transaction, so a source never ends with two delegations or none.
+	// operation binding declares source_delegation_scopes and which holds NO
+	// active delegation of the source, it records one under the calling
+	// administrator, in one transaction.
+	//
+	// It is ADDITIVE. A module that already holds an active delegation is left
+	// exactly as it is: this used to revoke every one of them as `replaced` and
+	// re-record each under the caller, which took a personal source's delegation
+	// away from its owner and moved unrelated modules' authority onto the
+	// administrator. A personal source the caller does not own is refused
+	// (PERMISSION_DENIED), because the authority a reference borrows must be one
+	// that can perform the operation the trigger admits, and on such a source
+	// that is the owner's alone.
 	DelegateSourceTriggers(context.Context, *DelegateSourceTriggersRequest) (*DelegateSourceTriggersResponse, error)
 	// GetSourceTriggerDeclaration reads the reconcile schedule this host declares
 	// for one source — the trigger a declared release carries — together with
 	// the identity its occurrences would run under and the children already
-	// minted against that identity. This host fires nothing on this schedule; the
-	// declaration is what an executing module admits occurrences from.
+	// minted against that identity. The declaration is what an executing module
+	// admits occurrences from.
+	//
+	// Reading it does not mean anything fires it. No composed runtime consumes
+	// the declaration yet, so this host still runs the reconcile schedule itself
+	// as an explicitly labelled stopgap, deleted when one does.
 	GetSourceTriggerDeclaration(context.Context, *GetSourceTriggerDeclarationRequest) (*GetSourceTriggerDeclarationResponse, error)
 	// ReconcileSource performs one reconcile pass over a source: the host
 	// operation the declared schedule's occurrences admit, and the same work a
@@ -722,6 +769,9 @@ func (UnimplementedDatasourceServiceServer) AddGitHubSource(context.Context, *Ad
 }
 func (UnimplementedDatasourceServiceServer) AddSource(context.Context, *AddSourceRequest) (*AddSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AddSource not implemented")
+}
+func (UnimplementedDatasourceServiceServer) UpdateSource(context.Context, *UpdateSourceRequest) (*UpdateSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateSource not implemented")
 }
 func (UnimplementedDatasourceServiceServer) GetDatasourceCatalog(context.Context, *GetDatasourceCatalogRequest) (*GetDatasourceCatalogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetDatasourceCatalog not implemented")
@@ -959,6 +1009,24 @@ func _DatasourceService_AddSource_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DatasourceServiceServer).AddSource(ctx, req.(*AddSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_UpdateSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).UpdateSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_UpdateSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).UpdateSource(ctx, req.(*UpdateSourceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1451,6 +1519,10 @@ var DatasourceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AddSource",
 			Handler:    _DatasourceService_AddSource_Handler,
+		},
+		{
+			MethodName: "UpdateSource",
+			Handler:    _DatasourceService_UpdateSource_Handler,
 		},
 		{
 			MethodName: "GetDatasourceCatalog",

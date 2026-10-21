@@ -54,33 +54,27 @@ import (
 // worker needs to service every tenant's deliveries on its queue. Tenant is the
 // org a single-tenant module is bound to, which its minted Work Context carries;
 // a cross-tenant module names the tenant per mint instead.
-// ModuleWorkload is the Kubernetes identity this principal's pods run as, and
-// the container within them that runs its image.
+// ModuleWorkload is one Kubernetes identity this principal's pods run as, and
+// the container within them that authenticates. It is the applied manifest's
+// (service, container) spelled by the cell's rule: the namespace is the
+// module's, the ServiceAccount the service's.
 //
 // WHY THE DECLARATION HOLDS THIS AT ALL. Execution binding is unconditional, so
 // `BindExecution` is the only thing authenticating a module mint — and it takes
 // the principal as an INPUT. On its own that leaves the principal a bare claim:
 // a module presenting its own perfectly valid service-account token could name
-// ANOTHER module's prefix, and the check would then compare that other
-// principal's approved build against this caller's running image. Two modules
-// built from one image are interchangeable, and a shared base image makes the
-// hole wider than that. The shared secret used to bind the prefix to the
-// caller; removing it without this would have removed the binding.
+// ANOTHER module's prefix and be minted that module's authority. The shared
+// secret used to bind the prefix to the caller; removing it without this would
+// have removed the binding.
 //
 // So the declaration says which workload a principal IS, the TokenReview says
 // which workload the caller is, and a mismatch is a refusal. The prefix becomes
 // a claim the host can check rather than one it has to believe.
 //
-// THE CONTAINER IS DECLARED, NOT CHOSEN. It was a caller-supplied argument, and
-// that is the last degree of freedom the caller had over its own identity: a
-// pod's containers do not all run the same image, so naming a sibling picks
-// which image the approval is tested against. Reading it from the declaration
-// means nothing about the identity is the caller's to pick — the prefix is
-// checked, the pod comes from the token, the container comes from here, the
-// running image comes from the pod's status, and the approval comes from a
-// signed document.
+// THE CONTAINER IS DECLARED, NOT CHOSEN. Reading it from the manifest means
+// nothing about the identity is the caller's to pick — the prefix is checked,
+// the pod comes from the token, and the container comes from here.
 type ModuleWorkload struct {
-	SPIFFEID       string `json:"spiffe_id"`
 	ServiceAccount string `json:"service_account"`
 	Namespace      string `json:"namespace"`
 	Container      string `json:"container"`
@@ -168,10 +162,11 @@ type ModulePrincipalGrant struct {
 	CrossTenant        bool
 	Tenant             string
 
-	// Workload is the Kubernetes identity this principal runs as. Required:
-	// see ModuleWorkload for why a principal without one cannot be
-	// authenticated at all.
-	Workload ModuleWorkload
+	// Workloads are the Kubernetes identities this principal runs as: every
+	// workload its applied manifest lists. At least one is required: see
+	// ModuleWorkload for why a principal without one cannot be authenticated
+	// at all.
+	Workloads []ModuleWorkload
 }
 
 func (g ModulePrincipalGrant) allowsQueue(queue string) bool {
@@ -401,14 +396,22 @@ func ValidateModulePrincipalGrant(prefix string, grant ModulePrincipalGrant) err
 	if err := validateModulePrincipalCeiling(prefix, grant); err != nil {
 		return err
 	}
-	if !grant.Workload.declared() {
+	if len(grant.Workloads) == 0 {
 		return fmt.Errorf(
 			"module principal %q must declare its workload identity (service_account, namespace, container): "+
 				"execution binding is unconditional, so without it the host cannot tell this principal's pods "+
 				"from any other caller holding a valid token",
 			prefix)
 	}
-	return grant.Workload.validateForm(prefix)
+	for _, workload := range grant.Workloads {
+		if !workload.declared() {
+			return fmt.Errorf("module principal %q declares a workload missing its service_account, namespace or container", prefix)
+		}
+		if err := workload.validateForm(prefix); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ModuleCaller is the authenticated module service principal, as the RPC adapter

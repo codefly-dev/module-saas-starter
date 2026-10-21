@@ -6,18 +6,23 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file saas/accounts/v1/solution_registry.proto.
  */
 export const file_saas_accounts_v1_solution_registry: GenFile = /*@__PURE__*/
-  fileDesc("CihzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIm8KF1NvbHV0aW9uRnJvbnRlbmRCaW5kaW5nEhAKCHJldmlzaW9uGAEgASgDEhAKCG1hbmlmZXN0GAIgASgJEhgKEGNvbnRyYWN0X3ZlcnNpb24YAyABKAlKBAgEEAVSEGxlYXNlX2V4cGlyZXNfYXQihQEKFlNvbHV0aW9uQmFja2VuZEJpbmRpbmcSEAoIcmV2aXNpb24YASABKAMSEAoIdXBzdHJlYW0YAiABKAkSFQoNc2VydmljZV9hbGlhcxgDIAEoCRIYChBjb250cmFjdF92ZXJzaW9uGAQgASgJSgQIBRAGUhBsZWFzZV9leHBpcmVzX2F0IooEChRTb2x1dGlvblJlZ2lzdHJhdGlvbhITCgtzb2x1dGlvbl9pZBgBIAEoCRIRCglwdWJsaXNoZXIYAiABKAkSEAoIcmV2aXNpb24YAyABKAMSPAoGc3RhdHVzGAQgASgOMiwuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvblN0YXR1cxJACghmcm9udGVuZBgFIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Gcm9udGVuZEJpbmRpbmdIAIgBARI+CgdiYWNrZW5kGAYgASgLMiguc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkJhY2tlbmRCaW5kaW5nSAGIAQESLgoKdXBkYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASNgoNdG9tYnN0b25lZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAogBARJACghkZWNsYXJlZBgKIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25EZWNsYXJlZEJpbmRpbmdIA4gBAUILCglfZnJvbnRlbmRCCgoIX2JhY2tlbmRCEAoOX3RvbWJzdG9uZWRfYXRCCwoJX2RlY2xhcmVkSgQICRAKUhBydW50aW1lX2JvdW5kYXJ5Ij4KIExpc3RTb2x1dGlvblJlZ2lzdHJhdGlvbnNSZXF1ZXN0EhoKEmluY2x1ZGVfdG9tYnN0b25lZBgBIAEoCCJ9CiFMaXN0U29sdXRpb25SZWdpc3RyYXRpb25zUmVzcG9uc2USPQoNcmVnaXN0cmF0aW9ucxgBIAMoCzImLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25SZWdpc3RyYXRpb24SGQoRcmVnaXN0cnlfcmV2aXNpb24YAiABKAMimwEKF1NvbHV0aW9uRGVjbGFyZWRCaW5kaW5nEhIKCmJpbmRpbmdfaWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBBIPCgdyZWxlYXNlGAMgASgJEhEKCXRhcmdldF9pZBgEIAEoCRI0CgRraW5kGAUgASgOMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkRlY2xhcmVkS2luZCJ9Ch1Tb2x1dGlvbkhvc3RCaW5kaW5nR2VuZXJhdGlvbhISCgpnZW5lcmF0aW9uGAEgASgEEg4KBmRpZ2VzdBgCIAEoCRIQCghkb2N1bWVudBgDIAEoCRImCgJhdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAisgEKJFNvbHV0aW9uSG9zdEJpbmRpbmdBcHBsaWVkR2VuZXJhdGlvbhJDCgpnZW5lcmF0aW9uGAEgASgLMi8uc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkhvc3RCaW5kaW5nR2VuZXJhdGlvbhIPCgdyZW1vdmVkGAIgASgIEg4KBnJvdXRlcxgDIAMoCRITCgtzb2x1dGlvbl9pZBgEIAEoCRIPCgdyZWxlYXNlGAUgASgJIo4EChhTb2x1dGlvbkhvc3RCaW5kaW5nU3RhdGUSEgoKYmluZGluZ19pZBgBIAEoCRIXCg9ob3N0X2Nvb3JkaW5hdGUYAiABKAkSFgoOaG9zdF9jb21wb25lbnQYAyABKAkSRQoHZGVzaXJlZBgEIAEoCzIvLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb25IAIgBARJMCgdhcHBsaWVkGAUgASgLMjYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkhvc3RCaW5kaW5nQXBwbGllZEdlbmVyYXRpb25IAYgBARIaChJwZW5kaW5nX2dlbmVyYXRpb24YBiABKAQSFgoOcGVuZGluZ19yZWFzb24YByABKAkSNgoNcGVuZGluZ19zaW5jZRgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAogBARJBCgxyZWdpc3RyYXRpb24YCSABKAsyJi5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uUmVnaXN0cmF0aW9uSAOIAQESLgoKdXBkYXRlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCCgoIX2Rlc2lyZWRCCgoIX2FwcGxpZWRCEAoOX3BlbmRpbmdfc2luY2VCDwoNX3JlZ2lzdHJhdGlvbiIhCh9MaXN0U29sdXRpb25Ib3N0QmluZGluZ3NSZXF1ZXN0ImAKIExpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1Jlc3BvbnNlEjwKCGJpbmRpbmdzGAEgAygLMiouc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkhvc3RCaW5kaW5nU3RhdGUqpQIKGlNvbHV0aW9uUmVnaXN0cmF0aW9uU3RhdHVzEiwKKFNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABInCiNTT0xVVElPTl9SRUdJU1RSQVRJT05fU1RBVFVTX0FDVElWRRABEigKJFNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfUEVORElORxACEi0KKVNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfSU5DT01QQVRJQkxFEAQSKwonU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19UT01CU1RPTkVEEAUiBAgDEAMqJFNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfRVhQSVJFRCqGAQoUU29sdXRpb25EZWNsYXJlZEtpbmQSJgoiU09MVVRJT05fREVDTEFSRURfS0lORF9VTlNQRUNJRklFRBAAEiMKH1NPTFVUSU9OX0RFQ0xBUkVEX0tJTkRfU09MVVRJT04QARIhCh1TT0xVVElPTl9ERUNMQVJFRF9LSU5EX01PRFVMRRACQr0BChRjb20uc2Fhcy5hY2NvdW50cy52MUIVU29sdXRpb25SZWdpc3RyeVByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("CihzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX3JlZ2lzdHJ5LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIm0KF1NvbHV0aW9uRnJvbnRlbmRCaW5kaW5nEhAKCHJldmlzaW9uGAEgASgDEhAKCG1hbmlmZXN0GAIgASgJSgQIAxAESgQIBBAFUhBjb250cmFjdF92ZXJzaW9uUhBsZWFzZV9leHBpcmVzX2F0IowEChRTb2x1dGlvblJlZ2lzdHJhdGlvbhITCgtzb2x1dGlvbl9pZBgBIAEoCRIRCglwdWJsaXNoZXIYAiABKAkSEAoIcmV2aXNpb24YAyABKAMSPAoGc3RhdHVzGAQgASgOMiwuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvblN0YXR1cxJACghmcm9udGVuZBgFIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Gcm9udGVuZEJpbmRpbmdIAIgBARIuCgp1cGRhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI2Cg10b21ic3RvbmVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgBiAEBEkAKCGRlY2xhcmVkGAogASgLMikuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkRlY2xhcmVkQmluZGluZ0gCiAEBEjMKBWdyb3VwGAsgASgLMh8uc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkdyb3VwSAOIAQFCCwoJX2Zyb250ZW5kQhAKDl90b21ic3RvbmVkX2F0QgsKCV9kZWNsYXJlZEIICgZfZ3JvdXBKBAgGEAdKBAgJEApSB2JhY2tlbmRSEHJ1bnRpbWVfYm91bmRhcnkiOQoNU29sdXRpb25Hcm91cBIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRINCgVvcmRlchgDIAEoBSI+CiBMaXN0U29sdXRpb25SZWdpc3RyYXRpb25zUmVxdWVzdBIaChJpbmNsdWRlX3RvbWJzdG9uZWQYASABKAgifQohTGlzdFNvbHV0aW9uUmVnaXN0cmF0aW9uc1Jlc3BvbnNlEj0KDXJlZ2lzdHJhdGlvbnMYASADKAsyJi5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uUmVnaXN0cmF0aW9uEhkKEXJlZ2lzdHJ5X3JldmlzaW9uGAIgASgDIpsBChdTb2x1dGlvbkRlY2xhcmVkQmluZGluZxISCgpiaW5kaW5nX2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSDwoHcmVsZWFzZRgDIAEoCRIRCgl0YXJnZXRfaWQYBCABKAkSNAoEa2luZBgFIAEoDjImLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25EZWNsYXJlZEtpbmQifQodU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb24SEgoKZ2VuZXJhdGlvbhgBIAEoBBIOCgZkaWdlc3QYAiABKAkSEAoIZG9jdW1lbnQYAyABKAkSJgoCYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIs0BCiRTb2x1dGlvbkhvc3RCaW5kaW5nQXBwbGllZEdlbmVyYXRpb24SQwoKZ2VuZXJhdGlvbhgBIAEoCzIvLnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0dlbmVyYXRpb24SDwoHcmVtb3ZlZBgCIAEoCBIOCgZyb3V0ZXMYAyADKAkSEwoLc29sdXRpb25faWQYBCABKAkSDwoHcmVsZWFzZRgFIAEoCRIZChFlbmRwb2ludF9kZWxpdmVyeRgGIAEoDCKOBAoYU29sdXRpb25Ib3N0QmluZGluZ1N0YXRlEhIKCmJpbmRpbmdfaWQYASABKAkSFwoPaG9zdF9jb29yZGluYXRlGAIgASgJEhYKDmhvc3RfY29tcG9uZW50GAMgASgJEkUKB2Rlc2lyZWQYBCABKAsyLy5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uSG9zdEJpbmRpbmdHZW5lcmF0aW9uSACIAQESTAoHYXBwbGllZBgFIAEoCzI2LnNhYXMuYWNjb3VudHMudjEuU29sdXRpb25Ib3N0QmluZGluZ0FwcGxpZWRHZW5lcmF0aW9uSAGIAQESGgoScGVuZGluZ19nZW5lcmF0aW9uGAYgASgEEhYKDnBlbmRpbmdfcmVhc29uGAcgASgJEjYKDXBlbmRpbmdfc2luY2UYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAKIAQESQQoMcmVnaXN0cmF0aW9uGAkgASgLMiYuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvblJlZ2lzdHJhdGlvbkgDiAEBEi4KCnVwZGF0ZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQgoKCF9kZXNpcmVkQgoKCF9hcHBsaWVkQhAKDl9wZW5kaW5nX3NpbmNlQg8KDV9yZWdpc3RyYXRpb24ikQEKGlNvbHV0aW9uRnJvbnRlbmRHZW5lcmF0aW9uEhIKCmdlbmVyYXRpb24YASABKAQSEQoJdGFyZ2V0X2lkGAIgASgJEhIKCmJpbmRpbmdfaWQYAyABKAkSDwoHcmVsZWFzZRgEIAEoCRIQCghmcm9udGVuZBgFIAEoCRIVCg1hc3NldF92ZXJzaW9uGAYgASgJIiEKH0xpc3RTb2x1dGlvbkhvc3RCaW5kaW5nc1JlcXVlc3QiYAogTGlzdFNvbHV0aW9uSG9zdEJpbmRpbmdzUmVzcG9uc2USPAoIYmluZGluZ3MYASADKAsyKi5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uSG9zdEJpbmRpbmdTdGF0ZSJvCiJHZXRSZXRhaW5lZFNvbHV0aW9uRnJvbnRlbmRSZXF1ZXN0EhsKCmJpbmRpbmdfaWQYASABKAlCB7pIBHICEAESLAoNYXNzZXRfdmVyc2lvbhgCIAEoCUIVukgSchAyDl5bYS1mMC05XXs2NH0kImUKI0dldFJldGFpbmVkU29sdXRpb25Gcm9udGVuZFJlc3BvbnNlEj4KCGZyb250ZW5kGAEgASgLMiwuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkZyb250ZW5kR2VuZXJhdGlvbiqnAgoaU29sdXRpb25SZWdpc3RyYXRpb25TdGF0dXMSLAooU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEicKI1NPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfQUNUSVZFEAESKAokU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19QRU5ESU5HEAISKwonU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19UT01CU1RPTkVEEAUiBAgDEAMiBAgEEAQqJFNPTFVUSU9OX1JFR0lTVFJBVElPTl9TVEFUVVNfRVhQSVJFRCopU09MVVRJT05fUkVHSVNUUkFUSU9OX1NUQVRVU19JTkNPTVBBVElCTEUqhgEKFFNvbHV0aW9uRGVjbGFyZWRLaW5kEiYKIlNPTFVUSU9OX0RFQ0xBUkVEX0tJTkRfVU5TUEVDSUZJRUQQABIjCh9TT0xVVElPTl9ERUNMQVJFRF9LSU5EX1NPTFVUSU9OEAESIQodU09MVVRJT05fREVDTEFSRURfS0lORF9NT0RVTEUQAkK9AQoUY29tLnNhYXMuYWNjb3VudHMudjFCFVNvbHV0aW9uUmVnaXN0cnlQcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_buf_validate_validate]);
 
 /**
- * SolutionFrontendBinding is the stored frontend half. manifest is the document
- * the frontend validates while reading the projection; accounts stores it
- * verbatim and keeps presence authority separate from runtime compatibility.
+ * SolutionFrontendBinding is the stored frontend half: the `frontend` block of
+ * the applied presence, copied by accounts in the transaction that applies the
+ * generation. manifest carries that block as JSON (title, order,
+ * exposed_module, host_contract, dashboard, surfaces) — the author-declared
+ * half of the manifest the gateway's registry projection builds, adding the
+ * host's own constants. Present on either kind when its applied generation
+ * declares one; absent on a headless component.
  *
  * @generated from message saas.accounts.v1.SolutionFrontendBinding
  */
@@ -31,11 +36,6 @@ export type SolutionFrontendBinding = Message<"saas.accounts.v1.SolutionFrontend
    * @generated from field: string manifest = 2;
    */
   manifest: string;
-
-  /**
-   * @generated from field: string contract_version = 3;
-   */
-  contractVersion: string;
 };
 
 /**
@@ -44,41 +44,6 @@ export type SolutionFrontendBinding = Message<"saas.accounts.v1.SolutionFrontend
  */
 export const SolutionFrontendBindingSchema: GenMessage<SolutionFrontendBinding> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_solution_registry, 0);
-
-/**
- * SolutionBackendBinding is the stored backend half: the upstream the gateway
- * proxies to and the logical service alias it is addressed by.
- *
- * @generated from message saas.accounts.v1.SolutionBackendBinding
- */
-export type SolutionBackendBinding = Message<"saas.accounts.v1.SolutionBackendBinding"> & {
-  /**
-   * @generated from field: int64 revision = 1;
-   */
-  revision: bigint;
-
-  /**
-   * @generated from field: string upstream = 2;
-   */
-  upstream: string;
-
-  /**
-   * @generated from field: string service_alias = 3;
-   */
-  serviceAlias: string;
-
-  /**
-   * @generated from field: string contract_version = 4;
-   */
-  contractVersion: string;
-};
-
-/**
- * Describes the message saas.accounts.v1.SolutionBackendBinding.
- * Use `create(SolutionBackendBindingSchema)` to create a new message.
- */
-export const SolutionBackendBindingSchema: GenMessage<SolutionBackendBinding> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 1);
 
 /**
  * SolutionRegistration is the canonical record. revision is drawn from one
@@ -116,11 +81,6 @@ export type SolutionRegistration = Message<"saas.accounts.v1.SolutionRegistratio
   frontend?: SolutionFrontendBinding;
 
   /**
-   * @generated from field: optional saas.accounts.v1.SolutionBackendBinding backend = 6;
-   */
-  backend?: SolutionBackendBinding;
-
-  /**
    * @generated from field: google.protobuf.Timestamp updated_at = 7;
    */
   updatedAt?: Timestamp;
@@ -136,6 +96,15 @@ export type SolutionRegistration = Message<"saas.accounts.v1.SolutionRegistratio
    * @generated from field: optional saas.accounts.v1.SolutionDeclaredBinding declared = 10;
    */
   declared?: SolutionDeclaredBinding;
+
+  /**
+   * Presentation from the composing workspace's applied declaration. Present
+   * only for a solution, independently of its frontend. Membership grants no
+   * access, consent or installation; viewer lists filter solutions first.
+   *
+   * @generated from field: optional saas.accounts.v1.SolutionGroup group = 11;
+   */
+  group?: SolutionGroup;
 };
 
 /**
@@ -143,6 +112,36 @@ export type SolutionRegistration = Message<"saas.accounts.v1.SolutionRegistratio
  * Use `create(SolutionRegistrationSchema)` to create a new message.
  */
 export const SolutionRegistrationSchema: GenMessage<SolutionRegistration> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_solution_registry, 1);
+
+/**
+ * SolutionGroup organises solutions in navigation and the catalogue. It is not
+ * an authorization subject, installation target or scope.
+ *
+ * @generated from message saas.accounts.v1.SolutionGroup
+ */
+export type SolutionGroup = Message<"saas.accounts.v1.SolutionGroup"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * @generated from field: int32 order = 3;
+   */
+  order: number;
+};
+
+/**
+ * Describes the message saas.accounts.v1.SolutionGroup.
+ * Use `create(SolutionGroupSchema)` to create a new message.
+ */
+export const SolutionGroupSchema: GenMessage<SolutionGroup> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_solution_registry, 2);
 
 /**
@@ -337,6 +336,15 @@ export type SolutionHostBindingAppliedGeneration = Message<"saas.accounts.v1.Sol
    * @generated from field: string release = 5;
    */
   release: string;
+
+  /**
+   * Opaque Codefly endpoint delivery joined to this exact applied document.
+   * Only the Codefly SDK interprets it. Empty means no delivered route; neither
+   * desired state nor startup addresses are a fallback.
+   *
+   * @generated from field: bytes endpoint_delivery = 6;
+   */
+  endpointDelivery: Uint8Array;
 };
 
 /**
@@ -427,6 +435,52 @@ export const SolutionHostBindingStateSchema: GenMessage<SolutionHostBindingState
   messageDesc(file_saas_accounts_v1_solution_registry, 8);
 
 /**
+ * One previously applied frontend for a still-live target. The targeted read
+ * joins exact admitted bytes to applied history, excluding delivered-only and
+ * closed-target identities. Public code confers no installation or API access.
+ *
+ * @generated from message saas.accounts.v1.SolutionFrontendGeneration
+ */
+export type SolutionFrontendGeneration = Message<"saas.accounts.v1.SolutionFrontendGeneration"> & {
+  /**
+   * @generated from field: uint64 generation = 1;
+   */
+  generation: bigint;
+
+  /**
+   * @generated from field: string target_id = 2;
+   */
+  targetId: string;
+
+  /**
+   * @generated from field: string binding_id = 3;
+   */
+  bindingId: string;
+
+  /**
+   * @generated from field: string release = 4;
+   */
+  release: string;
+
+  /**
+   * @generated from field: string frontend = 5;
+   */
+  frontend: string;
+
+  /**
+   * @generated from field: string asset_version = 6;
+   */
+  assetVersion: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.SolutionFrontendGeneration.
+ * Use `create(SolutionFrontendGenerationSchema)` to create a new message.
+ */
+export const SolutionFrontendGenerationSchema: GenMessage<SolutionFrontendGeneration> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_solution_registry, 9);
+
+/**
  * ListSolutionHostBindingsRequest reads every declared binding. There is one set
  * per deployment and it holds tens of bindings at most, so a consumer rebuilds
  * its view from a full snapshot.
@@ -441,7 +495,7 @@ export type ListSolutionHostBindingsRequest = Message<"saas.accounts.v1.ListSolu
  * Use `create(ListSolutionHostBindingsRequestSchema)` to create a new message.
  */
 export const ListSolutionHostBindingsRequestSchema: GenMessage<ListSolutionHostBindingsRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 9);
+  messageDesc(file_saas_accounts_v1_solution_registry, 10);
 
 /**
  * @generated from message saas.accounts.v1.ListSolutionHostBindingsResponse
@@ -458,11 +512,53 @@ export type ListSolutionHostBindingsResponse = Message<"saas.accounts.v1.ListSol
  * Use `create(ListSolutionHostBindingsResponseSchema)` to create a new message.
  */
 export const ListSolutionHostBindingsResponseSchema: GenMessage<ListSolutionHostBindingsResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_solution_registry, 10);
+  messageDesc(file_saas_accounts_v1_solution_registry, 11);
 
 /**
- * SolutionRegistrationStatus is derived from declared state and complete,
- * compatible frontend/backend observations, never from an expiring lease.
+ * A retained frontend read returns at most one exact APPLIED identity. It never
+ * expands the shared registry snapshot by the number of retained generations.
+ *
+ * @generated from message saas.accounts.v1.GetRetainedSolutionFrontendRequest
+ */
+export type GetRetainedSolutionFrontendRequest = Message<"saas.accounts.v1.GetRetainedSolutionFrontendRequest"> & {
+  /**
+   * @generated from field: string binding_id = 1;
+   */
+  bindingId: string;
+
+  /**
+   * @generated from field: string asset_version = 2;
+   */
+  assetVersion: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetRetainedSolutionFrontendRequest.
+ * Use `create(GetRetainedSolutionFrontendRequestSchema)` to create a new message.
+ */
+export const GetRetainedSolutionFrontendRequestSchema: GenMessage<GetRetainedSolutionFrontendRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_solution_registry, 12);
+
+/**
+ * @generated from message saas.accounts.v1.GetRetainedSolutionFrontendResponse
+ */
+export type GetRetainedSolutionFrontendResponse = Message<"saas.accounts.v1.GetRetainedSolutionFrontendResponse"> & {
+  /**
+   * @generated from field: saas.accounts.v1.SolutionFrontendGeneration frontend = 1;
+   */
+  frontend?: SolutionFrontendGeneration;
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetRetainedSolutionFrontendResponse.
+ * Use `create(GetRetainedSolutionFrontendResponseSchema)` to create a new message.
+ */
+export const GetRetainedSolutionFrontendResponseSchema: GenMessage<GetRetainedSolutionFrontendResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_solution_registry, 13);
+
+/**
+ * SolutionRegistrationStatus is derived from applied presence, never from an
+ * expiring registration lease or the existence of a frontend.
  *
  * @generated from enum saas.accounts.v1.SolutionRegistrationStatus
  */
@@ -473,28 +569,18 @@ export enum SolutionRegistrationStatus {
   UNSPECIFIED = 0,
 
   /**
-   * Both halves are present and their declared contract
-   * versions agree. This is the only status either surface serves.
+   * Presence is applied. Both modules and solutions may be headless.
    *
    * @generated from enum value: SOLUTION_REGISTRATION_STATUS_ACTIVE = 1;
    */
   ACTIVE = 1,
 
   /**
-   * A half has not been observed. The record is durable but incomplete, so no
-   * page advertises it and the gateway has nothing to route to.
+   * No applied declaration is available for this record.
    *
    * @generated from enum value: SOLUTION_REGISTRATION_STATUS_PENDING = 2;
    */
   PENDING = 2,
-
-  /**
-   * The two halves declare different contract versions, so activating them
-   * together would serve a page against a backend it was not built for.
-   *
-   * @generated from enum value: SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE = 4;
-   */
-  INCOMPATIBLE = 4,
 
   /**
    * An applied removal keeps the declaration as a tombstone.

@@ -40,6 +40,17 @@ func (f *invitationLifecycleStore) GetInvitationByID(context.Context, string) (*
 	return &copy, nil
 }
 
+func (f *invitationLifecycleStore) GetInvitationByTokenHash(
+	_ context.Context,
+	hash string,
+) (*business.Invitation, error) {
+	if f.invitation == nil || f.invitation.TokenHash != hash {
+		return nil, nil
+	}
+	copy := *f.invitation
+	return &copy, nil
+}
+
 func (f *invitationLifecycleStore) GetUser(context.Context, string) (*gen.User, error) {
 	return f.user, nil
 }
@@ -206,6 +217,31 @@ func TestInspectInvitationByIDReturnsTheAuthoritativeStatusToTheInvitee(t *testi
 		},
 	)
 	require.ErrorIs(t, err, business.ErrInvitationEmailMismatch)
+}
+
+// The emailed token reaches the browser in a query the proxy moves into a
+// fifteen-minute cookie, so the inspect before sign-in is the only chance to
+// learn WHICH invitation the link names. The summary therefore carries the id,
+// and the browser returns by it rather than by a cookie that has to outlive a
+// sign-up, an MFA enrolment or a passkey ceremony. The id is no credential:
+// accepting by it still requires a signed-in account whose primary email
+// matches the invitation's, which
+// TestInspectInvitationByIDReturnsTheAuthoritativeStatusToTheInvitee holds.
+func TestInspectInvitationReportsTheInvitationIDToAnUnauthenticatedCaller(t *testing.T) {
+	const token = "a-plaintext-invitation-token-of-ample-length"
+	store := &invitationLifecycleStore{invitation: pendingLifecycleInvitation()}
+	store.invitation.TokenHash = business.HashInvitationToken(token)
+	service, _ := newInvitationLifecycleService(t, store, false)
+
+	summary, err := service.InspectInvitation(
+		context.Background(),
+		&gen.InspectInvitationRequest{Token: token},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, store.invitation.ID, summary.Id)
+	require.Equal(t, gen.InvitationStatus_INVITATION_STATUS_PENDING, summary.Status)
+	require.NotEqual(t, store.invitation.Email, summary.EmailHint)
 }
 
 func TestInspectInvitationDoesNotOverwriteAConcurrentTerminalStatus(t *testing.T) {

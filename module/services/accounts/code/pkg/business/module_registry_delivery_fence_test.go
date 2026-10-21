@@ -24,7 +24,7 @@ func (c *countedInbox) CountDeliveredDocuments(context.Context) (uint64, error) 
 	return c.count, c.err
 }
 
-func (c *countedInbox) CountUnappliedPresence(context.Context) (uint64, error) {
+func (c *countedInbox) CountUnappliedManifests(context.Context) (uint64, error) {
 	return c.unapplied, c.err
 }
 

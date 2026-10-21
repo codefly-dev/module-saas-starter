@@ -17,7 +17,8 @@ vi.mock("@module-federation/runtime", () => ({
 // The outlet also asks the host for the solution's installation; these tests
 // are about loading, so the host answers that it has none.
 vi.mock("@/lib/connect/token-store", () => ({
-	authedFetch: async () => Response.json({ error: "not_installed" }, { status: 404 }),
+	authedFetch: async () =>
+		Response.json({ error: "not_installed" }, { status: 404 }),
 	getToken: () => null,
 	refreshToken: async () => null,
 	subscribeToken: () => () => {},
@@ -116,13 +117,43 @@ describe("SolutionOutlet remote loading", () => {
 
 		renderOutlet(freshRemote());
 
-		await waitFor(
-			() => expect(screen.getByText("warmed up")).toBeTruthy(),
-			{ timeout: 2000 },
-		);
+		await waitFor(() => expect(screen.getByText("warmed up")).toBeTruthy(), {
+			timeout: 2000,
+		});
 		expect(loadRemote).toHaveBeenCalledTimes(2);
 		// Once at initial registration, once more between the two attempts to force
 		// MF to drop its cached failed manifest snapshot and re-fetch.
 		expect(registerRemotes).toHaveBeenCalledTimes(2);
 	});
+});
+
+it("loads a new generation at the same component id, including after a failed generation", async () => {
+	const remote = freshRemote();
+	loadRemoteImpl = () => Promise.reject(new Error("exposed no default"));
+	const view = renderOutlet(remote);
+	await waitFor(() =>
+		expect(screen.getByText("This solution failed to load.")).toBeTruthy(),
+	);
+	const upgraded = {
+		...remote,
+		manifestUrl: remote.manifestUrl.replace(
+			"mf-manifest.json",
+			"v2/mf-manifest.json",
+		),
+	};
+	loadRemoteImpl = () =>
+		Promise.resolve({ default: () => <div>upgraded remote</div> });
+	view.rerender(
+		<SolutionOutlet
+			remote={upgraded}
+			pageProps={{ solutionId: remote.id, apiBase: "/v1" }}
+			authoring={authoring}
+		/>,
+	);
+	await waitFor(() => expect(screen.getByText("upgraded remote")).toBeTruthy());
+	expect(loadRemote).toHaveBeenCalledTimes(2);
+	expect(registerRemotes).toHaveBeenLastCalledWith(
+		[{ name: remote.id, entry: upgraded.manifestUrl }],
+		{ force: true },
+	);
 });

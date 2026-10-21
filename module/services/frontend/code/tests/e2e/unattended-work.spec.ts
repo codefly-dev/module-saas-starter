@@ -78,10 +78,15 @@ test.describe("unattended work", () => {
 		await expect(
 			page.getByRole("heading", { name: "Reconcile schedules" }),
 		).toBeVisible({ timeout: 20000 });
-		// The panel states the host's position on this schedule outright: it
-		// declares the trigger and fires nothing on it.
+		// The panel states the host's position on this schedule outright, and
+		// since #1112 that position is "declared here, and for now fired here
+		// too": nothing consumes the declaration, so the host runs the schedule
+		// as a labelled stopgap. A page still claiming it fires nothing would be
+		// the most misleading thing a schedule panel can say.
 		await expect(
-			page.getByText("This host fires nothing on it."),
+			page.getByText(
+				/this host still fires the schedule itself, as a\s+stopgap/i,
+			),
 		).toBeVisible();
 		// And it says that a person's "Sync now" is the same admission, which is
 		// why the two sit in one table rather than in two lists.
@@ -115,9 +120,9 @@ test.describe("unattended work", () => {
 		await expect(
 			admissions.locator('[data-slot="scheduled-occurrence"]'),
 		).toHaveCount(2);
-		await expect(
-			admissions.locator('[data-slot="manual-pass"]'),
-		).toHaveCount(0);
+		await expect(admissions.locator('[data-slot="manual-pass"]')).toHaveCount(
+			0,
+		);
 
 		// "Sync now" is the kit panel's control, above this one. Pressing it
 		// admits the host's reconcile operation, and the pass lands in THIS

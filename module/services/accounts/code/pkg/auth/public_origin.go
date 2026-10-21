@@ -230,13 +230,20 @@ func canonicalPublicOriginPort(port, scheme string) (string, error) {
 // Where nothing is pinned the candidate stands on the credential alone, which only
 // a local runtime reaches: boot requires a pinned origin outside local development
 // (requireApplicationBaseURL).
+//
+// A refusal names which check failed and the values it compared — the forwarded
+// candidate and, on a mismatch, both canonical origins. An origin is not a secret,
+// and the refuser's log is the one place an operator can learn that the frontend
+// presented its cluster-internal address rather than the configured one. Callers
+// log it and keep their caller-facing answer generic.
 func WithVerifiedPublicOrigin(ctx context.Context, candidate string) (context.Context, error) {
 	origin, err := CanonicalPublicOrigin(candidate)
 	if err != nil {
-		return ctx, err
+		return ctx, fmt.Errorf("forwarded public origin %q is not a usable origin: %w", candidate, err)
 	}
 	if configured, ok := ConfiguredPublicOrigin(); ok && !strings.EqualFold(origin, configured) {
-		return ctx, ErrPublicOriginNotConfigured
+		return ctx, fmt.Errorf("%w: forwarded %q, configured application/APP_BASE_URL %q",
+			ErrPublicOriginNotConfigured, origin, configured)
 	}
 	return context.WithValue(ctx, verifiedPublicOriginKey{}, origin), nil
 }

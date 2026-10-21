@@ -153,6 +153,222 @@ func (InstallationHealth) EnumDescriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{1}
 }
 
+// ReadinessConditionKind is what kind of thing is unmet. A reader acts on the
+// words in `detail`; the kind is for the surface to choose an action and for a
+// consumer to count one kind without parsing prose.
+type ReadinessConditionKind int32
+
+const (
+	ReadinessConditionKind_READINESS_CONDITION_KIND_UNSPECIFIED ReadinessConditionKind = 0
+	// The solution has not acknowledged its standard install step yet.
+	ReadinessConditionKind_READINESS_CONDITION_KIND_INSTALL_STEP_PENDING ReadinessConditionKind = 1
+	// It refused the install step, or never answered within the attempt budget.
+	ReadinessConditionKind_READINESS_CONDITION_KIND_INSTALL_STEP_FAILED ReadinessConditionKind = 2
+	// The installation record itself is not healthy: the InstallationHealth
+	// value, restated as a condition so one list holds every reason it will not
+	// work rather than two places a reader has to join.
+	ReadinessConditionKind_READINESS_CONDITION_KIND_RECORD_UNHEALTHY ReadinessConditionKind = 3
+	// The module registry holds no principal for this target's module at all, so
+	// every Work Context it asks for is denied.
+	ReadinessConditionKind_READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED ReadinessConditionKind = 4
+	// An operation binding the applied manifest asks for derived nothing: the
+	// envelope allows no such binding, or allows nothing of it. This is the
+	// condition that reported HEALTHY on a validation cell while four bindings were
+	// dropped.
+	ReadinessConditionKind_READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED ReadinessConditionKind = 5
+	// A source this organisation has connected holds no active delegation to a
+	// module that accepts them, so that module cannot read it on anyone's behalf.
+	ReadinessConditionKind_READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED ReadinessConditionKind = 6
+	// A module this target declares it reaches is not installed in this
+	// organisation, so every call it makes there is refused.
+	ReadinessConditionKind_READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED ReadinessConditionKind = 7
+	// A grant of this solution could not CARRY the access it declares it consumes
+	// on one reached module, so the team holds nothing there and the pages that
+	// reach it will be refused. `detail` says which of the two reasons it is: the
+	// chosen role permits none of what the solution consumes there, or the
+	// declared scope is narrowed to named resources, which a role cannot express.
+	ReadinessConditionKind_READINESS_CONDITION_KIND_CARRIED_MODULE_ACCESS_NOT_DERIVED ReadinessConditionKind = 8
+)
+
+// Enum value maps for ReadinessConditionKind.
+var (
+	ReadinessConditionKind_name = map[int32]string{
+		0: "READINESS_CONDITION_KIND_UNSPECIFIED",
+		1: "READINESS_CONDITION_KIND_INSTALL_STEP_PENDING",
+		2: "READINESS_CONDITION_KIND_INSTALL_STEP_FAILED",
+		3: "READINESS_CONDITION_KIND_RECORD_UNHEALTHY",
+		4: "READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED",
+		5: "READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED",
+		6: "READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED",
+		7: "READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED",
+		8: "READINESS_CONDITION_KIND_CARRIED_MODULE_ACCESS_NOT_DERIVED",
+	}
+	ReadinessConditionKind_value = map[string]int32{
+		"READINESS_CONDITION_KIND_UNSPECIFIED":                       0,
+		"READINESS_CONDITION_KIND_INSTALL_STEP_PENDING":              1,
+		"READINESS_CONDITION_KIND_INSTALL_STEP_FAILED":               2,
+		"READINESS_CONDITION_KIND_RECORD_UNHEALTHY":                  3,
+		"READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED":          4,
+		"READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED":         5,
+		"READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED":              6,
+		"READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED":      7,
+		"READINESS_CONDITION_KIND_CARRIED_MODULE_ACCESS_NOT_DERIVED": 8,
+	}
+)
+
+func (x ReadinessConditionKind) Enum() *ReadinessConditionKind {
+	p := new(ReadinessConditionKind)
+	*p = x
+	return p
+}
+
+func (x ReadinessConditionKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ReadinessConditionKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_installations_proto_enumTypes[2].Descriptor()
+}
+
+func (ReadinessConditionKind) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_installations_proto_enumTypes[2]
+}
+
+func (x ReadinessConditionKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ReadinessConditionKind.Descriptor instead.
+func (ReadinessConditionKind) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{2}
+}
+
+// ReadinessClearedBy is who can clear a condition. It is stated rather than
+// implied by the action, because "nobody at this surface can" is itself the
+// answer a reader needs — an envelope that withholds a binding is the platform
+// operator's, and offering an administrator a button would be a lie.
+type ReadinessClearedBy int32
+
+const (
+	ReadinessClearedBy_READINESS_CLEARED_BY_UNSPECIFIED ReadinessClearedBy = 0
+	// The person reading the page, acting as themselves: their own delegation.
+	ReadinessClearedBy_READINESS_CLEARED_BY_VIEWER             ReadinessClearedBy = 1
+	ReadinessClearedBy_READINESS_CLEARED_BY_ORGANIZATION_ADMIN ReadinessClearedBy = 2
+	ReadinessClearedBy_READINESS_CLEARED_BY_PLATFORM_OPERATOR  ReadinessClearedBy = 3
+	// Nobody: the host is waiting for the solution itself to answer.
+	ReadinessClearedBy_READINESS_CLEARED_BY_NOBODY ReadinessClearedBy = 4
+)
+
+// Enum value maps for ReadinessClearedBy.
+var (
+	ReadinessClearedBy_name = map[int32]string{
+		0: "READINESS_CLEARED_BY_UNSPECIFIED",
+		1: "READINESS_CLEARED_BY_VIEWER",
+		2: "READINESS_CLEARED_BY_ORGANIZATION_ADMIN",
+		3: "READINESS_CLEARED_BY_PLATFORM_OPERATOR",
+		4: "READINESS_CLEARED_BY_NOBODY",
+	}
+	ReadinessClearedBy_value = map[string]int32{
+		"READINESS_CLEARED_BY_UNSPECIFIED":        0,
+		"READINESS_CLEARED_BY_VIEWER":             1,
+		"READINESS_CLEARED_BY_ORGANIZATION_ADMIN": 2,
+		"READINESS_CLEARED_BY_PLATFORM_OPERATOR":  3,
+		"READINESS_CLEARED_BY_NOBODY":             4,
+	}
+)
+
+func (x ReadinessClearedBy) Enum() *ReadinessClearedBy {
+	p := new(ReadinessClearedBy)
+	*p = x
+	return p
+}
+
+func (x ReadinessClearedBy) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ReadinessClearedBy) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_installations_proto_enumTypes[3].Descriptor()
+}
+
+func (ReadinessClearedBy) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_installations_proto_enumTypes[3]
+}
+
+func (x ReadinessClearedBy) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ReadinessClearedBy.Descriptor instead.
+func (ReadinessClearedBy) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{3}
+}
+
+// ReadinessAction is what clears the condition, named as the act rather than as
+// a control, so a surface that cannot offer one still reports the same fact.
+type ReadinessAction int32
+
+const (
+	ReadinessAction_READINESS_ACTION_UNSPECIFIED ReadinessAction = 0
+	// No act at this surface clears it. The condition says where it is cleared.
+	ReadinessAction_READINESS_ACTION_NONE_AT_THIS_SURFACE   ReadinessAction = 1
+	ReadinessAction_READINESS_ACTION_RETRY_INSTALL_STEP     ReadinessAction = 2
+	ReadinessAction_READINESS_ACTION_RECONNECT_SOURCE       ReadinessAction = 3
+	ReadinessAction_READINESS_ACTION_TRANSFER_OWNERSHIP     ReadinessAction = 4
+	ReadinessAction_READINESS_ACTION_INSTALL_REACHED_MODULE ReadinessAction = 5
+	// Wait: the host is expecting an answer and no act brings it forward.
+	ReadinessAction_READINESS_ACTION_WAIT ReadinessAction = 6
+)
+
+// Enum value maps for ReadinessAction.
+var (
+	ReadinessAction_name = map[int32]string{
+		0: "READINESS_ACTION_UNSPECIFIED",
+		1: "READINESS_ACTION_NONE_AT_THIS_SURFACE",
+		2: "READINESS_ACTION_RETRY_INSTALL_STEP",
+		3: "READINESS_ACTION_RECONNECT_SOURCE",
+		4: "READINESS_ACTION_TRANSFER_OWNERSHIP",
+		5: "READINESS_ACTION_INSTALL_REACHED_MODULE",
+		6: "READINESS_ACTION_WAIT",
+	}
+	ReadinessAction_value = map[string]int32{
+		"READINESS_ACTION_UNSPECIFIED":            0,
+		"READINESS_ACTION_NONE_AT_THIS_SURFACE":   1,
+		"READINESS_ACTION_RETRY_INSTALL_STEP":     2,
+		"READINESS_ACTION_RECONNECT_SOURCE":       3,
+		"READINESS_ACTION_TRANSFER_OWNERSHIP":     4,
+		"READINESS_ACTION_INSTALL_REACHED_MODULE": 5,
+		"READINESS_ACTION_WAIT":                   6,
+	}
+)
+
+func (x ReadinessAction) Enum() *ReadinessAction {
+	p := new(ReadinessAction)
+	*p = x
+	return p
+}
+
+func (x ReadinessAction) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ReadinessAction) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_accounts_v1_installations_proto_enumTypes[4].Descriptor()
+}
+
+func (ReadinessAction) Type() protoreflect.EnumType {
+	return &file_saas_accounts_v1_installations_proto_enumTypes[4]
+}
+
+func (x ReadinessAction) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ReadinessAction.Descriptor instead.
+func (ReadinessAction) EnumDescriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{4}
+}
+
 // Installation is one solution's bound identity in an org. Server-assigned ids;
 // the browser cannot attest to tenancy, the agent principal, or the scope node.
 type Installation struct {
@@ -1083,6 +1299,14 @@ type OrganizationInstallation struct {
 	// installation; RevokeInstallationFromTeam removes those.
 	GrantedTeams   []*CollectionReadGrant `protobuf:"bytes,5,rep,name=granted_teams,json=grantedTeams,proto3" json:"granted_teams,omitempty"`
 	InheritedTeams []*CollectionReadGrant `protobuf:"bytes,6,rep,name=inherited_teams,json=inheritedTeams,proto3" json:"inherited_teams,omitempty"`
+	// Whether this installation will actually work, and what is unmet if it will
+	// not. Resolved live from the same facts health is resolved from plus the
+	// module registry and this organisation's sources; never stored.
+	Readiness *InstallationReadiness `protobuf:"bytes,7,opt,name=readiness,proto3" json:"readiness,omitempty"`
+	// The modules this installed target declares it reaches, and this
+	// organisation's installation of each. Empty for a target whose applied
+	// manifest declares no operation binding it redeems on a person's behalf.
+	ReachedModules []*ReachedModule `protobuf:"bytes,8,rep,name=reached_modules,json=reachedModules,proto3" json:"reached_modules,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1159,6 +1383,248 @@ func (x *OrganizationInstallation) GetInheritedTeams() []*CollectionReadGrant {
 	return nil
 }
 
+func (x *OrganizationInstallation) GetReadiness() *InstallationReadiness {
+	if x != nil {
+		return x.Readiness
+	}
+	return nil
+}
+
+func (x *OrganizationInstallation) GetReachedModules() []*ReachedModule {
+	if x != nil {
+		return x.ReachedModules
+	}
+	return nil
+}
+
+// ReadinessCondition is one thing that is unmet, in the words of whoever owns
+// it, with who can clear it and what clears it.
+type ReadinessCondition struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Kind  ReadinessConditionKind `protobuf:"varint,1,opt,name=kind,proto3,enum=saas.accounts.v1.ReadinessConditionKind" json:"kind,omitempty"`
+	// What the condition is about: the binding, the source, the module. Empty when
+	// the condition is about the installation as a whole.
+	Subject string `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
+	// Why it is unmet, as the part of the host that owns the fact words it. Never
+	// a generic "not ready": the reason is the whole value of the condition.
+	Detail    string             `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
+	ClearedBy ReadinessClearedBy `protobuf:"varint,4,opt,name=cleared_by,json=clearedBy,proto3,enum=saas.accounts.v1.ReadinessClearedBy" json:"cleared_by,omitempty"`
+	Action    ReadinessAction    `protobuf:"varint,5,opt,name=action,proto3,enum=saas.accounts.v1.ReadinessAction" json:"action,omitempty"`
+	// The source the action addresses, for RECONNECT_SOURCE. Empty otherwise.
+	SourceId      string `protobuf:"bytes,6,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadinessCondition) Reset() {
+	*x = ReadinessCondition{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadinessCondition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadinessCondition) ProtoMessage() {}
+
+func (x *ReadinessCondition) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadinessCondition.ProtoReflect.Descriptor instead.
+func (*ReadinessCondition) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ReadinessCondition) GetKind() ReadinessConditionKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ReadinessConditionKind_READINESS_CONDITION_KIND_UNSPECIFIED
+}
+
+func (x *ReadinessCondition) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *ReadinessCondition) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+func (x *ReadinessCondition) GetClearedBy() ReadinessClearedBy {
+	if x != nil {
+		return x.ClearedBy
+	}
+	return ReadinessClearedBy_READINESS_CLEARED_BY_UNSPECIFIED
+}
+
+func (x *ReadinessCondition) GetAction() ReadinessAction {
+	if x != nil {
+		return x.Action
+	}
+	return ReadinessAction_READINESS_ACTION_UNSPECIFIED
+}
+
+func (x *ReadinessCondition) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+// InstallationReadiness is whether the installation will work, which is NOT
+// whether its record exists. InstallationHealth answers about the record — it
+// is active, its owner is an admin, its standing grant is there — and on
+// a validation cell it reported HEALTHY for ten installations while four declared
+// operation bindings had derived nothing. Readiness is the other question, and
+// it is false while any condition below is unmet.
+type InstallationReadiness struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// True only when `unmet` is empty.
+	Ready         bool                  `protobuf:"varint,1,opt,name=ready,proto3" json:"ready,omitempty"`
+	Unmet         []*ReadinessCondition `protobuf:"bytes,2,rep,name=unmet,proto3" json:"unmet,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstallationReadiness) Reset() {
+	*x = InstallationReadiness{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallationReadiness) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallationReadiness) ProtoMessage() {}
+
+func (x *InstallationReadiness) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallationReadiness.ProtoReflect.Descriptor instead.
+func (*InstallationReadiness) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *InstallationReadiness) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *InstallationReadiness) GetUnmet() []*ReadinessCondition {
+	if x != nil {
+		return x.Unmet
+	}
+	return nil
+}
+
+// ReachedModule is one module an installed target declares it reaches on the
+// asking person's own session, and this organisation's installation of that
+// module.
+//
+// A solution granted to a team was refused by every module it reaches that the
+// same team was not granted — four separate refusals on a validation cell, each
+// a bare Forbidden. The set is the applied manifest's own declaration, and a
+// grant of the solution now CARRIES it: GrantInstallationToTeam derives a grant
+// at each reached module from this very set, traceable to the solution's grant
+// and revoked with it (CarriedModuleAccess). This field stays a read, so the
+// setup page can state the set a grant will carry before anyone grants it. It is
+// never a per-module grant step a person performs — that is the trail this ends.
+type ReachedModule struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The audience the manifest names: the module reached.
+	Audience string `protobuf:"bytes,1,opt,name=audience,proto3" json:"audience,omitempty"`
+	// This organisation's ACTIVE installation of that module, which is where the
+	// team grant is written. Empty when it has not installed it — then the
+	// readiness condition says so and no grant is offered.
+	InstallationId string `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	// The route alias of the installed module, for the reader. Empty with
+	// installation_id.
+	RouteAlias    string `protobuf:"bytes,3,opt,name=route_alias,json=routeAlias,proto3" json:"route_alias,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReachedModule) Reset() {
+	*x = ReachedModule{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReachedModule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReachedModule) ProtoMessage() {}
+
+func (x *ReachedModule) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReachedModule.ProtoReflect.Descriptor instead.
+func (*ReachedModule) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ReachedModule) GetAudience() string {
+	if x != nil {
+		return x.Audience
+	}
+	return ""
+}
+
+func (x *ReachedModule) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
+func (x *ReachedModule) GetRouteAlias() string {
+	if x != nil {
+		return x.RouteAlias
+	}
+	return ""
+}
+
 type ListOrganizationInstallationsResponse struct {
 	state         protoimpl.MessageState      `protogen:"open.v1"`
 	Installations []*OrganizationInstallation `protobuf:"bytes,1,rep,name=installations,proto3" json:"installations,omitempty"`
@@ -1170,7 +1636,7 @@ type ListOrganizationInstallationsResponse struct {
 
 func (x *ListOrganizationInstallationsResponse) Reset() {
 	*x = ListOrganizationInstallationsResponse{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[13]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1182,7 +1648,7 @@ func (x *ListOrganizationInstallationsResponse) String() string {
 func (*ListOrganizationInstallationsResponse) ProtoMessage() {}
 
 func (x *ListOrganizationInstallationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[13]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1195,7 +1661,7 @@ func (x *ListOrganizationInstallationsResponse) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use ListOrganizationInstallationsResponse.ProtoReflect.Descriptor instead.
 func (*ListOrganizationInstallationsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{13}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListOrganizationInstallationsResponse) GetInstallations() []*OrganizationInstallation {
@@ -1228,7 +1694,7 @@ type GrantInstallationToTeamRequest struct {
 
 func (x *GrantInstallationToTeamRequest) Reset() {
 	*x = GrantInstallationToTeamRequest{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[14]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1240,7 +1706,7 @@ func (x *GrantInstallationToTeamRequest) String() string {
 func (*GrantInstallationToTeamRequest) ProtoMessage() {}
 
 func (x *GrantInstallationToTeamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[14]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1253,7 +1719,7 @@ func (x *GrantInstallationToTeamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantInstallationToTeamRequest.ProtoReflect.Descriptor instead.
 func (*GrantInstallationToTeamRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{14}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GrantInstallationToTeamRequest) GetOrgId() string {
@@ -1284,16 +1750,123 @@ func (x *GrantInstallationToTeamRequest) GetRoleId() string {
 	return ""
 }
 
+// CarriedModuleAccess is one derived grant a solution's grant carried: the
+// access the solution declares it consumes on one module it reaches, intersected
+// with the role the administrator chose, written at that module's own
+// authority-root node.
+//
+// The role is this host's own, derived and owned by it: it appears in no picker,
+// cannot be edited, deleted, assigned organisation-wide or granted by hand, and
+// is revoked with the grant that caused it. What it permits is the intersection
+// and never the chosen role, which is the whole property — a person's own direct
+// reach into a reached module is exactly what the solution declared, not
+// whatever the administrator's role would have permitted there.
+type CarriedModuleAccess struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The module reached, as the applied manifest's binding names its audience.
+	Audience string `protobuf:"bytes,1,opt,name=audience,proto3" json:"audience,omitempty"`
+	// This organisation's installation of that module, whose authority root the
+	// derived grant is written at.
+	InstallationId string `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	// The node the derived grant was written at: that installation's authority
+	// root, resolved from the installation and never supplied by a caller.
+	ScopePath string `protobuf:"bytes,3,opt,name=scope_path,json=scopePath,proto3" json:"scope_path,omitempty"`
+	// The derived role. Read it to learn what was carried; never grant it.
+	RoleId string `protobuf:"bytes,4,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	// What the derived role permits, each written "<resource kind>:<action>" — the
+	// declared consumption intersected with the chosen role, in the words the
+	// declaration uses.
+	Scopes        []string `protobuf:"bytes,5,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CarriedModuleAccess) Reset() {
+	*x = CarriedModuleAccess{}
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CarriedModuleAccess) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CarriedModuleAccess) ProtoMessage() {}
+
+func (x *CarriedModuleAccess) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CarriedModuleAccess.ProtoReflect.Descriptor instead.
+func (*CarriedModuleAccess) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CarriedModuleAccess) GetAudience() string {
+	if x != nil {
+		return x.Audience
+	}
+	return ""
+}
+
+func (x *CarriedModuleAccess) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
+func (x *CarriedModuleAccess) GetScopePath() string {
+	if x != nil {
+		return x.ScopePath
+	}
+	return ""
+}
+
+func (x *CarriedModuleAccess) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+func (x *CarriedModuleAccess) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
 type GrantInstallationToTeamResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Grant         *ScopeGrant            `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Grant *ScopeGrant            `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
+	// The module access this grant carried, one entry per module the solution
+	// declares it reaches and this organisation has installed. A team granted a
+	// solution reaches every module the solution reaches on its members' own
+	// sessions, by construction: there is no per-module grant step for a person to
+	// discover by being refused.
+	Carried []*CarriedModuleAccess `protobuf:"bytes,2,rep,name=carried,proto3" json:"carried,omitempty"`
+	// Where it carried nothing, and why — in the same response as the grant,
+	// because a refusal a person learns about by hitting a Forbidden later is the
+	// failure this replaces. Stated in the same condition vocabulary the setup
+	// page reads, so one reader works through one list.
+	Unmet         []*ReadinessCondition `protobuf:"bytes,3,rep,name=unmet,proto3" json:"unmet,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GrantInstallationToTeamResponse) Reset() {
 	*x = GrantInstallationToTeamResponse{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[15]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1305,7 +1878,7 @@ func (x *GrantInstallationToTeamResponse) String() string {
 func (*GrantInstallationToTeamResponse) ProtoMessage() {}
 
 func (x *GrantInstallationToTeamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[15]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1318,12 +1891,26 @@ func (x *GrantInstallationToTeamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantInstallationToTeamResponse.ProtoReflect.Descriptor instead.
 func (*GrantInstallationToTeamResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{15}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GrantInstallationToTeamResponse) GetGrant() *ScopeGrant {
 	if x != nil {
 		return x.Grant
+	}
+	return nil
+}
+
+func (x *GrantInstallationToTeamResponse) GetCarried() []*CarriedModuleAccess {
+	if x != nil {
+		return x.Carried
+	}
+	return nil
+}
+
+func (x *GrantInstallationToTeamResponse) GetUnmet() []*ReadinessCondition {
+	if x != nil {
+		return x.Unmet
 	}
 	return nil
 }
@@ -1342,7 +1929,7 @@ type RevokeInstallationFromTeamRequest struct {
 
 func (x *RevokeInstallationFromTeamRequest) Reset() {
 	*x = RevokeInstallationFromTeamRequest{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[16]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1354,7 +1941,7 @@ func (x *RevokeInstallationFromTeamRequest) String() string {
 func (*RevokeInstallationFromTeamRequest) ProtoMessage() {}
 
 func (x *RevokeInstallationFromTeamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[16]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1367,7 +1954,7 @@ func (x *RevokeInstallationFromTeamRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use RevokeInstallationFromTeamRequest.ProtoReflect.Descriptor instead.
 func (*RevokeInstallationFromTeamRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{16}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RevokeInstallationFromTeamRequest) GetOrgId() string {
@@ -1423,14 +2010,20 @@ type AvailableSolution struct {
 	// target. A catalogue shows it as installed rather than offering it twice; the
 	// unique index over (org_id, target_id) would refuse the second install anyway,
 	// and an administrator should not have to discover that by being refused.
-	Installed     bool `protobuf:"varint,9,opt,name=installed,proto3" json:"installed,omitempty"`
+	Installed bool `protobuf:"varint,9,opt,name=installed,proto3" json:"installed,omitempty"`
+	// What this target is, as its registration declared it: `module` or
+	// `solution`. Read from the registration in the same statement as the rest of
+	// the row; a reader is told rather than inferring it from the alias, because a
+	// module and a solution are set up differently and the page says which it is.
+	// Empty when the registration declared neither.
+	Kind          string `protobuf:"bytes,10,opt,name=kind,proto3" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AvailableSolution) Reset() {
 	*x = AvailableSolution{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[17]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1442,7 +2035,7 @@ func (x *AvailableSolution) String() string {
 func (*AvailableSolution) ProtoMessage() {}
 
 func (x *AvailableSolution) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[17]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1455,7 +2048,7 @@ func (x *AvailableSolution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AvailableSolution.ProtoReflect.Descriptor instead.
 func (*AvailableSolution) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{17}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *AvailableSolution) GetTargetId() string {
@@ -1521,6 +2114,13 @@ func (x *AvailableSolution) GetInstalled() bool {
 	return false
 }
 
+func (x *AvailableSolution) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
 type ListAvailableSolutionsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -1534,7 +2134,7 @@ type ListAvailableSolutionsRequest struct {
 
 func (x *ListAvailableSolutionsRequest) Reset() {
 	*x = ListAvailableSolutionsRequest{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[18]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1546,7 +2146,7 @@ func (x *ListAvailableSolutionsRequest) String() string {
 func (*ListAvailableSolutionsRequest) ProtoMessage() {}
 
 func (x *ListAvailableSolutionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[18]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1559,7 +2159,7 @@ func (x *ListAvailableSolutionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAvailableSolutionsRequest.ProtoReflect.Descriptor instead.
 func (*ListAvailableSolutionsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{18}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListAvailableSolutionsRequest) GetOrgId() string {
@@ -1593,7 +2193,7 @@ type ListAvailableSolutionsResponse struct {
 
 func (x *ListAvailableSolutionsResponse) Reset() {
 	*x = ListAvailableSolutionsResponse{}
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[19]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1605,7 +2205,7 @@ func (x *ListAvailableSolutionsResponse) String() string {
 func (*ListAvailableSolutionsResponse) ProtoMessage() {}
 
 func (x *ListAvailableSolutionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_installations_proto_msgTypes[19]
+	mi := &file_saas_accounts_v1_installations_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1618,7 +2218,7 @@ func (x *ListAvailableSolutionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAvailableSolutionsResponse.ProtoReflect.Descriptor instead.
 func (*ListAvailableSolutionsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{19}
+	return file_saas_accounts_v1_installations_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListAvailableSolutionsResponse) GetSolutions() []*AvailableSolution {
@@ -1711,14 +2311,32 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\tpage_size\x18\x02 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xf4\x03(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x03 \x01(\tR\tpageToken\"\x9d\x03\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\xae\x04\n" +
 	"\x18OrganizationInstallation\x12B\n" +
 	"\finstallation\x18\x01 \x01(\v2\x1e.saas.accounts.v1.InstallationR\finstallation\x12<\n" +
 	"\x06health\x18\x02 \x01(\x0e2$.saas.accounts.v1.InstallationHealthR\x06health\x12;\n" +
 	"\x06target\x18\x03 \x01(\v2#.saas.accounts.v1.AvailableSolutionR\x06target\x12&\n" +
 	"\x0froot_scope_path\x18\x04 \x01(\tR\rrootScopePath\x12J\n" +
 	"\rgranted_teams\x18\x05 \x03(\v2%.saas.accounts.v1.CollectionReadGrantR\fgrantedTeams\x12N\n" +
-	"\x0finherited_teams\x18\x06 \x03(\v2%.saas.accounts.v1.CollectionReadGrantR\x0einheritedTeams\"\xa1\x01\n" +
+	"\x0finherited_teams\x18\x06 \x03(\v2%.saas.accounts.v1.CollectionReadGrantR\x0einheritedTeams\x12E\n" +
+	"\treadiness\x18\a \x01(\v2'.saas.accounts.v1.InstallationReadinessR\treadiness\x12H\n" +
+	"\x0freached_modules\x18\b \x03(\v2\x1f.saas.accounts.v1.ReachedModuleR\x0ereachedModules\"\xa1\x02\n" +
+	"\x12ReadinessCondition\x12<\n" +
+	"\x04kind\x18\x01 \x01(\x0e2(.saas.accounts.v1.ReadinessConditionKindR\x04kind\x12\x18\n" +
+	"\asubject\x18\x02 \x01(\tR\asubject\x12\x16\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail\x12C\n" +
+	"\n" +
+	"cleared_by\x18\x04 \x01(\x0e2$.saas.accounts.v1.ReadinessClearedByR\tclearedBy\x129\n" +
+	"\x06action\x18\x05 \x01(\x0e2!.saas.accounts.v1.ReadinessActionR\x06action\x12\x1b\n" +
+	"\tsource_id\x18\x06 \x01(\tR\bsourceId\"i\n" +
+	"\x15InstallationReadiness\x12\x14\n" +
+	"\x05ready\x18\x01 \x01(\bR\x05ready\x12:\n" +
+	"\x05unmet\x18\x02 \x03(\v2$.saas.accounts.v1.ReadinessConditionR\x05unmet\"u\n" +
+	"\rReachedModule\x12\x1a\n" +
+	"\baudience\x18\x01 \x01(\tR\baudience\x12'\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tR\x0einstallationId\x12\x1f\n" +
+	"\vroute_alias\x18\x03 \x01(\tR\n" +
+	"routeAlias\"\xa1\x01\n" +
 	"%ListOrganizationInstallationsResponse\x12P\n" +
 	"\rinstallations\x18\x01 \x03(\v2*.saas.accounts.v1.OrganizationInstallationR\rinstallations\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xba\x01\n" +
@@ -1726,14 +2344,23 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12!\n" +
 	"\ateam_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06teamId\x12!\n" +
-	"\arole_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"U\n" +
+	"\arole_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"\xaa\x01\n" +
+	"\x13CarriedModuleAccess\x12\x1a\n" +
+	"\baudience\x18\x01 \x01(\tR\baudience\x12'\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tR\x0einstallationId\x12\x1d\n" +
+	"\n" +
+	"scope_path\x18\x03 \x01(\tR\tscopePath\x12\x17\n" +
+	"\arole_id\x18\x04 \x01(\tR\x06roleId\x12\x16\n" +
+	"\x06scopes\x18\x05 \x03(\tR\x06scopes\"\xd2\x01\n" +
 	"\x1fGrantInstallationToTeamResponse\x122\n" +
-	"\x05grant\x18\x01 \x01(\v2\x1c.saas.accounts.v1.ScopeGrantR\x05grant\"\xbd\x01\n" +
+	"\x05grant\x18\x01 \x01(\v2\x1c.saas.accounts.v1.ScopeGrantR\x05grant\x12?\n" +
+	"\acarried\x18\x02 \x03(\v2%.saas.accounts.v1.CarriedModuleAccessR\acarried\x12:\n" +
+	"\x05unmet\x18\x03 \x03(\v2$.saas.accounts.v1.ReadinessConditionR\x05unmet\"\xbd\x01\n" +
 	"!RevokeInstallationFromTeamRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12!\n" +
 	"\ateam_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06teamId\x12!\n" +
-	"\arole_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"\xed\x02\n" +
+	"\arole_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\"\x8a\x03\n" +
 	"\x11AvailableSolution\x12%\n" +
 	"\ttarget_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\x12\x1d\n" +
 	"\n" +
@@ -1745,7 +2372,9 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\x0frelease_version\x18\x06 \x01(\tR\x0ereleaseVersion\x12+\n" +
 	"\x11opened_generation\x18\a \x01(\x04R\x10openedGeneration\x12-\n" +
 	"\x12applied_generation\x18\b \x01(\x04R\x11appliedGeneration\x12\x1c\n" +
-	"\tinstalled\x18\t \x01(\bR\tinstalled\"\x88\x01\n" +
+	"\tinstalled\x18\t \x01(\bR\tinstalled\x12\x1b\n" +
+	"\x04kind\x18\n" +
+	" \x01(\tB\a\xbaH\x04r\x02\x18 R\x04kind\"\x88\x01\n" +
 	"\x1dListAvailableSolutionsRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12'\n" +
 	"\tpage_size\x18\x02 \x01(\x05B\n" +
@@ -1767,7 +2396,31 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"%INSTALLATION_HEALTH_NO_ELIGIBLE_OWNER\x10\x02\x12%\n" +
 	"!INSTALLATION_HEALTH_AGENT_REVOKED\x10\x03\x12&\n" +
 	"\"INSTALLATION_HEALTH_AGENT_DISABLED\x10\x04\x12.\n" +
-	"*INSTALLATION_HEALTH_STANDING_GRANT_MISSING\x10\x052\xaa\x12\n" +
+	"*INSTALLATION_HEALTH_STANDING_GRANT_MISSING\x10\x05*\xf3\x03\n" +
+	"\x16ReadinessConditionKind\x12(\n" +
+	"$READINESS_CONDITION_KIND_UNSPECIFIED\x10\x00\x121\n" +
+	"-READINESS_CONDITION_KIND_INSTALL_STEP_PENDING\x10\x01\x120\n" +
+	",READINESS_CONDITION_KIND_INSTALL_STEP_FAILED\x10\x02\x12-\n" +
+	")READINESS_CONDITION_KIND_RECORD_UNHEALTHY\x10\x03\x125\n" +
+	"1READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED\x10\x04\x126\n" +
+	"2READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED\x10\x05\x121\n" +
+	"-READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED\x10\x06\x129\n" +
+	"5READINESS_CONDITION_KIND_REACHED_MODULE_NOT_INSTALLED\x10\a\x12>\n" +
+	":READINESS_CONDITION_KIND_CARRIED_MODULE_ACCESS_NOT_DERIVED\x10\b*\xd5\x01\n" +
+	"\x12ReadinessClearedBy\x12$\n" +
+	" READINESS_CLEARED_BY_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bREADINESS_CLEARED_BY_VIEWER\x10\x01\x12+\n" +
+	"'READINESS_CLEARED_BY_ORGANIZATION_ADMIN\x10\x02\x12*\n" +
+	"&READINESS_CLEARED_BY_PLATFORM_OPERATOR\x10\x03\x12\x1f\n" +
+	"\x1bREADINESS_CLEARED_BY_NOBODY\x10\x04*\x9f\x02\n" +
+	"\x0fReadinessAction\x12 \n" +
+	"\x1cREADINESS_ACTION_UNSPECIFIED\x10\x00\x12)\n" +
+	"%READINESS_ACTION_NONE_AT_THIS_SURFACE\x10\x01\x12'\n" +
+	"#READINESS_ACTION_RETRY_INSTALL_STEP\x10\x02\x12%\n" +
+	"!READINESS_ACTION_RECONNECT_SOURCE\x10\x03\x12'\n" +
+	"#READINESS_ACTION_TRANSFER_OWNERSHIP\x10\x04\x12+\n" +
+	"'READINESS_ACTION_INSTALL_REACHED_MODULE\x10\x05\x12\x19\n" +
+	"\x15READINESS_ACTION_WAIT\x10\x062\xaa\x12\n" +
 	"\x13InstallationService\x12\xba\x01\n" +
 	"\x0fInstallSolution\x12(.saas.accounts.v1.InstallSolutionRequest\x1a\x1e.saas.accounts.v1.Installation\"]\xc2\xf3\x18=\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x1d\n" +
@@ -1811,81 +2464,96 @@ func file_saas_accounts_v1_installations_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_installations_proto_rawDescData
 }
 
-var file_saas_accounts_v1_installations_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_saas_accounts_v1_installations_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_saas_accounts_v1_installations_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_saas_accounts_v1_installations_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_saas_accounts_v1_installations_proto_goTypes = []any{
 	(InstallationStatus)(0),                       // 0: saas.accounts.v1.InstallationStatus
 	(InstallationHealth)(0),                       // 1: saas.accounts.v1.InstallationHealth
-	(*Installation)(nil),                          // 2: saas.accounts.v1.Installation
-	(*InstallSolutionRequest)(nil),                // 3: saas.accounts.v1.InstallSolutionRequest
-	(*NarrowInstallationRequest)(nil),             // 4: saas.accounts.v1.NarrowInstallationRequest
-	(*RetryInstallationRequest)(nil),              // 5: saas.accounts.v1.RetryInstallationRequest
-	(*UninstallSolutionRequest)(nil),              // 6: saas.accounts.v1.UninstallSolutionRequest
-	(*TransferInstallationOwnershipRequest)(nil),  // 7: saas.accounts.v1.TransferInstallationOwnershipRequest
-	(*GetInstallationRequest)(nil),                // 8: saas.accounts.v1.GetInstallationRequest
-	(*GetInstallationResponse)(nil),               // 9: saas.accounts.v1.GetInstallationResponse
-	(*ListInstallationsRequest)(nil),              // 10: saas.accounts.v1.ListInstallationsRequest
-	(*InstallationSummary)(nil),                   // 11: saas.accounts.v1.InstallationSummary
-	(*ListInstallationsResponse)(nil),             // 12: saas.accounts.v1.ListInstallationsResponse
-	(*ListOrganizationInstallationsRequest)(nil),  // 13: saas.accounts.v1.ListOrganizationInstallationsRequest
-	(*OrganizationInstallation)(nil),              // 14: saas.accounts.v1.OrganizationInstallation
-	(*ListOrganizationInstallationsResponse)(nil), // 15: saas.accounts.v1.ListOrganizationInstallationsResponse
-	(*GrantInstallationToTeamRequest)(nil),        // 16: saas.accounts.v1.GrantInstallationToTeamRequest
-	(*GrantInstallationToTeamResponse)(nil),       // 17: saas.accounts.v1.GrantInstallationToTeamResponse
-	(*RevokeInstallationFromTeamRequest)(nil),     // 18: saas.accounts.v1.RevokeInstallationFromTeamRequest
-	(*AvailableSolution)(nil),                     // 19: saas.accounts.v1.AvailableSolution
-	(*ListAvailableSolutionsRequest)(nil),         // 20: saas.accounts.v1.ListAvailableSolutionsRequest
-	(*ListAvailableSolutionsResponse)(nil),        // 21: saas.accounts.v1.ListAvailableSolutionsResponse
-	(*timestamppb.Timestamp)(nil),                 // 22: google.protobuf.Timestamp
-	(*CollectionReadGrant)(nil),                   // 23: saas.accounts.v1.CollectionReadGrant
-	(*ScopeGrant)(nil),                            // 24: saas.accounts.v1.ScopeGrant
-	(*emptypb.Empty)(nil),                         // 25: google.protobuf.Empty
+	(ReadinessConditionKind)(0),                   // 2: saas.accounts.v1.ReadinessConditionKind
+	(ReadinessClearedBy)(0),                       // 3: saas.accounts.v1.ReadinessClearedBy
+	(ReadinessAction)(0),                          // 4: saas.accounts.v1.ReadinessAction
+	(*Installation)(nil),                          // 5: saas.accounts.v1.Installation
+	(*InstallSolutionRequest)(nil),                // 6: saas.accounts.v1.InstallSolutionRequest
+	(*NarrowInstallationRequest)(nil),             // 7: saas.accounts.v1.NarrowInstallationRequest
+	(*RetryInstallationRequest)(nil),              // 8: saas.accounts.v1.RetryInstallationRequest
+	(*UninstallSolutionRequest)(nil),              // 9: saas.accounts.v1.UninstallSolutionRequest
+	(*TransferInstallationOwnershipRequest)(nil),  // 10: saas.accounts.v1.TransferInstallationOwnershipRequest
+	(*GetInstallationRequest)(nil),                // 11: saas.accounts.v1.GetInstallationRequest
+	(*GetInstallationResponse)(nil),               // 12: saas.accounts.v1.GetInstallationResponse
+	(*ListInstallationsRequest)(nil),              // 13: saas.accounts.v1.ListInstallationsRequest
+	(*InstallationSummary)(nil),                   // 14: saas.accounts.v1.InstallationSummary
+	(*ListInstallationsResponse)(nil),             // 15: saas.accounts.v1.ListInstallationsResponse
+	(*ListOrganizationInstallationsRequest)(nil),  // 16: saas.accounts.v1.ListOrganizationInstallationsRequest
+	(*OrganizationInstallation)(nil),              // 17: saas.accounts.v1.OrganizationInstallation
+	(*ReadinessCondition)(nil),                    // 18: saas.accounts.v1.ReadinessCondition
+	(*InstallationReadiness)(nil),                 // 19: saas.accounts.v1.InstallationReadiness
+	(*ReachedModule)(nil),                         // 20: saas.accounts.v1.ReachedModule
+	(*ListOrganizationInstallationsResponse)(nil), // 21: saas.accounts.v1.ListOrganizationInstallationsResponse
+	(*GrantInstallationToTeamRequest)(nil),        // 22: saas.accounts.v1.GrantInstallationToTeamRequest
+	(*CarriedModuleAccess)(nil),                   // 23: saas.accounts.v1.CarriedModuleAccess
+	(*GrantInstallationToTeamResponse)(nil),       // 24: saas.accounts.v1.GrantInstallationToTeamResponse
+	(*RevokeInstallationFromTeamRequest)(nil),     // 25: saas.accounts.v1.RevokeInstallationFromTeamRequest
+	(*AvailableSolution)(nil),                     // 26: saas.accounts.v1.AvailableSolution
+	(*ListAvailableSolutionsRequest)(nil),         // 27: saas.accounts.v1.ListAvailableSolutionsRequest
+	(*ListAvailableSolutionsResponse)(nil),        // 28: saas.accounts.v1.ListAvailableSolutionsResponse
+	(*timestamppb.Timestamp)(nil),                 // 29: google.protobuf.Timestamp
+	(*CollectionReadGrant)(nil),                   // 30: saas.accounts.v1.CollectionReadGrant
+	(*ScopeGrant)(nil),                            // 31: saas.accounts.v1.ScopeGrant
+	(*emptypb.Empty)(nil),                         // 32: google.protobuf.Empty
 }
 var file_saas_accounts_v1_installations_proto_depIdxs = []int32{
 	0,  // 0: saas.accounts.v1.Installation.status:type_name -> saas.accounts.v1.InstallationStatus
-	22, // 1: saas.accounts.v1.Installation.created_at:type_name -> google.protobuf.Timestamp
-	22, // 2: saas.accounts.v1.Installation.revoked_at:type_name -> google.protobuf.Timestamp
-	2,  // 3: saas.accounts.v1.GetInstallationResponse.installation:type_name -> saas.accounts.v1.Installation
+	29, // 1: saas.accounts.v1.Installation.created_at:type_name -> google.protobuf.Timestamp
+	29, // 2: saas.accounts.v1.Installation.revoked_at:type_name -> google.protobuf.Timestamp
+	5,  // 3: saas.accounts.v1.GetInstallationResponse.installation:type_name -> saas.accounts.v1.Installation
 	1,  // 4: saas.accounts.v1.GetInstallationResponse.health:type_name -> saas.accounts.v1.InstallationHealth
 	0,  // 5: saas.accounts.v1.ListInstallationsRequest.status:type_name -> saas.accounts.v1.InstallationStatus
-	2,  // 6: saas.accounts.v1.InstallationSummary.installation:type_name -> saas.accounts.v1.Installation
+	5,  // 6: saas.accounts.v1.InstallationSummary.installation:type_name -> saas.accounts.v1.Installation
 	1,  // 7: saas.accounts.v1.InstallationSummary.health:type_name -> saas.accounts.v1.InstallationHealth
-	11, // 8: saas.accounts.v1.ListInstallationsResponse.installations:type_name -> saas.accounts.v1.InstallationSummary
-	2,  // 9: saas.accounts.v1.OrganizationInstallation.installation:type_name -> saas.accounts.v1.Installation
+	14, // 8: saas.accounts.v1.ListInstallationsResponse.installations:type_name -> saas.accounts.v1.InstallationSummary
+	5,  // 9: saas.accounts.v1.OrganizationInstallation.installation:type_name -> saas.accounts.v1.Installation
 	1,  // 10: saas.accounts.v1.OrganizationInstallation.health:type_name -> saas.accounts.v1.InstallationHealth
-	19, // 11: saas.accounts.v1.OrganizationInstallation.target:type_name -> saas.accounts.v1.AvailableSolution
-	23, // 12: saas.accounts.v1.OrganizationInstallation.granted_teams:type_name -> saas.accounts.v1.CollectionReadGrant
-	23, // 13: saas.accounts.v1.OrganizationInstallation.inherited_teams:type_name -> saas.accounts.v1.CollectionReadGrant
-	14, // 14: saas.accounts.v1.ListOrganizationInstallationsResponse.installations:type_name -> saas.accounts.v1.OrganizationInstallation
-	24, // 15: saas.accounts.v1.GrantInstallationToTeamResponse.grant:type_name -> saas.accounts.v1.ScopeGrant
-	19, // 16: saas.accounts.v1.ListAvailableSolutionsResponse.solutions:type_name -> saas.accounts.v1.AvailableSolution
-	3,  // 17: saas.accounts.v1.InstallationService.InstallSolution:input_type -> saas.accounts.v1.InstallSolutionRequest
-	6,  // 18: saas.accounts.v1.InstallationService.UninstallSolution:input_type -> saas.accounts.v1.UninstallSolutionRequest
-	4,  // 19: saas.accounts.v1.InstallationService.NarrowInstallation:input_type -> saas.accounts.v1.NarrowInstallationRequest
-	5,  // 20: saas.accounts.v1.InstallationService.RetryInstallation:input_type -> saas.accounts.v1.RetryInstallationRequest
-	7,  // 21: saas.accounts.v1.InstallationService.TransferInstallationOwnership:input_type -> saas.accounts.v1.TransferInstallationOwnershipRequest
-	8,  // 22: saas.accounts.v1.InstallationService.GetInstallation:input_type -> saas.accounts.v1.GetInstallationRequest
-	10, // 23: saas.accounts.v1.InstallationService.ListInstallations:input_type -> saas.accounts.v1.ListInstallationsRequest
-	20, // 24: saas.accounts.v1.InstallationService.ListAvailableSolutions:input_type -> saas.accounts.v1.ListAvailableSolutionsRequest
-	13, // 25: saas.accounts.v1.InstallationService.ListOrganizationInstallations:input_type -> saas.accounts.v1.ListOrganizationInstallationsRequest
-	16, // 26: saas.accounts.v1.InstallationService.GrantInstallationToTeam:input_type -> saas.accounts.v1.GrantInstallationToTeamRequest
-	18, // 27: saas.accounts.v1.InstallationService.RevokeInstallationFromTeam:input_type -> saas.accounts.v1.RevokeInstallationFromTeamRequest
-	2,  // 28: saas.accounts.v1.InstallationService.InstallSolution:output_type -> saas.accounts.v1.Installation
-	25, // 29: saas.accounts.v1.InstallationService.UninstallSolution:output_type -> google.protobuf.Empty
-	25, // 30: saas.accounts.v1.InstallationService.NarrowInstallation:output_type -> google.protobuf.Empty
-	2,  // 31: saas.accounts.v1.InstallationService.RetryInstallation:output_type -> saas.accounts.v1.Installation
-	2,  // 32: saas.accounts.v1.InstallationService.TransferInstallationOwnership:output_type -> saas.accounts.v1.Installation
-	9,  // 33: saas.accounts.v1.InstallationService.GetInstallation:output_type -> saas.accounts.v1.GetInstallationResponse
-	12, // 34: saas.accounts.v1.InstallationService.ListInstallations:output_type -> saas.accounts.v1.ListInstallationsResponse
-	21, // 35: saas.accounts.v1.InstallationService.ListAvailableSolutions:output_type -> saas.accounts.v1.ListAvailableSolutionsResponse
-	15, // 36: saas.accounts.v1.InstallationService.ListOrganizationInstallations:output_type -> saas.accounts.v1.ListOrganizationInstallationsResponse
-	17, // 37: saas.accounts.v1.InstallationService.GrantInstallationToTeam:output_type -> saas.accounts.v1.GrantInstallationToTeamResponse
-	25, // 38: saas.accounts.v1.InstallationService.RevokeInstallationFromTeam:output_type -> google.protobuf.Empty
-	28, // [28:39] is the sub-list for method output_type
-	17, // [17:28] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	26, // 11: saas.accounts.v1.OrganizationInstallation.target:type_name -> saas.accounts.v1.AvailableSolution
+	30, // 12: saas.accounts.v1.OrganizationInstallation.granted_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	30, // 13: saas.accounts.v1.OrganizationInstallation.inherited_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	19, // 14: saas.accounts.v1.OrganizationInstallation.readiness:type_name -> saas.accounts.v1.InstallationReadiness
+	20, // 15: saas.accounts.v1.OrganizationInstallation.reached_modules:type_name -> saas.accounts.v1.ReachedModule
+	2,  // 16: saas.accounts.v1.ReadinessCondition.kind:type_name -> saas.accounts.v1.ReadinessConditionKind
+	3,  // 17: saas.accounts.v1.ReadinessCondition.cleared_by:type_name -> saas.accounts.v1.ReadinessClearedBy
+	4,  // 18: saas.accounts.v1.ReadinessCondition.action:type_name -> saas.accounts.v1.ReadinessAction
+	18, // 19: saas.accounts.v1.InstallationReadiness.unmet:type_name -> saas.accounts.v1.ReadinessCondition
+	17, // 20: saas.accounts.v1.ListOrganizationInstallationsResponse.installations:type_name -> saas.accounts.v1.OrganizationInstallation
+	31, // 21: saas.accounts.v1.GrantInstallationToTeamResponse.grant:type_name -> saas.accounts.v1.ScopeGrant
+	23, // 22: saas.accounts.v1.GrantInstallationToTeamResponse.carried:type_name -> saas.accounts.v1.CarriedModuleAccess
+	18, // 23: saas.accounts.v1.GrantInstallationToTeamResponse.unmet:type_name -> saas.accounts.v1.ReadinessCondition
+	26, // 24: saas.accounts.v1.ListAvailableSolutionsResponse.solutions:type_name -> saas.accounts.v1.AvailableSolution
+	6,  // 25: saas.accounts.v1.InstallationService.InstallSolution:input_type -> saas.accounts.v1.InstallSolutionRequest
+	9,  // 26: saas.accounts.v1.InstallationService.UninstallSolution:input_type -> saas.accounts.v1.UninstallSolutionRequest
+	7,  // 27: saas.accounts.v1.InstallationService.NarrowInstallation:input_type -> saas.accounts.v1.NarrowInstallationRequest
+	8,  // 28: saas.accounts.v1.InstallationService.RetryInstallation:input_type -> saas.accounts.v1.RetryInstallationRequest
+	10, // 29: saas.accounts.v1.InstallationService.TransferInstallationOwnership:input_type -> saas.accounts.v1.TransferInstallationOwnershipRequest
+	11, // 30: saas.accounts.v1.InstallationService.GetInstallation:input_type -> saas.accounts.v1.GetInstallationRequest
+	13, // 31: saas.accounts.v1.InstallationService.ListInstallations:input_type -> saas.accounts.v1.ListInstallationsRequest
+	27, // 32: saas.accounts.v1.InstallationService.ListAvailableSolutions:input_type -> saas.accounts.v1.ListAvailableSolutionsRequest
+	16, // 33: saas.accounts.v1.InstallationService.ListOrganizationInstallations:input_type -> saas.accounts.v1.ListOrganizationInstallationsRequest
+	22, // 34: saas.accounts.v1.InstallationService.GrantInstallationToTeam:input_type -> saas.accounts.v1.GrantInstallationToTeamRequest
+	25, // 35: saas.accounts.v1.InstallationService.RevokeInstallationFromTeam:input_type -> saas.accounts.v1.RevokeInstallationFromTeamRequest
+	5,  // 36: saas.accounts.v1.InstallationService.InstallSolution:output_type -> saas.accounts.v1.Installation
+	32, // 37: saas.accounts.v1.InstallationService.UninstallSolution:output_type -> google.protobuf.Empty
+	32, // 38: saas.accounts.v1.InstallationService.NarrowInstallation:output_type -> google.protobuf.Empty
+	5,  // 39: saas.accounts.v1.InstallationService.RetryInstallation:output_type -> saas.accounts.v1.Installation
+	5,  // 40: saas.accounts.v1.InstallationService.TransferInstallationOwnership:output_type -> saas.accounts.v1.Installation
+	12, // 41: saas.accounts.v1.InstallationService.GetInstallation:output_type -> saas.accounts.v1.GetInstallationResponse
+	15, // 42: saas.accounts.v1.InstallationService.ListInstallations:output_type -> saas.accounts.v1.ListInstallationsResponse
+	28, // 43: saas.accounts.v1.InstallationService.ListAvailableSolutions:output_type -> saas.accounts.v1.ListAvailableSolutionsResponse
+	21, // 44: saas.accounts.v1.InstallationService.ListOrganizationInstallations:output_type -> saas.accounts.v1.ListOrganizationInstallationsResponse
+	24, // 45: saas.accounts.v1.InstallationService.GrantInstallationToTeam:output_type -> saas.accounts.v1.GrantInstallationToTeamResponse
+	32, // 46: saas.accounts.v1.InstallationService.RevokeInstallationFromTeam:output_type -> google.protobuf.Empty
+	36, // [36:47] is the sub-list for method output_type
+	25, // [25:36] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_installations_proto_init() }
@@ -1901,8 +2569,8 @@ func file_saas_accounts_v1_installations_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_installations_proto_rawDesc), len(file_saas_accounts_v1_installations_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   20,
+			NumEnums:      5,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

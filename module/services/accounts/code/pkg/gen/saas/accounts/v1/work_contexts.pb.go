@@ -956,8 +956,20 @@ type CheckAuthorizationRevisionRequest struct {
 	// confirmed only against that binding, re-read live; such a context checked
 	// without it is not confirmed. Empty for a context that seals none.
 	OperationBindingId *string `protobuf:"bytes,5,opt,name=operation_binding_id,json=operationBindingId,proto3,oneof" json:"operation_binding_id,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// seals_no_binding ASSERTS that the context names no operation binding at
+	// all. A consumer must send either this or operation_binding_id, and a
+	// request carrying neither is refused as malformed rather than confirmed.
+	//
+	// The distinction is the whole point. The signed capability never crosses
+	// this boundary (see above), so the host reads the binding from fields the
+	// consumer copied out of it — and an OMITTED field and a context that
+	// genuinely seals none are indistinguishable unless one of them is stated.
+	// While they were, a consumer that simply forgot the binding had a narrowed
+	// delegation confirmed against its module's much broader installation. Now
+	// absence is something a consumer asserts, and forgetting is an error.
+	SealsNoBinding *bool `protobuf:"varint,6,opt,name=seals_no_binding,json=sealsNoBinding,proto3,oneof" json:"seals_no_binding,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CheckAuthorizationRevisionRequest) Reset() {
@@ -1023,6 +1035,13 @@ func (x *CheckAuthorizationRevisionRequest) GetOperationBindingId() string {
 		return *x.OperationBindingId
 	}
 	return ""
+}
+
+func (x *CheckAuthorizationRevisionRequest) GetSealsNoBinding() bool {
+	if x != nil && x.SealsNoBinding != nil {
+		return *x.SealsNoBinding
+	}
+	return false
 }
 
 // AuthorizeEvidenceReadRequest asks Accounts to authorize one filtered
@@ -1292,7 +1311,7 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\v_project_id\"\x8f\x01\n" +
 	"\x1aWorkContextRevisionSubject\x12+\n" +
 	"\fprincipal_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\vprincipalId\x12D\n" +
-	"\x06scopes\x18\x02 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\b\xbaH\x05\x92\x01\x02\x10@R\x06scopes\"\xee\x02\n" +
+	"\x06scopes\x18\x02 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\b\xbaH\x05\x92\x01\x02\x10@R\x06scopes\"\xb2\x03\n" +
 	"!CheckAuthorizationRevisionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x126\n" +
 	"\x12owner_principal_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x10ownerPrincipalId\x12>\n" +
@@ -1300,8 +1319,10 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\bsubjects\x18\x04 \x03(\v2,.saas.accounts.v1.WorkContextRevisionSubjectB\n" +
 	"\xbaH\a\x92\x01\x04\b\x01\x10\x11R\bsubjects\x12A\n" +
 	"\x14operation_binding_id\x18\x05 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x00R\x12operationBindingId\x88\x01\x01B\x17\n" +
-	"\x15_operation_binding_id\"\xc2\x02\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x00R\x12operationBindingId\x88\x01\x01\x12-\n" +
+	"\x10seals_no_binding\x18\x06 \x01(\bH\x01R\x0esealsNoBinding\x88\x01\x01B\x17\n" +
+	"\x15_operation_binding_idB\x13\n" +
+	"\x11_seals_no_binding\"\xc2\x02\n" +
 	"\x1cAuthorizeEvidenceReadRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x128\n" +
 	"\x13caller_principal_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x11callerPrincipalId\x12;\n" +

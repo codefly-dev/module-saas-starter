@@ -61,3 +61,19 @@ work_context_audience.go:HostAudiences
 # working — a direct field read was a way past it — and the honest disposition is
 # to list the path rather than go back to the spelling that hid it.
 platform_catalogue.go:ListPlatformCatalogue
+# readReadinessFacts reads the registry to REPORT ON IT. Readiness compares what
+# an applied module manifest asks for against what the derived registry holds and
+# names each binding the host derived nothing for
+# (codefly-dev/module-saas-starter#1167) — so the registry is the SUBJECT of the
+# read, not a ceiling it decides against.
+#
+# It is group C's shape, and sharper than "accessor": there is no decision to
+# route because there is no capability in it. It authorises nothing, mints
+# nothing and admits nothing; its caller is ListOrganizationInstallations, an
+# organisation-admin RPC authorised upstream, and what it returns is shown to a
+# person. Routing it through AuthorizeModuleCapability would re-read the live
+# installation, epoch and revision in order to answer a question about the
+# DECLARED registry, which is the one thing the report must not do: a readiness
+# page that silently reported the live ceiling instead of the derived one would
+# hide exactly the omission it exists to surface.
+installation_readiness.go:readReadinessFacts

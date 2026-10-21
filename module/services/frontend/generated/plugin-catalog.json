@@ -126,6 +126,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
+      "path": "/admin/platform/module-authority",
+      "source_path": "src/app/admin/platform/module-authority/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
       "path": "/admin/platform/organizations",
       "source_path": "src/app/admin/platform/organizations/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -171,6 +177,12 @@
       "path": "/admin/solutions",
       "source_path": "src/app/admin/solutions/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/solutions/{installationId}",
+      "source_path": "src/app/admin/solutions/[installationId]/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_PARAMETER",
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
@@ -695,7 +707,7 @@
     {
       "id": "admin-solutions",
       "plugin": "core-users",
-      "label": "Solutions",
+      "label": "Modules & solutions",
       "path": "/admin/solutions",
       "icon": "Layers",
       "group": "Integrations",

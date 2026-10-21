@@ -234,6 +234,19 @@ func assertSecretDefaultIsPlaceholder(t *testing.T, name string) {
 
 func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 	for _, group := range declaredWorkspaceConfigGroups(t) {
+		// CLI supplies this group per native run. An authored path (even an
+		// empty placeholder) conflicts with its render-owned declaration.
+		if group == "artifact-cache" {
+			for _, directory := range []string{moduleConfigLocalDir, workspaceConfigLocalDir} {
+				for _, suffix := range []string{".env", ".secret.env"} {
+					path := filepath.Join(directory, group+suffix)
+					if _, err := os.Lstat(path); !os.IsNotExist(err) {
+						t.Errorf("CLI-owned group %s must have no authored default at %s", group, path)
+					}
+				}
+			}
+			continue
+		}
 		// The base-synced location is what a base-synced consumer inherits.
 		moduleDefaults := moduleDefaultFiles(group)
 		if len(moduleDefaults) == 0 {

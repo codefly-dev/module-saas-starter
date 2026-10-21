@@ -12,7 +12,6 @@ import (
 
 	"accounts/pkg/adapters"
 	"accounts/pkg/business"
-	"accounts/pkg/business/executiontest"
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -553,7 +552,6 @@ func TestSourceDelegation_MultiHopActorChainIsRefusedUnderADelegation(t *testing
 	require.NoError(t, err)
 	extra := proto.Clone(genuine.GetActorChain()[0]).(*basev0.WorkActorV1)
 	extra.PrincipalId, extra.PrincipalEpoch, extra.GrantedScopes = reports, epoch, scopes
-	extra.ImageDigest = proto.String(executiontest.Digest(otherModule))
 	deeperContext := proto.Clone(genuine).(*basev0.WorkContextV1)
 	deeperContext.Audience, deeperContext.AuthorityScopes = runtimeModule, scopes
 	deeperContext.ActorChain = []*basev0.WorkActorV1{extra, deeperContext.ActorChain[0]}

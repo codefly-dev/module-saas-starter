@@ -110,11 +110,9 @@ func TestMintModuleOperationContextSealsExactlyTheHeadlessScopes(t *testing.T) {
 	require.LessOrEqual(t, signed.GetExpiresAtUnix()-signed.GetIssuedAtUnix(), int64(business.ModuleOperationContextTTL/time.Second))
 	want := []*basev0.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}, ResourceIds: []string{"profile-digest"}}}
 	requireScopes(t, want, signed.GetAuthorityScopes())
-	// The module acts as itself: owned by its service principal, no actor hop,
-	// and sealed to the build its requesting pod runs.
+	// The module acts as itself: owned by its service principal, no actor hop.
 	require.Empty(t, signed.GetActorChain())
 	require.Equal(t, business.PrincipalKindService, signed.GetOwnerPrincipalKind())
-	require.Equal(t, executiontest.Digest("documents"), signed.GetSeal().GetImageDigest())
 
 	// It is not a module identity: the capability surface refuses it.
 	_, err = WorkContextSingleton().VerifyModuleWorkContext(context.Background(), resp.GetToken())
@@ -131,14 +129,12 @@ func TestMintModuleOperationContextSealsExactlyTheHeadlessScopes(t *testing.T) {
 	require.Equal(t, "model", payload["binding_id"])
 	require.Equal(t, "modelservice", payload["audience"])
 	require.Equal(t, []string{"modelservice.profiles:invoke:profile-digest", "modelservice.profiles:read:profile-digest"}, payload["scopes"])
-	// Attribution: the record names the execution the mint was bound to.
-	require.Equal(t, executiontest.Image("documents"), payload["running_digest"])
+	// Attribution: the record names the workload the mint was bound to.
 	require.Equal(t, "acme-prod", payload["namespace"])
 	require.Equal(t, "module", payload["service_account"])
 	require.Equal(t, "app", payload["container"])
 	require.NotEmpty(t, payload["pod"])
 	require.NotEmpty(t, payload["pod_uid"])
-	require.EqualValues(t, 1, payload["build_incarnation"])
 	require.Equal(t, 1, store.tenantChecks)
 	require.Equal(t, moduleWorkContextTenant, store.tenantCheckedID)
 }
@@ -173,9 +169,8 @@ func TestMintModuleOperationContextRefusals(t *testing.T) {
 		"not a projected token":            {headlessPrincipals, "documents", func(*testing.T) string { return "guessed" }, "model", codes.Unauthenticated},
 		"undeclared module":                {headlessPrincipals, "billing", own, "model", codes.Unauthenticated},
 		"another module's pod":             {twoModules, "documents", func(t *testing.T) string { return moduleToken(t, "billing") }, "model", codes.Unauthenticated},
-		"a pod on an unapproved build": {headlessPrincipals, "documents", func(t *testing.T) string {
-			return moduleExecution.cluster.Run(executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "module", Container: "app"},
-				executiontest.Image("documents-unreviewed"))
+		"a pod of an undeclared account": {headlessPrincipals, "documents", func(t *testing.T) string {
+			return moduleExecution.cluster.Run(executiontest.Workload{Namespace: "acme-prod", ServiceAccount: "intruder", Container: "app"})
 		}, "model", codes.Unauthenticated},
 		"invalid binding name": {headlessPrincipals, "documents", own, "", codes.InvalidArgument},
 	}
@@ -194,9 +189,9 @@ func TestMintModuleOperationContextRefusals(t *testing.T) {
 	}
 }
 
-// The module Work Context mint records the execution it was bound to, in a
+// The module Work Context mint records the workload it was bound to, in a
 // payload the registry accepts.
-func TestMintModuleWorkContextRecordsTheExecutionItWasBoundTo(t *testing.T) {
+func TestMintModuleWorkContextRecordsTheWorkloadItWasBoundTo(t *testing.T) {
 	_, audit := installModuleOperationContextService(t, documentsPrincipals)
 	installModuleWorkContextAuthority(t)
 
@@ -206,12 +201,11 @@ func TestMintModuleWorkContextRecordsTheExecutionItWasBoundTo(t *testing.T) {
 	entries := audit.of(business.EventModuleWorkContextMint)
 	require.Len(t, entries, 1)
 	payload := entries[0].Payload
-	require.Equal(t, executiontest.Image("documents"), payload["running_digest"])
 	require.Equal(t, "acme-prod", payload["namespace"])
 	require.Equal(t, "module", payload["service_account"])
 	require.Equal(t, "app", payload["container"])
 	require.NotEmpty(t, payload["pod_uid"])
-	require.EqualValues(t, 1, payload["build_incarnation"])
+	require.NotContains(t, payload, "running_digest", "no image is read at mint")
 }
 
 func TestMintModuleOperationContextRefusesATenantThatNamesNoOrganization(t *testing.T) {

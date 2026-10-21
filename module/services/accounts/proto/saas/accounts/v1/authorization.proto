@@ -266,6 +266,17 @@ message ScopeGrant {
   string granted_by = 7;
   google.protobuf.Timestamp expires_at = 8;
   google.protobuf.Timestamp created_at = 9;
+  // The grant that CAUSED this one, when this grant was derived rather than
+  // written by an administrator: the exposure grant of a solution whose applied
+  // manifest declares it reaches this node's module on the asking person's own
+  // session. Empty for every grant an administrator wrote.
+  //
+  // A derived grant is an ordinary grant in every other respect — same node,
+  // same resolution, same events — so this is the one field that says a surface
+  // must name the solution rather than offer a revoke: it goes when its cause
+  // goes, and removing it by hand only breaks the solution until the next grant
+  // of that cause re-derives it.
+  string derived_from_grant_id = 10;
 }
 
 message CollectionReadGrant {

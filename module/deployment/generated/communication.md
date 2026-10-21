@@ -472,6 +472,14 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Retention:** 30d
 - **Consumers:** _none_
 
+## saas.datasource.source.updated
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
 ## saas.datasource.sync.completed
 
 - **Publisher:** saas
@@ -1073,6 +1081,14 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Consumers:** _none_
 
 ## saas.org.updated
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.platform.module_envelope_delivered
 
 - **Publisher:** saas
 - **Visibility:** external

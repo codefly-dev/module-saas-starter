@@ -1,6 +1,7 @@
 "use client";
 
 import { Layers, RefreshCw, X } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
@@ -29,6 +30,7 @@ import {
 	Badge,
 	Banner,
 	Button,
+	buttonVariants,
 	Card,
 	CardContent,
 	CardDescription,
@@ -51,6 +53,7 @@ import {
 	installedRows,
 	type TeamGrantRow,
 } from "../model/installations";
+import { readinessSummary } from "../model/readiness";
 import {
 	useGrantInstallationToTeam,
 	useInstallSolution,
@@ -65,8 +68,12 @@ import { InstallSolutionDialog } from "./install-solution-dialog";
 /**
  * One fact. A gap reads as its label in muted italics with what it means on
  * hover, so "this host does not know" is never mistaken for a value.
+ *
+ * Exported for the setup page, which states the same facts about one
+ * installation: a second renderer would be a second answer to "is this a value
+ * or a gap", and the two would drift.
  */
-function Fact({ view }: { view: FactView }) {
+export function Fact({ view }: { view: FactView }) {
 	if (view.kind === "gap") {
 		return (
 			<span
@@ -97,7 +104,7 @@ function Fact({ view }: { view: FactView }) {
 }
 
 /**
- * The organization's solutions: what it may install, what it has installed and
+ * The organization's modules and solutions: what it may install, what it has installed and
  * at which release, and the runtime acts an administrator performs on them —
  * install, expose to a team, uninstall. Each act is the host's to accept or
  * refuse, and a refusal is shown as the host words it.
@@ -119,11 +126,11 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div>
 					<h1 data-slot="page-title" className="type-page-title">
-						Solutions
+						Modules &amp; solutions
 					</h1>
 					<p className="text-muted-foreground">
-						Install the solutions this organization may use, see what is
-						installed and at which release, and decide which teams reach each
+						Install the modules and solutions this organization may use, review
+						their status and release, and choose which teams can access each
 						one.
 					</p>
 				</div>
@@ -148,7 +155,7 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 			{!orgId ? (
 				<EmptyState
 					icon={Layers}
-					title="Select an organization to manage its solutions"
+					title="Select an organization to manage its modules and solutions"
 					description="Installations belong to one organization at a time. Pick one from the selector above."
 				/>
 			) : (
@@ -207,7 +214,7 @@ function AvailableSection({
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
-	const stale = staleReadNotice(outcome, "the available solutions");
+	const stale = staleReadNotice(outcome, "the available modules and solutions");
 	const rows = withheld ? [] : availableRows(query.data ?? []);
 
 	return (
@@ -221,7 +228,7 @@ function AvailableSection({
 			</CardHeader>
 			<CardContent>
 				{quiet ? null : indicator ? (
-					<Spinner label="Loading available solutions" />
+					<Spinner label="Loading available modules and solutions" />
 				) : rows.length === 0 ? (
 					<p
 						className="py-6 text-center text-sm text-muted-foreground"
@@ -229,8 +236,8 @@ function AvailableSection({
 					>
 						{readOutcomeMessage(
 							outcome,
-							"the available solutions",
-							"No solution is available to this organization.",
+							"the available modules and solutions",
+							"No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list.",
 						)}
 						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
@@ -241,10 +248,10 @@ function AvailableSection({
 								{stale} {hostRefusal(query.error)}
 							</p>
 						)}
-						<Table aria-label="Available solutions">
+						<Table aria-label="Available modules and solutions">
 							<TableHeader>
 								<TableRow>
-									<TableHead>Solution</TableHead>
+									<TableHead>Module or solution</TableHead>
 									<TableHead>Release</TableHead>
 									<TableHead>Generation</TableHead>
 									<TableHead>State</TableHead>
@@ -311,7 +318,7 @@ function InstalledSection({
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
-	const stale = staleReadNotice(outcome, "the installed solutions");
+	const stale = staleReadNotice(outcome, "the installed modules and solutions");
 	const rows = withheld ? [] : installedRows(query.data ?? []);
 
 	const name = (row: InstalledRow) =>
@@ -383,7 +390,7 @@ function InstalledSection({
 					</Banner>
 				)}
 				{quiet ? null : indicator ? (
-					<Spinner label="Loading installed solutions" />
+					<Spinner label="Loading installed modules and solutions" />
 				) : rows.length === 0 ? (
 					<p
 						className="py-6 text-center text-sm text-muted-foreground"
@@ -391,8 +398,8 @@ function InstalledSection({
 					>
 						{readOutcomeMessage(
 							outcome,
-							"the installed solutions",
-							"Nothing is installed in this organization.",
+							"the installed modules and solutions",
+							"Nothing is installed in this organization. Once a module or solution is available above, choose it to install it.",
 						)}
 						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
@@ -403,12 +410,13 @@ function InstalledSection({
 								{stale} {hostRefusal(query.error)}
 							</p>
 						)}
-						<Table aria-label="Installed solutions">
+						<Table aria-label="Installed modules and solutions">
 							<TableHeader>
 								<TableRow>
-									<TableHead>Solution</TableHead>
+									<TableHead>Module or solution</TableHead>
 									<TableHead>Revision</TableHead>
 									<TableHead>Status</TableHead>
+									<TableHead>Ready</TableHead>
 									<TableHead>Health</TableHead>
 									<TableHead>Teams</TableHead>
 									<TableHead>Installed</TableHead>
@@ -431,6 +439,9 @@ function InstalledSection({
 													{row.failureReason}
 												</p>
 											)}
+										</TableCell>
+										<TableCell>
+											<Readiness row={row} />
 										</TableCell>
 										<TableCell>
 											{row.status === InstallationStatus.ACTIVE ? (
@@ -475,6 +486,16 @@ function InstalledSection({
 													Retry
 												</Button>
 											)}
+											<Link
+												href={`/admin/solutions/${row.installationId}`}
+												aria-label={`Set up ${name(row)}`}
+												className={buttonVariants({
+													variant: "outline",
+													size: "sm",
+												})}
+											>
+												Set up
+											</Link>
 											<Button
 												variant="outline"
 												size="sm"
@@ -544,6 +565,33 @@ function InstalledSection({
 				/>
 			)}
 		</Card>
+	);
+}
+
+/**
+ * Whether the host says this row will work. It sits beside Health deliberately:
+ * health answers about the installation RECORD, and on a validation cell ten
+ * read healthy while four declared bindings had derived nothing. The link goes
+ * to the one place that lists why, because a row cannot carry the conditions.
+ */
+function Readiness({ row }: { row: InstalledRow }) {
+	const summary = readinessSummary(row.readiness);
+	if (summary.ready) {
+		return (
+			<Badge tone="success" dot>
+				Ready
+			</Badge>
+		);
+	}
+	return (
+		<Link
+			href={`/admin/solutions/${row.installationId}`}
+			className="hover:underline"
+		>
+			<Badge tone={summary.tone} dot>
+				{summary.text}
+			</Badge>
+		</Link>
 	);
 }
 

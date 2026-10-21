@@ -53,6 +53,11 @@ message InvitationSummary {
   InvitationRole role = 2 [(buf.validate.field).enum.defined_only = true];
   string email_hint = 3;
   google.protobuf.Timestamp expires_at = 4;
+  // The invitation's own id, so a caller holding only the emailed token can
+  // name the invitation afterwards without keeping the token. It grants
+  // nothing on its own: the id credential is accepted only for a signed-in
+  // caller whose primary email matches the invitation's.
+  string id = 5;
 }
 
 message CreateInvitationRequest {

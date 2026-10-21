@@ -13,6 +13,8 @@ const { getEndpoints, getWorkspaceSecret } = vi.hoisted(() => ({
 }));
 vi.mock("codefly", () => ({ getEndpoints, getWorkspaceSecret }));
 
+import { groupSolutionNavigation } from "@/solutions/solution-groups";
+
 import type {
   SolutionEntitlement,
   ViewerEntitlements,
@@ -544,6 +546,28 @@ describe("browserManifestUrl", () => {
     );
   });
 
+	it("gives an applied generation its own asset directory for the complete relative federation graph", () => {
+		const version = "a".repeat(64);
+		const manifest = {
+			...withManifestUrl("/assets/mf-manifest.json"),
+			assetVersion: version,
+		};
+		const url = browserManifestUrl(manifest);
+		expect(url).toBe(
+			`/api/solutions/audit/versions/${version}/proxy/assets/mf-manifest.json`,
+		);
+		const entry = new URL("remoteEntry.js", `https://host.example${url}`);
+		expect(entry.pathname).toBe(
+			`/api/solutions/audit/versions/${version}/proxy/assets/remoteEntry.js`,
+		);
+		expect(new URL("chunks/page.hash.js", entry).pathname).toBe(
+			`/api/solutions/audit/versions/${version}/proxy/assets/chunks/page.hash.js`,
+		);
+		expect(
+			parseManifest(baseManifest({ assetVersion: version }))?.assetVersion,
+		).toBeUndefined();
+	});
+
   it("takes the host-served form as registered", () => {
     expect(
       browserManifestUrl(
@@ -675,7 +699,7 @@ describe("registry snapshot", () => {
   }
 
   function snapshotResponse(
-    solutions: Array<{ id: string; status: string; manifest?: string }>,
+    solutions: Array<{ id: string; status: string; manifest?: string; kind?: string; targetId?: string }>,
   ) {
     return new Response(
       JSON.stringify({ revision: 7, solutions }),
@@ -701,6 +725,21 @@ describe("registry snapshot", () => {
     vi.unstubAllGlobals();
     getEndpoints.mockReset();
     getWorkspaceSecret.mockReset();
+  });
+
+  it("loads either kind and trusts only the host declaration for routing and consent", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => snapshotResponse([
+      {id: "audit", kind: "module", targetId: targetFor("audit"), status: "active", manifest: JSON.stringify(baseManifest({kind: "solution"}))},
+      {id: "reports", kind: "solution", status: "active", manifest: manifestFor("reports", 2)},
+    ])));
+    const manifests = await loadSolutions();
+    if (manifests === "unavailable") throw new Error("fixture registry must load");
+    expect(manifests?.find(m => m.id === "audit")?.kind).toBe("module");
+    expect(manifests?.find(m => m.id === "reports")?.kind).toBe("solution");
+    const sharedModule = manifests!.find(m => m.id === "audit")!;
+    expect(navProjection(sharedModule, granted)?.id).toBe("audit");
+    expect(entitledSolutions([sharedModule], entitlements({solutions: [{...granted, targetId: "another-target"}]}))).toEqual([]);
+    expect(parseManifest(baseManifest({kind: "module"}))?.kind).toBeUndefined();
   });
 
   it("checks runtime compatibility on the read-only projection", async () => {
@@ -905,6 +944,27 @@ describe("surfacesProjection for a solution served through the host", () => {
   it("leaves the solution out when there is no host origin to resolve against", () => {
     expect(surfacesProjection(manifest, "word", granted)).toBeNull();
   });
+
+	it.each(["module", "solution"] as const)(
+		"keeps a %s client surface and its relative imports in the page's asset generation",
+		(kind) => {
+			const origin = "https://app.example";
+			const project = (version: string) => {
+				const selected = { ...manifest, kind, assetVersion: version };
+				const surface = surfacesProjection(selected, "word", granted, origin);
+				const entry = new URL(surface!.surfaces[0].module, surface!.origin);
+				const base = `/api/solutions/audit/versions/${version}/proxy/assets/`;
+				expect(entry.pathname).toBe(`${base}surfaces/footnote.js`);
+				expect(new URL("chunks/deferred.js", entry).pathname).toBe(
+					`${base}surfaces/chunks/deferred.js`,
+				);
+				expect(browserManifestUrl(selected)).toBe(`${base}mf-manifest.json`);
+				return entry.href;
+			};
+			expect(project("a".repeat(64))).not.toBe(project("b".repeat(64)));
+			expect(manifest.surfaces![0].module).toBe("/assets/surfaces/footnote.js");
+		},
+	);
 });
 
 // ---------------------------------------------------------------------------
@@ -1114,5 +1174,41 @@ describe("an entitlement that can never join a registration", () => {
     } finally {
       errors.mockRestore();
     }
+  });
+});
+
+
+describe("solution grouping does not confer access", () => {
+  const group = { id: "operations", title: "Operations", order: 1 };
+  it("filters individual targets before grouping, including a newly delivered sibling", () => {
+    const registered = ["audit", "ledger", "new-sibling"].map((id) => ({
+      ...manifestFor(id), kind: "solution" as const, group,
+    }));
+    const visible = entitledSolutions(registered, entitlements()).map(
+      ({ manifest, entitlement }) => navProjection(manifest, entitlement),
+    );
+    expect(groupSolutionNavigation(visible).map((section) => section.items.map((item) => item.id))).toEqual([["audit"]]);
+    expect(groupSolutionNavigation(entitledSolutions(registered, entitlements({ solutions: [] })).map(
+      ({ manifest, entitlement }) => navProjection(manifest, entitlement),
+    ))).toEqual([]);
+  });
+  it("regrouping changes presentation without changing grant inputs or target identity", () => {
+    const permissions = entitlements();
+    const revision = permissions.revision;
+    const solution = { ...manifestFor("audit"), kind: "solution" as const, group };
+    const moved = { ...solution, group: { id: "review", title: "Review", order: 3 } };
+    for (const candidate of [solution, moved]) {
+      const [pair] = entitledSolutions([candidate], permissions);
+      expect(pair.entitlement).toBe(granted);
+      expect(pair.manifest.targetId).toBe(targetFor("audit"));
+      expect(navProjection(pair.manifest, pair.entitlement).nav.path).toBe("/s/audit");
+    }
+    expect(permissions.revision).toBe(revision);
+    expect(navProjection(moved, granted).group).toEqual(moved.group);
+    expect(navProjection({ ...moved, kind: "module" }, granted).group).toBeUndefined();
+  });
+  it("rejects malformed group metadata when reading a manifest", () => {
+    expect(parseManifest(baseManifest({ group }))?.group).toEqual(group);
+    expect(parseManifest(baseManifest({ group: { ...group, grants: ["all"] } }))).toBeNull();
   });
 });

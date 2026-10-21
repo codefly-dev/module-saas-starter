@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
@@ -27,6 +26,7 @@ type fakeSolutionRegistry struct {
 	listErr error
 
 	listCalls int
+	retained  map[string]*accountsv1.SolutionFrontendGeneration
 }
 
 func newFakeSolutionRegistry() *fakeSolutionRegistry {
@@ -39,19 +39,32 @@ func newFakeSolutionRegistry() *fakeSolutionRegistry {
 // binding now serves this alias", which no derivation can express.
 func fakeSolutionTarget(alias string) string { return "target-" + alias }
 
+// fakeFrontendBlock is the frontend block a declared solution's applied
+// presence carries, as accounts copies it onto the record's frontend half: the
+// author-declared half of the manifest the gateway projects.
+func fakeFrontendBlock(alias string) string {
+	return `{"title":"` + alias + ` page","order":7,"exposed_module":"./Page","host_contract":1}`
+}
+
+// fakeRouteEndpoint is the endpoint the fake's applied presence declares for
+// an alias — the one the composition's carrier addresses — and route is the
+// test binary's stand-in for that carrier: where the Codefly SDK resolves it.
+// Nothing on the record names an address.
+func fakeRouteEndpoint(alias string) moduleEndpoint {
+	return moduleEndpoint{Module: alias, Service: alias, Name: "rest", API: "rest"}
+}
+
+func (f *fakeSolutionRegistry) route(alias, address string) {
+	testModuleAddresses.Store(fakeRouteEndpoint(alias).String(), address)
+}
+
 // seedDeclared creates a fully declared record, which is how a test gets one
-// now that the runtime registration writer is deleted.
-//
-// Record CREATION in this fake used to come only from the writer's helpers
-// (registerSolutionUpstream / registerSolutionHalves), so with those gone there
-// was no way to put a record in front of the handlers at all — declareTarget
-// below only REPLACES the declaration on a record that already exists. That gap
-// is what item 4 left behind in the test infrastructure, and this closes it on
-// the declared side: delivery is what brings a record into being, so the fake
-// needs a way to say so without pretending a runtime registered itself.
+// now that the runtime registration writer is deleted: delivery is what brings
+// a record into being, and the composition is what addresses it.
 func (f *fakeSolutionRegistry) seedDeclared(alias, upstream string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.route(alias, upstream)
 	f.revision++
 	f.records[alias] = &accountsv1.SolutionRegistration{
 		SolutionId: alias,
@@ -67,13 +80,7 @@ func (f *fakeSolutionRegistry) seedDeclared(alias, upstream string) {
 			// cannot produce — and would quietly stop being routed at all.
 			Kind: accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_SOLUTION,
 		},
-		Frontend: &accountsv1.SolutionFrontendBinding{
-			Revision: f.revision, Manifest: `{"id":"` + alias + `"}`, ContractVersion: "v1",
-		},
-		Backend: &accountsv1.SolutionBackendBinding{
-			Revision: f.revision, Upstream: upstream,
-			ServiceAlias: alias, ContractVersion: "v1",
-		},
+		Frontend: &accountsv1.SolutionFrontendBinding{Revision: f.revision, Manifest: fakeFrontendBlock(alias)},
 	}
 }
 
@@ -113,19 +120,19 @@ func (f *fakeSolutionRegistry) tombstone(alias string) {
 	record.TombstonedAt = timestamppb.Now()
 }
 
-// repointUpstream changes a declared record's observed endpoint to model a
-// concurrent delivery observation while a request is being admitted.
+// repointUpstream changes where the composition addresses a declared alias
+// and advances the record, modelling a replacement delivery while a request is
+// being admitted.
 func (f *fakeSolutionRegistry) repointUpstream(alias, upstream string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	record := f.records[alias]
-	if record == nil || record.GetBackend() == nil {
+	if record == nil {
 		return
 	}
+	f.route(alias, upstream)
 	f.revision++
 	record.Revision = f.revision
-	record.Backend.Revision = f.revision
-	record.Backend.Upstream = upstream
 }
 
 // undeclare strips a record's declaration, modelling presence nothing declared.
@@ -155,23 +162,19 @@ func (f *fakeSolutionRegistry) List(
 			continue
 		}
 		listed := proto.Clone(record).(*accountsv1.SolutionRegistration)
-		listed.Status = fakeSolutionStatus(listed, time.Now())
+		listed.Status = fakeSolutionStatus(listed)
 		out.Registrations = append(out.Registrations, listed)
 	}
-	ids := make(map[string]string)
 	endpoints := make(map[string][]moduleEndpoint)
 	for _, record := range out.Registrations {
-		ids[record.GetSolutionId()] = "spiffe://acme.test/ns/acme-prod/sa/" + record.GetSolutionId()
-		if record.GetDeclared().GetKind() == accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE {
-			// What the applied presence would declare, and — standing in for the
-			// composition's carriers — the fixture's backend address as where the
-			// SDK resolves it.
-			endpoint := moduleEndpoint{Module: record.GetSolutionId(), Service: record.GetSolutionId(), Name: "rest", API: "rest"}
-			endpoints[record.GetSolutionId()] = []moduleEndpoint{endpoint}
-			testModuleAddresses.Store(endpoint, record.GetBackend().GetUpstream())
-		}
+		// What the applied presence declares, solution and module alike; where
+		// it resolves is the carrier table's answer (route), never the record's.
+		// Every record, declared or not: the tests about presence NOTHING
+		// declared strip a record's declaration after the composition addressed
+		// it, and need the address to stay so the verdict is what refuses it.
+		endpoints[record.GetSolutionId()] = []moduleEndpoint{fakeRouteEndpoint(record.GetSolutionId())}
 	}
-	return &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: out, workloadIDs: ids, moduleEndpoints: endpoints}, nil
+	return &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: out, routeEndpoints: endpoints}, nil
 }
 
 // testModuleAddresses is the test binary's stand-in for the composition's
@@ -180,7 +183,7 @@ var testModuleAddresses sync.Map
 
 func init() {
 	moduleEndpointResolver = func(_ context.Context, endpoint moduleEndpoint) (string, error) {
-		address, ok := testModuleAddresses.Load(endpoint)
+		address, ok := testModuleAddresses.Load(endpoint.String())
 		if !ok || address.(string) == "" {
 			return "", fmt.Errorf("no carrier for %s/%s/%s::%s", endpoint.Module, endpoint.Service, endpoint.Name, endpoint.API)
 		}
@@ -188,34 +191,36 @@ func init() {
 	}
 }
 
-// fakeSolutionStatus mirrors business.(*SolutionRegistration).Status, ordering
-// included: expiry is evaluated over whichever halves are present and outranks
-// pending, so a half that stopped renewing reads as dead rather than waiting.
-// A fake that ranks these differently hands tests a status the real registry
-// would never produce.
+// fakeSolutionStatus mirrors business.(*SolutionRegistration).Status. A fake
+// that derived it differently would hand tests a status the real registry
+// never produces.
 //
-// The module arm mirrors it too: a module has no browser remote, so a frontend
-// half is not something it is waiting for. A fake that left modules PENDING would
-// make every module-routing test fail for a reason the real registry does not
-// have.
-func fakeSolutionStatus(record *accountsv1.SolutionRegistration, now time.Time) accountsv1.SolutionRegistrationStatus {
-	front, backend := record.GetFrontend(), record.GetBackend()
-	if record.GetTombstonedAt() == nil &&
-		record.GetDeclared().GetKind() == accountsv1.SolutionDeclaredKind_SOLUTION_DECLARED_KIND_MODULE {
-		// A declared module is active once its presence is applied: its address
-		// is resolved, never reported, so no half is waited for.
-		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
-	}
+// Either declared kind is active with or without a frontend.
+func fakeSolutionStatus(record *accountsv1.SolutionRegistration) accountsv1.SolutionRegistrationStatus {
 	switch {
 	case record.GetTombstonedAt() != nil:
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED
-	case front != nil && backend != nil &&
-		front.GetContractVersion() != "" && backend.GetContractVersion() != "" &&
-		front.GetContractVersion() != backend.GetContractVersion():
-		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE
-	case front == nil || backend == nil:
-		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
-	default:
+	case declaredModuleKind(record) || declaredSolutionKind(record):
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
+	default:
+		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
 	}
+}
+
+func (f *fakeSolutionRegistry) GetRetainedFrontend(_ context.Context, binding, version string) (*accountsv1.SolutionFrontendGeneration, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	retained := f.retained[version]
+	if retained == nil || retained.GetBindingId() != binding {
+		return nil, nil
+	}
+	for _, record := range f.records {
+		if record.GetDeclared().GetBindingId() == binding && record.GetDeclared().GetTargetId() == retained.GetTargetId() && record.GetTombstonedAt() == nil {
+			return proto.Clone(retained).(*accountsv1.SolutionFrontendGeneration), nil
+		}
+	}
+	return nil, nil
 }

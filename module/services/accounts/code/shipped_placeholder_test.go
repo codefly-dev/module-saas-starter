@@ -153,10 +153,12 @@ func TestR1019StartupRefusesAnAbsentCurrentPerimeterCredential(t *testing.T) {
 		t.Helper()
 		// Everything a hosted startup requires BEFORE the perimeter credentials,
 		// so the refusal under test is the one that answers. requireStartupConfiguration
-		// resolves the key service first and then its custody, and each refuses a
-		// hosted boot by name — so without these the subject is never reached and
-		// every case below would pass on somebody else's refusal.
+		// resolves the key service first, then the group that key service is
+		// reached through, then its custody, and each refuses a hosted boot by
+		// name — so without these the subject is never reached and every case
+		// below would pass on somebody else's refusal.
 		keyServiceBackend(t, string(keyservice.BackendVault))
+		vaultGroupDelivered(t)
 		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__VAULT__VAULT_KEY_CUSTODY", "make seed-signing-key")
 		t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__APPLICATION__APP_BASE_URL", "https://app.example")
 		for _, credential := range perimeterCredentials() {

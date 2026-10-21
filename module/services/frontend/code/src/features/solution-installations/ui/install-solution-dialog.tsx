@@ -103,7 +103,7 @@ export function InstallSolutionDialog({
 				<form onSubmit={submit} className="space-y-4" noValidate>
 					<Field
 						label="Agent identifier"
-						description="The agent the solution acts as, as publisher/name:version."
+						description="The agent this module or solution acts as, as publisher/name:version."
 						error={errors.agentIdentifier?.message}
 					>
 						{(control) => (

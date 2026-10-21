@@ -70,6 +70,11 @@ func (s *RestServer) Run(ctx context.Context) error {
 		// across the transcoding hop. See restIdentityHeaderMatcher.
 		// Preserve this line when regenerating.
 		runtime.WithIncomingHeaderMatcher(restIdentityHeaderMatcher),
+		// CUSTOM: a Set-Cookie the Connect handler sets (the refresh cookie)
+		// reaches the browser as Set-Cookie, never as a JS-readable
+		// Grpc-Metadata-Set-Cookie. See restOutgoingHeaderMatcher.
+		// Preserve this line when regenerating.
+		runtime.WithOutgoingHeaderMatcher(restOutgoingHeaderMatcher),
 		runtime.WithErrorHandler(customErrorHandler))
 
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}

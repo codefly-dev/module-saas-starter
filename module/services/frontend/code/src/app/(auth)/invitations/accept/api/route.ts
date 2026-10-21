@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { gatewayBase } from "@/lib/gateway-endpoint";
+
 const INVITATION_COOKIE = "invitation_return_token";
 const UUID =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -20,9 +22,18 @@ export async function POST(request: Request) {
 		body.invitationId && UUID.test(body.invitationId)
 			? body.invitationId
 			: undefined;
+	// Neither credential means the emailed token is gone and no invitation id
+	// came with the request. The token only ever lived in a fifteen-minute
+	// cookie this browser set from the link's query (see `proxy.ts`), so the
+	// cause is the cookie, not the invitation: say that, because "invalid or no
+	// longer available" reads as a revoked invitation and sends the person to
+	// ask the inviter for a link they already have.
 	if (!token && !invitationId) {
 		return NextResponse.json(
-			{ error: "This invitation link is invalid or no longer available." },
+			{
+				error:
+					"This invitation link timed out in this browser after fifteen minutes. Open it from the email again.",
+			},
 			{ status: 400 },
 		);
 	}
@@ -37,7 +48,15 @@ export async function POST(request: Request) {
 				? "/v1/invitations:inspect"
 				: "/v1/invitations:inspect-id"
 			: "/v1/invitations:accept";
-	const upstream = await fetch(new URL(upstreamPath, request.url), {
+	const gateway = gatewayBase();
+	if (!gateway) {
+		console.error("invitation route: the composition states no API gateway endpoint");
+		return NextResponse.json(
+			{ error: "The invitation service is not reachable from this deployment." },
+			{ status: 503 },
+		);
+	}
+	const upstream = await fetch(`${gateway}${upstreamPath}`, {
 		method: "POST",
 		cache: "no-store",
 		headers: {

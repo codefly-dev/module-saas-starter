@@ -158,6 +158,14 @@ describe("createDatasourceClient", () => {
 			lookupReconcileSource: () => client.lookupReconcileSource("effect-1"),
 			reconnectSource: () => client.reconnectSource!("org-1", "ds-1"),
 			getSourceSync: () => client.getSourceSync!("org-1", "ds-1"),
+			updateSource: () =>
+				client.updateSource!({
+					orgId: "org-1",
+					id: "ds-1",
+					branch: "release",
+					paths: ["docs/"],
+					expected: { branch: "main", paths: [], fileExtensions: [] },
+				}),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
 			// The stub answers {} to everything; an operation whose answer must
 			// carry a record rejects on it, after the call this test counts.

@@ -124,8 +124,7 @@ func TestExactRecordOracleRefusesModuleIdentityCapability(t *testing.T) {
 	// The same identity re-minted at the module's own prefix, so the declared
 	// vocabulary gate passes and only the empty scope set can refuse it.
 	prefixed, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "rows", Tenant: readOrg, Owner: module,
-		OwnerKind: business.PrincipalKindService, Task: "019f6bf7-3333-7333-8333-333333333333", Session: "019f6bf7-4444-7444-8444-444444444444",
-		Execution: testBuildFor(module)})
+		OwnerKind: business.PrincipalKindService, Task: "019f6bf7-3333-7333-8333-333333333333", Session: "019f6bf7-4444-7444-8444-444444444444"})
 	for _, capability := range []struct{ name, token, refusal string }{
 		{"module-capability audience", identity, "declared resource scope required"},
 		{"module's own prefix", prefixed, "record scope required"},

@@ -136,8 +136,19 @@ func (s *Service) authorizeModuleIdentity(
 			return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
 				"principal %s: a document was delivered after the registry was derived", principalID)
 		}
-		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, fmt.Errorf("%w: %s is not a declared module principal",
-			ErrModuleIdentityDenied, prefix)
+		reason := "the module registry holds no entry for it"
+		switch {
+		case snapshot == nil || (len(snapshot.registry) == 0 && snapshot.envelopeRevision == 0):
+			reason = "the module registry is empty and was derived from no module envelope"
+		case len(snapshot.registry) == 0:
+			reason = "the module registry is empty"
+		}
+		err := fmt.Errorf("%w: %s is not a declared module principal: %s", ErrModuleIdentityDenied, prefix, reason)
+		// The caller hears only the denial (see ErrModuleIdentityDenied), so
+		// the reason is said here or nowhere.
+		wool.Get(ctx).In("ModuleAuthorizeWorkContext").Warn(
+			"module identity refused", wool.Field("prefix", prefix), wool.ErrField(err))
+		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, err
 	}
 	execution, err := s.BindExecution(ctx, snapshot, principalID, serviceAccountToken)
 	if err != nil {
@@ -254,13 +265,11 @@ func (s *Service) RecordModuleWorkContextMint(
 // auditFields is the execution as a mint record carries it.
 func (e ExecutionIdentity) auditFields() map[string]any {
 	return map[string]any{
-		"namespace":         e.Namespace,
-		"service_account":   e.ServiceAccount,
-		"pod":               e.PodName,
-		"pod_uid":           e.PodUID,
-		"container":         e.ContainerName,
-		"running_digest":    string(e.Running),
-		"build_incarnation": int64(e.Incarnation),
+		"namespace":       e.Namespace,
+		"service_account": e.ServiceAccount,
+		"pod":             e.PodName,
+		"pod_uid":         e.PodUID,
+		"container":       e.ContainerName,
 	}
 }
 

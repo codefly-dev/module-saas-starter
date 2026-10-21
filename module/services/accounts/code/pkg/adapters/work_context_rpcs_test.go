@@ -331,10 +331,12 @@ func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactF
 	orgID := "019fec91-1000-7000-8000-000000000001"
 	ownerID := "019fec91-1000-7000-8000-000000000002"
 	actorID := "019fec91-1000-7000-8000-000000000003"
+	sealsNone := true
 	revisionRequest := &gen.CheckAuthorizationRevisionRequest{
 		OrgId:                 orgID,
 		OwnerPrincipalId:      ownerID,
 		AuthorizationRevision: 29,
+		SealsNoBinding:        &sealsNone,
 		Subjects: []*gen.WorkContextRevisionSubject{
 			{
 				PrincipalId: ownerID,

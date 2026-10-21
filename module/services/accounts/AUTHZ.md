@@ -73,6 +73,15 @@ Until installation identity (#474) lands there is no org-root/solution node to
 parent under, so a minted `collection` node is registered as a **root**; it will
 be reparented under the org's solution node when that identity exists.
 
+`UpdateSource` changes what an already-connected source fetches — its branch and
+its path and file-type filters — under the same `org_admin` tenancy and the same
+organization resource binding as `AddSource`. It deliberately cannot move the
+boundary: the collection a source writes into is what grants reach, so re-aiming
+one in place would replace a granted collection's contents without any grant
+changing. The repository and the credential are out of reach for the same
+reason — one is the source's identity, the other rebinds whose authority its
+syncs run under (a reconnect, through `SyncSource`).
+
 Who *triggered* a source's sync is not a datasource field. `ListSources` and
 `GetSource` project `Datasource` to any org member under no declared permission,
 while `SyncSource` is org-admin only and reading its actor goes through
@@ -198,6 +207,30 @@ the adapters' `markContentReads`):
   re-checks by comparing that revision alone will not see the revocation;
   `CheckAuthorizationRevision` catches it because it re-resolves every
   permission before it compares revisions at all.
+
+## A derived role, and why it is not grantable
+
+`roles.derived_from` marks a role THIS HOST derived and owns, rather than one
+anybody authored: its permissions are a solution's declared consumption for ONE
+module it reaches, intersected with the role an administrator chose, and it is
+granted at that module's authority-root node with
+`scope_grants.derived_from_grant_id` naming the grant that caused it
+(`business/derived_module_access.go`;
+[../../MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md#a-grant-of-a-solution-carries-the-module-access-it-declares-it-consumes)
+carries the argument).
+
+It changes nothing in the decision above: a derived grant is an ordinary
+`scope_grants` row and `CheckAccess`, `ListAccessibleScopes` and
+`ListAccessibleResourceIDs` resolve it exactly as they resolve any other, so
+there is no second answer to "what does this viewer reach".
+
+What is different is that it may be conferred ONLY by the derivation. A derived
+role granted at some other node, or organisation-wide, would hand a subject the
+module reach of a solution they hold no installation grant on — the property the
+derivation exists to deny. So `ListRoles` hides it (no picker offers it),
+`GrantScope` refuses it unless the write names a cause, `AssignRole` and
+`ShareRecord` refuse it, `UpdateRole` and `DeleteRole` refuse it, `CreateRole`
+cannot mint one, and the role catalog importer leaves it alone.
 
 ## Deferred
 

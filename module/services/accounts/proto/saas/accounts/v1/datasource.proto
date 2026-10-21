@@ -378,6 +378,107 @@ message AddSourceResponse {
   Datasource datasource = 1;
 }
 
+// UpdateSourceRequest changes what an already-connected source fetches, in
+// place: its branch and its path and file-type filters. Nothing else about a
+// source is mutable here — the repository, the provider, the collection it
+// writes into and its credential are each the identity of something a consumer
+// already holds, and changing one of those is a different source.
+//
+// Every field is a WHOLE-FIELD REPLACEMENT, not a patch: the source is left
+// fetching exactly what this request names, so an empty `paths` ingests the
+// whole repository and an empty `file_extensions` admits every file type,
+// exactly as they mean on connect. A repeated proto3 field cannot tell "not
+// sent" from "sent empty", so a request that meant to leave a filter alone
+// must repeat it; naming that here is what keeps a clearing from reading as an
+// omission, and an omission from being silently preserved.
+//
+// Because every field is a whole-field replacement, every request asserts the
+// source's complete scope — so one is accepted only against the scope its
+// author was actually shown. `expected` carries that scope back, and a request
+// whose expectation no longer matches the stored row is REFUSED rather than
+// applied: without it, a form opened while the source read one way and saved
+// after someone else narrowed it would silently restore the wider scope and
+// re-ingest everything the other person had just excluded.
+message UpdateSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+  // Git ref (branch) to pull. Empty resolves to the repository default branch,
+  // as on connect. A branch the source's own credential cannot read is refused
+  // before anything is written.
+  string branch = 3 [(buf.validate.field).string.max_len = 255];
+  // Repository-relative path prefixes to ingest. Empty ingests the whole repo.
+  repeated string paths = 4 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {
+      string: {
+        min_len: 1
+        max_len: 512
+      }
+    }
+  }];
+  // Case-insensitive file suffixes, e.g. [".md", ".mdx"]. Empty admits every
+  // file type within paths.
+  repeated string file_extensions = 5 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: {
+      string: {
+        min_len: 2
+        max_len: 33
+        pattern: "^\\.[A-Za-z0-9][A-Za-z0-9._-]*$"
+      }
+    }
+  }];
+  // The scope the caller was shown, as it read it. Required: an unconditional
+  // whole-field replacement is exactly how one editor's save erases another's,
+  // so there is no "just apply it" mode to fall back to.
+  //
+  // It is the scope and not the row's `updated_at` because `updated_at` moves
+  // on every successful sync, which would refuse a perfectly good edit for the
+  // sole reason that the source had reconciled since the form was opened. What
+  // an editor needs guarded is what they were looking at.
+  SourceFetchScope expected = 6 [(buf.validate.field).required = true];
+}
+
+// SourceFetchScope is what a source fetches — the three values UpdateSource
+// replaces — carried on its own so a request can state the scope it expects to
+// be replacing as well as the one it wants.
+//
+// Its bounds are deliberately looser than the mutable fields': an expectation
+// is only ever compared against the stored row, never stored, so holding it to
+// today's shape would make a source that predates that shape impossible to
+// edit at all. Size is still bounded, because the comparison reads the whole
+// thing.
+message SourceFetchScope {
+  string branch = 1 [(buf.validate.field).string.max_len = 255];
+  repeated string paths = 2 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {
+      string: {
+        min_len: 1
+        max_len: 512
+      }
+    }
+  }];
+  repeated string file_extensions = 3 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: {
+      string: {
+        min_len: 1
+        max_len: 33
+      }
+    }
+  }];
+}
+
+message UpdateSourceResponse {
+  Datasource datasource = 1;
+  // The sync enqueued because the update moved what the source fetches, which
+  // for a consumer is a new snapshot of the collection. Empty when the request
+  // changed nothing, which is the only case where no sync runs: every mutable
+  // field here selects content, so any real change re-snapshots the source.
+  string job_id = 2;
+}
+
 // DatasourceConfigField describes one non-secret config input a provider needs,
 // so the UI can render the connect form from the catalog rather than hardcoding
 // it per provider.
@@ -610,6 +711,11 @@ enum SourceSyncTrigger {
   SOURCE_SYNC_TRIGGER_SCHEDULED = 2;
   // A webhook delivery from the provider.
   SOURCE_SYNC_TRIGGER_WEBHOOK = 3;
+  // The source was reconfigured — its branch or its path/file-type filters
+  // changed — so this sync re-snapshots it at the new scope. It is the one
+  // trigger that tells a reader the change set is large because the source
+  // moved rather than because the repository did.
+  SOURCE_SYNC_TRIGGER_RECONFIGURED = 4;
 }
 
 // SourceSyncChanges counts the change set a sync compiled, relative to the
@@ -1029,15 +1135,30 @@ message RevokeSourceDelegationResponse {
 // standing:
 //
 //   - source names a connected source whose delegation this host owns. It is
-//     the grant reference: an opaque identifier rather than a credential,
-//     re-checked against current facts on every mint, so an occurrence's run
-//     may outlive the capability that admitted it and revoking the delegation
-//     refuses the next occurrence.
+//     the grant reference: an identifier rather than a credential, re-checked
+//     against current facts on every mint, so an occurrence's run may outlive
+//     the capability that admitted it and revoking the delegation refuses the
+//     next occurrence.
+//
+//     IT IS NOT OPAQUE, and revocation is therefore not permanent. The value
+//     is the source's own id, and a mint resolves whichever delegation of that
+//     source is active, so revoking one and then RECONNECTING the source
+//     records a new delegation the same reference resolves to — re-arming an
+//     installed trigger with no explicit re-delegation. A reference that
+//     revocation ends for good is a delegation-level one; this host accepts
+//     that form at MintSourceOperationContext (delegation_id), but the client
+//     an executing module mints through sends only source_id, so a declaration
+//     cannot name it yet.
 //   - binding names one of the release's declared operation bindings, and an
-//     occurrence runs under the installation's own principal from that
-//     binding's headless scopes. That is an ordinary token admission, bounded
-//     by the capability's own short lifetime — which is why it is the first
-//     proof and not the contract.
+//     occurrence would run under the installation's own principal from that
+//     binding's headless scopes — an ordinary token admission, bounded by the
+//     capability's own short lifetime.
+//
+//     IT IS PLANNED, and no declaration this host builds has ever set it. It
+//     cannot serve the reconcile trigger: the headless mint lives 60 seconds
+//     against that trigger's 10-minute declared deadline, and the capability
+//     is the module's own principal while ReconcileSource requires an
+//     organization member.
 //
 // THE NAMES ARE THE INSTALLATION DOCUMENT'S, not this host's and not the
 // executing module's read API's. That distinction is load-bearing: the module
@@ -1562,6 +1683,32 @@ service DatasourceService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
+  // UpdateSource changes what an already-connected source fetches — its branch
+  // and its path and file-type filters — keeping its identity, its credential,
+  // its sync history and the collection it writes into. A change that moves
+  // what is fetched enqueues a sync, whose progress reports the reconfigured
+  // trigger so a reader can tell a re-snapshot from an ordinary one.
+  rpc UpdateSource(UpdateSourceRequest) returns (UpdateSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.source.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
   // GetDatasourceCatalog returns the host's connector registry: every provider,
   // its connect metadata, whether it conforms to the datasource connector
   // envelope, and whether it accepts a new source, so a client can render the
@@ -2035,10 +2182,18 @@ service DatasourceService {
   // delegation to name, and nothing backfills one.
   //
   // It records nothing new about who may do what. For every module whose one
-  // operation binding declares source_delegation_scopes it revokes any active
-  // delegation of the source to that module as `replaced` and records a fresh
-  // one under the calling administrator — exactly what a reconnect does, and in
-  // one transaction, so a source never ends with two delegations or none.
+  // operation binding declares source_delegation_scopes and which holds NO
+  // active delegation of the source, it records one under the calling
+  // administrator, in one transaction.
+  //
+  // It is ADDITIVE. A module that already holds an active delegation is left
+  // exactly as it is: this used to revoke every one of them as `replaced` and
+  // re-record each under the caller, which took a personal source's delegation
+  // away from its owner and moved unrelated modules' authority onto the
+  // administrator. A personal source the caller does not own is refused
+  // (PERMISSION_DENIED), because the authority a reference borrows must be one
+  // that can perform the operation the trigger admits, and on such a source
+  // that is the owner's alone.
   rpc DelegateSourceTriggers(DelegateSourceTriggersRequest) returns (DelegateSourceTriggersResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
@@ -2064,8 +2219,12 @@ service DatasourceService {
   // GetSourceTriggerDeclaration reads the reconcile schedule this host declares
   // for one source — the trigger a declared release carries — together with
   // the identity its occurrences would run under and the children already
-  // minted against that identity. This host fires nothing on this schedule; the
-  // declaration is what an executing module admits occurrences from.
+  // minted against that identity. The declaration is what an executing module
+  // admits occurrences from.
+  //
+  // Reading it does not mean anything fires it. No composed runtime consumes
+  // the declaration yet, so this host still runs the reconcile schedule itself
+  // as an explicitly labelled stopgap, deleted when one does.
   rpc GetSourceTriggerDeclaration(GetSourceTriggerDeclarationRequest) returns (GetSourceTriggerDeclarationResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED

@@ -119,6 +119,7 @@
     --color-amber-400: oklch(82.8% .189 84.429);
     --color-amber-500: oklch(76.9% .188 70.08);
     --color-black: #000;
+    --color-white: #fff;
     --spacing: var(--appearance-spacing);
     --container-xs: 20rem;
     --container-sm: 24rem;
@@ -899,6 +900,16 @@
   .size-14 {
     width: calc(var(--appearance-spacing) * 14);
     height: calc(var(--appearance-spacing) * 14);
+  }
+
+  .size-\[12rem\] {
+    width: 12rem;
+    height: 12rem;
+  }
+
+  .size-\[14rem\] {
+    width: 14rem;
+    height: 14rem;
   }
 
   .size-full {
@@ -1912,6 +1923,10 @@
     }
   }
 
+  .bg-white {
+    background-color: var(--color-white);
+  }
+
   .bg-gradient-to-br {
     --tw-gradient-position: to bottom right in oklab;
     background-image: linear-gradient(var(--tw-gradient-stops));
@@ -2045,6 +2060,10 @@
 
   .p-6 {
     padding: calc(var(--appearance-spacing) * 6);
+  }
+
+  .p-\[0\.75rem\] {
+    padding: .75rem;
   }
 
   .p-\[3px\] {

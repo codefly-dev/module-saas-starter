@@ -218,8 +218,16 @@ func (s *reconcileOperationStore) GetOrgMembership(context.Context, string, stri
 	return &gen.OrgMembership{Role: gen.OrgRole_ORG_ROLE_ADMIN}, nil
 }
 
-func (s *reconcileOperationStore) GetSourceOperationAttempt(_ context.Context, _, id string) (*business.SourceOperationAttempt, error) {
-	attempt, ok := s.attempts[id]
+// The attempt row is keyed by (ORG, effect), as the real table is
+// (`datasource_operation_attempts` has a composite primary key on
+// `org_id, effect_id`). Keying the fake by the effect alone made one
+// organization's attempt row answer another's lookup — a cross-tenant
+// collision the real store cannot have, which would have refused a legitimate
+// call and masked the enqueue-key scoping this package tests.
+func attemptKey(org, effect string) string { return org + "\x00" + effect }
+
+func (s *reconcileOperationStore) GetSourceOperationAttempt(_ context.Context, org, id string) (*business.SourceOperationAttempt, error) {
+	attempt, ok := s.attempts[attemptKey(org, id)]
 	if !ok {
 		return nil, nil
 	}
@@ -227,14 +235,15 @@ func (s *reconcileOperationStore) GetSourceOperationAttempt(_ context.Context, _
 }
 
 func (s *reconcileOperationStore) CreateSourceOperationAttempt(_ context.Context, attempt business.SourceOperationAttempt) (bool, error) {
-	if _, ok := s.attempts[attempt.EffectID]; ok {
+	key := attemptKey(attempt.OrgID, attempt.EffectID)
+	if _, ok := s.attempts[key]; ok {
 		return false, nil
 	}
-	s.attempts[attempt.EffectID] = attempt
+	s.attempts[key] = attempt
 	return true, nil
 }
 
-func (s *reconcileOperationStore) DeleteSourceOperationAttempt(_ context.Context, _, id string) error {
-	delete(s.attempts, id)
+func (s *reconcileOperationStore) DeleteSourceOperationAttempt(_ context.Context, org, id string) error {
+	delete(s.attempts, attemptKey(org, id))
 	return nil
 }
