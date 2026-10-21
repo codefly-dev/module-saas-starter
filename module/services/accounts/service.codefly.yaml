@@ -11,7 +11,7 @@ agent:
     # 0.1.53 additionally carries core v0.15.2 and the fix that lets a scaffolded
     # service resolve its own address (service-go-grpc#165).
     # 0.1.54 builds with Go 1.27.2, including the GO-2026-6613 fix.
-    version: 0.1.54
+    version: 0.1.58
     publisher: codefly.dev
 service-dependencies:
     - name: cache
