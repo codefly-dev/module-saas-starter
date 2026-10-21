@@ -15,21 +15,27 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func installedContentReadError(err error) error {
+func installedBindingError(err error) error {
 	if errors.Is(err, business.ErrNoOperationBinding) || errors.Is(err, business.ErrModuleHopStale) || status.Code(err) == codes.PermissionDenied {
-		return status.Error(codes.PermissionDenied, "installed content read authority no longer stands")
+		return status.Error(codes.PermissionDenied, "installed binding authority no longer stands")
 	}
-	return status.Error(codes.Unavailable, "installed content read authority unavailable")
+	return status.Error(codes.Unavailable, "installed binding authority unavailable")
 }
 
-func (s *WorkContextAuthorityServer) exchangeInstalledContentRead(ctx context.Context, parent *workcontext.Verified, caller business.ModuleCaller, request delegatedAudienceRequest, selected delegatedAudienceBinding, ttl time.Duration) (*gen.IssuedWorkContext, error) {
+// exchangeInstalledBinding issues the person's child of a binding installed
+// under mode: Core derives owner, tenant, lineage and expiry from the presented
+// parent, and the one hop it adds is the authenticated caller, never a
+// principal the request names. The hop is journaled like any other
+// on-behalf-of hop, in either mode, so the record of who acted outlives the
+// token.
+func (s *WorkContextAuthorityServer) exchangeInstalledBinding(ctx context.Context, parent *workcontext.Verified, caller business.ModuleCaller, request delegatedAudienceRequest, selected delegatedAudienceBinding, mode string, ttl time.Duration) (*gen.IssuedWorkContext, error) {
 	claims := parent.Context()
-	identity, binding, err := service.InstalledContentReadBinding(ctx, caller, request.bindingID)
+	identity, binding, err := service.InstalledBinding(ctx, caller, request.bindingID, mode)
 	if err != nil {
-		return nil, installedContentReadError(err)
+		return nil, installedBindingError(err)
 	}
 	if binding.Audience != selected.audience || claims.GetSeal().GetInstallationId() != identity.InstallationID {
-		return nil, status.Error(codes.PermissionDenied, "installed content parent mismatch")
+		return nil, status.Error(codes.PermissionDenied, "installed binding parent mismatch")
 	}
 	_, scopes, err := workContextScopes(selected.scopes, recheckContentReads())
 	if err != nil {
@@ -43,7 +49,7 @@ func (s *WorkContextAuthorityServer) exchangeInstalledContentRead(ctx context.Co
 	if err != nil {
 		return nil, mapWorkContextError(err)
 	}
-	if err := s.requireInstalledContentRead(ctx, signed); err != nil {
+	if err := s.requireInstalledBinding(ctx, signed); err != nil {
 		return nil, err
 	}
 	if err := s.journalActorHop(ctx, signed); err != nil {
@@ -53,21 +59,21 @@ func (s *WorkContextAuthorityServer) exchangeInstalledContentRead(ctx context.Co
 }
 
 // The installed module is authenticated by Core and the exact current binding;
-// only the person supplies node visibility. This branch accepts no other chain.
-func (s *WorkContextAuthorityServer) requireInstalledContentRead(ctx context.Context, claims *basev0.WorkContextV1) error {
+// only the person supplies visibility. This branch accepts no other chain.
+func (s *WorkContextAuthorityServer) requireInstalledBinding(ctx context.Context, claims *basev0.WorkContextV1) error {
 	if claims.GetOwnerPrincipalKind() != business.PrincipalKindHuman || len(claims.ActorChain) != 1 {
-		return status.Error(codes.PermissionDenied, "installed content child shape refused")
+		return status.Error(codes.PermissionDenied, "installed binding child shape refused")
 	}
 	actor := claims.ActorChain[0]
 	identity, err := service.WorkContextOperationBinding(ctx, claims.TenantId, claims.GetOperationBinding().GetBindingId())
 	if err != nil {
-		return installedContentReadError(err)
+		return installedBindingError(err)
 	}
 	if identity.PrincipalID != actor.PrincipalId || identity.InstallationID != claims.GetSeal().GetInstallationId() {
-		return status.Error(codes.PermissionDenied, "installed content child identity refused")
+		return status.Error(codes.PermissionDenied, "installed binding child identity refused")
 	}
 	if err := service.ConfirmModuleHopBinding(ctx, claims.TenantId, actor.PrincipalId, identity.ID, operationScopesFromCore(actor.GrantedScopes)); err != nil {
-		return installedContentReadError(err)
+		return installedBindingError(err)
 	}
 	facts, err := s.resolveAuthority(ctx, claims.TenantId, claims.OwnerPrincipalId, "", permissionsFromCoreScopes(actor.GrantedScopes, recheckContentReads()))
 	if err != nil {

@@ -127,8 +127,8 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	default:
 		return nil, refuseUnidentifiedParent()
 	}
-	if business.NamesInstalledContentRead(verified.GetOperationBinding().GetBindingId()) {
-		return nil, status.Error(codes.PermissionDenied, "installed content child cannot be exchanged")
+	if business.NamesInstalledBinding(verified.GetOperationBinding().GetBindingId()) {
+		return nil, status.Error(codes.PermissionDenied, "installed binding child cannot be exchanged")
 	}
 	if verified.GetTenantId() == "" || verified.GetOwnerPrincipalId() == "" {
 		return nil, refuseUnidentifiedParent()
@@ -193,9 +193,12 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		return nil, err
 	}
 	operation, _ := binding.policy.(business.ModuleOperationAudience)
-	installedRead := operation.DelegationMode == business.DelegationModeContentRead
-	if installedRead && (delegated || len(parent.ActorChain) != 0 || parent.GetOwnerPrincipalKind() != business.PrincipalKindHuman) {
-		err := status.Error(codes.PermissionDenied, "installed content read requires an ordinary human parent")
+	// An installed delegation mode is the binding's, never the request's: the
+	// caller cannot ask for an ordinary child of it, or for this child of an
+	// ordinary binding, and the chain-preserving exchange stays as it was.
+	installed := operation.DelegationMode != ""
+	if installed && (delegated || len(parent.ActorChain) != 0 || parent.GetOwnerPrincipalKind() != business.PrincipalKindHuman) {
+		err := status.Error(codes.PermissionDenied, "installed binding requires an ordinary human parent")
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
 	}
@@ -210,8 +213,8 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	var issued *gen.IssuedWorkContext
 	if delegated {
 		issued, err = authority.exchangeDelegatedParent(ctx, caller, parent, delegation, binding, time.Duration(ttl)*time.Second)
-	} else if installedRead {
-		issued, err = authority.exchangeInstalledContentRead(ctx, presented, caller, request, binding, time.Duration(ttl)*time.Second)
+	} else if installed {
+		issued, err = authority.exchangeInstalledBinding(ctx, presented, caller, request, binding, operation.DelegationMode, time.Duration(ttl)*time.Second)
 	} else {
 		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, "", moduleBindingSeal{PrincipalID: caller.PrincipalID, BindingID: request.operationBinding()})
 	}

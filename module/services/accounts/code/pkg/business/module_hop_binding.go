@@ -2,10 +2,7 @@ package business
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
-	"strings"
 )
 
 // ErrModuleHopStale is a module hop of a Work Context whose authority no longer
@@ -40,20 +37,19 @@ func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalI
 	}
 	defer releaseAuthority()
 
-	if NamesInstalledContentRead(bindingID) {
-		identity, err := s.resolveInstalledContentRead(ctx, orgID, bindingID)
+	if NamesInstalledBinding(bindingID) {
+		identity, err := s.resolveInstalledBinding(ctx, orgID, bindingID)
 		if err != nil {
 			return err
 		}
 		if identity.PrincipalID != principalID {
 			return ErrModuleHopStale
 		}
-		raw, _ := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(bindingID, installedContentReadPrefix))
-		var id installedContentReadID
-		if json.Unmarshal(raw, &id) != nil {
+		mode, id, ok := decodeInstalledBinding(bindingID)
+		if !ok {
 			return ErrModuleHopStale
 		}
-		_, binding, err := s.InstalledContentReadBinding(ctx, ModuleCaller{PrincipalID: principalID, BoundOrg: orgID}, id.Binding)
+		_, binding, err := s.InstalledBinding(ctx, ModuleCaller{PrincipalID: principalID, BoundOrg: orgID}, id.Binding, mode)
 		if err != nil {
 			return err
 		}

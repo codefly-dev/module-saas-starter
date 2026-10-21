@@ -272,8 +272,8 @@ type WorkContextOperationBinding struct {
 // the person lost the role that let them delegate — is refused outright rather
 // than answered, exactly as a mint from it is.
 func (s *Service) WorkContextOperationBinding(ctx context.Context, orgID, bindingID string) (WorkContextOperationBinding, error) {
-	if NamesInstalledContentRead(bindingID) {
-		return s.resolveInstalledContentRead(ctx, orgID, bindingID)
+	if NamesInstalledBinding(bindingID) {
+		return s.resolveInstalledBinding(ctx, orgID, bindingID)
 	}
 	delegationID, usedBy, ok := parseSourceDelegationBindingID(bindingID)
 	if !ok {

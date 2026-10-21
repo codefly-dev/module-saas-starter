@@ -42,3 +42,27 @@ func TestInstalledContentReadModeIsExplicitAndRestricted(t *testing.T) {
 		require.Empty(t, grant.OperationAudiences["evidence"].SourceDelegationScopes)
 	}
 }
+
+func TestInstalledModuleActorModeCarriesAnyInvokeScope(t *testing.T) {
+	invoke := []ModuleOperationScope{{ResourceKind: "tickets", Actions: []string{"read", "write"}}}
+	read := []ModuleOperationScope{{ResourceKind: "tickets", Actions: []string{"read"}}}
+	for _, audience := range []string{"compute", SolutionAudiencePrefix + "example-tools"} {
+		valid := ModuleOperationAudience{Audience: audience, InvokeScopes: invoke, LookupScopes: read, DelegationMode: DelegationModeModuleActor}
+		require.NoError(t, validateOperationAudiences("reader", map[string]ModuleOperationAudience{"act": valid}))
+		for name, change := range map[string]func(*ModuleOperationAudience){
+			"no invoke": func(b *ModuleOperationAudience) { b.InvokeScopes, b.LookupScopes, b.HeadlessScopes = nil, nil, read },
+			"headless":  func(b *ModuleOperationAudience) { b.HeadlessScopes = read },
+			"source":    func(b *ModuleOperationAudience) { b.SourceDelegationScopes = invoke },
+		} {
+			t.Run(audience+"/"+name, func(t *testing.T) {
+				b := valid
+				change(&b)
+				require.Error(t, validateOperationAudiences("reader", map[string]ModuleOperationAudience{"act": b}))
+			})
+		}
+	}
+	require.True(t, NamesInstalledBinding(installedModuleActorPrefix+"x"))
+	require.True(t, NamesInstalledBinding(installedContentReadPrefix+"x"))
+	require.False(t, NamesInstalledContentRead(installedModuleActorPrefix+"x"))
+	require.False(t, NamesInstalledBinding("act"))
+}
