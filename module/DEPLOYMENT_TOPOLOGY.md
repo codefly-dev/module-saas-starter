@@ -117,12 +117,14 @@ and metrics to the HTTPS operations intake. The environment's optional
 every service. Without an endpoint the services export nothing.
 
 The generated NetworkPolicy remains the endpoint/port enforcement boundary for
-services the module declares. The module does not derive an operations-intake
-egress rule from the environment telemetry declaration. Auth-gateway has no
-public egress; an external HTTPS intake therefore requires exact destination
-access in the owning deployment policy, as well as the mesh's external egress
-permission and DNS resolution. Successful new-environment export remains a
-rollout prerequisite; this change does not broaden the module's public egress.
+services the module declares. Auth-gateway has no direct public TCP 443 egress.
+The selected ambient waypoint route uses the existing
+[`allow-ambient-hbone-transport` policy](../gitops.go#L2255), which admits TCP
+15008 transport for every pod without a destination restriction. The route does
+not require a new module collector-egress field or a broad public-egress rule.
+Live CNI handling of HBONE, waypoint routing, DNS, TLS and actual telemetry
+export remain unqualified; successful new-environment export is a rollout
+prerequisite.
 
 The AWS overlay replaces stateful services with managed dependencies. A
 pod-selector rule cannot authorize an RDS, ElastiCache, external Vault, or S3
