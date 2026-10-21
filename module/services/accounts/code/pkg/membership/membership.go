@@ -16,14 +16,26 @@
 // through to the store behind a breaker; and "not a member" is cached as a
 // negative entry.
 //
+// The stack runs in the cache's default mode — TTLBounded by the longest tier
+// TTL (sharedTTL), WriteInvalidate, Degrade — except for its fills, which are
+// FillLease: the stack only leases a miss on the shared layer when asked to,
+// and fill-once across replicas is the reason this lookup is cached at all.
+//
 // # How stale a copy can be after an invalidation
 //
-// Up to memoryTTL (5s) on another replica, not zero. The stack can store a
-// generation it read from the shared layer into the in-process tier AFTER the
-// change notice for that key arrived: the replica then serves its pre-change
-// copy until the in-process entry expires. That fill path is being rewritten in
-// codefly-dev/interface-cache#7. Until it lands, memoryTTL is the bound, which
-// is why it stays short.
+// On another replica, until the shared layer's change notice reaches it: a
+// round trip while its tracking connection is up. A fill that read the old
+// generation or copy from the shared layer before that notice, and stores it
+// in the in-process tier after, undoes its store (go/cache v0.4, the
+// StaleRefillAfterInvalidation pitfall of its cachetest suite, which the
+// redis-db suite runs against this driver). When the tracking connection drops
+// silently, the gap is detected within the driver's NoticeBound and the
+// in-process tier flushed; until then memoryTTL (5s) bounds the copy, which is
+// why it stays short.
+//
+// The origin sets neither Entry.Expires nor Entry.NoStore: a role carries no
+// validity of its own, and every answer the store gives is one to keep. No
+// observer is registered.
 //
 // # Store-only mode
 //
@@ -128,6 +140,9 @@ func New(ctx context.Context, shared cache.Layer, store Store, opts ...Option) (
 		// "Not a member" is cached as long as a role is: every membership
 		// mutation invalidates the key, negative or not.
 		cache.WithNegativeTTL(sharedTTL),
+		// A miss reaches the store once across replicas, not once per
+		// replica: the lease is taken on the deepest tier that grants one.
+		cache.WithMode(cache.FillLease()),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("membership: build cache stack: %w", err)

@@ -64,8 +64,8 @@ github.com/codefly-dev/core v0.19.6-0.20261018171306-0a8d16c5e32d h1:vL8Beqd5fsK
 github.com/codefly-dev/core v0.19.6-0.20261018171306-0a8d16c5e32d/go.mod h1:0uX/7lTBVaGV0RI2Mb3mpEr/PPdx/jZqXHym/U8FVDI=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
-github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba h1:6nFaDYsLyA5x3WiGAk6pMI3c0naqxiPeaTHMqRPvbVs=
-github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba/go.mod h1:OQDNwz4rpEGfq7VC/FjvmQGlo9H8gH8fIDcZhKIe8iQ=
+github.com/codefly-dev/interface-cache/go/cache v0.4.1 h1:S7a20cVs3ilW8/HSpzmsyfJx/GJHgJ1xW9Dm9MYXYPI=
+github.com/codefly-dev/interface-cache/go/cache v0.4.1/go.mod h1:ki57cBwXnpFLx1uO29KiDY06lzyG/gXXBkqgi5ZNKWQ=
 github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261018173826-0d423cb8bd17 h1:ppOzy5ops7mEO9PApDfIcAiUBNy4z1MHOf3UJ8xXNNw=
 github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261018173826-0d423cb8bd17/go.mod h1:OxvwxMdo3HD190xFiMOPHtUsBC7/7Jt1evsEts/2HRs=
 github.com/codefly-dev/sdk-go v0.4.1 h1:WUKYWxXfojTr88SkLtq0T8aqpV0o5pR/muUUcsUUlzk=
@@ -74,8 +74,8 @@ github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458 h
 github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458/go.mod h1:hwtrdGtgh8i2xzjgihyd4wY2u+UK7nHQz30OGKL0n+M=
 github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211 h1:4KAPx8haCA/h4Kx5mB7D0rMriwLLKiOW9G9mMWuiQDw=
 github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211/go.mod h1:5mwz8oM8INcukJLc6C84zdRnmDQ/gkMNI8GxWMwgk+8=
-github.com/codefly-dev/service-redis/cache v0.2.0 h1:MKeyXFTIiZMnz5bdndb6YTsahws8DjmLTldtz/nH6EQ=
-github.com/codefly-dev/service-redis/cache v0.2.0/go.mod h1:bP1kDx4E6UWWIHNkzekfj2NbhSPPDdfRHAdfLC24fCA=
+github.com/codefly-dev/service-redis/cache v0.3.0 h1:F0mb7T1xHJBJDgEmI3kPriyb2EmPxKgtmOxSIUylX7s=
+github.com/codefly-dev/service-redis/cache v0.3.0/go.mod h1:cs9MIjYuIQpjqjaq1Os/JA/z7kLy093BTUDz4yjs4BE=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
 github.com/containerd/errdefs v1.0.0/go.mod h1:+YBYIdtsnF4Iw6nWZhJcqGSg/dwvV7tyJ/kCkyJ2k+M=
 github.com/containerd/errdefs/pkg v0.3.0 h1:9IKJ06FvyNlexW690DXuQNx2KA2cUJXx151Xdx3ZPPE=
