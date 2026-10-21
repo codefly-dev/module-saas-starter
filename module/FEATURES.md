@@ -616,6 +616,12 @@ the pre-existing opt-in rule, which refuses an ENROLLED member without recent
 evidence. So an enrolled org admin who has not stepped up recently is now refused on
 `AssignRole`, `RevokeRole`, `GrantScope`, `RevokeScope`, the role CRUD and
 `CreateAgentPrincipal`, where before this change nothing asked. That is intended —
+with one exemption: a `GrantScope` of a role whose every permission is a `read`
+(a collection shared with a member or a team) asks for no factor, because the
+subject gains nothing the factor protects; what is exempted is what the store says
+the role grants, never its name, and an unknown role is gated like any other
+(`roleGrantsOnlyReads`). When the gate does refuse, the frontend answers with a
+step-up (`step_up=1&next=<here>` on the sign-in page), not a bare error —
 granting authority inside a tenant is not an ordinary tenant mutation, whoever does
 it — and it is stated here because an operator reading only the paragraph above would
 not predict the refusal. An admin who has enrolled nothing is still admitted, so no

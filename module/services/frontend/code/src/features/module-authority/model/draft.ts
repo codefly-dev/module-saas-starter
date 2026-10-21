@@ -31,7 +31,7 @@ export function writeRefusal(error: unknown): string {
 	switch (refused.code) {
 		case Code.FailedPrecondition:
 			if (refused.rawMessage === "mfa_required") {
-				return "Writing the envelope needs a second factor completed recently. Sign out, sign in again completing your second factor, then write it again.";
+				return "Writing the envelope needs your passkey confirmed within the last 15 minutes. Confirm it (the sign-in page brings you back here), then write it again.";
 			}
 			return refused.rawMessage;
 		case Code.Aborted:
