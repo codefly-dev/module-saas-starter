@@ -33,20 +33,25 @@ var embeddedFixtures embed.FS
 
 // fixtureFile mirrors module/fixtures/*.yaml.
 type fixtureFile struct {
-	Users         []fixtureUser           `yaml:"users"`
-	Organizations []fixtureOrg            `yaml:"organizations"`
-	Teams         []fixtureTeam           `yaml:"teams"`
-	Agents        []fixtureAgent          `yaml:"agents"`
-	Roles         []fixtureRole           `yaml:"roles"`
-	Collections   []fixtureCollection     `yaml:"collections"`
-	Assignments   []fixtureRoleAssignment `yaml:"assignments"`
+	Users           []fixtureUser           `yaml:"users"`
+	Organizations   []fixtureOrg            `yaml:"organizations"`
+	Teams           []fixtureTeam           `yaml:"teams"`
+	Agents          []fixtureAgent          `yaml:"agents"`
+	Roles           []fixtureRole           `yaml:"roles"`
+	Collections     []fixtureCollection     `yaml:"collections"`
+	Assignments     []fixtureRoleAssignment `yaml:"assignments"`
+	TeamAssignments []fixtureRoleAssignment `yaml:"team_assignments"`
+	Installations   []fixtureInstallation   `yaml:"installations"`
 }
 
 type fixtureCollection struct {
-	Org     string   `yaml:"org"`
-	Label   string   `yaml:"label"`
-	Role    string   `yaml:"role"`
-	Readers []string `yaml:"readers"`
+	Org          string   `yaml:"org"`
+	Label        string   `yaml:"label"`
+	Role         string   `yaml:"role"`
+	Readers      []string `yaml:"readers"`
+	Teams        []string `yaml:"teams"`
+	ResourceType string   `yaml:"resource_type"`
+	ResourceID   string   `yaml:"resource_id"`
 }
 
 type fixtureUser struct {
@@ -105,6 +110,7 @@ type fixtureRoleAssignment struct {
 	Org             string `yaml:"org"`
 	Role            string `yaml:"role"`
 	AgentIdentifier string `yaml:"agent_identifier"`
+	Team            string `yaml:"team"`
 	Scope           string `yaml:"scope"`
 }
 
@@ -279,7 +285,7 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 	if err != nil {
 		return err
 	}
-	if err := seedRoleAssignments(ctx, w, service, f.Assignments, orgIDs, agentIDs, roleIDs); err != nil {
+	if err := seedRoleAssignments(ctx, w, service, append(f.Assignments, f.TeamAssignments...), orgIDs, agentIDs, roleIDs); err != nil {
 		return err
 	}
 
@@ -431,9 +437,45 @@ func validateFixture(f *fixtureFile) error {
 	for i, assignment := range f.Assignments {
 		if strings.TrimSpace(assignment.Org) == "" ||
 			strings.TrimSpace(assignment.Role) == "" ||
-			strings.TrimSpace(assignment.AgentIdentifier) == "" {
+			strings.TrimSpace(assignment.AgentIdentifier) == "" || assignment.Team != "" {
 			return fmt.Errorf("assignment[%d]: org, role, and agent_identifier are required", i)
 		}
+	}
+	for i, assignment := range f.TeamAssignments {
+		if assignment.Org == "" || assignment.Role == "" || assignment.Team == "" || assignment.AgentIdentifier != "" {
+			return fmt.Errorf("team_assignment[%d]: org, role, and team are required", i)
+		}
+		if err := validateFixtureTeamGrant(f, assignment.Org, assignment.Team, assignment.Role); err != nil {
+			return err
+		}
+	}
+	for _, collection := range f.Collections {
+		if (collection.ResourceType == "") != (collection.ResourceID == "") {
+			return fmt.Errorf("collection %q requires both resource_type and resource_id", collection.Label)
+		}
+		for _, team := range collection.Teams {
+			if err := validateFixtureTeamGrant(f, collection.Org, team, collection.Role); err != nil {
+				return err
+			}
+		}
+	}
+	return validateInstallations(f)
+}
+
+func validateFixtureTeamGrant(f *fixtureFile, org, team, role string) error {
+	teamFound, roleFound := false, false
+	for _, candidate := range f.Teams {
+		if candidate.Org == org && candidate.Name == team {
+			teamFound = true
+		}
+	}
+	for _, candidate := range f.Roles {
+		if candidate.Org == org && candidate.Name == role {
+			roleFound = true
+		}
+	}
+	if !teamFound || !roleFound {
+		return fmt.Errorf("fixture grant requires a declared team and role in organization %q", org)
 	}
 	return nil
 }
@@ -973,6 +1015,16 @@ func seedRoleAssignments(
 			return fmt.Errorf("assignment references unknown organization %q", assignment.Org)
 		}
 		agentID, ok := agentIDs[fixtureScopedKey(assignment.Org, assignment.AgentIdentifier)]
+		subjectKind := gen.SubjectKind_SUBJECT_KIND_PRINCIPAL
+		if assignment.Team != "" {
+			var err error
+			agentID, err = fixtureTeamID(ctx, service, orgID, assignment.Team)
+			if err != nil {
+				return err
+			}
+			ok = true
+			subjectKind = gen.SubjectKind_SUBJECT_KIND_TEAM
+		}
 		if !ok {
 			return fmt.Errorf("assignment references unknown agent %q in %q", assignment.AgentIdentifier, assignment.Org)
 		}
@@ -988,7 +1040,7 @@ func seedRoleAssignments(
 				ctx,
 				orgID,
 				agentID,
-				gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+				subjectKind,
 			)
 			return listErr
 		}); err != nil {
@@ -1010,7 +1062,7 @@ func seedRoleAssignments(
 		}
 		if _, err := service.AssignRole(ctx, &gen.AssignRoleRequest{
 			SubjectId:   agentID,
-			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			SubjectKind: subjectKind,
 			RoleId:      roleID,
 			OrgId:       orgID,
 			Scope:       assignment.Scope,
@@ -1027,6 +1079,9 @@ func seedRoleAssignments(
 
 func seedCollections(ctx context.Context, service *business.Service, collections []fixtureCollection, orgIDs, owners, users, roles map[string]string) error {
 	for _, collection := range collections {
+		if (collection.ResourceType == "") != (collection.ResourceID == "") {
+			return fmt.Errorf("collection %q requires both resource_type and resource_id", collection.Label)
+		}
 		orgID, actorID, roleID := orgIDs[collection.Org], owners[collection.Org], roles[fixtureScopedKey(collection.Org, collection.Role)]
 		if orgID == "" || actorID == "" || roleID == "" || strings.TrimSpace(collection.Label) == "" {
 			return fmt.Errorf("collection %q requires a known organization, owner, role, and label", collection.Label)
@@ -1043,19 +1098,25 @@ func seedCollections(ctx context.Context, service *business.Service, collections
 				return err
 			}
 			for _, existing := range page.Collections {
-				if existing.Node.Label == collection.Label {
+				matches := existing.Node.Label == collection.Label
+				if collection.ResourceID != "" {
+					matches = existing.Node.ResourceType == collection.ResourceType && existing.Node.ResourceId == collection.ResourceID
+				}
+				if matches {
+					if scopePath != "" {
+						return fmt.Errorf("collection %q has ambiguous placement", collection.Label)
+					}
 					scopePath = existing.Node.ScopePath
-					break
 				}
 			}
-			if scopePath != "" || page.NextPageToken == "" {
+			if page.NextPageToken == "" {
 				break
 			}
 			pageToken = page.NextPageToken
 		}
 		if scopePath == "" {
 			scopePath = strings.ReplaceAll(business.NewIDString(), "-", "_")
-			if _, err := service.RegisterScopeNode(ctx, actorID, &gen.RegisterScopeNodeRequest{OrgId: orgID, ScopePath: scopePath, Kind: business.ScopeNodeKindCollection, Label: collection.Label}); err != nil {
+			if _, err := service.RegisterScopeNode(ctx, actorID, &gen.RegisterScopeNodeRequest{OrgId: orgID, ScopePath: scopePath, Kind: business.ScopeNodeKindCollection, Label: collection.Label, ResourceType: collection.ResourceType, ResourceId: collection.ResourceID}); err != nil {
 				return err
 			}
 		}
@@ -1064,6 +1125,35 @@ func seedCollections(ctx context.Context, service *business.Service, collections
 				return err
 			}
 		}
+		for _, name := range collection.Teams {
+			teamID, err := fixtureTeamID(ctx, service, orgID, name)
+			if err != nil {
+				return err
+			}
+			if _, err := service.GrantScope(ctx, actorID, &gen.GrantScopeRequest{OrgId: orgID, ScopePath: scopePath, RoleId: roleID, SubjectId: teamID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_TEAM}); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+func fixtureTeamID(ctx context.Context, service *business.Service, orgID, name string) (string, error) {
+	response, err := service.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: orgID})
+	if err != nil {
+		return "", err
+	}
+	var id string
+	for _, team := range response.Teams {
+		if team.Name == name {
+			if id != "" {
+				return "", fmt.Errorf("ambiguous fixture team %q", name)
+			}
+			id = team.Id
+		}
+	}
+	if id == "" {
+		return "", fmt.Errorf("missing fixture team %q", name)
+	}
+	return id, nil
 }

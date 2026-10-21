@@ -1291,7 +1291,13 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		}
 	}()
 
+	var applyFixtureInstallations func(context.Context) error
 	if selectedFixture != "" {
+		applyFixtureInstallations, err = fixtures.PrepareInstallations(service, selectedFixture, codefly.IsLocal())
+		if err != nil {
+			retentionCancel()
+			return nil, err
+		}
 		err = fixtures.Seed(ctx, service, selectedFixture)
 		if err != nil {
 			retentionCancel()
@@ -1323,6 +1329,19 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	datasourceInstallationWorker.Start(ctx)
 	eventRelayWorker.Start(ctx)
 	followFanoutWorker.Start(ctx)
+	// Installation fixtures need delivered presence and live callback endpoints.
+	// They must not hold initial listener startup or drive the install worker.
+	if selectedFixture != "" {
+		go func() {
+			fixtureCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			defer cancel()
+			if err := applyFixtureInstallations(fixtureCtx); err != nil {
+				w.Error("fixture installation setup failed", wool.Field("fixture", selectedFixture), wool.ErrField(err))
+				return
+			}
+			w.Info("fixture installation setup completed", wool.Field("fixture", selectedFixture))
+		}()
+	}
 
 	return func() {
 		sw := wool.Get(ctx).In("shutdown")
