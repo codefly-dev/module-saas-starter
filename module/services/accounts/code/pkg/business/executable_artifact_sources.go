@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
