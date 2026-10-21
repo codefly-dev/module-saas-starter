@@ -110,6 +110,7 @@ const METHOD_CONTEXTS = {
   "ModuleCapabilitiesService/AuthorizeExecutableArtifact": "authorization",
   "ModuleCapabilitiesService/RevokeExecutableArtifact": "authorization",
   "ModuleCapabilitiesService/GetCurrentInstallation": "authorization",
+  "ModuleCapabilitiesService/ListExecutableArtifactSources": "authorization",
   "ModuleCapabilitiesService/ListSubjectVisibility": "authorization",
   "ModuleCapabilitiesService/ListSubscriptions": "events",
   "ModuleCapabilitiesService/MintModuleWorkContext": "authorization",
