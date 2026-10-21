@@ -73,6 +73,7 @@ var serviceInfo = &gen.ServiceInfo{
 // options; descriptions remain editorial prose until source comments are
 // compiled into the service catalog.
 var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
+	"ModuleCapabilitiesService/ListExecutableArtifactSources":      "Observe the complete source set a current effective artifact policy permits for an exact live installation binding, as a verified organization member.",
 	"DatasourceService/PruneSourceOperationReceipts":               "Expire old source receipt output while retaining effect tombstones.",
 	"DatasourceService/LookupPruneSourceOperationReceipts":         "Read an authorized source receipt-cleanup result.",
 	"DatasourceService/DelegateSourceTriggers":                     "Record the delegation a declared release's triggers run under for a source.",

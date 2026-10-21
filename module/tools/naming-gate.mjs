@@ -44,7 +44,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync, lstatSync, existsSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync, lstatSync, existsSync, realpathSync } from "node:fs";
 import { join, relative, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -82,8 +82,6 @@ const SKIP_FILE = (rel) =>
   /\.(?:png|jpe?g|gif|webp|avif|ico|icns|pdf|zip|gz|tgz|bz2|xz|woff2?|ttf|otf|eot|mp4|webm|wasm|so|dylib|dll|exe|bin|binpb|node)$/i.test(rel) ||
   rel.endsWith(".tsbuildinfo") ||
   rel.endsWith(".DS_Store");
-
-const MAX_BYTES = 512 * 1024;
 
 // A slug is an identifier-ish run: a hyphenated repository name, a dotted hostname, an email
 // address, an UPPER_SNAKE constant, a camelCase identifier. Splitting it on separators yields
@@ -303,16 +301,10 @@ export function namingErrors(moduleRoot = MODULE_ROOT, scanRoot = canonicalScanR
     }
 
     const abs = join(scanRoot, rel);
-    // Reported, never skipped silently: coverage must not shrink just because a file grew past
-    // the cap. Binaries are already excluded by extension, so whatever reaches this is text the
-    // gate is declining to read, and a reader of a green run has to be able to see that.
-    if (statSync(abs).size > MAX_BYTES) {
-      errors.push(
-        `${rel}: too large to scan (over ${MAX_BYTES} bytes) — split it, or allowlist it in ` +
-          "tools/naming-allowlist.json with a reason and a ticket",
-      );
-      continue;
-    }
+    // Read the complete text regardless of size. A generated catalog grows as
+    // methods are added; refusing it at an arbitrary byte count encourages an
+    // exemption for exactly the output whose descriptions must stay covered.
+    // Use the same matchers through EOF, including phrases spanning newlines.
     let source;
     try {
       source = readFileSync(abs, "utf8");

@@ -39,6 +39,9 @@ func authenticateModuleParent(ctx context.Context, encoded string) (moduleParent
 	}
 	presented, err := authority.readBack(ctx, encoded)
 	if err != nil {
+		if !decidedCapabilityRefusal(err) {
+			return moduleParentAuthentication{}, unansweredWorkContextAuthority(ctx, "module parent", err)
+		}
 		return moduleParentAuthentication{}, refusedReadBack(ctx, err, status.Error(codes.PermissionDenied, "invalid module parent"))
 	}
 	if presented.Context().GetTenantId() == "" || presented.Context().GetOwnerPrincipalId() == "" {
@@ -51,6 +54,9 @@ func authenticateModuleParent(ctx context.Context, encoded string) (moduleParent
 	}
 	actor, err := authority.requireCurrentAuthority(ctx, verified.TenantId, verified)
 	if err != nil {
+		if status.Code(err) == codes.Internal || status.Code(err) == codes.Unknown {
+			return moduleParentAuthentication{}, unansweredWorkContextAuthority(ctx, "module parent current authority", err)
+		}
 		return moduleParentAuthentication{}, err
 	}
 	parent := verified

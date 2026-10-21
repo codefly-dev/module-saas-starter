@@ -1019,6 +1019,23 @@ message ModuleCurrentInstallationResponse {
  string binding_id = 5;
 }
 
+// Observe only one effective policy's source relation. Identity comes from the
+// independently verified module and parent, never caller assertions.
+message ModuleExecutableArtifactSourcesRequest {
+ string parent_work_context_token = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+ string installation_id = 2 [(buf.validate.field).string.uuid = true];
+ string policy_id = 3 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 128];
+}
+message ModuleExecutableArtifactSourcesResponse {
+ ModuleCurrentInstallationResponse installation = 1;
+ string policy_id = 2;
+ // Complete set, sorted for reproducibility, with no preferred source. Empty
+ // means this valid effective policy has no mapping to the current binding.
+ // These are permitted labels under this policy, not unique namespace
+ // ownership, publisher attestation, content access or executable approval.
+ repeated string sources = 3;
+}
+
 // ============================================================================
 // The live authority a Work Context is held against (issue #1107)
 //
@@ -1330,6 +1347,25 @@ message ModuleResolveWorkContextAuthorityResponse {
 }
 
 service ModuleCapabilitiesService {
+ // Organization-member metadata under independent module/current-parent proof.
+ // Observes the complete matching source set from one effective installed
+ // policy and exact live installation binding. Hidden/missing state refuses
+ // uniformly; authority outages never become empty sets. No approval, grant,
+ // token, content access or lasting authority is created. Recheck at each use.
+ rpc ListExecutableArtifactSources(ModuleExecutableArtifactSourcesRequest) returns (ModuleExecutableArtifactSourcesResponse) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: { emission: AUDIT_EMISSION_NONE }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_CONFIDENTIAL
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+
  // Organization-member metadata read, not executable consent or a durable
  // liveness proof. Returns only a currently active, non-revoked installation.
  rpc GetCurrentInstallation(ModuleCurrentInstallationRequest) returns (ModuleCurrentInstallationResponse) {

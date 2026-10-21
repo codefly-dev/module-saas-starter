@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **270 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **271 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -133,6 +133,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ModuleCapabilitiesService/GetApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Read one approval request on the caller's tenant. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | SECRET → CONFIDENTIAL | Read current active installation identity as a verified organization member through an authenticated module. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Renew a live job lease by its fencing token. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/ListExecutableArtifactSources` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | SECRET → CONFIDENTIAL | Observe the complete source set a current effective artifact policy permits for an exact live installation binding, as a verified organization member. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | List source collections the verified viewer may currently read. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | List the subjects whose rows a viewer may read in a tenant. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | List the calling principal's live event subscriptions. |
@@ -282,7 +283,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 43
-- `internal`: 54
+- `internal`: 55
 - `mfa`: 5
 - `org_admin`: 65
 - `org_member`: 56

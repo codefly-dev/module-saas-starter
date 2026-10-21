@@ -5,6 +5,18 @@ This is the prose companion to the generated [`AUTHZ_MATRIX.md`](./AUTHZ_MATRIX.
 artifacts cannot: what the scope tree's node **kinds** mean, and how data below
 the tenant is named and bound.
 
+## Executable source metadata
+
+`ModuleCapabilitiesService/ListExecutableArtifactSources` discloses only the
+source identifiers in the calling module's named effective artifact policy
+that map to one current installation binding. It independently authenticates
+the module and current parent, derives tenant/owner/audience, and requires
+current organization membership. This is member-visible metadata without
+content visibility, publication, activation or execution permission. Missing
+and hidden policy/installation state share a refusal; lookup failure is
+unavailable. The complete set grants no authority and chooses no source.
+See [MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md#observing-the-permitted-executable-sources).
+
 ## The scope tree (RFC-0001 / ADR-0002)
 
 `scope_nodes` (migration 98) is the org's hierarchical scope registry: one

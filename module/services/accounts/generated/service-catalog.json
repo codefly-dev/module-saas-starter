@@ -244,6 +244,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
         "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
         "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ListExecutableArtifactSources",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
@@ -7073,6 +7074,49 @@
       },
       "policy_tier": "internal",
       "description": "Renew a live job lease by its fencing token.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ListExecutableArtifactSources",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ListExecutableArtifactSources",
+      "input_type": "saas.accounts.v1.ModuleExecutableArtifactSourcesRequest",
+      "output_type": "saas.accounts.v1.ModuleExecutableArtifactSourcesResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Observe the complete source set a current effective artifact policy permits for an exact live installation binding, as a verified organization member.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

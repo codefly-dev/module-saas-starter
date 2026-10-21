@@ -4920,6 +4920,132 @@ func (x *ModuleCurrentInstallationResponse) GetBindingId() string {
 	return ""
 }
 
+// Observe only one effective policy's source relation. Identity comes from the
+// independently verified module and parent, never caller assertions.
+type ModuleExecutableArtifactSourcesRequest struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	ParentWorkContextToken string                 `protobuf:"bytes,1,opt,name=parent_work_context_token,json=parentWorkContextToken,proto3" json:"parent_work_context_token,omitempty"`
+	InstallationId         string                 `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	PolicyId               string                 `protobuf:"bytes,3,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ModuleExecutableArtifactSourcesRequest) Reset() {
+	*x = ModuleExecutableArtifactSourcesRequest{}
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModuleExecutableArtifactSourcesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModuleExecutableArtifactSourcesRequest) ProtoMessage() {}
+
+func (x *ModuleExecutableArtifactSourcesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModuleExecutableArtifactSourcesRequest.ProtoReflect.Descriptor instead.
+func (*ModuleExecutableArtifactSourcesRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *ModuleExecutableArtifactSourcesRequest) GetParentWorkContextToken() string {
+	if x != nil {
+		return x.ParentWorkContextToken
+	}
+	return ""
+}
+
+func (x *ModuleExecutableArtifactSourcesRequest) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
+func (x *ModuleExecutableArtifactSourcesRequest) GetPolicyId() string {
+	if x != nil {
+		return x.PolicyId
+	}
+	return ""
+}
+
+type ModuleExecutableArtifactSourcesResponse struct {
+	state        protoimpl.MessageState             `protogen:"open.v1"`
+	Installation *ModuleCurrentInstallationResponse `protobuf:"bytes,1,opt,name=installation,proto3" json:"installation,omitempty"`
+	PolicyId     string                             `protobuf:"bytes,2,opt,name=policy_id,json=policyId,proto3" json:"policy_id,omitempty"`
+	// Complete set, sorted for reproducibility, with no preferred source. Empty
+	// means this valid effective policy has no mapping to the current binding.
+	// These are permitted labels under this policy, not unique namespace
+	// ownership, publisher attestation, content access or executable approval.
+	Sources       []string `protobuf:"bytes,3,rep,name=sources,proto3" json:"sources,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModuleExecutableArtifactSourcesResponse) Reset() {
+	*x = ModuleExecutableArtifactSourcesResponse{}
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModuleExecutableArtifactSourcesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModuleExecutableArtifactSourcesResponse) ProtoMessage() {}
+
+func (x *ModuleExecutableArtifactSourcesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModuleExecutableArtifactSourcesResponse.ProtoReflect.Descriptor instead.
+func (*ModuleExecutableArtifactSourcesResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *ModuleExecutableArtifactSourcesResponse) GetInstallation() *ModuleCurrentInstallationResponse {
+	if x != nil {
+		return x.Installation
+	}
+	return nil
+}
+
+func (x *ModuleExecutableArtifactSourcesResponse) GetPolicyId() string {
+	if x != nil {
+		return x.PolicyId
+	}
+	return ""
+}
+
+func (x *ModuleExecutableArtifactSourcesResponse) GetSources() []string {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
 // WorkContextSealQuestion asks for the live installation one principal holds.
 // Both identifiers must be the ones the presented capability names — its owner
 // and the installation it is sealed to — and its revision is the issuer's to
@@ -4938,7 +5064,7 @@ type WorkContextSealQuestion struct {
 
 func (x *WorkContextSealQuestion) Reset() {
 	*x = WorkContextSealQuestion{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[63]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4950,7 +5076,7 @@ func (x *WorkContextSealQuestion) String() string {
 func (*WorkContextSealQuestion) ProtoMessage() {}
 
 func (x *WorkContextSealQuestion) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[63]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4963,7 +5089,7 @@ func (x *WorkContextSealQuestion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkContextSealQuestion.ProtoReflect.Descriptor instead.
 func (*WorkContextSealQuestion) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{63}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *WorkContextSealQuestion) GetPrincipalId() string {
@@ -4994,7 +5120,7 @@ type WorkContextPrincipalEpochQuestion struct {
 
 func (x *WorkContextPrincipalEpochQuestion) Reset() {
 	*x = WorkContextPrincipalEpochQuestion{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[64]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5006,7 +5132,7 @@ func (x *WorkContextPrincipalEpochQuestion) String() string {
 func (*WorkContextPrincipalEpochQuestion) ProtoMessage() {}
 
 func (x *WorkContextPrincipalEpochQuestion) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[64]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5019,7 +5145,7 @@ func (x *WorkContextPrincipalEpochQuestion) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use WorkContextPrincipalEpochQuestion.ProtoReflect.Descriptor instead.
 func (*WorkContextPrincipalEpochQuestion) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{64}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *WorkContextPrincipalEpochQuestion) GetPrincipalId() string {
@@ -5043,7 +5169,7 @@ type WorkContextApprovedBuildQuestion struct {
 
 func (x *WorkContextApprovedBuildQuestion) Reset() {
 	*x = WorkContextApprovedBuildQuestion{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[65]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5055,7 +5181,7 @@ func (x *WorkContextApprovedBuildQuestion) String() string {
 func (*WorkContextApprovedBuildQuestion) ProtoMessage() {}
 
 func (x *WorkContextApprovedBuildQuestion) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[65]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5068,7 +5194,7 @@ func (x *WorkContextApprovedBuildQuestion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkContextApprovedBuildQuestion.ProtoReflect.Descriptor instead.
 func (*WorkContextApprovedBuildQuestion) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{65}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *WorkContextApprovedBuildQuestion) GetPrincipalId() string {
@@ -5094,7 +5220,7 @@ type WorkContextOperationBindingQuestion struct {
 
 func (x *WorkContextOperationBindingQuestion) Reset() {
 	*x = WorkContextOperationBindingQuestion{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[66]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5106,7 +5232,7 @@ func (x *WorkContextOperationBindingQuestion) String() string {
 func (*WorkContextOperationBindingQuestion) ProtoMessage() {}
 
 func (x *WorkContextOperationBindingQuestion) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[66]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5119,7 +5245,7 @@ func (x *WorkContextOperationBindingQuestion) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use WorkContextOperationBindingQuestion.ProtoReflect.Descriptor instead.
 func (*WorkContextOperationBindingQuestion) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{66}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *WorkContextOperationBindingQuestion) GetBindingId() string {
@@ -5147,7 +5273,7 @@ type WorkContextAuthorizationRevisionQuestion struct {
 
 func (x *WorkContextAuthorizationRevisionQuestion) Reset() {
 	*x = WorkContextAuthorizationRevisionQuestion{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[67]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5159,7 +5285,7 @@ func (x *WorkContextAuthorizationRevisionQuestion) String() string {
 func (*WorkContextAuthorizationRevisionQuestion) ProtoMessage() {}
 
 func (x *WorkContextAuthorizationRevisionQuestion) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[67]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5172,7 +5298,7 @@ func (x *WorkContextAuthorizationRevisionQuestion) ProtoReflect() protoreflect.M
 
 // Deprecated: Use WorkContextAuthorizationRevisionQuestion.ProtoReflect.Descriptor instead.
 func (*WorkContextAuthorizationRevisionQuestion) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{67}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *WorkContextAuthorizationRevisionQuestion) GetOwnerPrincipalId() string {
@@ -5194,7 +5320,7 @@ type WorkContextApprovalGrantQuestion struct {
 
 func (x *WorkContextApprovalGrantQuestion) Reset() {
 	*x = WorkContextApprovalGrantQuestion{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[68]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5206,7 +5332,7 @@ func (x *WorkContextApprovalGrantQuestion) String() string {
 func (*WorkContextApprovalGrantQuestion) ProtoMessage() {}
 
 func (x *WorkContextApprovalGrantQuestion) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[68]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5219,7 +5345,7 @@ func (x *WorkContextApprovalGrantQuestion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkContextApprovalGrantQuestion.ProtoReflect.Descriptor instead.
 func (*WorkContextApprovalGrantQuestion) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{68}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *WorkContextApprovalGrantQuestion) GetGrantId() string {
@@ -5242,7 +5368,7 @@ type WorkContextSealAnswer struct {
 
 func (x *WorkContextSealAnswer) Reset() {
 	*x = WorkContextSealAnswer{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[69]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5254,7 +5380,7 @@ func (x *WorkContextSealAnswer) String() string {
 func (*WorkContextSealAnswer) ProtoMessage() {}
 
 func (x *WorkContextSealAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[69]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5267,7 +5393,7 @@ func (x *WorkContextSealAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkContextSealAnswer.ProtoReflect.Descriptor instead.
 func (*WorkContextSealAnswer) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{69}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *WorkContextSealAnswer) GetState() WorkContextSealState {
@@ -5302,7 +5428,7 @@ type WorkContextPrincipalEpochAnswer struct {
 
 func (x *WorkContextPrincipalEpochAnswer) Reset() {
 	*x = WorkContextPrincipalEpochAnswer{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[70]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5314,7 +5440,7 @@ func (x *WorkContextPrincipalEpochAnswer) String() string {
 func (*WorkContextPrincipalEpochAnswer) ProtoMessage() {}
 
 func (x *WorkContextPrincipalEpochAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[70]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5327,7 +5453,7 @@ func (x *WorkContextPrincipalEpochAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkContextPrincipalEpochAnswer.ProtoReflect.Descriptor instead.
 func (*WorkContextPrincipalEpochAnswer) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{70}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *WorkContextPrincipalEpochAnswer) GetState() WorkContextPrincipalState {
@@ -5365,7 +5491,7 @@ type WorkContextApprovedBuildAnswer struct {
 
 func (x *WorkContextApprovedBuildAnswer) Reset() {
 	*x = WorkContextApprovedBuildAnswer{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[71]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5377,7 +5503,7 @@ func (x *WorkContextApprovedBuildAnswer) String() string {
 func (*WorkContextApprovedBuildAnswer) ProtoMessage() {}
 
 func (x *WorkContextApprovedBuildAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[71]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5390,7 +5516,7 @@ func (x *WorkContextApprovedBuildAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkContextApprovedBuildAnswer.ProtoReflect.Descriptor instead.
 func (*WorkContextApprovedBuildAnswer) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{71}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *WorkContextApprovedBuildAnswer) GetState() WorkContextApprovedBuildState {
@@ -5441,7 +5567,7 @@ type WorkContextOperationBindingAnswer struct {
 
 func (x *WorkContextOperationBindingAnswer) Reset() {
 	*x = WorkContextOperationBindingAnswer{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[72]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5453,7 +5579,7 @@ func (x *WorkContextOperationBindingAnswer) String() string {
 func (*WorkContextOperationBindingAnswer) ProtoMessage() {}
 
 func (x *WorkContextOperationBindingAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[72]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5466,7 +5592,7 @@ func (x *WorkContextOperationBindingAnswer) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use WorkContextOperationBindingAnswer.ProtoReflect.Descriptor instead.
 func (*WorkContextOperationBindingAnswer) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{72}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *WorkContextOperationBindingAnswer) GetState() WorkContextOperationBindingState {
@@ -5528,7 +5654,7 @@ type WorkContextAuthorizationRevisionAnswer struct {
 
 func (x *WorkContextAuthorizationRevisionAnswer) Reset() {
 	*x = WorkContextAuthorizationRevisionAnswer{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[73]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5540,7 +5666,7 @@ func (x *WorkContextAuthorizationRevisionAnswer) String() string {
 func (*WorkContextAuthorizationRevisionAnswer) ProtoMessage() {}
 
 func (x *WorkContextAuthorizationRevisionAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[73]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5553,7 +5679,7 @@ func (x *WorkContextAuthorizationRevisionAnswer) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use WorkContextAuthorizationRevisionAnswer.ProtoReflect.Descriptor instead.
 func (*WorkContextAuthorizationRevisionAnswer) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{73}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *WorkContextAuthorizationRevisionAnswer) GetOwnerPrincipalId() string {
@@ -5580,7 +5706,7 @@ type WorkContextApprovalGrantAnswer struct {
 
 func (x *WorkContextApprovalGrantAnswer) Reset() {
 	*x = WorkContextApprovalGrantAnswer{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[74]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5592,7 +5718,7 @@ func (x *WorkContextApprovalGrantAnswer) String() string {
 func (*WorkContextApprovalGrantAnswer) ProtoMessage() {}
 
 func (x *WorkContextApprovalGrantAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[74]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5605,7 +5731,7 @@ func (x *WorkContextApprovalGrantAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkContextApprovalGrantAnswer.ProtoReflect.Descriptor instead.
 func (*WorkContextApprovalGrantAnswer) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{74}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *WorkContextApprovalGrantAnswer) GetState() WorkContextApprovalGrantState {
@@ -5648,7 +5774,7 @@ type ModuleResolveWorkContextAuthorityRequest struct {
 
 func (x *ModuleResolveWorkContextAuthorityRequest) Reset() {
 	*x = ModuleResolveWorkContextAuthorityRequest{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[75]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5660,7 +5786,7 @@ func (x *ModuleResolveWorkContextAuthorityRequest) String() string {
 func (*ModuleResolveWorkContextAuthorityRequest) ProtoMessage() {}
 
 func (x *ModuleResolveWorkContextAuthorityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[75]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5673,7 +5799,7 @@ func (x *ModuleResolveWorkContextAuthorityRequest) ProtoReflect() protoreflect.M
 
 // Deprecated: Use ModuleResolveWorkContextAuthorityRequest.ProtoReflect.Descriptor instead.
 func (*ModuleResolveWorkContextAuthorityRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{75}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *ModuleResolveWorkContextAuthorityRequest) GetWorkContext() string {
@@ -5811,7 +5937,7 @@ type ModuleResolveWorkContextAuthorityResponse struct {
 
 func (x *ModuleResolveWorkContextAuthorityResponse) Reset() {
 	*x = ModuleResolveWorkContextAuthorityResponse{}
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[76]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5823,7 +5949,7 @@ func (x *ModuleResolveWorkContextAuthorityResponse) String() string {
 func (*ModuleResolveWorkContextAuthorityResponse) ProtoMessage() {}
 
 func (x *ModuleResolveWorkContextAuthorityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[76]
+	mi := &file_saas_accounts_v1_module_capabilities_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5836,7 +5962,7 @@ func (x *ModuleResolveWorkContextAuthorityResponse) ProtoReflect() protoreflect.
 
 // Deprecated: Use ModuleResolveWorkContextAuthorityResponse.ProtoReflect.Descriptor instead.
 func (*ModuleResolveWorkContextAuthorityResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{76}
+	return file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *ModuleResolveWorkContextAuthorityResponse) GetAnswer() isModuleResolveWorkContextAuthorityResponse_Answer {
@@ -6292,7 +6418,16 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12%\n" +
 	"\ttarget_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\x12\x1d\n" +
 	"\n" +
-	"binding_id\x18\x05 \x01(\tR\tbindingIdJ\x04\b\x03\x10\x04R\x13solution_identifier\"}\n" +
+	"binding_id\x18\x05 \x01(\tR\tbindingIdJ\x04\b\x03\x10\x04R\x13solution_identifier\"\xcc\x01\n" +
+	"&ModuleExecutableArtifactSourcesRequest\x12F\n" +
+	"\x19parent_work_context_token\x18\x01 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16parentWorkContextToken\x121\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12'\n" +
+	"\tpolicy_id\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\bpolicyId\"\xb9\x01\n" +
+	"'ModuleExecutableArtifactSourcesResponse\x12W\n" +
+	"\finstallation\x18\x01 \x01(\v23.saas.accounts.v1.ModuleCurrentInstallationResponseR\finstallation\x12\x1b\n" +
+	"\tpolicy_id\x18\x02 \x01(\tR\bpolicyId\x12\x18\n" +
+	"\asources\x18\x03 \x03(\tR\asources\"}\n" +
 	"\x17WorkContextSealQuestion\x12-\n" +
 	"\fprincipal_id\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\vprincipalId\x123\n" +
@@ -6406,8 +6541,9 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"+WORK_CONTEXT_OPERATION_BINDING_STATE_ABSENT\x10\x02*\x86\x01\n" +
 	"\x1dWorkContextApprovalGrantState\x121\n" +
 	"-WORK_CONTEXT_APPROVAL_GRANT_STATE_UNSPECIFIED\x10\x00\x122\n" +
-	".WORK_CONTEXT_APPROVAL_GRANT_STATE_NOT_RECORDED\x10\x012\xe0'\n" +
-	"\x19ModuleCapabilitiesService\x12\x9b\x01\n" +
+	".WORK_CONTEXT_APPROVAL_GRANT_STATE_NOT_RECORDED\x10\x012\x91)\n" +
+	"\x19ModuleCapabilitiesService\x12\xae\x01\n" +
+	"\x1dListExecutableArtifactSources\x128.saas.accounts.v1.ModuleExecutableArtifactSourcesRequest\x1a9.saas.accounts.v1.ModuleExecutableArtifactSourcesResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x04X\x03`\x01\x12\x9b\x01\n" +
 	"\x16GetCurrentInstallation\x122.saas.accounts.v1.ModuleCurrentInstallationRequest\x1a3.saas.accounts.v1.ModuleCurrentInstallationResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x04X\x03`\x01\x12\xc6\x01\n" +
 	"\x19ApproveExecutableArtifact\x121.saas.accounts.v1.ModuleExecutableArtifactRequest\x1a2.saas.accounts.v1.ModuleExecutableArtifactResponse\"B\xc2\xf3\x18>\b\x03\x10\x010\x01:,\n" +
 	"(saas.module.executable_artifact_decision\x10\x02@\x01H\aP\x04X\x02`\x01\x12\x9e\x01\n" +
@@ -6467,7 +6603,7 @@ func file_saas_accounts_v1_module_capabilities_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_module_capabilities_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_saas_accounts_v1_module_capabilities_proto_msgTypes = make([]protoimpl.MessageInfo, 77)
+var file_saas_accounts_v1_module_capabilities_proto_msgTypes = make([]protoimpl.MessageInfo, 79)
 var file_saas_accounts_v1_module_capabilities_proto_goTypes = []any{
 	(ModuleAuditFieldKind)(0),                               // 0: saas.accounts.v1.ModuleAuditFieldKind
 	(ModuleAuditEventVisibility)(0),                         // 1: saas.accounts.v1.ModuleAuditEventVisibility
@@ -6543,180 +6679,185 @@ var file_saas_accounts_v1_module_capabilities_proto_goTypes = []any{
 	(*ModuleExecutableArtifactResponse)(nil),                // 71: saas.accounts.v1.ModuleExecutableArtifactResponse
 	(*ModuleCurrentInstallationRequest)(nil),                // 72: saas.accounts.v1.ModuleCurrentInstallationRequest
 	(*ModuleCurrentInstallationResponse)(nil),               // 73: saas.accounts.v1.ModuleCurrentInstallationResponse
-	(*WorkContextSealQuestion)(nil),                         // 74: saas.accounts.v1.WorkContextSealQuestion
-	(*WorkContextPrincipalEpochQuestion)(nil),               // 75: saas.accounts.v1.WorkContextPrincipalEpochQuestion
-	(*WorkContextApprovedBuildQuestion)(nil),                // 76: saas.accounts.v1.WorkContextApprovedBuildQuestion
-	(*WorkContextOperationBindingQuestion)(nil),             // 77: saas.accounts.v1.WorkContextOperationBindingQuestion
-	(*WorkContextAuthorizationRevisionQuestion)(nil),        // 78: saas.accounts.v1.WorkContextAuthorizationRevisionQuestion
-	(*WorkContextApprovalGrantQuestion)(nil),                // 79: saas.accounts.v1.WorkContextApprovalGrantQuestion
-	(*WorkContextSealAnswer)(nil),                           // 80: saas.accounts.v1.WorkContextSealAnswer
-	(*WorkContextPrincipalEpochAnswer)(nil),                 // 81: saas.accounts.v1.WorkContextPrincipalEpochAnswer
-	(*WorkContextApprovedBuildAnswer)(nil),                  // 82: saas.accounts.v1.WorkContextApprovedBuildAnswer
-	(*WorkContextOperationBindingAnswer)(nil),               // 83: saas.accounts.v1.WorkContextOperationBindingAnswer
-	(*WorkContextAuthorizationRevisionAnswer)(nil),          // 84: saas.accounts.v1.WorkContextAuthorizationRevisionAnswer
-	(*WorkContextApprovalGrantAnswer)(nil),                  // 85: saas.accounts.v1.WorkContextApprovalGrantAnswer
-	(*ModuleResolveWorkContextAuthorityRequest)(nil),        // 86: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest
-	(*ModuleResolveWorkContextAuthorityResponse)(nil),       // 87: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse
-	(*v1.NewJob)(nil),                                       // 88: saas.jobs.v1.NewJob
-	(v1.JobEnqueueDisposition)(0),                           // 89: saas.jobs.v1.JobEnqueueDisposition
-	(*durationpb.Duration)(nil),                             // 90: google.protobuf.Duration
-	(*v1.JobEnvelope)(nil),                                  // 91: saas.jobs.v1.JobEnvelope
-	(*v1.JobLeaseReference)(nil),                            // 92: saas.jobs.v1.JobLeaseReference
-	(*v1.JobLease)(nil),                                     // 93: saas.jobs.v1.JobLease
-	(*v1.JobFailure)(nil),                                   // 94: saas.jobs.v1.JobFailure
-	(*timestamppb.Timestamp)(nil),                           // 95: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),                                 // 96: google.protobuf.Struct
-	(*v11.EventEnvelope)(nil),                               // 97: saas.events.v1.EventEnvelope
-	(*ModuleMintWorkContextRequest)(nil),                    // 98: saas.accounts.v1.ModuleMintWorkContextRequest
-	(*ModuleMintOperationContextRequest)(nil),               // 99: saas.accounts.v1.ModuleMintOperationContextRequest
-	(*ModuleMintSourceOperationContextRequest)(nil),         // 100: saas.accounts.v1.ModuleMintSourceOperationContextRequest
-	(*IssuedWorkContext)(nil),                               // 101: saas.accounts.v1.IssuedWorkContext
-	(*emptypb.Empty)(nil),                                   // 102: google.protobuf.Empty
-	(*ModuleMintWorkContextResponse)(nil),                   // 103: saas.accounts.v1.ModuleMintWorkContextResponse
-	(*ModuleMintOperationContextResponse)(nil),              // 104: saas.accounts.v1.ModuleMintOperationContextResponse
-	(*ModuleMintSourceOperationContextResponse)(nil),        // 105: saas.accounts.v1.ModuleMintSourceOperationContextResponse
+	(*ModuleExecutableArtifactSourcesRequest)(nil),          // 74: saas.accounts.v1.ModuleExecutableArtifactSourcesRequest
+	(*ModuleExecutableArtifactSourcesResponse)(nil),         // 75: saas.accounts.v1.ModuleExecutableArtifactSourcesResponse
+	(*WorkContextSealQuestion)(nil),                         // 76: saas.accounts.v1.WorkContextSealQuestion
+	(*WorkContextPrincipalEpochQuestion)(nil),               // 77: saas.accounts.v1.WorkContextPrincipalEpochQuestion
+	(*WorkContextApprovedBuildQuestion)(nil),                // 78: saas.accounts.v1.WorkContextApprovedBuildQuestion
+	(*WorkContextOperationBindingQuestion)(nil),             // 79: saas.accounts.v1.WorkContextOperationBindingQuestion
+	(*WorkContextAuthorizationRevisionQuestion)(nil),        // 80: saas.accounts.v1.WorkContextAuthorizationRevisionQuestion
+	(*WorkContextApprovalGrantQuestion)(nil),                // 81: saas.accounts.v1.WorkContextApprovalGrantQuestion
+	(*WorkContextSealAnswer)(nil),                           // 82: saas.accounts.v1.WorkContextSealAnswer
+	(*WorkContextPrincipalEpochAnswer)(nil),                 // 83: saas.accounts.v1.WorkContextPrincipalEpochAnswer
+	(*WorkContextApprovedBuildAnswer)(nil),                  // 84: saas.accounts.v1.WorkContextApprovedBuildAnswer
+	(*WorkContextOperationBindingAnswer)(nil),               // 85: saas.accounts.v1.WorkContextOperationBindingAnswer
+	(*WorkContextAuthorizationRevisionAnswer)(nil),          // 86: saas.accounts.v1.WorkContextAuthorizationRevisionAnswer
+	(*WorkContextApprovalGrantAnswer)(nil),                  // 87: saas.accounts.v1.WorkContextApprovalGrantAnswer
+	(*ModuleResolveWorkContextAuthorityRequest)(nil),        // 88: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest
+	(*ModuleResolveWorkContextAuthorityResponse)(nil),       // 89: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse
+	(*v1.NewJob)(nil),                                       // 90: saas.jobs.v1.NewJob
+	(v1.JobEnqueueDisposition)(0),                           // 91: saas.jobs.v1.JobEnqueueDisposition
+	(*durationpb.Duration)(nil),                             // 92: google.protobuf.Duration
+	(*v1.JobEnvelope)(nil),                                  // 93: saas.jobs.v1.JobEnvelope
+	(*v1.JobLeaseReference)(nil),                            // 94: saas.jobs.v1.JobLeaseReference
+	(*v1.JobLease)(nil),                                     // 95: saas.jobs.v1.JobLease
+	(*v1.JobFailure)(nil),                                   // 96: saas.jobs.v1.JobFailure
+	(*timestamppb.Timestamp)(nil),                           // 97: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),                                 // 98: google.protobuf.Struct
+	(*v11.EventEnvelope)(nil),                               // 99: saas.events.v1.EventEnvelope
+	(*ModuleMintWorkContextRequest)(nil),                    // 100: saas.accounts.v1.ModuleMintWorkContextRequest
+	(*ModuleMintOperationContextRequest)(nil),               // 101: saas.accounts.v1.ModuleMintOperationContextRequest
+	(*ModuleMintSourceOperationContextRequest)(nil),         // 102: saas.accounts.v1.ModuleMintSourceOperationContextRequest
+	(*IssuedWorkContext)(nil),                               // 103: saas.accounts.v1.IssuedWorkContext
+	(*emptypb.Empty)(nil),                                   // 104: google.protobuf.Empty
+	(*ModuleMintWorkContextResponse)(nil),                   // 105: saas.accounts.v1.ModuleMintWorkContextResponse
+	(*ModuleMintOperationContextResponse)(nil),              // 106: saas.accounts.v1.ModuleMintOperationContextResponse
+	(*ModuleMintSourceOperationContextResponse)(nil),        // 107: saas.accounts.v1.ModuleMintSourceOperationContextResponse
 }
 var file_saas_accounts_v1_module_capabilities_proto_depIdxs = []int32{
-	88,  // 0: saas.accounts.v1.ModuleEnqueueJobRequest.job:type_name -> saas.jobs.v1.NewJob
-	89,  // 1: saas.accounts.v1.ModuleEnqueueJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
-	90,  // 2: saas.accounts.v1.ModuleClaimJobsRequest.lease_duration:type_name -> google.protobuf.Duration
-	91,  // 3: saas.accounts.v1.ModuleClaimJobsResponse.jobs:type_name -> saas.jobs.v1.JobEnvelope
-	92,  // 4: saas.accounts.v1.ModuleHeartbeatJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	90,  // 5: saas.accounts.v1.ModuleHeartbeatJobRequest.extension:type_name -> google.protobuf.Duration
-	93,  // 6: saas.accounts.v1.ModuleHeartbeatJobResponse.lease:type_name -> saas.jobs.v1.JobLease
-	92,  // 7: saas.accounts.v1.ModuleAckJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	92,  // 8: saas.accounts.v1.ModuleNackJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	94,  // 9: saas.accounts.v1.ModuleNackJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
-	95,  // 10: saas.accounts.v1.ModuleNackJobRequest.retry_at:type_name -> google.protobuf.Timestamp
-	96,  // 11: saas.accounts.v1.ModuleResumeRef.payload:type_name -> google.protobuf.Struct
-	96,  // 12: saas.accounts.v1.ModuleRequestApprovalRequest.subject:type_name -> google.protobuf.Struct
+	90,  // 0: saas.accounts.v1.ModuleEnqueueJobRequest.job:type_name -> saas.jobs.v1.NewJob
+	91,  // 1: saas.accounts.v1.ModuleEnqueueJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
+	92,  // 2: saas.accounts.v1.ModuleClaimJobsRequest.lease_duration:type_name -> google.protobuf.Duration
+	93,  // 3: saas.accounts.v1.ModuleClaimJobsResponse.jobs:type_name -> saas.jobs.v1.JobEnvelope
+	94,  // 4: saas.accounts.v1.ModuleHeartbeatJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	92,  // 5: saas.accounts.v1.ModuleHeartbeatJobRequest.extension:type_name -> google.protobuf.Duration
+	95,  // 6: saas.accounts.v1.ModuleHeartbeatJobResponse.lease:type_name -> saas.jobs.v1.JobLease
+	94,  // 7: saas.accounts.v1.ModuleAckJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	94,  // 8: saas.accounts.v1.ModuleNackJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	96,  // 9: saas.accounts.v1.ModuleNackJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
+	97,  // 10: saas.accounts.v1.ModuleNackJobRequest.retry_at:type_name -> google.protobuf.Timestamp
+	98,  // 11: saas.accounts.v1.ModuleResumeRef.payload:type_name -> google.protobuf.Struct
+	98,  // 12: saas.accounts.v1.ModuleRequestApprovalRequest.subject:type_name -> google.protobuf.Struct
 	23,  // 13: saas.accounts.v1.ModuleRequestApprovalRequest.policy:type_name -> saas.accounts.v1.ModuleApprovalPolicy
 	24,  // 14: saas.accounts.v1.ModuleRequestApprovalRequest.resume_ref:type_name -> saas.accounts.v1.ModuleResumeRef
-	95,  // 15: saas.accounts.v1.ModuleRequestApprovalRequest.expires_at:type_name -> google.protobuf.Timestamp
-	95,  // 16: saas.accounts.v1.ModuleRequestApprovalRequest.escalate_at:type_name -> google.protobuf.Timestamp
-	96,  // 17: saas.accounts.v1.ModuleApproval.subject:type_name -> google.protobuf.Struct
+	97,  // 15: saas.accounts.v1.ModuleRequestApprovalRequest.expires_at:type_name -> google.protobuf.Timestamp
+	97,  // 16: saas.accounts.v1.ModuleRequestApprovalRequest.escalate_at:type_name -> google.protobuf.Timestamp
+	98,  // 17: saas.accounts.v1.ModuleApproval.subject:type_name -> google.protobuf.Struct
 	24,  // 18: saas.accounts.v1.ModuleApproval.resume_ref:type_name -> saas.accounts.v1.ModuleResumeRef
-	95,  // 19: saas.accounts.v1.ModuleApproval.expires_at:type_name -> google.protobuf.Timestamp
-	95,  // 20: saas.accounts.v1.ModuleApproval.escalate_at:type_name -> google.protobuf.Timestamp
-	95,  // 21: saas.accounts.v1.ModuleApproval.created_at:type_name -> google.protobuf.Timestamp
-	96,  // 22: saas.accounts.v1.ModuleEmitAuditEventRequest.fields:type_name -> google.protobuf.Struct
+	97,  // 19: saas.accounts.v1.ModuleApproval.expires_at:type_name -> google.protobuf.Timestamp
+	97,  // 20: saas.accounts.v1.ModuleApproval.escalate_at:type_name -> google.protobuf.Timestamp
+	97,  // 21: saas.accounts.v1.ModuleApproval.created_at:type_name -> google.protobuf.Timestamp
+	98,  // 22: saas.accounts.v1.ModuleEmitAuditEventRequest.fields:type_name -> google.protobuf.Struct
 	0,   // 23: saas.accounts.v1.ModuleAuditFieldDeclaration.kind:type_name -> saas.accounts.v1.ModuleAuditFieldKind
 	31,  // 24: saas.accounts.v1.ModuleAuditEventTypeDeclaration.fields:type_name -> saas.accounts.v1.ModuleAuditFieldDeclaration
 	1,   // 25: saas.accounts.v1.ModuleAuditEventTypeDeclaration.visibility:type_name -> saas.accounts.v1.ModuleAuditEventVisibility
 	32,  // 26: saas.accounts.v1.ModuleDeclareAuditEventTypesRequest.types:type_name -> saas.accounts.v1.ModuleAuditEventTypeDeclaration
-	95,  // 27: saas.accounts.v1.SubjectVisibilityGrant.expires_at:type_name -> google.protobuf.Timestamp
+	97,  // 27: saas.accounts.v1.SubjectVisibilityGrant.expires_at:type_name -> google.protobuf.Timestamp
 	35,  // 28: saas.accounts.v1.ModuleListSubjectVisibilityResponse.grants:type_name -> saas.accounts.v1.SubjectVisibilityGrant
 	40,  // 29: saas.accounts.v1.FetchDatasourceFilesRequest.files:type_name -> saas.accounts.v1.DatasourceFileRef
 	2,   // 30: saas.accounts.v1.DatasourceItemReaders.basis:type_name -> saas.accounts.v1.DatasourceItemReadersBasis
 	42,  // 31: saas.accounts.v1.DatasourceFileHeader.provenance:type_name -> saas.accounts.v1.DatasourceProvenance
 	43,  // 32: saas.accounts.v1.DatasourceFileHeader.readers:type_name -> saas.accounts.v1.DatasourceItemReaders
 	44,  // 33: saas.accounts.v1.FetchDatasourceFilesFrame.header:type_name -> saas.accounts.v1.DatasourceFileHeader
-	97,  // 34: saas.accounts.v1.ModulePublishEventRequest.envelope:type_name -> saas.events.v1.EventEnvelope
+	99,  // 34: saas.accounts.v1.ModulePublishEventRequest.envelope:type_name -> saas.events.v1.EventEnvelope
 	3,   // 35: saas.accounts.v1.ModuleSubscribeRequest.delivery:type_name -> saas.accounts.v1.EventDelivery
 	3,   // 36: saas.accounts.v1.ModuleSubscription.delivery:type_name -> saas.accounts.v1.EventDelivery
-	95,  // 37: saas.accounts.v1.ModuleSubscription.created_at:type_name -> google.protobuf.Timestamp
+	97,  // 37: saas.accounts.v1.ModuleSubscription.created_at:type_name -> google.protobuf.Timestamp
 	49,  // 38: saas.accounts.v1.ModuleSubscribeResponse.subscription:type_name -> saas.accounts.v1.ModuleSubscription
 	49,  // 39: saas.accounts.v1.ModuleListSubscriptionsResponse.subscriptions:type_name -> saas.accounts.v1.ModuleSubscription
-	95,  // 40: saas.accounts.v1.ModuleReplayEventsRequest.since:type_name -> google.protobuf.Timestamp
+	97,  // 40: saas.accounts.v1.ModuleReplayEventsRequest.since:type_name -> google.protobuf.Timestamp
 	4,   // 41: saas.accounts.v1.ReadableSourceCollection.grant_disclosure:type_name -> saas.accounts.v1.MetadataDisclosure
 	57,  // 42: saas.accounts.v1.ReadableSourceCollection.read_grants:type_name -> saas.accounts.v1.ReadableCollectionGrant
 	58,  // 43: saas.accounts.v1.ReadableSourceCollection.sync:type_name -> saas.accounts.v1.CollectionSyncProvenance
-	95,  // 44: saas.accounts.v1.ReadableCollectionGrant.expires_at:type_name -> google.protobuf.Timestamp
+	97,  // 44: saas.accounts.v1.ReadableCollectionGrant.expires_at:type_name -> google.protobuf.Timestamp
 	5,   // 45: saas.accounts.v1.CollectionSyncProvenance.stage:type_name -> saas.accounts.v1.SourceSyncStage
-	95,  // 46: saas.accounts.v1.CollectionSyncProvenance.at:type_name -> google.protobuf.Timestamp
+	97,  // 46: saas.accounts.v1.CollectionSyncProvenance.at:type_name -> google.protobuf.Timestamp
 	4,   // 47: saas.accounts.v1.CollectionSyncProvenance.requester_disclosure:type_name -> saas.accounts.v1.MetadataDisclosure
-	95,  // 48: saas.accounts.v1.CollectionSyncProvenance.requested_at:type_name -> google.protobuf.Timestamp
+	97,  // 48: saas.accounts.v1.CollectionSyncProvenance.requested_at:type_name -> google.protobuf.Timestamp
 	56,  // 49: saas.accounts.v1.ListReadableSourceCollectionsResponse.collections:type_name -> saas.accounts.v1.ReadableSourceCollection
 	67,  // 50: saas.accounts.v1.ExecutableArtifactIdentity.contracts:type_name -> saas.accounts.v1.ExecutableArtifactContract
 	68,  // 51: saas.accounts.v1.ModuleExecutableArtifactRequest.identity:type_name -> saas.accounts.v1.ExecutableArtifactIdentity
-	6,   // 52: saas.accounts.v1.WorkContextSealAnswer.state:type_name -> saas.accounts.v1.WorkContextSealState
-	7,   // 53: saas.accounts.v1.WorkContextPrincipalEpochAnswer.state:type_name -> saas.accounts.v1.WorkContextPrincipalState
-	8,   // 54: saas.accounts.v1.WorkContextApprovedBuildAnswer.state:type_name -> saas.accounts.v1.WorkContextApprovedBuildState
-	9,   // 55: saas.accounts.v1.WorkContextOperationBindingAnswer.state:type_name -> saas.accounts.v1.WorkContextOperationBindingState
-	10,  // 56: saas.accounts.v1.WorkContextApprovalGrantAnswer.state:type_name -> saas.accounts.v1.WorkContextApprovalGrantState
-	74,  // 57: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.seal:type_name -> saas.accounts.v1.WorkContextSealQuestion
-	75,  // 58: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.principal_epoch:type_name -> saas.accounts.v1.WorkContextPrincipalEpochQuestion
-	76,  // 59: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.approved_build:type_name -> saas.accounts.v1.WorkContextApprovedBuildQuestion
-	77,  // 60: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.operation_binding:type_name -> saas.accounts.v1.WorkContextOperationBindingQuestion
-	78,  // 61: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.authorization_revision:type_name -> saas.accounts.v1.WorkContextAuthorizationRevisionQuestion
-	79,  // 62: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.approval_grant:type_name -> saas.accounts.v1.WorkContextApprovalGrantQuestion
-	80,  // 63: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.seal:type_name -> saas.accounts.v1.WorkContextSealAnswer
-	81,  // 64: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.principal_epoch:type_name -> saas.accounts.v1.WorkContextPrincipalEpochAnswer
-	82,  // 65: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.approved_build:type_name -> saas.accounts.v1.WorkContextApprovedBuildAnswer
-	83,  // 66: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.operation_binding:type_name -> saas.accounts.v1.WorkContextOperationBindingAnswer
-	84,  // 67: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.authorization_revision:type_name -> saas.accounts.v1.WorkContextAuthorizationRevisionAnswer
-	85,  // 68: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.approval_grant:type_name -> saas.accounts.v1.WorkContextApprovalGrantAnswer
-	72,  // 69: saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation:input_type -> saas.accounts.v1.ModuleCurrentInstallationRequest
-	69,  // 70: saas.accounts.v1.ModuleCapabilitiesService.ApproveExecutableArtifact:input_type -> saas.accounts.v1.ModuleExecutableArtifactRequest
-	69,  // 71: saas.accounts.v1.ModuleCapabilitiesService.AuthorizeExecutableArtifact:input_type -> saas.accounts.v1.ModuleExecutableArtifactRequest
-	70,  // 72: saas.accounts.v1.ModuleCapabilitiesService.RevokeExecutableArtifact:input_type -> saas.accounts.v1.ModuleRevokeExecutableArtifactRequest
-	65,  // 73: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
-	66,  // 74: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
-	63,  // 75: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:input_type -> saas.accounts.v1.CheckWorkContextRecordAccessRequest
-	59,  // 76: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:input_type -> saas.accounts.v1.ListReadableSourceCollectionsRequest
-	61,  // 77: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:input_type -> saas.accounts.v1.ModulePlaceRecordRequest
-	11,  // 78: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:input_type -> saas.accounts.v1.ModuleEnqueueJobRequest
-	13,  // 79: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:input_type -> saas.accounts.v1.ModuleClaimJobsRequest
-	15,  // 80: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:input_type -> saas.accounts.v1.ModuleHeartbeatJobRequest
-	17,  // 81: saas.accounts.v1.ModuleCapabilitiesService.AckJob:input_type -> saas.accounts.v1.ModuleAckJobRequest
-	18,  // 82: saas.accounts.v1.ModuleCapabilitiesService.NackJob:input_type -> saas.accounts.v1.ModuleNackJobRequest
-	19,  // 83: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:input_type -> saas.accounts.v1.ModuleNotifyUserRequest
-	21,  // 84: saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins:input_type -> saas.accounts.v1.ModuleNotifyOrgAdminsRequest
-	25,  // 85: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:input_type -> saas.accounts.v1.ModuleRequestApprovalRequest
-	27,  // 86: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:input_type -> saas.accounts.v1.ModuleGetApprovalRequest
-	29,  // 87: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:input_type -> saas.accounts.v1.ModuleCancelApprovalRequest
-	30,  // 88: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:input_type -> saas.accounts.v1.ModuleEmitAuditEventRequest
-	33,  // 89: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:input_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesRequest
-	36,  // 90: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:input_type -> saas.accounts.v1.ModuleListSubjectVisibilityRequest
-	38,  // 91: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:input_type -> saas.accounts.v1.FetchDatasourceBlobRequest
-	41,  // 92: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:input_type -> saas.accounts.v1.FetchDatasourceFilesRequest
-	98,  // 93: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:input_type -> saas.accounts.v1.ModuleMintWorkContextRequest
-	99,  // 94: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:input_type -> saas.accounts.v1.ModuleMintOperationContextRequest
-	100, // 95: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:input_type -> saas.accounts.v1.ModuleMintSourceOperationContextRequest
-	46,  // 96: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:input_type -> saas.accounts.v1.ModulePublishEventRequest
-	48,  // 97: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:input_type -> saas.accounts.v1.ModuleSubscribeRequest
-	51,  // 98: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:input_type -> saas.accounts.v1.ModuleUnsubscribeRequest
-	52,  // 99: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:input_type -> saas.accounts.v1.ModuleListSubscriptionsRequest
-	54,  // 100: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:input_type -> saas.accounts.v1.ModuleReplayEventsRequest
-	86,  // 101: saas.accounts.v1.ModuleCapabilitiesService.ResolveWorkContextAuthority:input_type -> saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest
-	73,  // 102: saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation:output_type -> saas.accounts.v1.ModuleCurrentInstallationResponse
-	71,  // 103: saas.accounts.v1.ModuleCapabilitiesService.ApproveExecutableArtifact:output_type -> saas.accounts.v1.ModuleExecutableArtifactResponse
-	71,  // 104: saas.accounts.v1.ModuleCapabilitiesService.AuthorizeExecutableArtifact:output_type -> saas.accounts.v1.ModuleExecutableArtifactResponse
-	71,  // 105: saas.accounts.v1.ModuleCapabilitiesService.RevokeExecutableArtifact:output_type -> saas.accounts.v1.ModuleExecutableArtifactResponse
-	101, // 106: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:output_type -> saas.accounts.v1.IssuedWorkContext
-	101, // 107: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:output_type -> saas.accounts.v1.IssuedWorkContext
-	64,  // 108: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:output_type -> saas.accounts.v1.CheckWorkContextRecordAccessResponse
-	60,  // 109: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:output_type -> saas.accounts.v1.ListReadableSourceCollectionsResponse
-	62,  // 110: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:output_type -> saas.accounts.v1.ModulePlaceRecordResponse
-	12,  // 111: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:output_type -> saas.accounts.v1.ModuleEnqueueJobResponse
-	14,  // 112: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:output_type -> saas.accounts.v1.ModuleClaimJobsResponse
-	16,  // 113: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:output_type -> saas.accounts.v1.ModuleHeartbeatJobResponse
-	102, // 114: saas.accounts.v1.ModuleCapabilitiesService.AckJob:output_type -> google.protobuf.Empty
-	102, // 115: saas.accounts.v1.ModuleCapabilitiesService.NackJob:output_type -> google.protobuf.Empty
-	20,  // 116: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:output_type -> saas.accounts.v1.ModuleNotifyUserResponse
-	22,  // 117: saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins:output_type -> saas.accounts.v1.ModuleNotifyOrgAdminsResponse
-	26,  // 118: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:output_type -> saas.accounts.v1.ModuleRequestApprovalResponse
-	28,  // 119: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:output_type -> saas.accounts.v1.ModuleApproval
-	102, // 120: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:output_type -> google.protobuf.Empty
-	102, // 121: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:output_type -> google.protobuf.Empty
-	34,  // 122: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:output_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesResponse
-	37,  // 123: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:output_type -> saas.accounts.v1.ModuleListSubjectVisibilityResponse
-	39,  // 124: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:output_type -> saas.accounts.v1.FetchDatasourceBlobChunk
-	45,  // 125: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:output_type -> saas.accounts.v1.FetchDatasourceFilesFrame
-	103, // 126: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:output_type -> saas.accounts.v1.ModuleMintWorkContextResponse
-	104, // 127: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:output_type -> saas.accounts.v1.ModuleMintOperationContextResponse
-	105, // 128: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:output_type -> saas.accounts.v1.ModuleMintSourceOperationContextResponse
-	47,  // 129: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:output_type -> saas.accounts.v1.ModulePublishEventResponse
-	50,  // 130: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:output_type -> saas.accounts.v1.ModuleSubscribeResponse
-	102, // 131: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:output_type -> google.protobuf.Empty
-	53,  // 132: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:output_type -> saas.accounts.v1.ModuleListSubscriptionsResponse
-	55,  // 133: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:output_type -> saas.accounts.v1.ModuleReplayEventsResponse
-	87,  // 134: saas.accounts.v1.ModuleCapabilitiesService.ResolveWorkContextAuthority:output_type -> saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse
-	102, // [102:135] is the sub-list for method output_type
-	69,  // [69:102] is the sub-list for method input_type
-	69,  // [69:69] is the sub-list for extension type_name
-	69,  // [69:69] is the sub-list for extension extendee
-	0,   // [0:69] is the sub-list for field type_name
+	73,  // 52: saas.accounts.v1.ModuleExecutableArtifactSourcesResponse.installation:type_name -> saas.accounts.v1.ModuleCurrentInstallationResponse
+	6,   // 53: saas.accounts.v1.WorkContextSealAnswer.state:type_name -> saas.accounts.v1.WorkContextSealState
+	7,   // 54: saas.accounts.v1.WorkContextPrincipalEpochAnswer.state:type_name -> saas.accounts.v1.WorkContextPrincipalState
+	8,   // 55: saas.accounts.v1.WorkContextApprovedBuildAnswer.state:type_name -> saas.accounts.v1.WorkContextApprovedBuildState
+	9,   // 56: saas.accounts.v1.WorkContextOperationBindingAnswer.state:type_name -> saas.accounts.v1.WorkContextOperationBindingState
+	10,  // 57: saas.accounts.v1.WorkContextApprovalGrantAnswer.state:type_name -> saas.accounts.v1.WorkContextApprovalGrantState
+	76,  // 58: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.seal:type_name -> saas.accounts.v1.WorkContextSealQuestion
+	77,  // 59: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.principal_epoch:type_name -> saas.accounts.v1.WorkContextPrincipalEpochQuestion
+	78,  // 60: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.approved_build:type_name -> saas.accounts.v1.WorkContextApprovedBuildQuestion
+	79,  // 61: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.operation_binding:type_name -> saas.accounts.v1.WorkContextOperationBindingQuestion
+	80,  // 62: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.authorization_revision:type_name -> saas.accounts.v1.WorkContextAuthorizationRevisionQuestion
+	81,  // 63: saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest.approval_grant:type_name -> saas.accounts.v1.WorkContextApprovalGrantQuestion
+	82,  // 64: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.seal:type_name -> saas.accounts.v1.WorkContextSealAnswer
+	83,  // 65: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.principal_epoch:type_name -> saas.accounts.v1.WorkContextPrincipalEpochAnswer
+	84,  // 66: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.approved_build:type_name -> saas.accounts.v1.WorkContextApprovedBuildAnswer
+	85,  // 67: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.operation_binding:type_name -> saas.accounts.v1.WorkContextOperationBindingAnswer
+	86,  // 68: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.authorization_revision:type_name -> saas.accounts.v1.WorkContextAuthorizationRevisionAnswer
+	87,  // 69: saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse.approval_grant:type_name -> saas.accounts.v1.WorkContextApprovalGrantAnswer
+	74,  // 70: saas.accounts.v1.ModuleCapabilitiesService.ListExecutableArtifactSources:input_type -> saas.accounts.v1.ModuleExecutableArtifactSourcesRequest
+	72,  // 71: saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation:input_type -> saas.accounts.v1.ModuleCurrentInstallationRequest
+	69,  // 72: saas.accounts.v1.ModuleCapabilitiesService.ApproveExecutableArtifact:input_type -> saas.accounts.v1.ModuleExecutableArtifactRequest
+	69,  // 73: saas.accounts.v1.ModuleCapabilitiesService.AuthorizeExecutableArtifact:input_type -> saas.accounts.v1.ModuleExecutableArtifactRequest
+	70,  // 74: saas.accounts.v1.ModuleCapabilitiesService.RevokeExecutableArtifact:input_type -> saas.accounts.v1.ModuleRevokeExecutableArtifactRequest
+	65,  // 75: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedReadAudienceRequest
+	66,  // 76: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:input_type -> saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest
+	63,  // 77: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:input_type -> saas.accounts.v1.CheckWorkContextRecordAccessRequest
+	59,  // 78: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:input_type -> saas.accounts.v1.ListReadableSourceCollectionsRequest
+	61,  // 79: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:input_type -> saas.accounts.v1.ModulePlaceRecordRequest
+	11,  // 80: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:input_type -> saas.accounts.v1.ModuleEnqueueJobRequest
+	13,  // 81: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:input_type -> saas.accounts.v1.ModuleClaimJobsRequest
+	15,  // 82: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:input_type -> saas.accounts.v1.ModuleHeartbeatJobRequest
+	17,  // 83: saas.accounts.v1.ModuleCapabilitiesService.AckJob:input_type -> saas.accounts.v1.ModuleAckJobRequest
+	18,  // 84: saas.accounts.v1.ModuleCapabilitiesService.NackJob:input_type -> saas.accounts.v1.ModuleNackJobRequest
+	19,  // 85: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:input_type -> saas.accounts.v1.ModuleNotifyUserRequest
+	21,  // 86: saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins:input_type -> saas.accounts.v1.ModuleNotifyOrgAdminsRequest
+	25,  // 87: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:input_type -> saas.accounts.v1.ModuleRequestApprovalRequest
+	27,  // 88: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:input_type -> saas.accounts.v1.ModuleGetApprovalRequest
+	29,  // 89: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:input_type -> saas.accounts.v1.ModuleCancelApprovalRequest
+	30,  // 90: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:input_type -> saas.accounts.v1.ModuleEmitAuditEventRequest
+	33,  // 91: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:input_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesRequest
+	36,  // 92: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:input_type -> saas.accounts.v1.ModuleListSubjectVisibilityRequest
+	38,  // 93: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:input_type -> saas.accounts.v1.FetchDatasourceBlobRequest
+	41,  // 94: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:input_type -> saas.accounts.v1.FetchDatasourceFilesRequest
+	100, // 95: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:input_type -> saas.accounts.v1.ModuleMintWorkContextRequest
+	101, // 96: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:input_type -> saas.accounts.v1.ModuleMintOperationContextRequest
+	102, // 97: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:input_type -> saas.accounts.v1.ModuleMintSourceOperationContextRequest
+	46,  // 98: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:input_type -> saas.accounts.v1.ModulePublishEventRequest
+	48,  // 99: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:input_type -> saas.accounts.v1.ModuleSubscribeRequest
+	51,  // 100: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:input_type -> saas.accounts.v1.ModuleUnsubscribeRequest
+	52,  // 101: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:input_type -> saas.accounts.v1.ModuleListSubscriptionsRequest
+	54,  // 102: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:input_type -> saas.accounts.v1.ModuleReplayEventsRequest
+	88,  // 103: saas.accounts.v1.ModuleCapabilitiesService.ResolveWorkContextAuthority:input_type -> saas.accounts.v1.ModuleResolveWorkContextAuthorityRequest
+	75,  // 104: saas.accounts.v1.ModuleCapabilitiesService.ListExecutableArtifactSources:output_type -> saas.accounts.v1.ModuleExecutableArtifactSourcesResponse
+	73,  // 105: saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation:output_type -> saas.accounts.v1.ModuleCurrentInstallationResponse
+	71,  // 106: saas.accounts.v1.ModuleCapabilitiesService.ApproveExecutableArtifact:output_type -> saas.accounts.v1.ModuleExecutableArtifactResponse
+	71,  // 107: saas.accounts.v1.ModuleCapabilitiesService.AuthorizeExecutableArtifact:output_type -> saas.accounts.v1.ModuleExecutableArtifactResponse
+	71,  // 108: saas.accounts.v1.ModuleCapabilitiesService.RevokeExecutableArtifact:output_type -> saas.accounts.v1.ModuleExecutableArtifactResponse
+	103, // 109: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience:output_type -> saas.accounts.v1.IssuedWorkContext
+	103, // 110: saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience:output_type -> saas.accounts.v1.IssuedWorkContext
+	64,  // 111: saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess:output_type -> saas.accounts.v1.CheckWorkContextRecordAccessResponse
+	60,  // 112: saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections:output_type -> saas.accounts.v1.ListReadableSourceCollectionsResponse
+	62,  // 113: saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord:output_type -> saas.accounts.v1.ModulePlaceRecordResponse
+	12,  // 114: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:output_type -> saas.accounts.v1.ModuleEnqueueJobResponse
+	14,  // 115: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:output_type -> saas.accounts.v1.ModuleClaimJobsResponse
+	16,  // 116: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:output_type -> saas.accounts.v1.ModuleHeartbeatJobResponse
+	104, // 117: saas.accounts.v1.ModuleCapabilitiesService.AckJob:output_type -> google.protobuf.Empty
+	104, // 118: saas.accounts.v1.ModuleCapabilitiesService.NackJob:output_type -> google.protobuf.Empty
+	20,  // 119: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:output_type -> saas.accounts.v1.ModuleNotifyUserResponse
+	22,  // 120: saas.accounts.v1.ModuleCapabilitiesService.NotifyOrgAdmins:output_type -> saas.accounts.v1.ModuleNotifyOrgAdminsResponse
+	26,  // 121: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:output_type -> saas.accounts.v1.ModuleRequestApprovalResponse
+	28,  // 122: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:output_type -> saas.accounts.v1.ModuleApproval
+	104, // 123: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:output_type -> google.protobuf.Empty
+	104, // 124: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:output_type -> google.protobuf.Empty
+	34,  // 125: saas.accounts.v1.ModuleCapabilitiesService.DeclareAuditEventTypes:output_type -> saas.accounts.v1.ModuleDeclareAuditEventTypesResponse
+	37,  // 126: saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility:output_type -> saas.accounts.v1.ModuleListSubjectVisibilityResponse
+	39,  // 127: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:output_type -> saas.accounts.v1.FetchDatasourceBlobChunk
+	45,  // 128: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceFiles:output_type -> saas.accounts.v1.FetchDatasourceFilesFrame
+	105, // 129: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:output_type -> saas.accounts.v1.ModuleMintWorkContextResponse
+	106, // 130: saas.accounts.v1.ModuleCapabilitiesService.MintModuleOperationContext:output_type -> saas.accounts.v1.ModuleMintOperationContextResponse
+	107, // 131: saas.accounts.v1.ModuleCapabilitiesService.MintSourceOperationContext:output_type -> saas.accounts.v1.ModuleMintSourceOperationContextResponse
+	47,  // 132: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:output_type -> saas.accounts.v1.ModulePublishEventResponse
+	50,  // 133: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:output_type -> saas.accounts.v1.ModuleSubscribeResponse
+	104, // 134: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:output_type -> google.protobuf.Empty
+	53,  // 135: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:output_type -> saas.accounts.v1.ModuleListSubscriptionsResponse
+	55,  // 136: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:output_type -> saas.accounts.v1.ModuleReplayEventsResponse
+	89,  // 137: saas.accounts.v1.ModuleCapabilitiesService.ResolveWorkContextAuthority:output_type -> saas.accounts.v1.ModuleResolveWorkContextAuthorityResponse
+	104, // [104:138] is the sub-list for method output_type
+	70,  // [70:104] is the sub-list for method input_type
+	70,  // [70:70] is the sub-list for extension type_name
+	70,  // [70:70] is the sub-list for extension extendee
+	0,   // [0:70] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_module_capabilities_proto_init() }
@@ -6730,7 +6871,7 @@ func file_saas_accounts_v1_module_capabilities_proto_init() {
 		(*FetchDatasourceFilesFrame_Header)(nil),
 		(*FetchDatasourceFilesFrame_Data)(nil),
 	}
-	file_saas_accounts_v1_module_capabilities_proto_msgTypes[75].OneofWrappers = []any{
+	file_saas_accounts_v1_module_capabilities_proto_msgTypes[77].OneofWrappers = []any{
 		(*ModuleResolveWorkContextAuthorityRequest_Seal)(nil),
 		(*ModuleResolveWorkContextAuthorityRequest_PrincipalEpoch)(nil),
 		(*ModuleResolveWorkContextAuthorityRequest_ApprovedBuild)(nil),
@@ -6738,7 +6879,7 @@ func file_saas_accounts_v1_module_capabilities_proto_init() {
 		(*ModuleResolveWorkContextAuthorityRequest_AuthorizationRevision)(nil),
 		(*ModuleResolveWorkContextAuthorityRequest_ApprovalGrant)(nil),
 	}
-	file_saas_accounts_v1_module_capabilities_proto_msgTypes[76].OneofWrappers = []any{
+	file_saas_accounts_v1_module_capabilities_proto_msgTypes[78].OneofWrappers = []any{
 		(*ModuleResolveWorkContextAuthorityResponse_Seal)(nil),
 		(*ModuleResolveWorkContextAuthorityResponse_PrincipalEpoch)(nil),
 		(*ModuleResolveWorkContextAuthorityResponse_ApprovedBuild)(nil),
@@ -6752,7 +6893,7 @@ func file_saas_accounts_v1_module_capabilities_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_module_capabilities_proto_rawDesc), len(file_saas_accounts_v1_module_capabilities_proto_rawDesc)),
 			NumEnums:      11,
-			NumMessages:   77,
+			NumMessages:   79,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -1163,6 +1163,9 @@ func (s *WorkContextAuthorityServer) VerifyModuleWorkContext(ctx context.Context
 	}
 	verified, err := s.verifyFor(ctx, encoded, ModuleWorkContextAudience)
 	if err != nil {
+		if !decidedCapabilityRefusal(err) {
+			return business.ModuleCaller{}, unansweredWorkContextAuthority(ctx, "module credential", err)
+		}
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context is not a valid capability")
 	}
 	claims := verified.Context()

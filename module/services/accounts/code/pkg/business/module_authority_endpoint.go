@@ -88,6 +88,7 @@ var moduleAuthorityReadOracles = map[string]struct{}{
 // ValidateModuleAuthorityProcedures and the test beside this file hold each
 // entry to the rules above.
 var moduleAuthorityProcedures = []string{
+	"/saas.accounts.v1.ModuleCapabilitiesService/ListExecutableArtifactSources",
 	"/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
 	"/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
 	"/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",

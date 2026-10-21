@@ -483,16 +483,22 @@ func workContextGrants(claims *basev0.WorkContextV1, resourceKind, action, resou
 	return false
 }
 
-// refusedReadBack maps a refusal from verifying a capability this host issued.
-// A capability the issuer's live state has moved past — a superseded revision, a
-// moved seal or epoch — answers FailedPrecondition, the code the host's own
-// recheck has always answered a stale capability with and the one a consumer
-// re-mints on. Anything else answers invalid, with the site's own wording.
-//
-// A capability in another encoding — one minted before this host signed with
-// core, which no verifier here can read — is logged with its cause, never its
-// token: the caller is told only that it is invalid, and the operator watching
-// a wall of refusals during a cutover is told why.
+// Core distinguishes invalid/revoked capabilities from failures to obtain live
+// authority. Keep that distinction at the owner boundary without inspecting
+// messages or implementing another verifier. Unknown failures remain retryable.
+func decidedCapabilityRefusal(err error) bool {
+	for _, decided := range []error{workcontext.ErrInvalid, workcontext.ErrNotACoreToken, workcontext.ErrRevoked, workcontext.ErrNoSeal, workcontext.ErrNoBinding, workcontext.ErrReplayed, ErrNoApprovalGrants} {
+		if errors.Is(err, decided) {
+			return true
+		}
+	}
+	return decidedWorkContextAuthority(err)
+}
+
+// refusedReadBack maps a decided refusal from verifying a capability this host
+// issued. Superseded revision, seal or epoch answers FailedPrecondition for
+// re-minting; invalid encoding is logged by cause, never by token. Callers must
+// distinguish unreadable live authority before using this refusal mapping.
 func refusedReadBack(ctx context.Context, err error, invalid error) error {
 	if errors.Is(err, workcontext.ErrNotACoreToken) {
 		wool.Get(ctx).In("refusedReadBack").Warn(

@@ -21,6 +21,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ModuleCapabilitiesService_ListExecutableArtifactSources_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ListExecutableArtifactSources"
 	ModuleCapabilitiesService_GetCurrentInstallation_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation"
 	ModuleCapabilitiesService_ApproveExecutableArtifact_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact"
 	ModuleCapabilitiesService_AuthorizeExecutableArtifact_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact"
@@ -60,6 +61,12 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ModuleCapabilitiesServiceClient interface {
+	// Organization-member metadata under independent module/current-parent proof.
+	// Observes the complete matching source set from one effective installed
+	// policy and exact live installation binding. Hidden/missing state refuses
+	// uniformly; authority outages never become empty sets. No approval, grant,
+	// token, content access or lasting authority is created. Recheck at each use.
+	ListExecutableArtifactSources(ctx context.Context, in *ModuleExecutableArtifactSourcesRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactSourcesResponse, error)
 	// Organization-member metadata read, not executable consent or a durable
 	// liveness proof. Returns only a currently active, non-revoked installation.
 	GetCurrentInstallation(ctx context.Context, in *ModuleCurrentInstallationRequest, opts ...grpc.CallOption) (*ModuleCurrentInstallationResponse, error)
@@ -196,6 +203,16 @@ type moduleCapabilitiesServiceClient struct {
 
 func NewModuleCapabilitiesServiceClient(cc grpc.ClientConnInterface) ModuleCapabilitiesServiceClient {
 	return &moduleCapabilitiesServiceClient{cc}
+}
+
+func (c *moduleCapabilitiesServiceClient) ListExecutableArtifactSources(ctx context.Context, in *ModuleExecutableArtifactSourcesRequest, opts ...grpc.CallOption) (*ModuleExecutableArtifactSourcesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleExecutableArtifactSourcesResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ListExecutableArtifactSources_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *moduleCapabilitiesServiceClient) GetCurrentInstallation(ctx context.Context, in *ModuleCurrentInstallationRequest, opts ...grpc.CallOption) (*ModuleCurrentInstallationResponse, error) {
@@ -551,6 +568,12 @@ func (c *moduleCapabilitiesServiceClient) ResolveWorkContextAuthority(ctx contex
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
 type ModuleCapabilitiesServiceServer interface {
+	// Organization-member metadata under independent module/current-parent proof.
+	// Observes the complete matching source set from one effective installed
+	// policy and exact live installation binding. Hidden/missing state refuses
+	// uniformly; authority outages never become empty sets. No approval, grant,
+	// token, content access or lasting authority is created. Recheck at each use.
+	ListExecutableArtifactSources(context.Context, *ModuleExecutableArtifactSourcesRequest) (*ModuleExecutableArtifactSourcesResponse, error)
 	// Organization-member metadata read, not executable consent or a durable
 	// liveness proof. Returns only a currently active, non-revoked installation.
 	GetCurrentInstallation(context.Context, *ModuleCurrentInstallationRequest) (*ModuleCurrentInstallationResponse, error)
@@ -689,6 +712,9 @@ type ModuleCapabilitiesServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedModuleCapabilitiesServiceServer struct{}
 
+func (UnimplementedModuleCapabilitiesServiceServer) ListExecutableArtifactSources(context.Context, *ModuleExecutableArtifactSourcesRequest) (*ModuleExecutableArtifactSourcesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListExecutableArtifactSources not implemented")
+}
 func (UnimplementedModuleCapabilitiesServiceServer) GetCurrentInstallation(context.Context, *ModuleCurrentInstallationRequest) (*ModuleCurrentInstallationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetCurrentInstallation not implemented")
 }
@@ -808,6 +834,24 @@ func RegisterModuleCapabilitiesServiceServer(s grpc.ServiceRegistrar, srv Module
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ModuleCapabilitiesService_ServiceDesc, srv)
+}
+
+func _ModuleCapabilitiesService_ListExecutableArtifactSources_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleExecutableArtifactSourcesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ListExecutableArtifactSources(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ListExecutableArtifactSources_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ListExecutableArtifactSources(ctx, req.(*ModuleExecutableArtifactSourcesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ModuleCapabilitiesService_GetCurrentInstallation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -1397,6 +1441,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.ModuleCapabilitiesService",
 	HandlerType: (*ModuleCapabilitiesServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListExecutableArtifactSources",
+			Handler:    _ModuleCapabilitiesService_ListExecutableArtifactSources_Handler,
+		},
 		{
 			MethodName: "GetCurrentInstallation",
 			Handler:    _ModuleCapabilitiesService_GetCurrentInstallation_Handler,

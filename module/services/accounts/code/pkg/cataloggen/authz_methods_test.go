@@ -48,7 +48,12 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	// callee's verifier asks (#1107) — picking either side's number would be
 	// silently wrong, so this is read off the regenerated
 	// generated/authz-methods.json.
-	require.Equal(t, 54, internalCount) // includes the internal retained-frontend read
+	// One additional internal-only member metadata observation; it must not
+	// acquire a public HTTP route, audit mutation or activation requirement.
+	require.Equal(t, 55, internalCount)
+	sources := methodByProcedure(catalog, "/saas.accounts.v1.ModuleCapabilitiesService/ListExecutableArtifactSources").GetPolicy()
+	require.Equal(t, policyv1.Exposure_EXPOSURE_INTERNAL, sources.GetExposure())
+	require.Equal(t, policyv1.AuditEmission_AUDIT_EMISSION_NONE, sources.GetAudit().GetEmission())
 	require.Equal(t, 17, failClosedCount)
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(

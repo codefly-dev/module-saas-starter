@@ -320,7 +320,7 @@ grant in the module envelope:
 ```json
 {
   "schema": "example.artifact/v1",
-  "sources": {"acme.example": "acme/example"},
+  "sources": {"acme.example": "binding-acme-example-0001"},
   "activate": {"resource": "definitions", "action": "configure"},
   "run": {"resource": "definitions", "action": "run"},
   "contracts": [
@@ -331,8 +331,10 @@ grant in the module envelope:
 ```
 
 These are exact ceilings, without wildcards. `sources` maps the exported source
-identity to the installation's actual solution identifier; an event namespace
-never establishes source ownership. Each requested contract must be one of the
+identifier to the exact delivered presence binding that may carry it. A route
+alias, installation UUID or event namespace establishes no such permission.
+Several source identifiers may map to one binding; the mapping assigns no
+exclusive global namespace. Each requested contract must be one of the
 installed exact kind/name/digest triples, and every required kind must appear.
 The module's compiler owns completeness of its dependency list and its versioned
 subject encoding. The host owns approval and checks the declared ceilings; it
@@ -358,7 +360,7 @@ Ref, and owns its activation compare-and-swap. An approval left by a failed
 activation does not move any pointer or execute anything.
 
 `AuthorizeExecutableArtifact` never inserts. Every call checks current parent
-authority and permission, active healthy installation, exact source ownership,
+authority and permission, active healthy installation, the exact source-to-binding mapping,
 current policy/contract ceilings, the exact approved row and revocation.
 Approval is a durable tenant administrative decision, not an ongoing delegation
 from its approver: administrator turnover does not invalidate committed consent.
@@ -403,7 +405,8 @@ It introduces no permission vocabulary, operation binding, scope alias or token
 mint. The owner must still be a current member. The tenant and owner come only
 from the verified parent. The tenant-scoped store must return the exact requested
 installation and tenant, ACTIVE with no revocation timestamp. Success contains
-only `installation_id`, `tenant_id` and the exact host `solution_identifier`.
+only `installation_id`, `tenant_id`, the immutable `target_id` and its delivered
+`binding_id`. The former `solution_identifier` field is reserved, not an identity.
 Absent, inactive, revoked or mismatched rows are refused. No requested source,
 configuration, graph, grant or model identity is accepted or returned.
 
@@ -416,6 +419,37 @@ The TypeScript SDK includes this contract starting with package version
 `0.3.17`. Artifact decision events are also part of the declared module
 generator chain: regenerate the complete package projections when changing
 these authority contracts, including the event catalog and communication docs.
+
+## Observing the permitted executable sources
+
+`ModuleCapabilitiesService/ListExecutableArtifactSources` is an internal
+module/current-parent read with the same current organization-membership
+boundary as installation identity. It selects one `installation_id` and one
+`policy_id`; tenant, owner, audience, target and binding are derived and checked
+at the host. The policy must belong to the independently authenticated module
+and remain in its effective installed ceiling. No activation or execution
+permission is required to observe this metadata.
+
+Success returns the exact installation/tenant/target/binding, policy ID and the
+complete matching source set, sorted without preference. A valid policy with
+no mapping to that current binding returns an empty set. Hidden/missing policy
+or installation refuses uniformly; an authority-store failure is unavailable,
+never an empty authoritative result. A closed target, revoked installation,
+lost membership or narrowed policy affects the next lookup. A replacement
+binding taking the same route alias inherits no source mappings.
+
+This observation creates no grant, approval, credential, content access or
+activation and is no durable liveness proof or publisher attestation. The
+consumer explicitly selects/checks a permitted source and retains its own
+action and visibility checks. It never picks the first source or uses this
+result instead of fresh exact executable authorization. The parent is read
+back, not consumed or extended. No full envelope or foreign bindings are exposed.
+
+The signed public transport regression is
+`TestExecutableArtifactSourcesServedCurrentPolicySet` in Accounts adapters.
+It uses controlled owner storage/revision fixtures; it is not composed or
+deployed consumer qualification. Public Go SDK adoption and the consuming
+authoring journey remain separate requirements.
 
 ## Readiness: whether an installation will work
 

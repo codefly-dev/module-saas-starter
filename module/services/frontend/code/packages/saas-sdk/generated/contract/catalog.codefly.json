@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:373a8f3a22b7968c36dd9faffb9be5ef64213b1de2a532f5e567007bd65caaa7",
+      "digest": "sha256:2e6fb9a4e52b2d5f55d8e4174b6dcb9550f9802ecca5fec216b0eeed4e827570",
       "services": [
         {
           "name": "APIKeyService",
@@ -249,6 +249,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ListExecutableArtifactSources",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",

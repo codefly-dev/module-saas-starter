@@ -36,6 +36,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ModuleCapabilitiesServiceListExecutableArtifactSourcesProcedure is the fully-qualified name of
+	// the ModuleCapabilitiesService's ListExecutableArtifactSources RPC.
+	ModuleCapabilitiesServiceListExecutableArtifactSourcesProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ListExecutableArtifactSources"
 	// ModuleCapabilitiesServiceGetCurrentInstallationProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's GetCurrentInstallation RPC.
 	ModuleCapabilitiesServiceGetCurrentInstallationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation"
@@ -140,6 +143,12 @@ const (
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
 // service.
 type ModuleCapabilitiesServiceClient interface {
+	// Organization-member metadata under independent module/current-parent proof.
+	// Observes the complete matching source set from one effective installed
+	// policy and exact live installation binding. Hidden/missing state refuses
+	// uniformly; authority outages never become empty sets. No approval, grant,
+	// token, content access or lasting authority is created. Recheck at each use.
+	ListExecutableArtifactSources(context.Context, *connect.Request[v1.ModuleExecutableArtifactSourcesRequest]) (*connect.Response[v1.ModuleExecutableArtifactSourcesResponse], error)
 	// Organization-member metadata read, not executable consent or a durable
 	// liveness proof. Returns only a currently active, non-revoked installation.
 	GetCurrentInstallation(context.Context, *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error)
@@ -282,6 +291,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 	baseURL = strings.TrimRight(baseURL, "/")
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
 	return &moduleCapabilitiesServiceClient{
+		listExecutableArtifactSources: connect.NewClient[v1.ModuleExecutableArtifactSourcesRequest, v1.ModuleExecutableArtifactSourcesResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceListExecutableArtifactSourcesProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListExecutableArtifactSources")),
+			connect.WithClientOptions(opts...),
+		),
 		getCurrentInstallation: connect.NewClient[v1.ModuleCurrentInstallationRequest, v1.ModuleCurrentInstallationResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceGetCurrentInstallationProcedure,
@@ -485,6 +500,7 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
+	listExecutableArtifactSources      *connect.Client[v1.ModuleExecutableArtifactSourcesRequest, v1.ModuleExecutableArtifactSourcesResponse]
 	getCurrentInstallation             *connect.Client[v1.ModuleCurrentInstallationRequest, v1.ModuleCurrentInstallationResponse]
 	approveExecutableArtifact          *connect.Client[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
 	authorizeExecutableArtifact        *connect.Client[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
@@ -518,6 +534,12 @@ type moduleCapabilitiesServiceClient struct {
 	listSubscriptions                  *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
 	replayEvents                       *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
 	resolveWorkContextAuthority        *connect.Client[v1.ModuleResolveWorkContextAuthorityRequest, v1.ModuleResolveWorkContextAuthorityResponse]
+}
+
+// ListExecutableArtifactSources calls
+// saas.accounts.v1.ModuleCapabilitiesService.ListExecutableArtifactSources.
+func (c *moduleCapabilitiesServiceClient) ListExecutableArtifactSources(ctx context.Context, req *connect.Request[v1.ModuleExecutableArtifactSourcesRequest]) (*connect.Response[v1.ModuleExecutableArtifactSourcesResponse], error) {
+	return c.listExecutableArtifactSources.CallUnary(ctx, req)
 }
 
 // GetCurrentInstallation calls saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation.
@@ -700,6 +722,12 @@ func (c *moduleCapabilitiesServiceClient) ResolveWorkContextAuthority(ctx contex
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
+	// Organization-member metadata under independent module/current-parent proof.
+	// Observes the complete matching source set from one effective installed
+	// policy and exact live installation binding. Hidden/missing state refuses
+	// uniformly; authority outages never become empty sets. No approval, grant,
+	// token, content access or lasting authority is created. Recheck at each use.
+	ListExecutableArtifactSources(context.Context, *connect.Request[v1.ModuleExecutableArtifactSourcesRequest]) (*connect.Response[v1.ModuleExecutableArtifactSourcesResponse], error)
 	// Organization-member metadata read, not executable consent or a durable
 	// liveness proof. Returns only a currently active, non-revoked installation.
 	GetCurrentInstallation(context.Context, *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error)
@@ -838,6 +866,12 @@ type ModuleCapabilitiesServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
+	moduleCapabilitiesServiceListExecutableArtifactSourcesHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceListExecutableArtifactSourcesProcedure,
+		svc.ListExecutableArtifactSources,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListExecutableArtifactSources")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceGetCurrentInstallationHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceGetCurrentInstallationProcedure,
 		svc.GetCurrentInstallation,
@@ -1038,6 +1072,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ModuleCapabilitiesServiceListExecutableArtifactSourcesProcedure:
+			moduleCapabilitiesServiceListExecutableArtifactSourcesHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceGetCurrentInstallationProcedure:
 			moduleCapabilitiesServiceGetCurrentInstallationHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceApproveExecutableArtifactProcedure:
@@ -1112,6 +1148,10 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 
 // UnimplementedModuleCapabilitiesServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedModuleCapabilitiesServiceHandler struct{}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ListExecutableArtifactSources(context.Context, *connect.Request[v1.ModuleExecutableArtifactSourcesRequest]) (*connect.Response[v1.ModuleExecutableArtifactSourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ListExecutableArtifactSources is not implemented"))
+}
 
 func (UnimplementedModuleCapabilitiesServiceHandler) GetCurrentInstallation(context.Context, *connect.Request[v1.ModuleCurrentInstallationRequest]) (*connect.Response[v1.ModuleCurrentInstallationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation is not implemented"))

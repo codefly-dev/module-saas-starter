@@ -205,14 +205,12 @@ test("canonicalScanRoot widens to the repository root only in canonical", () => 
   rmSync(consumer, { recursive: true, force: true });
 });
 
-test("a file too large to scan is reported, never skipped silently", () => {
-  const big = "clean line\n".repeat(60000); // comfortably over the 512 KiB cap
-  assert.match(joined({ "big.md": big }), /big\.md: too large to scan/);
-  // The allowlist is the escape hatch the message names, so it must actually silence it.
-  assert.deepEqual(
-    run({ "big.md": big }, { allowlist: [{ path: "big.md", reason: "generated", ticket: "#1" }] }),
-    [],
-  );
+test("large generated text is scanned completely without an exemption", () => {
+  const padding = " ".repeat(600000); // beyond the former 512 KiB ceiling
+  assert.deepEqual(run({ "catalog.json": `${padding}\n{"description":"Example module"}` }), []);
+  const out = joined({ "catalog.json": `${padding}\nZorpco\nNorth Star\nMutual` });
+  assert.match(out, /catalog\.json:2: forbidden name \(Zorpco\)/);
+  assert.match(out, /catalog\.json:3: forbidden name \(North Star Mutual\)/);
 });
 
 // The gate says it judges tracked content, and in a work tree it does: an untracked file and a
