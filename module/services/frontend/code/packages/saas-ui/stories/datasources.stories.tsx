@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import {
+	ApiSourceCard,
 	ConnectGitHubForm,
 	type DatasourceClient,
 	DatasourcesPanel,
@@ -334,4 +335,81 @@ export const DeclaredSourceConnected = {
 };
 export const DeclaredSourceError = {
 	render: () => <DeclaredPreview state="error" />,
+};
+const apiSource: DatasourceView = {
+	id: "example-api-source",
+	orgId: "example-org",
+	provider: "api",
+	repo: "",
+	paths: [],
+	branch: "",
+	boundaryNodeId: "example-boundary",
+	webhookConfigured: false,
+	status: "active",
+	lastSyncedAt: undefined,
+	createdAt: undefined,
+	api: {
+		baseUrl: "https://api.example.com",
+		resourcePath: "",
+		credentialKind: "oauth2",
+		oauth2Grant: "authorization_code",
+	},
+};
+function ApiSourcePreview({
+	state,
+}: {
+	state: "setup" | "signin" | "connected";
+}) {
+	const [queryClient] = useState(
+		() => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+	);
+	const [client] = useState<DatasourceClient>(() => ({
+		listSources: async () => (state === "setup" ? [] : [apiSource]),
+		listMyAccountLinks: async () =>
+			state === "connected"
+				? [
+						{
+							id: "example-link",
+							userId: "example-user",
+							connector: "api",
+							providerAccountId: `source:${apiSource.id}`,
+							providerAccountLogin: "Connected API",
+						},
+					]
+				: [],
+		addPersonalApiSource: async () => {
+			throw new Error("Connection is unavailable in this preview.");
+		},
+		beginAccountLink: async () => {
+			throw new Error("Sign-in is unavailable in this preview.");
+		},
+		addGitHubSource: async () => {
+			throw new Error("Connection is unavailable in this preview.");
+		},
+		reconcileSource: async () => {
+			throw new Error("Synchronization is unavailable in this preview.");
+		},
+		lookupReconcileSource: async () => undefined,
+		deleteSource: async () => {
+			throw new Error("Deletion is unavailable in this preview.");
+		},
+	}));
+	return (
+		<QueryClientProvider client={queryClient}>
+			<ApiSourceCard
+				client={client}
+				orgId="example-org"
+				api={{ baseUrl: "https://api.example.com", name: "Example API" }}
+			/>
+		</QueryClientProvider>
+	);
+}
+export const ApiSourceSetUp = {
+	render: () => <ApiSourcePreview state="setup" />,
+};
+export const ApiSourceSignInNeeded = {
+	render: () => <ApiSourcePreview state="signin" />,
+};
+export const ApiSourceConnected = {
+	render: () => <ApiSourcePreview state="connected" />,
 };
