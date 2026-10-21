@@ -7,7 +7,6 @@ import {
 } from "./reconcile-passes.js";
 import type {
 	ConnectGitHubInput,
-	ConnectObjectStorageInput,
 	DatasourceClient,
 	EditSourceInput,
 	SourceReconcileReceipt,
@@ -51,21 +50,6 @@ export function useDatasourceCatalog(client: DatasourceClient) {
 		enabled: !!getCatalog,
 		retry: false,
 		staleTime: Number.POSITIVE_INFINITY,
-	});
-}
-
-export function useAddObjectStorageSource(client: DatasourceClient) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: (input: ConnectObjectStorageInput) =>
-			client.addObjectStorageSource!(input),
-		onSuccess: (_result, input) => {
-			queryClient.invalidateQueries({ queryKey: sourcesKey(input.orgId) });
-			queryClient.invalidateQueries({
-				queryKey: ["collection-access", input.orgId],
-			});
-			queryClient.invalidateQueries({ queryKey: scopesKey(input.orgId) });
-		},
 	});
 }
 

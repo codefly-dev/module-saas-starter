@@ -39,7 +39,6 @@ import {
 } from "../solution/viewer.js";
 import { CollectionGrants } from "./collection-access.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
-import { ConnectObjectStorageForm } from "./connect-object-storage-form.js";
 import { EditSourceForm } from "./edit-source-form.js";
 import { messageOf } from "./errors.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
@@ -47,7 +46,6 @@ import { readAppSetupReturn, scrubAppSetupReturn } from "./github-app-setup.js";
 import {
 	useAccessibleScopes,
 	useAddGitHubSource,
-	useAddObjectStorageSource,
 	useDatasourceCatalog,
 	useDeleteSource,
 	useListSources,
@@ -55,11 +53,7 @@ import {
 	useUpdateSource,
 } from "./queries.js";
 import type { AdmittedReconcilePass } from "./reconcile-passes.js";
-import type {
-	ConnectGitHubValues,
-	ConnectObjectStorageValues,
-	EditSourceValues,
-} from "./schema.js";
+import type { ConnectGitHubValues, EditSourceValues } from "./schema.js";
 import { SourceSyncProgress, useSourceSync } from "./sync-progress.js";
 import type {
 	AccessibleScopeView,
@@ -334,13 +328,11 @@ function DatasourcesPanelView({
 				)
 			: undefined;
 	const addMutation = useAddGitHubSource(client);
-	const addObjectStorageMutation = useAddObjectStorageSource(client);
-	const [connectingObjectStorage, setConnectingObjectStorage] = useState(false);
 	// The catalog decides what is offered: a provider that accepts new sources
 	// gets its connect form, if this kit has one, and every other provider is
-	// named with the host's reason it takes none. A client that does not read the
-	// catalog — or whose read failed — offers GitHub alone, as before the catalog
-	// was read; the host refuses a provider it does not admit either way.
+	// named with the host's reason it takes none. A client that does not read
+	// the catalog — or whose read failed — offers GitHub alone, as before the
+	// catalog was read; the host refuses a provider it does not admit either way.
 	const catalog = useDatasourceCatalog(client);
 	const accepts = (connector: string) =>
 		!!catalog.data?.some(
@@ -348,37 +340,9 @@ function DatasourcesPanelView({
 				provider.connector === connector && provider.acceptsNewSources,
 		);
 	const offerGitHub = catalog.isSuccess ? accepts("github") : true;
-	const offerObjectStorage =
-		catalog.isSuccess && accepts("upload") && !!client.addObjectStorageSource;
 	const refusedProviders = catalog.isSuccess
 		? catalog.data.filter((provider) => !provider.acceptsNewSources)
 		: [];
-
-	const handleConnectObjectStorage = (values: ConnectObjectStorageValues) => {
-		addObjectStorageMutation.mutate(
-			{
-				orgId,
-				endpoint: values.endpoint,
-				region: values.region,
-				bucket: values.bucket,
-				prefix: values.prefix,
-				accessKeyId: values.accessKeyId,
-				secretAccessKey: values.secretAccessKey,
-				targetCollection: values.targetCollection,
-				boundaryNodeId: values.boundaryNodeId || undefined,
-			},
-			{
-				onSuccess: () => {
-					setConnectingObjectStorage(false);
-					setJustConnected({
-						repo: `${values.bucket}/${values.prefix}`,
-						nodeId: values.boundaryNodeId || undefined,
-						label: values.targetCollection,
-					});
-				},
-			},
-		);
-	};
 	const reconcileMutation = useReconcileSource(client);
 	const deleteMutation = useDeleteSource(client);
 	const updateMutation = useUpdateSource(client);
@@ -651,23 +615,10 @@ function DatasourcesPanelView({
 							Repositories this organization ingests from.
 						</p>
 					</div>
-					{canManage && (offerGitHub || offerObjectStorage) && (
-						<div className="flex shrink-0 gap-2">
-							{offerGitHub && (
-								<Button type="button" onClick={() => setShowConnect(true)}>
-									Connect GitHub
-								</Button>
-							)}
-							{offerObjectStorage && (
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => setConnectingObjectStorage(true)}
-								>
-									Connect object storage
-								</Button>
-							)}
-						</div>
+					{canManage && offerGitHub && (
+						<Button type="button" onClick={() => setShowConnect(true)}>
+							Connect GitHub
+						</Button>
 					)}
 				</div>
 				{canManage && refusedProviders.length > 0 && (
@@ -1014,25 +965,6 @@ function DatasourcesPanelView({
 					isPending={updateMutation.isPending}
 					errorMessage={
 						updateMutation.isError ? messageOf(updateMutation.error) : undefined
-					}
-				/>
-			)}
-			{canManage && connectingObjectStorage && (
-				<ConnectObjectStorageForm
-					collections={collections.isError ? [] : collections.data}
-					readableNodeIds={
-						scopes.isSuccess && !scopes.isError
-							? [...boundaries.keys()]
-							: undefined
-					}
-					collectionError={collections.isError}
-					onSubmit={handleConnectObjectStorage}
-					onCancel={() => setConnectingObjectStorage(false)}
-					isPending={addObjectStorageMutation.isPending}
-					errorMessage={
-						addObjectStorageMutation.isError
-							? messageOf(addObjectStorageMutation.error)
-							: undefined
 					}
 				/>
 			)}

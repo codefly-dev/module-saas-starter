@@ -270,19 +270,14 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   conformance fields flags nothing.
   What the panel offers to connect is the host's connector catalog
   (`GetDatasourceCatalog`, read through the client's optional `getCatalog`): a
-  provider whose `accepts_new_sources` is true gets its connect action — **Connect
-  GitHub**, and **Connect object storage** when the client also implements
-  `addObjectStorageSource` — and every provider that takes no new source is
+  provider whose `accepts_new_sources` is true gets its connect action (today
+  **Connect GitHub**; object storage's form joins once the host admits it) — and every provider that takes no new source is
   named under the header with the host's gap sentence (and, for a provider that
   still accepts operations, that those can be connected). An empty catalog offers
   nothing, because that is the host admitting nothing. A client without
   `getCatalog`, or whose catalog read failed, offers **Connect GitHub** alone, as
   before the catalog was read; the host refuses a provider it does not admit
   either way.
-- `<ConnectObjectStorageForm onSubmit={…} … />` — endpoint (https only), region,
-  bucket, prefix, access key id, the secret access key the host encrypts at
-  receipt, and the target collection. It says what a bucket cannot: every object
-  is readable by whoever reads the collection, so one prefix per audience.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, webhook secret, and an access token only on the PAT path).
   Its Authentication choice always offers **Public repository (no token)**: the
@@ -401,7 +396,7 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   phase names and getting the terminal cases wrong. `<SourceSyncProgress source
   report />` is the card, and `useSourceSync(client, orgId, source)` the read.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
-  `useAddObjectStorageSource`, `useDatasourceCatalog`, `useUpdateSource`,
+  `useDatasourceCatalog`, `useUpdateSource`,
   `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`, `useMyAccountLinks`.
 - `<EditSourceForm source onSubmit … />`, behind the row's **Edit**, changes
   what a connected source fetches: its branch and its path and file-type

@@ -189,17 +189,6 @@ describe("createDatasourceClient", () => {
 				}),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
 			getCatalog: () => client.getCatalog!(),
-			addObjectStorageSource: () =>
-				client.addObjectStorageSource!({
-					orgId: "org-1",
-					endpoint: "https://store.example.com",
-					region: "us-east-1",
-					bucket: "acme-docs",
-					prefix: "kb/",
-					accessKeyId: "AKIAEXAMPLE",
-					secretAccessKey: "secret",
-					targetCollection: "Example",
-				}),
 			// The stub answers {} to everything; an operation whose answer must
 			// carry a record rejects on it, after the call this test counts.
 			beginAccountLink: () =>

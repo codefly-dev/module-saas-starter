@@ -1775,7 +1775,6 @@ describe("DatasourcesPanel connector catalog", () => {
 	it("offers what the catalog accepts and names the rest with the host's reason", async () => {
 		const client = fakeClient({
 			getCatalog: vi.fn(async () => [github, objectStorage, api]),
-			addObjectStorageSource: vi.fn(async () => {}),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
@@ -1790,9 +1789,6 @@ describe("DatasourcesPanel connector catalog", () => {
 			"HTTP API takes no new sources to sync yet: one untyped response. Its operations can still be connected.",
 		]);
 		expect(screen.getByRole("button", { name: "Connect GitHub" })).toBeTruthy();
-		expect(
-			screen.queryByRole("button", { name: "Connect object storage" }),
-		).toBeNull();
 	});
 
 	it("withholds GitHub when the catalog does not admit it", async () => {
@@ -1805,72 +1801,5 @@ describe("DatasourcesPanel connector catalog", () => {
 
 		await screen.findByText(/GitHub takes no new sources to sync yet/);
 		expect(screen.queryByRole("button", { name: "Connect GitHub" })).toBeNull();
-	});
-
-	it("connects a bucket the catalog admits, with its key as the credential", async () => {
-		const addObjectStorageSource = vi.fn(async () => {});
-		const client = fakeClient({
-			getCatalog: vi.fn(async () => [
-				github,
-				{ ...objectStorage, acceptsNewSources: true, gap: "" },
-			]),
-			addObjectStorageSource,
-		});
-		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Connect object storage" }),
-		);
-		const fill = (label: string, value: string) =>
-			fireEvent.change(screen.getByLabelText(label), { target: { value } });
-		fill("Endpoint", "https://store.example.com");
-		fill("Region", "us-east-1");
-		fill("Bucket", "acme-docs");
-		fill("Prefix (optional)", "handbook/");
-		fill("Access key ID", "AKIAEXAMPLE");
-		fill("Secret access key", "example-secret");
-		fill("Target collection", "Handbook");
-		fireEvent.click(screen.getByRole("button", { name: "Connect bucket" }));
-
-		await waitFor(() =>
-			expect(addObjectStorageSource).toHaveBeenCalledWith({
-				orgId: "org-1",
-				endpoint: "https://store.example.com",
-				region: "us-east-1",
-				bucket: "acme-docs",
-				prefix: "handbook/",
-				accessKeyId: "AKIAEXAMPLE",
-				secretAccessKey: "example-secret",
-				targetCollection: "Handbook",
-				boundaryNodeId: undefined,
-			}),
-		);
-		await waitFor(() =>
-			expect(
-				screen.queryByRole("dialog", { name: "Connect object storage" }),
-			).toBeNull(),
-		);
-	});
-
-	it("refuses a store that is not https before asking the host", async () => {
-		const addObjectStorageSource = vi.fn(async () => {});
-		const client = fakeClient({
-			getCatalog: vi.fn(async () => [
-				{ ...objectStorage, acceptsNewSources: true, gap: "" },
-			]),
-			addObjectStorageSource,
-		});
-		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Connect object storage" }),
-		);
-		fireEvent.change(screen.getByLabelText("Endpoint"), {
-			target: { value: "http://store.example.com" },
-		});
-		fireEvent.click(screen.getByRole("button", { name: "Connect bucket" }));
-
-		expect(await screen.findByText("Use the store's https URL")).toBeTruthy();
-		expect(addObjectStorageSource).not.toHaveBeenCalled();
 	});
 });

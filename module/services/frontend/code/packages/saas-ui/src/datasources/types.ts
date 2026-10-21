@@ -203,22 +203,6 @@ export interface ConnectGitHubInput {
 }
 
 /**
- * An object-storage source, ready for `addObjectStorageSource`: a bucket and a
- * key prefix in a store, and the access key the host encrypts at receipt.
- */
-export interface ConnectObjectStorageInput {
-	orgId: string;
-	endpoint: string;
-	region: string;
-	bucket: string;
-	prefix: string;
-	accessKeyId: string;
-	secretAccessKey: string;
-	targetCollection: string;
-	boundaryNodeId?: string;
-}
-
-/**
  * One provider of the host's connector catalog (`GetDatasourceCatalog`). A
  * surface offers a provider whose `acceptsNewSources` is true and flags the
  * rest with their `gap`, which is the host's sentence for why it takes none.
@@ -460,8 +444,6 @@ export interface DatasourceClient {
 	 * GitHub alone, as it did before the catalog was read.
 	 */
 	getCatalog?(): Promise<DatasourceProviderView[]>;
-	/** Connects an object-storage source. Optional, like the catalog. */
-	addObjectStorageSource?(input: ConnectObjectStorageInput): Promise<void>;
 	/**
 	 * Creates the caller's own `api` source with the OAuth 2.0
 	 * authorization-code grant (`API_CREDENTIAL_KIND_OAUTH2` +

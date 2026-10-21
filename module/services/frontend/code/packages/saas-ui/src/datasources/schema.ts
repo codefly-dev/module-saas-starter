@@ -92,30 +92,3 @@ export const connectGitHubSchema = z
 	});
 
 export type ConnectGitHubValues = z.infer<typeof connectGitHubSchema>;
-
-export const connectObjectStorageSchema = z.object({
-	endpoint: z
-		.string()
-		.max(2048, "Endpoint too long")
-		.regex(/^https:\/\/[^\s/]+/, "Use the store's https URL"),
-	region: z.string().min(1, "Region is required").max(64, "Region too long"),
-	bucket: z.string().min(1, "Bucket is required").max(255, "Bucket too long"),
-	prefix: z.string().max(1024, "Prefix too long"),
-	accessKeyId: z
-		.string()
-		.min(1, "Access key ID is required")
-		.max(256, "Access key ID too long"),
-	secretAccessKey: z
-		.string()
-		.min(1, "Secret access key is required")
-		.max(4096, "Secret access key too long"),
-	boundaryNodeId: z.string().optional(),
-	targetCollection: z
-		.string()
-		.min(1, "Target collection is required")
-		.max(255, "Target collection too long"),
-});
-
-export type ConnectObjectStorageValues = z.infer<
-	typeof connectObjectStorageSchema
->;
