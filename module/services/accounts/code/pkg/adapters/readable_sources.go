@@ -70,8 +70,17 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 		return &gen.ListReadableSourceCollectionsResponse{}, nil
 	}
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, claims.GetOwnerPrincipalId(), claims.GetTenantId())
+	installedRead := business.NamesInstalledContentRead(claims.GetOperationBinding().GetBindingId())
+	if installedRead {
+		if err := authority.requireInstalledContentRead(ctx, claims); err != nil {
+			return nil, err
+		}
+	}
 	subjects := []string{claims.GetOwnerPrincipalId()}
 	for _, actor := range claims.GetActorChain() {
+		if installedRead {
+			continue
+		}
 		subjects = append(subjects, actor.GetPrincipalId())
 	}
 	// The capability's own sealed scopes decide which collection details this
