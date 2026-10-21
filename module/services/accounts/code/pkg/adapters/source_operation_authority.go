@@ -33,6 +33,7 @@ type sourceOperationDelegationKey struct{}
 func sourceOperationProcedure(method string) bool {
 	switch method {
 	case business.SourceOperationMethod,
+		"/saas.accounts.v1.DatasourceService/ListSourceOperations",
 		"/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
 		business.SourceReceiptRetentionMethod,
 		"/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts",

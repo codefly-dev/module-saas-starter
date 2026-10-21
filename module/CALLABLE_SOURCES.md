@@ -17,6 +17,18 @@ Released CLI v0.1.185 uses it to derive packages only on Connect. Discovery
 projects individual declaration schemas/effects/digests over this one binding.
 The caller never chooses a destination, HTTP header, credential or method.
 
+`ListSourceOperations` reads the current declarations through the same Connect
+endpoint. Interactive readers retain the membership and source-boundary gates.
+A Work Context reader presents an idempotent `saas-datasource` capability with
+an explicit `datasource.sources:read` scope naming the requested source. The
+host verifies the capability and current authority on every request, then checks
+its tenant, exact source scope, any borrowed-source delegation, membership,
+personal ownership and source-boundary read permission before reading declarations.
+An invoke-only scope or an unconstrained source kind cannot list declarations.
+The result includes each declaration's schemas, effect, bound and canonical digest;
+it grants no invocation authority and is not itself a model-facing tool projection.
+Consumers must freeze the admitted declaration and separately authorize execution.
+
 Invoke takes `org_id`, `source_id`, `operation`, `input_json`, and `effect_id`.
 `input_json` is a string containing exactly one JSON object. The complete
 protojson request (proto field names, unpopulated fields included) is limited to
