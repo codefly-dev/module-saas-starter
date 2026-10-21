@@ -85,14 +85,15 @@ which is only for older CLIs and reuses fixed local database directories across
 otherwise independent runs and migration revisions.
 
 Core is pinned per Go module. Accounts and auth-gateway currently select
-candidate presence/delivery revisions for the lifecycle PR; the gateway also
-selects the SDK candidate providing `ResolveDeliveredNetworkInstance`.
+candidate presence/delivery revisions for the lifecycle PR. Released SDK
+v0.4.1 includes the lifecycle APIs and owns tracing startup and shutdown.
 Their `go.mod` files are the exact source pins. The other services and tools
 retain their own released pins. These are development candidates, not release
 qualification: never ship a host release on an untagged pseudo-version.
 Run qualification with `GOWORK=off` so a workspace cannot mask the pins.
-Accounts requires Go 1.27.2. All go-grpc services pin released agent 0.1.54,
-whose builder uses Go 1.27.2 under `GOTOOLCHAIN=local`; CI uses the same patch.
+Accounts requires Go 1.27.2. All go-grpc services pin released agent 0.1.58,
+whose builder uses Go 1.27.3 under `GOTOOLCHAIN=local`; CI uses the same patch.
+Go 1.27.3 also fixes GO-2026-6809.
 Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613).
 A source audit under a newer compiler does not qualify the compiler used in the
 image: move the owning agent and image contract together, regenerate the recipe,
@@ -112,7 +113,8 @@ release for development qualification. The installer refuses release tags
 while the source candidate is selected. Restore a qualified released pin
 before publishing the host.
 
-Outside the gateway's delivery candidate, services use released SDK v0.4.0.
+Accounts and auth-gateway use released SDK v0.4.1; other services retain their
+own released pins.
 Their listeners resolve allocated
 endpoints through `ResolveNetworkInstance`, which selects the delivered or local
 endpoint from the runtime environment; the removed `WithDefaultNetwork` switch

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/codefly-dev/core/resources"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,7 +32,7 @@ func TestTopologyRefusesAuthoredConsumersByKeyPresence(t *testing.T) {
 			document := []byte("visibility: internal\n" + key + ": " + value + "\n")
 			for _, endpoint := range []any{&topologyManifestEndpoint{}, &topologyInterface{}} {
 				err := yaml.Unmarshal(document, endpoint)
-				if err == nil || !strings.Contains(err.Error(), "derived from consumers") {
+				if !errors.Is(err, resources.ErrInvalidEndpointDeclaration) {
 					t.Fatalf("%T %s=%s: %v", endpoint, key, value, err)
 				}
 			}

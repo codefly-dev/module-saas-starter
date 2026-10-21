@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
+	"github.com/codefly-dev/core/resources"
 	"github.com/codefly-dev/core/standards"
 	"gopkg.in/yaml.v3"
 )
@@ -351,39 +351,11 @@ func standardAllocation(name, api string, endpoints []manifestEndpoint) (uint32,
 	return port, true
 }
 
-func (endpoint *manifestEndpoint) UnmarshalYAML(node *yaml.Node) error {
-	if err := refuseAuthoredConsumers(node); err != nil {
-		return err
-	}
-	type plain manifestEndpoint
-	return node.Decode((*plain)(endpoint))
-}
-
 func (endpoint *deploymentInterfaceBinding) UnmarshalYAML(node *yaml.Node) error {
-	if err := refuseAuthoredConsumers(node); err != nil {
+	var declaration resources.InterfaceEndpoint
+	if err := node.Decode(&declaration); err != nil {
 		return err
 	}
-	type plain deploymentInterfaceBinding
-	return node.Decode((*plain)(endpoint))
-}
-
-// Judge key presence before decoding: null and alternate spellings cannot
-// silently erase a forbidden grant. This matches Core's declaration boundary.
-func refuseAuthoredConsumers(node *yaml.Node) error {
-	if node.Kind != yaml.MappingNode {
-		return nil
-	}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		key := node.Content[i].Value
-		var canonical strings.Builder
-		for _, r := range strings.ToLower(key) {
-			if r >= 'a' && r <= 'z' {
-				canonical.WriteRune(r)
-			}
-		}
-		if canonical.String() == "allowmodules" {
-			return fmt.Errorf("authors %q: endpoint access is derived from consumers' declared dependencies", key)
-		}
-	}
+	endpoint.Service, endpoint.Endpoint, endpoint.Visibility = declaration.Service, declaration.Endpoint, declaration.Visibility
 	return nil
 }

@@ -756,27 +756,30 @@ Environment variables consumed by the api:
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
-When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, the accounts service and the
-auth-gateway export traces and unsampled request and Go runtime metrics over
-OTLP/gRPC to the collector it names. The auth-gateway covers both its HTTP gateway
-and gRPC ext_authz authorization service. That variable is the whole contract:
-core's `wool/otel` reads it, tells a URL from a `host:port`, takes the transport
-from the scheme, and refuses a URL with no port or with credentials, and the
-metrics exporter reads it from the same environment. When it is unset the services
-export nothing over OTLP and start normally: no state, reason or protocol is
-delivered or read, and a process that is given no collector does not fail to
-start. A local runtime, meaning the Codefly environment named `local` and no
-other, then uses wool's stdout tracer for traces; `local-dogfood` is not that
-runtime, so it exports no traces either. The endpoint decides, not where the
-process runs: a collector delivered to a pod in an environment named `local` is
-exported to. A value the metrics exporter cannot read (anything but an `http://`
-or `https://` URL, which would otherwise make it dial `localhost:4317` in
-silence) stops the service at startup.
-Metrics leave by OTLP push alone — decided 2026-10-06, because the cell's
-collector is the record for traces and metrics take the same path — so neither
-service serves a scrape endpoint. `service.name` comes from `OTEL_SERVICE_NAME` or
-`OTEL_RESOURCE_ATTRIBUTES` when the platform sets it, else the service's own
-Codefly identity (`module/service`, the one wool puts on its log lines).
+The SDK's `Init` enables tracing when `OTEL_EXPORTER_OTLP_ENDPOINT` is
+present, and `ShutdownTelemetry` flushes traces on service shutdown. Services
+with no endpoint export nothing, including native `local` runs. Invalid exporter
+configuration is logged without stopping the service. Accounts and auth-gateway
+also install an OTLP metrics provider for unsampled request and Go runtime
+metrics; no scrape endpoint is served.
+
+Delivery uses OpenTelemetry process variables, not a module configuration group.
+The platform can deliver scoped `service-config` values to admitted workloads;
+CLIs implementing [CLI #1097](https://github.com/codefly-dev/cli/pull/1097)
+can instead supply the standard variables to every service through the
+environment's optional `telemetry:` block. The current lifecycle CLI pin does
+not need that block for scoped `service-config` delivery. `OTEL_SERVICE_NAME`
+selects trace identity, falling back to the SDK's `module/service` identity.
+Metrics also consume `OTEL_RESOURCE_ATTRIBUTES`. Core currently forwards only
+`service.name` and `library.name` to traces, so arbitrary resource attributes
+are not yet attached to trace exports.
+
+| Build or reuse | Verified implementation | Decision |
+| --- | --- | --- |
+| Tracing lifecycle and identity | Released SDK v0.4.1 [Init / ShutdownTelemetry](https://github.com/codefly-dev/sdk-go/blob/v0.4.1/codefly.go#L66), using Core wool/otel | Reuse SDK lifecycle; remove per-service tracing bootstrap and its duplicate tests. |
+| Endpoint declaration validation | Core [Endpoint](https://github.com/codefly-dev/core/blob/v0.18.0/resources/endpoint.go#L134) / [InterfaceEndpoint](https://github.com/codefly-dev/core/blob/v0.18.0/resources/module.go#L69) YAML decoders | Reuse the Core decoders before projecting deployment fields. |
+| Metrics export and runtime instruments | OpenTelemetry OTLP metrics exporter and runtime instrumentation v0.71.0; Core/SDK provide no metrics bootstrap | Keep service wiring with the standard exporter. The services remain separate Go modules; no additional shared framework is introduced. |
+| GC activity instruments | Runtime v0.71.0 default instruments omit cycle count and cumulative GC pause CPU time; deprecated pause instruments measure wall time instead | Retain existing `go.gc.cycle.count` and `go.gc.pause.cpu_time` callbacks and their export assertions. |
 
 Frontend browser configuration. The server reads each value from its Codefly group per
 request (`identity`, `legal`, `product-features`, `product-analytics`, `error-tracking`,

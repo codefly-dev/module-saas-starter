@@ -185,7 +185,7 @@ func TestDeploymentTopologyRefusesUnrepresentableEndpointPolicies(t *testing.T) 
 		"    - name: connect\n      visibility: internal\n",
 		"    - name: connect\n      visibility: internal\n      allow-modules: [\"*\"]\n")
 	_, err = cataloggen.BuildDeploymentArtifacts(catalog, legacy)
-	require.ErrorContains(t, err, "derived from consumers", "legacy wildcard grants must refuse")
+	require.ErrorIs(t, err, resources.ErrInvalidEndpointDeclaration, "legacy wildcard grants must refuse")
 }
 
 // The manifests are the model: a deployment fact lives in the service manifest

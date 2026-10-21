@@ -34,6 +34,14 @@ func main() {
 		panic(fmt.Sprintf("codefly init failed: %v", err))
 	}
 
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := codefly.ShutdownTelemetry(shutdownCtx); err != nil {
+			log.Printf("shutdown: OTEL tracing: %v", err)
+		}
+	}()
+
 	// Refuse before anything is served: a deployed gateway holding a shipped
 	// placeholder, or a perimeter credential too short to be one, decides
 	// perimeter membership on a published value.
@@ -63,29 +71,12 @@ func main() {
 		panic(fmt.Sprintf("Codefly workload endpoint is unavailable: %v", err))
 	}
 	workloadPort := workloadNet.Port
-	// Traces and metrics go to the collector OTEL_EXPORTER_OTLP_ENDPOINT names, which
-	// the platform delivers when the cell has one this workload may reach. With none
-	// delivered the process exports nothing over OTLP; a local run's traces go to
-	// wool's own stdout tracer instead. wool/otel reads and validates the variable,
-	// so a value it refuses stops the process here with its reason.
-	otelProvider, err := enableTracing(ctx, codefly.IsLocal())
-	if err != nil {
-		panic(fmt.Sprintf("configure OTEL tracing: %v", err))
-	}
 	var otelMetricProvider *otelMetrics
 	if otlpEndpointConfigured() {
 		otelMetricProvider, err = enableOTELMetrics(ctx)
 		if err != nil {
-			if otelProvider != nil {
-				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = otelProvider.Shutdown(shutdownCtx)
-				cancel()
-			}
-			panic(fmt.Sprintf("configure OTEL metrics: %v", err))
+			log.Printf("OTEL metrics exporter could not be built; service continues without metrics export: %v", err)
 		}
-		log.Print("OTEL export enabled: traces and metrics go to the collector at " + otlpEndpointVariable)
-	} else {
-		log.Print("OTEL export disabled: " + otlpEndpointVariable + " is not set, so nothing is exported over OTLP")
 	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -93,11 +84,6 @@ func main() {
 		if otelMetricProvider != nil {
 			if err := otelMetricProvider.Shutdown(shutdownCtx); err != nil {
 				log.Printf("shutdown: OTEL metrics: %v", err)
-			}
-		}
-		if otelProvider != nil {
-			if err := otelProvider.Shutdown(shutdownCtx); err != nil {
-				log.Printf("shutdown: OTEL tracing: %v", err)
 			}
 		}
 	}()

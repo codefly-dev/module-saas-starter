@@ -23,14 +23,14 @@ codefly run service --fixture dev-admin
 - No TTY (CI, pipes, MCP) auto-enables `--headless`.
 - Docker must be running. `codefly doctor` checks prerequisites; `codefly clear`
   reaps stray processes and containers between runs.
-- A local run has no cell collector, and the module ships none. Traces and
-  metrics follow one standard variable, `OTEL_EXPORTER_OTLP_ENDPOINT`, in the
-  process environment: set it and the services export over OTLP, leave it unset
-  and they export nothing over OTLP. Only the runtime the SDK identifies as
-  `local` sends traces to wool's stdout tracer in that case; the `local-dogfood`
-  profile is not that runtime, so with no endpoint it exports no traces or
-  metrics at all. The module's `configurations/local/observability.env` names no
-  collector and nothing reads it.
+- The module ships no collector. Standard OpenTelemetry process variables
+  select export: `OTEL_EXPORTER_OTLP_ENDPOINT` names the collector, with
+  `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` supplying identity.
+  CLIs implementing [CLI #1097](https://github.com/codefly-dev/cli/pull/1097)
+  also deliver these for every service through an environment's `telemetry:`
+  block; scoped platform `service-config` delivery needs no such block.
+  Without an endpoint, SDK Init enables no tracing, including for `local`.
+  No module configuration group is required.
 
 For a real external identity provider and the production-grade provider stack,
 use the `local-dogfood` environment and its configuration groups:

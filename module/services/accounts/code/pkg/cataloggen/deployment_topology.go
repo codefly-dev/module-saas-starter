@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/codefly-dev/core/resources"
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/yaml.v3"
 
@@ -731,12 +732,7 @@ type manifestEndpointReference struct {
 	Name string `yaml:"name"`
 }
 
-type manifestEndpoint struct {
-	Name       string `yaml:"name"`
-	Visibility string `yaml:"visibility,omitempty"`
-	API        string `yaml:"api,omitempty"`
-	Location   string `yaml:"location,omitempty"`
-}
+type manifestEndpoint = resources.Endpoint
 
 func marshalGeneratedYAML(source string, value any) ([]byte, error) {
 	document, err := yaml.Marshal(value)

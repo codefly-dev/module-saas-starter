@@ -34,7 +34,6 @@ workspace-configuration-dependencies:
     - gateway
     - gateway-trust
     - internal-auth
-    - observability
     - security
 endpoints:
     - name: grpc

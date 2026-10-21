@@ -3,16 +3,18 @@ package main
 import (
 	"context"
 	"net"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/codefly-dev/core/wool"
-	"github.com/stretchr/testify/require"
+	"github.com/codefly-dev/core/resources"
+	codefly "github.com/codefly-dev/sdk-go"
 	"go.opentelemetry.io/otel"
 	collectortracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/grpc"
+
+	"github.com/codefly-dev/core/wool"
+	"github.com/stretchr/testify/require"
 )
 
 // isolateOTLPEnvironment clears every OTLP variable the exporters read, so what a
@@ -44,32 +46,6 @@ func collectorAt(t *testing.T, scheme, hostPort string) {
 	t.Setenv(otlpEndpointVariable, scheme+"://"+hostPort)
 }
 
-// shippedObservabilityProfile is what the module's own `observability` profile
-// contributes to the group, read from the file it ships.
-func shippedObservabilityProfile(t *testing.T) map[string]string {
-	t.Helper()
-	contents, err := os.ReadFile("../../../configurations/local/observability.env")
-	require.NoError(t, err)
-	values := map[string]string{}
-	for _, line := range strings.Split(string(contents), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		require.True(t, ok)
-		values[key] = value
-	}
-	return values
-}
-
-// Module defaults also reach deployed cells, so the profile names no collector:
-// the group exists (a composing workspace inherits a group from the key it
-// assigns), and the one variable it assigns is empty, which is no endpoint.
-func TestShippedObservabilityProfileNamesNoCollector(t *testing.T) {
-	require.Equal(t, map[string]string{otlpEndpointVariable: ""}, shippedObservabilityProfile(t))
-}
-
 func TestOTLPEndpointConfigured(t *testing.T) {
 	isolateOTLPEnvironment(t)
 	require.False(t, otlpEndpointConfigured(), "unset")
@@ -86,7 +62,8 @@ func TestTelemetryResourceServiceName(t *testing.T) {
 		t.Helper()
 		res, err := telemetryResource(t.Context(), identity)
 		require.NoError(t, err)
-		return telemetryServiceName(res)
+		value, _ := res.Set().Value("service.name")
+		return value.AsString()
 	}
 
 	t.Run("falls back to the Codefly service identity", func(t *testing.T) {
@@ -124,150 +101,56 @@ func TestCodeflyServiceNameIsTheSDKProviderIdentity(t *testing.T) {
 	require.Empty(t, codeflyServiceName(t.Context()), "no provider: the SDK was not initialised")
 }
 
-func restoreTracing(t *testing.T) {
-	t.Helper()
-	previous := otel.GetTracerProvider()
+// SDK Init must deliver a real span with the supplied service identity; its
+// public shutdown flushes the batch before the process exits.
+func TestSDKExportsTracesAndFlushesOnShutdown(t *testing.T) {
+	isolateOTLPEnvironment(t)
+	t.Setenv(resources.ModulePrefix, "saas-starter")
+	t.Setenv(resources.ServicePrefix, "auth-gateway")
+	t.Setenv("OTEL_SERVICE_NAME", "named-by-the-platform")
+	previousTracer := otel.GetTracerProvider()
+	previousTelemetry := wool.GetTelemetry()
 	t.Cleanup(func() {
-		wool.RegisterTelemetry(nil)
-		otel.SetTracerProvider(previous)
+		_ = codefly.ShutdownTelemetry(context.Background())
+		otel.SetTracerProvider(previousTracer)
+		wool.RegisterTelemetry(previousTelemetry)
 	})
-}
-
-// With no endpoint delivered the process registers no OTLP exporter: nothing
-// is exported, and nothing dials a default address.
-func TestEnableTracingWithoutAnEndpointRegistersNothingOutsideALocalRun(t *testing.T) {
-	restoreTracing(t)
-	isolateOTLPEnvironment(t)
-	provider, err := enableTracing(t.Context(), false)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	require.Nil(t, provider)
-	require.False(t, wool.TelemetryEnabled())
-}
-
-// A local run with no endpoint keeps wool's own stdout tracer, which exports
-// nothing over OTLP.
-func TestEnableTracingWithoutAnEndpointUsesWoolsStdoutTracerInALocalRun(t *testing.T) {
-	restoreTracing(t)
-	isolateOTLPEnvironment(t)
-	provider, err := enableTracing(t.Context(), true)
+	capture := &sdkTraceCapture{requests: make(chan *collectortracev1.ExportTraceServiceRequest, 1)}
+	server := grpc.NewServer()
+	collectortracev1.RegisterTraceServiceServer(server, capture)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	t.Setenv(otlpEndpointVariable, "http://"+listener.Addr().String())
+	_, err = codefly.Init(t.Context())
 	require.NoError(t, err)
-	require.NotNil(t, provider)
-	require.True(t, wool.TelemetryEnabled())
-	shutdown(t, provider)
-}
-
-// The endpoint decides, not where the process runs: a pod deployed into an
-// environment named `local` that is handed a collector exports to it, rather
-// than falling back to the stdout tracer.
-func TestEnableTracingExportsToTheDeliveredEndpointWhetherOrNotTheRunIsLocal(t *testing.T) {
-	for name, local := range map[string]bool{"deployed": false, "local environment": true} {
-		t.Run(name, func(t *testing.T) {
-			restoreTracing(t)
-			t.Setenv("OTEL_SERVICE_NAME", "named-by-the-platform")
-			t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "")
-			endpoint, capture := startTraceCapture(t)
-			collectorAt(t, "http", endpoint)
-			provider, err := enableTracing(t.Context(), local)
-			require.NoError(t, err)
-			require.NotNil(t, provider)
-			require.True(t, wool.TelemetryEnabled())
-
-			_, span := otel.Tracer("test").Start(t.Context(), "operation")
-			span.End()
-			shutdown(t, provider) // flushes the batch
-
-			select {
-			case request := <-capture.requests:
-				var name string
-				for _, resourceSpans := range request.GetResourceSpans() {
-					for _, attribute := range resourceSpans.GetResource().GetAttributes() {
-						if attribute.GetKey() == "service.name" {
-							name = attribute.GetValue().GetStringValue()
-						}
-					}
-				}
-				require.Equal(t, "named-by-the-platform", name)
-			case <-time.After(5 * time.Second):
-				t.Fatal("timed out waiting for OTLP spans")
+	_, span := otel.Tracer("test").Start(t.Context(), "operation")
+	span.End()
+	shutdownCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, codefly.ShutdownTelemetry(shutdownCtx))
+	select {
+	case request := <-capture.requests:
+		require.Len(t, request.ResourceSpans, 1)
+		for _, attribute := range request.ResourceSpans[0].Resource.Attributes {
+			if attribute.Key == "service.name" {
+				require.Equal(t, "named-by-the-platform", attribute.Value.GetStringValue())
+				return
 			}
-		})
+		}
+		t.Fatal("exported trace has no service.name")
+	case <-time.After(5 * time.Second):
+		t.Fatal("SDK shutdown did not deliver the span")
 	}
 }
 
-// core's wool/otel owns what an endpoint may be, and a value it refuses stops
-// the process with its reason and registers nothing — never a tracer pointed at a
-// default address.
-func TestEnableTracingReturnsWhatWoolRefusesAndRegistersNothing(t *testing.T) {
-	for name, value := range map[string]string{
-		"no port":  "http://otel-collector.otel-collector.svc.cluster.local",
-		"userinfo": "http://user:secret-pass@collector.example:4317",
-	} {
-		t.Run(name, func(t *testing.T) {
-			restoreTracing(t)
-			isolateOTLPEnvironment(t)
-			t.Setenv(otlpEndpointVariable, value)
-			provider, err := enableTracing(t.Context(), false)
-			require.Error(t, err)
-			require.NotContains(t, err.Error(), "secret-pass", "the refusal never echoes the URL")
-			require.Nil(t, provider)
-			require.False(t, wool.TelemetryEnabled())
-		})
-	}
-}
-
-// wool takes a value that is not an http:// or https:// URL for a bare
-// host:port, the shape it accepted before it read URLs, and dials it in
-// plaintext. The metrics exporter reads only a URL and, given anything else,
-// keeps its default, localhost:4317. So the tracer would accept what the
-// metrics exporter silently misreads, which is why the metrics call refuses it:
-// both signals follow the one variable, and neither is pointed at a default.
-func TestAValueWoolAcceptsAsHostPortIsRefusedByTheMetricsExporterGuard(t *testing.T) {
-	restoreTracing(t)
-	isolateOTLPEnvironment(t)
-	t.Setenv(otlpEndpointVariable, "collector.example:4317")
-
-	provider, err := enableTracing(t.Context(), false)
-	require.NoError(t, err)
-	require.NotNil(t, provider)
-	shutdown(t, provider)
-
-	metrics, err := enableOTELMetrics(t.Context())
-	require.ErrorContains(t, err, "http:// or https://")
-	require.Nil(t, metrics)
-}
-
-type traceCapture struct {
+type sdkTraceCapture struct {
 	collectortracev1.UnimplementedTraceServiceServer
 	requests chan *collectortracev1.ExportTraceServiceRequest
 }
 
-func (c *traceCapture) Export(
-	_ context.Context,
-	request *collectortracev1.ExportTraceServiceRequest,
-) (*collectortracev1.ExportTraceServiceResponse, error) {
-	c.requests <- request
+func (capture *sdkTraceCapture) Export(_ context.Context, request *collectortracev1.ExportTraceServiceRequest) (*collectortracev1.ExportTraceServiceResponse, error) {
+	capture.requests <- request
 	return &collectortracev1.ExportTraceServiceResponse{}, nil
-}
-
-// startTraceCapture serves an in-process OTLP/gRPC trace receiver on loopback.
-func startTraceCapture(t *testing.T) (string, *traceCapture) {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	capture := &traceCapture{requests: make(chan *collectortracev1.ExportTraceServiceRequest, 4)}
-	server := grpc.NewServer()
-	collectortracev1.RegisterTraceServiceServer(server, capture)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	return listener.Addr().String(), capture
-}
-
-func shutdown(t *testing.T, provider interface{ Shutdown(context.Context) error }) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	require.NoError(t, provider.Shutdown(ctx))
 }

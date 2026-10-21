@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"strings"
 
 	"github.com/codefly-dev/core/wool"
-	wooltel "github.com/codefly-dev/core/wool/otel"
 	codefly "github.com/codefly-dev/sdk-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -34,34 +32,10 @@ func otlpEndpointConfigured() bool {
 	return strings.TrimSpace(os.Getenv(otlpEndpointVariable)) != ""
 }
 
-// enableTracing registers wool's tracer: OTLP/gRPC to the collector when the
-// environment names one, with wool's own stdout tracer in its place on a local
-// run that names none, and no tracer at all otherwise. A nil provider means
-// nothing was registered.
-//
-// wool/otel owns the endpoint: it reads the variable, so a value it refuses (no
-// scheme, no port, credentials in the URL) is returned as its error and nothing is
-// registered.
-func enableTracing(ctx context.Context, local bool) (*wooltel.Provider, error) {
-	configured := otlpEndpointConfigured()
-	if !configured && !local {
-		return nil, nil
-	}
-	res, err := currentTelemetryResource(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve telemetry resource: %w", err)
-	}
-	options := []wooltel.Option{wooltel.WithServiceName(telemetryServiceName(res))}
-	if !configured {
-		options = append(options, wooltel.WithStdout())
-	}
-	return wooltel.Enable(options...)
-}
-
 // requireMetricsEndpoint refuses what the metrics exporter cannot read. It reads
 // the variable only as an http:// or https:// URL, and on anything else keeps its
 // default and dials localhost:4317 without saying so, so a value of another shape
-// (wool still accepts a bare host:port for traces) stops the process here.
+// is rejected here instead of creating a metrics exporter at a default address.
 func requireMetricsEndpoint() error {
 	if !otlpEndpointConfigured() {
 		return errors.New("no " + otlpEndpointVariable + " to export metrics to")
@@ -73,7 +47,7 @@ func requireMetricsEndpoint() error {
 	return nil
 }
 
-// telemetryResource is the one resource both signals carry. service.name is
+// telemetryResource builds the metrics resource. service.name is
 // whatever the environment says — OTEL_SERVICE_NAME, or service.name in
 // OTEL_RESOURCE_ATTRIBUTES — and otherwise the service identity the Codefly SDK
 // holds. No name is typed here: a literal would override the environment, so the
@@ -110,12 +84,4 @@ func codeflyServiceName(ctx context.Context) string {
 	}
 	// An identity with no module reads `/service`; with neither, `/`.
 	return strings.Trim(strings.TrimSpace(source.Unique), "/")
-}
-
-// telemetryServiceName is the service.name the resource resolved to.
-func telemetryServiceName(res *resource.Resource) string {
-	if value, ok := res.Set().Value(attribute.Key("service.name")); ok {
-		return value.AsString()
-	}
-	return ""
 }

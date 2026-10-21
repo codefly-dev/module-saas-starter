@@ -53,7 +53,20 @@ func init() {
 	WithWork(doWork)
 }
 
-func doWork(ctx context.Context) (Clean, error) {
+func doWork(ctx context.Context) (clean Clean, err error) {
+	var otelMetricProvider *otelMetrics
+	// SDK Init owns tracing. Stop telemetry exporters on startup errors too,
+	// before a normal cleanup function can be returned.
+	defer func() {
+		if err != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if otelMetricProvider != nil {
+				_ = otelMetricProvider.Shutdown(shutdownCtx)
+			}
+			_ = codefly.ShutdownTelemetry(shutdownCtx)
+		}
+	}()
 	// `app diagnose …` answers and exits; it never starts the service.
 	if code, ran := runRequestedDiagnostic(os.Args[1:]); ran {
 		os.Exit(code)
@@ -91,30 +104,13 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// Traces and metrics go to the collector OTEL_EXPORTER_OTLP_ENDPOINT names, which
-	// the platform delivers when the cell has one this workload may reach. With none
-	// delivered the process exports nothing over OTLP; a local run's traces go to
-	// wool's own stdout tracer instead. wool/otel reads and validates the variable,
-	// so a value it refuses stops the process here with its reason.
-	otelProvider, err := enableTracing(ctx, codefly.IsLocal())
-	if err != nil {
-		return nil, fmt.Errorf("configure OTEL tracing: %w", err)
-	}
-	var otelMetricProvider *otelMetrics
 	if otlpEndpointConfigured() {
 		metricProvider, oerr := enableOTELMetrics(ctx)
 		if oerr != nil {
-			if otelProvider != nil {
-				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = otelProvider.Shutdown(shutdownCtx)
-				cancel()
-			}
-			return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
+			w.Warn("OTEL metrics exporter could not be built; service continues without metrics export", wool.ErrField(oerr))
+		} else {
+			otelMetricProvider = metricProvider
 		}
-		otelMetricProvider = metricProvider
-		w.Info("OTEL export enabled: traces and metrics go to the collector at " + otlpEndpointVariable)
-	} else {
-		w.Info("OTEL export disabled: " + otlpEndpointVariable + " is not set, so nothing is exported over OTLP")
 	}
 
 	store, err := infra.NewPostgresStore(ctx)
@@ -1444,15 +1440,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		sw.Info("closing store")
 		store.Close()
 		sw.Info("store closed")
-		if otelProvider != nil {
-			sw.Info("flushing OTEL provider")
-			// Bounded shutdown — exporter has its own flush window
-			// (otlptrace's batcher). 5s is a sensible cap.
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := otelProvider.Shutdown(shutdownCtx); err != nil {
-				sw.Warn("OTEL shutdown failed", wool.ErrField(err))
-			}
+		traceShutdownCtx, cancelTraceShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelTraceShutdown()
+		if err := codefly.ShutdownTelemetry(traceShutdownCtx); err != nil {
+			sw.Warn("OTEL shutdown failed", wool.ErrField(err))
 		}
 		if otelMetricProvider != nil {
 			sw.Info("flushing OTEL metrics provider")

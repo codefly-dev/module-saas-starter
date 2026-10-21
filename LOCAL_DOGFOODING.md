@@ -49,21 +49,17 @@ plugin, which validates the account, observes the webhook and projects the
 | `email` | Resend |
 | `product-analytics` | PostHog |
 | `error-tracking` | Sentry |
-| `observability` | none: the collector is the standard `OTEL_EXPORTER_OTLP_ENDPOINT` variable, below |
 | `abuse-protection` | Cloudflare Turnstile |
 
 Validate the result with `codefly doctor workspace --env local-dogfood`.
 
-Traces and metrics follow one standard variable, `OTEL_EXPORTER_OTLP_ENDPOINT`,
-in the environment the services run with: set it and `accounts` and `auth-gateway`
-export over OTLP/gRPC, leave it unset and they export nothing over OTLP. That is
-the default here, so `observability` needs no setup (logs still go to stdout):
-`local-dogfood` is not the `local` runtime, and wool's stdout tracer belongs to
-that runtime alone. To export to a collector this machine can reach, set the
-variable to its address, for example `http://localhost:4317`. A value that names
-no port, or carries credentials, stops the service at startup with the reason.
-The group's own file, `observability.env`, exists only so the group does; nothing
-reads the key in it.
+Operational telemetry uses standard process variables rather than a configuration
+group. With no `OTEL_EXPORTER_OTLP_ENDPOINT`, the SDK exports no traces in any
+environment, and the services build no metrics exporter. To export, deliver the
+endpoint as scoped platform `service-config`. CLIs implementing
+[CLI #1097](https://github.com/codefly-dev/cli/pull/1097) also support the
+environment's optional `telemetry:` block, which applies to every service. SDK exporter failures are
+logged without stopping the service; logs always go to stdout.
 
 `email` is required because this profile is not the `local` environment, and
 accounts refuses to start there without an explicit `EMAIL_PROVIDER`: `resend`
