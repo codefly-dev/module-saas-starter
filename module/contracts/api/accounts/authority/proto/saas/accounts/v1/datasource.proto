@@ -189,7 +189,48 @@ message UploadDatasourceConfig {
   // AWS-style access key id. The matching secret access key is the credential.
   string access_key_id = 5;
   // Upper bound on objects fetched per sync. Zero applies the connector default.
+  // Only objects that pass the filters below count against it.
   uint32 max_objects = 6;
+  // Which keys under the prefix are ingested. Each pattern is an RE2 regular
+  // expression matched against the object key with the prefix removed,
+  // unanchored and case-sensitive (anchor with ^ and $, fold case with (?i)).
+  // An empty include admits every key; an exclude match always wins. Applied
+  // when the prefix is listed, before anything is fetched, so an excluded
+  // object is never read and never counts against max_objects. An invalid
+  // expression is refused when the source is added or updated, never at sync:
+  // the call fails INVALID_ARGUMENT with a google.rpc.BadRequest violation, and
+  // a message that starts with the field's path, e.g.
+  // "upload.include_patterns[1]: …".
+  repeated string include_patterns = 7 [(buf.validate.field).repeated = {
+    max_items: 16
+    items: {
+      string: {
+        min_len: 1
+        max_len: 256
+      }
+    }
+  }];
+  repeated string exclude_patterns = 8 [(buf.validate.field).repeated = {
+    max_items: 16
+    items: {
+      string: {
+        min_len: 1
+        max_len: 256
+      }
+    }
+  }];
+  // Case-insensitive key suffixes, e.g. [".md", ".pdf"], intersected with the
+  // patterns. Empty admits every type. GitHub's file_extensions semantics.
+  repeated string file_extensions = 9 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: {
+      string: {
+        min_len: 2
+        max_len: 33
+        pattern: "^\\.[A-Za-z0-9][A-Za-z0-9._-]*$"
+      }
+    }
+  }];
 }
 
 // Datasource is one connected external datasource. It is org-scoped and carries
@@ -437,6 +478,27 @@ message UpdateSourceRequest {
   // sole reason that the source had reconciled since the form was opened. What
   // an editor needs guarded is what they were looking at.
   SourceFetchScope expected = 6 [(buf.validate.field).required = true];
+  // An object-storage source's key patterns (see UploadDatasourceConfig),
+  // replaced whole like every field here. Its file_extensions is field 5; its
+  // branch and paths must be empty. Refused for a github source.
+  repeated string include_patterns = 7 [(buf.validate.field).repeated = {
+    max_items: 16
+    items: {
+      string: {
+        min_len: 1
+        max_len: 256
+      }
+    }
+  }];
+  repeated string exclude_patterns = 8 [(buf.validate.field).repeated = {
+    max_items: 16
+    items: {
+      string: {
+        min_len: 1
+        max_len: 256
+      }
+    }
+  }];
 }
 
 // SourceFetchScope is what a source fetches — the three values UpdateSource
@@ -466,6 +528,17 @@ message SourceFetchScope {
         min_len: 1
         max_len: 33
       }
+    }
+  }];  repeated string include_patterns = 4 [(buf.validate.field).repeated = {
+    max_items: 16
+    items: {
+      string: {max_len: 256}
+    }
+  }];
+  repeated string exclude_patterns = 5 [(buf.validate.field).repeated = {
+    max_items: 16
+    items: {
+      string: {max_len: 256}
     }
   }];
 }

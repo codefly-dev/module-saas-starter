@@ -365,6 +365,11 @@ type UploadDatasourceConfig struct {
 	Prefix      string `json:"prefix,omitempty"`
 	AccessKeyID string `json:"access_key_id"`
 	MaxObjects  int    `json:"max_objects,omitempty"`
+	// Which keys under the prefix are ingested: RE2 patterns over the key with
+	// the prefix removed, and a file-type allowlist (uploadKeyScope).
+	IncludePatterns []string `json:"include_patterns,omitempty"`
+	ExcludePatterns []string `json:"exclude_patterns,omitempty"`
+	FileExtensions  []string `json:"file_extensions,omitempty"`
 }
 
 // DatasourceSource is one connected external datasource. CredentialSecretRef and
@@ -513,7 +518,9 @@ type CrawlerContentClient interface {
 // needs. The Service builds one per Source from its config and decrypted secret
 // access key and drives it item-at-a-time (List then Fetch).
 type UploadContentClient interface {
-	List(ctx context.Context) (objectstore.Listing, error)
+	// List lists the keys match admits; a key it refuses is neither returned
+	// nor counted against the object cap.
+	List(ctx context.Context, match func(key string) bool) (objectstore.Listing, error)
 	Fetch(ctx context.Context, key string) (objectstore.Object, error)
 }
 
@@ -934,6 +941,10 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		}
 		cfg, err := normalizeUploadConfig(input.Upload)
 		if err != nil {
+			// A key-filter refusal names its field; it reaches the caller as itself.
+			if status.Code(err) == codes.InvalidArgument {
+				return nil, err
+			}
 			return nil, w.Wrap(err)
 		}
 		source.Upload = cfg
@@ -1117,6 +1128,22 @@ func normalizeCrawlerConfig(cfg *CrawlerDatasourceConfig) (*CrawlerDatasourceCon
 	return &CrawlerDatasourceConfig{SitemapURL: sitemapURL, MaxPages: maxPages}, nil
 }
 
+// normalizeUploadKeyFilter validates from's key filter into to, naming each
+// field under path (its place in the request) when it refuses one.
+func normalizeUploadKeyFilter(to, from *UploadDatasourceConfig, path string) error {
+	var err error
+	if to.IncludePatterns, err = normalizeKeyPatterns(path+"include_patterns", from.IncludePatterns); err != nil {
+		return err
+	}
+	if to.ExcludePatterns, err = normalizeKeyPatterns(path+"exclude_patterns", from.ExcludePatterns); err != nil {
+		return err
+	}
+	if to.FileExtensions, err = normalizeFileExtensions(from.FileExtensions); err != nil {
+		return keyFilterRefused(path+"file_extensions", status.Convert(err).Message())
+	}
+	return nil
+}
+
 // normalizeUploadConfig validates and trims an object-storage provider config.
 func normalizeUploadConfig(cfg *UploadDatasourceConfig) (*UploadDatasourceConfig, error) {
 	if cfg == nil {
@@ -1146,6 +1173,9 @@ func normalizeUploadConfig(cfg *UploadDatasourceConfig) (*UploadDatasourceConfig
 	}
 	if out.MaxObjects < 0 {
 		return nil, errors.New("upload max objects must not be negative")
+	}
+	if err := normalizeUploadKeyFilter(out, cfg, "upload."); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -1917,7 +1947,11 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 	}
 	client := s.newUploadClient(*source.Upload, secretKey)
 
-	listing, err := client.List(ctx)
+	// The source's key filter is applied as the prefix is listed, so an
+	// excluded object is never fetched, and the closing listing — built from
+	// what was delivered — names only matches: narrowing the filter tombstones
+	// what it now excludes on the next sync.
+	listing, err := client.List(ctx, uploadKeyScope(source.Upload))
 	if err != nil {
 		return 0, w.Wrapf(err, "list objects")
 	}

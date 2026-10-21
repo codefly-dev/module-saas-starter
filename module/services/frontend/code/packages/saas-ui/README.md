@@ -385,9 +385,19 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   in its own shell — a line in a header, say — without re-deriving them from the
   phase names and getting the terminal cases wrong. `<SourceSyncProgress source
   report />` is the card, and `useSourceSync(client, orgId, source)` the read.
+- `<ConnectObjectStorageForm onSubmit={…} … />` — endpoint (https only),
+  region, bucket, prefix, the key filter (include and exclude RE2 patterns, one
+  per line, over the key after the prefix; file types as on GitHub), access key
+  id, the secret access key the host encrypts at receipt, and the target
+  collection. It states that a bucket has no per-object access list, so one
+  source is one collection with one set of readers. A host refusal of a pattern
+  leads with the field it names and is shown under that field. Map its values
+  with `objectStorageInputFrom(orgId, values)` for the client's optional
+  `addObjectStorageSource`. Nothing in the kit mounts it yet: the host refuses
+  new object-storage sources until the provider is conformant (#1211).
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
-  `useUpdateSource`, `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`,
-  `useMyAccountLinks`.
+  `useAddObjectStorageSource`, `useUpdateSource`, `useSyncSource`,
+  `useDeleteSource`, `useAccessibleScopes`, `useMyAccountLinks`.
 - `<EditSourceForm source onSubmit … />`, behind the row's **Edit**, changes
   what a connected source fetches: its branch and its path and file-type
   filters, bound by the same schema the connect form uses. It offers the connect

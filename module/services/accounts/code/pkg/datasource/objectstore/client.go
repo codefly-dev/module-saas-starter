@@ -167,11 +167,13 @@ type Listing struct {
 	Complete bool
 }
 
-// List issues one ListObjectsV2 request and returns its entries, bounded by the
-// configured object cap. Listing failure (including a non-2xx list) is a returned
-// error so a credential or permission problem surfaces rather than reading as an
-// empty bucket.
-func (c *Client) List(ctx context.Context) (Listing, error) {
+// List issues one ListObjectsV2 request and returns the entries match admits,
+// bounded by the configured object cap: an entry match refuses is dropped
+// before it is counted, so it never uses up the cap. A nil match admits every
+// entry. Listing failure (including a non-2xx list) is a returned error so a
+// credential or permission problem surfaces rather than reading as an empty
+// bucket.
+func (c *Client) List(ctx context.Context, match func(key string) bool) (Listing, error) {
 	if c.baseErr != nil {
 		return Listing{}, c.baseErr
 	}
@@ -201,13 +203,16 @@ func (c *Client) List(ctx context.Context) (Listing, error) {
 		limit = maxObjectsCeiling
 	}
 	entries := make([]Entry, 0, len(parsed.Contents))
+	matched := 0
 	for _, e := range parsed.Contents {
-		if len(entries) >= limit {
-			break
+		if match != nil && !match(e.Key) {
+			continue
 		}
-		entries = append(entries, Entry{Key: e.Key, ETag: e.ETag})
+		if matched++; matched <= limit {
+			entries = append(entries, Entry{Key: e.Key, ETag: e.ETag})
+		}
 	}
-	return Listing{Entries: entries, Complete: !parsed.IsTruncated && len(parsed.Contents) <= limit}, nil
+	return Listing{Entries: entries, Complete: !parsed.IsTruncated && matched <= limit}, nil
 }
 
 // listEntry is one <Contents> row of a ListBucketResult.

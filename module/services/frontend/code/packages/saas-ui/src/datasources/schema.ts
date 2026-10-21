@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { parsePaths } from "./util.js";
+import { parseLines, parsePaths } from "./util.js";
 
 /**
  * The three fields that select what a source fetches, as both the connect form
@@ -92,3 +92,44 @@ export const connectGitHubSchema = z
 	});
 
 export type ConnectGitHubValues = z.infer<typeof connectGitHubSchema>;
+
+// The host's bounds on a key-pattern list. Whether each is valid RE2 is the
+// host's to say: a browser's RegExp is a different dialect.
+const keyPatterns = z
+	.string()
+	.optional()
+	.refine((raw) => parseLines(raw).length <= 16, "Too many patterns (max 16)")
+	.refine(
+		(raw) => parseLines(raw).every((line) => line.length <= 256),
+		"A pattern is too long (max 256 characters)",
+	);
+
+export const connectObjectStorageSchema = z.object({
+	endpoint: z
+		.string()
+		.max(2048, "Endpoint too long")
+		.regex(/^https:\/\/[^\s/]+/, "Use the store's https URL"),
+	region: z.string().min(1, "Region is required").max(64, "Region too long"),
+	bucket: z.string().min(1, "Bucket is required").max(255, "Bucket too long"),
+	prefix: z.string().max(1024, "Prefix too long"),
+	includePatterns: keyPatterns,
+	excludePatterns: keyPatterns,
+	fileExtensions: fetchScopeFields.fileExtensions,
+	accessKeyId: z
+		.string()
+		.min(1, "Access key ID is required")
+		.max(256, "Access key ID too long"),
+	secretAccessKey: z
+		.string()
+		.min(1, "Secret access key is required")
+		.max(4096, "Secret access key too long"),
+	boundaryNodeId: z.string().optional(),
+	targetCollection: z
+		.string()
+		.min(1, "Target collection is required")
+		.max(255, "Target collection too long"),
+});
+
+export type ConnectObjectStorageValues = z.infer<
+	typeof connectObjectStorageSchema
+>;

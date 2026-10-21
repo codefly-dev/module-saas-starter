@@ -1042,6 +1042,38 @@ The transport underneath — h2c rather than server TLS, the resolved origin, an
 the key set a consumer verifies host-signed credentials against — is
 [../../INTERNAL_TRANSPORT.md](../../INTERNAL_TRANSPORT.md).
 
+## An object-storage source is a prefix and a key filter
+
+An `upload` ("Object storage") source reads one bucket under one `prefix`, and
+`UploadDatasourceConfig` narrows it further: `include_patterns` and
+`exclude_patterns` are RE2 expressions over the object key with the prefix
+removed (unanchored, case-sensitive; exclude wins; an empty include admits
+everything), and `file_extensions` intersects them with GitHub's suffix
+semantics. `uploadKeyScope` (`pkg/business/datasource_file_filter.go`, beside
+GitHub's own filter) is the one matcher; the store's listing applies it before
+it counts against `max_objects`, so an excluded object is never fetched and
+never uses up the cap, and the closing listing names only matches.
+
+- **Refused at the call, never at sync.** `AddSource` and `UpdateSource`
+  compile every pattern and refuse an invalid one, more than 16, or one over 256
+  characters as `INVALID_ARGUMENT` with a `google.rpc.BadRequest` violation and
+  a message that leads with the field path (`upload.include_patterns[1]: …` on
+  add, `include_patterns[1]: …` on update). The kit places a refusal under its
+  field by that leading path, because the TypeScript SDK carries no
+  error-detail types.
+- **Narrowing deletes.** `UpdateSource` takes the patterns and file types for an
+  upload source (branch and paths are refused), under the same `expected` rule
+  as a GitHub edit, and queues the source's pull sync. That sync's closing
+  listing omits what the narrower filter excludes, and the store tombstones it
+  — unlike a GitHub snapshot, which only declares scope (below).
+- **Access follows the source.** A source is (bucket, prefix, filter) → one
+  collection → one grant; two sources on one bucket with different filters are
+  two collections with different readers. The catalog description says so.
+- **The filter is the host's whatever the store.** An S3-style listing takes a
+  prefix and a delimiter only, so the object-storage service needs nothing for
+  this. When the envelope connector replaces `runUploadSync`, it receives the
+  same predicate (#1211).
+
 ## A datasource source is refreshed by three things, and one of them covers every provider
 
 Ranked by latency, a source's content is refreshed by a push (near-live), by a

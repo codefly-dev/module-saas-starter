@@ -72,7 +72,7 @@ func TestFetchHappyPath(t *testing.T) {
 		AccessKeyID: "AKIAIOSFODNN7EXAMPLE",
 	}, "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY")
 
-	listing, err := c.List(context.Background())
+	listing, err := c.List(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestAuthorizationHeaderStructure(t *testing.T) {
 		Bucket:      "b",
 		AccessKeyID: "AKIAIOSFODNN7EXAMPLE",
 	}, "secret")
-	if _, err := c.List(context.Background()); err != nil {
+	if _, err := c.List(context.Background(), nil); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 
@@ -293,7 +293,7 @@ func TestSSRFGuardBlocksLoopback(t *testing.T) {
 		Region:      "us-east-1",
 		AccessKeyID: "AKIAEXAMPLE",
 	}, "secret")
-	if _, err := c.List(context.Background()); err == nil {
+	if _, err := c.List(context.Background(), nil); err == nil {
 		t.Fatal("expected an error listing a loopback endpoint, got nil")
 	}
 }
@@ -327,10 +327,17 @@ func TestListReportsATruncatedListingIncomplete(t *testing.T) {
 		{"whole listing within the cap", "false", 3, 3, true},
 		{"store truncated the page", "true", 10, 3, false},
 		{"object cap cut the page", "false", 2, 2, false},
+		// An excluded key is dropped before it is counted: two matches fit a
+		// cap of two, and the listing is still whole.
+		{"excluded keys never use up the cap", "false", 2, 2, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			truncated = tc.truncated
-			listing, err := client(tc.max).List(context.Background())
+			var match func(string) bool
+			if strings.HasPrefix(tc.name, "excluded") {
+				match = func(key string) bool { return key != "docs/b.txt" }
+			}
+			listing, err := client(tc.max).List(context.Background(), match)
 			if err != nil {
 				t.Fatal(err)
 			}
