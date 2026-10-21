@@ -60,6 +60,11 @@ func TestDatasourceCatalog_ProjectsTheRegistry(t *testing.T) {
 			t.Fatalf("%s entry = %v, want listed, non-conformant, with a gap, accepting no new source", key, p)
 		}
 	}
+	// A bucket has no per-object access list; the catalog says so before a
+	// person connects one.
+	if r := byKey[business.DatasourceProviderUpload].GetReadersModel(); r != gen.DatasourceReadersModel_DATASOURCE_READERS_MODEL_SOURCE_SCOPED {
+		t.Fatalf("object storage readers model = %v, want source-scoped", r)
+	}
 	if datasourceCatalog(nil).GetProviders() != nil {
 		t.Fatal("an unconfigured connector offers nothing")
 	}

@@ -1173,3 +1173,37 @@ cause (v2 of that type; `datasourceAccessLostCodes` is the whole vocabulary a
 registry test holds the declaration to). Recovery is the ordinary one — a later
 snapshot clearing the degrade — which a repository made public again, or
 reconnected with a PAT or through the App, all reach.
+
+## Object storage is a client of the object-storage service, diffed against a listing the host retains
+
+The `upload` provider — "Object storage" to a person — reads a bucket under a
+key prefix into a `collection` scope node. Its readers are source-scoped: a
+bucket has no per-object access list, so the model to offer is one collection
+per prefix, granted like any scope. It is registered non-conformant, so
+`AdmitNewSource` refuses a new one; existing sources sync on `runUploadSync`
+over the host's own S3 client (`pkg/datasource/objectstore/client.go`), daily
+and on "Sync now", re-sending every object and closing a whole-folder sync with
+the listing the store tombstones the rest against. `AddSource` refuses a
+webhook secret for it: there is no push path (#1211 b).
+
+The owner's direction (2026-10-21) is that the host **re-uses the composed
+object-storage service** rather than keep a store client of its own: the
+service takes a per-call bucket binding with the credential handed per call and
+owns the public-destination guard and the size caps
+(codefly-dev/service-object-storage#108). What lives here is what is per-source
+state:
+
+- **The retained listing is the cursor.** `objectstore.FilesConnector` versions
+  a source by the digest of its listing under its binding and diffs the current
+  listing against the one a version names. The host keeps those listings in
+  `datasource_object_manifests` (migration 46), tenant-owned — the control plane
+  has no grant — and pruned to the newest four per source by
+  `PutDatasourceObjectManifest`; a pruned or rebound version resyncs. Clause by
+  clause, in [CONFORMANCE.md](./code/pkg/datasource/connector/CONFORMANCE.md).
+- **The connector reaches the store through `objectstore.Bucket`.** It lists the
+  prefix whole or fails (`ErrListingIncomplete` — a partial listing would read
+  every unlisted object as deleted) and reads a batch in one call at the listed
+  ETags. The implementation over the service is not written yet; until it is,
+  the connector is exercised only by the conformance suite over a scripted
+  bucket, the provider stays registered non-conformant, and `client.go` stays
+  the running engine. It is deleted when the service client lands, not extended.
