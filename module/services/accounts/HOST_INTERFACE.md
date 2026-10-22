@@ -53,12 +53,15 @@ serves on a laptop is served here on a cell, and the authority interface reposit
    and the role catalogue is needed. Unimplemented, named.
 6. **No exposure audit event** exists; `GrantToTeam`'s policy borrows
    `saas.installation.created` until one is registered.
-7. **The conformance harness** needs accounts booted with its store (the test
+7. **Closed 2026-10-22.** The interfaces carry the host's names (publisher `codefly.dev`, packages `host.*.v1`), so this repository carries no consumer name; the naming gate is at its main baseline.
+8. **The conformance harness** needs accounts booted with its store (the test
    Postgres each package persists) and the fixture people; the suite takes a
    `grpc.ClientConnInterface`, so an in-process server over bufconn is enough once
    registration works.
 
 ## How to run the suite, once 1 and 2 are closed
+
+(Gap 7, the naming of the interface, closed on 2026-10-22.)
 
 Import `github.com/the authority interface repository/.../pkg/conformance` (or vendor the one
 file), boot accounts in-process, dial it, and call `conformance.Run(t, conn,
