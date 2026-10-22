@@ -45,6 +45,9 @@ func (s *WorkContextAuthorityServer) exchangeInstalledContentRead(ctx context.Co
 	if err := s.requireInstalledContentRead(ctx, signed); err != nil {
 		return nil, err
 	}
+	if err := s.journalActorHop(ctx, signed); err != nil {
+		return nil, err
+	}
 	return issuedWorkContext(token, signed), nil
 }
 

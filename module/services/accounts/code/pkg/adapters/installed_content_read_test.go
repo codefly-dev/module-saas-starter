@@ -172,6 +172,64 @@ func (s installedReadSeals) WorkContextOperationBinding(ctx context.Context, org
 	return service.WorkContextOperationBinding(ctx, org, id)
 }
 
+type installedReadJournal struct {
+	business.ActorChainJournal
+	hops []business.ActorChainHopInput
+	err  error
+}
+
+func (j *installedReadJournal) AppendActorChainHop(_ context.Context, hop business.ActorChainHopInput) (*business.ActorChainHop, error) {
+	j.hops = append(j.hops, hop)
+	return &business.ActorChainHop{ID: hop.ID}, j.err
+}
+
+func (j *installedReadJournal) AnyActorChainHopRevoked(context.Context, string, []string) (bool, error) {
+	return false, nil
+}
+
+func TestInstalledContentReadJournalsBeforeIssuance(t *testing.T) {
+	for _, lookup := range []bool{false, true} {
+		for _, failAppend := range []bool{false, true} {
+			t.Run(fmt.Sprintf("lookup=%t/append_failure=%t", lookup, failAppend), func(t *testing.T) {
+				f, server := installedReadFixture(t)
+				journal := &installedReadJournal{}
+				if failAppend {
+					journal.err = errors.New("journal unavailable")
+				}
+				server.journal = journal
+				caller := stampVerifiedIdentity(context.Background(), readOwner, readOrg, auth.Assurance{})
+				parent, err := server.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: readOrg, TaskId: uuid.NewString(), Audience: "reader", AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}}})
+				require.NoError(t, err)
+				moduleToken, _, err := server.StartModuleTask(context.Background(), business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("reader"), Tenant: readOrg, InstallationID: f.live[business.ModulePrincipalID("reader")].InstallationID})
+				require.NoError(t, err)
+				ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "installed-read-test", workContextHeader, moduleToken))
+				child, err := (&ModuleCapabilitiesServer{}).ExchangeDelegatedOperationAudience(ctx, &gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "evidence", ParentWorkContextToken: parent.Token, Lookup: lookup})
+				require.Len(t, journal.hops, 1)
+				if failAppend {
+					require.Equal(t, codes.Internal, status.Code(err))
+					require.Nil(t, child, "an unrecorded actor hop must not release a capability")
+					return
+				}
+				require.NoError(t, err)
+				verified, err := corework.Decode(child.Token)
+				require.NoError(t, err)
+				claims := verified.Context()
+				require.Len(t, claims.ActorChain, 1)
+				hop := journal.hops[0]
+				require.Equal(t, claims.ActorChain[0].DelegationId, hop.ID)
+				require.Equal(t, readOwner, hop.OwnerPrincipalID)
+				require.Equal(t, business.ModulePrincipalID("reader"), hop.ActorPrincipalID)
+				require.Equal(t, business.PrincipalKindService, hop.ActorKind)
+				require.Equal(t, readOrg, hop.OrgID)
+				require.Equal(t, claims.TaskId, hop.TaskID)
+				require.Equal(t, claims.SessionId, hop.SessionID)
+				require.Equal(t, claims.AuthorizationRevision, hop.AuthorizationRevision)
+				require.Equal(t, actorChainScopes(claims.ActorChain[0].GrantedScopes), hop.GrantedScopes)
+			})
+		}
+	}
+}
+
 func TestInstalledContentReadCollectionReader(t *testing.T) {
 	f, server := installedReadFixture(t)
 	caller := stampVerifiedIdentity(context.Background(), readOwner, readOrg, auth.Assurance{})

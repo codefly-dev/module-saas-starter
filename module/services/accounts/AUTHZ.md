@@ -157,10 +157,12 @@ envelope revision. Every content read revalidates that lifetime before using
 the owner's existing collection grants, shares or platform read authority.
 The module actor contributes no personal grants; it also does not remove the
 human's valid visibility by being treated as a second collection reader.
+The actor hop is journaled before the child is returned; an append failure
+refuses issuance through the existing actor-chain journal.
 
 StartTask may admit an unscoped foreign read carried by a current marked binding
 when the human has existing content-read standing. This never admits content
-writes, Model invocation, host permissions or an absent target declaration.
+writes, model inference, host permissions or an absent target declaration.
 The child is terminal: renewal, further exchange, actor/source-delegated
 parents and source references are refused. Optional bounded lookup uses the
 same child path. Ordinary operation, proof, Model and source-delegation paths
