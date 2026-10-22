@@ -38,7 +38,12 @@ import (
 // binding the one a connect records a delegation for; at most one binding of a
 // module may declare it, and like HeadlessScopes it is bounded by InvokeScopes,
 // because the context it yields acts on that person's behalf.
+const DelegationModeContentRead = "content_read"
+
+// DelegationMode is host-owned: content_read requires an authentic installed
+// module child and live personal visibility. Empty preserves ordinary exchanges.
 type ModuleOperationAudience struct {
+	DelegationMode         string                 `json:"delegation_mode,omitempty"`
 	Audience               string                 `json:"audience"`
 	InvokeScopes           []ModuleOperationScope `json:"invoke_scopes"`
 	LookupScopes           []ModuleOperationScope `json:"lookup_scopes"`
@@ -174,6 +179,16 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 		if !validOperationValue(id, 128) || !validOperationValue(binding.Audience, 512) ||
 			(binding.Audience == prefix && !selfAdmittingBinding(binding)) {
 			return fmt.Errorf("invalid installed module operation audience binding")
+		}
+		if binding.DelegationMode != "" {
+			if binding.DelegationMode != DelegationModeContentRead || len(binding.InvokeScopes) == 0 || binding.HeadlessScopes != nil || binding.SourceDelegationScopes != nil {
+				return fmt.Errorf("invalid installed content-read delegation mode")
+			}
+			for _, scope := range binding.InvokeScopes {
+				if len(scope.Actions) != 1 || scope.Actions[0] != "read" {
+					return fmt.Errorf("content-read delegation grants only read")
+				}
+			}
 		}
 		// HEADLESS-ONLY: absent invoke is whole only beside headless scopes, and
 		// then it carries nothing a person's exchange could redeem — no lookup and

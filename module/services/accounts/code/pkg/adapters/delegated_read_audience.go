@@ -127,6 +127,9 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	default:
 		return nil, refuseUnidentifiedParent()
 	}
+	if business.NamesInstalledContentRead(verified.GetOperationBinding().GetBindingId()) {
+		return nil, status.Error(codes.PermissionDenied, "installed content child cannot be exchanged")
+	}
 	if verified.GetTenantId() == "" || verified.GetOwnerPrincipalId() == "" {
 		return nil, refuseUnidentifiedParent()
 	}
@@ -135,13 +138,14 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, verified.OwnerPrincipalId, verified.TenantId)
 	parent := verified
 	var actor *business.Principal
+	actorID := delegatedAudienceActorID(parent)
 	audit := func(outcome, audience string, exchangeErr error) {
 		logDelegatedAudienceRefusal(ctx, request, audience, exchangeErr)
 		service.ObserveDelegatedAudienceExchange(ctx, business.DelegatedAudienceExchangeObservation{
 			Caller:      caller,
 			OwnerID:     parent.OwnerPrincipalId,
 			Actor:       actor,
-			ActorID:     delegatedAudienceActorID(parent),
+			ActorID:     actorID,
 			Tenant:      parent.TenantId,
 			BindingKind: request.kind,
 			BindingID:   request.bindingID,
@@ -188,6 +192,13 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		audit(business.DelegatedAudienceExchangeRefused, "", err)
 		return nil, err
 	}
+	operation, _ := binding.policy.(business.ModuleOperationAudience)
+	installedRead := operation.DelegationMode == business.DelegationModeContentRead
+	if installedRead && (delegated || len(parent.ActorChain) != 0 || parent.GetOwnerPrincipalKind() != business.PrincipalKindHuman) {
+		err := status.Error(codes.PermissionDenied, "installed content read requires an ordinary human parent")
+		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
+		return nil, err
+	}
 	ttl := min(int64(60), parent.ExpiresAtUnix-time.Now().Unix()-2)
 	if ttl <= 0 {
 		err = status.Error(codes.PermissionDenied, "parent expires before exchange")
@@ -199,6 +210,8 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	var issued *gen.IssuedWorkContext
 	if delegated {
 		issued, err = authority.exchangeDelegatedParent(ctx, caller, parent, delegation, binding, time.Duration(ttl)*time.Second)
+	} else if installedRead {
+		issued, err = authority.exchangeInstalledContentRead(ctx, presented, caller, request, binding, time.Duration(ttl)*time.Second)
 	} else {
 		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, "", moduleBindingSeal{PrincipalID: caller.PrincipalID, BindingID: request.operationBinding()})
 	}
@@ -234,6 +247,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
 	}
+	actorID = issued.CurrentActorPrincipalId
 	audit(business.DelegatedAudienceExchangeIssued, binding.audience, nil)
 	return issued, nil
 }
