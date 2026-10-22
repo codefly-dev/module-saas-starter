@@ -10,10 +10,10 @@ import (
 	"connectrpc.com/connect"
 
 	"accounts/pkg/business"
-	authorityv1 "accounts/pkg/gen/obin/authority/v1"
-	compositionv1 "accounts/pkg/gen/obin/composition/v1"
-	installationv1 "accounts/pkg/gen/obin/installation/v1"
-	sessionv1 "accounts/pkg/gen/obin/session/v1"
+	authorityv1 "accounts/pkg/gen/host/authority/v1"
+	compositionv1 "accounts/pkg/gen/host/composition/v1"
+	installationv1 "accounts/pkg/gen/host/installation/v1"
+	sessionv1 "accounts/pkg/gen/host/session/v1"
 )
 
 var hostAuthoritySingleton = &HostAuthorityServer{workContexts: workContextSingleton}

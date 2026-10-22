@@ -5,15 +5,15 @@ import (
 
 	// The interface descriptors must be linked for RPCPolicies and the catalog
 	// generators to see them; the policy sidecar below is what names them.
-	_ "accounts/pkg/gen/obin/authority/v1"
-	_ "accounts/pkg/gen/obin/composition/v1"
-	_ "accounts/pkg/gen/obin/installation/v1"
-	_ "accounts/pkg/gen/obin/session/v1"
+	_ "accounts/pkg/gen/host/authority/v1"
+	_ "accounts/pkg/gen/host/composition/v1"
+	_ "accounts/pkg/gen/host/installation/v1"
+	_ "accounts/pkg/gen/host/session/v1"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
 // InterfaceMethodPolicies is the host's policy for the methods of the published
-// host interfaces (obin-ai/authority: obin.ai/authority, composition,
+// host interfaces (codefly.dev/authority, composition,
 // installation, session). Those protos carry no saas.policy option on purpose:
 // exposure, tenancy, audit and rate limits are how THIS implementation guards an
 // operation, not what a caller is promised, and the same interface is served by
@@ -57,10 +57,10 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		return p
 	}
 	return map[string]*policyv1.MethodPolicy{
-		"/obin.authority.v1.AuthorityService/Issue": authenticatedMint("saas.work_context.task_started"),
-		"/obin.authority.v1.AuthorityService/Check": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
-		"/obin.authority.v1.AuthorityService/Keys":  read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_PUBLIC),
-		"/obin.composition.v1.CompositionService/ApplyManifest": {
+		"/host.authority.v1.AuthorityService/Issue": authenticatedMint("saas.work_context.task_started"),
+		"/host.authority.v1.AuthorityService/Check": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		"/host.authority.v1.AuthorityService/Keys":  read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_PUBLIC),
+		"/host.composition.v1.CompositionService/ApplyManifest": {
 			Exposure: policyv1.Exposure_EXPOSURE_INTERNAL, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
 			Mfa:                 policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
 			Audit:               &policyv1.AuditPolicy{Events: []string{"saas.solution.host_binding_applied"}, Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS},
@@ -70,10 +70,10 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 			ResponseSensitivity: policyv1.Sensitivity_SENSITIVITY_INTERNAL,
 			PlatformRole:        policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
 		},
-		"/obin.installation.v1.InstallationService/Install":     adminWrite("saas.installation.created"),
-		"/obin.installation.v1.InstallationService/GrantToTeam": adminWrite("saas.installation.created") /* GAP: no exposure event is registered; narrowed is the nearest */,
-		"/obin.installation.v1.InstallationService/List":        read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_MEMBER, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
-		"/obin.session.v1.SessionService/SignIn": {
+		"/host.installation.v1.InstallationService/Install":     adminWrite("saas.installation.created"),
+		"/host.installation.v1.InstallationService/GrantToTeam": adminWrite("saas.installation.created") /* GAP: no exposure event is registered; narrowed is the nearest */,
+		"/host.installation.v1.InstallationService/List":        read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_MEMBER, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		"/host.session.v1.SessionService/SignIn": {
 			Exposure: policyv1.Exposure_EXPOSURE_PUBLIC, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
 			Mfa:                 policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
 			Audit:               &policyv1.AuditPolicy{Events: []string{"saas.auth.login"}, Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS},
@@ -99,14 +99,14 @@ func impersonationFor(exposure policyv1.Exposure) policyv1.ImpersonationRequirem
 // accounts service is served; of the interface packages, InstallableService is
 // the solution's side of the installation interface and is not served here.
 func implementedHere(service protoreflect.ServiceDescriptor) bool {
-	return string(service.FullName()) != "obin.installation.v1.InstallableService"
+	return string(service.FullName()) != "host.installation.v1.InstallableService"
 }
 
 // interfacePackage reports whether a proto package is one of the published host
 // interfaces this service implements.
 func interfacePackage(name string) bool {
 	switch name {
-	case "obin.authority.v1", "obin.composition.v1", "obin.installation.v1", "obin.session.v1":
+	case "host.authority.v1", "host.composition.v1", "host.installation.v1", "host.session.v1":
 		return true
 	}
 	return false

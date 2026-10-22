@@ -168,7 +168,7 @@ services:
     handler: webhookConnectHandler
     source:
       kind: business
-  # The host interfaces (obin-ai/authority), served as adapters; see host_interface.go.
+  # The host interfaces (the authority interface repository), served as adapters; see host_interface.go.
   AuthorityService:
     handler: hostAuthorityConnectHandler
     source:
