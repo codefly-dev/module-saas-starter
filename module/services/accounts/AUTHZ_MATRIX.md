@@ -2,12 +2,21 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **269 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **278 RPCs** across **40 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
 | Procedure | Shape | REST mapping | Tier | Guards | Permission / scope | Resource bindings | Audit | Idempotency / rate | Sensitivity req → res | Description |
 |---|---|---|---|---|---|---|---|---|---|---|
+| `/obin.authority.v1.AuthorityService/Check` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live. |
+| `/obin.authority.v1.AuthorityService/Issue` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | — | SUCCESS: saas.work_context.task_started | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Issue a Work Context for one owner shape, one audience and the scopes asked for, bounded by what the owner holds. |
+| `/obin.authority.v1.AuthorityService/Keys` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / STANDARD_READ | PUBLIC → PUBLIC | Return the issuer and the public keys a verifier pins. |
+| `/obin.composition.v1.CompositionService/ApplyManifest` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.solution.host_binding_applied | OPTIONAL / INTERNAL | INTERNAL → INTERNAL | Deliver one module instance's manifest at one generation; the ceiling is the manifest. |
+| `/obin.installation.v1.InstallableService/Install` | unary | `—` | `` | INVALID | INVALID | INVALID | INVALID | INVALID | INVALID |  |
+| `/obin.installation.v1.InstallationService/GrantToTeam` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | SUCCESS: saas.installation.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Expose an installation to a team under the installation's role. |
+| `/obin.installation.v1.InstallationService/Install` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | SUCCESS: saas.installation.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Install one target at one organisation under the least role it needs; pending until its install step is acknowledged. |
+| `/obin.installation.v1.InstallationService/List` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List what one organisation has installed. |
+| `/obin.session.v1.SessionService/SignIn` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.auth.login | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Open a session for a fixture person by their fixture token. |
 | `/saas.accounts.v1.APIKeyService/CreateAPIKey` | unary | `POST /v1/api-keys` | `mfa` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; mfa=IF_ENROLLED_RECENT_STEP_UP; impersonation=FORBIDDEN | perm=api_keys:write | organization_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.api_key.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → SECRET | Mint an API key for an administered organization. |
 | `/saas.accounts.v1.APIKeyService/ListAPIKeys` | unary | `GET /v1/api-keys` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=api_keys:read; scope=api_keys:read | organization_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List org's API keys. |
 | `/saas.accounts.v1.APIKeyService/RevokeAPIKey` | unary | `DELETE /v1/api-keys/{id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | perm=api_keys:write; scope=api_keys:write | organization_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.api_key.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke an API key in an administered organization. |
@@ -280,10 +289,11 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 43
-- `internal`: 54
+- ``: 1
+- `auth`: 44
+- `internal`: 55
 - `mfa`: 5
-- `org_admin`: 64
-- `org_member`: 56
+- `org_admin`: 66
+- `org_member`: 58
 - `platform_admin`: 29
-- `public`: 18
+- `public`: 20
