@@ -543,7 +543,7 @@
       ],
       "http_bindings": [],
       "policy": {
-        "exposure": "EXPOSURE_AUTHENTICATED",
+        "exposure": "EXPOSURE_PUBLIC",
         "tenant": "TENANT_REQUIREMENT_NONE",
         "permissions": [],
         "scopes": [],
@@ -560,9 +560,9 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "auth",
+      "policy_tier": "public",
       "description": "Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live.",
       "owner": {
         "module": "saas-starter",

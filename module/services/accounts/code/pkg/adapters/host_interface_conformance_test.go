@@ -78,10 +78,21 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 
 	// The composition: two module principals the host knows, as the module
 	// registry would hold them after delivery.
-	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+	registry := business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("documents"): {Prefix: "documents", Resources: []string{"example-records"}},
 		business.ModulePrincipalID("model"):     {Prefix: "model", Resources: []string{"modelservice.profiles"}},
-	})
+	}
+	svc.SetModuleCapabilities(store, nil, registry)
+
+	// The declared registry is what delivery derives; the ceiling is the manifest,
+	// so the derived registry is the manifest's own, at revision 1.
+	svc.InstallDerivedModulePrincipals(registry, 1, nil)
+
+	// Composition installs a module at every organisation (contract decision of
+	// 2026-10-22): the live module authority answers for every declared principal.
+	composed := business.NewComposedModuleInstallations(svc, store)
+	svc.SetModuleAuthorityReads(composed, nil)
+	svc.SetWorkContextSealStore(composed)
 
 	previous := service
 	service = svc

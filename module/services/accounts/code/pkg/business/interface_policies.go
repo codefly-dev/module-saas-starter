@@ -58,7 +58,9 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 	}
 	return map[string]*policyv1.MethodPolicy{
 		"/host.authority.v1.AuthorityService/Issue": authenticatedMint("saas.work_context.task_started"),
-		"/host.authority.v1.AuthorityService/Check": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		// Check is authenticated by the token it checks: the caller is whoever holds it,
+		// and the answer says nothing the token does not already carry but its standing.
+		"/host.authority.v1.AuthorityService/Check": read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.authority.v1.AuthorityService/Keys":  read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_PUBLIC),
 		"/host.composition.v1.CompositionService/ApplyManifest": {
 			Exposure: policyv1.Exposure_EXPOSURE_INTERNAL, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,

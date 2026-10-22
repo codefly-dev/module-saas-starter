@@ -73,6 +73,12 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	if req.GetAudience() == "" {
 		return nil, status.Error(codes.InvalidArgument, "an issue names its audience")
 	}
+	// An audience that is not composed does not exist, by the contract: refused
+	// NotFound by name before any mint, rather than as the host's own
+	// "not one this host serves" denial.
+	if service == nil || !service.IsDeclaredModulePrincipal(business.ModulePrincipalID(req.GetAudience())) {
+		return nil, status.Errorf(codes.NotFound, "audience %q is not composed", req.GetAudience())
+	}
 	scopes := scopesToHost(req.GetScopes())
 	ttl := int32(req.GetTtlSeconds())
 	var issued *gen.IssuedWorkContext
