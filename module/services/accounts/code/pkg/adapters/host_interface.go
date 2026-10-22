@@ -108,15 +108,14 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 			Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
 		})
 	case *authorityv1.IssueRequest_ParentToken:
-		if req.GetActor() != nil {
-			issued, err = s.workContexts.StartChildSession(ctx, &gen.StartChildSessionWorkContextRequest{
-				ParentWorkContextToken: as.ParentToken, Audience: req.GetAudience(), GrantedScopes: scopes, TtlSeconds: ttl,
-			})
-		} else {
+		if req.GetActor() == nil {
+			// An audience exchange keeps the chain: the owner's bearer authorizes it.
 			issued, err = s.workContexts.ExchangeAudience(ctx, &gen.ExchangeWorkContextAudienceRequest{
 				ParentWorkContextToken: as.ParentToken, Audience: req.GetAudience(), AttenuatedScopes: scopes, TtlSeconds: ttl,
 			})
+			break
 		}
+		issued, err = s.childHop(ctx, as.ParentToken, req)
 	case *authorityv1.IssueRequest_Workload:
 		// The credential names the module: reviewed by the execution reviewer,
 		// matched to the one principal declaring that workload. With a binding
@@ -353,4 +352,56 @@ func interfaceStatus(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 	}
 	return status.Error(codes.Internal, fmt.Sprintf("%v", err))
+}
+
+// childHop derives a module's hop on a person's context behind the interface:
+// the parent token is the authentication, the actor's credential names the
+// module, and the hop attenuates. The host's own child session is authorized by
+// the owner's bearer, which the module acting does not hold. The hop names no
+// binding (authority README, "Open decisions"), as the host's module hops do today.
+func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, req *authorityv1.IssueRequest) (*gen.IssuedWorkContext, error) {
+	parent, err := s.workContexts.verifyIssued(ctx, parentToken)
+	if err != nil {
+		return nil, interfaceStatus(err)
+	}
+	claims := parent.Context()
+	prefix, err := service.ModulePrefixOfWorkload(ctx, req.GetActor().GetCredential())
+	if err != nil {
+		if mapped := moduleIdentityError(err, codes.PermissionDenied, "actor credential refused"); mapped != nil {
+			return nil, mapped
+		}
+		return nil, status.Error(codes.PermissionDenied, "actor credential refused")
+	}
+	if req.GetOperationBindingId() != "" {
+		return nil, status.Error(codes.Unimplemented, "a hop naming its binding waits on core deciding where a cross-module binding is held")
+	}
+	// The owner's authority is re-read as the owner, as the module-caller
+	// exchange does: the parent token is what proves the owner here.
+	ctx = accountsauth.WithVerifiedDatabaseIdentity(ctx, claims.GetOwnerPrincipalId(), claims.GetTenantId())
+	if _, err := s.workContexts.requireCurrentAuthority(ctx, claims.GetTenantId(), claims); err != nil {
+		return nil, err
+	}
+	_, scopes, err := workContextScopes(scopesToHost(req.GetScopes()), mintContentReads(req.GetAudience()))
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if !workcontext.ScopesAttenuate(scopes, parent.EffectiveScopes()) {
+		return nil, status.Error(codes.PermissionDenied, "a child hop widens authority beyond its parent")
+	}
+	ttl := workContextTTL(int32(req.GetTtlSeconds()))
+	if ttl == 0 {
+		ttl = workContextDefaultTTL
+	}
+	token, signed, err := s.workContexts.coreAuthority(claims.GetTenantId(), claims.GetOwnerPrincipalId()).Child(ctx, parent, workcontext.ChildInput{
+		PrincipalID: business.ModulePrincipalID(prefix), PrincipalKind: business.PrincipalKindService,
+		DelegationID: uuid.NewString(), GrantedScopes: scopes, Audience: req.GetAudience(),
+		ReplayPolicy: workcontext.ReplayIdempotent, TTL: ttl,
+	})
+	if err != nil {
+		return nil, mapWorkContextError(ctx, err)
+	}
+	if err := s.workContexts.journalActorHop(ctx, signed); err != nil {
+		return nil, err
+	}
+	return issuedWorkContext(token, signed), nil
 }

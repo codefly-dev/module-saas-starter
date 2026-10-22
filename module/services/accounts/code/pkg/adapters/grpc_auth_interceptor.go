@@ -367,8 +367,10 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	if policy.Tier == business.RPCPolicyPublic {
 		return ctx, nil
 	}
-	if fullMethod == business.HostIssueMethod && len(md.Get("authorization")) == 0 {
-		// The request's shape authenticates: see business.HostIssueMethod.
+	if fullMethod == business.HostIssueMethod && len(md.Get("authorization")) == 0 && !(trustedForwarded && hasForwardedIdentity(md)) {
+		// A call carrying no credential at all: the request's shape
+		// authenticates (business.HostIssueMethod). A forwarded identity or a
+		// bearer is admitted as on every other method.
 		return ctx, nil
 	}
 

@@ -86,45 +86,61 @@ is a line of the gap list, which is the point.
 `HOST_INTERFACE_CONFORMANCE=1 go test ./pkg/adapters/ -run TestAccountsPassesTheHostInterfaceConformanceSuite`
 boots the test store, seeds the dev-admin fixture, configures the Work Context
 authority against the store, serves the Connect listener on an ephemeral port
-and runs the suite over gRPC.
+and runs the suite over gRPC. The harness composes three modules: documents (the
+audience the viewer reads at), org-directory (the page module, one declared
+workload, one binding to documents) and model (an audience the viewer's context
+is not addressed to); a fake cluster projects org-directory's credential.
 
-**Green (4 of 10):** Keys; sign-in and an unknown token refused by name; the
-whole person line (issued at documents, checked there, refused at model); every
-refusal reaches the caller with a reason.
+**Green (6 of 10):** Keys; sign-in and an unknown token refused by name; the
+person line; every refusal with a reason; the workload line; the child hop.
 
-What it took, each a fix at the place that owns the behaviour, none a hack:
+What it took, each a fix at the place that owns the behaviour:
 
-- *Composition installs a module at every organisation* (contract decision,
-  2026-10-22). `business.ComposedModuleInstallations` answers the live module
-  authority and the seal store for a composed module's installation, named
-  `<org>/<module principal>`, held by every member; everything else is the wrapped
-  Postgres store. A new control-plane membership read, `WorkContextOrgMember`,
-  sits beside the other seal reads because the tenant-scoped membership read
-  needs a verified identity a seal check does not carry. The harness wires it;
-  production keeps its reads until the registry derives these rows itself.
-- *An uncomposed audience is NotFound by name* (contract decision): the adapter
-  checks the derived registry through `ModulePrincipalID` before any mint.
-- *Check is authenticated by the token it checks*: policy `EXPOSURE_PUBLIC`,
-  like Keys. The answer carries nothing the token does not, but its standing.
-- *A refusal names its reason somewhere*: `mapWorkContextError` now takes the
-  context and logs the one case the caller is told nothing, `cannot issue Work
-  Context`, at WARN. Before, that reason lived nowhere; diagnosing the harness
-  is what exposed it.
-- *A fresh task per person-owned issue*; the session returns the access token as
-  the bearer; List is an administrator's read over the host's listing.
+- *Composition installs a module at every organisation* (contract decision):
+  `business.ComposedModuleInstallations` answers the live module authority and
+  the seal store for a composed module's installation, held by every member, with
+  the declared grant as its scope (the manifest is the ceiling); a control-plane
+  membership read, `WorkContextOrgMember`, sits beside the other seal reads.
+- *An uncomposed audience is NotFound by name*: checked against the derived
+  registry through `ModulePrincipalID` before any mint.
+- *Check is authenticated by the token it checks*: public, like Keys.
+- *Issue is authenticated by the request's shape* (`business.HostIssueMethod`):
+  both interceptors let a call carrying no credential at all reach the adapter,
+  which refuses a bearer-less person by name; a bearer or a forwarded identity is
+  admitted as on every other method.
+- *A workload is named by its credential alone*: `ModulePrefixOfWorkload` reviews
+  the credential and finds the one principal declaring that workload; the issue
+  is the host's operation context when a binding is named, the module's own
+  context otherwise; an undeclared binding is NotFound by name.
+- *An operation context names its binding*: the seal source resolves
+  `module-operation/<principal>/<binding>` from the installed grant and the
+  operation-task mint seals it. Until now the token carried no binding, which is
+  what left runtime hops "stale" at the revision check.
+- *A child hop by the parent token and the actor's credential*: `childHop`
+  verifies the parent as issued, names the actor from its credential, re-reads
+  the owner's authority as the owner, refuses widening as PermissionDenied and
+  derives the hop with no binding.
+- *A hidden refusal names its reason*: `mapWorkContextError` logs the one case
+  the caller is told nothing.
 
-**Red (6 of 10), each a host change of its own:**
+**Red (4 of 10):**
 
 | Red line | Gap | Proper fix |
 |---|---|---|
 | empty ask: `authority_scopes: must contain at least 1 item(s)` | **11** | an effective-permissions read in the host (person × audience → scopes); the adapter uses it when the ask is empty |
-| workload Issue: `authentication required` | 3 | the broker's attestation behind `Issue`: the workload credential in the request is the authentication |
-| child hop: `authentication required` | **13, new** | the host's `StartChildSession` authenticates the *owner's* bearer; the contract and the chain authenticate the *holder of the parent token* plus the actor's credential, because the holder is a module service, not the person. A child hop behind the interface verifies the parent and attests the actor, with no session |
-| `installed solution = <nil>` | fixture | the dev-admin fixture gains an `installations` section performed through the real install path at seed (owner decision 2026-10-22); needs a declared solution, so it follows gap 4 |
+| `installed solution = <nil>` | fixture | the dev-admin fixture gains an `installations` section performed through the real install path (owner decision); follows gap 4 |
 | ApplyManifest: `internal RPC is not exposed on the tenant listener` | 4 | the delivery path behind the composition interface, on the internal listener; the harness dials it there |
 | Install, GrantToTeam | 5 | name-to-id resolvers; not reached until the manifest applies |
 
-Suite changes today, each to state the contract more precisely and none to pass
-a red line: an authenticated caller for the audience probe; explicit scopes in
-base cases with the empty ask as its own line; List as an administrator's read;
-`Session.bearer`.
+**Open decision on core (gap 14):** a hop keeps the owner's seal installation
+and core requires a binding named on it to be granted within that installation;
+a module's binding is granted within the module's own installation. So a
+cross-module hop cannot name the binding it exercises today; the host carries it
+out of band in the revision check's request. The suite does not ask the hop to
+name one until core decides (authority README, "Open decisions").
+
+Suite changes today, each stating the contract more precisely and none passing a
+red line: an authenticated caller for the audience probe; explicit scopes in base
+cases with the empty ask as its own line; List as an administrator's read;
+`Session.bearer`; the elsewhere audience as its own fixture field; the hop names no
+binding until core decides.
