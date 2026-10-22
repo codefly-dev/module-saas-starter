@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file host/authority/v1/authority.proto.
  */
 export const file_host_authority_v1_authority: GenFile = /*@__PURE__*/
-  fileDesc("CiFob3N0L2F1dGhvcml0eS92MS9hdXRob3JpdHkucHJvdG8SEWhvc3QuYXV0aG9yaXR5LnYxIpsDCgxJc3N1ZVJlcXVlc3QSMgoGcGVyc29uGAEgASgLMiAuaG9zdC5hdXRob3JpdHkudjEuUGVyc29uU2Vzc2lvbkgAEjkKCHdvcmtsb2FkGAIgASgLMiUuaG9zdC5hdXRob3JpdHkudjEuV29ya2xvYWRDcmVkZW50aWFsSAASOgoMaW5zdGFsbGF0aW9uGAMgASgLMiIuaG9zdC5hdXRob3JpdHkudjEuSW5zdGFsbGF0aW9uUmVmSAASFgoMcGFyZW50X3Rva2VuGAQgASgJSAASEAoIYXVkaWVuY2UYBSABKAkSLgoGc2NvcGVzGAYgAygLMh4uaG9zdC5hdXRob3JpdHkudjEuV29ya1Njb3BlVjESEwoLdHRsX3NlY29uZHMYByABKAMSHAoUb3BlcmF0aW9uX2JpbmRpbmdfaWQYCCABKAkSFwoPb3JnYW5pemF0aW9uX2lkGAkgASgJEjQKBWFjdG9yGAogASgLMiUuaG9zdC5hdXRob3JpdHkudjEuV29ya2xvYWRDcmVkZW50aWFsQgQKAmFzIiMKDVBlcnNvblNlc3Npb24SEgoKc2Vzc2lvbl9pZBgBIAEoCSIoChJXb3JrbG9hZENyZWRlbnRpYWwSEgoKY3JlZGVudGlhbBgBIAEoCSIqCg9JbnN0YWxsYXRpb25SZWYSFwoPaW5zdGFsbGF0aW9uX2lkGAEgASgJImoKDUlzc3VlUmVzcG9uc2USDQoFdG9rZW4YASABKAkSFwoPZXhwaXJlc19hdF91bml4GAIgASgDEjEKB2NvbnRleHQYAyABKAsyIC5ob3N0LmF1dGhvcml0eS52MS5Xb3JrQ29udGV4dFYxIi8KDENoZWNrUmVxdWVzdBINCgV0b2tlbhgBIAEoCRIQCghhdWRpZW5jZRgCIAEoCSJiCg1DaGVja1Jlc3BvbnNlEjEKB2NvbnRleHQYASABKAsyIC5ob3N0LmF1dGhvcml0eS52MS5Xb3JrQ29udGV4dFYxEh4KFmF1dGhvcml6YXRpb25fcmV2aXNpb24YAiABKAQiDQoLS2V5c1JlcXVlc3QiSgoMS2V5c1Jlc3BvbnNlEg4KBmlzc3VlchgBIAEoCRIqCgRrZXlzGAIgAygLMhwuaG9zdC5hdXRob3JpdHkudjEuUHVibGljS2V5IkIKCVB1YmxpY0tleRIOCgZrZXlfaWQYASABKAkSEQoJYWxnb3JpdGhtGAIgASgJEhIKCnB1YmxpY19rZXkYAyABKAwy8wEKEEF1dGhvcml0eVNlcnZpY2USSgoFSXNzdWUSHy5ob3N0LmF1dGhvcml0eS52MS5Jc3N1ZVJlcXVlc3QaIC5ob3N0LmF1dGhvcml0eS52MS5Jc3N1ZVJlc3BvbnNlEkoKBUNoZWNrEh8uaG9zdC5hdXRob3JpdHkudjEuQ2hlY2tSZXF1ZXN0GiAuaG9zdC5hdXRob3JpdHkudjEuQ2hlY2tSZXNwb25zZRJHCgRLZXlzEh4uaG9zdC5hdXRob3JpdHkudjEuS2V5c1JlcXVlc3QaHy5ob3N0LmF1dGhvcml0eS52MS5LZXlzUmVzcG9uc2VCvQEKFWNvbS5ob3N0LmF1dGhvcml0eS52MUIOQXV0aG9yaXR5UHJvdG9QAVouYWNjb3VudHMvcGtnL2dlbi9ob3N0L2F1dGhvcml0eS92MTthdXRob3JpdHl2MaICA0hBWKoCEUhvc3QuQXV0aG9yaXR5LlYxygIRSG9zdFxBdXRob3JpdHlcVjHiAh1Ib3N0XEF1dGhvcml0eVxWMVxHUEJNZXRhZGF0YeoCE0hvc3Q6OkF1dGhvcml0eTo6VjFiBnByb3RvMw", [file_host_authority_v1_work_context]);
+  fileDesc("CiFob3N0L2F1dGhvcml0eS92MS9hdXRob3JpdHkucHJvdG8SEWhvc3QuYXV0aG9yaXR5LnYxIpsDCgxJc3N1ZVJlcXVlc3QSMgoGcGVyc29uGAEgASgLMiAuaG9zdC5hdXRob3JpdHkudjEuUGVyc29uU2Vzc2lvbkgAEjkKCHdvcmtsb2FkGAIgASgLMiUuaG9zdC5hdXRob3JpdHkudjEuV29ya2xvYWRDcmVkZW50aWFsSAASOgoMaW5zdGFsbGF0aW9uGAMgASgLMiIuaG9zdC5hdXRob3JpdHkudjEuSW5zdGFsbGF0aW9uUmVmSAASFgoMcGFyZW50X3Rva2VuGAQgASgJSAASEAoIYXVkaWVuY2UYBSABKAkSLgoGc2NvcGVzGAYgAygLMh4uaG9zdC5hdXRob3JpdHkudjEuV29ya1Njb3BlVjESEwoLdHRsX3NlY29uZHMYByABKAMSHAoUb3BlcmF0aW9uX2JpbmRpbmdfaWQYCCABKAkSFwoPb3JnYW5pemF0aW9uX2lkGAkgASgJEjQKBWFjdG9yGAogASgLMiUuaG9zdC5hdXRob3JpdHkudjEuV29ya2xvYWRDcmVkZW50aWFsQgQKAmFzIiEKDVBlcnNvblNlc3Npb25KBAgBEAJSCnNlc3Npb25faWQiKAoSV29ya2xvYWRDcmVkZW50aWFsEhIKCmNyZWRlbnRpYWwYASABKAkiKgoPSW5zdGFsbGF0aW9uUmVmEhcKD2luc3RhbGxhdGlvbl9pZBgBIAEoCSJqCg1Jc3N1ZVJlc3BvbnNlEg0KBXRva2VuGAEgASgJEhcKD2V4cGlyZXNfYXRfdW5peBgCIAEoAxIxCgdjb250ZXh0GAMgASgLMiAuaG9zdC5hdXRob3JpdHkudjEuV29ya0NvbnRleHRWMSIvCgxDaGVja1JlcXVlc3QSDQoFdG9rZW4YASABKAkSEAoIYXVkaWVuY2UYAiABKAkiYgoNQ2hlY2tSZXNwb25zZRIxCgdjb250ZXh0GAEgASgLMiAuaG9zdC5hdXRob3JpdHkudjEuV29ya0NvbnRleHRWMRIeChZhdXRob3JpemF0aW9uX3JldmlzaW9uGAIgASgEIg0KC0tleXNSZXF1ZXN0IkoKDEtleXNSZXNwb25zZRIOCgZpc3N1ZXIYASABKAkSKgoEa2V5cxgCIAMoCzIcLmhvc3QuYXV0aG9yaXR5LnYxLlB1YmxpY0tleSJCCglQdWJsaWNLZXkSDgoGa2V5X2lkGAEgASgJEhEKCWFsZ29yaXRobRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMMvMBChBBdXRob3JpdHlTZXJ2aWNlEkoKBUlzc3VlEh8uaG9zdC5hdXRob3JpdHkudjEuSXNzdWVSZXF1ZXN0GiAuaG9zdC5hdXRob3JpdHkudjEuSXNzdWVSZXNwb25zZRJKCgVDaGVjaxIfLmhvc3QuYXV0aG9yaXR5LnYxLkNoZWNrUmVxdWVzdBogLmhvc3QuYXV0aG9yaXR5LnYxLkNoZWNrUmVzcG9uc2USRwoES2V5cxIeLmhvc3QuYXV0aG9yaXR5LnYxLktleXNSZXF1ZXN0Gh8uaG9zdC5hdXRob3JpdHkudjEuS2V5c1Jlc3BvbnNlQr0BChVjb20uaG9zdC5hdXRob3JpdHkudjFCDkF1dGhvcml0eVByb3RvUAFaLmFjY291bnRzL3BrZy9nZW4vaG9zdC9hdXRob3JpdHkvdjE7YXV0aG9yaXR5djGiAgNIQViqAhFIb3N0LkF1dGhvcml0eS5WMcoCEUhvc3RcQXV0aG9yaXR5XFYx4gIdSG9zdFxBdXRob3JpdHlcVjFcR1BCTWV0YWRhdGHqAhNIb3N0OjpBdXRob3JpdHk6OlYxYgZwcm90bzM", [file_host_authority_v1_work_context]);
 
 /**
  * IssueRequest names on whose behalf the capability is issued.
@@ -33,7 +33,8 @@ export type IssueRequest = Message<"host.authority.v1.IssueRequest"> & {
    */
   as: {
     /**
-     * A signed-in person, by the session the host opened for them.
+     * The signed-in person making this call, identified by the bearer the call
+     * carries; the host opened that session at sign-in.
      *
      * @generated from field: host.authority.v1.PersonSession person = 1;
      */
@@ -117,17 +118,13 @@ export const IssueRequestSchema: GenMessage<IssueRequest> = /*@__PURE__*/
   messageDesc(file_host_authority_v1_authority, 0);
 
 /**
- * PersonSession identifies a signed-in person by their session.
+ * PersonSession names the caller's own session. It carries no field: the person
+ * is whoever the bearer on the call authenticates as, so a caller cannot ask for
+ * another person's authority by naming a session.
  *
  * @generated from message host.authority.v1.PersonSession
  */
 export type PersonSession = Message<"host.authority.v1.PersonSession"> & {
-  /**
-   * The session id the host returned at sign-in.
-   *
-   * @generated from field: string session_id = 1;
-   */
-  sessionId: string;
 };
 
 /**
@@ -138,13 +135,15 @@ export const PersonSessionSchema: GenMessage<PersonSession> = /*@__PURE__*/
   messageDesc(file_host_authority_v1_authority, 1);
 
 /**
- * WorkloadCredential proves which module a running process is.
+ * WorkloadCredential proves which module a running process is: the native
+ * launcher credential core's workloadidentity defines, signed by the one launcher
+ * the host was handed an anchor for.
  *
  * @generated from message host.authority.v1.WorkloadCredential
  */
 export type WorkloadCredential = Message<"host.authority.v1.WorkloadCredential"> & {
   /**
-   * The credential the launcher signed for this process.
+   * The launcher-signed credential, as core's native issuer writes it.
    *
    * @generated from field: string credential = 1;
    */

@@ -78,16 +78,13 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	var err error
 	switch as := req.GetAs().(type) {
 	case *authorityv1.IssueRequest_Person:
-		// The person is whoever the perimeter verified; the session named must be
-		// theirs. accounts has no session lookup by id and needs none: the bearer
-		// that reached this call is the session.
+		// The person is whoever the perimeter verified from the bearer on this
+		// call; the request names nobody, by the interface's design.
 		identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
 		if !ok {
 			return nil, status.Error(codes.Unauthenticated, "a person-owned issue is made by the signed-in person")
 		}
-		if as.Person.GetSessionId() != identity.SessionID.String() {
-			return nil, status.Error(codes.PermissionDenied, "the session named is not the caller's")
-		}
+		_ = as
 		if err := requireOrgMember(ctx, identity.EffectiveSubject.String(), identity.OrgID.String()); err != nil {
 			return nil, err
 		}
