@@ -40,8 +40,13 @@ import (
 // because the context it yields acts on that person's behalf.
 const DelegationModeContentRead = "content_read"
 
+// DelegationModeModuleActor issues the person's child with the exchanging
+// module as its one actor hop, so the callee sees who acts for the person.
+const DelegationModeModuleActor = "module_actor"
+
 // DelegationMode is host-owned: content_read requires an authentic installed
-// module child and live personal visibility. Empty preserves ordinary exchanges.
+// module child and live personal visibility; module_actor requires the same
+// installed child for any invoke scope. Empty preserves ordinary exchanges.
 type ModuleOperationAudience struct {
 	DelegationMode         string                 `json:"delegation_mode,omitempty"`
 	Audience               string                 `json:"audience"`
@@ -181,10 +186,13 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 			return fmt.Errorf("invalid installed module operation audience binding")
 		}
 		if binding.DelegationMode != "" {
-			if binding.DelegationMode != DelegationModeContentRead || len(binding.InvokeScopes) == 0 || binding.HeadlessScopes != nil || binding.SourceDelegationScopes != nil {
-				return fmt.Errorf("invalid installed content-read delegation mode")
+			if _, known := installedBindingPrefixes[binding.DelegationMode]; !known || len(binding.InvokeScopes) == 0 || binding.HeadlessScopes != nil || binding.SourceDelegationScopes != nil {
+				return fmt.Errorf("invalid installed delegation mode")
 			}
 			for _, scope := range binding.InvokeScopes {
+				if binding.DelegationMode != DelegationModeContentRead {
+					break
+				}
 				if len(scope.Actions) != 1 || scope.Actions[0] != "read" {
 					return fmt.Errorf("content-read delegation grants only read")
 				}

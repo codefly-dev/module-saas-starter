@@ -175,6 +175,13 @@ a host without it refuses migration and preserves its current envelope.
 See [Work Contexts](../../WORK_CONTEXTS.md#installed-delegated-audience-exchange)
 for the envelope field, terminal-lifetime rules and full exchange contract.
 
+`delegation_mode: module_actor` issues the same terminal child for invoke
+scopes the audience serves, addressed to a module, a `solution:` audience or
+the host's source operations for named sources, so the callee sees the
+installed module acting for the person. The person's own grants still decide
+every scope; the module's hop adds none, and its binding commits to both
+installations' lifetimes where the audience has one.
+
 ## A read grant is standing to mint a content read
 
 A module reading content for a viewer presents that viewer's Work Context,

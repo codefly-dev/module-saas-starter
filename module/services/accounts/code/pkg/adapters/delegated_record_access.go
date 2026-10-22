@@ -56,7 +56,7 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, claims.GetOwnerPrincipalId(), claims.GetTenantId())
 	installedRead := business.NamesInstalledContentRead(claims.GetOperationBinding().GetBindingId())
 	if installedRead {
-		if err := authority.requireInstalledContentRead(ctx, claims); err != nil {
+		if err := authority.requireInstalledBinding(ctx, claims); err != nil {
 			return nil, err
 		}
 	}

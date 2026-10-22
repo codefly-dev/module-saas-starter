@@ -389,8 +389,8 @@ func (s *WorkContextAuthorityServer) remint(
 	ctx context.Context, parent *basev0.WorkContextV1, audience, replay string, ttl time.Duration,
 	attenuated []*basev0.WorkScopeV1, session string, exercised moduleBindingSeal,
 ) (string, *basev0.WorkContextV1, error) {
-	if business.NamesInstalledContentRead(parent.GetOperationBinding().GetBindingId()) {
-		return "", nil, status.Error(codes.PermissionDenied, "installed content child cannot be reminted")
+	if business.NamesInstalledBinding(parent.GetOperationBinding().GetBindingId()) {
+		return "", nil, status.Error(codes.PermissionDenied, "installed binding child cannot be reminted")
 	}
 	// The seal follows the owner. A person's capability is sealed to the
 	// organization's installation of the audience it addresses — what an

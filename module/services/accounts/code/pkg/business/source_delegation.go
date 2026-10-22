@@ -808,10 +808,10 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 		if !installed || validateOperationAudiences(grant.Prefix, map[string]ModuleOperationAudience{bindingID: binding}) != nil {
 			return ErrSourceDelegationInvalid
 		}
-		// Installed content reads require a human root and the exact installed
+		// Installed delegation modes require a human root and the exact installed
 		// binding lifetime. A source reference seals a different authority and
-		// cannot be substituted, even when its read scopes happen to overlap.
-		if binding.DelegationMode == DelegationModeContentRead {
+		// cannot be substituted, even when its scopes happen to overlap.
+		if binding.DelegationMode != "" {
 			return ErrSourceDelegationInvalid
 		}
 		// A person delegated this work, and a headless-only binding was granted

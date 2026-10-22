@@ -146,6 +146,47 @@ and installation checks. A host without the configured policy-log witness
 refuses a mode migration and leaves the stored envelope revision unchanged.
 No local substitute witness or automatically inferred migration is supported.
 
+**Installed module actors.**
+
+`"delegation_mode": "module_actor"` is the same installed child for a module
+that acts on a person's behalf, so the callee can see which module acted. It
+takes the content-read rules above except that its invoke scopes are not
+limited to `read`. Its audience is one of three:
+
+- a module, which must serve every kind the binding names;
+- a `solution:` audience, held by the organization's installation of that
+  solution;
+- the host's own source operations (`saas-datasource`), where every scope names
+  `datasource.sources` with explicit source ids and carries only `invoke` and
+  `read`. The source surface then takes the call as the person's, with the
+  module acting, for those sources only, and rechecks the person's access to
+  the source on every call.
+
+Lookup, when declared, still yields only lookup scopes.
+
+```json
+{"audience":"solution:example-tools","delegation_mode":"module_actor","invoke_scopes":[{"resource_kind":"tickets","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"tickets","actions":["read"]}]}
+```
+
+The parent must be a current human-owned root with no actor hops, addressed to
+the authenticated caller module. Core's Child operation derives owner, tenant,
+task and expiry from that parent; the one hop it adds is the authenticated
+caller's module principal, never one the request names, so it equals the owner
+of the module Work Context the host issued that module. The hop is journaled
+like any on-behalf-of hop. The binding id is namespaced `installed-actor/` and
+commits to the caller's installation, presence and envelope facts and to the
+audience's installation where it has one: a module audience's presence and
+installation, or the organization's installation of a solution audience.
+Uninstalling, reinstalling or narrowing either side retires every child
+already issued. A callee's
+revision check confirms the hop from the binding it names
+(`ConfirmModuleHopBinding`); only the owner is a question for the
+authorization store. The child is terminal, as above.
+
+The mode is the binding's, never the request's. The chain-preserving exchange,
+StartTask and registered-agent actors are unchanged, and a binding without a
+mode keeps its owner-only child.
+
 Resource kinds, actions and resource ids are sorted and unique; wildcards are
 refused. Lookup scopes are optional: a binding that declares only invoke scopes
 redeems no lookup, and a lookup exchange under it is refused by name. When present,

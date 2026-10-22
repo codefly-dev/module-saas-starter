@@ -198,8 +198,8 @@ func (s *WorkContextAuthorityServer) confirmCurrentAuthority(
 					wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()),
 					wool.Field("module", principalID), wool.Field("binding", req.GetOperationBindingId()),
 					wool.ErrField(err))
-				if business.NamesInstalledContentRead(req.GetOperationBindingId()) {
-					return installedContentReadError(err)
+				if business.NamesInstalledBinding(req.GetOperationBindingId()) {
+					return installedBindingError(err)
 				}
 				return status.Error(codes.PermissionDenied, business.ErrModuleHopStale.Error())
 			}
@@ -1668,8 +1668,8 @@ func (s *WorkContextAuthorityServer) verifyParent(
 		return nil, nil, refusedReadBack(ctx, err, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller"))
 	}
 	claims := parent.Context()
-	if business.NamesInstalledContentRead(claims.GetOperationBinding().GetBindingId()) {
-		return nil, nil, status.Error(codes.PermissionDenied, "installed content child cannot be transformed")
+	if business.NamesInstalledBinding(claims.GetOperationBinding().GetBindingId()) {
+		return nil, nil, status.Error(codes.PermissionDenied, "installed binding child cannot be transformed")
 	}
 	if claims.GetTenantId() != orgID || claims.GetOwnerPrincipalId() != ownerID {
 		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
@@ -1700,8 +1700,8 @@ func (s *WorkContextAuthorityServer) verifyActorParent(
 		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
 	}
 	claims := parent.Context()
-	if business.NamesInstalledContentRead(claims.GetOperationBinding().GetBindingId()) {
-		return nil, nil, status.Error(codes.PermissionDenied, "installed content child cannot be renewed")
+	if business.NamesInstalledBinding(claims.GetOperationBinding().GetBindingId()) {
+		return nil, nil, status.Error(codes.PermissionDenied, "installed binding child cannot be renewed")
 	}
 	actors := claims.GetActorChain()
 	if len(actors) == 0 {
@@ -1735,8 +1735,8 @@ func (s *WorkContextAuthorityServer) requireCurrentAuthority(
 	orgID string,
 	parent *basev0.WorkContextV1,
 ) (*business.Principal, error) {
-	if business.NamesInstalledContentRead(parent.GetOperationBinding().GetBindingId()) {
-		return nil, s.requireInstalledContentRead(ctx, parent)
+	if business.NamesInstalledBinding(parent.GetOperationBinding().GetBindingId()) {
+		return nil, s.requireInstalledBinding(ctx, parent)
 	}
 	ownerID := parent.GetOwnerPrincipalId()
 	if len(parent.GetActorChain()) == 0 {
