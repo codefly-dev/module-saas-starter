@@ -9,8 +9,10 @@ agent:
 workspace-configuration-dependencies:
     - policy-log
 endpoints:
-    # Private to this module. The host declares the dependency when its client
-    # is wired; neither the public gateway nor composed modules get this API.
+    # Private to this module. The host reaches it through the
+    # `policy-log-witness` group a composition root binds per environment, never
+    # a declared dependency; neither the public gateway nor composed modules get
+    # this API.
     - name: grpc
 spec:
     hot-reload: true

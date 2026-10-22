@@ -19,11 +19,13 @@ import (
 	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/email"
 	"accounts/pkg/eventcatalog"
+	policylogv1 "accounts/pkg/gen/saas/policylog/v1"
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
 	"accounts/pkg/keyservice"
 	"accounts/pkg/membership"
+	"accounts/pkg/meshtransport"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
 	"accounts/pkg/redisstate"
@@ -48,6 +50,8 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	otelmetric "go.opentelemetry.io/otel/metric"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func init() {
@@ -539,37 +543,49 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// The policy log: append → receipt → commit, before authority is narrowed.
 	//
-	// THIS DEPLOYMENT HAS NO LOG TRANSPORT, and that is stated by wiring none
-	// rather than by wiring something that refuses. The difference matters now
-	// that the serving gate is on the request path: a host holding a log it can
-	// never reach never refreshes `reached_at`, so the staleness window closes
-	// and the host stops answering anything — a total outage dressed as
-	// fail-closed. A host holding NO log has nothing unreconciled to honour, so
-	// `MayServe` admits and the host serves.
+	// The log is the module's independent signed witness (services/policy-log),
+	// and this host is its one client. Two things must be DELIVERED for the
+	// client to be wired, and both are composition's to deliver, never this
+	// host's to invent:
 	//
-	// What it cannot do is NARROW authority. `WithPolicyLoggedNarrowing` refuses
-	// outright, so uninstalling a solution, closing a withdrawn solution
-	// target, revoking a scope grant and removing a team membership all refuse
-	// with ErrPolicyLogUnreachable until a transport exists. That is the
-	// protocol's own answer — a narrowing nothing witnessed is one a restore
-	// silently undoes — and it is loud rather than silent, below.
+	//   - the witness's private gRPC endpoint, which resolves only when this
+	//     service declares the dependency and composition grants it; and
+	//   - the witness's public key, pinned in the trust anchor. Every receipt
+	//     and cursor is verified against that pin, and the key the witness
+	//     publishes about itself is only compared with it, never adopted.
 	//
-	// WHY THERE IS NO TRANSPORT. The warehouse the log lives in cannot issue the
-	// receipt the protocol requires. `PolicyLog.Append` must return a token the
-	// LOG minted and a monotonic sequence the LOG assigned, because the receipt
-	// is what separates "the log witnessed this" from "this host decided it". A
-	// BigQuery dataset assigns neither to a writer: the non-job write paths
-	// return no ordinal, ingestion time is not readable until the streaming
-	// buffer flushes, and the writer role deliberately holds no read and no
-	// job-creation permission, so it cannot read its own row back to learn
-	// either. Closing that needs a receipt-issuing appender inside the
-	// warehouse's trust domain, which is infrastructure this service does not
-	// own. Anything else would be this host minting its own receipt — the exact
-	// tautology the protocol exists to prevent.
-	service.SetPolicyLog(nil, nil)
-	w.Warn("no policy log transport is configured: this host SERVES normally and REFUSES every " +
-		"narrowing of authority (solution uninstall, solution-target close, scope-grant revocation, " +
-		"team-membership removal), because a narrowing nothing witnessed is one a restore undoes silently")
+	// With both, every narrowing — solution uninstall, solution-target close,
+	// scope-grant revocation, team-membership removal — appends to the witness
+	// and commits the verified receipt in the transaction that narrows, and the
+	// reconciliation loop below keeps `reached_at` fresh from a signed, fresh
+	// cursor. A witness that stops answering then closes the staleness window
+	// and this host stops serving, rather than narrowing unwitnessed.
+	//
+	// Without both, the host is CONFIGURED without a witness, and wires none
+	// rather than wiring something that refuses. The difference matters because
+	// the serving gate is on the request path: a host holding a log it can never
+	// reach never refreshes `reached_at`, so the window closes and the host
+	// stops answering anything — a total outage dressed as fail-closed. A host
+	// holding NO log has nothing unreconciled to honour, so `MayServe` admits and
+	// it serves, and `WithPolicyLoggedNarrowing` refuses every narrowing with
+	// ErrPolicyLogUnreachable: a narrowing nothing witnessed is one a restore of
+	// this database undoes silently. That refusal is loud, below.
+	policyLogWitness, policyLogWitnessClose, policyLogWitnessAbsent, err := configuredPolicyLogWitness(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("configure policy log witness: %w", err)
+	}
+	if policyLogWitness != nil {
+		service.SetPolicyLog(policyLogWitness, store)
+		w.Info("policy log witness configured: narrowings append to the witness and commit its verified receipt; "+
+			"this host stops serving if the witness is not reached within the staleness window",
+			wool.Field("staleness_window", business.PolicyLogStaleAfter.String()))
+	} else {
+		service.SetPolicyLog(nil, nil)
+		w.Warn("no policy log witness is configured for this host: it SERVES normally and REFUSES every "+
+			"narrowing of authority (solution uninstall, solution-target close, scope-grant revocation, "+
+			"team-membership removal), because a narrowing nothing witnessed is one a restore undoes silently",
+			wool.Field("reason", policyLogWitnessAbsent))
+	}
 
 	// The serving gate, on the request path. Registered for both transports'
 	// authorization interceptors; with no log wired it admits, which is what
@@ -1324,6 +1340,15 @@ func doWork(ctx context.Context) (Clean, error) {
 	if solutionHostBindingReconciler != nil {
 		solutionHostBindingReconciler.Start(ctx)
 	}
+	// Reconciliation is what keeps a witnessed host serving: each pass reads a
+	// signed cursor and every entry past this host's own, records the ones it
+	// has not applied as gaps, and refreshes `reached_at`. It runs at once and
+	// then on an interval shorter than the staleness window. With no witness
+	// wired it returns immediately.
+	policyLogCtx, policyLogCancel := context.WithCancel(ctx)
+	go service.ReconcilePolicyLogEvery(policyLogCtx, business.PolicyLogReconcileInterval, func(err error) {
+		wool.Get(policyLogCtx).In("policy-log").Warn("reconciliation pass failed; the cursor is not advanced", wool.ErrField(err))
+	})
 	if analyticsWorker != nil {
 		analyticsWorker.Start(ctx)
 	}
@@ -1443,6 +1468,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		}
 		sw.Info("stopping retention goroutine")
 		retentionCancel()
+		policyLogCancel()
+		if policyLogWitnessClose != nil {
+			if err := policyLogWitnessClose(); err != nil {
+				sw.Warn("policy log witness connection close failed", wool.ErrField(err))
+			}
+		}
 		sw.Info("closing audit emitter")
 		auditEmitter.Close()
 		sw.Info("audit emitter closed")
@@ -3009,4 +3040,98 @@ func registerMembershipCacheHealth(c *membership.Cache) {
 			o.ObserveInt64(gauge, storeOnly)
 			return nil
 		}, gauge)
+}
+
+// configuredPolicyLogWitness builds the witness client when composition has
+// delivered both halves of it: the endpoint and the pinned key.
+//
+// It answers in one of three ways. A client and its closer, when both are
+// delivered. No client and the reason, when either is absent — the host then
+// serves and refuses narrowings, which is a configuration and is reported as
+// one. An error, which refuses the boot, only when a pinned key IS delivered and
+// cannot be used: that host would refuse every narrowing for a reason nobody
+// could see, and a broken trust anchor is a delivery fault an operator must be
+// shown, not absorbed.
+//
+// THE PIN'S LOCATION IS NOT CONFIGURABLE. It is a fixed file in the trust
+// anchor (infra.SolutionHostTrustAnchorPath), for the reason the anchor itself
+// is fixed: workspace configuration is delivered by the composition, and a
+// composition that could choose which key verifies the witness could stand up
+// a witness of its own.
+//
+// THE TRANSPORT CARRIES NO APPLICATION CREDENTIAL. The witness listener admits
+// its one client through workload-authenticated mesh policy derived from this
+// service's declared dependency, and checks nothing in-band; minting a token
+// for it here would be a second identity scheme nothing verifies. What makes a
+// receipt believable is not the channel but the pinned signature on it.
+func configuredPolicyLogWitness(ctx context.Context) (*infra.WitnessPolicyLog, func() error, string, error) {
+	key, pinned, err := infra.ReadPolicyLogWitnessKey()
+	if err != nil {
+		return nil, nil, "", err
+	}
+	// The composition root binds the witness, per environment, in the
+	// `policy-log-witness` group (`endpoint=${endpoint:saas/policy-log/grpc}`);
+	// the module ships it empty. A value that is there and cannot be read is a
+	// delivery fault and refuses the boot, never "no witness".
+	address, bound, readErr := codefly.For(ctx).WorkspaceValueIfSet(policyLogWitnessGroup, policyLogWitnessEndpointKey)
+	if readErr != nil {
+		return nil, nil, "", fmt.Errorf("%s/%s is delivered and cannot be read: %w", policyLogWitnessGroup, policyLogWitnessEndpointKey, readErr)
+	}
+	address = strings.TrimSpace(address)
+	switch {
+	case (!bound || address == "") && !pinned:
+		return nil, nil, "the composition binds no policy-log witness for this environment and no witness key is pinned in the trust anchor", nil
+	case !bound || address == "":
+		// The pin comes from the platform-owned anchor, so it — not the
+		// composition — decides that this environment HAS a witness. Serving here
+		// with no log wired would switch the serving gate off on a host whose
+		// database may already depend on the witness: a restore could then undo
+		// a witnessed narrowing with only a warning in the log.
+		return nil, nil, "", fmt.Errorf("a witness key is pinned in the trust anchor but the composition binds no witness endpoint (%s/%s): refusing to serve without the witness this environment is pinned to", policyLogWitnessGroup, policyLogWitnessEndpointKey)
+	case !pinned:
+		return nil, nil, "the composition binds a policy-log witness but no witness key is pinned in the trust anchor, and a key read from the witness itself is never trusted", nil
+	}
+	// Plaintext only where the mesh carries the hop (handbook security posture,
+	// rule 1): the composition asserts internal-transport/mesh-protected=true
+	// and the witness is an in-cluster Service address. Otherwise refused by
+	// name — without the mesh the witness's "only my declared client" admission
+	// does not hold, and anyone on the path could append to it or replay a
+	// cursor. There is no loopback exception: no local run delivers a pin.
+	if err := policyLogWitnessTransport(codefly.For(ctx), address); err != nil {
+		return nil, nil, "", err
+	}
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("dial the policy-log witness at %s: %w", address, err)
+	}
+	witness, err := infra.NewWitnessPolicyLog(policylogv1.NewWitnessServiceClient(conn), key)
+	if err != nil {
+		_ = conn.Close()
+		return nil, nil, "", err
+	}
+	return witness, conn.Close, "", nil
+}
+
+// policyLogWitnessGroup is the workspace configuration group the composition
+// root binds the witness's address in, per environment; the module ships it
+// empty. Read rather than declared as a service dependency, so the edge exists
+// only where an environment provisions the witness — a local run never starts
+// one it could not boot.
+const (
+	policyLogWitnessGroup       = "policy-log-witness"
+	policyLogWitnessEndpointKey = "endpoint"
+)
+
+// policyLogWitnessTransport admits the plaintext dial to the witness only under
+// the mesh assertion and to an in-cluster Service address, and refuses it by
+// name otherwise.
+func policyLogWitnessTransport(source meshtransport.Source, host string) error {
+	protected, err := meshtransport.Protected(source)
+	if err != nil {
+		return err
+	}
+	if !protected || !meshtransport.ClusterServiceHost(host) {
+		return fmt.Errorf("refusing cleartext gRPC to the policy-log witness at %q: %s", host, meshtransport.Remedy)
+	}
+	return nil
 }
