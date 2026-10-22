@@ -8,6 +8,7 @@ import {
 import type {
 	ConnectGitHubInput,
 	DatasourceClient,
+	EditSourceInput,
 	SourceReconcileReceipt,
 } from "./types.js";
 
@@ -127,6 +128,27 @@ function admitted(
 	};
 	notifySourceReconcileAdmitted(pass);
 	return pass;
+}
+
+/**
+ * Edits what a connected source fetches. The held source list is invalidated
+ * because the row's branch and paths are what it renders, and the boundary
+ * answers are deliberately NOT: an edit cannot move a source's collection, so
+ * nothing a collection query holds has gone stale.
+ */
+export function useUpdateSource(client: DatasourceClient) {
+	const queryClient = useQueryClient();
+	const updateSource = client.updateSource?.bind(client);
+	return useMutation({
+		mutationFn: (input: EditSourceInput) => {
+			if (!updateSource) {
+				throw new Error("this client cannot edit a connected source");
+			}
+			return updateSource(input);
+		},
+		onSuccess: (_result, input) =>
+			queryClient.invalidateQueries({ queryKey: sourcesKey(input.orgId) }),
+	});
 }
 
 export function useDeleteSource(client: DatasourceClient) {

@@ -812,10 +812,49 @@ func (s *PermServer) GrantScope(ctx context.Context, req *gen.GrantScopeRequest)
 	// mutation: a factor check the write has already passed is not a check.
 	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
 	// role or organization owner is refused rather than admitted.
-	if err := requireMFA(ctx, actorID); err != nil {
+	//
+	// A role that grants only reads — a collection's read access handed to a
+	// member or a team — grants no privilege the factor exists to protect: the
+	// subject can change nothing, and the grant is revoked by the same
+	// administrator without a factor. Gating it left an administrator sharing a
+	// collection fifteen minutes after signing in with a refusal nothing on
+	// the page could act on. The role is read in the grant's organization, so
+	// what is exempted is what the store says the role grants, not the name.
+	readOnly, err := roleGrantsOnlyReads(ctx, req.OrgId, req.RoleId)
+	if err != nil {
 		return nil, err
 	}
+	if !readOnly {
+		if err := requireMFA(ctx, actorID); err != nil {
+			return nil, err
+		}
+	}
 	return service.GrantScope(ctx, actorID, req)
+}
+
+// roleGrantsOnlyReads reports whether every permission of the role is a read.
+// An unknown role is not read-only: the grant itself refuses it, after the
+// factor gate has had its say, so a guess here can never widen anything.
+func roleGrantsOnlyReads(ctx context.Context, orgID, roleID string) (bool, error) {
+	listed, err := service.ListRoles(ctx, &gen.ListRolesRequest{OrgId: orgID})
+	if err != nil {
+		return false, err
+	}
+	for _, role := range listed.GetRoles() {
+		if role.GetId() != roleID {
+			continue
+		}
+		if len(role.GetPermissions()) == 0 {
+			return false, nil
+		}
+		for _, permission := range role.GetPermissions() {
+			if permission.GetAction() != "read" {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *PermServer) RevokeScope(ctx context.Context, req *gen.RevokeScopeRequest) (*emptypb.Empty, error) {

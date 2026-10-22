@@ -5,6 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+
+import { refusalToast } from "@/features/auth/model/step-up";
 import { useAuth } from "@/lib/auth";
 import { Button, Input } from "@/shared/ui";
 import { toUserStatus, type User } from "../model/types";
@@ -87,7 +89,7 @@ export function UsersPage() {
 			enterImpersonation(token);
 			toast.success("Impersonation session started");
 		},
-		onError: () => toast.error("Failed to impersonate user"),
+		onError: (error) => refusalToast(error, "Failed to impersonate user"),
 	});
 
 	const updateMutation = useMutation({

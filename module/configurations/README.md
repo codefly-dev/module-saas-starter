@@ -54,7 +54,7 @@ the three services below, all of which need the origin.
 | `APP_BASE_URL` | accounts (links it mints, the OAuth issuer, the origin it compares a forwarded one with), auth-gateway (a solution's MCP protected-resource metadata and token audience), frontend (the verified public origin it presents to accounts and judges the solution proxy against) | local only: the frontend uses its loopback own endpoint and accounts trusts the forwarded origin. Outside local, accounts refuses to start and a deployed frontend refuses sign-in, naming the key |
 | `BOOTSTRAP_ADMIN_EMAIL` | accounts | no one-time bootstrap administrator |
 | `ORGANIZATION_CREATION` | accounts | `open`; `platform_admin` or `disabled` restrict it, anything else refuses the boot |
-| `MODULE_AUTHORITY_ENFORCEMENT` | accounts | `enforce`; `warn` grants every module what its manifest asks for and logs, on every registry pass, what the envelope would have withheld (a cell under validation, never a production default — the token, workload, build, installation and tenant stay enforced); anything else refuses the boot |
+| `MODULE_AUTHORITY_ENFORCEMENT` | accounts | `enforce`; `warn` grants every module everything its envelope entry allows, widened to what its manifest asks for, and logs, on every registry pass, what the envelope would have withheld (a cell under validation, never a production default — the token, workload, build, installation and tenant stay enforced); anything else refuses the boot |
 
 A deployed frontend never stands its own endpoint in for `APP_BASE_URL` when
 that endpoint is loopback, cluster-internal (`*.svc`, `*.cluster.local`, a

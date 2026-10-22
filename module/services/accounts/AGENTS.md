@@ -393,8 +393,11 @@ request, not a grant: a carrier the pass no longer verifies is listed and still
 grants nothing. The page writes the next revision through `PutModuleEnvelope`,
 fenced on the revision the draft was started from, and names each refusal (a
 missing recent step-up, a revision written meanwhile, a document the parser
-refuses). There is no in-session step-up: an administrator whose second factor
-is not recent signs in again.
+refuses). There is no silent step-up: an administrator whose second factor is
+not recent is sent to the sign-in page with `step_up=1&next=<here>`, confirms
+the passkey, and lands back on the same page to write again
+(`features/auth/model/step-up.ts` — every sensitive screen turns `mfa_required`
+into that, never into a bare error).
 
 **The registry is fenced by the committed envelope revision.** Every module
 authority decision — `AuthorizeModuleCapability`, the work-context and
@@ -1124,6 +1127,17 @@ identity their caller minted (issue #1094).
   fires the trigger, and this host holds none.
 - **Every provider syncs at connect**, not a whole interval later
   (`startFirstSync`).
+- **A snapshot declares what is in scope; it does not order a deletion.**
+  `snapshotAt` hands off the complete file list at one commit — every path that
+  passes the source's `paths` and `file_extensions` filters — and emits no
+  `removed` change for a file that merely left the scope. So what becomes of an
+  entry a consumer holds that a newer snapshot no longer names is **that
+  module's** decision, under its own provenance rules; this host neither prunes
+  it nor promises it survives. The consequence worth stating plainly, because
+  `UpdateSource` makes it reachable on purpose: **narrowing a source's filters
+  deletes nothing here.** It changes what the next snapshot declares, and a
+  surface must not tell an administrator that de-scoped content is either
+  retained or removed, because the host does not know which.
 - **What is not proven.** No live occurrence exists. Nothing in this repository
   composes a module that executes declared work, so the declaration is
   built, held to the contract's field names by test, and never yet admitted by

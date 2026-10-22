@@ -143,6 +143,7 @@ func (w ModuleWorkload) validateForm(prefix string) error {
 
 type ModulePrincipalGrant struct {
 	// PresenceBinding is the durable registry key proven by delivered authority.
+	PresenceGeneration uint64                              `json:"-"`
 	PresenceBinding    string                              `json:"presence_binding,omitempty"`
 	ArtifactPolicies   map[string]ExecutableArtifactPolicy `json:"artifact_policies"`
 	ReadAudiences      map[string]ModuleReadAudience       `json:"read_audiences"`
