@@ -72,8 +72,8 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 			PlatformRole:        policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
 		},
 		"/host.installation.v1.InstallationService/Install":     adminWrite("saas.installation.created"),
-		"/host.installation.v1.InstallationService/GrantToTeam": adminWrite("saas.installation.created"), /* GAP: no exposure event is registered; narrowed is the nearest */
-		"/host.installation.v1.InstallationService/List":        read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_MEMBER, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		"/host.installation.v1.InstallationService/GrantToTeam": adminWrite("saas.installation.created"),                                                                                                                /* GAP: no exposure event is registered; narrowed is the nearest */
+		"/host.installation.v1.InstallationService/List":        read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's view is the entitlement listing
 		"/host.session.v1.SessionService/SignIn": {
 			Exposure: policyv1.Exposure_EXPOSURE_PUBLIC, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
 			Mfa:                 policyv1.MFARequirement_MFA_REQUIREMENT_NONE,

@@ -243,7 +243,7 @@
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [],
@@ -261,13 +261,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
-      "policy_tier": "org_member",
+      "policy_tier": "org_admin",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "host/installation/v1/installation.proto",
-      "policy_sha256": "ef97adc91e34324bcfc493a22881c687ecc7159d587c42d5133e5b3fc031d839",
+      "policy_sha256": "b387739192840b24f771349cb2cded72d5f7eabd9d56c433b5b5937e6f4e58f0",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

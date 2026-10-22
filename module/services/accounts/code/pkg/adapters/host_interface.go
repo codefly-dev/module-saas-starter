@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/codefly-dev/core/workcontext"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -88,8 +89,10 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		if err := requireOrgMember(ctx, identity.EffectiveSubject.String(), identity.OrgID.String()); err != nil {
 			return nil, err
 		}
+		// A fresh task per issue: the interface names no task, the host requires
+		// one as the identity tuple's third element.
 		issued, err = s.workContexts.StartTask(ctx, &gen.StartTaskWorkContextRequest{
-			OrgId: identity.OrgID.String(), Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
+			OrgId: identity.OrgID.String(), TaskId: uuid.NewString(), Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
 		})
 	case *authorityv1.IssueRequest_Installation:
 		// The installation is the one the caller's service credential names; the
@@ -156,16 +159,17 @@ func NewHostInstallationServer(installations *InstallationServer, service *busin
 	return &HostInstallationServer{installations: installations, service: service}
 }
 
-// List answers what one organisation has installed.
+// List answers what one organisation has installed: an administrator's read,
+// over the host's organisation-installation listing.
 func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.ListRequest) (*installationv1.ListResponse, error) {
 	actorID, err := requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireOrgMember(ctx, actorID, req.GetOrganizationId()); err != nil {
+	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
-	out, err := s.installations.ListInstallations(ctx, &gen.ListInstallationsRequest{OrgId: req.GetOrganizationId()})
+	out, err := s.installations.ListOrganizationInstallations(ctx, &gen.ListOrganizationInstallationsRequest{OrgId: req.GetOrganizationId()})
 	if err != nil {
 		return nil, err
 	}
@@ -217,8 +221,9 @@ func NewHostSessionServer(service *business.Service) *HostSessionServer {
 
 // SignIn opens a session for a fixture person through the fixture provider.
 func (s *HostSessionServer) SignIn(ctx context.Context, req *sessionv1.SignInRequest) (*sessionv1.Session, error) {
+	// The provider is the fixture person's own, as the fixture file declares it;
+	// naming one here would only be checked against it.
 	out, err := s.service.Authenticate(ctx, &gen.AuthenticateRequest{
-		Provider:       "fixture",
 		Authentication: &gen.AuthenticateRequest_Fixture{Fixture: &gen.FixtureAuthentication{Token: req.GetFixtureToken()}},
 	})
 	if err != nil {
@@ -230,9 +235,10 @@ func (s *HostSessionServer) SignIn(ctx context.Context, req *sessionv1.SignInReq
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	// The bearer a person presents on every call is this host's access token.
 	return &sessionv1.Session{
 		SessionId: claims.SessionID, PersonId: out.GetUser().GetUuid(), OrganizationId: claims.OrgID,
-		Roles: []string{claims.OrgRole},
+		Roles: []string{claims.OrgRole}, Bearer: out.GetAccessToken(),
 	}, nil
 }
 
@@ -300,6 +306,8 @@ func interfaceStatus(err error) error {
 		return err
 	}
 	switch {
+	case errors.Is(err, accountsauth.ErrUnknownIdentity):
+		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, workcontext.ErrRevoked), errors.Is(err, workcontext.ErrNoSeal):
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, workcontext.ErrInvalid), errors.Is(err, workcontext.ErrNotACoreToken), errors.Is(err, workcontext.ErrReplayed):
