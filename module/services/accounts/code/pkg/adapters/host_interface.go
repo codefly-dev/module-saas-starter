@@ -1,10 +1,10 @@
 package adapters
 
-// The host authority interfaces (obin-ai/authority), served by accounts as
+// The host authority interfaces (the authority interface repository), served by accounts as
 // adapters over what it already does. Nothing here decides authority: every
 // operation maps onto an existing path, and where no path exists the refusal
 // names the gap instead of inventing one. The same four interfaces are served by
-// the mini gateway for a local run, and obin-ai/authority's pkg/conformance is
+// the mini gateway for a local run, and the authority interface repository's pkg/conformance is
 // the suite both must pass.
 
 import (
@@ -22,10 +22,10 @@ import (
 
 	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
-	authorityv1 "accounts/pkg/gen/obin/authority/v1"
-	compositionv1 "accounts/pkg/gen/obin/composition/v1"
-	installationv1 "accounts/pkg/gen/obin/installation/v1"
-	sessionv1 "accounts/pkg/gen/obin/session/v1"
+	authorityv1 "accounts/pkg/gen/host/authority/v1"
+	compositionv1 "accounts/pkg/gen/host/composition/v1"
+	installationv1 "accounts/pkg/gen/host/installation/v1"
+	sessionv1 "accounts/pkg/gen/host/session/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 

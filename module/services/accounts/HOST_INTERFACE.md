@@ -1,15 +1,15 @@
 # The host interfaces, served by accounts
 
 **What we are doing.** accounts implements the four host interfaces declared in
-obin-ai/authority (`obin.ai/authority`, `composition`, `installation`, `session`)
+the authority interface repository (`codefly.dev/authority`, `composition`, `installation`, `session`)
 as adapters over what it already does, so the same contract the mini gateway
-serves on a laptop is served here on a cell, and obin-ai/authority's
+serves on a laptop is served here on a cell, and the authority interface repository's
 `pkg/conformance` can prove the two agree. Rung 1 of the validation ladder.
 
 ## What is on this branch
 
-- `proto/obin/**`: the interface protos, copied unchanged from obin-ai/authority;
-  `proto/buf.gen.yaml` generates them beside `saas` (`code/pkg/gen/obin/**`).
+- `proto/host/**`: the interface protos, copied unchanged from the authority interface repository;
+  `proto/buf.gen.yaml` generates them beside `saas` (`code/pkg/gen/host/**`).
 - `module.codefly.yaml`: the `authority` endpoint declares `implements` for the four.
 - `code/pkg/business/interface_policies.go`: the host's method policies for the
   interface procedures. The interface protos carry no `saas.policy` option on
@@ -37,7 +37,7 @@ serves on a laptop is served here on a cell, and obin-ai/authority's
    drift tests (`TestServiceCatalog*`, `TestCatalogConnectRegistration*`,
    `TestConnectRegistrationIsDeterministicAndCurrent`, `TestAPIContractSurfaces*`,
    `TestRPCPolicyInventory*`) are red. This is the first change the branch needs.
-2. **Connect bindings are keyed by short service name.** `obin.installation.v1.
+2. **Connect bindings are keyed by short service name.** `host.installation.v1.
    InstallationService` collides with `saas.accounts.v1.InstallationService`;
    the installation interface is therefore not bound yet. Key by full name.
 3. **Workload-owned Issue** is minted on the gateway's workload endpoint
@@ -60,7 +60,7 @@ serves on a laptop is served here on a cell, and obin-ai/authority's
 
 ## How to run the suite, once 1 and 2 are closed
 
-Import `github.com/obin-ai/authority/.../pkg/conformance` (or vendor the one
+Import `github.com/the authority interface repository/.../pkg/conformance` (or vendor the one
 file), boot accounts in-process, dial it, and call `conformance.Run(t, conn,
 conformance.Fixture{...})` with the saas fixture's Acme people. Red is the gap
 list; green is the claim that the laptop and the cell implement one contract.
