@@ -32,8 +32,12 @@ import (
 	ed25519minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
+	"accounts/pkg/business/executiontest"
 	"accounts/pkg/infra"
 )
+
+// fixtureOrganization is Acme Corp in the dev-admin fixture.
+const fixtureOrganization = "00000000-0000-7000-8000-0000000000c1"
 
 func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	if os.Getenv("HOST_INTERFACE_CONFORMANCE") == "" {
@@ -78,10 +82,24 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 
 	// The composition: two module principals the host knows, as the module
 	// registry would hold them after delivery.
+	// documents runs as one declared workload and declares one operation
+	// audience, model, with headless scopes; the fake cluster projects the
+	// credential a pod of that workload would present.
+	modelScopes := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}}}
+	modelReads := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"read"}}}
 	registry := business.ModulePrincipalRegistry{
-		business.ModulePrincipalID("documents"): {Prefix: "documents", Resources: []string{"example-records"}},
-		business.ModulePrincipalID("model"):     {Prefix: "model", Resources: []string{"modelservice.profiles"}},
+		business.ModulePrincipalID("documents"): {
+			Prefix: "documents", Resources: []string{"example-records"}, Tenant: fixtureOrganization,
+			Workloads: []business.ModuleWorkload{{Namespace: "acme", ServiceAccount: "documents", Container: "app"}},
+			OperationAudiences: map[string]business.ModuleOperationAudience{
+				"model": {Audience: "model", InvokeScopes: modelScopes, LookupScopes: modelReads, HeadlessScopes: modelScopes},
+			},
+		},
+		business.ModulePrincipalID("model"): {Prefix: "model", Resources: []string{"modelservice.profiles"}},
 	}
+	cluster := executiontest.New()
+	svc.SetExecutionBinding(cluster)
+	workloadCredential := cluster.Run(executiontest.Workload{Namespace: "acme", ServiceAccount: "documents", Container: "app"})
 	svc.SetModuleCapabilities(store, nil, registry)
 
 	// The declared registry is what delivery derives; the ceiling is the manifest,
@@ -136,13 +154,13 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	}, 20*time.Second, 100*time.Millisecond, "the Connect listener did not come up")
 
 	conformance.Run(t, conn, registeredDescriptors(t), conformance.Fixture{
-		Organization: "00000000-0000-7000-8000-0000000000c1", // Acme Corp
+		Organization: fixtureOrganization,
 		ViewerToken:  "dev-bob", AdminToken: "dev-alice",
 		Audience: "documents", ReadKind: "example-records",
-		// GAPS, by design of this branch (HOST_INTERFACE.md 3 to 6): no workload
-		// credential is minted on an accounts RPC, and the fixture installs no
-		// solution. The lines these make red are the gap list.
-		WorkloadCredential: "", Binding: "model", BindingAudience: "model",
+		// The credential a pod of documents' declared workload presents.
+		WorkloadCredential: workloadCredential, Binding: "model", BindingAudience: "model",
+		// GAP (HOST_INTERFACE.md 4, fixture): the fixture installs no solution;
+		// the lines this makes red are the gap list.
 		InstalledSolution: "",
 	})
 }

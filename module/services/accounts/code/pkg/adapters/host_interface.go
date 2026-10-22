@@ -34,11 +34,12 @@ import (
 type HostAuthorityServer struct {
 	authorityv1.UnimplementedAuthorityServiceServer
 	workContexts *WorkContextAuthorityServer
+	modules      *ModuleCapabilitiesServer
 }
 
 // NewHostAuthorityServer adapts the Work Context authority.
-func NewHostAuthorityServer(workContexts *WorkContextAuthorityServer) *HostAuthorityServer {
-	return &HostAuthorityServer{workContexts: workContexts}
+func NewHostAuthorityServer(workContexts *WorkContextAuthorityServer, modules *ModuleCapabilitiesServer) *HostAuthorityServer {
+	return &HostAuthorityServer{workContexts: workContexts, modules: modules}
 }
 
 // Keys is the issuer and the one Work Context signing key.
@@ -117,11 +118,41 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 			})
 		}
 	case *authorityv1.IssueRequest_Workload:
-		// GAP (rung 1): the host mints a module's own capability on the gateway's
-		// workload endpoint (/modules/_operation-context) from a pod token and an
-		// installed binding, not on an accounts RPC. Serving it here needs the
-		// broker's attestation moved behind this method.
-		return nil, status.Error(codes.Unimplemented, "workload-owned issue: accounts mints this on the gateway's workload endpoint today; not yet behind the interface")
+		// The credential names the module: reviewed by the execution reviewer,
+		// matched to the one principal declaring that workload. With a binding
+		// named, the issue is the host's operation context to that installed
+		// audience; without one, the module's own context to this surface.
+		prefix, perr := service.ModulePrefixOfWorkload(ctx, as.Workload.GetCredential())
+		if perr != nil {
+			if mapped := moduleIdentityError(perr, codes.PermissionDenied, "workload credential refused"); mapped != nil {
+				return nil, mapped
+			}
+			return nil, status.Error(codes.PermissionDenied, "workload credential refused")
+		}
+		if binding := req.GetOperationBindingId(); binding != "" {
+			grant := service.ModulePrincipals()[business.ModulePrincipalID(prefix)]
+			if _, declared := grant.OperationAudiences[binding]; !declared {
+				return nil, status.Errorf(codes.NotFound, "operation binding %q is not declared by %s", binding, prefix)
+			}
+			out, merr := s.modules.MintModuleOperationContext(ctx, &gen.ModuleMintOperationContextRequest{
+				Prefix: prefix, ServiceAccountToken: as.Workload.GetCredential(), Binding: binding, OrganizationId: req.GetOrganizationId(),
+			})
+			if merr != nil {
+				return nil, interfaceStatus(merr)
+			}
+			issued = &gen.IssuedWorkContext{Token: out.GetToken(), ExpiresAt: out.GetExpiresAt()}
+		} else {
+			if req.GetAudience() != ModuleWorkContextAudience {
+				return nil, status.Errorf(codes.InvalidArgument, "a module's own context is addressed to %q, not %q", ModuleWorkContextAudience, req.GetAudience())
+			}
+			out, merr := s.modules.MintModuleWorkContext(ctx, &gen.ModuleMintWorkContextRequest{
+				Prefix: prefix, ServiceAccountToken: as.Workload.GetCredential(), OrganizationId: req.GetOrganizationId(),
+			})
+			if merr != nil {
+				return nil, interfaceStatus(merr)
+			}
+			issued = &gen.IssuedWorkContext{Token: out.GetToken(), ExpiresAt: out.GetExpiresAt()}
+		}
 	default:
 		return nil, status.Error(codes.InvalidArgument, "an issue names whom it is for")
 	}

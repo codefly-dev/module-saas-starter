@@ -367,6 +367,10 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	if policy.Tier == business.RPCPolicyPublic {
 		return ctx, nil
 	}
+	if fullMethod == business.HostIssueMethod && len(md.Get("authorization")) == 0 {
+		// The request's shape authenticates: see business.HostIssueMethod.
+		return ctx, nil
+	}
 
 	if trustedForwarded && hasForwardedIdentity(md) {
 		forwarded, err := stampForwardedGRPCIdentity(ctx, md)

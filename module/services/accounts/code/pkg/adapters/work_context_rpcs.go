@@ -1146,6 +1146,9 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 			Audience:           authority.Audience,
 			AuthorityScopes:    scopes,
 			InstallationID:     authority.InstallationID,
+			// The context names the binding it exercises, so a verifier resolves
+			// exactly that binding instead of fitting the scopes to one.
+			OperationBindingID: business.ModuleOperationBindingID(authority.PrincipalID, authority.BindingID),
 		},
 		Replay: workcontext.ReplayIdempotent,
 		TTL:    business.ModuleOperationContextTTL,
