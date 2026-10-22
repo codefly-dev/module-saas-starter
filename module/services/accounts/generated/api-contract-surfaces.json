@@ -204,6 +204,7 @@
         "/saas.accounts.v1.DatasourceService/RevokeSourceDelegation",
         "/saas.accounts.v1.DatasourceService/SyncSource",
         "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",
+        "/saas.accounts.v1.DatasourceService/UpdateSource",
         "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain"
       ]
     },

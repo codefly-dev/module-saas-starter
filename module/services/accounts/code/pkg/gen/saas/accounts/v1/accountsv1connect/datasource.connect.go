@@ -58,6 +58,9 @@ const (
 	// DatasourceServiceAddSourceProcedure is the fully-qualified name of the DatasourceService's
 	// AddSource RPC.
 	DatasourceServiceAddSourceProcedure = "/saas.accounts.v1.DatasourceService/AddSource"
+	// DatasourceServiceUpdateSourceProcedure is the fully-qualified name of the DatasourceService's
+	// UpdateSource RPC.
+	DatasourceServiceUpdateSourceProcedure = "/saas.accounts.v1.DatasourceService/UpdateSource"
 	// DatasourceServiceGetDatasourceCatalogProcedure is the fully-qualified name of the
 	// DatasourceService's GetDatasourceCatalog RPC.
 	DatasourceServiceGetDatasourceCatalogProcedure = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
@@ -171,6 +174,12 @@ type DatasourceServiceClient interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error)
+	// UpdateSource changes what an already-connected source fetches — its branch
+	// and its path and file-type filters — keeping its identity, its credential,
+	// its sync history and the collection it writes into. A change that moves
+	// what is fetched enqueues a sync, whose progress reports the reconfigured
+	// trigger so a reader can tell a re-snapshot from an ordinary one.
+	UpdateSource(context.Context, *connect.Request[v1.UpdateSourceRequest]) (*connect.Response[v1.UpdateSourceResponse], error)
 	// GetDatasourceCatalog returns the host's connector registry: every provider,
 	// its connect metadata, whether it conforms to the datasource connector
 	// envelope, and whether it accepts a new source, so a client can render the
@@ -353,6 +362,12 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(datasourceServiceMethods.ByName("AddSource")),
 			connect.WithClientOptions(opts...),
 		),
+		updateSource: connect.NewClient[v1.UpdateSourceRequest, v1.UpdateSourceResponse](
+			httpClient,
+			baseURL+DatasourceServiceUpdateSourceProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("UpdateSource")),
+			connect.WithClientOptions(opts...),
+		),
 		getDatasourceCatalog: connect.NewClient[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse](
 			httpClient,
 			baseURL+DatasourceServiceGetDatasourceCatalogProcedure,
@@ -516,6 +531,7 @@ type datasourceServiceClient struct {
 	declareSourceOperations            *connect.Client[v1.DeclareSourceOperationsRequest, v1.DeclareSourceOperationsResponse]
 	addGitHubSource                    *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
 	addSource                          *connect.Client[v1.AddSourceRequest, v1.AddSourceResponse]
+	updateSource                       *connect.Client[v1.UpdateSourceRequest, v1.UpdateSourceResponse]
 	getDatasourceCatalog               *connect.Client[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse]
 	listSources                        *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
 	getSource                          *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
@@ -583,6 +599,11 @@ func (c *datasourceServiceClient) AddGitHubSource(ctx context.Context, req *conn
 // AddSource calls saas.accounts.v1.DatasourceService.AddSource.
 func (c *datasourceServiceClient) AddSource(ctx context.Context, req *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error) {
 	return c.addSource.CallUnary(ctx, req)
+}
+
+// UpdateSource calls saas.accounts.v1.DatasourceService.UpdateSource.
+func (c *datasourceServiceClient) UpdateSource(ctx context.Context, req *connect.Request[v1.UpdateSourceRequest]) (*connect.Response[v1.UpdateSourceResponse], error) {
+	return c.updateSource.CallUnary(ctx, req)
 }
 
 // GetDatasourceCatalog calls saas.accounts.v1.DatasourceService.GetDatasourceCatalog.
@@ -748,6 +769,12 @@ type DatasourceServiceHandler interface {
 	// by provider, stores the config and the encrypted credential (and optional
 	// webhook signing secret), and returns the non-secret projection.
 	AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error)
+	// UpdateSource changes what an already-connected source fetches — its branch
+	// and its path and file-type filters — keeping its identity, its credential,
+	// its sync history and the collection it writes into. A change that moves
+	// what is fetched enqueues a sync, whose progress reports the reconfigured
+	// trigger so a reader can tell a re-snapshot from an ordinary one.
+	UpdateSource(context.Context, *connect.Request[v1.UpdateSourceRequest]) (*connect.Response[v1.UpdateSourceResponse], error)
 	// GetDatasourceCatalog returns the host's connector registry: every provider,
 	// its connect metadata, whether it conforms to the datasource connector
 	// envelope, and whether it accepts a new source, so a client can render the
@@ -926,6 +953,12 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 		connect.WithSchema(datasourceServiceMethods.ByName("AddSource")),
 		connect.WithHandlerOptions(opts...),
 	)
+	datasourceServiceUpdateSourceHandler := connect.NewUnaryHandler(
+		DatasourceServiceUpdateSourceProcedure,
+		svc.UpdateSource,
+		connect.WithSchema(datasourceServiceMethods.ByName("UpdateSource")),
+		connect.WithHandlerOptions(opts...),
+	)
 	datasourceServiceGetDatasourceCatalogHandler := connect.NewUnaryHandler(
 		DatasourceServiceGetDatasourceCatalogProcedure,
 		svc.GetDatasourceCatalog,
@@ -1094,6 +1127,8 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 			datasourceServiceAddGitHubSourceHandler.ServeHTTP(w, r)
 		case DatasourceServiceAddSourceProcedure:
 			datasourceServiceAddSourceHandler.ServeHTTP(w, r)
+		case DatasourceServiceUpdateSourceProcedure:
+			datasourceServiceUpdateSourceHandler.ServeHTTP(w, r)
 		case DatasourceServiceGetDatasourceCatalogProcedure:
 			datasourceServiceGetDatasourceCatalogHandler.ServeHTTP(w, r)
 		case DatasourceServiceListSourcesProcedure:
@@ -1183,6 +1218,10 @@ func (UnimplementedDatasourceServiceHandler) AddGitHubSource(context.Context, *c
 
 func (UnimplementedDatasourceServiceHandler) AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.AddSource is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) UpdateSource(context.Context, *connect.Request[v1.UpdateSourceRequest]) (*connect.Response[v1.UpdateSourceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.UpdateSource is not implemented"))
 }
 
 func (UnimplementedDatasourceServiceHandler) GetDatasourceCatalog(context.Context, *connect.Request[v1.GetDatasourceCatalogRequest]) (*connect.Response[v1.GetDatasourceCatalogResponse], error) {

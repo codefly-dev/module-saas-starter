@@ -42,6 +42,11 @@ type datasourceFakeStore struct {
 	// beforeInstallationMark, when set, runs just before a park is applied.
 	beforeInstallationMark func(sourceID string)
 
+	// before holds one-shot interleavings keyed by statement name (see
+	// interleave), so a test can land a concurrent change inside the window
+	// between a caller's read and its write.
+	before map[string]func()
+
 	// GitHub App onboarding: setups keyed by state hash, and the one
 	// organization each installation is claimed by.
 	setups        map[string]*business.GitHubAppSetup
@@ -135,6 +140,96 @@ func (f *datasourceFakeStore) InsertDatasourceSource(_ context.Context, source *
 	cp := *source
 	f.sources[source.ID] = &cp
 	return nil
+}
+
+// UpdateDatasourceSourceFetchScope mirrors the store's narrow UPDATE: only the
+// three fetch-scope fields are written, so a business change that tried to move
+// a source's repository or credential through this call fails here as it would
+// against the statement.
+//
+// Matching no row reports ErrDatasourceSourceNotFound, as the statement's empty
+// command tag does. Answering nil here instead — which is what the real store
+// used to do — would let a caller that writes an audit record and queues a sync
+// after this call pass its tests while doing both for a source that is gone.
+func (f *datasourceFakeStore) UpdateDatasourceSourceFetchScope(_ context.Context, source *business.DatasourceSource) error {
+	f.runBefore("UpdateDatasourceSourceFetchScope")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	stored, ok := f.sources[source.ID]
+	if !ok || stored.OrgID != source.OrgID {
+		return business.ErrDatasourceSourceNotFound
+	}
+	stored.Branch = source.Branch
+	stored.Paths = source.Paths
+	stored.FileExtensions = source.FileExtensions
+	return nil
+}
+
+// deleteSourceRow removes a row behind the service's back, so a test can put
+// the store in the state a concurrent DeleteSource leaves it in: the caller
+// still holds the source it read, and the next statement matches nothing.
+func (f *datasourceFakeStore) deleteSourceRow(id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.sources, id)
+}
+
+// interleave runs fn once, just before the named datasource-source statement
+// executes, so a test can land a concurrent change in the window a caller
+// actually has rather than before the call. Deleting the row beforehand proves
+// nothing: UpdateSource's own first read would answer not-found and the write
+// path would never run.
+func (f *datasourceFakeStore) interleave(statement string, fn func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.before == nil {
+		f.before = map[string]func(){}
+	}
+	f.before[statement] = fn
+}
+
+// runBefore fires and clears a one-shot interleaving. Called with the lock
+// released, because the hook it runs reaches back into the store.
+func (f *datasourceFakeStore) runBefore(statement string) {
+	f.mu.Lock()
+	fn := f.before[statement]
+	delete(f.before, statement)
+	f.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+// setSourceScope writes a fetch scope straight onto the row, bypassing the
+// normalizers, so a test can stand up a source spelled the way an earlier
+// version of them left it.
+func (f *datasourceFakeStore) setSourceScope(id, branch string, paths, extensions []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	stored, ok := f.sources[id]
+	if !ok {
+		return
+	}
+	stored.Branch = branch
+	stored.Paths = paths
+	stored.FileExtensions = extensions
+}
+
+// LockDatasourceSourceFetchScope mirrors the store's locked read: the row as it
+// stands, or (nil, nil) when none matches. The copy is deliberate — a caller
+// must not be handed the fake's own row to mutate, because the statement hands
+// back a scanned snapshot and a test that shared memory with the store would
+// pass an expectation check that production fails.
+func (f *datasourceFakeStore) LockDatasourceSourceFetchScope(_ context.Context, orgID, id string) (*business.DatasourceSource, error) {
+	f.runBefore("LockDatasourceSourceFetchScope")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	stored, ok := f.sources[id]
+	if !ok || stored.OrgID != orgID {
+		return nil, nil
+	}
+	cp := *stored
+	return &cp, nil
 }
 
 func (f *datasourceFakeStore) ListDatasourceSources(_ context.Context, orgID string) ([]*business.DatasourceSource, error) {
@@ -509,6 +604,21 @@ func (purposeCipher) DecryptSecret(_ context.Context, purpose, envelope string) 
 type recordingProducer struct {
 	mu   sync.Mutex
 	jobs []*jobsv1.NewJob
+}
+
+// reconcileJobsFor returns the reconcile jobs enqueued for one source, so a
+// test can assert the mode a pass ran in rather than that something was queued.
+func (p *recordingProducer) reconcileJobsFor(sourceID string) []*jobsv1.NewJob {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []*jobsv1.NewJob
+	for _, job := range p.jobs {
+		if job.GetTopic() == business.DatasourceReconcileTopic &&
+			job.GetAttributes()["datasource.source_id"] == sourceID {
+			out = append(out, job)
+		}
+	}
+	return out
 }
 
 func (p *recordingProducer) EnqueueJob(_ context.Context, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {

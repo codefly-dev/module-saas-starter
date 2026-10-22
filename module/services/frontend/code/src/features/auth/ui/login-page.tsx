@@ -37,6 +37,9 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 	const { branding } = useAppearance();
 	const router = useRouter();
 	const searchParams = useSearchParams();
+	// A sensitive operation the host refused for want of a recent second
+	// factor sends the person here with step_up=1 and next=<where they were>.
+	const stepUp = searchParams.get("step_up") === "1";
 	const destination = useMemo(
 		() => publicHandoffDestination(searchParams),
 		[searchParams],
@@ -268,12 +271,14 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 						<div className="p-8 space-y-6">
 							<div className="space-y-1.5">
 								<h1 data-slot="page-title" className="type-page-title">
-									Sign in
+									{stepUp ? "Confirm your passkey" : "Sign in"}
 								</h1>
 								<p className="text-sm text-muted-foreground">
-									{clientName
-										? `to continue to ${clientName}`
-										: "Choose a method to continue."}
+									{stepUp
+										? "That change needs your second factor confirmed within the last 15 minutes. Sign in again and you will be taken back to where you were."
+										: clientName
+											? `to continue to ${clientName}`
+											: "Choose a method to continue."}
 								</p>
 							</div>
 							{/* A client the host does not recognise is refused here, before

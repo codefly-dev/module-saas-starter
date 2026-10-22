@@ -386,7 +386,29 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   phase names and getting the terminal cases wrong. `<SourceSyncProgress source
   report />` is the card, and `useSourceSync(client, orgId, source)` the read.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
-  `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
+  `useUpdateSource`, `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`,
+  `useMyAccountLinks`.
+- `<EditSourceForm source onSubmit … />`, behind the row's **Edit**, changes
+  what a connected source fetches: its branch and its path and file-type
+  filters, bound by the same schema the connect form uses. It offers the connect
+  form's *mutable* fields only — the repository and the collection are the
+  source's identity and the host refuses to move either, so the dialog states
+  them rather than offering them disabled. Every field is submitted whole, as
+  `updateSource` replaces rather than patches, which is why the fields arrive
+  seeded from the source. A client without `updateSource` is offered no Edit at
+  all. Because every field is a whole-field replacement, `EditSourceInput`
+  carries `expected` — the scope the dialog was seeded with — and the host
+  **refuses** a save whose expectation no longer matches the stored row rather
+  than applying it: a dialog left open across someone else's narrowing would
+  otherwise restore the wider scope and re-ingest everything they excluded. A
+  consumer calling `updateSource` itself must send the scope it last read, not a
+  blank one. The panel keeps the dialog open on that refusal and refetches the
+  list, so reopening it seeds from the current row. Saving deletes nothing that
+  was already ingested — the next sync hands off what the new scope covers, and
+  what becomes of files it no longer covers is the consuming module's rule. The sync the host queues when the scope moves reports the
+  `reconfigured` trigger, and `describeSync` says so: a re-snapshot hands off
+  the whole new scope, which beside an ordinary sync reads as a fault unless
+  something names the cause.
 
 ### Connecting through the GitHub App
 
@@ -412,6 +434,59 @@ the App registration**, which nothing in this repo can set or verify. Point it a
 the page that mounts this panel (`https://<host>/admin/datasources` in the portal)
 and enable "Redirect on update", or the tenant installs the App and is returned no
 source and no error. See `module/configurations/local/github-app.env`.
+
+### Connecting an API over OAuth
+
+`<ApiSourceCard gateway={{ apiBase, getAccessToken }} orgId={…} api={{ baseUrl,
+name }} operations={…} />` connects a person to one generic OAuth `api` source —
+the `api` counterpart of `<DeclaredSourceCard>`. The surface fixes the API (its
+base URL, optionally a `resourcePath`, the `collection` or `boundaryNodeId` it
+writes into); the person supplies only the sign-in. Where the API and its
+operation declarations come from is the caller's to decide: the card takes them
+as props and reads no manifest.
+
+- **Set up** — the person has no source for the base URL. **Connect** creates
+  it with `AddSource` (`API_CREDENTIAL_KIND_OAUTH2` + `GRANT_AUTHORIZATION_CODE`,
+  no credential — the host makes it personal to its creator and resolves the
+  client, endpoints and scopes from the deployment's `datasource-oauth`
+  registration), declares `operations` on it if given, and sends the browser to
+  the provider with `BeginDatasourceAccountLink.source_id` set to it.
+- **Sign-in needed** — the source exists and the person has not signed in for
+  it. A failure after the source was created lands here, so a retry signs in
+  for that source rather than creating a second one; `operations` are declared
+  again before every sign-in, which the host's atomic replace makes harmless.
+- **Connected** — the person's link for the source is listed.
+
+The source is matched on provider `api`, the authorization-code grant, and the
+base URL and resource path, trimmed and otherwise exact (`matchPersonalApiSources`).
+`ListSources` never lists another member's personal source, so every match is
+the caller's; two are reported rather than one picked. The host's refusals are
+worded as something to do (`apiSourceRefusal`): no sign-in configured for the
+deployment, the administrator role that `AddSource` and `DeclareSourceOperations`
+take, no access to the source's collection, a source personal to someone else.
+Mount the card on the page the provider returns to, and no second
+`DatasourceAccountLinks` beside it — both would redeem the one-time state.
+
+The card renders `<DatasourceAccountLinks connector="api" sourceId={…}
+providerName={…} />`, which is usable alone for a source a surface created
+itself. With `sourceId` it begins the sign-in with that source, completes the
+provider's return on the page (reading `code` and `state` off the address once,
+then removing them — and reporting an OAuth `error` return rather than leaving
+it in the address bar), and lists the person's link for that source only: the
+host records a generic OAuth link under the account `source:<source id>`, since
+the sign-in authorizes the source and proves nothing about who the person is at
+the provider. It offers **no Unlink**: deleting the link record leaves the
+source's stored authorization in place, so the control would claim a disconnect
+that did not happen. `beforeLink` runs before the sign-in begins and stops it on
+a rejection. Without `sourceId` it is unchanged: a person's GitHub account link.
+
+On the client, `beginAccountLink(orgId, connector, redirectUri, sourceId?)`
+carries the source (required by the host for `api`, ignored for the other
+connectors), `addPersonalApiSource(input)` creates the person's source and
+resolves to it, and `declareSourceOperations(orgId, sourceId, operations)`
+replaces its operation set. A `DatasourceView` of an `api` source now reads
+`provider: "api"` with an `api` block (base URL, resource path, credential kind,
+OAuth grant); it read `unknown` before.
 
 ### Data boundaries
 
@@ -554,6 +629,8 @@ offer a Markdown preset. The host intersects suffixes with paths for snapshots
 and incremental changes; empty keeps all file types. The filter is selected at
 connection time and does not rewrite existing sources.
 
-The SDK peer floor is **0.3.14**: principal-name resolution imports the directory
-service introduced in that release. Earlier SDK versions must be rejected during
-installation rather than accepted and then failing when the component loads.
+The SDK peer floor is **0.3.35**: the datasource client maps an `api` source's
+credential kind and OAuth grant, and declares operations, with enums the SDK
+exports from that release (principal-name resolution needs 0.3.14's directory
+service). Earlier SDK versions must be rejected during installation rather than
+accepted and then failing when the component loads.

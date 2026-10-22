@@ -1,6 +1,48 @@
 import { z } from "zod";
 import { parsePaths } from "./util.js";
 
+/**
+ * The three fields that select what a source fetches, as both the connect form
+ * and the edit form bind them. They are shared rather than restated because
+ * connecting and editing are the same decision made twice: a bound that held
+ * on only one of the two would let an edit store a scope that connecting
+ * refuses, or refuse one it accepts.
+ */
+const fetchScopeFields = {
+	paths: z
+		.string()
+		.optional()
+		.refine((raw) => parsePaths(raw).length <= 64, "Too many paths (max 64)")
+		.refine(
+			(raw) => parsePaths(raw).every((path) => path.length <= 512),
+			"A path prefix is too long (max 512 characters)",
+		),
+	branch: z.string().max(255, "Branch name too long").optional(),
+	fileExtensions: z
+		.string()
+		.optional()
+		.refine(
+			(raw) => parsePaths(raw).length <= 32,
+			"Too many extensions (max 32)",
+		)
+		.refine(
+			(raw) =>
+				parsePaths(raw).every((value) =>
+					/^\.[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(value),
+				),
+			"Use suffixes such as .md or .mdx, separated by commas; no paths or globs",
+		),
+} as const;
+
+/**
+ * What an edit of a connected source may change. Only the fetch scope: the
+ * repository, the credential and the collection are the source's identity and
+ * are not editable, so they are deliberately absent rather than disabled.
+ */
+export const editSourceSchema = z.object(fetchScopeFields);
+
+export type EditSourceValues = z.infer<typeof editSourceSchema>;
+
 // Field bounds mirror the AddGitHubSource protobuf validation so the form
 // rejects the same inputs the backend would.
 export const connectGitHubSchema = z
@@ -24,29 +66,9 @@ export const connectGitHubSchema = z
 				/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/,
 				"Use the owner/name form, e.g. codefly-dev/module-saas-starter",
 			),
-		paths: z
-			.string()
-			.optional()
-			.refine((raw) => parsePaths(raw).length <= 64, "Too many paths (max 64)")
-			.refine(
-				(raw) => parsePaths(raw).every((path) => path.length <= 512),
-				"A path prefix is too long (max 512 characters)",
-			),
-		branch: z.string().max(255, "Branch name too long").optional(),
-		fileExtensions: z
-			.string()
-			.optional()
-			.refine(
-				(raw) => parsePaths(raw).length <= 32,
-				"Too many extensions (max 32)",
-			)
-			.refine(
-				(raw) =>
-					parsePaths(raw).every((value) =>
-						/^\.[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(value),
-					),
-				"Use suffixes such as .md or .mdx, separated by commas; no paths or globs",
-			),
+		paths: fetchScopeFields.paths,
+		branch: fetchScopeFields.branch,
+		fileExtensions: fetchScopeFields.fileExtensions,
 		boundaryNodeId: z.string().optional(),
 		targetCollection: z
 			.string()

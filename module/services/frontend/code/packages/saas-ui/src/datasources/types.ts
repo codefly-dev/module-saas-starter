@@ -4,9 +4,10 @@
  * this shape, so the package carries no transport and no generated protobuf.
  */
 
+import type { JsonObject } from "@bufbuild/protobuf";
 import type { SourceReconcileStatus } from "./reconcile-passes.js";
 
-export type DatasourceProviderName = "github" | "unknown";
+export type DatasourceProviderName = "github" | "api" | "unknown";
 
 export type DatasourceStatusName = "active" | "paused" | "degraded" | "unknown";
 
@@ -98,7 +99,42 @@ export interface DatasourceView {
 	lastIngestedAt?: string | undefined;
 	/** Head commit the `lastIngestedAt` change set covered. */
 	lastIngestedCommit?: string | undefined;
+	/**
+	 * The non-secret configuration of an `api` source; absent for every other
+	 * provider. Optional so a consumer adapting its own client keeps compiling.
+	 */
+	api?: ApiSourceView | undefined;
 	createdAt: string | undefined;
+}
+
+/** How an `api` source presents its credential, as the host reports it. */
+export type ApiCredentialKindName =
+	| "bearer"
+	| "basic"
+	| "header"
+	| "query"
+	| "oauth2"
+	| "unknown";
+
+/**
+ * Which OAuth 2.0 grant an `oauth2` source holds. `authorization_code` is the
+ * one a person signs in for: the host makes such a source personal to whoever
+ * created it, and resolves its client, endpoints and scopes from the
+ * deployment's provider registration rather than from the source.
+ */
+export type ApiOAuth2GrantName =
+	| "refresh_token"
+	| "client_credentials"
+	| "authorization_code"
+	| "unknown";
+
+/** An `api` source's configuration, already mapped out of protobuf. */
+export interface ApiSourceView {
+	baseUrl: string;
+	resourcePath: string;
+	credentialKind: ApiCredentialKindName;
+	/** Set only for an `oauth2` source. */
+	oauth2Grant?: ApiOAuth2GrantName | undefined;
 }
 
 /**
@@ -166,6 +202,79 @@ export interface ConnectGitHubInput {
 	webhookSecret: string;
 }
 
+/**
+ * The person's own `api` source, ready for `addPersonalApiSource`: an API base
+ * URL the person signs in to through the deployment's provider registration.
+ * There is no credential field — the credential is the sign-in, which the
+ * account link stores on the source when it completes.
+ */
+export interface ConnectPersonalApiInput {
+	orgId: string;
+	/** Absolute http(s) base URL of the API, e.g. "https://api.example.com". */
+	baseUrl: string;
+	/** A path under `baseUrl` to pull; empty for a source that is only called. */
+	resourcePath?: string;
+	/** The collection the source writes into, minted or reused by label. */
+	targetCollection: string;
+	/** An existing scope node instead of `targetCollection`. */
+	boundaryNodeId?: string;
+}
+
+/**
+ * One operation a caller may invoke on an `api` source: a route under the
+ * source's base URL and the bounded JSON contract it is called with, as
+ * `DatasourceService/DeclareSourceOperations` admits it. Never a credential;
+ * the host checks the schemas and the route when it is declared.
+ */
+export interface SourceOperationDeclaration {
+	name: string;
+	description?: string;
+	method: string;
+	/** Relative to the source's base path; `{name}` segments are template parameters. */
+	path: string;
+	/** Input fields sent as query parameters rather than in the body. */
+	query?: string[];
+	/** A closed JSON Schema object for the operation's input. */
+	inputSchema: JsonObject;
+	/** A JSON Schema object for the provider's output. */
+	outputSchema: JsonObject;
+	effect: "read_only" | "mutation";
+	/** Upper bound on the provider's output; 0 or absent applies the host's. */
+	maxOutputBytes?: number;
+}
+
+/**
+ * What an edit of a connected source leaves it fetching, ready for
+ * `updateSource`. Every field is the whole value, not a patch: empty `paths`
+ * ingests the whole repository and empty `fileExtensions` admits every file
+ * type, exactly as on connect. The repository, the credential and the
+ * collection are absent because they are not editable — a source pointed at
+ * another repository, or writing into another collection, is a different
+ * source.
+ */
+export interface EditSourceInput {
+	orgId: string;
+	id: string;
+	branch: string;
+	paths: string[];
+	fileExtensions?: string[];
+	/**
+	 * The scope the editor was shown, exactly as it read it, which the host
+	 * accepts the replacement against. Required, because every field above is a
+	 * whole-field replacement: a save applied unconditionally after someone else
+	 * narrowed the source would restore the wider scope and re-ingest everything
+	 * they had just excluded. A mismatch is refused, not applied.
+	 */
+	expected: SourceFetchScope;
+}
+
+/** What a source fetches — the three values an edit replaces, as a whole. */
+export interface SourceFetchScope {
+	branch: string;
+	paths: string[];
+	fileExtensions: string[];
+}
+
 export interface SourceActivity {
 	id: string;
 	type: string;
@@ -204,8 +313,20 @@ export type SourceSyncPhaseName =
 	| "failed"
 	| "unknown";
 
-/** What started a sync: a tenant (or the connect), the periodic reconcile, or a webhook. */
-export type SourceSyncTriggerName = "manual" | "scheduled" | "webhook" | "unknown";
+/**
+ * What started a sync: a tenant (or the connect), the periodic reconcile, a
+ * webhook, or an edit of the source itself.
+ *
+ * `reconfigured` is the one that changes how a change set should be read: the
+ * source's branch or filters moved, so the files it brings differ because the
+ * source was re-aimed rather than because the repository changed.
+ */
+export type SourceSyncTriggerName =
+	| "manual"
+	| "scheduled"
+	| "webhook"
+	| "reconfigured"
+	| "unknown";
 
 /** Why a sync waits to retry, or failed — typed so a view offers the remedy. */
 export type SourceSyncFailureReasonName =
@@ -299,6 +420,28 @@ export interface DatasourceClient {
 	listSources(orgId: string): Promise<DatasourceView[]>;
 	addGitHubSource(input: ConnectGitHubInput): Promise<void>;
 	/**
+	 * Creates the caller's own `api` source with the OAuth 2.0
+	 * authorization-code grant (`API_CREDENTIAL_KIND_OAUTH2` +
+	 * `GRANT_AUTHORIZATION_CODE`), which the host makes personal to the caller,
+	 * and resolves to it. It holds no credential until the caller signs in
+	 * through `beginAccountLink` with its id.
+	 *
+	 * Optional, and without it no surface offers to connect an API.
+	 */
+	addPersonalApiSource?(
+		input: ConnectPersonalApiInput,
+	): Promise<DatasourceView>;
+	/**
+	 * Replaces the operation set of an `api` source, atomically
+	 * (`DatasourceService/DeclareSourceOperations`). An empty list removes
+	 * every declaration.
+	 */
+	declareSourceOperations?(
+		orgId: string,
+		sourceId: string,
+		operations: readonly SourceOperationDeclaration[],
+	): Promise<void>;
+	/**
 	 * Admits one reconcile pass over one source under `effectId` — the same host
 	 * operation (`DatasourceService/ReconcileSource`) a declared reconcile
 	 * schedule's occurrence admits, so a person's pass and a scheduled pass are
@@ -355,6 +498,18 @@ export interface DatasourceClient {
 		sourceId: string,
 		jobId?: string,
 	): Promise<SourceSyncView | undefined>;
+	/**
+	 * Changes what an already-connected source fetches — its branch and its path
+	 * and file-type filters — keeping its credential, its sync history and the
+	 * collection it writes into. Resolves to the id of the sync the host
+	 * enqueued because the change moved what is fetched, or undefined when the
+	 * request changed nothing.
+	 *
+	 * Optional, and without it the surfaces offer no Edit control at all: a
+	 * consumer adapting its own client to an older host keeps compiling, and the
+	 * panel never offers an edit its client cannot perform.
+	 */
+	updateSource?(input: EditSourceInput): Promise<string | undefined>;
 	deleteSource(orgId: string, id: string): Promise<void>;
 	/**
 	 * Enumerates the caller’s readable collection boundaries; failure must
@@ -391,11 +546,16 @@ export interface DatasourceClient {
 	 * their own provider account by signing in to the provider; an
 	 * administrator binds provider groups to teams and verifies domains.
 	 * Optional so that a consumer's own adapter keeps compiling without them.
+	 *
+	 * `sourceId` names the source a generic OAuth link (`connector: "api"`)
+	 * authorizes: the caller's own source, from `addPersonalApiSource`, which
+	 * the host requires for that connector and ignores for the others.
 	 */
 	beginAccountLink?(
 		orgId: string,
 		connector: string,
 		redirectUri: string,
+		sourceId?: string,
 	): Promise<AccountLinkHandle>;
 	completeAccountLink?(
 		orgId: string,

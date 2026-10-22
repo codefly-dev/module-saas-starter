@@ -1,6 +1,7 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { isMFARequired, stepUpToast } from "@/features/auth/model/step-up";
 import { ConnectError } from "@connectrpc/connect";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -88,7 +89,10 @@ export function ModuleAuthorityPage() {
 					setDraft(null);
 					setRefusal(null);
 				},
-				onError: (error) => setRefusal(writeRefusal(error)),
+				onError: (error) => {
+					if (isMFARequired(error)) stepUpToast();
+					setRefusal(writeRefusal(error));
+				},
 				onSettled: () => setConfirming(false),
 			},
 		);

@@ -98,13 +98,16 @@ func scanDatasourceSourceInto(row pgx.Row, label *string) (*business.DatasourceS
 	return &d, nil
 }
 
-// InsertDatasourceSource writes a new connected Source. Runs under the caller's
-// WithOrgTx.
-func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *business.DatasourceSource) error {
-	paths := source.Paths
-	if paths == nil {
-		paths = []string{}
-	}
+// datasourceConfigJSON encodes a Source's provider-specific non-secret config
+// for the `config` column, or nil when the provider stores none.
+//
+// Shared by the insert and the in-place fetch-scope update so one encoding
+// decides what the column holds. For a github source the envelope carries the
+// credential kind as well as the file-type filter, and an update that rebuilt
+// the JSON from the filter alone would drop the marker that says the source
+// holds no credential — turning a public source into one whose every fetch
+// looks for an envelope that was never there.
+func datasourceConfigJSON(source *business.DatasourceSource) ([]byte, error) {
 	var payload any
 	switch {
 	case source.Provider == business.DatasourceProviderGitHub:
@@ -116,15 +119,95 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 	case source.Upload != nil:
 		payload = source.Upload
 	}
-	var config []byte
-	if payload != nil {
-		encoded, err := json.Marshal(payload)
-		if err != nil {
-			return err
-		}
-		config = encoded
+	if payload == nil {
+		return nil, nil
 	}
-	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+	return json.Marshal(payload)
+}
+
+// UpdateDatasourceSourceFetchScope replaces what a Source fetches — its branch,
+// its path prefixes and the config envelope carrying its file-type filter —
+// from the already-validated Source the caller holds. Nothing else is written:
+// the repository, the provider, the boundary and the credential envelope are
+// not in the statement, so this cannot re-aim a source at another repository or
+// another collection however it is called.
+//
+// No migration is owed for it: the three columns, app_tenant's UPDATE
+// privilege and the tenant policy's WITH CHECK on org_id all already exist, and
+// the statement never touches org_id, so the row it may write is the row the
+// policy already admits. The baseline's `datasource_sources_source_read_revision`
+// trigger covers branch and paths (not config) and bumps the org's
+// AUTHORIZATION revision — the counter `CheckAuthorizationRevision` compares.
+// It is not a hand-off signal and nothing downstream reads it as one: what tells
+// the consuming module its snapshot moved is the reconcile UpdateSource enqueues.
+//
+// Matching no row is reported as business.ErrDatasourceSourceNotFound rather
+// than as a silent success. The caller read the source in an earlier statement,
+// so under this store's READ COMMITTED transactions the row can have been
+// deleted in between; swallowing the empty command tag would commit an audit
+// record and queue a sync for a source that no longer exists, and answer the
+// caller as though the edit had landed. Runs under the caller's WithOrgTx.
+func (s *PostgresStore) UpdateDatasourceSourceFetchScope(ctx context.Context, source *business.DatasourceSource) error {
+	paths := source.Paths
+	if paths == nil {
+		paths = []string{}
+	}
+	config, err := datasourceConfigJSON(source)
+	if err != nil {
+		return err
+	}
+	tag, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET branch = NULLIF($3, ''), paths = $4, config = $5, updated_at = NOW()
+		 WHERE org_id = $1 AND id = $2`,
+		source.OrgID, source.ID, source.Branch, paths, config)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return business.ErrDatasourceSourceNotFound
+	}
+	return nil
+}
+
+// LockDatasourceSourceFetchScope reads one org-scoped Source under a row lock,
+// or (nil, nil) when none matches. Runs under the caller's WithOrgTx, and the
+// lock is held until that transaction ends.
+//
+// It exists so an edit decides against the row as it is at the moment it
+// writes. UpdateSource reads the source once to validate against (a GitHub call
+// no transaction should be held open across), and the stored scope can move
+// between that read and the write; comparing the caller's expectation against
+// this locked read is what makes "replace the scope I was shown" true rather
+// than "replace whatever is there now". It takes the plain projection without
+// the boundary label, because the label comes from a join that has no row to
+// lock.
+func (s *PostgresStore) LockDatasourceSourceFetchScope(ctx context.Context, orgID, id string) (*business.DatasourceSource, error) {
+	row := s.getQueryExecutor(ctx).QueryRow(ctx,
+		`SELECT `+datasourceSourceColumns+`
+		   FROM datasource_sources WHERE org_id = $1 AND id = $2 FOR UPDATE`, orgID, id)
+	source, err := scanDatasourceSource(row)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return source, nil
+}
+
+// InsertDatasourceSource writes a new connected Source. Runs under the caller's
+// WithOrgTx.
+func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *business.DatasourceSource) error {
+	paths := source.Paths
+	if paths == nil {
+		paths = []string{}
+	}
+	config, err := datasourceConfigJSON(source)
+	if err != nil {
+		return err
+	}
+	_, err = s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO datasource_sources (
 			id, org_id, provider, repo, paths, branch, boundary_node_id,
 			credential_secret_ref, webhook_secret_ref, status, config,

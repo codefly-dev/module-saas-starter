@@ -473,6 +473,7 @@ const (
 	EventDatasourceSyncFailed           EventType = "saas.datasource.sync.failed"
 	EventDatasourceSourceSynced         EventType = "saas.datasource.source.synced"
 	EventDatasourceSourceRemoved        EventType = "saas.datasource.source.removed"
+	EventDatasourceSourceUpdated        EventType = "saas.datasource.source.updated"
 	EventDatasourceChangeSetCompiled    EventType = "saas.datasource.change_set_compiled"
 	EventDatasourceForcePushReconciled  EventType = "saas.datasource.force_push_reconciled"
 	EventDatasourceBranchDeleted        EventType = "saas.datasource.branch_deleted"
@@ -833,6 +834,20 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed.",
 		enum("provider", DatasourceProviderGitHub, DatasourceProviderAPI, DatasourceProviderCrawler, DatasourceProviderUpload),
 		str("repo"), str("boundary")), 2),
+	// What a source fetches is what a consumer's collection holds, so the trail
+	// records both sides of the move: the branch it was on and the branch it is
+	// on now, with the filters as they stand. `previous_branch` is empty when
+	// the branch did not change, which is how the trail distinguishes a
+	// re-aimed source from one whose filters were narrowed in place.
+	//
+	// `boundary` is the collection the source feeds, spelled as on the document
+	// and source-removed events so one payload filter reads all three — and so
+	// the collection grant covers this event, which isCollectionBoundaryEvent
+	// reads this declaration for. An edit never moves the boundary, but it is
+	// the collection whose contents the next snapshot replaces, so whoever may
+	// read that collection is exactly who needs to see it.
+	mutation(EventDatasourceSourceUpdated, CategorySystem, "A connected datasource's branch or path filters were changed.",
+		str("repo"), str("branch"), str("previous_branch"), strs("paths"), strs("file_extensions"), str("boundary")),
 	observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...),
 	observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...),
 	observation(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",
