@@ -183,7 +183,7 @@ describe("ModuleAuthorityPage", () => {
 			"a session with no recent second factor",
 			{ code: "failed_precondition", message: "mfa_required" },
 			400,
-			"Writing the envelope needs a second factor completed recently. Sign out, sign in again completing your second factor, then write it again.",
+			"Writing the envelope needs your passkey confirmed within the last 15 minutes. Confirm it (the sign-in page brings you back here), then write it again.",
 		],
 		[
 			"a revision another administrator wrote first",

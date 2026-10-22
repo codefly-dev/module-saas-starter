@@ -91,10 +91,10 @@ Their `go.mod` files are the exact source pins. The other services and tools
 retain their own released pins. These are development candidates, not release
 qualification: never ship a host release on an untagged pseudo-version.
 Run qualification with `GOWORK=off` so a workspace cannot mask the pins.
-Accounts requires Go 1.27.2. All go-grpc services pin released agent 0.1.58,
+Accounts requires Go 1.27.3. All go-grpc services pin released agent 0.1.58,
 whose builder uses Go 1.27.3 under `GOTOOLCHAIN=local`; CI uses the same patch.
-Go 1.27.3 also fixes GO-2026-6809.
-Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613).
+Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613),
+and Go 1.27.2 by [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809).
 A source audit under a newer compiler does not qualify the compiler used in the
 image: move the owning agent and image contract together, regenerate the recipe,
 and check the built executable's toolchain evidence. Never lower the accounts
