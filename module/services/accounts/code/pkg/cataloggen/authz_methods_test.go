@@ -169,5 +169,5 @@ func TestImpersonationRestrictionsMatchTheDescriptorsTheInterceptorReads(t *test
 	}
 
 	require.Equal(t, catalogued, enforced)
-	require.Len(t, enforced, 62) // 57 of the API package + Issue, Check, Install, GrantToTeam, List of the implemented interfaces
+	require.Len(t, enforced, 61) // 57 of the API package + Issue, Install, GrantToTeam, List of the implemented interfaces; Check is public, authenticated by the token it checks
 }
