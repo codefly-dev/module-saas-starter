@@ -4,6 +4,7 @@ inputs:
   - directory: .
     paths:
       - saas
+      - obin
 managed:
   enabled: true
   disable:

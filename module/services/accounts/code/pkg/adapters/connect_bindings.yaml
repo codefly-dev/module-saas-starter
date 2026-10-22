@@ -168,3 +168,18 @@ services:
     handler: webhookConnectHandler
     source:
       kind: business
+  # The host interfaces (obin-ai/authority), served as adapters; see host_interface.go.
+  AuthorityService:
+    handler: hostAuthorityConnectHandler
+    source:
+      kind: singleton
+      name: HostAuthoritySingleton
+  CompositionService:
+    handler: hostCompositionConnectHandler
+    source:
+      kind: singleton
+      name: HostCompositionSingleton
+  SessionService:
+    handler: hostSessionConnectHandler
+    source:
+      kind: business

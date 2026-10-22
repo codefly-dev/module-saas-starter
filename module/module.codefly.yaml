@@ -14,6 +14,14 @@ interface:
         - service: accounts
           endpoint: authority
           visibility: internal
+          # The host authority interfaces (obin-ai/authority): the same contract
+          # the mini gateway implements for a local run. A consumer depends on
+          # the interface, never on this service.
+          implements:
+              - obin.ai/authority@0.1.0
+              - obin.ai/composition@0.1.0
+              - obin.ai/installation@0.1.0
+              - obin.ai/session@0.1.0
         - service: accounts
           endpoint: connect
           visibility: internal

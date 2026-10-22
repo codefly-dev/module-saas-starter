@@ -121,11 +121,15 @@ func RPCPolicies() []RPCPolicy {
 func accountServiceDescriptors() []protoreflect.ServiceDescriptor {
 	var services []protoreflect.ServiceDescriptor
 	protoregistry.GlobalFiles.RangeFiles(func(file protoreflect.FileDescriptor) bool {
-		if string(file.Package()) != "saas.accounts.v1" {
+		if string(file.Package()) != "saas.accounts.v1" && !interfacePackage(string(file.Package())) {
 			return true
 		}
 		for i := 0; i < file.Services().Len(); i++ {
-			services = append(services, file.Services().Get(i))
+			service := file.Services().Get(i)
+			if !implementedHere(service) {
+				continue
+			}
+			services = append(services, service)
 		}
 		return true
 	})
@@ -138,6 +142,13 @@ func accountServiceDescriptors() []protoreflect.ServiceDescriptor {
 func descriptorMethodPolicy(method protoreflect.MethodDescriptor) (*policyv1.MethodPolicy, string) {
 	options, ok := method.Options().(*descriptorpb.MethodOptions)
 	if !ok || !proto.HasExtension(options, policyv1.E_MethodPolicy) {
+		// A published host interface carries no host option; the policy is the
+		// host's own, stated in InterfaceMethodPolicies beside the implementation.
+		fullMethod := "/" + string(method.Parent().FullName()) + "/" + string(method.Name())
+		if sidecar, held := InterfaceMethodPolicies()[fullMethod]; held {
+			copy, _ := proto.Clone(sidecar).(*policyv1.MethodPolicy)
+			return copy, validateDescriptorPolicy(method, copy)
+		}
 		return nil, "method_policy option is missing"
 	}
 	methodPolicy, ok := proto.GetExtension(options, policyv1.E_MethodPolicy).(*policyv1.MethodPolicy)
