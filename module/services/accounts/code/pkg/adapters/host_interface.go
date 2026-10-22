@@ -29,7 +29,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// HostAuthorityServer serves obin.ai/authority over the Work Context authority.
+// HostAuthorityServer serves codefly.dev/authority over the Work Context authority.
 type HostAuthorityServer struct {
 	authorityv1.UnimplementedAuthorityServiceServer
 	workContexts *WorkContextAuthorityServer
@@ -130,7 +130,7 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	return &authorityv1.IssueResponse{Token: issued.GetToken(), ExpiresAtUnix: issued.GetExpiresAt().GetSeconds(), Context: wire}, nil
 }
 
-// HostCompositionServer serves obin.ai/composition.
+// HostCompositionServer serves codefly.dev/composition.
 type HostCompositionServer struct {
 	compositionv1.UnimplementedCompositionServiceServer
 }
@@ -144,7 +144,7 @@ func (s *HostCompositionServer) ApplyManifest(context.Context, *compositionv1.Ap
 	return nil, status.Error(codes.Unimplemented, "apply manifest: accounts learns a module through signed delivery at /platform/_delivery/manifest today; not yet behind the interface")
 }
 
-// HostInstallationServer serves obin.ai/installation over the installation service.
+// HostInstallationServer serves codefly.dev/installation over the installation service.
 type HostInstallationServer struct {
 	installationv1.UnimplementedInstallationServiceServer
 	installations *InstallationServer
@@ -183,7 +183,7 @@ func (s *HostInstallationServer) GrantToTeam(context.Context, *installationv1.Gr
 	return nil, status.Error(codes.Unimplemented, "grant to team: accounts grants a role id at the root; the installation's own role is not yet resolved behind the interface")
 }
 
-// HostSessionServer serves obin.ai/session over fixture authentication.
+// HostSessionServer serves codefly.dev/session over fixture authentication.
 type HostSessionServer struct {
 	sessionv1.UnimplementedSessionServiceServer
 	service *business.Service
