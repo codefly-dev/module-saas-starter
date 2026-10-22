@@ -91,6 +91,20 @@ message StartTaskWorkContextRequest {
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 512
   ];
+  // Operation bindings of the audience module, by name, whose invoke scopes
+  // this capability carries beside authority_scopes. The host resolves each
+  // name to the binding as installed at org_id, narrowed by that installation
+  // exactly as the module's delegated exchange redeems it, and keeps each
+  // resource only if the person holds it. The caller names a binding and never
+  // its resource ids. A direct human-owned mint only.
+  repeated string operation_bindings = 11 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items.string = {
+      min_len: 1
+      max_len: 256
+    }
+  ];
 }
 
 // StartInstallationTaskRequest is the headless (no-user-present) mint path. The
