@@ -4,8 +4,9 @@ package infra_test
 
 import (
 	"accounts/pkg/business"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestInstalledContentReadModeMigrationRequiresWitnessPostgres(t *testing.T) {

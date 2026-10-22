@@ -30,11 +30,11 @@ type installedContentReadID struct {
 // The identity commits to monotonic owner facts, not a hash of current policy:
 // removing and restoring identical policy can never revive a retained child.
 func (s *Service) InstalledContentReadBinding(ctx context.Context, caller ModuleCaller, bindingID string) (WorkContextOperationBinding, ModuleOperationAudience, error) {
-	ctx, release, err := s.BeginModuleAuthorityUse(ctx)
+	ctx, releaseAuthority, err := s.BeginModuleAuthorityUse(ctx)
 	if err != nil {
 		return WorkContextOperationBinding{}, ModuleOperationAudience{}, err
 	}
-	defer release()
+	defer releaseAuthority()
 	origin, snapshot, err := s.authorizeModuleCapability(ctx, caller)
 	if err != nil {
 		return WorkContextOperationBinding{}, ModuleOperationAudience{}, err

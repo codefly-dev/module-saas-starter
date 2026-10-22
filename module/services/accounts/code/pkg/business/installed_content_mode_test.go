@@ -1,9 +1,10 @@
 package business
 
 import (
+	"testing"
+
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestInstalledContentReadModeIsExplicitAndRestricted(t *testing.T) {
