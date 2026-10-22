@@ -8,7 +8,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 | Procedure | Shape | REST mapping | Tier | Guards | Permission / scope | Resource bindings | Audit | Idempotency / rate | Sensitivity req → res | Description |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `/host.authority.v1.AuthorityService/Check` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live. |
+| `/host.authority.v1.AuthorityService/Check` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live. |
 | `/host.authority.v1.AuthorityService/Issue` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | — | SUCCESS: saas.work_context.task_started | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Issue a Work Context for one owner shape, one audience and the scopes asked for, bounded by what the owner holds. |
 | `/host.authority.v1.AuthorityService/Keys` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / STANDARD_READ | PUBLIC → PUBLIC | Return the issuer and the public keys a verifier pins. |
 | `/host.composition.v1.CompositionService/ApplyManifest` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | OPTIONAL / INTERNAL | INTERNAL → INTERNAL | Deliver one module instance's manifest at one generation; the ceiling is the manifest. |
@@ -288,10 +288,10 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 44
+- `auth`: 43
 - `internal`: 55
 - `mfa`: 5
 - `org_admin`: 67
 - `org_member`: 57
 - `platform_admin`: 29
-- `public`: 20
+- `public`: 21

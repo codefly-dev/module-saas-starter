@@ -11,7 +11,7 @@ type generatedAuthorizationMetadata struct {
 }
 
 var generatedAuthorizationByProcedure = map[string]generatedAuthorizationMetadata{
-	"/host.authority.v1.AuthorityService/Check":                                      {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "79921072468c5f99274839371a7ac834d857df6e5f0708942165c4b31084de26"},
+	"/host.authority.v1.AuthorityService/Check":                                      {exposure: edgeExposurePublic, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "095caeb90e18271e84ac9c463cf7fe9f88d6a52b66818c16ccc48b156468cb58"},
 	"/host.authority.v1.AuthorityService/Issue":                                      {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassSensitive, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "e434a6f8983ad37edb91c8557f9303e74805913e5709e860b2c0645f283e1c3e"},
 	"/host.authority.v1.AuthorityService/Keys":                                       {exposure: edgeExposurePublic, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "7a256fcd03f73b9cb7495e12372e9d421cf3f81d480b111a4ebd64720623d8c3"},
 	"/host.composition.v1.CompositionService/ApplyManifest":                          {exposure: edgeExposureInternal, rateLimitClass: edgeRateLimitClassInternal, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "21769738674c352d8e593fbc1243fc7b42fd53493f59de9c11b349dbde550700"},

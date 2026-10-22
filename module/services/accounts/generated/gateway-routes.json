@@ -3452,7 +3452,7 @@
         "service": "accounts"
       },
       "upstream_endpoint": "connect",
-      "exposure": "EXPOSURE_AUTHENTICATED",
+      "exposure": "EXPOSURE_PUBLIC",
       "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
       "rewrite_path": "",
       "remove_after": ""

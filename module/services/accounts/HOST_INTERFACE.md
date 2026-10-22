@@ -81,25 +81,50 @@ and `GrantToTeam`, which refuse by name (gaps 3 to 6), and the `List` assertion
 that an installed solution exists, since the fixture installs none. Each red line
 is a line of the gap list, which is the point.
 
-## The first run of the suite against accounts (2026-10-22)
+## The suite against accounts (2026-10-22)
 
 `HOST_INTERFACE_CONFORMANCE=1 go test ./pkg/adapters/ -run TestAccountsPassesTheHostInterfaceConformanceSuite`
 boots the test store, seeds the dev-admin fixture, configures the Work Context
 authority against the store, serves the Connect listener on an ephemeral port
-and runs the suite over gRPC. Green: Keys; sign-in and an unknown token refused
-by name. Red, each a line of the gap list:
+and runs the suite over gRPC.
 
-| Red line | Which gap | Proper fix |
+**Green (4 of 10):** Keys; sign-in and an unknown token refused by name; the
+whole person line (issued at documents, checked there, refused at model); every
+refusal reaches the caller with a reason.
+
+What it took, each a fix at the place that owns the behaviour, none a hack:
+
+- *Composition installs a module at every organisation* (contract decision,
+  2026-10-22). `business.ComposedModuleInstallations` answers the live module
+  authority and the seal store for a composed module's installation, named
+  `<org>/<module principal>`, held by every member; everything else is the wrapped
+  Postgres store. A new control-plane membership read, `WorkContextOrgMember`,
+  sits beside the other seal reads because the tenant-scoped membership read
+  needs a verified identity a seal check does not carry. The harness wires it;
+  production keeps its reads until the registry derives these rows itself.
+- *An uncomposed audience is NotFound by name* (contract decision): the adapter
+  checks the derived registry through `ModulePrincipalID` before any mint.
+- *Check is authenticated by the token it checks*: policy `EXPOSURE_PUBLIC`,
+  like Keys. The answer carries nothing the token does not, but its standing.
+- *A refusal names its reason somewhere*: `mapWorkContextError` now takes the
+  context and logs the one case the caller is told nothing, `cannot issue Work
+  Context`, at WARN. Before, that reason lived nowhere; diagnosing the harness
+  is what exposed it.
+- *A fresh task per person-owned issue*; the session returns the access token as
+  the bearer; List is an administrator's read over the host's listing.
+
+**Red (6 of 10), each a host change of its own:**
+
+| Red line | Gap | Proper fix |
 |---|---|---|
-| person-owned Issue: `audience "documents" is not installed in this organization` | **10, new**: the host requires a module installation per organisation before a module may be an audience; the fixture installs none and the mini gateway holds one per organisation implicitly | the contract decides whether a composed module is installed at every organisation by composition (the mini gateway's reading) or by an explicit module installation; the host's fixture then installs the composed modules at Acme |
-| empty ask: `authority_scopes: must contain at least 1 item(s)` | **11, new**: the host cannot answer "everything the owner holds at the audience"; it has no effective-permissions read | an effective-permissions read in the host (person × audience module → scopes), which the adapter uses when the ask is empty |
-| uncomposed audience refused as PermissionDenied "not one this host serves", contract says NotFound | **12, new**: refusal code for an unknown audience | the adapter checks the audience against the module registry before the mint and refuses NotFound by name; or the contract adopts PermissionDenied; one or the other, written down |
-| workload Issue: `authentication required` | 3 | the broker's attestation behind `Issue`: a workload credential in the request is the authentication |
-| `installed solution = <nil>` | fixture: the dev-admin fixture installs no solution | the fixture gains an `installations` section performed through the real install path (primer decision 6) |
+| empty ask: `authority_scopes: must contain at least 1 item(s)` | **11** | an effective-permissions read in the host (person × audience → scopes); the adapter uses it when the ask is empty |
+| workload Issue: `authentication required` | 3 | the broker's attestation behind `Issue`: the workload credential in the request is the authentication |
+| child hop: `authentication required` | **13, new** | the host's `StartChildSession` authenticates the *owner's* bearer; the contract and the chain authenticate the *holder of the parent token* plus the actor's credential, because the holder is a module service, not the person. A child hop behind the interface verifies the parent and attests the actor, with no session |
+| `installed solution = <nil>` | fixture | the dev-admin fixture gains an `installations` section performed through the real install path at seed (owner decision 2026-10-22); needs a declared solution, so it follows gap 4 |
 | ApplyManifest: `internal RPC is not exposed on the tenant listener` | 4 | the delivery path behind the composition interface, on the internal listener; the harness dials it there |
-| Install, GrantToTeam | 5 | not reached yet: the install subtest applies a manifest first |
+| Install, GrantToTeam | 5 | name-to-id resolvers; not reached until the manifest applies |
 
-Rule held: the suite was changed three times today, each time to state the
-contract more precisely (an authenticated caller for the audience probe; explicit
-scopes in base cases with the empty ask as its own line; List as an administrator's
-read), never to make a red line green.
+Suite changes today, each to state the contract more precisely and none to pass
+a red line: an authenticated caller for the audience probe; explicit scopes in
+base cases with the empty ask as its own line; List as an administrator's read;
+`Session.bearer`.
