@@ -1,4 +1,15 @@
 export {
+	type ApiSourceSpec,
+	apiSourceCollection,
+	apiSourceName,
+	apiSourceRefusal,
+	matchPersonalApiSources,
+} from "./datasources/api-source.js";
+export {
+	ApiSourceCard,
+	type ApiSourceCardProps,
+} from "./datasources/api-source-card.js";
+export {
 	CollectionGrants,
 	CollectionReadBoundary,
 } from "./datasources/collection-access.js";
@@ -36,6 +47,7 @@ export {
 export {
 	DatasourceAccountLinks,
 	DatasourceDirectoryPanel,
+	useMyAccountLinks,
 } from "./datasources/directory.js";
 export {
 	createDatasourceClient,
@@ -97,10 +109,14 @@ export type {
 	AccessibleScopeView,
 	AccountLinkHandle,
 	AccountLinkView,
+	ApiCredentialKindName,
+	ApiOAuth2GrantName,
+	ApiSourceView,
 	CollectionAccessView,
 	CollectionGrantSubject,
 	CollectionGrantView,
 	ConnectGitHubInput,
+	ConnectPersonalApiInput,
 	DatasourceClient,
 	DatasourceDirectoryView,
 	DatasourceProviderName,
@@ -110,6 +126,7 @@ export type {
 	EditSourceInput,
 	GroupBindingView,
 	SourceFetchScope,
+	SourceOperationDeclaration,
 	SourceReconcileReceipt,
 	SourceSyncFailureReasonName,
 	SourceSyncPhaseName,

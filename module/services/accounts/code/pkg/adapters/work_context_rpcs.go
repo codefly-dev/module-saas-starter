@@ -198,6 +198,9 @@ func (s *WorkContextAuthorityServer) confirmCurrentAuthority(
 					wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()),
 					wool.Field("module", principalID), wool.Field("binding", req.GetOperationBindingId()),
 					wool.ErrField(err))
+				if business.NamesInstalledBinding(req.GetOperationBindingId()) {
+					return installedBindingError(err)
+				}
 				return status.Error(codes.PermissionDenied, business.ErrModuleHopStale.Error())
 			}
 			continue
@@ -538,7 +541,31 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
 	}
-	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes(), mintContentReads(req.GetAudience()))
+	eligible := mintContentReads(req.GetAudience())
+	var standing []string
+	if service != nil && req.GetActorPrincipalId() == "" {
+		var release func()
+		var err error
+		ctx, release, err = service.BeginModuleAuthorityUse(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+		var kinds []string
+		for _, scope := range req.GetAuthorityScopes() {
+			if len(scope.GetActions()) == 1 && scope.GetActions()[0] == "read" {
+				kinds = append(kinds, scope.GetResourceKind())
+			}
+		}
+		foreign, identities, err := service.InstalledContentReadStanding(ctx, req.GetOrgId(), req.GetAudience(), kinds)
+		if err != nil {
+			return nil, err
+		}
+		standing = identities
+		direct := eligible
+		eligible = func(kind string) bool { return direct(kind) || slices.Contains(foreign, kind) }
+	}
+	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes(), eligible)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -621,6 +648,11 @@ func (s *WorkContextAuthorityServer) StartTask(
 	// business.ConsumerCeilingStillCurrent for what this does and does not hold).
 	if consumerCeiling != nil {
 		if err := service.ConsumerCeilingStillCurrent(ctx, consumerCeiling); err != nil {
+			return nil, err
+		}
+	}
+	for _, id := range standing {
+		if _, err := service.WorkContextOperationBinding(ctx, req.GetOrgId(), id); err != nil {
 			return nil, err
 		}
 	}
@@ -1636,6 +1668,9 @@ func (s *WorkContextAuthorityServer) verifyParent(
 		return nil, nil, refusedReadBack(ctx, err, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller"))
 	}
 	claims := parent.Context()
+	if business.NamesInstalledBinding(claims.GetOperationBinding().GetBindingId()) {
+		return nil, nil, status.Error(codes.PermissionDenied, "installed binding child cannot be transformed")
+	}
 	if claims.GetTenantId() != orgID || claims.GetOwnerPrincipalId() != ownerID {
 		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
 	}
@@ -1665,6 +1700,9 @@ func (s *WorkContextAuthorityServer) verifyActorParent(
 		return nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
 	}
 	claims := parent.Context()
+	if business.NamesInstalledBinding(claims.GetOperationBinding().GetBindingId()) {
+		return nil, nil, status.Error(codes.PermissionDenied, "installed binding child cannot be renewed")
+	}
 	actors := claims.GetActorChain()
 	if len(actors) == 0 {
 		return nil, nil, status.Error(
@@ -1697,6 +1735,9 @@ func (s *WorkContextAuthorityServer) requireCurrentAuthority(
 	orgID string,
 	parent *basev0.WorkContextV1,
 ) (*business.Principal, error) {
+	if business.NamesInstalledBinding(parent.GetOperationBinding().GetBindingId()) {
+		return nil, s.requireInstalledBinding(ctx, parent)
+	}
 	ownerID := parent.GetOwnerPrincipalId()
 	if len(parent.GetActorChain()) == 0 {
 		permissions := permissionsFromCoreScopes(parent.GetAuthorityScopes(), recheckContentReads())

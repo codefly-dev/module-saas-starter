@@ -70,6 +70,28 @@ interface BulkGrantOutcome {
 	failed: { label: string; message: string }[];
 }
 
+/**
+ * The host refuses a grant with `mfa_required` when the administrator's second
+ * factor was confirmed more than fifteen minutes ago; a refresh never renews
+ * it. The sign-in page confirms the passkey and honours `next`, so the
+ * administrator comes back here and grants again.
+ */
+function needsRecentFactor(message: string): boolean {
+	return (
+		message.includes("mfa_required") &&
+		(message.includes("failed_precondition") ||
+			message.includes("FailedPrecondition"))
+	);
+}
+
+function stepUpHref(): string {
+	const here =
+		typeof window === "undefined"
+			? "/"
+			: `${window.location.pathname}${window.location.search}`;
+	return `/auth/login?step_up=1&next=${encodeURIComponent(here)}`;
+}
+
 export function CollectionGrants({
 	client,
 	orgId,
@@ -300,7 +322,17 @@ export function CollectionGrants({
 			)}
 			{outcome?.failed.map((failure) => (
 				<p role="alert" key={failure.label}>
-					Couldn’t grant read access to {failure.label}: {failure.message}
+					{needsRecentFactor(failure.message) ? (
+						<>
+							Couldn’t grant read access to {failure.label}: this needs your
+							passkey confirmed within the last 15 minutes.{" "}
+							<a href={stepUpHref()}>Confirm passkey</a> and grant again.
+						</>
+					) : (
+						<>
+							Couldn’t grant read access to {failure.label}: {failure.message}
+						</>
+					)}
 				</p>
 			))}
 			{grant.isError && (
