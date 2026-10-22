@@ -132,7 +132,24 @@ a connector-owned linker. Authorization-code envelopes hold only provider
 tokens and expiry; refresh resolves the client ID, secret, token URL and scopes
 from the current deployment registration, so app rotation does not require
 copying a new secret into every source. This generic link identifies a source authorization, not a provider
-subject or email; it is not a provider-directory ACL mapping.
+subject or email; it is not a provider-directory ACL mapping. Its account link
+is recorded under connector `api` and provider account `source:<source id>`,
+which is how a client finds the link for one source. Deleting that link record
+does not remove the authorization stored on the source.
+
+## Connecting in the UI
+
+The host's kit (`@codefly-dev/saas-ui`) connects a person to one API with
+`ApiSourceCard`: given a base URL and, optionally, the operation declarations
+to declare, it creates the person's `api` source with
+`API_CREDENTIAL_KIND_OAUTH2` + `GRANT_AUTHORIZATION_CODE` when they have none,
+declares the operations, begins the link with that `source_id`, and completes
+it on the page the provider returns to through `DatasourceAccountLinks`
+(`connector="api"`, `sourceId`). Where the API and its declarations come from is
+the caller's decision; the card takes them as props. `AddSource` and
+`DeclareSourceOperations` require an organization administrator today, so a
+member without that role is refused and told so. The kit's README describes the
+states and the refusals it words.
 
 Refresh and client-credentials resolution reuse the credential row lock.
 Transport uses the resolved-IP egress guard and same-origin redirect policy.

@@ -1,6 +1,6 @@
 module github.com/codefly-dev/module-saas-starter/module/frontendpayload
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/codefly-dev/core v0.19.5-0.20261014005330-835460f16fb5
