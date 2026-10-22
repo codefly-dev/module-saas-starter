@@ -1,0 +1,152 @@
+package adapters
+
+// The harness of rung 1: accounts, booted over its test store with the dev-admin
+// fixture, serves the host interfaces over an in-memory connection and the
+// interface conformance suite drives them. Every red line is a line of the gap
+// list in HOST_INTERFACE.md; the suite is never loosened to make a line green.
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"fmt"
+	"net"
+	"os"
+	"testing"
+	"time"
+
+	conformance "github.com/codefly-dev/authority/libraries/conformance/go"
+	"github.com/codefly-dev/core/sdk"
+	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
+
+	"accounts/fixtures"
+	Package "accounts/pkg/auth/dev"
+	ed25519minter "accounts/pkg/auth/ed25519"
+	pgauth "accounts/pkg/auth/pg"
+	"accounts/pkg/business"
+	"accounts/pkg/infra"
+)
+
+func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
+	if os.Getenv("HOST_INTERFACE_CONFORMANCE") == "" {
+		t.Skip("set HOST_INTERFACE_CONFORMANCE=1: boots the test store and seeds the dev-admin fixture (rung 1 harness)")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	deps, err := sdk.WithDependencies(ctx, sdk.WithExcludedDependencies("cache", "telemetry"), sdk.WithNamingScope("host-interface-conformance"), sdk.WithTimeout(10*time.Minute), sdk.WithSilence("store"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = deps.Destroy(ctx) })
+	_, err = codefly.Init(ctx)
+	require.NoError(t, err)
+	store, err := infra.NewPostgresStore(ctx)
+	require.NoError(t, err)
+	t.Cleanup(store.Close)
+	svc, err := business.NewService(store)
+	require.NoError(t, err)
+	// The sign-in path, as production and the business tests wire it: a session
+	// store and an identity resolver over the store, a token minter with a test
+	// key, the audit emitter and the entitlement checker every audited RPC needs.
+	sessionStore := pgauth.NewSessionStore(store)
+	svc.SetIdentityResolver(pgauth.NewResolver(store))
+	_, minterKey, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	svc.SetJWTMinter(ed25519minter.New(ed25519minter.Config{Issuer: "accounts-conformance", Audience: "accounts-conformance"}, minterKey, sessionStore))
+	auditEmitter, err := business.NewDurableAuditEmitter(store, store)
+	require.NoError(t, err)
+	t.Cleanup(auditEmitter.Close)
+	svc.SetAuditEmitter(auditEmitter)
+	svc.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store))
+	require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}))
+
+	// The people: the dev-admin fixture, signed in through the fixture provider.
+	fixturePath, err := fixtures.FixturePath("dev-admin")
+	require.NoError(t, err)
+	validator, err := Package.New(fixturePath)
+	require.NoError(t, err)
+	svc.SetDevelopmentTokenValidator(validator)
+	require.NoError(t, fixtures.Seed(ctx, svc, "dev-admin"))
+
+	// The composition: two module principals the host knows, as the module
+	// registry would hold them after delivery.
+	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("documents"): {Prefix: "documents", Resources: []string{"example-records"}},
+		business.ModulePrincipalID("model"):     {Prefix: "model", Resources: []string{"modelservice.profiles"}},
+	})
+
+	previous := service
+	service = svc
+	t.Cleanup(func() { service = previous })
+
+	// The servers, as production builds them; then the Work Context authority
+	// configured against this store with a test key (NewGrpServer configures it
+	// from the permissions plugin, which a test has none of).
+	grpcServer, err := NewGrpServer(&Configuration{})
+	require.NoError(t, err)
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	authority, _ := svc.Store().(business.WorkContextAuthorityStore)
+	workContextSingleton.Configure(WorkContextAuthorityConfiguration{
+		Issuer: "https://accounts.conformance.test", KeyID: "conformance-1", PrivateKey: key, Authority: authority, Seals: svc,
+	})
+	require.NoError(t, workContextSingleton.configureErr)
+
+	// The Connect listener is the catalog-complete one (business-backed services
+	// are Connect-only) and speaks the gRPC protocol over h2c, so the suite dials
+	// it with a plain gRPC client on an ephemeral port.
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := uint16(probe.Addr().(*net.TCPAddr).Port)
+	require.NoError(t, probe.Close())
+	connectServer, err := NewConnectServer(&Configuration{EndpointConnectPort: &port}, grpcServer)
+	require.NoError(t, err)
+	serveCtx, stopServing := context.WithCancel(ctx)
+	t.Cleanup(stopServing)
+	go func() { _ = connectServer.Run(serveCtx) }()
+	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	require.Eventually(t, func() bool {
+		c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 200*time.Millisecond)
+		if err != nil {
+			return false
+		}
+		_ = c.Close()
+		return true
+	}, 20*time.Second, 100*time.Millisecond, "the Connect listener did not come up")
+
+	conformance.Run(t, conn, registeredDescriptors(t), conformance.Fixture{
+		Organization: "00000000-0000-7000-8000-0000000000c1", // Acme Corp
+		ViewerToken:  "dev-bob", AdminToken: "dev-alice",
+		Audience: "documents", ReadKind: "example-records",
+		// GAPS, by design of this branch (HOST_INTERFACE.md 3 to 6): no workload
+		// credential is minted on an accounts RPC, and the fixture installs no
+		// solution. The lines these make red are the gap list.
+		WorkloadCredential: "", Binding: "model", BindingAudience: "model",
+		InstalledSolution: "",
+	})
+}
+
+// registeredDescriptors is the descriptor set of every proto file this binary
+// links, which is what codefly generate contracts would export for the served
+// interfaces; the suite drives the interfaces from it with dynamic messages.
+func registeredDescriptors(t *testing.T) []byte {
+	t.Helper()
+	set := &descriptorpb.FileDescriptorSet{}
+	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		set.File = append(set.File, protodesc.ToFileDescriptorProto(fd))
+		return true
+	})
+	raw, err := proto.Marshal(set)
+	require.NoError(t, err)
+	return raw
+}

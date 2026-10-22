@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file host/session/v1/session.proto.
  */
 export const file_host_session_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("Ch1ob3N0L3Nlc3Npb24vdjEvc2Vzc2lvbi5wcm90bxIPaG9zdC5zZXNzaW9uLnYxIiYKDVNpZ25JblJlcXVlc3QSFQoNZml4dHVyZV90b2tlbhgBIAEoCSJqCgdTZXNzaW9uEhIKCnNlc3Npb25faWQYASABKAkSEQoJcGVyc29uX2lkGAIgASgJEhcKD29yZ2FuaXphdGlvbl9pZBgDIAEoCRINCgVyb2xlcxgEIAMoCRIQCgh0ZWFtX2lkcxgFIAMoCTJUCg5TZXNzaW9uU2VydmljZRJCCgZTaWduSW4SHi5ob3N0LnNlc3Npb24udjEuU2lnbkluUmVxdWVzdBoYLmhvc3Quc2Vzc2lvbi52MS5TZXNzaW9uQq0BChNjb20uaG9zdC5zZXNzaW9uLnYxQgxTZXNzaW9uUHJvdG9QAVoqYWNjb3VudHMvcGtnL2dlbi9ob3N0L3Nlc3Npb24vdjE7c2Vzc2lvbnYxogIDSFNYqgIPSG9zdC5TZXNzaW9uLlYxygIPSG9zdFxTZXNzaW9uXFYx4gIbSG9zdFxTZXNzaW9uXFYxXEdQQk1ldGFkYXRh6gIRSG9zdDo6U2Vzc2lvbjo6VjFiBnByb3RvMw");
+  fileDesc("Ch1ob3N0L3Nlc3Npb24vdjEvc2Vzc2lvbi5wcm90bxIPaG9zdC5zZXNzaW9uLnYxIiYKDVNpZ25JblJlcXVlc3QSFQoNZml4dHVyZV90b2tlbhgBIAEoCSJ6CgdTZXNzaW9uEhIKCnNlc3Npb25faWQYASABKAkSEQoJcGVyc29uX2lkGAIgASgJEhcKD29yZ2FuaXphdGlvbl9pZBgDIAEoCRINCgVyb2xlcxgEIAMoCRIQCgh0ZWFtX2lkcxgFIAMoCRIOCgZiZWFyZXIYBiABKAkyVAoOU2Vzc2lvblNlcnZpY2USQgoGU2lnbkluEh4uaG9zdC5zZXNzaW9uLnYxLlNpZ25JblJlcXVlc3QaGC5ob3N0LnNlc3Npb24udjEuU2Vzc2lvbkKtAQoTY29tLmhvc3Quc2Vzc2lvbi52MUIMU2Vzc2lvblByb3RvUAFaKmFjY291bnRzL3BrZy9nZW4vaG9zdC9zZXNzaW9uL3YxO3Nlc3Npb252MaICA0hTWKoCD0hvc3QuU2Vzc2lvbi5WMcoCD0hvc3RcU2Vzc2lvblxWMeICG0hvc3RcU2Vzc2lvblxWMVxHUEJNZXRhZGF0YeoCEUhvc3Q6OlNlc3Npb246OlYxYgZwcm90bzM");
 
 /**
  * SignInRequest presents a fixture token.
@@ -77,6 +77,15 @@ export type Session = Message<"host.session.v1.Session"> & {
    * @generated from field: repeated string team_ids = 5;
    */
   teamIds: string[];
+
+  /**
+   * The credential the person presents on every call as `authorization: Bearer
+   * <bearer>`; whatever this implementation authenticates a person by. The mini
+   * gateway hands back the session id; the host hands back its access token.
+   *
+   * @generated from field: string bearer = 6;
+   */
+  bearer: string;
 };
 
 /**

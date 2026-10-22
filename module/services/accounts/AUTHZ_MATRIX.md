@@ -14,7 +14,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/host.composition.v1.CompositionService/ApplyManifest` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | OPTIONAL / INTERNAL | INTERNAL → INTERNAL | Deliver one module instance's manifest at one generation; the ceiling is the manifest. |
 | `/host.installation.v1.InstallationService/GrantToTeam` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | SUCCESS: saas.installation.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Expose an installation to a team under the installation's role. |
 | `/host.installation.v1.InstallationService/Install` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | SUCCESS: saas.installation.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Install one target at one organisation under the least role it needs; pending until its install step is acknowledged. |
-| `/host.installation.v1.InstallationService/List` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List what one organisation has installed. |
+| `/host.installation.v1.InstallationService/List` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List what one organisation has installed. |
 | `/host.session.v1.SessionService/SignIn` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.auth.login | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Open a session for a fixture person by their fixture token. |
 | `/saas.accounts.v1.APIKeyService/CreateAPIKey` | unary | `POST /v1/api-keys` | `mfa` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; mfa=IF_ENROLLED_RECENT_STEP_UP; impersonation=FORBIDDEN | perm=api_keys:write | organization_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.api_key.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → SECRET | Mint an API key for an administered organization. |
 | `/saas.accounts.v1.APIKeyService/ListAPIKeys` | unary | `GET /v1/api-keys` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=api_keys:read; scope=api_keys:read | organization_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List org's API keys. |
@@ -291,7 +291,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 44
 - `internal`: 55
 - `mfa`: 5
-- `org_admin`: 66
-- `org_member`: 58
+- `org_admin`: 67
+- `org_member`: 57
 - `platform_admin`: 29
 - `public`: 20

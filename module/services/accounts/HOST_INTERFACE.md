@@ -80,3 +80,26 @@ Expected red on the first run: workload-owned `Issue`, `ApplyManifest`, `Install
 and `GrantToTeam`, which refuse by name (gaps 3 to 6), and the `List` assertion
 that an installed solution exists, since the fixture installs none. Each red line
 is a line of the gap list, which is the point.
+
+## The first run of the suite against accounts (2026-10-22)
+
+`HOST_INTERFACE_CONFORMANCE=1 go test ./pkg/adapters/ -run TestAccountsPassesTheHostInterfaceConformanceSuite`
+boots the test store, seeds the dev-admin fixture, configures the Work Context
+authority against the store, serves the Connect listener on an ephemeral port
+and runs the suite over gRPC. Green: Keys; sign-in and an unknown token refused
+by name. Red, each a line of the gap list:
+
+| Red line | Which gap | Proper fix |
+|---|---|---|
+| person-owned Issue: `audience "documents" is not installed in this organization` | **10, new**: the host requires a module installation per organisation before a module may be an audience; the fixture installs none and the mini gateway holds one per organisation implicitly | the contract decides whether a composed module is installed at every organisation by composition (the mini gateway's reading) or by an explicit module installation; the host's fixture then installs the composed modules at Acme |
+| empty ask: `authority_scopes: must contain at least 1 item(s)` | **11, new**: the host cannot answer "everything the owner holds at the audience"; it has no effective-permissions read | an effective-permissions read in the host (person × audience module → scopes), which the adapter uses when the ask is empty |
+| uncomposed audience refused as PermissionDenied "not one this host serves", contract says NotFound | **12, new**: refusal code for an unknown audience | the adapter checks the audience against the module registry before the mint and refuses NotFound by name; or the contract adopts PermissionDenied; one or the other, written down |
+| workload Issue: `authentication required` | 3 | the broker's attestation behind `Issue`: a workload credential in the request is the authentication |
+| `installed solution = <nil>` | fixture: the dev-admin fixture installs no solution | the fixture gains an `installations` section performed through the real install path (primer decision 6) |
+| ApplyManifest: `internal RPC is not exposed on the tenant listener` | 4 | the delivery path behind the composition interface, on the internal listener; the harness dials it there |
+| Install, GrantToTeam | 5 | not reached yet: the install subtest applies a manifest first |
+
+Rule held: the suite was changed three times today, each time to state the
+contract more precisely (an authenticated caller for the audience probe; explicit
+scopes in base cases with the empty ask as its own line; List as an administrator's
+read), never to make a red line green.

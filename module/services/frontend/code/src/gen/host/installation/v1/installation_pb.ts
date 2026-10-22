@@ -312,7 +312,9 @@ export const InstallationService: GenService<{
     output: typeof InstallationSchema;
   },
   /**
-   * List answers what one organisation has installed.
+   * List answers what one organisation has installed: an administrator's read. A
+   * member's view, which installed solutions they may use, is their navigation and
+   * belongs to the entitlement read, not here.
    *
    * @generated from rpc host.installation.v1.InstallationService.List
    */
