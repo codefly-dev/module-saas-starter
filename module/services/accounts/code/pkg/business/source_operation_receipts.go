@@ -12,6 +12,10 @@ import (
 
 const SourceOperationAudience = "saas-datasource"
 
+// SourceOperationResourceKind is the kind a source operation's scope names; its
+// resource ids are the sources it reaches.
+const SourceOperationResourceKind = "datasource.sources"
+
 // SourceOperationReceiptWriter binds the SDK receipt to the host transaction.
 type SourceOperationReceiptWriter interface {
 	RecordSourceOperationReceipt(context.Context, receipts.Store, proto.Message) error

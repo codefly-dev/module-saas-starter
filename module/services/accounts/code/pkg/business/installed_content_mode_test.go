@@ -43,7 +43,7 @@ func TestInstalledContentReadModeIsExplicitAndRestricted(t *testing.T) {
 	}
 }
 
-func TestInstalledModuleActorModeCarriesAnyInvokeScope(t *testing.T) {
+func TestInstalledModuleActorModeShape(t *testing.T) {
 	invoke := []ModuleOperationScope{{ResourceKind: "tickets", Actions: []string{"read", "write"}}}
 	read := []ModuleOperationScope{{ResourceKind: "tickets", Actions: []string{"read"}}}
 	for _, audience := range []string{"compute", SolutionAudiencePrefix + "example-tools"} {

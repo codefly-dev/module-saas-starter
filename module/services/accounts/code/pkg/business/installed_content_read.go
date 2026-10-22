@@ -61,10 +61,12 @@ func (s *Service) InstalledContentReadBinding(ctx context.Context, caller Module
 // The identity commits to monotonic owner facts, not a hash of current policy:
 // removing and restoring identical policy can never revive a retained child.
 //
-// content_read requires a module audience serving the content kinds it reads.
-// module_actor requires only that the audience be installed in the
-// organization, a module or a solution, and commits to that installation, so
-// withdrawing the audience retires every child exchanged for it.
+// Both modes require a module audience to serve every kind they name, and
+// content_read reads only. module_actor may also address a solution, held by
+// the organization's installation of it, or the host's own source operations,
+// one named source per scope and only its call and lookup. The identity
+// commits to the audience's installation where there is one, so withdrawing
+// the audience retires every child exchanged for it.
 func (s *Service) InstalledBinding(ctx context.Context, caller ModuleCaller, bindingID, mode string) (WorkContextOperationBinding, ModuleOperationAudience, error) {
 	prefix, known := installedBindingPrefixes[mode]
 	if !known {
@@ -94,7 +96,19 @@ func (s *Service) InstalledBinding(ctx context.Context, caller ModuleCaller, bin
 	}
 	facts := []any{caller.BoundOrg, snapshot.envelopeRevision,
 		origin.Grant.PresenceBinding, origin.Grant.PresenceGeneration, origin.InstallationID, origin.InstallationRevision, origin.ProducerEpoch}
-	if mode == DelegationModeModuleActor && strings.HasPrefix(binding.Audience, SolutionAudiencePrefix) {
+	switch {
+	case mode == DelegationModeModuleActor && binding.Audience == SourceOperationAudience:
+		// The host's own source surface has no installation to commit to, so
+		// the binding itself is held to what that surface serves: named
+		// sources, called or looked up. Whether the person may reach a source
+		// stays their own grant, rechecked when the call is made.
+		for _, scope := range append(slices.Clone(binding.InvokeScopes), binding.LookupScopes...) {
+			if !sourceOperationActorScope(scope) {
+				return WorkContextOperationBinding{}, ModuleOperationAudience{}, ErrNoOperationBinding
+			}
+		}
+		facts = append(facts, binding.Audience)
+	case mode == DelegationModeModuleActor && strings.HasPrefix(binding.Audience, SolutionAudiencePrefix):
 		// A solution audience is held by the organization's installation of
 		// that solution, which an uninstall or a reinstall replaces.
 		installation, err := s.WorkContextAudienceInstallation(ctx, caller.BoundOrg, binding.Audience)
@@ -102,13 +116,16 @@ func (s *Service) InstalledBinding(ctx context.Context, caller ModuleCaller, bin
 			return WorkContextOperationBinding{}, ModuleOperationAudience{}, err
 		}
 		facts = append(facts, binding.Audience, installation)
-	} else {
+	default:
 		target, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: ModulePrincipalID(binding.Audience), BoundOrg: caller.BoundOrg})
 		if err != nil {
 			return WorkContextOperationBinding{}, ModuleOperationAudience{}, err
 		}
 		for _, scope := range binding.InvokeScopes {
-			if mode == DelegationModeContentRead && (len(scope.Actions) != 1 || scope.Actions[0] != "read" || !slices.Contains(target.Grant.Resources, scope.ResourceKind)) {
+			if !slices.Contains(target.Grant.Resources, scope.ResourceKind) {
+				return WorkContextOperationBinding{}, ModuleOperationAudience{}, ErrNoOperationBinding
+			}
+			if mode == DelegationModeContentRead && (len(scope.Actions) != 1 || scope.Actions[0] != "read") {
 				return WorkContextOperationBinding{}, ModuleOperationAudience{}, ErrNoOperationBinding
 			}
 		}
@@ -133,6 +150,20 @@ func (s *Service) InstalledBinding(ctx context.Context, caller ModuleCaller, bin
 		return WorkContextOperationBinding{}, ModuleOperationAudience{}, err
 	}
 	return WorkContextOperationBinding{ID: prefix + base64.RawURLEncoding.EncodeToString(encoded), PrincipalID: caller.PrincipalID, InstallationID: origin.InstallationID, Revision: snapshot.envelopeRevision, Incarnation: origin.Grant.PresenceGeneration}, binding, nil
+}
+
+// sourceOperationActorScope admits a source scope that names its sources and
+// carries only a call and its lookup.
+func sourceOperationActorScope(scope ModuleOperationScope) bool {
+	if scope.ResourceKind != SourceOperationResourceKind || len(scope.ResourceIDs) == 0 || len(scope.Actions) == 0 {
+		return false
+	}
+	for _, action := range scope.Actions {
+		if action != "invoke" && action != "read" {
+			return false
+		}
+	}
+	return true
 }
 
 // decodeInstalledBinding reads the mode and the installed binding an issued id

@@ -2,6 +2,8 @@ package adapters
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +11,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
 	corework "github.com/codefly-dev/core/workcontext"
@@ -21,18 +24,35 @@ import (
 
 const actorSolutionAudience = "solution:example-tools"
 
-// addModuleActorBindings gives the fixture's consuming module two module_actor
-// bindings: one addressed to a module, one to a solution.
-func addModuleActorBindings(authority *solutionhost.Authority, grant map[string]any) {
-	authority.Bindings = append(authority.Bindings,
-		solutionhost.AuthorityBinding{ID: "act", Audience: "compute", Operations: map[string][]string{"invoke": {"profiles:invoke", "profiles:read"}, "lookup": {"profiles:read"}}},
-		solutionhost.AuthorityBinding{ID: "act-solution", Audience: actorSolutionAudience, Operations: map[string][]string{"invoke": {"tickets:read"}}})
-	audiences := grant["operation_audiences"].(map[string]any)
-	audiences["act"] = map[string]any{"audience": "compute", "delegation_mode": "module_actor",
-		"invoke_scopes": []any{map[string]any{"resource_kind": "profiles", "actions": []string{"invoke", "read"}}},
-		"lookup_scopes": []any{map[string]any{"resource_kind": "profiles", "actions": []string{"read"}}}}
-	audiences["act-solution"] = map[string]any{"audience": actorSolutionAudience, "delegation_mode": "module_actor",
-		"invoke_scopes": []any{map[string]any{"resource_kind": "tickets", "actions": []string{"read"}}}}
+const actorSource = "source-a"
+
+// addModuleActorBindings gives the fixture's consuming module module_actor
+// bindings addressed to a module, a solution and the host's source operations,
+// plus one naming a kind its module audience does not serve. The audience
+// module serves the kind the first one names.
+func addModuleActorBindings(prefix string, authority *solutionhost.Authority, grant map[string]any) {
+	switch prefix {
+	case "compute":
+		authority.ResourceKinds = append(authority.ResourceKinds, "profiles")
+		grant["resources"] = []string{"profiles"}
+	case "reader":
+		authority.Bindings = append(authority.Bindings,
+			solutionhost.AuthorityBinding{ID: "act", Audience: "compute", Operations: map[string][]string{"invoke": {"profiles:invoke", "profiles:read"}, "lookup": {"profiles:read"}}},
+			solutionhost.AuthorityBinding{ID: "act-unserved", Audience: "compute", Operations: map[string][]string{"invoke": {"tickets:read"}}},
+			solutionhost.AuthorityBinding{ID: "act-solution", Audience: actorSolutionAudience, Operations: map[string][]string{"invoke": {"tickets:read"}}},
+			solutionhost.AuthorityBinding{ID: "act-source", Audience: business.SourceOperationAudience, Operations: map[string][]string{"invoke": {"datasource.sources:invoke", "datasource.sources:read"}, "lookup": {"datasource.sources:read"}}})
+		audiences := grant["operation_audiences"].(map[string]any)
+		audiences["act"] = map[string]any{"audience": "compute", "delegation_mode": "module_actor",
+			"invoke_scopes": []any{map[string]any{"resource_kind": "profiles", "actions": []string{"invoke", "read"}}},
+			"lookup_scopes": []any{map[string]any{"resource_kind": "profiles", "actions": []string{"read"}}}}
+		audiences["act-unserved"] = map[string]any{"audience": "compute", "delegation_mode": "module_actor",
+			"invoke_scopes": []any{map[string]any{"resource_kind": "tickets", "actions": []string{"read"}}}}
+		audiences["act-solution"] = map[string]any{"audience": actorSolutionAudience, "delegation_mode": "module_actor",
+			"invoke_scopes": []any{map[string]any{"resource_kind": "tickets", "actions": []string{"read"}}}}
+		audiences["act-source"] = map[string]any{"audience": business.SourceOperationAudience, "delegation_mode": "module_actor",
+			"invoke_scopes": []any{map[string]any{"resource_kind": "datasource.sources", "actions": []string{"invoke", "read"}, "resource_ids": []string{actorSource}}},
+			"lookup_scopes": []any{map[string]any{"resource_kind": "datasource.sources", "actions": []string{"read"}, "resource_ids": []string{actorSource}}}}
+	}
 }
 
 // solutionInstallations answers the organization's installation of a solution
@@ -124,6 +144,7 @@ var moduleActorScopes = []*gen.WorkContextScope{
 	{ResourceKind: "runs", Actions: []string{"execute"}},
 	{ResourceKind: "profiles", Actions: []string{"invoke", "read"}},
 	{ResourceKind: "tickets", Actions: []string{"read"}},
+	{ResourceKind: "datasource.sources", Actions: []string{"invoke", "read"}, ResourceIds: []string{actorSource}},
 }
 
 func TestModuleActorExchangeNamesTheExchangingModule(t *testing.T) {
@@ -225,6 +246,13 @@ func TestModuleActorExchangeRefusals(t *testing.T) {
 		require.Error(t, err)
 		require.Nil(t, out)
 	})
+	t.Run("a kind its module audience does not serve", func(t *testing.T) {
+		c := moduleActorFixture(t, moduleActorScopes)
+		out, err := c.exchange("act-unserved", c.parent.Token, c.moduleToken, false)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+		require.Nil(t, out)
+		require.Empty(t, c.journal.hops)
+	})
 	t.Run("authority broader than the parent", func(t *testing.T) {
 		c := moduleActorFixture(t, []*gen.WorkContextScope{{ResourceKind: "profiles", Actions: []string{"read"}}})
 		out, err := c.exchange("act", c.parent.Token, c.moduleToken, false)
@@ -257,4 +285,96 @@ func TestModuleActorSolutionAudienceFollowsItsInstallation(t *testing.T) {
 	out, err := c.exchange("act-solution", c.parent.Token, c.moduleToken, false)
 	require.Error(t, err)
 	require.Nil(t, out)
+}
+
+// presentToSource presents a child to the host's source operation surface, as
+// a source call does, and returns the context that call would run under.
+func presentToSource(token string) (context.Context, error) {
+	headers := http.Header{}
+	headers.Set(workContextHeader, token)
+	return authenticateSourceOperationContext(context.Background(), headers)
+}
+
+type sourceAccessWithdrawn struct {
+	business.WorkContextAuthorityStore
+}
+
+func (sourceAccessWithdrawn) ResolveWorkContextAuthority(context.Context, string, string, string, []business.WorkContextPermission) (*business.WorkContextAuthorityFacts, error) {
+	return nil, business.NewStoreError(errors.New("no access to the source"), business.ErrTypePermission)
+}
+
+func TestModuleActorSourceCallIsThePersonsWithTheModuleActing(t *testing.T) {
+	c := moduleActorFixture(t, moduleActorScopes)
+	for _, lookup := range []bool{false, true} {
+		issued, err := c.exchange("act-source", c.parent.Token, c.moduleToken, lookup)
+		require.NoError(t, err)
+		decoded, err := corework.Decode(issued.Token)
+		require.NoError(t, err)
+		child := decoded.Context()
+		require.Equal(t, business.SourceOperationAudience, child.Audience)
+		require.Equal(t, readOwner, child.OwnerPrincipalId)
+		require.Len(t, child.ActorChain, 1)
+		require.Equal(t, c.moduleClaims.OwnerPrincipalId, child.ActorChain[0].PrincipalId)
+		require.Len(t, child.ActorChain[0].GrantedScopes, 1)
+		granted := child.ActorChain[0].GrantedScopes[0]
+		require.Equal(t, business.SourceOperationResourceKind, granted.ResourceKind)
+		require.Equal(t, []string{actorSource}, granted.ResourceIds)
+		action := "invoke"
+		if lookup {
+			action = "read"
+			require.Equal(t, []string{"read"}, granted.Actions)
+		}
+
+		// The source surface takes it as the person's call with the module
+		// acting, for the one source it names.
+		ctx, err := presentToSource(issued.Token)
+		require.NoError(t, err)
+		require.NoError(t, requireSourceOperationScope(ctx, readOrg, actorSource, action))
+		require.Error(t, requireSourceOperationScope(ctx, readOrg, "source-b", action))
+	}
+	require.Len(t, c.journal.hops, 2)
+}
+
+// After one accepted call, each loss of standing refuses the same child at the
+// source surface.
+func TestModuleActorSourceChildRetiresWithItsStanding(t *testing.T) {
+	for name, revoke := range map[string]func(c moduleActorCase){
+		"the module's installation is withdrawn": func(c moduleActorCase) {
+			c.f.live[business.ModulePrincipalID("reader")].InstallationRevision++
+		},
+		"the binding is narrowed": func(c moduleActorCase) {
+			registry := service.ModulePrincipals()
+			grant := registry[business.ModulePrincipalID("reader")]
+			audiences := make(map[string]business.ModuleOperationAudience, len(grant.OperationAudiences))
+			for id, binding := range grant.OperationAudiences {
+				audiences[id] = binding
+			}
+			narrowed := audiences["act-source"]
+			narrowed.InvokeScopes = []business.ModuleOperationScope{{ResourceKind: business.SourceOperationResourceKind, Actions: []string{"read"}, ResourceIDs: []string{actorSource}}}
+			narrowed.LookupScopes = narrowed.InvokeScopes
+			audiences["act-source"] = narrowed
+			grant.OperationAudiences = audiences
+			registry[business.ModulePrincipalID("reader")] = grant
+			c.f.envelope.Revision = 2
+			for _, live := range c.f.live {
+				v := uint64(2)
+				live.EnvelopeRevision = &v
+			}
+			service.InstallDerivedModulePrincipals(registry, 2, nil)
+		},
+		"the person loses access to the source": func(c moduleActorCase) {
+			c.server.authority = sourceAccessWithdrawn{}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := moduleActorFixture(t, moduleActorScopes)
+			issued, err := c.exchange("act-source", c.parent.Token, c.moduleToken, false)
+			require.NoError(t, err)
+			_, err = presentToSource(issued.Token)
+			require.NoError(t, err)
+			revoke(c)
+			_, err = presentToSource(issued.Token)
+			require.Error(t, err)
+		})
+	}
 }
