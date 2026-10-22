@@ -169,17 +169,21 @@ services:
     source:
       kind: business
   # The host interfaces (the authority interface repository), served as adapters; see host_interface.go.
-  AuthorityService:
+  host.authority.v1.AuthorityService:
     handler: hostAuthorityConnectHandler
     source:
       kind: singleton
       name: HostAuthoritySingleton
-  CompositionService:
+  host.composition.v1.CompositionService:
     handler: hostCompositionConnectHandler
     source:
       kind: singleton
       name: HostCompositionSingleton
-  SessionService:
+  host.session.v1.SessionService:
     handler: hostSessionConnectHandler
+    source:
+      kind: business
+  host.installation.v1.InstallationService:
+    handler: hostInstallationConnectHandler
     source:
       kind: business

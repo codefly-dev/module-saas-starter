@@ -71,7 +71,7 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 			PlatformRole:        policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
 		},
 		"/host.installation.v1.InstallationService/Install":     adminWrite("saas.installation.created"),
-		"/host.installation.v1.InstallationService/GrantToTeam": adminWrite("saas.installation.created") /* GAP: no exposure event is registered; narrowed is the nearest */,
+		"/host.installation.v1.InstallationService/GrantToTeam": adminWrite("saas.installation.created"), /* GAP: no exposure event is registered; narrowed is the nearest */
 		"/host.installation.v1.InstallationService/List":        read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_MEMBER, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.session.v1.SessionService/SignIn": {
 			Exposure: policyv1.Exposure_EXPOSURE_PUBLIC, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
@@ -94,6 +94,10 @@ func impersonationFor(exposure policyv1.Exposure) policyv1.ImpersonationRequirem
 	}
 	return policyv1.ImpersonationRequirement_IMPERSONATION_REQUIREMENT_UNSPECIFIED
 }
+
+// ServiceAPIPackage is this service's own protobuf package; every other package
+// it serves is a published interface it implements.
+const ServiceAPIPackage = "saas.accounts.v1"
 
 // implementedHere reports whether this service serves a descriptor. Every
 // accounts service is served; of the interface packages, InstallableService is
