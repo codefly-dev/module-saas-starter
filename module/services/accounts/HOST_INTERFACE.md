@@ -51,11 +51,32 @@ serves on a laptop is served here on a cell, and the authority interface reposit
 
 9. **Closed.** The naming gate reported `generated/service-catalog.json` as "too large to scan": main's catalog was 1.4 KB under the 512 KiB cap and eight methods crossed it. The gate now skips that generated file for the reason it already skips descriptors: every string in it is a scanned proto identifier or a scanned Go description, restated in `AUTHZ_MATRIX.md`. Named here for review: a tool fix, not an allowlist entry.
 
-## How to run the suite, now that 1 and 2 are closed
+## How to run the suite against accounts (the harness, next)
 
-(Gaps 1, 2, 7 and 9 closed on 2026-10-22; 3 to 6 and 8 stand.)
+The suite is `github.com/codefly-dev/authority/libraries/conformance/go`: it links
+no generated package (an implementation links its own; a second registration of
+one proto file panics) and drives the interfaces from a published descriptor set
+with dynamic messages over any gRPC connection. The harness here is one
+integration test in `pkg/adapters`, shaped like `database_transport_integration_test.go`
+and `readable_sources_integration_test.go`, which already boot the persisted test
+store:
 
-Import `github.com/the authority interface repository/.../pkg/conformance` (or vendor the one
-file), boot accounts in-process, dial it, and call `conformance.Run(t, conn,
-conformance.Fixture{...})` with the saas fixture's Acme people. Red is the gap
-list; green is the claim that the laptop and the cell implement one contract.
+1. boot the store and the service as `pkg/business/service_test.go` does
+   (`sdk.WithDependencies`, `infra.NewPostgresStore`, `business.NewService`), seed
+   the `dev-admin` fixture (`fixtures.Seed`), set the package-level `service`;
+2. configure the Work Context singleton as production does
+   (`permission_servers.go:51`) against that store;
+3. `NewGrpServer(&Configuration{})` and serve it over `bufconn`, so the interceptor
+   authenticates bearers;
+4. sign in through the fixture provider (a fixture person's token is their
+   `provider_id`, `dev-admin` for the super administrator; the suite's
+   `AdminToken` and `ViewerToken` name two of them);
+5. `conformance.Run(t, conn, descriptors, fixture)` with the descriptor set
+   `codefly generate contracts` writes for this service
+   (`module/contracts/api/accounts/authority/contract.binpb`, regenerated on this
+   branch so it carries the `host.*` services).
+
+Expected red on the first run: workload-owned `Issue`, `ApplyManifest`, `Install`
+and `GrantToTeam`, which refuse by name (gaps 3 to 6), and the `List` assertion
+that an installed solution exists, since the fixture installs none. Each red line
+is a line of the gap list, which is the point.
