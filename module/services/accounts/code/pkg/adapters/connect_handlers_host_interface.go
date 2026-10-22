@@ -18,12 +18,12 @@ import (
 
 var hostAuthoritySingleton = &HostAuthorityServer{workContexts: workContextSingleton}
 
-// HostAuthoritySingleton serves obin.ai/authority over the Work Context singleton.
+// HostAuthoritySingleton serves codefly.dev/authority over the Work Context singleton.
 func HostAuthoritySingleton() *HostAuthorityServer { return hostAuthoritySingleton }
 
 var hostCompositionSingleton = &HostCompositionServer{}
 
-// HostCompositionSingleton serves obin.ai/composition.
+// HostCompositionSingleton serves codefly.dev/composition.
 func HostCompositionSingleton() *HostCompositionServer { return hostCompositionSingleton }
 
 type hostAuthorityConnectHandler struct{ inner *HostAuthorityServer }
