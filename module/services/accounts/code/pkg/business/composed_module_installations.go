@@ -91,7 +91,17 @@ func (c *ComposedModuleInstallations) LiveModuleAuthority(_ context.Context, pri
 	if installationID != "" && installationID != id {
 		return nil, fmt.Errorf("%w: %s holds %s, not %s", ErrModuleInstallationInactive, principalID, id, installationID)
 	}
-	return &LiveModuleAuthority{InstallationID: id, InstallationRevision: 1, ProducerEpoch: 1}, nil
+	// The manifest is the ceiling: a composed installation's scope is the
+	// declared grant itself, narrowed by nothing.
+	grant := c.service.declaredModules()[principalID]
+	return &LiveModuleAuthority{
+		RegistryBindingID: grant.PresenceBinding, InstallationID: id, InstallationRevision: 1, ProducerEpoch: 1,
+		Scope: InstallationScope{
+			Capabilities: true, Follows: true, Queues: grant.Queues, Namespaces: grant.Namespaces,
+			ExternalNamespaces: grant.ExternalNamespaces, Resources: grant.Resources,
+			ReadAudiences: grant.ReadAudiences, OperationAudiences: grant.OperationAudiences, ArtifactPolicies: grant.ArtifactPolicies,
+		},
+	}, nil
 }
 
 // WorkContextSolutionInstallation is the wrapped store's answer: a solution is

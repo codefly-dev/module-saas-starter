@@ -16,7 +16,7 @@ import (
 	sessionv1 "accounts/pkg/gen/host/session/v1"
 )
 
-var hostAuthoritySingleton = &HostAuthorityServer{workContexts: workContextSingleton}
+var hostAuthoritySingleton = &HostAuthorityServer{workContexts: workContextSingleton, modules: moduleCapabilitiesSingleton}
 
 // HostAuthoritySingleton serves codefly.dev/authority over the Work Context singleton.
 func HostAuthoritySingleton() *HostAuthorityServer { return hostAuthoritySingleton }

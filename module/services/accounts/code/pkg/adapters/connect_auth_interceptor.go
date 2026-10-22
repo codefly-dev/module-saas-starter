@@ -283,6 +283,10 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	if sourceOperationProcedure(procedure) && len(headers.Values(workContextHeader)) != 0 {
 		return authenticateSourceOperationContext(ctx, headers)
 	}
+	if procedure == business.HostIssueMethod && headers.Get("Authorization") == "" {
+		// The request's shape authenticates: see business.HostIssueMethod.
+		return ctx, nil
+	}
 	if trustedForwarded && headers.Get("X-User-Id") != "" {
 		forwarded, err := stampForwardedHTTPIdentity(ctx, headers)
 		if err != nil {

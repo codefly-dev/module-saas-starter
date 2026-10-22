@@ -21,6 +21,14 @@ import (
 // implementation, keyed by full method, and RPCPolicies reads it when the
 // descriptor carries no option. A method of these packages that is missing here
 // is a policy error like a missing option, and the interceptor refuses it.
+// HostIssueMethod is the interface's issue: the one method whose authentication
+// is carried by the request's shape rather than by a bearer alone. A person is the
+// signed-in bearer; a workload is the credential in the request; a child hop is
+// the parent token and the actor's credential. The interceptor lets a bearer-less
+// call reach the adapter, which authenticates the shape and refuses a bearer-less
+// person by name; a bearer, when present, is verified as on every other method.
+const HostIssueMethod = "/host.authority.v1.AuthorityService/Issue"
+
 func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 	authenticatedMint := func(event string) *policyv1.MethodPolicy {
 		return &policyv1.MethodPolicy{
