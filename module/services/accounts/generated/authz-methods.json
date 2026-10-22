@@ -134,10 +134,8 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [
-            "saas.solution.host_binding_applied"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
         "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
@@ -154,7 +152,7 @@
         "service": "accounts"
       },
       "source_proto": "host/composition/v1/composition.proto",
-      "policy_sha256": "6de2c900b555e9c524899980ad1010995bebbfd1977d95b0451329697e146451",
+      "policy_sha256": "21769738674c352d8e593fbc1243fc7b42fd53493f59de9c11b349dbde550700",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

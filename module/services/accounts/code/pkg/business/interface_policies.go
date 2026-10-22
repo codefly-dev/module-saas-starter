@@ -62,8 +62,9 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		"/host.authority.v1.AuthorityService/Keys":  read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_PUBLIC),
 		"/host.composition.v1.CompositionService/ApplyManifest": {
 			Exposure: policyv1.Exposure_EXPOSURE_INTERNAL, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
-			Mfa:                 policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
-			Audit:               &policyv1.AuditPolicy{Events: []string{"saas.solution.host_binding_applied"}, Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS},
+			Mfa: policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
+			// The delivery path this will route into emits saas.solution.host_binding_applied itself (outside RPC); declaring it here too would double it.
+			Audit:               &policyv1.AuditPolicy{Emission: policyv1.AuditEmission_AUDIT_EMISSION_NONE},
 			Idempotency:         policyv1.IdempotencyRequirement_IDEMPOTENCY_REQUIREMENT_OPTIONAL,
 			RateLimit:           policyv1.RateLimitClass_RATE_LIMIT_CLASS_INTERNAL,
 			RequestSensitivity:  policyv1.Sensitivity_SENSITIVITY_INTERNAL,
