@@ -1136,20 +1136,23 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 	// The authorization revision is not an input: core reads it, from the same
 	// answer CheckAuthorizationRevision confirms a consumer's copy against
 	// (ModuleOperationContextRevision of the installed grant).
+	start := workcontext.StartInput{
+		TenantID:           authority.Tenant,
+		OwnerPrincipalID:   authority.PrincipalID,
+		OwnerPrincipalKind: business.PrincipalKindService,
+		OrganizationID:     authority.Tenant,
+		TaskID:             uuid.NewString(),
+		Audience:           authority.Audience,
+		AuthorityScopes:    scopes,
+		InstallationID:     authority.InstallationID,
+	}
+	if authority.BindingID != "" {
+		// The context names the binding it exercises, so a verifier resolves
+		// exactly that binding instead of fitting the scopes to one.
+		start.OperationBindingID = business.ModuleOperationBindingID(authority.PrincipalID, authority.BindingID)
+	}
 	return s.mint(ctx, mintRequest{
-		Start: workcontext.StartInput{
-			TenantID:           authority.Tenant,
-			OwnerPrincipalID:   authority.PrincipalID,
-			OwnerPrincipalKind: business.PrincipalKindService,
-			OrganizationID:     authority.Tenant,
-			TaskID:             uuid.NewString(),
-			Audience:           authority.Audience,
-			AuthorityScopes:    scopes,
-			InstallationID:     authority.InstallationID,
-			// The context names the binding it exercises, so a verifier resolves
-			// exactly that binding instead of fitting the scopes to one.
-			OperationBindingID: business.ModuleOperationBindingID(authority.PrincipalID, authority.BindingID),
-		},
+		Start:  start,
 		Replay: workcontext.ReplayIdempotent,
 		TTL:    business.ModuleOperationContextTTL,
 	})

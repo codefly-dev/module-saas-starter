@@ -58,8 +58,8 @@ github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJ
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=
 github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
-github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261022033010-44d04dd59ea8 h1:LHqdEka5cEInXJQIelnI7SJ1MemgVWZu3T1iBSi2HaI=
-github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261022033010-44d04dd59ea8/go.mod h1:tZOXIXX+XLKcnjtojsfpd2NC1o2msginpqK0HeBSfjM=
+github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261022044422-c263086d5244 h1:Hv55JybWMrZ9AqCKWG7zXIHLOCOVp/Ze+2jHQXQ63GI=
+github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261022044422-c263086d5244/go.mod h1:tZOXIXX+XLKcnjtojsfpd2NC1o2msginpqK0HeBSfjM=
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc h1:olDnVJ1A1Retn0z9A59YMwDRmDLgkV2y1lbl+HzNrj8=
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc/go.mod h1:VWPYY3FH4te7SzdN2xl9odNpWidJ1Grl/Hjs1SNoEF8=
 github.com/codefly-dev/core v0.19.6-0.20261018171306-0a8d16c5e32d h1:vL8Beqd5fsK1t3G8COMIvbGD33aYLQzox3GFl8l7/aI=

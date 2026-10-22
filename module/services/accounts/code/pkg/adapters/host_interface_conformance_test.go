@@ -82,24 +82,27 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 
 	// The composition: two module principals the host knows, as the module
 	// registry would hold them after delivery.
-	// documents runs as one declared workload and declares one operation
-	// audience, model, with headless scopes; the fake cluster projects the
-	// credential a pod of that workload would present.
-	modelScopes := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}}}
-	modelReads := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"read"}}}
+	// documents is the audience the viewer reads at; org-directory is the page
+	// module that runs as one declared workload and reads documents for the
+	// viewer through its one binding; model is an audience the viewer's context
+	// at documents is not addressed to. The fake cluster projects the credential
+	// a pod of org-directory's workload would present.
+	reads := []business.ModuleOperationScope{{ResourceKind: "example-records", Actions: []string{"invoke", "read"}}}
+	lookups := []business.ModuleOperationScope{{ResourceKind: "example-records", Actions: []string{"read"}}}
 	registry := business.ModulePrincipalRegistry{
-		business.ModulePrincipalID("documents"): {
-			Prefix: "documents", Resources: []string{"example-records"}, Tenant: fixtureOrganization,
-			Workloads: []business.ModuleWorkload{{Namespace: "acme", ServiceAccount: "documents", Container: "app"}},
+		business.ModulePrincipalID("documents"): {Prefix: "documents", Resources: []string{"example-records"}, Tenant: fixtureOrganization},
+		business.ModulePrincipalID("org-directory"): {
+			Prefix: "org-directory", Resources: []string{"directory.entry"}, Tenant: fixtureOrganization,
+			Workloads: []business.ModuleWorkload{{Namespace: "acme", ServiceAccount: "org-directory", Container: "app"}},
 			OperationAudiences: map[string]business.ModuleOperationAudience{
-				"model": {Audience: "model", InvokeScopes: modelScopes, LookupScopes: modelReads, HeadlessScopes: modelScopes},
+				"documents": {Audience: "documents", InvokeScopes: reads, LookupScopes: lookups, HeadlessScopes: reads},
 			},
 		},
-		business.ModulePrincipalID("model"): {Prefix: "model", Resources: []string{"modelservice.profiles"}},
+		business.ModulePrincipalID("model"): {Prefix: "model", Resources: []string{"modelservice.profiles"}, Tenant: fixtureOrganization},
 	}
 	cluster := executiontest.New()
 	svc.SetExecutionBinding(cluster)
-	workloadCredential := cluster.Run(executiontest.Workload{Namespace: "acme", ServiceAccount: "documents", Container: "app"})
+	workloadCredential := cluster.Run(executiontest.Workload{Namespace: "acme", ServiceAccount: "org-directory", Container: "app"})
 	svc.SetModuleCapabilities(store, nil, registry)
 
 	// The declared registry is what delivery derives; the ceiling is the manifest,
@@ -157,8 +160,8 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 		Organization: fixtureOrganization,
 		ViewerToken:  "dev-bob", AdminToken: "dev-alice",
 		Audience: "documents", ReadKind: "example-records",
-		// The credential a pod of documents' declared workload presents.
-		WorkloadCredential: workloadCredential, Binding: "model", BindingAudience: "model",
+		// The credential a pod of org-directory's declared workload presents.
+		WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
 		// GAP (HOST_INTERFACE.md 4, fixture): the fixture installs no solution;
 		// the lines this makes red are the gap list.
 		InstalledSolution: "",
