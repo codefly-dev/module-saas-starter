@@ -88,6 +88,9 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		if as.Person.GetSessionId() != identity.SessionID.String() {
 			return nil, status.Error(codes.PermissionDenied, "the session named is not the caller's")
 		}
+		if err := requireOrgMember(ctx, identity.EffectiveSubject.String(), identity.OrgID.String()); err != nil {
+			return nil, err
+		}
 		issued, err = s.workContexts.StartTask(ctx, &gen.StartTaskWorkContextRequest{
 			OrgId: identity.OrgID.String(), Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
 		})
@@ -158,6 +161,13 @@ func NewHostInstallationServer(installations *InstallationServer, service *busin
 
 // List answers what one organisation has installed.
 func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.ListRequest) (*installationv1.ListResponse, error) {
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgMember(ctx, actorID, req.GetOrganizationId()); err != nil {
+		return nil, err
+	}
 	out, err := s.installations.ListInstallations(ctx, &gen.ListInstallationsRequest{OrgId: req.GetOrganizationId()})
 	if err != nil {
 		return nil, err
@@ -173,13 +183,27 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 // identifier and role id; the interface names the target and the role by name.
 // Serving it here needs a resolver from the applied presence (alias → target id,
 // agent identifier) and from the role catalogue (name → id).
-func (s *HostInstallationServer) Install(context.Context, *installationv1.InstallRequest) (*installationv1.Installation, error) {
+func (s *HostInstallationServer) Install(ctx context.Context, req *installationv1.InstallRequest) (*installationv1.Installation, error) {
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
+		return nil, err
+	}
 	return nil, status.Error(codes.Unimplemented, "install by target name and role name: accounts installs by target id, agent identifier and role id; the resolver is not yet behind the interface")
 }
 
 // GrantToTeam: GAP (rung 1), same resolver: the host grants a role id at the
 // installation's root; the interface grants the installation's own role.
-func (s *HostInstallationServer) GrantToTeam(context.Context, *installationv1.GrantToTeamRequest) (*installationv1.Installation, error) {
+func (s *HostInstallationServer) GrantToTeam(ctx context.Context, req *installationv1.GrantToTeamRequest) (*installationv1.Installation, error) {
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
+		return nil, err
+	}
 	return nil, status.Error(codes.Unimplemented, "grant to team: accounts grants a role id at the root; the installation's own role is not yet resolved behind the interface")
 }
 

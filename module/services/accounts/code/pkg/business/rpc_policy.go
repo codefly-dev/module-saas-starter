@@ -121,7 +121,7 @@ func RPCPolicies() []RPCPolicy {
 func accountServiceDescriptors() []protoreflect.ServiceDescriptor {
 	var services []protoreflect.ServiceDescriptor
 	protoregistry.GlobalFiles.RangeFiles(func(file protoreflect.FileDescriptor) bool {
-		if string(file.Package()) != "saas.accounts.v1" && !interfacePackage(string(file.Package())) {
+		if string(file.Package()) != ServiceAPIPackage && !interfacePackage(string(file.Package())) {
 			return true
 		}
 		for i := 0; i < file.Services().Len(); i++ {

@@ -85,6 +85,11 @@ func BuildGatewayRouteCatalog(serviceDocument, bindingDocument []byte, documents
 				Source:           catalogv1.GatewayRouteSource_GATEWAY_ROUTE_SOURCE_DESCRIPTOR,
 			}
 			routes.Routes = append(routes.Routes, canonical)
+			if !strings.HasPrefix(method.GetProcedure(), "/"+serviceCatalog.GetApiPackage()+".") {
+				// An implemented interface's procedure is served under its own
+				// package and has no compatibility alias in the API package.
+				continue
+			}
 			for _, alias := range bindings.CompatibilityAliases {
 				if alias.Protocol != "connect" || alias.FromPackage != serviceCatalog.GetApiPackage() {
 					continue

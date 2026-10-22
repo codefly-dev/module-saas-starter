@@ -47,6 +47,38 @@
   ],
   "connect": [
     {
+      "name": "AuthorityService",
+      "fullName": "host.authority.v1.AuthorityService",
+      "procedures": [
+        "/host.authority.v1.AuthorityService/Check",
+        "/host.authority.v1.AuthorityService/Issue",
+        "/host.authority.v1.AuthorityService/Keys"
+      ]
+    },
+    {
+      "name": "CompositionService",
+      "fullName": "host.composition.v1.CompositionService",
+      "procedures": [
+        "/host.composition.v1.CompositionService/ApplyManifest"
+      ]
+    },
+    {
+      "name": "InstallationService",
+      "fullName": "host.installation.v1.InstallationService",
+      "procedures": [
+        "/host.installation.v1.InstallationService/GrantToTeam",
+        "/host.installation.v1.InstallationService/Install",
+        "/host.installation.v1.InstallationService/List"
+      ]
+    },
+    {
+      "name": "SessionService",
+      "fullName": "host.session.v1.SessionService",
+      "procedures": [
+        "/host.session.v1.SessionService/SignIn"
+      ]
+    },
+    {
       "name": "APIKeyService",
       "fullName": "saas.accounts.v1.APIKeyService",
       "procedures": [

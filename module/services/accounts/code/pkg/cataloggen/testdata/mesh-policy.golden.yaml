@@ -28,6 +28,7 @@ spec:
       to:
         - operation:
             paths:
+              - /host.composition.v1.CompositionService/ApplyManifest
               - /saas.accounts.v1.APIKeyService/ValidateAPIKey
               - /saas.accounts.v1.ClientRegistryService/ListRegisteredClients
               - /saas.accounts.v1.IdentityService/ResolveIdentity
