@@ -26,6 +26,16 @@ const modes = {
 	static_secret: "Access credential",
 } as const;
 
+export function useDatasourceCatalog(client: DatasourceClient, orgId: string) {
+	return useQuery({
+		queryKey: ["datasource-catalog", orgId],
+		queryFn: () => client.getCatalog!(),
+		enabled: !!client.getCatalog,
+		retry: false,
+		refetchInterval: 15000,
+	});
+}
+
 /** The catalog is read even with no sources; a refused provider remains visible. */
 export function ConnectSource({
 	client,
@@ -43,13 +53,7 @@ export function ConnectSource({
 	appSetup?: ReactNode;
 }) {
 	const [selected, setSelected] = useState<string>();
-	const catalog = useQuery({
-		queryKey: ["datasource-catalog", orgId],
-		queryFn: () => client.getCatalog!(),
-		enabled: !!client.getCatalog,
-		retry: false,
-		refetchInterval: 15000,
-	});
+	const catalog = useDatasourceCatalog(client, orgId);
 	const loading = useLoadingPhase(!!client.getCatalog && catalog.isPending);
 	if (!client.getCatalog)
 		return (
@@ -168,7 +172,7 @@ function ProviderForm({
 				setPending(true);
 				setError(undefined);
 				const form = event.currentTarget;
-				const read = (name: string) =>
+				const fieldValue = (name: string) =>
 					(form.elements.namedItem(name) as HTMLInputElement | null)?.value ??
 					"";
 				// Secrets live only in uncontrolled password inputs until this call. Clear
@@ -177,15 +181,15 @@ function ProviderForm({
 					mode === "static_secret"
 						? {
 								kind: mode,
-								secret: read("secret"),
-								webhookSecret: read("webhookSecret"),
+								secret: fieldValue("secret"),
+								webhookSecret: fieldValue("webhookSecret"),
 							}
 						: { kind: mode };
 				for (const input of form.querySelectorAll<HTMLInputElement>(
 					'input[type="password"]',
 				))
 					input.value = "";
-				const boundary = { targetCollection: read("collection") };
+				const boundary = { targetCollection: fieldValue("collection") };
 				try {
 					await client.addSource!({
 						orgId,
@@ -195,7 +199,7 @@ function ProviderForm({
 						config: Object.fromEntries(
 							provider.fields.map((field) => [
 								field.key,
-								read(`config:${field.key}`),
+								fieldValue(`config:${field.key}`),
 							]),
 						),
 					});

@@ -5,7 +5,7 @@ import {
 	type MessageShape,
 	ScalarType,
 } from "@bufbuild/protobuf";
-import { DatasourceProvider, DatasourceService } from "@codefly-dev/saas-sdk";
+import { DatasourceService } from "@codefly-dev/saas-sdk";
 import type {
 	ConnectSourceInput,
 	DatasourceConnectField,
@@ -46,6 +46,13 @@ export function catalogProvider(provider: Provider): DatasourceProviderView {
 		modes?.fieldKind === "list" && modes.listKind === "message"
 			? modes.message.fields.find((field) => field.name === "credential_modes")
 			: undefined;
+	const credentialModes = provider.credentialModes.map((value) =>
+		mode?.fieldKind === "list" && mode.listKind === "enum"
+			? (mode.enum.values.find((entry) => entry.number === value)?.name ?? "")
+					.replace("DATASOURCE_CREDENTIAL_MODE_", "")
+					.toLowerCase()
+			: "",
+	);
 	return {
 		provider: provider.provider,
 		connector: provider.connector,
@@ -54,16 +61,18 @@ export function catalogProvider(provider: Provider): DatasourceProviderView {
 		acceptsNewSources: provider.acceptsNewSources,
 		gap: provider.conformanceGap,
 		supportsWebhook: provider.supportsWebhook,
-		// Reuse the existing bespoke onboarding RPCs only for their owner.
+		// A credential mode alone does not promise an installation workflow.
+		// Require both SDK operations for the catalog connector as well.
 		supportsOrganizationAppSetup:
-			provider.provider === DatasourceProvider.GITHUB,
-		credentialModes: provider.credentialModes.map((value) =>
-			mode?.fieldKind === "list" && mode.listKind === "enum"
-				? (mode.enum.values.find((entry) => entry.number === value)?.name ?? "")
-						.replace("DATASOURCE_CREDENTIAL_MODE_", "")
-						.toLowerCase()
-				: "",
-		),
+			credentialModes.includes("org_app") &&
+			["begin", "complete"].every((leg) =>
+				DatasourceService.methods.some(
+					(method) =>
+						method.name.toLowerCase() ===
+						`${leg}${provider.connector.toLowerCase()}appsetup`,
+				),
+			),
+		credentialModes,
 		fields: provider.configFields.map((field) => ({
 			key: field.key,
 			displayName: field.displayName,

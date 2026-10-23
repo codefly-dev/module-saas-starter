@@ -157,6 +157,69 @@ it.each(["removed", "refused", "failed"])(
 	},
 );
 
+it.each(["removed", "refused"])(
+	"does not redeem or offer an installation return when its catalog provider is %s",
+	async (change) => {
+		window.history.replaceState(
+			null,
+			"",
+			"/?installation_id=42&state=example&code=example",
+		);
+		const provider = {
+			...repositoryProvider,
+			acceptsNewSources: false,
+			gap: refusedProvider.gap,
+		};
+		const client = clientWith(change === "removed" ? [] : [provider]);
+		client.completeGitHubAppSetup = vi.fn(async () => ({
+			installationId: "42",
+			repositories: [],
+		}));
+		try {
+			mount(client);
+			await screen.findByText(
+				change === "removed"
+					? "The host reports no source providers."
+					: refusedProvider.gap,
+			);
+			expect(client.completeGitHubAppSetup).not.toHaveBeenCalled();
+			expect(screen.queryByLabelText("Repository")).toBeNull();
+			expect(screen.queryByRole("button", { name: /^Connect/ })).toBeNull();
+			expect(window.location.search).toBe("");
+		} finally {
+			window.history.replaceState(null, "", "/");
+		}
+	},
+);
+
+it("withdraws the installation-return form when its provider leaves the catalog", async () => {
+	window.history.replaceState(
+		null,
+		"",
+		"/?installation_id=42&state=example&code=example",
+	);
+	const client = clientWith([repositoryProvider]);
+	client.completeGitHubAppSetup = vi.fn(async () => ({
+		installationId: "42",
+		repositories: [
+			{ repo: "acme/example", defaultBranch: "main", alreadyConnected: false },
+		],
+	}));
+	try {
+		const { queries } = mount(client);
+		await screen.findByLabelText("Repository");
+		vi.mocked(client.getCatalog!).mockResolvedValue([]);
+		await act(() =>
+			queries.invalidateQueries({ queryKey: ["datasource-catalog"] }),
+		);
+		await screen.findByText("The host reports no source providers.");
+		expect(screen.queryByLabelText("Repository")).toBeNull();
+		expect(screen.queryByRole("button", { name: /^Connect/ })).toBeNull();
+	} finally {
+		window.history.replaceState(null, "", "/");
+	}
+});
+
 it.each([false, true])(
 	"clears secrets before a pending call and never caches or echoes them (reject=%s)",
 	async (reject) => {
@@ -315,6 +378,33 @@ it("reads the host catalog over the existing transport and encodes two different
 		connect(catalog[1], { bucket: "example", max_objects: "not-json" }),
 	).rejects.toThrow("valid JSON");
 	expect(received).toHaveLength(2);
+});
+
+it("requires both the catalog credential mode and connector setup operations", async () => {
+	const transport = createRouterTransport((router) =>
+		router.service(DatasourceService, {
+			getDatasourceCatalog: () => ({
+				providers: [
+					{
+						provider: 1,
+						connector: repositoryProvider.connector,
+						displayName: "Example one",
+						credentialModes: [4],
+					},
+					{
+						provider: 4,
+						connector: "example-two",
+						displayName: "Example two",
+						credentialModes: [2],
+					},
+				],
+			}),
+		}),
+	);
+	const providers =
+		await datasourceClientOverTransport(transport).getCatalog!();
+	expect(providers[0].supportsOrganizationAppSetup).toBe(false);
+	expect(providers[1].supportsOrganizationAppSetup).toBe(false);
 });
 
 it.each([CatalogProviders, RefusedProvider])(

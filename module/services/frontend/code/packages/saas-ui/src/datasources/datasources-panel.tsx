@@ -38,7 +38,7 @@ import {
 	viewerAdministersOrganization,
 } from "../solution/viewer.js";
 import { CollectionGrants } from "./collection-access.js";
-import { ConnectSource } from "./connect-source.js";
+import { ConnectSource, useDatasourceCatalog } from "./connect-source.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { EditSourceForm } from "./edit-source-form.js";
 import { messageOf } from "./errors.js";
@@ -379,7 +379,16 @@ function DatasourcesPanelView({
 	// so an authority that only arrives after the first paint still redeems the
 	// return leg the page loaded with.
 	const appSetupClaimed = !!appSetupReturn && appSetupReturn.orgId === orgId;
-	const appSetupActive = appSetupClaimed && canManage;
+	const catalog = useDatasourceCatalog(client, orgId);
+	const appSetupAdmitted =
+		!catalog.isError &&
+		catalog.data?.some(
+			(provider) =>
+				provider.acceptsNewSources &&
+				!provider.unsupportedReason &&
+				provider.supportsOrganizationAppSetup,
+		);
+	const appSetupActive = appSetupClaimed && canManage && !!appSetupAdmitted;
 	// A return leg nobody on this screen can redeem. The capture and the scrub ran
 	// regardless of authority, so the installation stands on the provider's side
 	// while its single-use state is spent: saying nothing would leave an ordinary

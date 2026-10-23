@@ -292,7 +292,11 @@ uncontrolled and cleared before the call; neither those values nor operation
 errors enter a query or mutation cache, storage, logs, or component state.
 Failures use neutral wording because an error may echo submitted secrets. The
 existing app-install return form also clears its credentials and calls directly.
-No-credential and organization-app modes send no secret. Connecting still
+The catalog also gates installation-return redemption: a missing, refused,
+unsupported or failed catalog entry offers no return form and triggers no
+completion call. Organization-app support follows the advertised credential
+mode and the SDK setup operations matching its connector key; a credential mode
+alone never offers another connector’s installation workflow. No-credential and organization-app modes send no secret. Connecting still
 refreshes sources, collection grants and readable boundaries. Preview stories
 `CatalogProviders` and `RefusedProvider` exercise the descriptor-driven surface.
 
