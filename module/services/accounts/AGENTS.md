@@ -1247,9 +1247,11 @@ keeps what is per-source state:
 - **`objectstore.ServiceBucket` is the store.** It pages the listing (bounded;
   past the bound it is `ErrListingIncomplete`, never a partial version) and
   reads a batch in one `GetMany`, each object at `If-Match` its listed ETag.
-  A source's prefix is a key prefix and the binding's a folder, so the binding
-  takes the prefix up to its last `/` and the listing filters on the rest: an
-  item keeps its full key.
+  The binding carries no prefix — the service would normalize it as a folder —
+  and every page filters on the source's literal key prefix (`/reports/` stays
+  `/reports/`), so an item keeps its full key; a listed key outside that prefix,
+  or a page past the service's page size, refuses the listing. Every call has a
+  deadline (30 s, five minutes for a batched read).
   Before it lists or reads it asks `Capabilities` under the binding and refuses
   a service that reports no bound caps or no batch size — a release from before
   the binding would ignore it and serve its own bucket as the tenant's.
@@ -1257,9 +1259,16 @@ keeps what is per-source state:
   the service's `max_get_many_items`, 1000), each object at its listed ETag, so
   the provider passes the conformance suite through `ServiceBucket` over the
   service's wire and is registered through `connector.Budgeted`: a sync spends
-  the source credential's budget, `GetDatasourceCatalog` reports
-  `accepts_new_sources`, and `AddSource` takes a new source with its prefix and
-  key filter. That is the whole admin path a composed consumer drives — catalog,
-  `AddSource`, sync — with no portal step.
-- **A composition without the service** has no endpoint to resolve: the host
-  starts without object storage and an object-storage sync refuses by name.
+  its credential's budget, keyed by a digest of the store's origin and access
+  key id so sources sharing one key share one quota, and a requested sync may
+  spend the reserved share. Where a compatible service is composed,
+  `GetDatasourceCatalog` reports `accepts_new_sources` and `AddSource` takes a
+  new source with its prefix and key filter. That is the whole admin path a
+  composed consumer drives — catalog, `AddSource`, sync — with no portal step.
+- **Admission needs a service that can read a bucket.** At start `work.go` asks
+  the composed service, unbound, whether it reads a batch
+  (`objectstore.CheckService`). A composition without the service, or with one
+  from before the binding (the released 0.0.18 agent this module pins today),
+  leaves object storage unavailable: the catalog says so, `AddSource` refuses
+  with `ErrObjectStorageUnavailable`, and an existing source's sync fails by
+  name.

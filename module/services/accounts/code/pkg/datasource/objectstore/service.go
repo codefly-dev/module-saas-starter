@@ -31,6 +31,15 @@ import (
 // version.
 const maxListPages = 20
 
+// callTimeout bounds every call but a batched read, and readTimeout a batched
+// read of up to MaxBatchBytes: a store that answers and then stalls must not
+// hold a sync, and its worker's lease, for longer. Variables so a test can
+// shorten them.
+var (
+	callTimeout = 30 * time.Second
+	readTimeout = 5 * time.Minute
+)
+
 // ErrBindingNotHonoured: the service answered Capabilities under the binding
 // without the caps a bound call reports, which is a release from before the
 // binding existed — such a service ignores the binding and serves its own
@@ -38,22 +47,29 @@ const maxListPages = 20
 // or without a batch size, which is one from before GetMany.
 var ErrBindingNotHonoured = errors.New("objectstore: the object-storage service does not honour a per-call binding with a batched read; an older one would serve its own bucket")
 
+// errOutsideScope: the service listed what the source's literal prefix does
+// not name, or more than its own page size. Nothing in such a listing is taken
+// as the source's, since the closing listing would reconcile deletions against
+// it.
+var errOutsideScope = errors.New("objectstore: the object-storage service listed outside the source's scope")
+
 // ServiceBucket is one source's bucket as the object-storage service serves it.
 type ServiceBucket struct {
-	client     storagev0.ObjectStorageClient
-	binding    *storagev0.Binding
-	folder     string // the binding's prefix: every key the service reports is relative to it
-	listPrefix string // the rest of the source's prefix, which a listing filters on
-	maxBatch   int    // objects per GetMany, once Capabilities under the binding answered
+	client   storagev0.ObjectStorageClient
+	binding  *storagev0.Binding
+	prefix   string // the source's literal key prefix
+	maxBatch int    // objects per GetMany, once Capabilities under the binding answered
+	maxList  int    // objects per List page, likewise
 }
 
 // NewServiceBucket binds cfg and the source's access key to calls on client.
-// A source's prefix is a key prefix, not a folder ("reports-2026" matches
-// "reports-2026-q1.pdf"), while a binding's prefix is a folder: the binding
-// takes the prefix up to its last "/", and the listing filters on the rest, so
-// an item's key is the full object key either way.
+// The binding carries no prefix: the service normalizes a binding's prefix as a
+// folder (no leading or trailing "/"), while a source's prefix is a literal S3
+// key prefix — "/reports/" is not "reports/", "/" is not the whole bucket, and
+// "reports-2026" matches "reports-2026-q1.pdf". So every listing filters on the
+// literal prefix, which the service passes to the store unchanged, and every
+// key travels whole.
 func NewServiceBucket(client storagev0.ObjectStorageClient, cfg SourceConfig, accessKeyID, secretAccessKey string) *ServiceBucket {
-	cut := strings.LastIndex(cfg.Prefix, "/") + 1
 	return &ServiceBucket{
 		client: client,
 		binding: &storagev0.Binding{
@@ -64,18 +80,17 @@ func NewServiceBucket(client storagev0.ObjectStorageClient, cfg SourceConfig, ac
 			Endpoint: cfg.Endpoint,
 			Region:   cfg.Region,
 			Bucket:   cfg.Bucket,
-			Prefix:   cfg.Prefix[:cut],
 			Credential: &storagev0.Credential{Kind: &storagev0.Credential_AccessKey{
 				AccessKey: &storagev0.AccessKey{Id: accessKeyID, Secret: secretAccessKey},
 			}},
 		},
-		folder:     cfg.Prefix[:cut],
-		listPrefix: cfg.Prefix[cut:],
+		prefix: cfg.Prefix,
 	}
 }
 
 // List pages through the prefix. A listing longer than maxListPages pages is
-// ErrListingIncomplete.
+// ErrListingIncomplete; a key outside the literal prefix, or a page past the
+// service's own page size, refuses the whole listing.
 func (b *ServiceBucket) List(ctx context.Context) ([]Item, error) {
 	if err := b.checkBinding(ctx); err != nil {
 		return nil, err
@@ -83,18 +98,30 @@ func (b *ServiceBucket) List(ctx context.Context) ([]Item, error) {
 	var items []Item
 	token := ""
 	for page := 0; page < maxListPages; page++ {
-		res, err := b.client.List(ctx, &storagev0.ListRequest{Prefix: b.listPrefix, PageToken: token, Binding: b.binding})
+		res, err := b.listPage(ctx, token)
 		if err != nil {
 			return nil, storeError(err)
 		}
+		if len(res.GetObjects()) > b.maxList {
+			return nil, fmt.Errorf("%w: a page of %d objects, past its page size of %d", errOutsideScope, len(res.GetObjects()), b.maxList)
+		}
 		for _, o := range res.GetObjects() {
-			items = append(items, Item{Key: b.folder + o.GetKey(), ETag: o.GetEtag(), Size: o.GetSize()})
+			if !strings.HasPrefix(o.GetKey(), b.prefix) {
+				return nil, fmt.Errorf("%w: %q is not under %q", errOutsideScope, o.GetKey(), b.prefix)
+			}
+			items = append(items, Item{Key: o.GetKey(), ETag: o.GetEtag(), Size: o.GetSize()})
 		}
 		if token = res.GetNextPageToken(); token == "" {
 			return items, nil
 		}
 	}
 	return nil, fmt.Errorf("%w: more than %d pages", ErrListingIncomplete, maxListPages)
+}
+
+func (b *ServiceBucket) listPage(ctx context.Context, token string) (*storagev0.ListResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
+	return b.client.List(ctx, &storagev0.ListRequest{Prefix: b.prefix, PageToken: token, Binding: b.binding})
 }
 
 // Read gets the batch at its listed ETags in one GetMany call per
@@ -117,8 +144,10 @@ func (b *ServiceBucket) Read(ctx context.Context, items []Item, visit func(Item,
 func (b *ServiceBucket) readBatch(ctx context.Context, items []Item, visit func(Item, string, io.Reader) error) error {
 	req := &storagev0.GetManyRequest{Binding: b.binding, Items: make([]*storagev0.GetManyItem, len(items))}
 	for i, it := range items {
-		req.Items[i] = &storagev0.GetManyItem{Key: strings.TrimPrefix(it.Key, b.folder), IfMatch: it.ETag}
+		req.Items[i] = &storagev0.GetManyItem{Key: it.Key, IfMatch: it.ETag}
 	}
+	ctx, cancel := context.WithTimeout(ctx, readTimeout)
+	defer cancel()
 	stream, err := b.client.GetMany(ctx, req)
 	if err != nil {
 		return storeError(err)
@@ -195,6 +224,8 @@ func (b *ServiceBucket) checkBinding(ctx context.Context) error {
 	if b.maxBatch > 0 {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
 	caps, err := b.client.Capabilities(ctx, &storagev0.CapabilitiesRequest{Binding: b.binding})
 	if err != nil {
 		return storeError(err)
@@ -202,7 +233,7 @@ func (b *ServiceBucket) checkBinding(ctx context.Context) error {
 	if caps.GetMaxObjectBytes() <= 0 || caps.GetMaxListLimit() <= 0 || caps.GetMaxGetManyItems() <= 0 {
 		return ErrBindingNotHonoured
 	}
-	b.maxBatch = int(caps.GetMaxGetManyItems())
+	b.maxBatch, b.maxList = int(caps.GetMaxGetManyItems()), int(caps.GetMaxListLimit())
 	return nil
 }
 
@@ -226,6 +257,23 @@ func storeError(err error) error {
 		return limited
 	}
 	return err
+}
+
+// CheckService asks the object-storage service, with no binding, whether it
+// reads a batch: a release that does is the one that also takes a per-call
+// binding. One that does not — the composed agent predates it — is
+// ErrBindingNotHonoured, and the host admits no object-storage source.
+func CheckService(ctx context.Context, client storagev0.ObjectStorageClient) error {
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
+	caps, err := client.Capabilities(ctx, &storagev0.CapabilitiesRequest{})
+	if err != nil {
+		return storeError(err)
+	}
+	if caps.GetMaxGetManyItems() <= 0 {
+		return ErrBindingNotHonoured
+	}
+	return nil
 }
 
 // Dial opens a connection to the object-storage service at addr, presenting

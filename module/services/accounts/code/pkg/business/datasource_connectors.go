@@ -109,7 +109,7 @@ func (s *Service) DatasourceCatalog() []DatasourceCatalogEntry {
 			AcceptsOperations:      d.Key == DatasourceProviderAPI,
 			OperationsGap:          gap,
 			OAuth:                  s.datasourceOAuth[d.Key],
-			AcceptsNewSources:      s.datasourceConnectors.AdmitNewSource(d.Key) == nil,
+			AcceptsNewSources:      s.admitNewDatasource(d.Key) == nil,
 			LiveDeliveryConfigured: s.DatasourceLiveDeliveryConfigured(d.Key),
 		})
 	}
@@ -130,14 +130,25 @@ func DatasourceConformance(registry *connector.Registry, provider string) (bool,
 	return d.Conformant, d.Gap
 }
 
+// ErrObjectStorageUnavailable: no composed object-storage service here can read
+// a tenant's bucket, so an object-storage source is neither admitted nor synced.
+var ErrObjectStorageUnavailable = errors.New("object storage is not available here: no composed object-storage service serves a per-call binding with a batched read")
+
 // admitNewDatasource refuses a new source of a provider the registry does not
-// admit, before anything is validated, sealed or stored.
+// admit, or that nothing composed here can serve, before anything is
+// validated, sealed or stored. The catalog reports the same answer.
 func (s *Service) admitNewDatasource(provider string) error {
 	if s.datasourceConnectors == nil {
 		return status.Error(codes.FailedPrecondition, "datasource connector is not configured")
 	}
 	err := s.datasourceConnectors.AdmitNewSource(provider)
 	switch {
+	case err == nil && provider == DatasourceProviderUpload && s.newUploadBucket == nil:
+		// Conformant, but nothing here can read a bucket: no object-storage
+		// service is composed, or the one composed predates the per-call
+		// binding and the batched read (work.go asks it at start). A source
+		// admitted now would fail every sync.
+		return status.Error(codes.FailedPrecondition, ErrObjectStorageUnavailable.Error())
 	case err == nil:
 		return nil
 	case errors.Is(err, connector.ErrUnknownConnector):
@@ -169,7 +180,7 @@ func connectorSource(source *DatasourceSource) connector.Source {
 // and the connector never sees it.
 func (s *Service) uploadBucketForSource(ctx context.Context, src connector.Source) (objectstore.Bucket, error) {
 	if s.newUploadBucket == nil {
-		return nil, errors.New("object storage is not configured: the host composes no object-storage service")
+		return nil, ErrObjectStorageUnavailable
 	}
 	source, err := s.store.GetDatasourceSourceByID(ctx, src.ID)
 	if err != nil {

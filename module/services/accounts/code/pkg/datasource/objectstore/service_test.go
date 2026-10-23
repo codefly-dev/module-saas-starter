@@ -41,7 +41,10 @@ type fakeService struct {
 	unbound       bool   // a release from before the binding: Capabilities reports no bound caps
 	unbatched     bool   // a release from before GetMany: no max_get_many_items
 	misorder      bool   // answers the first object under the second's index
-	truncate      bool   // sends one byte less of each object than its size
+	stray         string // a key List adds to its first page whatever the prefix
+	overfill      bool   // a List page one object past the page size it reports
+	stall         time.Duration
+	truncate      bool // sends one byte less of each object than its size
 	throttled     atomic.Bool
 	authenticated atomic.Bool
 	calls         atomic.Int64
@@ -91,6 +94,9 @@ func (f *fakeService) List(_ context.Context, req *storagev0.ListRequest) (*stor
 	if err := f.call(req.GetBinding()); err != nil {
 		return nil, err
 	}
+	if f.stall > 0 {
+		time.Sleep(f.stall)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listReqs = append(f.listReqs, req)
@@ -106,8 +112,15 @@ func (f *fakeService) List(_ context.Context, req *storagev0.ListRequest) (*stor
 	if req.GetPageToken() != "" {
 		fmt.Sscan(req.GetPageToken(), &start)
 	}
-	end := min(start+f.pageSize, len(rel))
+	size := f.pageSize
+	if f.overfill {
+		size++
+	}
+	end := min(start+size, len(rel))
 	res := &storagev0.ListResult{}
+	if f.stray != "" && start == 0 {
+		res.Objects = append(res.Objects, &storagev0.ObjectInfo{Key: f.stray, Etag: etagOf("stray"), Size: 5})
+	}
 	for _, r := range rel[start:end] {
 		res.Objects = append(res.Objects, &storagev0.ObjectInfo{Key: r, Etag: etagOf(f.objects[folder+r]), Size: int64(len(f.objects[folder+r]))})
 	}
@@ -197,9 +210,10 @@ func serve(t *testing.T, f *fakeService) storagev0.ObjectStorageClient {
 var serviceConfig = SourceConfig{Endpoint: "https://store.example.com", Region: "eu-west-1", Bucket: "acme-docs", Prefix: "kb/2026-"}
 
 // TestServiceBucketListsTheSourcesKeyPrefixThroughTheBinding: a source's
-// prefix is a key prefix, the binding's a folder. The binding takes the folder
-// and the listing the rest, every page is read, and every item comes back
-// under its full key — the identity the host's deliveries carry.
+// prefix is a literal key prefix. The binding carries none — the service would
+// normalize it as a folder — and every page filters on the prefix as written,
+// so every item comes back under its full key, the identity the host's
+// deliveries carry.
 func TestServiceBucketListsTheSourcesKeyPrefixThroughTheBinding(t *testing.T) {
 	f := &fakeService{pageSize: 2, objects: map[string]string{
 		"kb/2026-a.md": "alpha", "kb/2026-b.md": "bravo", "kb/2026-c.md": "charlie", "kb/2025-z.md": "old", "other/2026-x.md": "elsewhere",
@@ -219,14 +233,74 @@ func TestServiceBucketListsTheSourcesKeyPrefixThroughTheBinding(t *testing.T) {
 	if want := []string{"kb/2026-a.md", "kb/2026-b.md", "kb/2026-c.md"}; strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Fatalf("listed %v, want %v", keys, want)
 	}
-	if len(f.listReqs) != 2 || f.listReqs[0].GetPrefix() != "2026-" || f.listReqs[1].GetPageToken() == "" {
-		t.Fatalf("list requests = %v, want two pages filtered on the prefix's last segment", f.listReqs)
+	if len(f.listReqs) != 2 || f.listReqs[0].GetPrefix() != "kb/2026-" || f.listReqs[1].GetPageToken() == "" {
+		t.Fatalf("list requests = %v, want two pages filtered on the literal prefix", f.listReqs)
 	}
 	bound := f.bindings[0]
 	if bound.GetKind() != "s3" || bound.GetEndpoint() != serviceConfig.Endpoint || bound.GetRegion() != "eu-west-1" ||
-		bound.GetBucket() != "acme-docs" || bound.GetPrefix() != "kb/" ||
+		bound.GetBucket() != "acme-docs" || bound.GetPrefix() != "" ||
 		bound.GetCredential().GetAccessKey().GetId() != "AKIAEXAMPLE" || bound.GetCredential().GetAccessKey().GetSecret() != "sentinel-secret" {
-		t.Fatalf("binding = %v", bound)
+		t.Fatalf("binding = %v, want the source's store and credential and no prefix", bound)
+	}
+}
+
+// TestServiceBucketKeepsALiteralPrefixLiteral: "/reports/" is not "reports/",
+// and "/" is not the whole bucket. A prefix the service would rewrite as a
+// folder reaches it as written, so a source never lists another key space and
+// then reconciles deletions against it.
+func TestServiceBucketKeepsALiteralPrefixLiteral(t *testing.T) {
+	objects := map[string]string{"/reports/a.md": "slashed", "reports/b.md": "plain", "//double.md": "double"}
+	for prefix, want := range map[string]string{"/reports/": "/reports/a.md", "reports/": "reports/b.md", "//": "//double.md"} {
+		f := &fakeService{pageSize: 10, objects: objects}
+		cfg := serviceConfig
+		cfg.Prefix = prefix
+		b := NewServiceBucket(serve(t, f), cfg, "id", "secret")
+		items, err := b.List(context.Background())
+		if err != nil || len(items) != 1 || items[0].Key != want {
+			t.Fatalf("prefix %q listed %v (%v), want only %s", prefix, items, err, want)
+		}
+		if err := b.Read(context.Background(), items, func(Item, string, io.Reader) error { return nil }); err != nil {
+			t.Fatalf("prefix %q: reading %s = %v", prefix, want, err)
+		}
+		if got := f.getManys[0].GetItems()[0].GetKey(); got != want {
+			t.Fatalf("prefix %q: read key %q, want the full key %q", prefix, got, want)
+		}
+	}
+	f := &fakeService{pageSize: 10, objects: objects}
+	cfg := serviceConfig
+	cfg.Prefix = "/"
+	items, err := NewServiceBucket(serve(t, f), cfg, "id", "secret").List(context.Background())
+	if err != nil || len(items) != 2 {
+		t.Fatalf(`prefix "/" listed %v (%v), want only the two keys that start with "/"`, items, err)
+	}
+}
+
+// TestServiceBucketRefusesAListingOutsideItsScope: a key the literal prefix
+// does not name, or a page past the service's own page size, refuses the whole
+// listing — nothing from it reaches a version the closing listing would
+// reconcile deletions against.
+func TestServiceBucketRefusesAListingOutsideItsScope(t *testing.T) {
+	objects := map[string]string{"kb/2026-a.md": "alpha", "kb/2026-b.md": "bravo", "kb/2026-c.md": "charlie"}
+	for name, f := range map[string]*fakeService{
+		"a key outside the prefix":  {pageSize: 10, stray: "other/x.md", objects: objects},
+		"a page past its page size": {pageSize: 2, overfill: true, objects: objects},
+	} {
+		if items, err := NewServiceBucket(serve(t, f), serviceConfig, "id", "secret").List(context.Background()); !errors.Is(err, errOutsideScope) {
+			t.Fatalf("%s: List = %v, %v, want errOutsideScope", name, items, err)
+		}
+	}
+}
+
+// TestServiceBucketBoundsAStalledCall: a store that answers and then stalls
+// does not hold the sync past the call's deadline.
+func TestServiceBucketBoundsAStalledCall(t *testing.T) {
+	defer func(d time.Duration) { callTimeout = d }(callTimeout)
+	callTimeout = 50 * time.Millisecond
+	f := &fakeService{pageSize: 10, stall: time.Second, objects: map[string]string{"kb/2026-a.md": "alpha"}}
+	start := time.Now()
+	_, err := NewServiceBucket(serve(t, f), serviceConfig, "id", "secret").List(context.Background())
+	if status.Code(err) != codes.DeadlineExceeded || time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("a stalled List = %v after %s, want DeadlineExceeded at the call's deadline", err, time.Since(start))
 	}
 }
 
@@ -270,8 +344,8 @@ func TestServiceBucketReadsABatchInOneCall(t *testing.T) {
 		t.Fatalf("read %v", got)
 	}
 	if len(f.getManys) != 1 || len(f.getManys[0].GetItems()) != 3 ||
-		f.getManys[0].GetItems()[0].GetKey() != "2026-a.md" || f.getManys[0].GetItems()[0].GetIfMatch() != etagOf("alpha") {
-		t.Fatalf("GetMany calls = %v, want one for the batch, relative keys, at If-Match", f.getManys)
+		f.getManys[0].GetItems()[0].GetKey() != "kb/2026-a.md" || f.getManys[0].GetItems()[0].GetIfMatch() != etagOf("alpha") {
+		t.Fatalf("GetMany calls = %v, want one for the batch, full keys, at If-Match", f.getManys)
 	}
 
 	small := &fakeService{pageSize: 10, maxBatch: 2, objects: f.objects}
@@ -330,6 +404,18 @@ func TestServiceBucketRefusesAServiceThatIgnoresTheBinding(t *testing.T) {
 	unbatched := &fakeService{pageSize: 10, unbatched: true, objects: f.objects}
 	if _, err := NewServiceBucket(serve(t, unbatched), serviceConfig, "id", "secret").List(context.Background()); !errors.Is(err, ErrBindingNotHonoured) {
 		t.Fatalf("List on a service with no batched read = %v, want ErrBindingNotHonoured", err)
+	}
+}
+
+// TestCheckServiceAdmitsOnlyABatchedRead: the host's start-up question to the
+// composed service. One that reports no batch size predates GetMany and the
+// binding, and the host wires no object storage.
+func TestCheckServiceAdmitsOnlyABatchedRead(t *testing.T) {
+	if err := CheckService(context.Background(), serve(t, &fakeService{pageSize: 10})); err != nil {
+		t.Fatalf("a service with a batched read = %v, want admitted", err)
+	}
+	if err := CheckService(context.Background(), serve(t, &fakeService{pageSize: 10, unbatched: true})); !errors.Is(err, ErrBindingNotHonoured) {
+		t.Fatalf("a service with no batched read = %v, want ErrBindingNotHonoured", err)
 	}
 }
 

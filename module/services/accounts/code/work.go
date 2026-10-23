@@ -362,7 +362,14 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, err
 	}
 	if objectStorage != nil {
-		service.SetObjectStorage(storagev0.NewObjectStorageClient(objectStorage))
+		client := storagev0.NewObjectStorageClient(objectStorage)
+		if err := objectstore.CheckService(ctx, client); err != nil {
+			// Not a start failure: the host runs, and object storage is refused
+			// by name in the catalog, at AddSource and at sync.
+			wool.Get(ctx).Warn("the composed object-storage service cannot read a tenant's bucket; object-storage datasources are unavailable", wool.ErrField(err))
+		} else {
+			service.SetObjectStorage(client)
+		}
 	}
 	// Every provider credential's operations are metered in one window shared by
 	// every replica, so a sync a person starts is served before background work.

@@ -1,6 +1,7 @@
 package business_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,6 +11,10 @@ import (
 
 	"accounts/pkg/business"
 	"accounts/pkg/datasource/connector"
+	"accounts/pkg/datasource/objectstore"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // suiteCall is how a connector's own tests run the conformance suite.
@@ -85,6 +90,9 @@ func TestLegacyProvidersAreRegisteredWithTheirGap(t *testing.T) {
 			t.Fatalf("%s: admission = %v, want ErrNonConformant", key, err)
 		}
 	}
+	// Object storage is admitted only where a compatible object-storage
+	// service is composed (TestObjectStorageIsAdmittedOnlyWhereAServiceCanReadIt).
+	svc.SetDatasourceUploadBucketFactory(func(objectstore.SourceConfig, string, string) objectstore.Bucket { return nil })
 	for _, e := range svc.DatasourceCatalog() {
 		if e.AcceptsNewSources != (e.Descriptor.Conformant && e.Descriptor.Readers != connector.ReadersTranslated) {
 			t.Fatalf("the catalog says %s accepts new sources = %v", e.Descriptor.Key, e.AcceptsNewSources)
@@ -97,5 +105,38 @@ func TestLegacyProvidersAreRegisteredWithTheirGap(t *testing.T) {
 		if err := reg.AdmitNewSource(key); err != nil {
 			t.Fatalf("%s: admission = %v, want admitted", key, err)
 		}
+	}
+}
+
+// TestObjectStorageIsAdmittedOnlyWhereAServiceCanReadIt: object storage is
+// conformant, but a host with no composed object-storage service — or one
+// whose service predates the per-call binding, which work.go leaves unwired —
+// cannot sync a bucket. The catalog says so, and AddSource refuses by name
+// before anything is sealed or stored.
+func TestObjectStorageIsAdmittedOnlyWhereAServiceCanReadIt(t *testing.T) {
+	svc, _ := business.NewService(nil)
+	svc.SetDatasourceConnector(nil, nil, "")
+	accepts := func() bool {
+		for _, e := range svc.DatasourceCatalog() {
+			if e.Descriptor.Key == business.DatasourceProviderUpload {
+				return e.AcceptsNewSources
+			}
+		}
+		t.Fatal("object storage is not in the catalog")
+		return false
+	}
+	if accepts() {
+		t.Fatal("the catalog accepts object-storage sources with no object-storage service composed")
+	}
+	_, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: "11111111-1111-1111-1111-111111111111", Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "secretkey",
+		Upload: &business.UploadDatasourceConfig{Endpoint: "https://store.example.com", Region: "us-east-1", Bucket: "docs", AccessKeyID: "AKIAEXAMPLE"},
+	})
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), business.ErrObjectStorageUnavailable.Error()) {
+		t.Fatalf("AddSource(upload) with no object storage = %v, want the unavailable refusal", err)
+	}
+	svc.SetDatasourceUploadBucketFactory(func(objectstore.SourceConfig, string, string) objectstore.Bucket { return nil })
+	if !accepts() {
+		t.Fatal("the catalog refuses object-storage sources with an object-storage service composed")
 	}
 }

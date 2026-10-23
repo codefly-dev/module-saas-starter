@@ -49,8 +49,9 @@ binding and batched read from #108) — over an in-process fake of the service's
 gRPC API, so every clause is measured on the calls the host makes
 (`objectstore/connector_conformance_test.go`). The host signs, dials and guards
 nothing for a bucket; `client.go`, its own store client, is deleted. It is
-registered through `connector.Budgeted`, metered per source credential like
-GitHub, and `AdmitNewSource` admits it.
+registered through `connector.Budgeted`, metered per provider credential like
+GitHub, and `AdmitNewSource` admits it; the host admits a new source only where
+a composed object-storage service can read a bucket (below).
 
 | Clause | How it is honoured |
 | --- | --- |
@@ -58,20 +59,31 @@ GitHub, and `AdmitNewSource` admits it.
 | 2 readers | `ReadersSourceScoped`: a bucket has no per-object access list, so every object is readable by whoever may read the source's collection. |
 | 4 versions and change sets | A version is a digest of the listing within the source's key filter and object cap, under its binding; the host retains the listing each version names in `datasource_object_manifests` (migration 46; the newest four per source), and `Changes(from)` diffs against it. The host's own sync still takes a complete snapshot each time and re-sends every object, closing with the listing that tombstones the rest; delivering only what changed means moving `runUploadSync` onto the change-set path, which changes what the consuming module receives, so it is its own change. |
 | 5 provenance | Source, org, boundary, version, key and ETag on every fetched file. |
-| 6 budget and backpressure | A declared `Budget`, metered by `datasource_credential_budgets` through `connector.Budgeted`. |
+| 6 budget and backpressure | A declared `Budget`, metered by `datasource_credential_budgets` through `connector.Budgeted`, keyed by the credential — a keyed digest of the store's origin and the access key id, fixed at connect — so every source reading with one key at one store spends one quota and honours one provider throttle. A sync a person asks for may spend the reserved share; the scheduled pass yields. |
 | 8 bulk only | A batch is one `GetMany` per `max_get_many_items` (1000, the connector's batch): 120 objects cost one call after the listing. |
 
 **How it reads a store.**
 
 - **The binding.** `objectstore.ServiceBucket` names the source's endpoint,
-  region, bucket and prefix and carries its access key for each call; the
-  service never stores it. A source's prefix is a key prefix and a binding's is
-  a folder, so the binding takes the prefix up to its last `/` and the listing
-  filters on the rest; an item keeps its full object key, which is what the
-  consuming module has always been sent. Before it lists or reads, it asks
-  `Capabilities` under the binding and refuses a service that reports no bound
-  caps or no batch size — an older one would serve its own bucket as the
-  tenant's.
+  region and bucket and carries its access key for each call; the service
+  never stores it. The binding carries **no prefix**: the service normalizes a
+  binding's prefix as a folder (no leading or trailing `/`), while a source's
+  prefix is a literal S3 key prefix — `/reports/` is not `reports/`, and `/` is
+  not the whole bucket. Every listing filters on the literal prefix, which the
+  service passes to the store unchanged, and every key travels whole, which is
+  what the consuming module has always been sent. A listed key outside the
+  literal prefix, or a page past the service's own page size, refuses the whole
+  listing. Before it lists or reads, it asks `Capabilities` under the binding
+  and refuses a service that reports no bound caps or no batch size — an older
+  one would serve its own bucket as the tenant's.
+- **Every call has a deadline**: 30 seconds per listing page or capability
+  question, five minutes per batched read. A store that answers and then
+  stalls does not hold a sync, and its worker's lease, past it.
+- **Admission needs a service that can read a bucket.** At start the host asks
+  the composed service, unbound, whether it reads a batch; one that does not —
+  the released 0.0.18 agent, or none composed — leaves object storage
+  unavailable: the catalog reports `accepts_new_sources: false` and `AddSource`
+  refuses by name.
 - **The guard and the caps are the service's.** A non-public endpoint is
   refused there by name (`PERMISSION_DENIED`, reported as the envelope's
   credential refusal: it is the source's configuration to fix either way). A
@@ -79,7 +91,11 @@ GitHub, and `AdmitNewSource` admits it.
   over it is refused from its listed size before it is read; one the service
   still answers `TOO_LARGE` is the envelope's `ErrItemTooLarge`. A listing is
   paged at the service's page size and bounded at 20 pages; past that it is
-  `ErrListingIncomplete`, never a partial version.
+  `ErrListingIncomplete`, never a partial version. **Completeness is the
+  service's to report:** the host takes an empty `next_page_token` as the end
+  of the listing, so a store that answers "truncated" with no continuation
+  token must be refused by the service, which owns the S3 parsing — the host
+  cannot recover a truncation signal the service discards.
 - **The scope is the connector's.** The key filter and the object cap are the
   source's `objectstore.Scope`, applied to the listing before its digest: an
   excluded object is never read and never counts against the cap, and a

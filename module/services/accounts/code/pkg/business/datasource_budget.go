@@ -83,6 +83,8 @@ func datasourceCredentialKey(source *DatasourceSource) string {
 	switch {
 	case source.Provider == DatasourceProviderAPI && source.API != nil && source.API.CredentialBudgetKey != "":
 		return source.API.CredentialBudgetKey
+	case source.Provider == DatasourceProviderUpload && source.Upload != nil && source.Upload.CredentialBudgetKey != "":
+		return source.Upload.CredentialBudgetKey
 	case source.Provider != DatasourceProviderGitHub:
 		return source.Provider + ":source:" + source.ID
 	case source.GitHubInstallationID != "":

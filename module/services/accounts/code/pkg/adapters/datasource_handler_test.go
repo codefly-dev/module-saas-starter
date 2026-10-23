@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/datasource/objectstore"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -36,6 +37,12 @@ func TestAPICredentialKindRoundTrip(t *testing.T) {
 func TestDatasourceCatalog_ProjectsTheRegistry(t *testing.T) {
 	svc, _ := business.NewService(nil)
 	svc.SetDatasourceConnector(nil, nil, "")
+	for _, p := range datasourceCatalog(svc.DatasourceCatalog()).GetProviders() {
+		if p.GetConnector() == business.DatasourceProviderUpload && p.GetAcceptsNewSources() {
+			t.Fatal("object storage accepts new sources with no object-storage service composed")
+		}
+	}
+	svc.SetDatasourceUploadBucketFactory(func(objectstore.SourceConfig, string, string) objectstore.Bucket { return nil })
 	catalog := datasourceCatalog(svc.DatasourceCatalog())
 	byKey := map[string]*gen.DatasourceProviderDescriptor{}
 	for _, p := range catalog.GetProviders() {

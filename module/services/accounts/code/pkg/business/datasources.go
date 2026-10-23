@@ -371,6 +371,10 @@ type UploadDatasourceConfig struct {
 	IncludePatterns []string `json:"include_patterns,omitempty"`
 	ExcludePatterns []string `json:"exclude_patterns,omitempty"`
 	FileExtensions  []string `json:"file_extensions,omitempty"`
+	// CredentialBudgetKey groups the sources that read with one access key at
+	// one store under one budget (uploadCredentialBudgetKey). Empty on a source
+	// connected before it, which keeps a budget of its own.
+	CredentialBudgetKey string `json:"credential_budget_key,omitempty"`
 }
 
 // DatasourceSource is one connected external datasource. CredentialSecretRef and
@@ -935,6 +939,7 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 			}
 			return nil, w.Wrap(err)
 		}
+		cfg.CredentialBudgetKey = s.uploadCredentialBudgetKey(cfg)
 		source.Upload = cfg
 	default:
 		return nil, w.NewError("unknown datasource provider")
@@ -2131,6 +2136,12 @@ func (s *Service) NewDatasourceSyncJobHandler() jobs.Handler {
 		sourceID := envelope.GetAttributes()[attrSourceID]
 		if sourceID == "" {
 			return jobs.NewProcessingError("datasource.invalid_job", "datasource sync job has no source id", false)
+		}
+		// A sync a person asked for ("Sync now", the first sync at connect) is
+		// interactive and may spend the credential's reserved share; the
+		// scheduled pass is background and yields — as a GitHub delivery does.
+		if envelope.GetSource() == datasourceSyncRequestSource {
+			ctx = connector.WithPriority(ctx, connector.PriorityInteractive)
 		}
 		_, err := s.RunDatasourceSync(ctx, sourceID)
 		switch {
