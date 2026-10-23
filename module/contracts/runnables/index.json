@@ -6,7 +6,7 @@
     {
       "name": "accounts-connect-invoke-source-operation",
       "version": "0.1.0",
-      "digest": "70e00061ad57c8ed7a868b9cad536b61b8562ee4eba7dfabf0fd97e1d3f6f52d",
+      "digest": "989d265873ecdcf658dc37c29fe5a308c51a6626f11a5849e041fbcec2e7bede",
       "service": "accounts",
       "endpoint": "connect",
       "method": "/saas.accounts.v1.DatasourceService/InvokeSourceOperation",
@@ -17,7 +17,7 @@
     {
       "name": "accounts-connect-prune-source-operation-receipts",
       "version": "0.1.0",
-      "digest": "8b2e2691848ec6e9ab3d9be8f5124390f3a7ca65abfb0c9413f220365a7c52a0",
+      "digest": "7d729bfe247aa63a86815162a10ae06ef15d18be4b826939b22187816987cdda",
       "service": "accounts",
       "endpoint": "connect",
       "method": "/saas.accounts.v1.DatasourceService/PruneSourceOperationReceipts",
@@ -28,7 +28,7 @@
     {
       "name": "accounts-connect-reconcile-source",
       "version": "0.1.0",
-      "digest": "388950465185ec570fe4be8127715638c2cbbd4550d10969fb519af00813d6d7",
+      "digest": "ea914c8ee5dfc307d64f492010002873d9df50ed766e21f1f8256a969468681b",
       "service": "accounts",
       "endpoint": "connect",
       "method": "/saas.accounts.v1.DatasourceService/ReconcileSource",

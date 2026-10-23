@@ -1,6 +1,8 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import {
 	AccessBasis,
+	ApiCredentialKind,
+	ApiOAuth2Config_Grant,
 	accounts,
 	type Datasource,
 	type DatasourceAccountLink,
@@ -9,6 +11,7 @@ import {
 	DatasourceProvider,
 	type DatasourceVerifiedDomain,
 	DatasourceStatus,
+	SourceOperation_Effect,
 	type SourceSyncProgress,
 	SourceSyncFailureReason,
 	SourceSyncPhase,
@@ -24,8 +27,11 @@ import { createConnectTransport } from "@connectrpc/connect-web";
 import type {
 	AccessibleScopeView,
 	AccountLinkView,
+	ApiCredentialKindName,
+	ApiOAuth2GrantName,
 	DatasourceClient,
 	DatasourceLiveDeliveryName,
+	DatasourceProviderName,
 	DatasourceStatusName,
 	DatasourceView,
 	DomainView,
@@ -87,11 +93,12 @@ export function datasourceClientOverTransport(
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
 	return {
-		async beginAccountLink(orgId, connector, redirectUri) {
+		async beginAccountLink(orgId, connector, redirectUri, sourceId) {
 			const response = await client.beginDatasourceAccountLink({
 				orgId,
 				connector,
 				redirectUri,
+				sourceId: sourceId ?? "",
 			});
 			return { authorizeUrl: response.authorizeUrl, state: response.state };
 		},
@@ -258,6 +265,51 @@ export function datasourceClientOverTransport(
 			// The host starts a GitHub source's first sync as it connects it.
 			notifySourceSyncRequested(response.datasource?.id ?? "");
 		},
+		async addPersonalApiSource(input) {
+			// No credential and no OAuth client: the authorization-code grant
+			// stores only its selector on the source, and the host resolves the
+			// client, endpoints and scopes from the deployment's registration.
+			// An `api` source is admitted for operations only, so no first sync
+			// starts and none is announced.
+			const response = await client.addSource({
+				orgId: input.orgId,
+				provider: DatasourceProvider.API,
+				config: {
+					case: "api",
+					value: {
+						baseUrl: input.baseUrl,
+						resourcePath: input.resourcePath ?? "",
+						credentialKind: ApiCredentialKind.OAUTH2,
+						oauth2: { grant: ApiOAuth2Config_Grant.AUTHORIZATION_CODE },
+					},
+				},
+				boundary: input.boundaryNodeId
+					? { case: "boundaryNodeId", value: input.boundaryNodeId }
+					: { case: "collectionLabel", value: input.targetCollection },
+			});
+			if (!response.datasource) throw new Error("the host returned no source");
+			return toDatasourceView(response.datasource);
+		},
+		async declareSourceOperations(orgId, sourceId, operations) {
+			await client.declareSourceOperations({
+				orgId,
+				sourceId,
+				operations: operations.map((operation) => ({
+					name: operation.name,
+					description: operation.description ?? "",
+					method: operation.method,
+					path: operation.path,
+					query: operation.query ?? [],
+					inputSchema: operation.inputSchema,
+					outputSchema: operation.outputSchema,
+					effect:
+						operation.effect === "mutation"
+							? SourceOperation_Effect.MUTATION
+							: SourceOperation_Effect.READ_ONLY,
+					maxOutputBytes: operation.maxOutputBytes ?? 0,
+				})),
+			});
+		},
 		async beginGitHubAppSetup(orgId) {
 			const response = await client.beginGitHubAppSetup({ orgId });
 			return {
@@ -340,6 +392,29 @@ export function datasourceClientOverTransport(
 				throw error;
 			}
 		},
+		async updateSource(input) {
+			const response = await client.updateSource({
+				orgId: input.orgId,
+				id: input.id,
+				branch: input.branch,
+				paths: input.paths,
+				fileExtensions: input.fileExtensions ?? [],
+				// Sent whole and always: the host refuses an edit whose expectation
+				// no longer matches the stored scope, which is what stops a save
+				// from a form opened earlier overwriting a change made since.
+				expected: {
+					branch: input.expected.branch,
+					paths: input.expected.paths,
+					fileExtensions: input.expected.fileExtensions,
+				},
+			});
+			// An empty job id is the host saying the request changed nothing, so
+			// there is no sync to watch and nothing to announce. Announcing one
+			// anyway would put a row into the "syncing" state that never moves.
+			if (!response.jobId) return undefined;
+			notifySourceSyncRequested(input.id);
+			return response.jobId;
+		},
 		async deleteSource(orgId, id) {
 			await client.deleteSource({ orgId, id });
 		},
@@ -377,6 +452,7 @@ const syncTriggerNames: Partial<Record<SourceSyncTrigger, SourceSyncTriggerName>
 	[SourceSyncTrigger.MANUAL]: "manual",
 	[SourceSyncTrigger.SCHEDULED]: "scheduled",
 	[SourceSyncTrigger.WEBHOOK]: "webhook",
+	[SourceSyncTrigger.RECONFIGURED]: "reconfigured",
 };
 
 const syncFailureNames: Partial<
@@ -506,6 +582,33 @@ const liveDeliveryNames: Partial<
 	[DatasourceLiveDelivery.APP_WEBHOOK]: "app_webhook",
 };
 
+const credentialKindNames: Partial<
+	Record<ApiCredentialKind, ApiCredentialKindName>
+> = {
+	[ApiCredentialKind.BEARER]: "bearer",
+	[ApiCredentialKind.BASIC]: "basic",
+	[ApiCredentialKind.HEADER]: "header",
+	[ApiCredentialKind.QUERY]: "query",
+	[ApiCredentialKind.OAUTH2]: "oauth2",
+};
+
+// UNSPECIFIED is a stored refresh-token source (the proto keeps it as the
+// default so older rows read unchanged), so it is named rather than left unknown.
+const oauth2GrantNames: Partial<
+	Record<ApiOAuth2Config_Grant, ApiOAuth2GrantName>
+> = {
+	[ApiOAuth2Config_Grant.UNSPECIFIED]: "refresh_token",
+	[ApiOAuth2Config_Grant.REFRESH_TOKEN]: "refresh_token",
+	[ApiOAuth2Config_Grant.CLIENT_CREDENTIALS]: "client_credentials",
+	[ApiOAuth2Config_Grant.AUTHORIZATION_CODE]: "authorization_code",
+};
+
+const providerNames: Partial<Record<DatasourceProvider, DatasourceProviderName>> =
+	{
+		[DatasourceProvider.GITHUB]: "github",
+		[DatasourceProvider.API]: "api",
+	};
+
 const statusNames: Partial<Record<DatasourceStatus, DatasourceStatusName>> = {
 	[DatasourceStatus.ACTIVE]: "active",
 	[DatasourceStatus.PAUSED]: "paused",
@@ -516,8 +619,7 @@ function toDatasourceView(source: Datasource): DatasourceView {
 	return {
 		id: source.id,
 		orgId: source.orgId,
-		provider:
-			source.provider === DatasourceProvider.GITHUB ? "github" : "unknown",
+		provider: providerNames[source.provider] ?? "unknown",
 		repo: source.github?.repo ?? "",
 		paths: source.github ? [...source.github.paths] : [],
 		fileExtensions: source.github ? [...source.github.fileExtensions] : [],
@@ -547,6 +649,17 @@ function toDatasourceView(source: Datasource): DatasourceView {
 			? timestampDate(source.lastIngestedAt).toISOString()
 			: undefined,
 		lastIngestedCommit: source.lastIngestedCommit || undefined,
+		api: source.api
+			? {
+					baseUrl: source.api.baseUrl,
+					resourcePath: source.api.resourcePath,
+					credentialKind:
+						credentialKindNames[source.api.credentialKind] ?? "unknown",
+					oauth2Grant: source.api.oauth2
+						? (oauth2GrantNames[source.api.oauth2.grant] ?? "unknown")
+						: undefined,
+				}
+			: undefined,
 		createdAt: source.createdAt
 			? timestampDate(source.createdAt).toISOString()
 			: undefined,

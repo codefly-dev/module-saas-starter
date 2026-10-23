@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file host/composition/v1/composition.proto.
  */
 export const file_host_composition_v1_composition: GenFile = /*@__PURE__*/
-  fileDesc("CiVob3N0L2NvbXBvc2l0aW9uL3YxL2NvbXBvc2l0aW9uLnByb3RvEhNob3N0LmNvbXBvc2l0aW9uLnYxIk8KFEFwcGx5TWFuaWZlc3RSZXF1ZXN0EjcKCG1hbmlmZXN0GAEgASgLMiUuaG9zdC5jb21wb3NpdGlvbi52MS5Nb2R1bGVNYW5pZmVzdFYxIlgKFUFwcGx5TWFuaWZlc3RSZXNwb25zZRIRCglwcmluY2lwYWwYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBBIYChBpbnN0YWxsYXRpb25faWRzGAMgAygJIvEBChBNb2R1bGVNYW5pZmVzdFYxEg4KBm1vZHVsZRgBIAEoCRIRCglwcmluY2lwYWwYAiABKAkSDAoEa2luZBgDIAEoCRISCgpnZW5lcmF0aW9uGAQgASgEEjAKCGJpbmRpbmdzGAUgAygLMh4uaG9zdC5jb21wb3NpdGlvbi52MS5CaW5kaW5nVjESOwoOcmVzb3VyY2Vfa2luZHMYBiADKAsyIy5ob3N0LmNvbXBvc2l0aW9uLnYxLlJlc291cmNlS2luZFYxEikKBHBhZ2UYByABKAsyGy5ob3N0LmNvbXBvc2l0aW9uLnYxLlBhZ2VWMSKZAQoJQmluZGluZ1YxEgoKAmlkGAEgASgJEhAKCGF1ZGllbmNlGAIgASgJEjUKDWludm9rZV9zY29wZXMYAyADKAsyHi5ob3N0LmF1dGhvcml0eS52MS5Xb3JrU2NvcGVWMRI3Cg9oZWFkbGVzc19zY29wZXMYBCADKAsyHi5ob3N0LmF1dGhvcml0eS52MS5Xb3JrU2NvcGVWMSIvCg5SZXNvdXJjZUtpbmRWMRIMCgRraW5kGAEgASgJEg8KB2FjdGlvbnMYAiADKAkiJgoGUGFnZVYxEg0KBXRpdGxlGAEgASgJEg0KBW9yZGVyGAIgASgFMnwKEkNvbXBvc2l0aW9uU2VydmljZRJmCg1BcHBseU1hbmlmZXN0EikuaG9zdC5jb21wb3NpdGlvbi52MS5BcHBseU1hbmlmZXN0UmVxdWVzdBoqLmhvc3QuY29tcG9zaXRpb24udjEuQXBwbHlNYW5pZmVzdFJlc3BvbnNlQs0BChdjb20uaG9zdC5jb21wb3NpdGlvbi52MUIQQ29tcG9zaXRpb25Qcm90b1ABWjJhY2NvdW50cy9wa2cvZ2VuL2hvc3QvY29tcG9zaXRpb24vdjE7Y29tcG9zaXRpb252MaICA0hDWKoCE0hvc3QuQ29tcG9zaXRpb24uVjHKAhNIb3N0XENvbXBvc2l0aW9uXFYx4gIfSG9zdFxDb21wb3NpdGlvblxWMVxHUEJNZXRhZGF0YeoCFUhvc3Q6OkNvbXBvc2l0aW9uOjpWMWIGcHJvdG8z", [file_host_authority_v1_work_context]);
+  fileDesc("CiVob3N0L2NvbXBvc2l0aW9uL3YxL2NvbXBvc2l0aW9uLnByb3RvEhNob3N0LmNvbXBvc2l0aW9uLnYxIpsBChRBcHBseU1hbmlmZXN0UmVxdWVzdBI3CghtYW5pZmVzdBgBIAEoCzIlLmhvc3QuY29tcG9zaXRpb24udjEuTW9kdWxlTWFuaWZlc3RWMRI2CgdjYXJyaWVyGAIgASgLMiUuaG9zdC5jb21wb3NpdGlvbi52MS5TaWduZWRNYW5pZmVzdFYxEhIKCmNyZWRlbnRpYWwYAyABKAkiNgoQU2lnbmVkTWFuaWZlc3RWMRIQCghkb2N1bWVudBgBIAEoDBIQCghlbnZlbG9wZRgCIAEoDCJYChVBcHBseU1hbmlmZXN0UmVzcG9uc2USEQoJcHJpbmNpcGFsGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSGAoQaW5zdGFsbGF0aW9uX2lkcxgDIAMoCSLxAQoQTW9kdWxlTWFuaWZlc3RWMRIOCgZtb2R1bGUYASABKAkSEQoJcHJpbmNpcGFsGAIgASgJEgwKBGtpbmQYAyABKAkSEgoKZ2VuZXJhdGlvbhgEIAEoBBIwCghiaW5kaW5ncxgFIAMoCzIeLmhvc3QuY29tcG9zaXRpb24udjEuQmluZGluZ1YxEjsKDnJlc291cmNlX2tpbmRzGAYgAygLMiMuaG9zdC5jb21wb3NpdGlvbi52MS5SZXNvdXJjZUtpbmRWMRIpCgRwYWdlGAcgASgLMhsuaG9zdC5jb21wb3NpdGlvbi52MS5QYWdlVjEimQEKCUJpbmRpbmdWMRIKCgJpZBgBIAEoCRIQCghhdWRpZW5jZRgCIAEoCRI1Cg1pbnZva2Vfc2NvcGVzGAMgAygLMh4uaG9zdC5hdXRob3JpdHkudjEuV29ya1Njb3BlVjESNwoPaGVhZGxlc3Nfc2NvcGVzGAQgAygLMh4uaG9zdC5hdXRob3JpdHkudjEuV29ya1Njb3BlVjEiLwoOUmVzb3VyY2VLaW5kVjESDAoEa2luZBgBIAEoCRIPCgdhY3Rpb25zGAIgAygJIiYKBlBhZ2VWMRINCgV0aXRsZRgBIAEoCRINCgVvcmRlchgCIAEoBTJ8ChJDb21wb3NpdGlvblNlcnZpY2USZgoNQXBwbHlNYW5pZmVzdBIpLmhvc3QuY29tcG9zaXRpb24udjEuQXBwbHlNYW5pZmVzdFJlcXVlc3QaKi5ob3N0LmNvbXBvc2l0aW9uLnYxLkFwcGx5TWFuaWZlc3RSZXNwb25zZULNAQoXY29tLmhvc3QuY29tcG9zaXRpb24udjFCEENvbXBvc2l0aW9uUHJvdG9QAVoyYWNjb3VudHMvcGtnL2dlbi9ob3N0L2NvbXBvc2l0aW9uL3YxO2NvbXBvc2l0aW9udjGiAgNIQ1iqAhNIb3N0LkNvbXBvc2l0aW9uLlYxygITSG9zdFxDb21wb3NpdGlvblxWMeICH0hvc3RcQ29tcG9zaXRpb25cVjFcR1BCTWV0YWRhdGHqAhVIb3N0OjpDb21wb3NpdGlvbjo6VjFiBnByb3RvMw", [file_host_authority_v1_work_context]);
 
 /**
  * ApplyManifestRequest carries the manifest.
@@ -26,11 +26,33 @@ export const file_host_composition_v1_composition: GenFile = /*@__PURE__*/
  */
 export type ApplyManifestRequest = Message<"host.composition.v1.ApplyManifestRequest"> & {
   /**
-   * The manifest the render produced.
+   * The sketch of a manifest, kept through the transition. An implementation
+   * that verifies deliveries ignores it when a carrier is present.
    *
    * @generated from field: host.composition.v1.ModuleManifestV1 manifest = 1;
    */
   manifest?: ModuleManifestV1;
+
+  /**
+   * The delivery as Codefly signs it: core's module manifest and the DSSE
+   * envelope over it. An implementation verifies the envelope against the release
+   * keys it pins and reads the manifest from the verified document, never from
+   * the request, so what composes a module is the same signed document on the
+   * mini gateway and on the host.
+   *
+   * @generated from field: host.composition.v1.SignedManifestV1 carrier = 2;
+   */
+  carrier?: SignedManifestV1;
+
+  /**
+   * The credential of the workload delivering the manifest, as that
+   * implementation attests workloads: the launcher's on the mini gateway, the
+   * delivery service account's on the host. A manifest is delivered by its own
+   * module's delivery workload and by nothing else.
+   *
+   * @generated from field: string credential = 3;
+   */
+  credential: string;
 };
 
 /**
@@ -39,6 +61,31 @@ export type ApplyManifestRequest = Message<"host.composition.v1.ApplyManifestReq
  */
 export const ApplyManifestRequestSchema: GenMessage<ApplyManifestRequest> = /*@__PURE__*/
   messageDesc(file_host_composition_v1_composition, 0);
+
+/**
+ * SignedManifestV1 is core's signed carrier: the manifest document (JSON) and
+ * the DSSE envelope whose payload is that document.
+ *
+ * @generated from message host.composition.v1.SignedManifestV1
+ */
+export type SignedManifestV1 = Message<"host.composition.v1.SignedManifestV1"> & {
+  /**
+   * @generated from field: bytes document = 1;
+   */
+  document: Uint8Array;
+
+  /**
+   * @generated from field: bytes envelope = 2;
+   */
+  envelope: Uint8Array;
+};
+
+/**
+ * Describes the message host.composition.v1.SignedManifestV1.
+ * Use `create(SignedManifestV1Schema)` to create a new message.
+ */
+export const SignedManifestV1Schema: GenMessage<SignedManifestV1> = /*@__PURE__*/
+  messageDesc(file_host_composition_v1_composition, 1);
 
 /**
  * ApplyManifestResponse says what the host derived.
@@ -73,7 +120,7 @@ export type ApplyManifestResponse = Message<"host.composition.v1.ApplyManifestRe
  * Use `create(ApplyManifestResponseSchema)` to create a new message.
  */
 export const ApplyManifestResponseSchema: GenMessage<ApplyManifestResponse> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 1);
+  messageDesc(file_host_composition_v1_composition, 2);
 
 /**
  * ModuleManifestV1 is one module instance at one generation.
@@ -136,7 +183,7 @@ export type ModuleManifestV1 = Message<"host.composition.v1.ModuleManifestV1"> &
  * Use `create(ModuleManifestV1Schema)` to create a new message.
  */
 export const ModuleManifestV1Schema: GenMessage<ModuleManifestV1> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 2);
+  messageDesc(file_host_composition_v1_composition, 3);
 
 /**
  * BindingV1 is one declared call towards another module.
@@ -178,7 +225,7 @@ export type BindingV1 = Message<"host.composition.v1.BindingV1"> & {
  * Use `create(BindingV1Schema)` to create a new message.
  */
 export const BindingV1Schema: GenMessage<BindingV1> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 3);
+  messageDesc(file_host_composition_v1_composition, 4);
 
 /**
  * ResourceKindV1 is one kind the module governs and the actions on it.
@@ -206,7 +253,7 @@ export type ResourceKindV1 = Message<"host.composition.v1.ResourceKindV1"> & {
  * Use `create(ResourceKindV1Schema)` to create a new message.
  */
 export const ResourceKindV1Schema: GenMessage<ResourceKindV1> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 4);
+  messageDesc(file_host_composition_v1_composition, 5);
 
 /**
  * PageV1 is a module's frontend contribution.
@@ -234,7 +281,7 @@ export type PageV1 = Message<"host.composition.v1.PageV1"> & {
  * Use `create(PageV1Schema)` to create a new message.
  */
 export const PageV1Schema: GenMessage<PageV1> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 5);
+  messageDesc(file_host_composition_v1_composition, 6);
 
 /**
  * CompositionService is implemented by the host and by the mini gateway.

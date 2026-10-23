@@ -1486,6 +1486,41 @@
       "remaining": "Verify explorer rendering and the metric type slots under external skins."
     },
     {
+      "source": "packages/saas-ui/src/datasources/api-source-card.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@tanstack/react-query",
+        "react",
+        "./api-source.js",
+        "./directory.js",
+        "./errors.js",
+        "./credential-mode.js",
+        "./gateway.js",
+        "./queries.js",
+        "./types.js",
+        "./util.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "One API a person connects over OAuth, in one card: the api counterpart of DeclaredSourceCard. The surface fixes the base URL and the person supplies only the sign-in; the card creates the person's own authorization-code source when they have none, declares its operations if given, and links it.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ApiSourceSetUp"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ApiSourceSignInNeeded"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ApiSourceConnected"
+        }
+      ],
+      "coverage": "owner story; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins, and walk the sign-in against a composed host with a real OAuth provider."
+    },
+    {
       "source": "packages/saas-ui/src/datasources/collection-access.tsx",
       "imports": [
         "@tanstack/react-query",
@@ -1627,6 +1662,7 @@
         "@codefly-dev/ui/layout",
         "@tanstack/react-query",
         "react",
+        "./api-source.js",
         "./types.js"
       ],
       "owner": "@codefly-dev/saas-ui",
@@ -1634,7 +1670,30 @@
       "reason": "Owner package implementation.",
       "stories": [],
       "coverage": "missing",
-      "remaining": "Add owner stories for the account link, the group bindings and the pending and verified domains, then verify under external skins."
+      "remaining": "Add owner stories for the account link (GitHub and a single api source), the group bindings and the pending and verified domains, then verify under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/datasources/edit-source-form.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react",
+        "react-hook-form",
+        "./credential-mode.js",
+        "./schema.js",
+        "@codefly-dev/ui/layout",
+        "./types.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "EditSource"
+        }
+      ],
+      "coverage": "owner story; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
       "source": "packages/saas-ui/src/datasources/source-execution-access.tsx",

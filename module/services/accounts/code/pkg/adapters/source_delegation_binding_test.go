@@ -194,3 +194,38 @@ func TestThePlainMintExercisesTheDelegationAsTheDelegatingModule(t *testing.T) {
 	require.Equal(t, business.ModulePrincipalID("docstore"), claims.GetActorChain()[0].GetPrincipalId())
 	require.Equal(t, business.SourceDelegationBindingID(delegationID, "docstore"), claims.GetOperationBinding().GetBindingId())
 }
+
+func TestSourceDelegationCannotRedeemInstalledContentReadBinding(t *testing.T) {
+	store := installDelegationBindingService(t)
+	registry, err := moduleregistrytest.Parse(delegationBindingPrincipals)
+	require.NoError(t, err)
+	// An ordinary source delegation legitimately carries read; the selected
+	// callee binding still requires the distinct installed content-read child.
+	donor := registry[business.ModulePrincipalID("docstore")]
+	source := donor.OperationAudiences["source-sync"]
+	source.SourceDelegationScopes = []business.ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read", "write"}}}
+	donor.OperationAudiences["source-sync"] = source
+	store.delegations[delegationID].BindingDigest = business.SourceDelegationBindingDigest(source)
+	target := registry[business.ModulePrincipalID("ingestservice")]
+	read := business.ModuleOperationAudience{Audience: "reports", InvokeScopes: []business.ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}}}, LookupScopes: []business.ModuleOperationScope{{ResourceKind: "collections", Actions: []string{"read"}}}}
+	target.OperationAudiences["ordinary-read"] = read
+	read.DelegationMode = business.DelegationModeContentRead
+	target.OperationAudiences["installed-read"] = read
+	service.SetModuleCapabilities(nil, nil, registry)
+	caller := presentedAs(t, identityOf(t, "ingestservice"))
+	sourceParent, err := mintSourceContext("docstore", moduleToken(t, "docstore"), business.SourceDelegationRef{DelegationID: delegationID})
+	require.NoError(t, err)
+	for _, lookup := range []bool{false, true} {
+		t.Run(map[bool]string{false: "invoke", true: "lookup"}[lookup], func(t *testing.T) {
+			ordinary, err := ModuleCapabilitiesSingleton().ExchangeDelegatedOperationAudience(caller, &gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "ordinary-read", DelegationId: delegationID, Lookup: lookup})
+			require.NoError(t, err)
+			require.NotEmpty(t, ordinary.GetToken())
+			denied, err := ModuleCapabilitiesSingleton().ExchangeDelegatedOperationAudience(caller, &gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "installed-read", DelegationId: delegationID, Lookup: lookup})
+			require.Equal(t, codes.PermissionDenied, status.Code(err), "marked reference must refuse, got %v", err)
+			require.Nil(t, denied)
+			denied, err = ModuleCapabilitiesSingleton().ExchangeDelegatedOperationAudience(caller, &gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "installed-read", ParentWorkContextToken: sourceParent.GetToken(), Lookup: lookup})
+			require.Equal(t, codes.PermissionDenied, status.Code(err), "source parent must refuse, got %v", err)
+			require.Nil(t, denied)
+		})
+	}
+}

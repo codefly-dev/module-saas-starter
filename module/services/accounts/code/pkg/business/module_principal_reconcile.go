@@ -539,16 +539,17 @@ func deriveModulePrincipalGrant(
 	ceiling := entry.Grant
 	request := manifest.Authority
 	grant := ModulePrincipalGrant{
-		PresenceBinding:  manifest.Binding,
-		ArtifactPolicies: maps.Clone(ceiling.ArtifactPolicies),
-		ReadAudiences:    maps.Clone(ceiling.ReadAudiences),
-		Prefix:           prefix,
-		Queues:           keepDeclared(ceiling.Queues, request.Queues),
-		Namespaces:       keepDeclared(ceiling.Namespaces, request.Namespaces),
-		Resources:        keepDeclared(ceiling.Resources, request.ResourceKinds),
-		CrossTenant:      ceiling.CrossTenant,
-		Tenant:           ceiling.Tenant,
-		Workloads:        workloads,
+		PresenceBinding:    manifest.Binding,
+		PresenceGeneration: manifest.Generation,
+		ArtifactPolicies:   maps.Clone(ceiling.ArtifactPolicies),
+		ReadAudiences:      maps.Clone(ceiling.ReadAudiences),
+		Prefix:             prefix,
+		Queues:             keepDeclared(ceiling.Queues, request.Queues),
+		Namespaces:         keepDeclared(ceiling.Namespaces, request.Namespaces),
+		Resources:          keepDeclared(ceiling.Resources, request.ResourceKinds),
+		CrossTenant:        ceiling.CrossTenant,
+		Tenant:             ceiling.Tenant,
+		Workloads:          workloads,
 	}
 	grant.ExternalNamespaces = keepDeclared(ceiling.ExternalNamespaces, grant.Namespaces)
 
@@ -636,8 +637,9 @@ func deriveModulePrincipalGrant(
 			continue
 		}
 		derived := ModuleOperationAudience{
-			Audience:     allowed.Audience,
-			InvokeScopes: intersectUnitScopes(allowed.InvokeScopes, invoke),
+			Audience:       allowed.Audience,
+			DelegationMode: allowed.DelegationMode,
+			InvokeScopes:   intersectUnitScopes(allowed.InvokeScopes, invoke),
 		}
 		if len(headless) > 0 && allowed.HeadlessScopes != nil {
 			derived.HeadlessScopes = nilIfEmpty(intersectUnitScopes(allowed.HeadlessScopes, headless))

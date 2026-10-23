@@ -37,6 +37,27 @@ func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalI
 	}
 	defer releaseAuthority()
 
+	if NamesInstalledBinding(bindingID) {
+		identity, err := s.resolveInstalledBinding(ctx, orgID, bindingID)
+		if err != nil {
+			return err
+		}
+		if identity.PrincipalID != principalID {
+			return ErrModuleHopStale
+		}
+		mode, id, ok := decodeInstalledBinding(bindingID)
+		if !ok {
+			return ErrModuleHopStale
+		}
+		_, binding, err := s.InstalledBinding(ctx, ModuleCaller{PrincipalID: principalID, BoundOrg: orgID}, id.Binding, mode)
+		if err != nil {
+			return err
+		}
+		if len(scopes) == 0 || !operationScopesSubset(scopes, binding.InvokeScopes) {
+			return ErrModuleHopStale
+		}
+		return nil
+	}
 	if bindingID == "" {
 		return ErrModuleHopStale
 	}

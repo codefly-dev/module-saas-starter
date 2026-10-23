@@ -149,6 +149,16 @@ describe("createDatasourceClient", () => {
 					targetCollection: "Example",
 					webhookSecret: "",
 				}),
+			addPersonalApiSource: () =>
+				client
+					.addPersonalApiSource!({
+						orgId: "org-1",
+						baseUrl: "https://api.example.com",
+						targetCollection: "Example",
+					})
+					.catch(() => undefined),
+			declareSourceOperations: () =>
+				client.declareSourceOperations!("org-1", "ds-1", []),
 			beginGitHubAppSetup: () => client.beginGitHubAppSetup!("org-1"),
 			completeGitHubAppSetup: () =>
 				client.completeGitHubAppSetup!("org-1", "state-1", "42", "oauth-1"),
@@ -158,6 +168,14 @@ describe("createDatasourceClient", () => {
 			lookupReconcileSource: () => client.lookupReconcileSource("effect-1"),
 			reconnectSource: () => client.reconnectSource!("org-1", "ds-1"),
 			getSourceSync: () => client.getSourceSync!("org-1", "ds-1"),
+			updateSource: () =>
+				client.updateSource!({
+					orgId: "org-1",
+					id: "ds-1",
+					branch: "release",
+					paths: ["docs/"],
+					expected: { branch: "main", paths: [], fileExtensions: [] },
+				}),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
 			// The stub answers {} to everything; an operation whose answer must
 			// carry a record rejects on it, after the call this test counts.
@@ -811,4 +829,193 @@ it("reports which scopes the viewer reads only as a platform administrator", asy
 	expect(
 		Object.fromEntries(scopes.map((scope) => [scope.nodeId, scope.viaPlatformAdministrator])),
 	).toEqual({ granted: false, platform: true, unstated: false });
+});
+
+describe("generic OAuth api sources", () => {
+	it("begins a link for the source it authorizes, and sends none for GitHub", async () => {
+		const { calls } = stubFetch({
+			authorizeUrl: "https://provider.example.com/authorize",
+			state: "dl.s",
+		});
+		const client = createDatasourceClient({
+			apiBase: "http://example.test",
+			getAccessToken: () => "viewer",
+		});
+		await expect(
+			client.beginAccountLink!(
+				"org-1",
+				"api",
+				"https://host.example.com/connect",
+				"ds-api",
+			),
+		).resolves.toEqual({
+			authorizeUrl: "https://provider.example.com/authorize",
+			state: "dl.s",
+		});
+		await client.beginAccountLink!(
+			"org-1",
+			"github",
+			"https://host.example.com/settings",
+		);
+		expect(calls[0].body).toEqual({
+			orgId: "org-1",
+			connector: "api",
+			redirectUri: "https://host.example.com/connect",
+			sourceId: "ds-api",
+		});
+		// Exactly the request an existing caller sent before the source existed.
+		expect(calls[1].body).toEqual({
+			orgId: "org-1",
+			connector: "github",
+			redirectUri: "https://host.example.com/settings",
+		});
+	});
+
+	it("creates the person's source with the authorization-code grant and no credential", async () => {
+		const { calls } = stubFetch({
+			datasource: {
+				id: "ds-api",
+				orgId: "org-1",
+				provider: "DATASOURCE_PROVIDER_API",
+				api: {
+					baseUrl: "https://api.example.com",
+					credentialKind: "API_CREDENTIAL_KIND_OAUTH2",
+					oauth2: { grant: "GRANT_AUTHORIZATION_CODE" },
+				},
+				status: "DATASOURCE_STATUS_ACTIVE",
+			},
+		});
+		const client = createDatasourceClient({
+			apiBase: "http://example.test",
+			getAccessToken: () => "viewer",
+		});
+		const source = await client.addPersonalApiSource!({
+			orgId: "org-1",
+			baseUrl: "https://api.example.com",
+			targetCollection: "Example API",
+		});
+		expect(calls[0].url).toContain("saas.accounts.v1.DatasourceService/AddSource");
+		expect(calls[0].body).toEqual({
+			orgId: "org-1",
+			provider: "DATASOURCE_PROVIDER_API",
+			api: {
+				baseUrl: "https://api.example.com",
+				credentialKind: "API_CREDENTIAL_KIND_OAUTH2",
+				oauth2: { grant: "GRANT_AUTHORIZATION_CODE" },
+			},
+			collectionLabel: "Example API",
+		});
+		expect(source).toMatchObject({
+			id: "ds-api",
+			provider: "api",
+			api: {
+				baseUrl: "https://api.example.com",
+				resourcePath: "",
+				credentialKind: "oauth2",
+				oauth2Grant: "authorization_code",
+			},
+		});
+	});
+
+	it("names an api source's credential and grant, and a stored refresh token's default", async () => {
+		stubFetch({
+			datasources: [
+				{
+					id: "a",
+					provider: "DATASOURCE_PROVIDER_API",
+					api: { baseUrl: "https://a.example.com", credentialKind: "API_CREDENTIAL_KIND_BEARER" },
+				},
+				{
+					id: "b",
+					provider: "DATASOURCE_PROVIDER_API",
+					api: {
+						baseUrl: "https://b.example.com",
+						credentialKind: "API_CREDENTIAL_KIND_OAUTH2",
+						oauth2: { tokenUrl: "https://b.example.com/token", clientId: "c" },
+					},
+				},
+				{ id: "c", provider: "DATASOURCE_PROVIDER_CRAWLER" },
+			],
+		});
+		const client = createDatasourceClient({
+			apiBase: "http://example.test",
+			getAccessToken: () => "viewer",
+		});
+		const [bearer, refresh, crawler] = await client.listSources("org-1");
+		expect(bearer.provider).toBe("api");
+		expect(bearer.api).toEqual({
+			baseUrl: "https://a.example.com",
+			resourcePath: "",
+			credentialKind: "bearer",
+			oauth2Grant: undefined,
+		});
+		expect(refresh.api?.oauth2Grant).toBe("refresh_token");
+		expect(crawler.provider).toBe("unknown");
+		expect(crawler.api).toBeUndefined();
+	});
+
+	it("declares operations with their schemas and effects", async () => {
+		const { calls } = stubFetch({});
+		const client = createDatasourceClient({
+			apiBase: "http://example.test",
+			getAccessToken: () => "viewer",
+		});
+		await client.declareSourceOperations!("org-1", "ds-api", [
+			{
+				name: "get_record",
+				method: "GET",
+				path: "/records/{id}",
+				inputSchema: {
+					type: "object",
+					properties: { id: { type: "string" } },
+					additionalProperties: false,
+				},
+				outputSchema: { type: "object" },
+				effect: "read_only",
+			},
+			{
+				name: "create_record",
+				description: "Creates a record",
+				method: "POST",
+				path: "/records",
+				query: ["dry_run"],
+				inputSchema: { type: "object", additionalProperties: false },
+				outputSchema: { type: "object" },
+				effect: "mutation",
+				maxOutputBytes: 4096,
+			},
+		]);
+		expect(calls[0].url).toContain(
+			"saas.accounts.v1.DatasourceService/DeclareSourceOperations",
+		);
+		expect(calls[0].body).toEqual({
+			orgId: "org-1",
+			sourceId: "ds-api",
+			operations: [
+				{
+					name: "get_record",
+					method: "GET",
+					path: "/records/{id}",
+					inputSchema: {
+						type: "object",
+						properties: { id: { type: "string" } },
+						additionalProperties: false,
+					},
+					outputSchema: { type: "object" },
+					effect: "EFFECT_READ_ONLY",
+				},
+				{
+					name: "create_record",
+					description: "Creates a record",
+					method: "POST",
+					path: "/records",
+					query: ["dry_run"],
+					inputSchema: { type: "object", additionalProperties: false },
+					outputSchema: { type: "object" },
+					effect: "EFFECT_MUTATION",
+					maxOutputBytes: 4096,
+				},
+			],
+		});
+	});
 });

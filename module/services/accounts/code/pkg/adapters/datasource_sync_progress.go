@@ -19,9 +19,10 @@ var sourceSyncPhases = map[business.DatasourceSyncPhase]gen.SourceSyncPhase{
 }
 
 var sourceSyncTriggers = map[business.DatasourceSyncTrigger]gen.SourceSyncTrigger{
-	business.DatasourceSyncTriggerManual:    gen.SourceSyncTrigger_SOURCE_SYNC_TRIGGER_MANUAL,
-	business.DatasourceSyncTriggerScheduled: gen.SourceSyncTrigger_SOURCE_SYNC_TRIGGER_SCHEDULED,
-	business.DatasourceSyncTriggerWebhook:   gen.SourceSyncTrigger_SOURCE_SYNC_TRIGGER_WEBHOOK,
+	business.DatasourceSyncTriggerManual:       gen.SourceSyncTrigger_SOURCE_SYNC_TRIGGER_MANUAL,
+	business.DatasourceSyncTriggerScheduled:    gen.SourceSyncTrigger_SOURCE_SYNC_TRIGGER_SCHEDULED,
+	business.DatasourceSyncTriggerWebhook:      gen.SourceSyncTrigger_SOURCE_SYNC_TRIGGER_WEBHOOK,
+	business.DatasourceSyncTriggerReconfigured: gen.SourceSyncTrigger_SOURCE_SYNC_TRIGGER_RECONFIGURED,
 }
 
 var sourceSyncFailureReasons = map[business.DatasourceSyncFailureReason]gen.SourceSyncFailureReason{

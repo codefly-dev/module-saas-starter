@@ -36,6 +36,8 @@ export {
 } from "../generated/typescript/src/gen/saas/accounts/v1/accessible_scopes_pb.js";
 export { AuditService } from "../generated/typescript/src/gen/saas/accounts/v1/audit_pb.js";
 export {
+	ApiCredentialKind,
+	ApiOAuth2Config_Grant,
 	type Datasource,
 	type DatasourceAccountLink,
 	DatasourceDomainStatus,
@@ -46,6 +48,7 @@ export {
 	DatasourceStatus,
 	type DatasourceVerifiedDomain,
 	type GetSourceSyncResponse,
+	SourceOperation_Effect,
 	type SourceSyncChanges,
 	type SourceSyncFailure,
 	SourceSyncFailureReason,
