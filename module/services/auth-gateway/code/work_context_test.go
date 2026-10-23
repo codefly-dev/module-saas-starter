@@ -132,6 +132,7 @@ func TestWorkContextVerifier_ForgedSignatureFailsClosed(t *testing.T) {
 	// Claims the published key id but is signed by a key the JWKS never lists.
 	err := inspect(verifier, context.Background(), mintWorkContext(t, kid, attacker, nil), "solution:demo")
 	require.ErrorIs(t, err, errInvalidWorkContext)
+	require.ErrorIs(t, err, workcontext.ErrInvalid)
 }
 
 func TestWorkContextVerifier_ExpiredTokenFailsClosed(t *testing.T) {
@@ -143,6 +144,18 @@ func TestWorkContextVerifier_ExpiredTokenFailsClosed(t *testing.T) {
 	verifier := newWorkContextVerifier(server.URL)
 	err := inspect(verifier, context.Background(), mintWorkContext(t, kid, priv, past), "solution:demo")
 	require.ErrorIs(t, err, errInvalidWorkContext)
+	require.ErrorIs(t, err, workcontext.ErrInvalid)
+}
+
+func TestWorkContextVerifier_ForeignEncodingRetainsCoreRefusal(t *testing.T) {
+	_, priv := mustEd25519(t)
+	payload := []byte(`{"kind":"foreign"}`)
+	token := base64.RawURLEncoding.EncodeToString(payload) + "." +
+		base64.RawURLEncoding.EncodeToString(ed25519.Sign(priv, payload))
+	verifier := newWorkContextVerifier("http://127.0.0.1:0")
+	err := inspect(verifier, context.Background(), token, "solution:demo")
+	require.ErrorIs(t, err, errInvalidWorkContext)
+	require.ErrorIs(t, err, workcontext.ErrNotACoreToken)
 }
 
 func TestWorkContextVerifier_JWKSUnreachableFailsClosed(t *testing.T) {
@@ -153,8 +166,8 @@ func TestWorkContextVerifier_JWKSUnreachableFailsClosed(t *testing.T) {
 
 	verifier := newWorkContextVerifier(url)
 	err := inspect(verifier, context.Background(), mintWorkContext(t, "key-1", priv, nil), "solution:demo")
-	// An upstream outage must read as the same invalid sentinel, not a distinct
-	// transport error class that would leak the dependency being down.
+	// An upstream outage retains the same edge classification. The HTTP boundary
+	// must not reveal its underlying transport cause.
 	require.ErrorIs(t, err, errInvalidWorkContext)
 }
 
@@ -337,19 +350,39 @@ func TestParseJWKS_SkipsNonEd25519Keys(t *testing.T) {
 }
 
 func TestGateway_InvalidWorkContextReturns401(t *testing.T) {
-	gw, apiFake, _, priv := newGatewayHarness(t)
-	pub, _ := mustEd25519(t)
-	server := jwksServer(t, jwksDocument(map[string]ed25519.PublicKey{"key-1": pub}), nil)
-	gw.workContext = newWorkContextVerifier(server.URL)
+	pub, wcPriv := mustEd25519(t)
+	_, attacker := mustEd25519(t)
+	past := func() time.Time { return time.Now().Add(-time.Hour) }
+	for _, test := range []struct {
+		name        string
+		token       string
+		unreachable bool
+	}{
+		{name: "malformed", token: "not-a-valid-work-context"},
+		{name: "foreign encoding", token: "e30.c2ln"},
+		{name: "forged signature", token: mintWorkContext(t, "key-1", attacker, nil)},
+		{name: "expired", token: mintWorkContext(t, "key-1", wcPriv, past)},
+		{name: "unknown key", token: mintWorkContext(t, "unknown", wcPriv, nil)},
+		{name: "JWKS unavailable", token: mintWorkContext(t, "key-1", wcPriv, nil), unreachable: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gw, apiFake, _, accessPriv := newGatewayHarness(t)
+			server := jwksServer(t, jwksDocument(map[string]ed25519.PublicKey{"key-1": pub}), nil)
+			gw.workContext = newWorkContextVerifier(server.URL)
+			if test.unreachable {
+				server.Close()
+			}
+			req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
+			req.Header.Set("Authorization", "Bearer "+signValidToken(t, accessPriv))
+			req.Header.Set(carrier.HeaderName, test.token)
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
-	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
-	req.Header.Set(carrier.HeaderName, "not-a-valid-work-context")
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusUnauthorized, w.Code)
-	require.Nil(t, apiFake.lastHeaders, "invalid Work Context must not reach the upstream")
+			require.Equal(t, http.StatusUnauthorized, w.Code)
+			require.Equal(t, "invalid work context", w.Body.String())
+			require.Nil(t, apiFake.lastHeaders, "invalid Work Context must not reach the upstream")
+		})
+	}
 }
 
 func TestGateway_ValidWorkContextForwards(t *testing.T) {
