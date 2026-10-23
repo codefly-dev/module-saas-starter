@@ -110,7 +110,7 @@ func (f *fakeService) List(_ context.Context, req *storagev0.ListRequest) (*stor
 	sort.Strings(rel)
 	start := 0
 	if req.GetPageToken() != "" {
-		fmt.Sscan(req.GetPageToken(), &start)
+		_, _ = fmt.Sscan(req.GetPageToken(), &start)
 	}
 	size := f.pageSize
 	if f.overfill {

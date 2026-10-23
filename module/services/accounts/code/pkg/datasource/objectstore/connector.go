@@ -215,7 +215,7 @@ func versionOf(cfg SourceConfig, listed map[string]Item) string {
 	h := sha256.New()
 	for _, key := range sortedKeys(listed) {
 		it := listed[key]
-		fmt.Fprintf(h, "%s\x00%s\x00%d\n", it.Key, it.ETag, it.Size)
+		_, _ = fmt.Fprintf(h, "%s\x00%s\x00%d\n", it.Key, it.ETag, it.Size) // a hash never fails a write
 	}
 	return cfg.binding() + "." + hex.EncodeToString(h.Sum(nil))
 }
