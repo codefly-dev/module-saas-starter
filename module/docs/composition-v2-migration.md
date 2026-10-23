@@ -11,7 +11,7 @@ contract. The copied tree is removed only after the v1 and v2 projections produc
 the same service catalog, endpoint graph, frontend inventory, permissions, settings,
 fixtures, and runtime smoke results.
 
-The `0.1.x` package line supports migration from Starter `0.0.32` and later. Earlier
+The `0.1.x` and `0.2.x` package lines support migration from Starter `0.0.32` and later. Earlier
 copies must first update to a release the package line supports.
 
 The v2 descriptor points directly at contribution sources; Starter does not
@@ -23,7 +23,7 @@ kind: composed-module
 name: my-product
 base:
   id: codefly/saas-starter
-  version: ">=0.1.0 <0.2.0"
+  version: ">=0.2.0 <0.3.0"
 contributions:
   frontend:
     - {path: frontend, export: productPlugin}
