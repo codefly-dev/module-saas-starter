@@ -129,7 +129,7 @@ func freePort(t *testing.T) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port
 }
 
@@ -162,7 +162,7 @@ func startGateway(t *testing.T, store *httptest.Server) storagev0.ObjectStorageC
 	for {
 		c, err := net.DialTimeout("tcp", listen, 200*time.Millisecond)
 		if err == nil {
-			c.Close()
+			_ = c.Close()
 			break
 		}
 		if time.Now().After(deadline) {
