@@ -72,6 +72,9 @@ func filteredUploadSource(t *testing.T, svc *business.Service, include, exclude 
 	t.Helper()
 	cfg := uploadConfig()
 	cfg.IncludePatterns, cfg.ExcludePatterns = include, exclude
+	// The sync test lists four keys, three of them matches: an excluded key
+	// that used up the cap would leave its listing incomplete.
+	cfg.MaxObjects = 3
 	source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides",
 		Credential: "secretkey", Upload: cfg,

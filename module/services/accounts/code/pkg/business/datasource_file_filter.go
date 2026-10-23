@@ -104,7 +104,8 @@ func normalizeKeyPatterns(field string, values []string) ([]string, error) {
 	return out, nil
 }
 
-// uploadKeyScope is an object-storage source's key filter: a key is in scope
+// uploadKeyScope is an object-storage source's key filter, the InScope of its
+// connector Scope as datasourceFileScope is a GitHub source's: a key is in scope
 // when, with the prefix removed, it matches an include pattern (or there are
 // none), matches no exclude pattern, and carries an admitted file type. The
 // patterns were compiled when the config was accepted; one that no longer

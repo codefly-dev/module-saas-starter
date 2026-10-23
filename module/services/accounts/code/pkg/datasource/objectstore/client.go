@@ -38,14 +38,6 @@ import (
 // cannot exhaust memory or overflow the downstream job payload limit.
 const maxResponseBytes = 5 * 1024 * 1024
 
-// defaultMaxObjects caps how many objects one Fetch returns when the source does
-// not configure a limit; maxObjectsCeiling is the hard upper bound regardless of
-// configuration.
-const (
-	defaultMaxObjects = 100
-	maxObjectsCeiling = 1000
-)
-
 const maxRedirects = 3
 
 // emptyPayloadHash is the SHA-256 of the empty payload, used as
@@ -74,7 +66,6 @@ type Config struct {
 	Bucket      string
 	Prefix      string // key prefix to list under; may be empty
 	AccessKeyID string
-	MaxObjects  int // 0 means the default cap
 }
 
 // Object is one fetched object: its key, body bytes, content type, and ETag.
@@ -159,21 +150,20 @@ type Entry struct {
 }
 
 // Listing is one List result. Complete is true only when the entries are every
-// object under the prefix: the store answered with IsTruncated false and the
-// object cap cut nothing. A caller that treats absence from a listing as a
-// deletion must act only on a complete one.
+// object under the prefix: the store answered with IsTruncated false. A caller
+// that treats absence from a listing as a deletion must act only on a complete
+// one.
 type Listing struct {
 	Entries  []Entry
 	Complete bool
 }
 
-// List issues one ListObjectsV2 request and returns the entries match admits,
-// bounded by the configured object cap: an entry match refuses is dropped
-// before it is counted, so it never uses up the cap. A nil match admits every
-// entry. Listing failure (including a non-2xx list) is a returned error so a
-// credential or permission problem surfaces rather than reading as an empty
-// bucket.
-func (c *Client) List(ctx context.Context, match func(key string) bool) (Listing, error) {
+// List issues one ListObjectsV2 request and returns every entry of the page the
+// store answers with; which of them a sync takes, and how many, is its Scope's
+// to decide (Window), not the listing's. Listing failure (including a non-2xx
+// list) is a returned error so a credential or permission problem surfaces
+// rather than reading as an empty bucket.
+func (c *Client) List(ctx context.Context) (Listing, error) {
 	if c.baseErr != nil {
 		return Listing{}, c.baseErr
 	}
@@ -195,24 +185,11 @@ func (c *Client) List(ctx context.Context, match func(key string) bool) (Listing
 	if err := xml.Unmarshal(body, &parsed); err != nil {
 		return Listing{}, fmt.Errorf("objectstore: parse listing: %w", err)
 	}
-	limit := c.cfg.MaxObjects
-	if limit <= 0 {
-		limit = defaultMaxObjects
-	}
-	if limit > maxObjectsCeiling {
-		limit = maxObjectsCeiling
-	}
 	entries := make([]Entry, 0, len(parsed.Contents))
-	matched := 0
 	for _, e := range parsed.Contents {
-		if match != nil && !match(e.Key) {
-			continue
-		}
-		if matched++; matched <= limit {
-			entries = append(entries, Entry{Key: e.Key, ETag: e.ETag})
-		}
+		entries = append(entries, Entry{Key: e.Key, ETag: e.ETag})
 	}
-	return Listing{Entries: entries, Complete: !parsed.IsTruncated && matched <= limit}, nil
+	return Listing{Entries: entries, Complete: !parsed.IsTruncated}, nil
 }
 
 // listEntry is one <Contents> row of a ListBucketResult.

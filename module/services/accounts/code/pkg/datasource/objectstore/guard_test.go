@@ -67,7 +67,7 @@ func TestEveryOutboundDialIsGuarded(t *testing.T) {
 		call func(ctx context.Context) error
 	}{
 		{"listing dial (List)", func(ctx context.Context) error {
-			_, err := newGuardedClient(origin).List(ctx, nil)
+			_, err := newGuardedClient(origin).List(ctx)
 			return err
 		}},
 		{"object dial (Fetch)", func(ctx context.Context) error {

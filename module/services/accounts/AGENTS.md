@@ -1050,9 +1050,13 @@ An `upload` ("Object storage") source reads one bucket under one `prefix`, and
 removed (unanchored, case-sensitive; exclude wins; an empty include admits
 everything), and `file_extensions` intersects them with GitHub's suffix
 semantics. `uploadKeyScope` (`pkg/business/datasource_file_filter.go`, beside
-GitHub's own filter) is the one matcher; the store's listing applies it before
-it counts against `max_objects`, so an excluded object is never fetched and
-never uses up the cap, and the closing listing names only matches.
+GitHub's own filter) is the one matcher. The connector applies it, not the
+listing source: it is the `InScope` of an `objectstore.Scope`
+(`pkg/datasource/objectstore/scope.go`), whose `Window` takes the store's
+listing whole and keeps the matches, counting only them against
+`max_objects`. So an excluded object is never fetched and never uses up the
+cap, the closing listing names only matches, and replacing what lists the
+prefix leaves the filter where it is.
 
 - **Refused at the call, never at sync.** `AddSource` and `UpdateSource`
   compile every pattern and refuse an invalid one, more than 16, or one over 256
@@ -1071,8 +1075,8 @@ never uses up the cap, and the closing listing names only matches.
   two collections with different readers. The catalog description says so.
 - **The filter is the host's whatever the store.** An S3-style listing takes a
   prefix and a delimiter only, so the object-storage service needs nothing for
-  this. When the envelope connector replaces `runUploadSync`, it receives the
-  same predicate (#1211).
+  this. When the envelope connector replaces `runUploadSync`, it takes the
+  same `Scope` (#1211).
 
 ## A datasource source is refreshed by three things, and one of them covers every provider
 

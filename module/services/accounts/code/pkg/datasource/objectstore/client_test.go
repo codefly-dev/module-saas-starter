@@ -72,7 +72,7 @@ func TestFetchHappyPath(t *testing.T) {
 		AccessKeyID: "AKIAIOSFODNN7EXAMPLE",
 	}, "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY")
 
-	listing, err := c.List(context.Background(), nil)
+	listing, err := c.List(context.Background())
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestAuthorizationHeaderStructure(t *testing.T) {
 		Bucket:      "b",
 		AccessKeyID: "AKIAIOSFODNN7EXAMPLE",
 	}, "secret")
-	if _, err := c.List(context.Background(), nil); err != nil {
+	if _, err := c.List(context.Background()); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 
@@ -293,14 +293,15 @@ func TestSSRFGuardBlocksLoopback(t *testing.T) {
 		Region:      "us-east-1",
 		AccessKeyID: "AKIAEXAMPLE",
 	}, "secret")
-	if _, err := c.List(context.Background(), nil); err == nil {
+	if _, err := c.List(context.Background()); err == nil {
 		t.Fatal("expected an error listing a loopback endpoint, got nil")
 	}
 }
 
 // TestListReportsATruncatedListingIncomplete pins the completeness signal a
-// mirror deletes by: a page the store marks IsTruncated, or one the object cap
-// cut, is never complete, while an untruncated page within the cap is.
+// mirror deletes by: a page the store marks IsTruncated is never complete,
+// while an untruncated one is, and either way the client returns the whole
+// page — the cap is the sync's Scope, not the listing's (TestWindow).
 func TestListReportsATruncatedListingIncomplete(t *testing.T) {
 	allowDial(t)
 	truncated := "false"
@@ -314,36 +315,18 @@ func TestListReportsATruncatedListingIncomplete(t *testing.T) {
 </ListBucketResult>`))
 	}))
 	defer srv.Close()
-	client := func(max int) *Client {
-		return New(Config{Endpoint: srv.URL, Region: "us-east-1", Bucket: "b", Prefix: "docs/", AccessKeyID: "AK", MaxObjects: max}, "secret")
-	}
+	client := New(Config{Endpoint: srv.URL, Region: "us-east-1", Bucket: "b", Prefix: "docs/", AccessKeyID: "AK"}, "secret")
 	for _, tc := range []struct {
-		name      string
 		truncated string
-		max       int
-		entries   int
 		complete  bool
-	}{
-		{"whole listing within the cap", "false", 3, 3, true},
-		{"store truncated the page", "true", 10, 3, false},
-		{"object cap cut the page", "false", 2, 2, false},
-		// An excluded key is dropped before it is counted: two matches fit a
-		// cap of two, and the listing is still whole.
-		{"excluded keys never use up the cap", "false", 2, 2, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			truncated = tc.truncated
-			var match func(string) bool
-			if strings.HasPrefix(tc.name, "excluded") {
-				match = func(key string) bool { return key != "docs/b.txt" }
-			}
-			listing, err := client(tc.max).List(context.Background(), match)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(listing.Entries) != tc.entries || listing.Complete != tc.complete {
-				t.Fatalf("entries=%d complete=%v, want %d/%v", len(listing.Entries), listing.Complete, tc.entries, tc.complete)
-			}
-		})
+	}{{"false", true}, {"true", false}} {
+		truncated = tc.truncated
+		listing, err := client.List(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(listing.Entries) != 3 || listing.Complete != tc.complete {
+			t.Fatalf("IsTruncated=%s: entries=%d complete=%v, want 3/%v", tc.truncated, len(listing.Entries), listing.Complete, tc.complete)
+		}
 	}
 }

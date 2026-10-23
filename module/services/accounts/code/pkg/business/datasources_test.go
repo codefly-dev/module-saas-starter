@@ -1244,7 +1244,6 @@ type fakeCrawlerClient struct {
 	listErr    error
 	listCalls  int
 	fetchCalls int
-	fetched    []string
 }
 
 func (f *fakeCrawlerClient) List(context.Context) ([]string, error) {
@@ -1286,19 +1285,12 @@ type fakeUploadClient struct {
 	fetched    []string
 }
 
-// List applies match as the real client does, before anything is fetched.
-func (f *fakeUploadClient) List(_ context.Context, match func(string) bool) (objectstore.Listing, error) {
+func (f *fakeUploadClient) List(context.Context) (objectstore.Listing, error) {
 	f.listCalls++
 	if f.listErr != nil {
 		return objectstore.Listing{}, f.listErr
 	}
-	var entries []objectstore.Entry
-	for _, e := range f.entries {
-		if match == nil || match(e.Key) {
-			entries = append(entries, e)
-		}
-	}
-	return objectstore.Listing{Entries: entries, Complete: !f.incomplete}, nil
+	return objectstore.Listing{Entries: f.entries, Complete: !f.incomplete}, nil
 }
 
 func (f *fakeUploadClient) Fetch(_ context.Context, key string) (objectstore.Object, error) {
