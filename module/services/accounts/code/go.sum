@@ -70,8 +70,8 @@ github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d
 github.com/codefly-dev/interface-cache/go/cache v0.2.2-0.20260926205419-327a6e1d9aba/go.mod h1:OQDNwz4rpEGfq7VC/FjvmQGlo9H8gH8fIDcZhKIe8iQ=
 github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261018173826-0d423cb8bd17 h1:ppOzy5ops7mEO9PApDfIcAiUBNy4z1MHOf3UJ8xXNNw=
 github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261018173826-0d423cb8bd17/go.mod h1:OxvwxMdo3HD190xFiMOPHtUsBC7/7Jt1evsEts/2HRs=
-github.com/codefly-dev/sdk-go v0.4.1-0.20261018052022-70dc7a546458 h1:hi+KhotTLMOJ/PUSzVO/Axfho7yZ2UOjrCFfrLI1EKU=
-github.com/codefly-dev/sdk-go v0.4.1-0.20261018052022-70dc7a546458/go.mod h1:Qg8SMzZxKSllwvZwShMrWgSetBVMjxP0s17mwWHWjk0=
+github.com/codefly-dev/sdk-go v0.4.1 h1:WUKYWxXfojTr88SkLtq0T8aqpV0o5pR/muUUcsUUlzk=
+github.com/codefly-dev/sdk-go v0.4.1/go.mod h1:zr9ts3kkWNv2XEFUXZB+ydfW6x5b6/NbUvBm4KVYNqs=
 github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458 h1:wBOL7QsuoC0HsS43gsH2+tpsipk4os077C2VUDkMUHg=
 github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458/go.mod h1:hwtrdGtgh8i2xzjgihyd4wY2u+UK7nHQz30OGKL0n+M=
 github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211 h1:4KAPx8haCA/h4Kx5mB7D0rMriwLLKiOW9G9mMWuiQDw=
@@ -82,7 +82,6 @@ github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG
 github.com/containerd/errdefs v1.0.0/go.mod h1:+YBYIdtsnF4Iw6nWZhJcqGSg/dwvV7tyJ/kCkyJ2k+M=
 github.com/containerd/errdefs/pkg v0.3.0 h1:9IKJ06FvyNlexW690DXuQNx2KA2cUJXx151Xdx3ZPPE=
 github.com/containerd/errdefs/pkg v0.3.0/go.mod h1:NJw6s9HwNuRhnjJhM7pylWwMyAkmCQvQ4GpJHEqRLVk=
-github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/cyphar/filepath-securejoin v0.7.0 h1:s0Y3ITPy6sQn5xt54DuYvTF8hu134ooYLUb58DX/HjE=
 github.com/cyphar/filepath-securejoin v0.7.0/go.mod h1:ymLGms/u3BYaviIiuKFnUx8EkQEZeK6cInNoAPJA3o4=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

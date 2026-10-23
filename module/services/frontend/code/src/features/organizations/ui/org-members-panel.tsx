@@ -11,6 +11,8 @@ import {
 import { Shield, Trash2, UserPlus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+
+import { refusalToast } from "@/features/auth/model/step-up";
 import { RoleGate } from "@/components/auth/role-gate";
 import { UserPicker } from "@/components/user-picker";
 import { InvitationForm } from "@/features/invitations/ui/invitation-form";
@@ -139,7 +141,7 @@ export function OrgMembersPanel({
 			setNewUserId("");
 		},
 		onError: (error) =>
-			toast.error(memberErrorMessage(error, "Failed to add member")),
+			refusalToast(error, memberErrorMessage(error, "Failed to add member")),
 	});
 
 	const roleMutation = useMutation({
@@ -150,7 +152,7 @@ export function OrgMembersPanel({
 			invalidateRoster();
 		},
 		onError: (error) =>
-			toast.error(memberErrorMessage(error, "Failed to change role")),
+			refusalToast(error, memberErrorMessage(error, "Failed to change role")),
 	});
 
 	const removeMutation = useMutation({
@@ -160,7 +162,7 @@ export function OrgMembersPanel({
 			invalidateRoster();
 		},
 		onError: (error) =>
-			toast.error(memberErrorMessage(error, "Failed to remove member")),
+			refusalToast(error, memberErrorMessage(error, "Failed to remove member")),
 	});
 
 	const columns = useMemo(

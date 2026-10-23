@@ -198,6 +198,16 @@ export function describeSync(
 			? `Attempt ${view.attempt} of ${view.maxAttempts}`
 			: undefined;
 
+	// Why this sync's change set may be large. The host reports the trigger from
+	// the durable job it ran, so this is a fact about the pass rather than a
+	// guess from the counts: a re-snapshot after an edit hands off the whole new
+	// scope, which beside an ordinary sync's handful of files reads as a fault
+	// unless something says the source itself moved.
+	const scopeNote =
+		view.trigger === "reconfigured"
+			? "The source was reconfigured, so this sync re-snapshots it at the branch and filters now saved."
+			: undefined;
+
 	const base = {
 		step,
 		stepCount,
@@ -251,7 +261,17 @@ export function describeSync(
 				active: false,
 				percent: 100,
 				headline: "Up to date",
-				detail: "The source had not changed, so nothing was handed off.",
+				// The scope note is ADDED here, never substituted. This branch is
+				// the one where nothing was handed off — a forced reconcile reaches
+				// it when the host parked the source instead of snapshotting it,
+				// which is exactly what happens when a narrowed scope is still over
+				// the ingest cap. Replacing the sentence with "this sync
+				// re-snapshots it at the branch and filters now saved" would claim
+				// the hand-off that did not happen, to the one reader who most needs
+				// to know it did not.
+				detail: scopeNote
+					? "The source was reconfigured, but nothing was handed off: this sync compiled no change set at the branch and filters now saved."
+					: "The source had not changed, so nothing was handed off.",
 			};
 		}
 		return {
@@ -263,6 +283,7 @@ export function describeSync(
 			headline: view.changes.snapshot
 				? "Handed off a full snapshot"
 				: "Handed off the changed files",
+			...(scopeNote ? { detail: scopeNote } : {}),
 		};
 	}
 
@@ -291,6 +312,7 @@ export function describeSync(
 		active: true,
 		percent: percentFor(step, stepCount),
 		headline,
+		...(scopeNote ? { detail: scopeNote } : {}),
 	};
 }
 

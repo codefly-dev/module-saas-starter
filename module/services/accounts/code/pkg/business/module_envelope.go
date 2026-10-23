@@ -796,7 +796,23 @@ func envelopePrincipalsKept(before, after json.RawMessage) bool {
 	}
 	for prefix, section := range was {
 		kept, exists := is[prefix]
-		if !exists || !jsonOnlyGains(section, kept) {
+		if !exists || !envelopeDelegationModesKept(section, kept) || !jsonOnlyGains(section, kept) {
+			return false
+		}
+	}
+	return true
+}
+
+// Changing an existing binding's credential semantics is never a pure grant.
+// In particular, adding content_read restricts ordinary owner-only exchanges,
+// although adding an object field would otherwise look additive to JSON.
+func envelopeDelegationModesKept(before, after json.RawMessage) bool {
+	var was, is ModuleEnvelopePrincipal
+	if json.Unmarshal(before, &was) != nil || json.Unmarshal(after, &is) != nil {
+		return false
+	}
+	for id, binding := range was.Grant.OperationAudiences {
+		if current, ok := is.Grant.OperationAudiences[id]; !ok || current.DelegationMode != binding.DelegationMode {
 			return false
 		}
 	}

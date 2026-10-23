@@ -9,7 +9,8 @@ import {
 	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { apiSourceRefusal, sourceLinks } from "./api-source.js";
 import type { DatasourceClient, DomainView } from "./types.js";
 
 /**
@@ -31,23 +32,36 @@ const directoryKey = (orgId: string) =>
 /**
  * The browser's return from a provider sign-in, when this page is one: the
  * provider echoes the state the host minted (which says it is a link, not an
- * App setup) and appends its code.
+ * App setup) and appends its code — or, when the person declined or the
+ * provider refused, an OAuth `error` in place of the code.
  */
-function readLinkReturn(): { state: string; code: string } | undefined {
+type LinkReturn =
+	| { state: string; code: string }
+	| { state: string; error: string };
+
+function readLinkReturn(): LinkReturn | undefined {
 	if (typeof window === "undefined") return undefined;
 	const params = new URLSearchParams(window.location.search);
 	const state = params.get("state");
+	if (!state?.startsWith(linkStatePrefix)) return undefined;
 	const code = params.get("code");
-	return state?.startsWith(linkStatePrefix) && code
-		? { state, code }
-		: undefined;
+	if (code) return { state, code };
+	const error = params.get("error");
+	return error ? { state, error } : undefined;
 }
 
-/** Burns the state and code out of the address bar: they are single-use. */
+/** Burns the return out of the address bar: its state and code are single-use. */
 function clearLinkReturn() {
 	const params = new URLSearchParams(window.location.search);
-	params.delete("state");
-	params.delete("code");
+	for (const name of [
+		"state",
+		"code",
+		"error",
+		"error_description",
+		"error_uri",
+	]) {
+		params.delete(name);
+	}
 	const query = params.toString();
 	window.history.replaceState(
 		window.history.state,
@@ -57,29 +71,78 @@ function clearLinkReturn() {
 }
 
 /**
+ * The calling person's linked provider accounts — the one read both
+ * `DatasourceAccountLinks` and a card that shows whether its source is signed
+ * in make, under one key, so a completed link refreshes both.
+ */
+export function useMyAccountLinks(client: DatasourceClient, orgId: string) {
+	return useQuery({
+		queryKey: myLinksKey(orgId),
+		queryFn: () => client.listMyAccountLinks!(orgId),
+		enabled: !!orgId && !!client.listMyAccountLinks,
+		retry: false,
+	});
+}
+
+/**
+ * Sends the browser to the provider to sign in, returning to this page: the
+ * host checks the provider's code against the redirect it minted the state
+ * for, so the page that begins the link is the page that completes it.
+ */
+export async function beginAccountLinkHere(
+	client: DatasourceClient,
+	orgId: string,
+	connector: string,
+	sourceId?: string,
+): Promise<void> {
+	const back = `${window.location.origin}${window.location.pathname}`;
+	const handle = await client.beginAccountLink!(
+		orgId,
+		connector,
+		back,
+		sourceId,
+	);
+	window.location.assign(handle.authorizeUrl);
+}
+
+/**
  * A person's own linked provider accounts: link one by signing in to the
  * provider, remove one. Mount it on the page the provider returns to.
+ *
+ * With `sourceId` it links that one source instead — a generic OAuth `api`
+ * source (`connector="api"`) the person created for themselves: it begins the
+ * sign-in with the source, and lists only that source's link. Such a sign-in
+ * authorizes the source to call the provider as the person; it proves nothing
+ * about who they are there, so nothing is said about matching accounts. It
+ * offers no Unlink: removing the link leaves the source's authorization in
+ * place, so a control that only removed the record would claim a disconnect
+ * that did not happen.
  */
 export function DatasourceAccountLinks({
 	client,
 	orgId,
 	connector = "github",
 	providerName = "GitHub",
+	sourceId,
+	beforeLink,
 }: {
 	client: DatasourceClient;
 	orgId: string;
 	connector?: string;
 	providerName?: string;
+	/** The source a generic OAuth link authorizes; required by the host for `api`. */
+	sourceId?: string;
+	/**
+	 * Runs before the sign-in begins; a rejection stops it and is reported as
+	 * the link's failure. A card uses it to declare the source's operations, so
+	 * a retry after a failed declaration declares them again.
+	 */
+	beforeLink?: () => Promise<void>;
 }) {
 	const cache = useQueryClient();
 	// Read once: the return is consumed by the first render that sees it.
 	const [linkReturn] = useState(readLinkReturn);
-	const links = useQuery({
-		queryKey: myLinksKey(orgId),
-		queryFn: () => client.listMyAccountLinks!(orgId),
-		enabled: !!orgId && !!client.listMyAccountLinks,
-		retry: false,
-	});
+	const links = useMyAccountLinks(client, orgId);
 	// `links.data` is undefined until the answer lands, so the empty branch below
 	// would otherwise state "No account is linked" about a read still in flight —
 	// and go on stating it for as long as the read takes. `quiet` is the window
@@ -88,14 +151,15 @@ export function DatasourceAccountLinks({
 	const { indicator: linksIndicator, quiet: linksQuiet } = useLoadingPhase(
 		links.isPending && links.fetchStatus !== "idle",
 	);
+	const redeemable = linkReturn && "code" in linkReturn ? linkReturn : undefined;
 	const completed = useQuery({
-		queryKey: ["datasource-account-link-return", orgId, linkReturn?.state],
+		queryKey: ["datasource-account-link-return", orgId, redeemable?.state],
 		queryFn: async () => {
 			try {
 				return await client.completeAccountLink!(
 					orgId,
-					linkReturn!.state,
-					linkReturn!.code,
+					redeemable!.state,
+					redeemable!.code,
 				);
 			} finally {
 				clearLinkReturn();
@@ -103,17 +167,22 @@ export function DatasourceAccountLinks({
 			}
 		},
 		// The state is redeemable once, so the answer is never refetched.
-		enabled: !!linkReturn && !!client.completeAccountLink,
+		enabled: !!redeemable && !!client.completeAccountLink,
 		retry: false,
 		staleTime: Number.POSITIVE_INFINITY,
 		gcTime: Number.POSITIVE_INFINITY,
 	});
+	// A refused sign-in carries nothing to redeem; its parameters still go, so a
+	// reload does not report the same refusal again.
+	const declined = linkReturn && "error" in linkReturn ? linkReturn : undefined;
+	useEffect(() => {
+		if (declined) clearLinkReturn();
+	}, [declined]);
 	const begin = useMutation({
-		mutationFn: () => {
-			const back = `${window.location.origin}${window.location.pathname}`;
-			return client.beginAccountLink!(orgId, connector, back);
+		mutationFn: async () => {
+			await beforeLink?.();
+			await beginAccountLinkHere(client, orgId, connector, sourceId);
 		},
-		onSuccess: (handle) => window.location.assign(handle.authorizeUrl),
 	});
 	const remove = useMutation({
 		mutationFn: (id: string) => client.deleteAccountLink!(orgId, id),
@@ -121,6 +190,66 @@ export function DatasourceAccountLinks({
 	});
 
 	if (!client.listMyAccountLinks) return null;
+	if (sourceId !== undefined) {
+		const mine = sourceLinks(links.data ?? [], sourceId);
+		return (
+			<section
+				aria-label={`Your ${providerName} sign-in`}
+				className="space-y-3 rounded border p-4"
+			>
+				<h3 className="type-section-title">Your {providerName} sign-in</h3>
+				<p className="type-body">
+					Signing in lets this source call {providerName} as you. The source
+					is yours: no one else in the organization can use it.
+				</p>
+				{completed.isSuccess && (
+					<p role="status" className="type-body">
+						Signed in to {providerName}.
+					</p>
+				)}
+				{completed.isError && (
+					<p role="alert" className="type-body">
+						Couldn’t finish signing in:{" "}
+						{apiSourceRefusal(completed.error, providerName)}
+					</p>
+				)}
+				{declined && (
+					<p role="alert" className="type-body">
+						The sign-in at {providerName} did not finish ({declined.error}).
+						Start it again.
+					</p>
+				)}
+				{links.isError ? (
+					<p role="alert" className="type-body">
+						Couldn’t check whether you are signed in.
+					</p>
+				) : linksQuiet ? null : linksIndicator ? (
+					<Spinner label="Checking your sign-in" size="sm" />
+				) : mine.length === 0 ? (
+					<p className="type-body">You have not signed in yet.</p>
+				) : (
+					<p className="type-body">
+						Signed in. Signing in again replaces the authorization. To stop
+						this source calling {providerName} as you, revoke its access at{" "}
+						{providerName}, or remove the source.
+					</p>
+				)}
+				{client.beginAccountLink && (
+					<Button disabled={begin.isPending} onClick={() => begin.mutate()}>
+						{mine.length === 0
+							? `Sign in to ${providerName}`
+							: "Sign in again"}
+					</Button>
+				)}
+				{begin.isError && (
+					<p role="alert" className="type-body">
+						Couldn’t start the sign-in:{" "}
+						{apiSourceRefusal(begin.error, providerName)}
+					</p>
+				)}
+			</section>
+		);
+	}
 	const mine = (links.data ?? []).filter((l) => l.connector === connector);
 	return (
 		<section
@@ -141,6 +270,12 @@ export function DatasourceAccountLinks({
 			{completed.isError && (
 				<p role="alert" className="type-body">
 					Couldn’t link the account: {completed.error.message}
+				</p>
+			)}
+			{declined && (
+				<p role="alert" className="type-body">
+					The sign-in at {providerName} did not finish ({declined.error}). Start
+					it again.
 				</p>
 			)}
 			{links.isError ? (

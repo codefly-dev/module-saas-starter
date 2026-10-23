@@ -77,6 +77,11 @@ const (
 	DatasourceSyncTriggerManual
 	DatasourceSyncTriggerScheduled
 	DatasourceSyncTriggerWebhook
+	// DatasourceSyncTriggerReconfigured is a sync an UpdateSource asked for: the
+	// source's branch or filters moved, so this pass re-snapshots it at the new
+	// scope. A reader needs it to tell a change set that is large because the
+	// source was re-aimed from one that is large because the repository moved.
+	DatasourceSyncTriggerReconfigured
 )
 
 // DatasourceSyncFailureReason classifies why a sync waits or failed.
@@ -238,6 +243,8 @@ func datasourceSyncTrigger(record DatasourceSyncRecord) DatasourceSyncTrigger {
 	switch {
 	case record.Topic == datasourcePushTopic:
 		return DatasourceSyncTriggerWebhook
+	case record.ReconcileMode == reconcileModeReconfigured:
+		return DatasourceSyncTriggerReconfigured
 	case record.ReconcileMode == reconcileModeForce:
 		return DatasourceSyncTriggerManual
 	case record.Topic == DatasourceReconcileTopic:
@@ -316,7 +323,7 @@ func (s *Service) startFirstSync(ctx context.Context, source *DatasourceSource) 
 	}
 	var err error
 	if source.Provider == DatasourceProviderGitHub {
-		err = s.enqueueReconcile(ctx, source, reconcileModeForce, NewIDString())
+		_, err = s.enqueueReconcile(ctx, source, reconcileModeForce, NewIDString())
 	} else {
 		err = s.enqueueFirstPullSync(ctx, source)
 	}

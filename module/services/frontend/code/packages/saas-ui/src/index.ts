@@ -1,4 +1,15 @@
 export {
+	type ApiSourceSpec,
+	apiSourceCollection,
+	apiSourceName,
+	apiSourceRefusal,
+	matchPersonalApiSources,
+} from "./datasources/api-source.js";
+export {
+	ApiSourceCard,
+	type ApiSourceCardProps,
+} from "./datasources/api-source-card.js";
+export {
 	CollectionGrants,
 	CollectionReadBoundary,
 } from "./datasources/collection-access.js";
@@ -7,6 +18,7 @@ export {
 	DatasourcesPanel,
 	type DatasourcesPanelProps,
 } from "./datasources/datasources-panel.js";
+export { EditSourceForm } from "./datasources/edit-source-form.js";
 // The credential block, presentational and controlled, exported for the same
 // reason `matchDeclaredSources` is: a consumer that renders the three states
 // in its own shell must be able to ASK for the credential without copying
@@ -35,6 +47,7 @@ export {
 export {
 	DatasourceAccountLinks,
 	DatasourceDirectoryPanel,
+	useMyAccountLinks,
 } from "./datasources/directory.js";
 export {
 	createDatasourceClient,
@@ -47,6 +60,7 @@ export {
 	useDeleteSource,
 	useListSources,
 	useReconcileSource,
+	useUpdateSource,
 } from "./datasources/queries.js";
 // The effect identity a manual pass commits under, and the record of the
 // passes this browser admitted. Exported because the host's own
@@ -63,6 +77,8 @@ export {
 export {
 	type ConnectGitHubValues,
 	connectGitHubSchema,
+	type EditSourceValues,
+	editSourceSchema,
 } from "./datasources/schema.js";
 export { SourceExecutionRestricted } from "./datasources/source-execution-access.js";
 export {
@@ -93,17 +109,24 @@ export type {
 	AccessibleScopeView,
 	AccountLinkHandle,
 	AccountLinkView,
+	ApiCredentialKindName,
+	ApiOAuth2GrantName,
+	ApiSourceView,
 	CollectionAccessView,
 	CollectionGrantSubject,
 	CollectionGrantView,
 	ConnectGitHubInput,
+	ConnectPersonalApiInput,
 	DatasourceClient,
 	DatasourceDirectoryView,
 	DatasourceProviderName,
 	DatasourceStatusName,
 	DatasourceView,
 	DomainView,
+	EditSourceInput,
 	GroupBindingView,
+	SourceFetchScope,
+	SourceOperationDeclaration,
 	SourceReconcileReceipt,
 	SourceSyncFailureReasonName,
 	SourceSyncPhaseName,
