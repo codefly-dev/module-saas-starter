@@ -71,7 +71,7 @@ func (s *Service) newDatasourceConnectorRegistry() *connector.Registry {
 	}))
 	must(r.RegisterNonConformant(connector.Descriptor{
 		Key: DatasourceProviderUpload, DisplayName: "Object storage",
-		Description:     "An S3-compatible bucket; objects under a prefix are pulled on sync.",
+		Description:     "An S3-compatible bucket; the objects under a prefix that pass its key filter are pulled on sync. A source is one collection with one set of readers, so a bucket shared by several audiences is several sources.",
 		Interface:       connector.InterfaceFiles,
 		CredentialModes: []connector.CredentialMode{connector.CredentialStaticSecret},
 		// A bucket has no per-object access list, so the catalog says before a

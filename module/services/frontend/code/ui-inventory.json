@@ -1536,11 +1536,36 @@
       "remaining": "Add owner stories for the grant table, the grant/revoke controls and the read boundary's denied state, then verify under external skins."
     },
     {
+      "source": "packages/saas-ui/src/datasources/collection-field.tsx",
+      "imports": [
+        "react-hook-form",
+        "./credential-mode.js",
+        "@codefly-dev/ui/layout",
+        "./types.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ConnectionValidation"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ConnectObjectStorage"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
       "source": "packages/saas-ui/src/datasources/connect-github-form.tsx",
       "imports": [
         "@hookform/resolvers/zod",
         "react",
         "react-hook-form",
+        "./collection-field.js",
         "./schema.js",
         "@codefly-dev/ui/layout",
         "./types.js"
@@ -1559,6 +1584,32 @@
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/datasources/connect-object-storage-form.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react",
+        "react-hook-form",
+        "./collection-field.js",
+        "./credential-mode.js",
+        "./errors.js",
+        "./schema.js",
+        "@codefly-dev/ui/layout",
+        "./types.js",
+        "./util.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ConnectObjectStorage"
+        }
+      ],
+      "coverage": "owner story; browser/skin verification pending",
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {

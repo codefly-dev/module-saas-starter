@@ -299,8 +299,9 @@ func TestSSRFGuardBlocksLoopback(t *testing.T) {
 }
 
 // TestListReportsATruncatedListingIncomplete pins the completeness signal a
-// mirror deletes by: a page the store marks IsTruncated, or one the object cap
-// cut, is never complete, while an untruncated page within the cap is.
+// mirror deletes by: a page the store marks IsTruncated is never complete,
+// while an untruncated one is, and either way the client returns the whole
+// page — the cap is the sync's Scope, not the listing's (TestWindow).
 func TestListReportsATruncatedListingIncomplete(t *testing.T) {
 	allowDial(t)
 	truncated := "false"
@@ -314,29 +315,18 @@ func TestListReportsATruncatedListingIncomplete(t *testing.T) {
 </ListBucketResult>`))
 	}))
 	defer srv.Close()
-	client := func(max int) *Client {
-		return New(Config{Endpoint: srv.URL, Region: "us-east-1", Bucket: "b", Prefix: "docs/", AccessKeyID: "AK", MaxObjects: max}, "secret")
-	}
+	client := New(Config{Endpoint: srv.URL, Region: "us-east-1", Bucket: "b", Prefix: "docs/", AccessKeyID: "AK"}, "secret")
 	for _, tc := range []struct {
-		name      string
 		truncated string
-		max       int
-		entries   int
 		complete  bool
-	}{
-		{"whole listing within the cap", "false", 3, 3, true},
-		{"store truncated the page", "true", 10, 3, false},
-		{"object cap cut the page", "false", 2, 2, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			truncated = tc.truncated
-			listing, err := client(tc.max).List(context.Background())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(listing.Entries) != tc.entries || listing.Complete != tc.complete {
-				t.Fatalf("entries=%d complete=%v, want %d/%v", len(listing.Entries), listing.Complete, tc.entries, tc.complete)
-			}
-		})
+	}{{"false", true}, {"true", false}} {
+		truncated = tc.truncated
+		listing, err := client.List(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(listing.Entries) != 3 || listing.Complete != tc.complete {
+			t.Fatalf("IsTruncated=%s: entries=%d complete=%v, want 3/%v", tc.truncated, len(listing.Entries), listing.Complete, tc.complete)
+		}
 	}
 }
