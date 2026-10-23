@@ -30,10 +30,36 @@ database restore must not restore the witness. Accounts must have no object
 write, signing-key read, warehouse writer, or witness administration capability.
 The witness holds no accounts database credential or dependency.
 
-Delivery must provision a dedicated bucket, workload identity, private signing
-key, and warehouse ingestion credential. Bucket IAM must confine the workload
+Delivery must provision a dedicated bucket, workload identity and private
+signing key, and — only where a warehouse mirror is configured — the warehouse
+ingestion credential. Bucket IAM must confine the workload
 to that bucket and forbid deleting or replacing `entries/` objects; enforce the
-immutable prefix with retention and IAM, in addition to application checks.
+immutable prefix with retention and IAM, in addition to application checks. The
+retention half is this service's at write time: every entry is created under a
+**Locked** object retention for `POLICY_LOG_RETENTION_DAYS` (a whole number of
+days, at most ten years), so the bucket must have object retention enabled, and
+a bucket that cannot hold the lock refuses every append. The head carries no
+retention, because it is rewritten on every append.
+
+Uploading under a retention lock needs `storage.objects.setRetention`. Grant it
+**only** under an IAM condition on `resource.name.startsWith(".../objects/entries/")`,
+never bucket-wide and never through `roles/storage.objectAdmin`: with it on the
+head, a compromised workload could lock `head.json` far into the future and the
+log could never advance again. The head's write authority (create and delete,
+for the generation-matched replace) is conditioned on `head.json` alone, and
+nothing is granted delete under `entries/`. Enabling object retention on a
+bucket cannot be undone.
+
+A bucket without object retention, or an identity without `setRetention`,
+still boots — `witness.Open` only reads — and then refuses every append with a
+400 or 403 from the store. Those two symptoms name a provisioning defect, not
+a witness one.
+
+An entry written whose head commit was lost (a timeout after the entry landed)
+holds its sequence slot under the lock for the whole horizon, and it cannot be
+removed out of band. The log is unstuck by retrying that operation's identical
+entry — rebuildable from the orphaned object itself — which completes the head
+commit; every other operation is answered `ErrPending` until then.
 The head's write authority is scoped to `head.json`. Bucket lifecycle deletion,
 rewriting an existing sequence, or restoring the head from a database backup
 would defeat the trust boundary and are not recovery procedures. Provision
@@ -41,8 +67,8 @@ versioning and deletion protection outside the workload's administrative reach.
 
 The runtime exposes no delete, reset, unconditional overwrite, ambient signing-key
 source, insecure warehouse transport, or emulator option. The GCS constructor
-refuses a storage emulator setting. The warehouse uses its own mandatory bearer
-credential over HTTPS and refuses redirects.
+refuses a storage emulator setting. A configured warehouse mirror uses its own
+bearer credential, mandatory with its endpoint, over HTTPS and refuses redirects.
 
 The listener is private and must stay private. Composition must admit only the
 host's declared client through workload-authenticated mesh policy, resolve its
@@ -201,18 +227,23 @@ and the detail goes to this service's own failure reporter instead.
 [code/main.go](code/main.go) is the binary. Every construction happens **before**
 `net.Listen`, in this order, and any failure is fatal: resolve the whole
 configuration group, read the Codefly-allocated port, parse the delivered signing-key
-secret, open the bucket, build the warehouse writer, start the mirror
-worker, then `witness.Open`, which verifies the entire committed chain under
+secret, open the bucket, build the warehouse writer and start the mirror
+worker (or wire `mirror.None` and say so, when no mirror is configured), then
+`witness.Open`, which verifies the entire committed chain under
 that key. A witness that accepted an append it could not sign, store, or verify
 the history of would be worse than one that is down, because the caller would
 commit against it.
 
-`POLICY_LOG_BUCKET`, `POLICY_LOG_WAREHOUSE_ENDPOINT` and
+`POLICY_LOG_BUCKET`, `POLICY_LOG_RETENTION_DAYS`, `POLICY_LOG_WAREHOUSE_ENDPOINT` and
 `POLICY_LOG_WAREHOUSE_TOKEN` come from the `policy-log` configuration group and
 from nowhere else. There is no process-environment fallback, no default bucket
 and no development bypass, so an ambient value cannot make this service witness
 somewhere nobody provisioned — and the refusal names the missing keys, never the
-delivered values, because one of the three is a credential. The native composition cannot yet start this service with its empty group.
+delivered values, because one of them is a credential. The bucket and its entry
+retention are always required. The two warehouse settings are optional, but only together: both
+delivered starts the mirror, neither starts the witness with no mirror, and one
+without the other is refused as a half-provisioned group. The native composition
+cannot yet start this service with its empty group.
 Local execution must use the same signing and verification protocol with durable
 custody independent of Accounts; missing native storage and bootstrap are owner
 tooling gaps, not a reason to create a host-private log or fake receipts.
@@ -291,6 +322,15 @@ stronger remote cancellation guarantee. That distinction needs real-GCS
 qualification before the transport can claim the full deadline requirement.
 
 ## Warehouse mirror
+
+**The mirror is optional** (owner decision 2026-10-18, reversing the 2026-10-17
+call that the witness stays down until a warehouse front exists). The object
+store is the authority — every receipt is signed, chained and committed there
+before it is returned — so a witness deployed with no warehouse configured
+witnesses fully; what it lacks is the projection. It wires `mirror.None`, a
+named value rather than a nil, and prints one line at boot naming
+`POLICY_LOG_WAREHOUSE_ENDPOINT` and `POLICY_LOG_WAREHOUSE_TOKEN`, so the pod log
+says why the warehouse is empty. A warehouse added later backfills from `Read`.
 
 The [warehouse writer](code/mirror/warehouse.go) follows the repository's JSON
 POST ingestion convention with a dedicated credential. The service offers an

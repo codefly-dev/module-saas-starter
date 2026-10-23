@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"time"
 
 	"policy-log/objectstore"
 
@@ -21,16 +22,35 @@ var entryName = regexp.MustCompile(`^entries/[0-9]{20}\.json$`)
 // GCS owns a bucket in the witness trust domain, never a host database or a
 // host-controlled bucket. It performs one attempt per write, even for 5xx.
 type GCS struct {
-	client *storage.Client
-	bucket *storage.BucketHandle
+	client    *storage.Client
+	bucket    *storage.BucketHandle
+	retention time.Duration
+	now       func() time.Time
 }
+
+// MaxRetention bounds the delivered entry retention. A Locked retention cannot
+// be shortened or removed by anyone, so a typo of an extra digit would hold the
+// evidence — and the bucket — for a century. Ten years covers every declared
+// audit horizon with room to spare.
+const MaxRetention = 10 * 366 * 24 * time.Hour
 
 // New uses the service's workload identity and the official GCS endpoint. There
 // is no endpoint or emulator fallback in production. Bucket identity is delivery
 // data; IAM and the service's own workload identity enforce its trust domain.
-func New(ctx context.Context, bucket string) (*GCS, error) {
+//
+// retention is how long every entry is held under a LOCKED object retention:
+// once written, nobody — not this service, not a project owner — can delete or
+// replace it before then. That is the "retention" half of the immutable
+// prefix; the bucket's IAM, which lets this identity create entries and never
+// delete them, is the other. A bucket without object retention enabled refuses
+// the write, so a store that cannot hold the lock refuses every append rather
+// than accepting evidence it cannot protect.
+func New(ctx context.Context, bucket string, retention time.Duration) (*GCS, error) {
 	if bucket == "" {
 		return nil, errors.New("policy-log: GCS bucket is required")
+	}
+	if retention <= 0 || retention > MaxRetention {
+		return nil, fmt.Errorf("policy-log: entry retention must be positive and at most %s", MaxRetention)
 	}
 	if os.Getenv("STORAGE_EMULATOR_HOST") != "" {
 		return nil, errors.New("policy-log: storage emulator is forbidden")
@@ -39,11 +59,12 @@ func New(ctx context.Context, bucket string) (*GCS, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newGCS(client, bucket), nil
+	return newGCS(client, bucket, retention), nil
 }
 
-func newGCS(client *storage.Client, bucket string) *GCS {
-	return &GCS{client: client, bucket: client.Bucket(bucket).Retryer(storage.WithPolicy(storage.RetryNever))}
+func newGCS(client *storage.Client, bucket string, retention time.Duration) *GCS {
+	return &GCS{client: client, bucket: client.Bucket(bucket).Retryer(storage.WithPolicy(storage.RetryNever)),
+		retention: retention, now: time.Now}
 }
 
 func (s *GCS) Close() error { return s.client.Close() }
@@ -99,6 +120,11 @@ func (s *GCS) Write(ctx context.Context, name string, data []byte, generation in
 	writer.CacheControl = "no-store"
 	writer.CRC32C = crc32.Checksum(data, crc32.MakeTable(crc32.Castagnoli))
 	writer.SendCRC32C = true
+	if name != objectstore.HeadObject {
+		// The head is the one object rewritten on every append; an entry is never
+		// rewritten, so it is locked for the declared horizon as it is created.
+		writer.Retention = &storage.ObjectRetention{Mode: "Locked", RetainUntil: s.now().Add(s.retention)}
+	}
 	if _, err := writer.Write(data); err != nil {
 		_ = writer.CloseWithError(err)
 		return 0, classify(err)

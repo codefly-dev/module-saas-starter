@@ -34,7 +34,9 @@ func fakeGCS(t *testing.T, transport transportFunc) *GCS {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
-	return newGCS(client, "example-policy-log")
+	s := newGCS(client, "example-policy-log", 2557*24*time.Hour)
+	s.now = func() time.Time { return time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC) }
+	return s
 }
 
 func TestGCSWritesUseExactGenerationPreconditions(t *testing.T) {
@@ -161,7 +163,46 @@ func TestGCSRejectsMissingOversizedAndGenerationlessObjects(t *testing.T) {
 
 func TestGCSBootRefusesEmulatorOverride(t *testing.T) {
 	t.Setenv("STORAGE_EMULATOR_HOST", "http://example.invalid")
-	if s, err := New(context.Background(), "example-policy-log"); s != nil || err == nil {
+	if s, err := New(context.Background(), "example-policy-log", 24*time.Hour); s != nil || err == nil {
 		t.Fatal("emulator override accepted")
+	}
+}
+
+// TestEntriesAreLockedForTheDeclaredRetentionAndTheHeadIsNot: the immutable
+// prefix's retention half. Every entry is created under a LOCKED object
+// retention for the declared horizon; the head, rewritten on every append,
+// carries none — a locked head could never advance.
+func TestEntriesAreLockedForTheDeclaredRetentionAndTheHeadIsNot(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		generation int64
+		locked     bool
+	}{{"entries/00000000000000000001.json", 0, true}, {objectstore.HeadObject, 41, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body string
+			s := fakeGCS(t, func(r *http.Request) (*http.Response, error) {
+				b, _ := io.ReadAll(r.Body)
+				body = string(b)
+				return response(200, `{"generation":"42"}`), nil
+			})
+			if _, err := s.Write(context.Background(), tc.name, []byte(`{"seq":1}`), tc.generation); err != nil {
+				t.Fatal(err)
+			}
+			want := `"retention":{"mode":"Locked","retainUntilTime":"2033-10-18T00:00:00Z"}`
+			if got := strings.Contains(body, want); got != tc.locked {
+				t.Fatalf("locked=%v, want %v: %s", got, tc.locked, body)
+			}
+			if !tc.locked && strings.Contains(body, `"retention"`) {
+				t.Fatalf("the head carried a retention: %s", body)
+			}
+		})
+	}
+}
+
+func TestTheRetentionIsRequiredAndBounded(t *testing.T) {
+	for _, retention := range []time.Duration{0, -time.Hour, MaxRetention + time.Hour} {
+		if s, err := New(context.Background(), "example-policy-log", retention); s != nil || err == nil {
+			t.Errorf("retention %s accepted", retention)
+		}
 	}
 }

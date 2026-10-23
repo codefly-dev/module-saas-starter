@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/base64"
@@ -9,6 +10,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"policy-log/mirror"
 
 	"gopkg.in/yaml.v3"
 )
@@ -17,33 +21,117 @@ import (
 // cost one restart to diagnose, not one per key, and it must fail rather than
 // start a listener that cannot witness.
 func TestResolveSettingsNamesEveryMissingKeyAtOnce(t *testing.T) {
-	_, err := resolveSettings(func(string, string) (string, error) { return "", nil })
+	_, err := resolveSettings(lookup(func(string, string) (string, error) { return "", nil }))
 	if err == nil {
 		t.Fatal("resolveSettings accepted a group that delivered nothing")
 	}
-	for _, key := range []string{settingKeys.bucket, settingKeys.warehouseEndpoint, settingKeys.warehouseToken} {
+	for _, key := range []string{settingKeys.bucket, settingKeys.retentionDays} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("the refusal does not name the missing %s: %v", key, err)
+		}
+	}
+	// No bucket and a token with no endpoint: both defects in one refusal.
+	_, err = resolveSettings(lookup(func(_, key string) (string, error) {
+		if key == settingKeys.warehouseToken {
+			return "example-warehouse-token", nil
+		}
+		return "", nil
+	}))
+	if err == nil {
+		t.Fatal("resolveSettings accepted a group with no bucket and half a mirror")
+	}
+	for _, key := range []string{settingKeys.bucket, settingKeys.warehouseEndpoint} {
 		if !strings.Contains(err.Error(), key) {
 			t.Errorf("the refusal does not name the missing %s: %v", key, err)
 		}
 	}
 }
 
+// TestABucketWithNoMirrorIsAStartableWitness: the owner's 2026-10-18 decision.
+// The object store is the authority and the warehouse only mirrors it, so a
+// group delivering the bucket and NEITHER mirror setting resolves, with no
+// mirror — it is not read as a half-provisioned group.
+func TestABucketWithNoMirrorIsAStartableWitness(t *testing.T) {
+	resolved, err := resolveSettings(lookup(func(_, key string) (string, error) {
+		switch key {
+		case settingKeys.bucket:
+			return "example-witness-bucket", nil
+		case settingKeys.retentionDays:
+			return "2557", nil
+		}
+		return "", errors.New("not delivered")
+	}))
+	if err != nil {
+		t.Fatalf("a bucket with no mirror was refused: %v", err)
+	}
+	if resolved.bucket != "example-witness-bucket" || resolved.mirrored() {
+		t.Fatalf("resolved %+v, want the bucket and no mirror", resolved)
+	}
+}
+
+// TestNoMirrorIsStatedByNameAtBoot: a witness with no mirror wires mirror.None
+// — a named value, never a nil a check could absorb — and says so in one line
+// that names both settings it would need, so the pod log answers "why is the
+// warehouse empty" without a code read.
+func TestNoMirrorIsStatedByNameAtBoot(t *testing.T) {
+	var said []string
+	worker, err := startMirror(context.Background(), settings{bucket: "example-witness-bucket"},
+		func(line string) { said = append(said, line) })
+	if err != nil {
+		t.Fatalf("startMirror with no mirror: %v", err)
+	}
+	if _, ok := worker.(mirror.None); !ok {
+		t.Fatalf("startMirror wired %T, want mirror.None", worker)
+	}
+	if len(said) != 1 {
+		t.Fatalf("startMirror said %d lines, want exactly one: %q", len(said), said)
+	}
+	for _, want := range []string{"no warehouse mirror is configured", "object store is the authority",
+		settingKeys.warehouseEndpoint, settingKeys.warehouseToken} {
+		if !strings.Contains(said[0], want) {
+			t.Errorf("the boot line does not say %q: %s", want, said[0])
+		}
+	}
+}
+
+// TestAConfiguredMirrorIsBuiltAndStaysSilent: the other branch. A whole mirror
+// starts the bounded worker and prints no no-mirror line; a mirror the writer
+// refuses (not https) still refuses the boot, as before the decision.
+func TestAConfiguredMirrorIsBuiltAndStaysSilent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	silent := func(line string) { t.Fatalf("a configured mirror printed %q", line) }
+	worker, err := startMirror(ctx, settings{bucket: "b", warehouseEndpoint: "https://warehouse.example.com/ingest",
+		warehouseToken: "example-warehouse-token"}, silent)
+	if err != nil {
+		t.Fatalf("startMirror with a whole mirror: %v", err)
+	}
+	if _, ok := worker.(*mirror.Worker); !ok {
+		t.Fatalf("startMirror wired %T, want *mirror.Worker", worker)
+	}
+	if _, err := startMirror(ctx, settings{bucket: "b", warehouseEndpoint: "http://warehouse.example.com/ingest",
+		warehouseToken: "example-warehouse-token"}, silent); err == nil {
+		t.Fatal("startMirror accepted a mirror the writer refuses")
+	}
+}
+
 // TestResolveSettingsRefusesEachMissingKeyIndividually proves no single setting
-// has a default. A bucket without a warehouse credential, or a warehouse
-// without a bucket, is not a startable configuration.
+// has a default. A bucket with half a mirror, or a mirror without a bucket, is
+// not a startable configuration.
 func TestResolveSettingsRefusesEachMissingKeyIndividually(t *testing.T) {
 	delivered := map[string]string{
 		settingKeys.bucket:            "example-witness-bucket",
+		settingKeys.retentionDays:     "2557",
 		settingKeys.warehouseEndpoint: "https://warehouse.example.com/ingest",
 		settingKeys.warehouseToken:    "example-warehouse-token",
 	}
 	for withheld := range delivered {
-		_, err := resolveSettings(func(_, key string) (string, error) {
+		_, err := resolveSettings(lookup(func(_, key string) (string, error) {
 			if key == withheld {
 				return "", nil
 			}
 			return delivered[key], nil
-		})
+		}))
 		if err == nil {
 			t.Errorf("resolveSettings started with %s missing", withheld)
 			continue
@@ -63,9 +151,9 @@ func TestResolveSettingsNeverFallsBackToTheProcessEnvironment(t *testing.T) {
 	t.Setenv(settingKeys.warehouseEndpoint, "https://ambient.example.com/ingest")
 	t.Setenv(settingKeys.warehouseToken, "ambient-token")
 	// The group is absent, exactly as it is on a workstation.
-	resolved, err := resolveSettings(func(string, string) (string, error) {
+	resolved, err := resolveSettings(lookup(func(string, string) (string, error) {
 		return "", errors.New("no configuration found for policy-log")
-	})
+	}))
 	if err == nil {
 		t.Fatalf("resolveSettings fell back to the process environment and resolved %+v", resolved)
 	}
@@ -81,7 +169,7 @@ func TestResolveSettingsNeverFallsBackToTheProcessEnvironment(t *testing.T) {
 // has. The refusal names keys, never values.
 func TestResolveSettingsNeverEchoesADeliveredValue(t *testing.T) {
 	const credential = "s3cr3t-warehouse-token"
-	_, err := resolveSettings(func(_, key string) (string, error) {
+	_, err := resolveSettings(lookup(func(_, key string) (string, error) {
 		switch key {
 		case settingKeys.warehouseToken:
 			return credential, nil
@@ -89,7 +177,7 @@ func TestResolveSettingsNeverEchoesADeliveredValue(t *testing.T) {
 			return "example-witness-bucket", nil
 		}
 		return "", nil
-	})
+	}))
 	if err == nil {
 		t.Fatal("resolveSettings accepted a group with no warehouse endpoint")
 	}
@@ -104,13 +192,15 @@ func TestResolveSettingsNeverEchoesADeliveredValue(t *testing.T) {
 // group resolves, and each value lands in its own field rather than being
 // transposed.
 func TestResolveSettingsAcceptsAWholeGroup(t *testing.T) {
-	resolved, err := resolveSettings(func(group, key string) (string, error) {
+	resolved, err := resolveSettings(lookup(func(group, key string) (string, error) {
 		if group != policyLogConfiguration {
 			t.Fatalf("resolveSettings read group %q, want %q", group, policyLogConfiguration)
 		}
 		switch key {
 		case settingKeys.bucket:
 			return "example-witness-bucket", nil
+		case settingKeys.retentionDays:
+			return "2557", nil
 		case settingKeys.warehouseEndpoint:
 			return "https://warehouse.example.com/ingest", nil
 		case settingKeys.warehouseToken:
@@ -118,11 +208,11 @@ func TestResolveSettingsAcceptsAWholeGroup(t *testing.T) {
 		}
 		t.Fatalf("resolveSettings read an undeclared key %q", key)
 		return "", nil
-	})
+	}))
 	if err != nil {
 		t.Fatalf("resolveSettings: %v", err)
 	}
-	if resolved.bucket != "example-witness-bucket" ||
+	if resolved.bucket != "example-witness-bucket" || resolved.retention != 2557*24*time.Hour ||
 		resolved.warehouseEndpoint != "https://warehouse.example.com/ingest" ||
 		resolved.warehouseToken != "example-warehouse-token" {
 		t.Fatalf("resolveSettings transposed a value: %+v", resolved)
@@ -239,6 +329,68 @@ func TestInvalidDeliveredSigningSecretNamesItsSetting(t *testing.T) {
 		}
 		if value != "" && strings.Contains(err.Error(), value) {
 			t.Fatal("refusal exposed secret")
+		}
+	}
+}
+
+// lookup adapts a (value, error) answer to WorkspaceValueIfSet's three-way
+// one: an error is "nothing carries this key" unless it is errUnreadable,
+// which stands for a delivered value the carrier could not read.
+func lookup(value func(group, key string) (string, error)) func(group, key string) (string, bool, error) {
+	return func(group, key string) (string, bool, error) {
+		got, err := value(group, key)
+		if errors.Is(err, errUnreadable) {
+			return "", false, err
+		}
+		if err != nil || got == "" {
+			return "", false, nil
+		}
+		return got, true, nil
+	}
+}
+
+var errUnreadable = errors.New("delivered but unreadable")
+
+// TestAnUnreadableMirrorIsRefusedNotReadAsAbsent: both mirror settings
+// delivered and neither readable (a broken file carrier) must refuse the boot
+// by name. Read as absent, the witness would start claiming no mirror was
+// configured — a provisioned projection gone dark with the wrong cause logged.
+func TestAnUnreadableMirrorIsRefusedNotReadAsAbsent(t *testing.T) {
+	_, err := resolveSettings(lookup(func(_, key string) (string, error) {
+		switch key {
+		case settingKeys.bucket:
+			return "example-witness-bucket", nil
+		case settingKeys.retentionDays:
+			return "2557", nil
+		}
+		return "", errUnreadable
+	}))
+	if err == nil {
+		t.Fatal("resolveSettings started a witness whose mirror settings could not be read")
+	}
+	for _, key := range []string{settingKeys.warehouseEndpoint, settingKeys.warehouseToken} {
+		if !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "could not be read") {
+			t.Errorf("the refusal does not name the unreadable %s: %v", key, err)
+		}
+	}
+}
+
+// TestTheEntryRetentionIsAWholeBoundedNumberOfDays: a Locked retention can
+// never be shortened, so anything but a plain positive day count within the
+// adapter's bound is refused by name rather than rounded or clamped.
+func TestTheEntryRetentionIsAWholeBoundedNumberOfDays(t *testing.T) {
+	for _, value := range []string{"0", "-1", "7y", "2557.5", " 2557", "02557", "4000", "213504", "9223372036854775807"} {
+		_, err := resolveSettings(lookup(func(_, key string) (string, error) {
+			switch key {
+			case settingKeys.bucket:
+				return "example-witness-bucket", nil
+			case settingKeys.retentionDays:
+				return value, nil
+			}
+			return "", nil
+		}))
+		if err == nil || !strings.Contains(err.Error(), settingKeys.retentionDays) {
+			t.Errorf("retention %q was accepted or not named: %v", value, err)
 		}
 	}
 }
