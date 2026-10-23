@@ -104,7 +104,11 @@ export function ConnectGitHubForm({
 				</div>
 
 				<form
-					onSubmit={form.handleSubmit(onSubmit)}
+					onSubmit={form.handleSubmit((values) => {
+						form.setValue("accessToken", "");
+						form.setValue("webhookSecret", "");
+						onSubmit(values);
+					})}
 					className="space-y-4"
 					noValidate
 				>

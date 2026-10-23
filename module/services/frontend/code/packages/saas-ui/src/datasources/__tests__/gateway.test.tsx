@@ -7,6 +7,8 @@ import { DatasourcesPanel } from "../datasources-panel.js";
 import { createDatasourceClient } from "../gateway.js";
 import { onSourceSyncRequested } from "../sync-requests.js";
 
+import { repositoryProvider } from "../../../stories/catalog-fixtures.js";
+
 const gatewayCatalog = JSON.parse(
 	readFileSync(
 		resolve(
@@ -137,6 +139,15 @@ describe("createDatasourceClient", () => {
 			contentResource: "example-records",
 		});
 		const operations = {
+			getCatalog: () => client.getCatalog!(),
+			addSource: () =>
+				client.addSource!({
+					orgId: "org-1",
+					provider: repositoryProvider,
+					config: { repo: "acme/example" },
+					targetCollection: "Example",
+					credential: { kind: "none" },
+				}),
 			listSources: () => client.listSources("org-1"),
 			listAccessibleScopes: () => client.listAccessibleScopes!("org-1"),
 			listActivity: () => client.listActivity!("org-1", "ds-1"),
@@ -150,13 +161,11 @@ describe("createDatasourceClient", () => {
 					webhookSecret: "",
 				}),
 			addPersonalApiSource: () =>
-				client
-					.addPersonalApiSource!({
-						orgId: "org-1",
-						baseUrl: "https://api.example.com",
-						targetCollection: "Example",
-					})
-					.catch(() => undefined),
+				client.addPersonalApiSource!({
+					orgId: "org-1",
+					baseUrl: "https://api.example.com",
+					targetCollection: "Example",
+				}).catch(() => undefined),
 			declareSourceOperations: () =>
 				client.declareSourceOperations!("org-1", "ds-1", []),
 			beginGitHubAppSetup: () => client.beginGitHubAppSetup!("org-1"),
@@ -164,7 +173,8 @@ describe("createDatasourceClient", () => {
 				client.completeGitHubAppSetup!("org-1", "state-1", "42", "oauth-1"),
 			migrateGitHubSourceToApp: () =>
 				client.migrateGitHubSourceToApp!("org-1", "ds-1"),
-			reconcileSource: () => client.reconcileSource("org-1", "ds-1", "effect-1"),
+			reconcileSource: () =>
+				client.reconcileSource("org-1", "ds-1", "effect-1"),
 			lookupReconcileSource: () => client.lookupReconcileSource("effect-1"),
 			reconnectSource: () => client.reconnectSource!("org-1", "ds-1"),
 			getSourceSync: () => client.getSourceSync!("org-1", "ds-1"),
@@ -180,18 +190,27 @@ describe("createDatasourceClient", () => {
 			// The stub answers {} to everything; an operation whose answer must
 			// carry a record rejects on it, after the call this test counts.
 			beginAccountLink: () =>
-				client.beginAccountLink!("org-1", "github", "https://host.example.com/"),
+				client.beginAccountLink!(
+					"org-1",
+					"github",
+					"https://host.example.com/",
+				),
 			completeAccountLink: () =>
-				client.completeAccountLink!("org-1", "dl.s", "c").catch(() => undefined),
+				client.completeAccountLink!("org-1", "dl.s", "c").catch(
+					() => undefined,
+				),
 			listMyAccountLinks: () => client.listMyAccountLinks!("org-1"),
 			deleteAccountLink: () => client.deleteAccountLink!("org-1", "l1"),
 			getDirectory: () => client.getDirectory!("org-1"),
 			bindGroup: () =>
-				client.bindGroup!("org-1", "github", "acme/x", "t1").catch(() => undefined),
+				client.bindGroup!("org-1", "github", "acme/x", "t1").catch(
+					() => undefined,
+				),
 			unbindGroup: () => client.unbindGroup!("org-1", "b1"),
 			claimDomain: () =>
 				client.claimDomain!("org-1", "example.com").catch(() => undefined),
-			verifyDomain: () => client.verifyDomain!("org-1", "d1").catch(() => undefined),
+			verifyDomain: () =>
+				client.verifyDomain!("org-1", "d1").catch(() => undefined),
 			deleteDomain: () => client.deleteDomain!("org-1", "d1"),
 		} satisfies Partial<Record<keyof typeof client, () => Promise<unknown>>>;
 		expect(Object.keys(operations).sort()).toEqual(Object.keys(client).sort());
@@ -203,7 +222,10 @@ describe("createDatasourceClient", () => {
 	});
 
 	it("announces every sync it enqueues, so a progress view watches closely at once", async () => {
-		stubFetchSequence([reply({ jobId: "job-1" }), reply({ datasource: { id: "ds-new" } })]);
+		stubFetchSequence([
+			reply({ jobId: "job-1" }),
+			reply({ datasource: { id: "ds-new" } }),
+		]);
 		const client = createDatasourceClient({
 			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => "test-token",
@@ -289,7 +311,12 @@ describe("createDatasourceClient", () => {
 				progress: {
 					phase: "SOURCE_SYNC_PHASE_DONE",
 					trigger: "SOURCE_SYNC_TRIGGER_MANUAL",
-					changes: { files: 42, splitKnown: true, snapshot: true, commit: "c1" },
+					changes: {
+						files: 42,
+						splitKnown: true,
+						snapshot: true,
+						commit: "c1",
+					},
 				},
 			}),
 			reply({ code: "not_found", message: "datasource: sync not found" }, 404),
@@ -311,7 +338,9 @@ describe("createDatasourceClient", () => {
 			snapshot: true,
 			commit: "c1",
 		});
-		await expect(client.getSourceSync!("org-1", "ds-2")).resolves.toBeUndefined();
+		await expect(
+			client.getSourceSync!("org-1", "ds-2"),
+		).resolves.toBeUndefined();
 	});
 
 	it("calls the live DatasourceService through the gateway with the host token", async () => {
@@ -427,7 +456,11 @@ describe("createDatasourceClient", () => {
 		const [source] = oneSource.datasources;
 		stubFetch({
 			datasources: [
-				{ ...source, conformant: false, conformanceGap: "no cursor and no deletions" },
+				{
+					...source,
+					conformant: false,
+					conformanceGap: "no cursor and no deletions",
+				},
 			],
 		});
 		const client = createDatasourceClient({
@@ -558,7 +591,19 @@ describe("DatasourcesPanel gateway binding", () => {
 	])(
 		"offers %s the management controls only when their credential names the tier",
 		async (_who, claims, manages) => {
-			stubFetch(oneSource);
+			stubFetch({
+				...oneSource,
+				providers: [
+					{
+						provider: 1,
+						connector: "github",
+						displayName: "GitHub",
+						acceptsNewSources: true,
+						credentialModes: [1],
+						configFields: [],
+					},
+				],
+			});
 			render(
 				<DatasourcesPanel
 					orgId="org-1"
@@ -569,6 +614,8 @@ describe("DatasourcesPanel gateway binding", () => {
 				/>,
 			);
 			await screen.findByText("codefly-dev/module-saas-starter");
+			if (manages)
+				await screen.findByRole("button", { name: "Connect GitHub" });
 			expect(!!screen.queryByRole("button", { name: "Connect GitHub" })).toBe(
 				manages,
 			);
@@ -809,7 +856,12 @@ it("asks the permission service for the resource the composition declared", asyn
 it("reports which scopes the viewer reads only as a platform administrator", async () => {
 	stubFetch({
 		scopes: [
-			{ nodeId: "granted", label: "Granted", kind: "collection", basis: "ACCESS_BASIS_GRANT" },
+			{
+				nodeId: "granted",
+				label: "Granted",
+				kind: "collection",
+				basis: "ACCESS_BASIS_GRANT",
+			},
 			{
 				nodeId: "platform",
 				label: "Platform",
@@ -827,7 +879,9 @@ it("reports which scopes the viewer reads only as a platform administrator", asy
 	});
 	const scopes = await client.listAccessibleScopes!("org-1");
 	expect(
-		Object.fromEntries(scopes.map((scope) => [scope.nodeId, scope.viaPlatformAdministrator])),
+		Object.fromEntries(
+			scopes.map((scope) => [scope.nodeId, scope.viaPlatformAdministrator]),
+		),
 	).toEqual({ granted: false, platform: true, unstated: false });
 });
 
@@ -894,7 +948,9 @@ describe("generic OAuth api sources", () => {
 			baseUrl: "https://api.example.com",
 			targetCollection: "Example API",
 		});
-		expect(calls[0].url).toContain("saas.accounts.v1.DatasourceService/AddSource");
+		expect(calls[0].url).toContain(
+			"saas.accounts.v1.DatasourceService/AddSource",
+		);
 		expect(calls[0].body).toEqual({
 			orgId: "org-1",
 			provider: "DATASOURCE_PROVIDER_API",
@@ -923,7 +979,10 @@ describe("generic OAuth api sources", () => {
 				{
 					id: "a",
 					provider: "DATASOURCE_PROVIDER_API",
-					api: { baseUrl: "https://a.example.com", credentialKind: "API_CREDENTIAL_KIND_BEARER" },
+					api: {
+						baseUrl: "https://a.example.com",
+						credentialKind: "API_CREDENTIAL_KIND_BEARER",
+					},
 				},
 				{
 					id: "b",

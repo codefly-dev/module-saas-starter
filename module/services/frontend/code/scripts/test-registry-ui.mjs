@@ -169,10 +169,15 @@ import { createTaskTracker, mountIsolated } from "@codefly-dev/ui/lifecycle";
 import { resolveSkin } from "@codefly-dev/ui/skin";
 import { PluginRuntimeProvider, usePluginRuntime } from "@codefly-dev/ui/plugin-host/runtime";
 import { PluginRuntimeProvider as DirectProvider, usePluginRuntime as directHook } from "@codefly-dev/saas-plugin-react/runtime";
-import { ConnectGitHubForm, connectGitHubSchema, editSourceSchema, type ConnectGitHubValues, type EditSourceValues } from "@codefly-dev/saas-ui";
+import { ConnectGitHubForm, connectGitHubSchema, editSourceSchema, type ConnectGitHubValues, type EditSourceValues, type DatasourceClient, type DatasourcesPanelProps } from "@codefly-dev/saas-ui";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { Resolver } from "react-hook-form";
+// The pre-catalog consumer still compiles, with neither new client method nor prop.
+const legacyClient: DatasourceClient = {listSources:async()=>[],addGitHubSource:async()=>{},reconcileSource:async(_o,_i,effectId)=>({effectId,status:"committed",jobId:"example-job"}),lookupReconcileSource:async()=>undefined,deleteSource:async()=>{}};
+const injected: DatasourcesPanelProps = {client:legacyClient,orgId:"example-org"};
+const bound: DatasourcesPanelProps = {gateway:{apiBase:"/api",getAccessToken:()=>null},orgId:"example-org"};
+void injected; void bound;
 import { DirectoryService } from "@codefly-dev/saas-sdk";
 const schema: z.ZodType<ConnectGitHubValues> = connectGitHubSchema;
 const connection: ConnectGitHubValues = schema.parse({ method: "public", repo: "Acme/example", targetCollection: "example" });

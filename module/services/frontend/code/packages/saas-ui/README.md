@@ -203,7 +203,11 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
   `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
   (repo · status · paths · branch · boundary · live updates · last sync) with per-row **Sync**/**Delete** and
-  a **Connect GitHub** action. The last-sync cell shows whichever clock applies:
+  catalog-driven connect actions. Every provider returned by `GetDatasourceCatalog`
+  is listed; a provider refusing new sources keeps its exact `conformance_gap`
+  text visible. A removed provider disappears, including an open form, on the
+  next catalog refresh (15 seconds or window focus). A failed catalog read
+  withdraws connect forms and offers a retry. The last-sync cell shows whichever clock applies:
   `last_synced_at` for a provider that pulls, or `last ingest <date, time> ·
   <short commit>` for a github source, whose change sets the compiler enqueues
   (a webhook delivery, or a reconcile pass — a declared schedule's occurrence or
@@ -268,6 +272,34 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   it keeps syncing, but the host connects no new source of that provider. The
   flag is keyed on `conformance_gap`, so an older host that sends no
   conformance fields flags nothing.
+
+The optional `DatasourceClient.getCatalog()` and `addSource(input)` methods are
+implemented by both kit transport bindings. Existing injected clients compile
+unchanged; without catalog support the panel states that the catalog is
+unavailable and invents no provider. No new panel prop is required.
+
+The host descriptor owns field keys, labels, help, required flags and credential
+modes. The adapter uses the SDK's `AddSource` message descriptor to encode the
+matching config oneof: text stays text, repeated strings accept one value per
+line, and other field types accept JSON. No provider table lives in the panel.
+A provider with unknown config fields stays visible with a newer-kit requirement;
+it is never silently dropped. A host adding a wire-contract variant still
+requires a compatible SDK. Prefixes and include/exclude patterns appear only
+when the host describes them. This UI does not change provider admission.
+
+`ConnectSourceInput.credential` is a typed, transient value. Password inputs are
+uncontrolled and cleared before the call; neither those values nor operation
+errors enter a query or mutation cache, storage, logs, or component state.
+Failures use neutral wording because an error may echo submitted secrets. The
+existing app-install return form also clears its credentials and calls directly.
+The catalog also gates installation-return redemption: a missing, refused,
+unsupported or failed catalog entry offers no return form and triggers no
+completion call. Organization-app support follows the advertised credential
+mode and the SDK setup operations matching its connector key; a credential mode
+alone never offers another connector’s installation workflow. No-credential and organization-app modes send no secret. Connecting still
+refreshes sources, collection grants and readable boundaries. Preview stories
+`CatalogProviders` and `RefusedProvider` exercise the descriptor-driven surface.
+
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, webhook secret, and an access token only on the PAT path).
   Its Authentication choice always offers **Public repository (no token)**: the
