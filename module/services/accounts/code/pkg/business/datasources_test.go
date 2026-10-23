@@ -143,7 +143,7 @@ func (f *datasourceFakeStore) InsertDatasourceSource(_ context.Context, source *
 }
 
 // UpdateDatasourceSourceFetchScope mirrors the store's narrow UPDATE: only the
-// three fetch-scope fields are written, so a business change that tried to move
+// fetch-scope fields and the config envelope are written, so a business change that tried to move
 // a source's repository or credential through this call fails here as it would
 // against the statement.
 //
@@ -162,6 +162,12 @@ func (f *datasourceFakeStore) UpdateDatasourceSourceFetchScope(_ context.Context
 	stored.Branch = source.Branch
 	stored.Paths = source.Paths
 	stored.FileExtensions = source.FileExtensions
+	// The statement also rewrites the config envelope, which for an
+	// object-storage source is its whole config, key filter included.
+	if source.Upload != nil {
+		cfg := *source.Upload
+		stored.Upload = &cfg
+	}
 	return nil
 }
 
@@ -1276,6 +1282,7 @@ type fakeUploadClient struct {
 	incomplete bool
 	listCalls  int
 	fetchCalls int
+	fetched    []string
 }
 
 func (f *fakeUploadClient) List(context.Context) (objectstore.Listing, error) {
@@ -1288,6 +1295,7 @@ func (f *fakeUploadClient) List(context.Context) (objectstore.Listing, error) {
 
 func (f *fakeUploadClient) Fetch(_ context.Context, key string) (objectstore.Object, error) {
 	f.fetchCalls++
+	f.fetched = append(f.fetched, key)
 	if err := f.fetchErr[key]; err != nil {
 		return objectstore.Object{}, err
 	}

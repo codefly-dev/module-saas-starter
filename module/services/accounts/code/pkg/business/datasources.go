@@ -365,6 +365,11 @@ type UploadDatasourceConfig struct {
 	Prefix      string `json:"prefix,omitempty"`
 	AccessKeyID string `json:"access_key_id"`
 	MaxObjects  int    `json:"max_objects,omitempty"`
+	// Which keys under the prefix are ingested: RE2 patterns over the key with
+	// the prefix removed, and a file-type allowlist (uploadKeyScope).
+	IncludePatterns []string `json:"include_patterns,omitempty"`
+	ExcludePatterns []string `json:"exclude_patterns,omitempty"`
+	FileExtensions  []string `json:"file_extensions,omitempty"`
 }
 
 // DatasourceSource is one connected external datasource. CredentialSecretRef and
@@ -560,7 +565,6 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 				Bucket:      cfg.Bucket,
 				Prefix:      cfg.Prefix,
 				AccessKeyID: cfg.AccessKeyID,
-				MaxObjects:  cfg.MaxObjects,
 			}, secretAccessKey)
 		}
 	}
@@ -934,6 +938,10 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		}
 		cfg, err := normalizeUploadConfig(input.Upload)
 		if err != nil {
+			// A key-filter refusal names its field; it reaches the caller as itself.
+			if status.Code(err) == codes.InvalidArgument {
+				return nil, err
+			}
 			return nil, w.Wrap(err)
 		}
 		source.Upload = cfg
@@ -1117,6 +1125,22 @@ func normalizeCrawlerConfig(cfg *CrawlerDatasourceConfig) (*CrawlerDatasourceCon
 	return &CrawlerDatasourceConfig{SitemapURL: sitemapURL, MaxPages: maxPages}, nil
 }
 
+// normalizeUploadKeyFilter validates from's key filter into to, naming each
+// field under path (its place in the request) when it refuses one.
+func normalizeUploadKeyFilter(to, from *UploadDatasourceConfig, path string) error {
+	var err error
+	if to.IncludePatterns, err = normalizeKeyPatterns(path+"include_patterns", from.IncludePatterns); err != nil {
+		return err
+	}
+	if to.ExcludePatterns, err = normalizeKeyPatterns(path+"exclude_patterns", from.ExcludePatterns); err != nil {
+		return err
+	}
+	if to.FileExtensions, err = normalizeFileExtensions(from.FileExtensions); err != nil {
+		return keyFilterRefused(path+"file_extensions", status.Convert(err).Message())
+	}
+	return nil
+}
+
 // normalizeUploadConfig validates and trims an object-storage provider config.
 func normalizeUploadConfig(cfg *UploadDatasourceConfig) (*UploadDatasourceConfig, error) {
 	if cfg == nil {
@@ -1146,6 +1170,9 @@ func normalizeUploadConfig(cfg *UploadDatasourceConfig) (*UploadDatasourceConfig
 	}
 	if out.MaxObjects < 0 {
 		return nil, errors.New("upload max objects must not be negative")
+	}
+	if err := normalizeUploadKeyFilter(out, cfg, "upload."); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -1921,6 +1948,13 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 	if err != nil {
 		return 0, w.Wrapf(err, "list objects")
 	}
+	// The source's key filter and object cap are the connector's Scope, applied
+	// to the listing before anything is fetched: an excluded object is never
+	// read and never counts against the cap, and the closing listing — built
+	// from what was delivered — names only matches, so narrowing the filter
+	// tombstones what it now excludes on the next sync.
+	scope := objectstore.Scope{InScope: uploadKeyScope(source.Upload), MaxObjects: source.Upload.MaxObjects}
+	entries, whole := objectstore.Window(scope, listing.Entries, func(e objectstore.Entry) string { return e.Key })
 	ordinal, err := s.allocateOrdinal(ctx, source.ID)
 	if err != nil {
 		return 0, w.Wrapf(err, "allocate ordinal")
@@ -1928,8 +1962,8 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 
 	enqueued := 0
 	oversized := 0
-	delivered := make([]uploadListingFile, 0, len(listing.Entries))
-	for _, entry := range listing.Entries {
+	delivered := make([]uploadListingFile, 0, len(entries))
+	for _, entry := range entries {
 		if strings.HasSuffix(entry.Key, "/") {
 			continue
 		}
@@ -1965,8 +1999,8 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 	if oversized > 0 {
 		return enqueued, w.NewError("%d object(s) exceed the ingest payload limit", oversized)
 	}
-	if !listing.Complete {
-		return enqueued, w.Wrapf(ErrUploadListingIncomplete, "listing of %d object(s) under %q", len(listing.Entries), source.Upload.Prefix)
+	if !listing.Complete || !whole {
+		return enqueued, w.Wrapf(ErrUploadListingIncomplete, "listing of %d object(s) under %q", len(entries), source.Upload.Prefix)
 	}
 	if err := s.enqueueUploadListing(ctx, source, ordinal, delivered); err != nil {
 		return enqueued, w.Wrapf(err, "enqueue listing")

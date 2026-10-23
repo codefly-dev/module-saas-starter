@@ -1032,7 +1032,8 @@ func forcedReconcileMode(mode string) bool {
 // connecting is an explicit act, and a source reconnected after being deleted
 // must not be dropped as a replay of the first one's schedule.
 func (s *Service) enqueueFirstPullSync(ctx context.Context, source *DatasourceSource) error {
-	return s.enqueuePullSync(ctx, source, datasourceSyncRequestSource, NewIDString())
+	_, err := s.enqueuePullSync(ctx, source, datasourceSyncRequestSource, NewIDString())
+	return err
 }
 
 // enqueueScheduledPullSync is the periodic reconcile for a provider the host
@@ -1043,15 +1044,16 @@ func (s *Service) enqueueFirstPullSync(ctx context.Context, source *DatasourceSo
 //
 // STOPGAP (issue #1112).
 func (s *Service) enqueueScheduledPullSync(ctx context.Context, source *DatasourceSource) error {
-	return s.enqueuePullSync(ctx, source, DatasourceScheduledSyncSource, scheduledReconcileKey(source))
+	_, err := s.enqueuePullSync(ctx, source, DatasourceScheduledSyncSource, scheduledReconcileKey(source))
+	return err
 }
 
 // enqueuePullSync enqueues one pull-provider sync request, the job the leased
 // sync worker performs through RunDatasourceSync. It is exactly the job
 // SyncDatasourceSource enqueues for these providers; only provenance and
-// idempotency key vary by caller.
-func (s *Service) enqueuePullSync(ctx context.Context, source *DatasourceSource, provenance, idempotencyKey string) error {
-	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
+// idempotency key vary by caller. It returns the job's id.
+func (s *Service) enqueuePullSync(ctx context.Context, source *DatasourceSource, provenance, idempotencyKey string) (string, error) {
+	response, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_OrganizationId{OrganizationId: source.OrgID}},
@@ -1067,7 +1069,10 @@ func (s *Service) enqueuePullSync(ctx context.Context, source *DatasourceSource,
 			Attributes:     map[string]string{attrSourceID: source.ID},
 		},
 	})
-	return err
+	if err != nil {
+		return "", err
+	}
+	return response.GetJobId(), nil
 }
 
 // pathInScope reports whether p is under one of the source's path prefixes at a
