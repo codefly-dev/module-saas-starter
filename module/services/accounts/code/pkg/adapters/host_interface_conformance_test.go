@@ -161,7 +161,7 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 		ViewerToken:  "dev-bob", AdminToken: "dev-alice",
 		Audience: "documents", ReadKind: "example-records",
 		// The credential a pod of org-directory's declared workload presents.
-		WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
+		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
 		// GAP (HOST_INTERFACE.md 4, fixture): the fixture installs no solution;
 		// the lines this makes red are the gap list.
 		InstalledSolution: "",
