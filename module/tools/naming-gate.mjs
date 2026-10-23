@@ -83,7 +83,9 @@ const SKIP_FILE = (rel) =>
   rel.endsWith(".tsbuildinfo") ||
   rel.endsWith(".DS_Store");
 
-const MAX_BYTES = 512 * 1024;
+// The combined service catalog exceeds 512 KiB. Keep its full contents under
+// the same scan as every authored file, with a bounded one-MiB refusal limit.
+const MAX_BYTES = 1024 * 1024;
 
 // A slug is an identifier-ish run: a hyphenated repository name, a dotted hostname, an email
 // address, an UPPER_SNAKE constant, a camelCase identifier. Splitting it on separators yields

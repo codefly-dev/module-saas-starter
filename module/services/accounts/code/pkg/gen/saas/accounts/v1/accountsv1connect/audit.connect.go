@@ -46,6 +46,12 @@ const (
 	// AuditServiceExportAuditLogProcedure is the fully-qualified name of the AuditService's
 	// ExportAuditLog RPC.
 	AuditServiceExportAuditLogProcedure = "/saas.accounts.v1.AuditService/ExportAuditLog"
+	// AuditServiceDeliverAuditEventsProcedure is the fully-qualified name of the AuditService's
+	// DeliverAuditEvents RPC.
+	AuditServiceDeliverAuditEventsProcedure = "/saas.accounts.v1.AuditService/DeliverAuditEvents"
+	// AuditServiceLookupDeliverAuditEventsProcedure is the fully-qualified name of the AuditService's
+	// LookupDeliverAuditEvents RPC.
+	AuditServiceLookupDeliverAuditEventsProcedure = "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents"
 )
 
 // AuditServiceClient is a client for the saas.accounts.v1.AuditService service.
@@ -54,6 +60,17 @@ type AuditServiceClient interface {
 	AggregateAuditLog(context.Context, *connect.Request[v1.AggregateAuditLogRequest]) (*connect.Response[v1.AggregateAuditLogResponse], error)
 	ListAuditEventTypes(context.Context, *connect.Request[v1.ListAuditEventTypesRequest]) (*connect.Response[v1.ListAuditEventTypesResponse], error)
 	ExportAuditLog(context.Context, *connect.Request[v1.ExportAuditLogRequest]) (*connect.Response[v1.ExportAuditLogResponse], error)
+	// DeliverAuditEvents appends one range of the journal's audit records to the
+	// warehouse audit storage: the operation module-runtime calls after reading the
+	// range through ReadJournal. It is an operation, not a sweep. It takes each
+	// record's organization from the journal row and never from the caller, emits no
+	// audit of its own, and commits one receipt per range under the installation's
+	// tenant; delivery is at least once, and every read of the storage returns each
+	// entry once by id. Its receipt is read back through LookupDeliverAuditEvents.
+	DeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error)
+	// LookupDeliverAuditEvents takes the invocation's same {from, to} body and
+	// derives the range receipt identity from from. It never delivers.
+	LookupDeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error)
 }
 
 // NewAuditServiceClient constructs a client for the saas.accounts.v1.AuditService service. By
@@ -91,15 +108,29 @@ func NewAuditServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(auditServiceMethods.ByName("ExportAuditLog")),
 			connect.WithClientOptions(opts...),
 		),
+		deliverAuditEvents: connect.NewClient[v1.DeliverAuditEventsRequest, v1.DeliverAuditEventsResponse](
+			httpClient,
+			baseURL+AuditServiceDeliverAuditEventsProcedure,
+			connect.WithSchema(auditServiceMethods.ByName("DeliverAuditEvents")),
+			connect.WithClientOptions(opts...),
+		),
+		lookupDeliverAuditEvents: connect.NewClient[v1.DeliverAuditEventsRequest, v1.DeliverAuditEventsResponse](
+			httpClient,
+			baseURL+AuditServiceLookupDeliverAuditEventsProcedure,
+			connect.WithSchema(auditServiceMethods.ByName("LookupDeliverAuditEvents")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // auditServiceClient implements AuditServiceClient.
 type auditServiceClient struct {
-	queryAuditLog       *connect.Client[v1.QueryAuditLogRequest, v1.QueryAuditLogResponse]
-	aggregateAuditLog   *connect.Client[v1.AggregateAuditLogRequest, v1.AggregateAuditLogResponse]
-	listAuditEventTypes *connect.Client[v1.ListAuditEventTypesRequest, v1.ListAuditEventTypesResponse]
-	exportAuditLog      *connect.Client[v1.ExportAuditLogRequest, v1.ExportAuditLogResponse]
+	queryAuditLog            *connect.Client[v1.QueryAuditLogRequest, v1.QueryAuditLogResponse]
+	aggregateAuditLog        *connect.Client[v1.AggregateAuditLogRequest, v1.AggregateAuditLogResponse]
+	listAuditEventTypes      *connect.Client[v1.ListAuditEventTypesRequest, v1.ListAuditEventTypesResponse]
+	exportAuditLog           *connect.Client[v1.ExportAuditLogRequest, v1.ExportAuditLogResponse]
+	deliverAuditEvents       *connect.Client[v1.DeliverAuditEventsRequest, v1.DeliverAuditEventsResponse]
+	lookupDeliverAuditEvents *connect.Client[v1.DeliverAuditEventsRequest, v1.DeliverAuditEventsResponse]
 }
 
 // QueryAuditLog calls saas.accounts.v1.AuditService.QueryAuditLog.
@@ -122,12 +153,33 @@ func (c *auditServiceClient) ExportAuditLog(ctx context.Context, req *connect.Re
 	return c.exportAuditLog.CallUnary(ctx, req)
 }
 
+// DeliverAuditEvents calls saas.accounts.v1.AuditService.DeliverAuditEvents.
+func (c *auditServiceClient) DeliverAuditEvents(ctx context.Context, req *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error) {
+	return c.deliverAuditEvents.CallUnary(ctx, req)
+}
+
+// LookupDeliverAuditEvents calls saas.accounts.v1.AuditService.LookupDeliverAuditEvents.
+func (c *auditServiceClient) LookupDeliverAuditEvents(ctx context.Context, req *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error) {
+	return c.lookupDeliverAuditEvents.CallUnary(ctx, req)
+}
+
 // AuditServiceHandler is an implementation of the saas.accounts.v1.AuditService service.
 type AuditServiceHandler interface {
 	QueryAuditLog(context.Context, *connect.Request[v1.QueryAuditLogRequest]) (*connect.Response[v1.QueryAuditLogResponse], error)
 	AggregateAuditLog(context.Context, *connect.Request[v1.AggregateAuditLogRequest]) (*connect.Response[v1.AggregateAuditLogResponse], error)
 	ListAuditEventTypes(context.Context, *connect.Request[v1.ListAuditEventTypesRequest]) (*connect.Response[v1.ListAuditEventTypesResponse], error)
 	ExportAuditLog(context.Context, *connect.Request[v1.ExportAuditLogRequest]) (*connect.Response[v1.ExportAuditLogResponse], error)
+	// DeliverAuditEvents appends one range of the journal's audit records to the
+	// warehouse audit storage: the operation module-runtime calls after reading the
+	// range through ReadJournal. It is an operation, not a sweep. It takes each
+	// record's organization from the journal row and never from the caller, emits no
+	// audit of its own, and commits one receipt per range under the installation's
+	// tenant; delivery is at least once, and every read of the storage returns each
+	// entry once by id. Its receipt is read back through LookupDeliverAuditEvents.
+	DeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error)
+	// LookupDeliverAuditEvents takes the invocation's same {from, to} body and
+	// derives the range receipt identity from from. It never delivers.
+	LookupDeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error)
 }
 
 // NewAuditServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -161,6 +213,18 @@ func NewAuditServiceHandler(svc AuditServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(auditServiceMethods.ByName("ExportAuditLog")),
 		connect.WithHandlerOptions(opts...),
 	)
+	auditServiceDeliverAuditEventsHandler := connect.NewUnaryHandler(
+		AuditServiceDeliverAuditEventsProcedure,
+		svc.DeliverAuditEvents,
+		connect.WithSchema(auditServiceMethods.ByName("DeliverAuditEvents")),
+		connect.WithHandlerOptions(opts...),
+	)
+	auditServiceLookupDeliverAuditEventsHandler := connect.NewUnaryHandler(
+		AuditServiceLookupDeliverAuditEventsProcedure,
+		svc.LookupDeliverAuditEvents,
+		connect.WithSchema(auditServiceMethods.ByName("LookupDeliverAuditEvents")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.AuditService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuditServiceQueryAuditLogProcedure:
@@ -171,6 +235,10 @@ func NewAuditServiceHandler(svc AuditServiceHandler, opts ...connect.HandlerOpti
 			auditServiceListAuditEventTypesHandler.ServeHTTP(w, r)
 		case AuditServiceExportAuditLogProcedure:
 			auditServiceExportAuditLogHandler.ServeHTTP(w, r)
+		case AuditServiceDeliverAuditEventsProcedure:
+			auditServiceDeliverAuditEventsHandler.ServeHTTP(w, r)
+		case AuditServiceLookupDeliverAuditEventsProcedure:
+			auditServiceLookupDeliverAuditEventsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -194,4 +262,12 @@ func (UnimplementedAuditServiceHandler) ListAuditEventTypes(context.Context, *co
 
 func (UnimplementedAuditServiceHandler) ExportAuditLog(context.Context, *connect.Request[v1.ExportAuditLogRequest]) (*connect.Response[v1.ExportAuditLogResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuditService.ExportAuditLog is not implemented"))
+}
+
+func (UnimplementedAuditServiceHandler) DeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuditService.DeliverAuditEvents is not implemented"))
+}
+
+func (UnimplementedAuditServiceHandler) LookupDeliverAuditEvents(context.Context, *connect.Request[v1.DeliverAuditEventsRequest]) (*connect.Response[v1.DeliverAuditEventsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuditService.LookupDeliverAuditEvents is not implemented"))
 }

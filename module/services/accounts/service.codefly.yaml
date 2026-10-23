@@ -29,6 +29,7 @@ workspace-configuration-dependencies:
     - abuse-protection
     - application
     - artifact-cache
+    - audit-storage
     - billing
     - datasource-keys
     - datasource-oauth

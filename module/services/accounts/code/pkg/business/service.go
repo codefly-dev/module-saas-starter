@@ -48,53 +48,56 @@ type Service struct {
 	moduleAuthorityEnforcement ModuleAuthorityEnforcement
 	audit                      AuditEmitter
 	auditTx                    TxAuditEmitter // set when audit also writes on the caller's tx; required in production
-	entitlements               EntitlementChecker
-	membership                 MembershipInvalidator
-	slack                      *SlackNotifier // optional: sends critical notifications to Slack
-	oauthState                 *auth.OAuthStateSigner
-	oauthPolicy                *auth.OAuthRequestPolicy
-	clientRegistry             *auth.ClientRegistry
-	clientMetadata             *auth.ClientMetadataResolver
-	oauthIssuer                string
-	webhookJobs                jobs.Producer // request-scoped, transactional outbound producer
-	mfaCipher                  SecretCipher  // required for TOTP enrollment and verification
-	webhookCipher              SecretCipher  // required for outbound-webhook signing keys
-	webhookPolicy              *WebhookEndpointPolicy
-	webAuthn                   WebAuthnEngine    // required for passkey registration and assertion
-	jobOperations              jobs.Operations   // isolated, payload-free platform operations
-	eventOperations            events.Operations // isolated, payload-free domain-event operations
-	followablesMu              sync.RWMutex
-	followables                []FollowableResource
-	followableByEvent          map[string]string // declared followable event type → resource type
-	acquisitionMode            gen.AcquisitionMode
-	waitlistEmailVerification  bool
-	eventRegistry              *analytics.Registry
-	productEvents              analytics.Emitter
-	usageMeters                *UsageMeterCatalog
-	privacy                    PrivacyWorkflow
-	privacyJobs                jobs.Producer // request-scoped, transactional producer for privacy workflow jobs
-	ssoManagementAPIKey        string
-	abuseVerifier              abuse.Verifier
-	identityCipher             SecretCipher               // encrypts per-org IdP client secrets
-	identityRegistry           *IdentityProviderRegistry  // resolves org → provider stack, cache-invalidated on config change
-	connectorCipher            SecretCipher               // encrypts per-source datasource connector credentials (#274 connector store)
-	githubConnector            *githubconnector.Connector // mints installation tokens and pulls repo contents (#274 connector store)
-	datasourceCipher           SecretCipher               // encrypts per-source DatasourceService credentials + webhook secrets
-	datasourceJobs             jobs.Producer              // privileged inbox producer for datasource ingest deliveries
-	datasourceSyncOperations   DatasourceSyncOperationStore
-	datasourceConnectors       *connector.Registry // the descriptor-driven connector registry; nil until the connector is configured
-	datasourceLinkKey          []byte              // signs account-link states; delivered as datasource-keys/DATASOURCE_ACCOUNT_LINK_KEY, not derived from any other credential
-	datasourceLinkers          map[string]DatasourceAccountLinker
-	datasourceOAuth            map[string]DatasourceOAuthProvider
-	datasourceTXTResolver      TXTResolver
-	datasourceBudgets          DatasourceBudgetStore // meters provider credentials; nil leaves connectors unmetered
-	githubBaseURL              string                // api.github.com override for the datasource connector
-	githubAppID                string                // deployment's GitHub App registration; empty leaves sources on their own PAT
-	githubAppKeyPEM            string                // the App's RSA signing key, deployment custody — never copied onto a source
-	githubAppWebhookSecret     string                // signs the App's own lifecycle deliveries; App-wide, never per source
-	githubAppSlug              string                // the App's URL slug, used to build its install link; empty disables App onboarding
-	githubAppClientID          string                // the App's OAuth client, which identifies the person returning from an install
-	githubAppClientSecret      string                // its secret; without the pair, an installation cannot be attributed to a caller
+	// auditReads serves the activity list, aggregation and export. It reads
+	// audit_events until SetAuditService gives it the AuditService startup built.
+	auditReads                *AuditService
+	entitlements              EntitlementChecker
+	membership                MembershipInvalidator
+	slack                     *SlackNotifier // optional: sends critical notifications to Slack
+	oauthState                *auth.OAuthStateSigner
+	oauthPolicy               *auth.OAuthRequestPolicy
+	clientRegistry            *auth.ClientRegistry
+	clientMetadata            *auth.ClientMetadataResolver
+	oauthIssuer               string
+	webhookJobs               jobs.Producer // request-scoped, transactional outbound producer
+	mfaCipher                 SecretCipher  // required for TOTP enrollment and verification
+	webhookCipher             SecretCipher  // required for outbound-webhook signing keys
+	webhookPolicy             *WebhookEndpointPolicy
+	webAuthn                  WebAuthnEngine    // required for passkey registration and assertion
+	jobOperations             jobs.Operations   // isolated, payload-free platform operations
+	eventOperations           events.Operations // isolated, payload-free domain-event operations
+	followablesMu             sync.RWMutex
+	followables               []FollowableResource
+	followableByEvent         map[string]string // declared followable event type → resource type
+	acquisitionMode           gen.AcquisitionMode
+	waitlistEmailVerification bool
+	eventRegistry             *analytics.Registry
+	productEvents             analytics.Emitter
+	usageMeters               *UsageMeterCatalog
+	privacy                   PrivacyWorkflow
+	privacyJobs               jobs.Producer // request-scoped, transactional producer for privacy workflow jobs
+	ssoManagementAPIKey       string
+	abuseVerifier             abuse.Verifier
+	identityCipher            SecretCipher               // encrypts per-org IdP client secrets
+	identityRegistry          *IdentityProviderRegistry  // resolves org → provider stack, cache-invalidated on config change
+	connectorCipher           SecretCipher               // encrypts per-source datasource connector credentials (#274 connector store)
+	githubConnector           *githubconnector.Connector // mints installation tokens and pulls repo contents (#274 connector store)
+	datasourceCipher          SecretCipher               // encrypts per-source DatasourceService credentials + webhook secrets
+	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
+	datasourceSyncOperations  DatasourceSyncOperationStore
+	datasourceConnectors      *connector.Registry // the descriptor-driven connector registry; nil until the connector is configured
+	datasourceLinkKey         []byte              // signs account-link states; delivered as datasource-keys/DATASOURCE_ACCOUNT_LINK_KEY, not derived from any other credential
+	datasourceLinkers         map[string]DatasourceAccountLinker
+	datasourceOAuth           map[string]DatasourceOAuthProvider
+	datasourceTXTResolver     TXTResolver
+	datasourceBudgets         DatasourceBudgetStore // meters provider credentials; nil leaves connectors unmetered
+	githubBaseURL             string                // api.github.com override for the datasource connector
+	githubAppID               string                // deployment's GitHub App registration; empty leaves sources on their own PAT
+	githubAppKeyPEM           string                // the App's RSA signing key, deployment custody — never copied onto a source
+	githubAppWebhookSecret    string                // signs the App's own lifecycle deliveries; App-wide, never per source
+	githubAppSlug             string                // the App's URL slug, used to build its install link; empty disables App onboarding
+	githubAppClientID         string                // the App's OAuth client, which identifies the person returning from an install
+	githubAppClientSecret     string                // its secret; without the pair, an installation cannot be attributed to a caller
 	//nolint:lll // the mount this mirrors is a single deployment switch; splitting the note loses the pairing
 	datasourceWebhookMounted bool                    // whether THIS deployment mounted the per-source push receiver; a stored per-source secret verifies nothing without it
 	datasourceTicketSigner   *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
@@ -492,7 +495,14 @@ func NewService(store Store) (*Service, error) {
 		return nil, err
 	}
 	authority, _ := store.(ModuleAuthorityStore)
+	var auditReads *AuditService
+	if store != nil {
+		if auditReads, err = newAuditReads(store); err != nil {
+			return nil, err
+		}
+	}
 	return &Service{
+		auditReads:                auditReads,
 		store:                     store,
 		moduleAuthority:           authority,
 		acquisitionMode:           gen.AcquisitionMode_ACQUISITION_MODE_OPEN_SIGNUP,
@@ -709,6 +719,15 @@ func (s *Service) publicBaseURL(ctx context.Context) string {
 func (s *Service) SetAuditEmitter(a AuditEmitter) {
 	s.audit = a
 	s.auditTx, _ = a.(TxAuditEmitter)
+}
+
+// SetAuditService wires the AuditService startup built: the emitter every audited
+// write goes through and the storage every audit read comes from. It replaces
+// SetAuditEmitter for the process, so the write and the read can never name two
+// different stores.
+func (s *Service) SetAuditService(a *AuditService) {
+	s.SetAuditEmitter(a)
+	s.auditReads = a
 }
 
 // VerifyAuditWiring fails startup when the wired audit emitter cannot write on

@@ -1,7 +1,7 @@
 {
   "schema": "codefly/module-api-contracts/v1",
   "package": "codefly/saas-starter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "endpoints": [
     {
       "service": "accounts",
@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:373a8f3a22b7968c36dd9faffb9be5ef64213b1de2a532f5e567007bd65caaa7",
+      "digest": "sha256:e333050ebab639ea5e171b8636a2cae5e33235f1dd8aaf73f162811d09184c34",
       "services": [
         {
           "name": "APIKeyService",
@@ -42,8 +42,10 @@
           "fullName": "saas.accounts.v1.AuditService",
           "procedures": [
             "/saas.accounts.v1.AuditService/AggregateAuditLog",
+            "/saas.accounts.v1.AuditService/DeliverAuditEvents",
             "/saas.accounts.v1.AuditService/ExportAuditLog",
             "/saas.accounts.v1.AuditService/ListAuditEventTypes",
+            "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents",
             "/saas.accounts.v1.AuditService/QueryAuditLog"
           ]
         },
@@ -260,6 +262,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
             "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",

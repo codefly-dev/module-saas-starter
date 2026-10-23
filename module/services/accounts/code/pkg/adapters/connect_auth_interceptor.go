@@ -280,6 +280,9 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 		return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("internal RPC is not exposed on the tenant listener"))
 	}
 
+	if (procedure == business.DeliverAuditEventsMethod || procedure == business.LookupDeliverAuditEventsMethod) && len(headers.Values(workContextHeader)) != 0 {
+		return authenticateAuditDeliveryContext(ctx, headers, procedure == business.LookupDeliverAuditEventsMethod)
+	}
 	if sourceOperationProcedure(procedure) && len(headers.Values(workContextHeader)) != 0 {
 		return authenticateSourceOperationContext(ctx, headers)
 	}

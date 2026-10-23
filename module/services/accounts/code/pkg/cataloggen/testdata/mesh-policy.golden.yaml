@@ -59,6 +59,7 @@ spec:
               - /saas.accounts.v1.ModuleCapabilitiesService/NotifyUser
               - /saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord
               - /saas.accounts.v1.ModuleCapabilitiesService/PublishEvent
+              - /saas.accounts.v1.ModuleCapabilitiesService/ReadJournal
               - /saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents
               - /saas.accounts.v1.ModuleCapabilitiesService/RequestApproval
               - /saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority
