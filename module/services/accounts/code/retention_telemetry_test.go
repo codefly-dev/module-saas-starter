@@ -3,15 +3,11 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/require"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -121,37 +117,44 @@ func TestAScheduledRetentionRunReportsToTheGauge(t *testing.T) {
 	require.Equal(t, map[string]int64{"audit_events provision": 0}, retentionFailing(t, reader))
 }
 
-// The alert pack's retention alert reads the gauge under the name the /metrics
-// scrape serves it by, which is also the series the pack's promtool tests feed
-// the alert: a failed run's first scrape carries a 1, with no earlier sample.
-func TestTheRetentionAlertReadsTheGaugeAsItIsScraped(t *testing.T) {
-	registry := prometheus.NewRegistry()
-	exporter, err := newScrapeExporter(registry)
+// A failed retention run pushes its gauge to the collector. The alert pack and
+// its promtool fixtures use the Prometheus translation of that instrument name.
+func TestTheRetentionAlertReadsTheGaugeExportedOverOTLP(t *testing.T) {
+	endpoint, capture := startMetricCapture(t)
+	t.Setenv(otlpEndpointVariable, "http://"+endpoint)
+	metricsProvider, err := enableOTELMetrics(t.Context())
 	require.NoError(t, err)
-	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
-	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
-	telemetry, err := newRetentionTelemetry(provider.Meter("github.com/codefly-dev/module-saas-starter/accounts"))
+	t.Cleanup(func() { _ = metricsProvider.Shutdown(context.Background()) })
+	telemetry, err := newRetentionTelemetry(metricsProvider.provider.Meter("github.com/codefly-dev/module-saas-starter/accounts"))
 	require.NoError(t, err)
 	telemetry.report(context.Background(), &business.RetentionError{Failures: []business.RetentionFailure{
 		{Resource: "audit_events", Step: business.RetentionStepRemove, Err: errors.New("lock not available")},
 	}})
 
-	recorder := httptest.NewRecorder()
-	promhttp.HandlerFor(registry, promhttp.HandlerOpts{}).ServeHTTP(recorder,
-		httptest.NewRequest(http.MethodGet, "http://accounts.internal/metrics", nil))
-	require.Equal(t, http.StatusOK, recorder.Code)
-	scraped := strings.ReplaceAll(retentionFailingMetric, ".", "_")
-	body := recorder.Body.String()
-	require.Contains(t, body, "# TYPE "+scraped+" gauge\n")
-	var sample string
-	for _, line := range strings.Split(body, "\n") {
-		if strings.HasPrefix(line, scraped+"{") {
-			sample = line
+	require.NoError(t, metricsProvider.provider.ForceFlush(t.Context()))
+	request := receiveMetrics(t, capture.requests)
+	found := false
+	for _, resource := range request.ResourceMetrics {
+		for _, scope := range resource.ScopeMetrics {
+			for _, instrument := range scope.Metrics {
+				if instrument.Name != retentionFailingMetric {
+					continue
+				}
+				for _, point := range instrument.GetGauge().DataPoints {
+					labels := map[string]string{}
+					for _, attribute := range point.Attributes {
+						labels[attribute.Key] = attribute.Value.GetStringValue()
+					}
+					if labels["resource"] == "audit_events" && labels["step"] == "remove" {
+						require.EqualValues(t, 1, point.GetAsInt())
+						found = true
+					}
+				}
+			}
 		}
 	}
-	require.Contains(t, sample, `resource="audit_events"`)
-	require.Contains(t, sample, `step="remove"`)
-	require.True(t, strings.HasSuffix(sample, "} 1"), "the failed part reads 1: %s", sample)
+	require.True(t, found, "the failed retention part is exported as a gauge")
+	scraped := strings.ReplaceAll(retentionFailingMetric, ".", "_")
 
 	pack, err := metrics.DefaultSLOPack()
 	require.NoError(t, err)

@@ -41,7 +41,6 @@ import (
 
 	"github.com/codefly-dev/core/resources"
 	"github.com/codefly-dev/core/wool"
-	wooltel "github.com/codefly-dev/core/wool/otel"
 	"github.com/codefly-dev/core/workloadidentity/native"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
@@ -54,7 +53,20 @@ func init() {
 	WithWork(doWork)
 }
 
-func doWork(ctx context.Context) (Clean, error) {
+func doWork(ctx context.Context) (clean Clean, err error) {
+	var otelMetricProvider *otelMetrics
+	// SDK Init owns tracing. Stop telemetry exporters on startup errors too,
+	// before a normal cleanup function can be returned.
+	defer func() {
+		if err != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if otelMetricProvider != nil {
+				_ = otelMetricProvider.Shutdown(shutdownCtx)
+			}
+			_ = codefly.ShutdownTelemetry(shutdownCtx)
+		}
+	}()
 	// `app diagnose …` answers and exits; it never starts the service.
 	if code, ran := runRequestedDiagnostic(os.Args[1:]); ran {
 		os.Exit(code)
@@ -92,42 +104,13 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// When external observability is configured, OpenTelemetry always targets
-	// the in-graph collector. Codefly owns its host and port; the accounts
-	// process never reads or hardcodes a collector address.
-	var otelProvider *wooltel.Provider
-	var otelMetricProvider *otelMetrics
-	if observabilityEnabled() {
-		collectorNetwork, err := codefly.For(ctx).
-			Service("telemetry").
-			Endpoint("grpc").
-			API("grpc").
-			ResolveNetworkInstance()
-		if err != nil {
-			return nil, fmt.Errorf("resolve telemetry collector through Codefly: %w", err)
-		}
-		p, oerr := wooltel.Enable(
-			wooltel.WithServiceName("saas-starter-api"),
-			wooltel.WithEndpoint(collectorNetwork.Host),
-			wooltel.WithInsecure(),
-		)
+	if otlpEndpointConfigured() {
+		metricProvider, oerr := enableOTELMetrics(ctx)
 		if oerr != nil {
-			return nil, fmt.Errorf("configure OTEL tracing: %w", oerr)
+			w.Warn("OTEL metrics exporter could not be built; service continues without metrics export", wool.ErrField(oerr))
+		} else {
+			otelMetricProvider = metricProvider
 		}
-		otelProvider = p
-		w.Info("OTEL enabled",
-			wool.Field("endpoint", collectorNetwork.Host),
-			wool.Field("service.name", "saas-starter-api"))
-		metricProvider, oerr := enableOTELMetrics(ctx, "saas-starter-api", collectorNetwork.Host)
-		if oerr != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = otelProvider.Shutdown(shutdownCtx)
-			cancel()
-			return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
-		}
-		otelMetricProvider = metricProvider
-		// codefly:gateway-route-exempt the OTEL scrape endpoint; the collector reaches it over the mesh and it must never be public
-		adapters.RegisterHTTPRoute("/metrics", otelMetricProvider.Handler())
 	}
 
 	store, err := infra.NewPostgresStore(ctx)
@@ -202,10 +185,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	jobStore := infra.NewPostgresJobStore(jobWorkerPool)
 	// Durable job-operations metrics are enabled only when OTEL metrics are, i.e.
-	// otelMetricProvider != nil (observabilityEnabled()). With observability off
-	// the global meter is a no-op, so building the monitor would poll the job
-	// store every interval to feed instruments nothing can read; keep it nil and
-	// let the Start/Shutdown nil-checks below skip it entirely.
+	// otelMetricProvider != nil (the cell has a collector). Without one the global
+	// meter is a no-op, so building the monitor would poll the job store every
+	// interval to feed instruments nothing can read; keep it nil and let the
+	// Start/Shutdown nil-checks below skip it entirely.
 	jobOperationsMonitor, err := newDurableJobMetricsMonitor(otelMetricProvider != nil, jobStore)
 	if err != nil {
 		return nil, fmt.Errorf("configure durable job metrics: %w", err)
@@ -1457,15 +1440,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		sw.Info("closing store")
 		store.Close()
 		sw.Info("store closed")
-		if otelProvider != nil {
-			sw.Info("flushing OTEL provider")
-			// Bounded shutdown — exporter has its own flush window
-			// (otlptrace's batcher). 5s is a sensible cap.
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := otelProvider.Shutdown(shutdownCtx); err != nil {
-				sw.Warn("OTEL shutdown failed", wool.ErrField(err))
-			}
+		traceShutdownCtx, cancelTraceShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelTraceShutdown()
+		if err := codefly.ShutdownTelemetry(traceShutdownCtx); err != nil {
+			sw.Warn("OTEL shutdown failed", wool.ErrField(err))
 		}
 		if otelMetricProvider != nil {
 			sw.Info("flushing OTEL metrics provider")
@@ -2079,13 +2057,9 @@ func workspaceEnv(configuration, key string) string {
 	return os.Getenv(key)
 }
 
-func observabilityEnabled() bool {
-	return strings.TrimSpace(workspaceEnv("observability", "OTEL_EXPORTER_OTLP_ENDPOINT")) != ""
-}
-
 // newDurableJobMetricsMonitor builds the durable job-operations metrics monitor
 // only when OTEL metrics are enabled (metricsEnabled mirrors a non-nil
-// otelMetricProvider, i.e. observabilityEnabled()). When metrics are disabled the
+// otelMetricProvider, i.e. the cell has a collector). When metrics are disabled the
 // global meter is a no-op, so a monitor would poll the job store every interval
 // only to record into instruments nothing can read; returning a nil monitor lets
 // the caller's Start/Shutdown nil-checks skip that background work entirely.

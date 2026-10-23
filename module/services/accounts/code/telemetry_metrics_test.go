@@ -60,6 +60,7 @@ func (versionConnectHandler) Version(
 func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 	endpoint, capture := startMetricCapture(t)
 	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.instance.id=test-instance")
+	t.Setenv("OTEL_SERVICE_NAME", "named-by-the-platform")
 
 	previousMeterProvider := otel.GetMeterProvider()
 	previousTracerProvider := otel.GetTracerProvider()
@@ -70,7 +71,8 @@ func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 	)
 	otel.SetTracerProvider(tracerProvider)
 
-	metrics, err := enableOTELMetrics(t.Context(), "test-service", endpoint)
+	collectorAt(t, "http", endpoint)
+	metrics, err := enableOTELMetrics(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, metrics)
 	t.Cleanup(func() {
@@ -89,6 +91,7 @@ func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 	require.NoError(t, metrics.provider.ForceFlush(t.Context()))
 	request := receiveMetrics(t, capture.requests)
 	require.Equal(t, "test-instance", resourceAttribute(request, "service.instance.id"))
+	require.Equal(t, "named-by-the-platform", resourceAttribute(request, "service.name"))
 	metricNames := exportedMetricNames(request)
 	require.Contains(t, metricNames, "go.goroutine.count")
 	require.Contains(t, metricNames, "go.memory.allocated")
@@ -107,24 +110,75 @@ func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 	require.Equal(t, uint64(1), connectCounts["permission_denied"])
 
 	require.Empty(t, spanExporter.GetSpans())
+}
 
-	recorder := httptest.NewRecorder()
-	metrics.Handler().ServeHTTP(
-		recorder,
-		httptest.NewRequest(http.MethodGet, "http://accounts.internal/metrics", nil),
-	)
-	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Contains(t, recorder.Header().Get("Content-Type"), "text/plain")
-	body := recorder.Body.String()
-	require.Contains(t, body, "go_goroutine_count")
-	require.Contains(t, body, "go_memory_allocated")
-	require.Contains(t, body, "go_memory_gc_goal")
-	require.Contains(t, body, "go_gc_cycle_count")
-	require.Contains(t, body, "go_gc_pause_cpu_time")
-	require.Contains(t, body, "rpc_server_call_duration_seconds_count")
-	require.Contains(t, body, `rpc_method="grpc.health.v1.Health/Check"`)
-	require.Contains(t, body, `rpc_response_status_code="OK"`)
-	require.Contains(t, body, `service_name="test-service"`)
+// The exporter reads its transport off the URL's scheme, so an https:// URL is
+// TLS and cannot talk to a plaintext receiver. A constant WithInsecure() would
+// have let it.
+func TestEnableOTELMetricsDerivesTransportFromTheURLScheme(t *testing.T) {
+	endpoint, capture := startMetricCapture(t)
+	previousMeterProvider := otel.GetMeterProvider()
+	collectorAt(t, "https", endpoint)
+	metrics, err := enableOTELMetrics(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, metrics)
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = metrics.Shutdown(shutdownCtx) // the flush it attempts is the failure under test
+		otel.SetMeterProvider(previousMeterProvider)
+	})
+
+	flushCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.Error(t, metrics.provider.ForceFlush(flushCtx), "a TLS client cannot export to a plaintext receiver")
+	select {
+	case <-capture.requests:
+		t.Fatal("an https:// destination reached a plaintext receiver")
+	default:
+	}
+}
+
+// A process with no collector configured builds no exporter: an
+// otlpmetricgrpc exporter with nothing configured dials its own default,
+// localhost:4317, so the call refuses instead.
+func TestEnableOTELMetricsRefusesWithoutAnEndpoint(t *testing.T) {
+	for name, value := range map[string]string{"unset": "", "blank": "   "} {
+		t.Run(name, func(t *testing.T) {
+			isolateOTLPEnvironment(t)
+			t.Setenv(otlpEndpointVariable, value)
+			metrics, err := enableOTELMetrics(t.Context())
+			require.ErrorContains(t, err, "no "+otlpEndpointVariable)
+			require.Nil(t, metrics)
+		})
+	}
+}
+
+// The exporter reads the variable only as an http:// or https:// URL. Any other
+// form keeps its default, localhost:4317, without a word, so it is refused here,
+// and the refusal does not echo the value, which may carry credentials.
+func TestEnableOTELMetricsRefusesAnEndpointTheExporterCannotRead(t *testing.T) {
+	for _, value := range []string{"collector.example:4317", "ftp://collector.example:4317", "://bad", "secret-user:secret-pass@collector.example:4317"} {
+		isolateOTLPEnvironment(t)
+		t.Setenv(otlpEndpointVariable, value)
+		metrics, err := enableOTELMetrics(t.Context())
+		require.ErrorContains(t, err, "http:// or https://", value)
+		require.NotContains(t, err.Error(), "secret-pass")
+		require.Nil(t, metrics)
+	}
+}
+
+// A resource that cannot be built fails the whole call, and the call builds it
+// before it creates the exporter: there is no exporter, and so no client
+// connection, left running behind the failure.
+func TestEnableOTELMetricsFailsWhenTheResourceCannotBeBuilt(t *testing.T) {
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "an-attribute-with-no-value")
+	endpoint, _ := startMetricCapture(t)
+	collectorAt(t, "http", endpoint)
+	metrics, err := enableOTELMetrics(t.Context())
+	require.Error(t, err)
+	require.Nil(t, metrics)
 }
 
 func startMetricCapture(t *testing.T) (string, *metricCapture) {

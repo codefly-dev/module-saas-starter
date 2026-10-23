@@ -1,3 +1,14 @@
 # protoc-gen-es emits one separator line after the final declaration.
 # Keep normal whitespace checks everywhere else.
 module/services/frontend/code/src/gen/** whitespace=-blank-at-eof
+
+# Generated artifacts changed by the telemetry service removal.
+# Their owning generators remain responsible for the committed outputs.
+module/deployment/generated/** linguist-generated=true
+module/contracts/runnables/** linguist-generated=true
+module/services/telemetry/code/pkg/gen/** linguist-generated=true
+
+# Build recipes emitted by the pinned Go service agent.
+module/services/accounts/builder/** linguist-generated=true
+module/services/auth-gateway/builder/** linguist-generated=true
+module/services/policy-log/builder/** linguist-generated=true
