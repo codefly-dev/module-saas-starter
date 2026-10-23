@@ -372,7 +372,7 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			// instead, and carry their own deny. See DEPLOYMENT_TOPOLOGY.md,
 			// "Cluster-internal HTTP routes".
 			for _, path := range paths {
-				require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
+				require.True(t, (strings.HasPrefix(path.(string), "/saas.accounts.v1.") || strings.HasPrefix(path.(string), "/host.")),
 					"the gate lists gRPC procedures, not HTTP routes: %q", path)
 			}
 		case "Gateway":
@@ -442,7 +442,7 @@ func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
 				operation, ok := rule.(map[string]any)["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)
 				require.True(t, ok)
 				for _, path := range operation["paths"].([]any) {
-					require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
+					require.True(t, (strings.HasPrefix(path.(string), "/saas.accounts.v1.") || strings.HasPrefix(path.(string), "/host.")),
 						"a catalog-derived gate lists gRPC procedures, not HTTP routes: %q", path)
 				}
 			}
@@ -794,7 +794,7 @@ func TestDeploymentTopologyRequiresTheModuleAuthorityEndpoint(t *testing.T) {
 	documents := readDeploymentDocuments(t)
 
 	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: internal\n", ""))
+		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: internal\n          # The published host authority interfaces: the same contract\n          # the mini gateway implements for a local run. A consumer depends on\n          # the interface, never on this service.\n          implements:\n              - codefly.dev/authority@0.1.0\n              - codefly.dev/composition@0.1.0\n              - codefly.dev/installation@0.1.0\n              - codefly.dev/session@0.1.0\n", ""))
 	require.ErrorContains(t, err, "module interface must export accounts/authority")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,

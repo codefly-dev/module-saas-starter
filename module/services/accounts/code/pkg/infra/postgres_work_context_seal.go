@@ -126,3 +126,21 @@ func (s *PostgresStore) WorkContextSolutionInstallation(ctx context.Context, org
 }
 
 var _ business.WorkContextSealStore = (*PostgresStore)(nil)
+
+// WorkContextOrgMember answers, on the control-plane snapshot the other seal
+// reads use, whether a principal is a member of the organisation: the question a
+// composed module's installation asks, since a member holds every one of them.
+func (s *PostgresStore) WorkContextOrgMember(ctx context.Context, orgID, principalID string) (bool, error) {
+	var member bool
+	err := s.sealRead(ctx, func(ctx context.Context, q QueryExecutor) error {
+		return q.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM public.organization_members m
+			                WHERE m.org_id = $1::uuid AND m.user_id::text = $2)`,
+			orgID, principalID,
+		).Scan(&member)
+	})
+	if err != nil {
+		return false, fmt.Errorf("read membership: %w", err)
+	}
+	return member, nil
+}

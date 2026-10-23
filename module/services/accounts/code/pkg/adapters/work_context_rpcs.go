@@ -640,7 +640,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 	}
 	token, signed, err := s.mint(ctx, request)
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	// The consumer's declaration must still be the one the ceiling was decided
 	// against now that the capability is signed and before it leaves: a binding
@@ -1012,7 +1012,7 @@ func (s *WorkContextAuthorityServer) mintInstallationTask(ctx context.Context, r
 		TTL:    workContextTTL(req.GetTtlSeconds()),
 	})
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	if err := s.journalActorHop(ctx, signed); err != nil {
 		return nil, err
@@ -1168,17 +1168,23 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 	// The authorization revision is not an input: core reads it, from the same
 	// answer CheckAuthorizationRevision confirms a consumer's copy against
 	// (ModuleOperationContextRevision of the installed grant).
+	start := workcontext.StartInput{
+		TenantID:           authority.Tenant,
+		OwnerPrincipalID:   authority.PrincipalID,
+		OwnerPrincipalKind: business.PrincipalKindService,
+		OrganizationID:     authority.Tenant,
+		TaskID:             uuid.NewString(),
+		Audience:           authority.Audience,
+		AuthorityScopes:    scopes,
+		InstallationID:     authority.InstallationID,
+	}
+	if authority.BindingID != "" {
+		// The context names the binding it exercises, so a verifier resolves
+		// exactly that binding instead of fitting the scopes to one.
+		start.OperationBindingID = business.ModuleOperationBindingID(authority.PrincipalID, authority.BindingID)
+	}
 	return s.mint(ctx, mintRequest{
-		Start: workcontext.StartInput{
-			TenantID:           authority.Tenant,
-			OwnerPrincipalID:   authority.PrincipalID,
-			OwnerPrincipalKind: business.PrincipalKindService,
-			OrganizationID:     authority.Tenant,
-			TaskID:             uuid.NewString(),
-			Audience:           authority.Audience,
-			AuthorityScopes:    scopes,
-			InstallationID:     authority.InstallationID,
-		},
+		Start:  start,
 		Replay: workcontext.ReplayIdempotent,
 		TTL:    business.ModuleOperationContextTTL,
 	})
@@ -1273,7 +1279,7 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
 		nil, "", moduleBindingSeal{})
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	return issuedWorkContext(token, signed), nil
 }
@@ -1329,7 +1335,7 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
 		attenuated, session, exercised)
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	return issuedWorkContext(token, signed), nil
 }
@@ -1448,7 +1454,7 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 		TTL:           ttl,
 	})
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	if err := s.journalActorHop(ctx, signed); err != nil {
 		return nil, err
@@ -1529,7 +1535,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	token, signed, err := s.remint(ctx, parent, audience, replayPolicy, workContextTTL(req.GetTtlSeconds()),
 		attenuated, "", moduleBindingSeal{})
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	return issuedWorkContext(token, signed), nil
 }
@@ -2087,7 +2093,10 @@ func issuedWorkContext(
 // mapWorkContextError maps a refusal from core's minter. ErrRevoked — the
 // parent or the authority moved underneath the mint — is a precondition the
 // caller can re-establish; ErrInvalid is a request core will never sign.
-func mapWorkContextError(err error) error {
+// mapWorkContextError turns an issue or verification error into the status a
+// caller sees. A reason the caller must not learn is still named in this
+// service's own log: a refusal with no reason anywhere is a bug, not a posture.
+func mapWorkContextError(ctx context.Context, err error) error {
 	if _, isStatus := status.FromError(err); isStatus && status.Code(err) != codes.Unknown {
 		return err
 	}
@@ -2099,6 +2108,8 @@ func mapWorkContextError(err error) error {
 	case errors.Is(err, ErrWorkContextAuthorityUnconfigured):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
+	// The caller learns no reason; this log is the one place the reason lives.
+	wool.Get(ctx).In("WorkContext").Warn("Work Context refused for a reason the caller is not told", wool.ErrField(err))
 	return status.Error(codes.Internal, "cannot issue Work Context")
 }
 

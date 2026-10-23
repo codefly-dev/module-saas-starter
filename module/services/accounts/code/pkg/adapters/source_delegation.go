@@ -85,7 +85,7 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			return nil, status.Error(codes.FailedPrecondition, err.Error())
 		}
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	// Written once the capability exists, and withheld when it cannot be — or
 	// when the delegation was revoked while the capability was being signed.

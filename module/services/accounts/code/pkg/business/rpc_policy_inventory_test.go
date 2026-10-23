@@ -34,6 +34,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		streaming[policy.FullMethod] = policy.Streaming
 	}
 	require.ElementsMatch(t, []string{
+		"/host.composition.v1.CompositionService/ApplyManifest",
 		"/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
 		"/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
 		"/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",

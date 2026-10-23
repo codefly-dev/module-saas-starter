@@ -114,7 +114,7 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			return nil, status.Error(codes.FailedPrecondition, err.Error())
 		}
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	// The record is written only once the capability exists, and the capability is
 	// withheld when the record cannot be committed.
@@ -178,7 +178,7 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			return nil, status.Error(codes.FailedPrecondition, err.Error())
 		}
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	// Written once the capability exists; withheld when it cannot be committed.
 	if err := service.RecordModuleOperationContextMint(ctx, req.GetPrefix(), authority); err != nil {

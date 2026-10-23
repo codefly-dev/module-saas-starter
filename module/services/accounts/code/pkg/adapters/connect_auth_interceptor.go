@@ -283,6 +283,12 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	if sourceOperationProcedure(procedure) && len(headers.Values(workContextHeader)) != 0 {
 		return authenticateSourceOperationContext(ctx, headers)
 	}
+	if procedure == business.HostIssueMethod && headers.Get("Authorization") == "" && !trustedForwarded {
+		// A call carrying no credential at all: the request's shape
+		// authenticates (business.HostIssueMethod). A forwarded identity or a
+		// bearer is admitted as on every other method.
+		return ctx, nil
+	}
 	if trustedForwarded && headers.Get("X-User-Id") != "" {
 		forwarded, err := stampForwardedHTTPIdentity(ctx, headers)
 		if err != nil {

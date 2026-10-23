@@ -174,7 +174,12 @@ func TestServiceCatalogValidationRejectsConsumerUnsafeDrift(t *testing.T) {
 	require.ErrorContains(t, business.ValidateServiceCatalog(unsorted), "not strictly sorted")
 
 	transportMismatch := proto.Clone(catalog).(*catalogv1.ServiceCatalog)
-	transportMismatch.Methods[0].Protocols = transportMismatch.Methods[0].Protocols[:2]
+	for _, method := range transportMismatch.Methods {
+		if len(method.Protocols) == 3 { // a REST-bound method; an interface procedure carries two
+			method.Protocols = method.Protocols[:2]
+			break
+		}
+	}
 	require.ErrorContains(t, business.ValidateServiceCatalog(transportMismatch), "protocol list is not canonical")
 
 	internalREST := proto.Clone(catalog).(*catalogv1.ServiceCatalog)
@@ -189,8 +194,17 @@ func TestServiceCatalogValidationRejectsConsumerUnsafeDrift(t *testing.T) {
 	require.ErrorContains(t, business.ValidateServiceCatalog(internalREST), "must not declare HTTP bindings")
 
 	duplicateRoute := proto.Clone(catalog).(*catalogv1.ServiceCatalog)
-	duplicateRoute.Methods[1].HttpBindings[0].Method = duplicateRoute.Methods[0].HttpBindings[0].GetMethod()
-	duplicateRoute.Methods[1].HttpBindings[0].Path = duplicateRoute.Methods[0].HttpBindings[0].GetPath()
+	var restBound []*catalogv1.Method // an interface procedure carries no HTTP binding; pick two that do
+	for _, method := range duplicateRoute.Methods {
+		if len(method.HttpBindings) > 0 {
+			restBound = append(restBound, method)
+		}
+		if len(restBound) == 2 {
+			break
+		}
+	}
+	restBound[1].HttpBindings[0].Method = restBound[0].HttpBindings[0].GetMethod()
+	restBound[1].HttpBindings[0].Path = restBound[0].HttpBindings[0].GetPath()
 	require.ErrorContains(t, business.ValidateServiceCatalog(duplicateRoute), "duplicate HTTP route")
 
 	unknownPermission := proto.Clone(catalog).(*catalogv1.ServiceCatalog)

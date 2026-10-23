@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/codefly-dev/core/wool"
@@ -204,11 +205,15 @@ func TestIntrospection_RPCListMatchesDescriptors(t *testing.T) {
 
 	wanted := map[string]struct{}{}
 	protoregistry.GlobalFiles.RangeFiles(func(file protoreflect.FileDescriptor) bool {
-		if string(file.Package()) != "saas.accounts.v1" {
+		pkg := string(file.Package())
+		if pkg != "saas.accounts.v1" && !strings.HasPrefix(pkg, "host.") {
 			return true
 		}
 		for i := 0; i < file.Services().Len(); i++ {
 			service := file.Services().Get(i)
+			if string(service.FullName()) == "host.installation.v1.InstallableService" {
+				continue // the solution's side of the installation interface; not served here
+			}
 			for j := 0; j < service.Methods().Len(); j++ {
 				wanted[string(service.Name())+"/"+string(service.Methods().Get(j).Name())] = struct{}{}
 			}

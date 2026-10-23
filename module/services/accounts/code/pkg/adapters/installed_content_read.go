@@ -47,7 +47,7 @@ func (s *WorkContextAuthorityServer) exchangeInstalledBinding(ctx context.Contex
 	}
 	token, signed, err := s.coreAuthority(claims.TenantId, claims.OwnerPrincipalId).Child(ctx, parent, workcontext.ChildInput{DelegationID: uuid.NewString(), PrincipalID: caller.PrincipalID, PrincipalKind: business.PrincipalKindService, OrganizationID: claims.TenantId, Audience: selected.audience, GrantedScopes: scopes, OperationBindingID: identity.ID, ReplayPolicy: workcontext.ReplayIdempotent, TTL: ttl})
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	if err := s.requireInstalledBinding(ctx, signed); err != nil {
 		return nil, err

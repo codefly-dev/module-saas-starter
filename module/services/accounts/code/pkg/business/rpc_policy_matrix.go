@@ -152,7 +152,7 @@ func enumTail(value, prefix string) string {
 func serviceCount(policies []RPCPolicy) int {
 	services := make(map[string]struct{})
 	for _, policy := range policies {
-		services[policy.Service] = struct{}{}
+		services[policy.FullService] = struct{}{} // two short names may coincide across an implemented interface and the API package
 	}
 	return len(services)
 }
