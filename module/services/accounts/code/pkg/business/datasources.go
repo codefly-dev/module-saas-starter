@@ -609,11 +609,19 @@ func (s *Service) SetDatasourceCrawlerClientFactory(factory func(cfg CrawlerData
 
 // SetObjectStorage makes the composed object-storage service the store every
 // object-storage source is read through, under a per-call binding of the
-// source's bucket and credential. Without it an object-storage sync fails.
-func (s *Service) SetObjectStorage(client storagev0.ObjectStorageClient) {
+// source's bucket and credential — if, and only if, the service can serve one:
+// it asks first (objectstore.CheckService). A service that cannot — a release
+// from before the binding, such as 0.0.18 — is refused and left unwired, so
+// object storage is unavailable: the catalog does not offer it, AddSource
+// refuses it, and nothing is admitted that every sync would then fail on.
+func (s *Service) SetObjectStorage(ctx context.Context, client storagev0.ObjectStorageClient) error {
+	if err := objectstore.CheckService(ctx, client); err != nil {
+		return err
+	}
 	s.newUploadBucket = func(cfg objectstore.SourceConfig, accessKeyID, secretAccessKey string) objectstore.Bucket {
 		return objectstore.NewServiceBucket(client, cfg, accessKeyID, secretAccessKey)
 	}
+	return nil
 }
 
 // SetDatasourceUploadBucketFactory overrides how an object-storage source's

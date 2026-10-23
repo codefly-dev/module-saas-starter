@@ -1265,9 +1265,10 @@ keeps what is per-source state:
   `GetDatasourceCatalog` reports `accepts_new_sources` and `AddSource` takes a
   new source with its prefix and key filter. That is the whole admin path a
   composed consumer drives — catalog, `AddSource`, sync — with no portal step.
-- **Admission needs a service that can read a bucket.** At start `work.go` asks
-  the composed service, unbound, whether it reads a batch
-  (`objectstore.CheckService`). A composition without the service, or with one
+- **Admission needs a service that can read a bucket.** At start `work.go`
+  wires the composed service through `Service.SetObjectStorage`, which first
+  asks it, unbound, whether it reads a batch (`objectstore.CheckService`) and
+  refuses to wire one that does not. A composition without the service, or with one
   from before the binding (the released 0.0.18 agent this module pins today),
   leaves object storage unavailable: the catalog says so, `AddSource` refuses
   with `ErrObjectStorageUnavailable`, and an existing source's sync fails by
