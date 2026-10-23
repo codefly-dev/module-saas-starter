@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **270 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **273 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -16,8 +16,10 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ApprovalReviewService/DecideApprovalReview` | unary | `POST /v1/approvals/{id}:decide` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.approval.decision_recorded, saas.approval.approved, saas.approval.denied | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Record an assigned approver decision bound to the exact subject reviewed. |
 | `/saas.accounts.v1.ApprovalReviewService/GetApprovalReview` | unary | `GET /v1/approvals/{id}` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read the immutable subject, assigned approvers and decisions for a request visible to the caller. |
 | `/saas.accounts.v1.AuditService/AggregateAuditLog` | unary | `GET /v1/audit-log:aggregate` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=audit:read; scope=audit:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Aggregate audit events (counts, time buckets, group-by) for analytics. |
+| `/saas.accounts.v1.AuditService/DeliverAuditEvents` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE | — | — | — | REQUIRED / STANDARD_WRITE | INTERNAL → INTERNAL | Deliver one final audit journal range under the installed module's delivery authority, committing a receipt. |
 | `/saas.accounts.v1.AuditService/ExportAuditLog` | unary | `POST /v1/audit-log:export` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=audit:read; scope=audit:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Download audit log as CSV/JSON. |
 | `/saas.accounts.v1.AuditService/ListAuditEventTypes` | unary | `GET /v1/audit-event-types` | `auth` | exposure=AUTHENTICATED; tenant=NONE | perm=audit:read; scope=audit:read | — | — | FORBIDDEN / STANDARD_READ | INTERNAL → INTERNAL | List the registered audit event-type catalog for search facets. |
+| `/saas.accounts.v1.AuditService/LookupDeliverAuditEvents` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE | — | — | — | FORBIDDEN / STANDARD_READ | INTERNAL → INTERNAL | Read the receipt of one audit delivery without appending any entries. |
 | `/saas.accounts.v1.AuditService/QueryAuditLog` | unary | `GET /v1/audit-log` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=audit:read; scope=audit:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read audit events (org member sees own org; platform admin sees all). |
 | `/saas.accounts.v1.AuthService/Authenticate` | unary | `POST /v1/auth/authenticate` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.auth.login, saas.auth.mfa_challenge_started | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Exchange typed OAuth-code or explicit fixture credentials for tokens. |
 | `/saas.accounts.v1.AuthService/BeginOAuth` | unary | `POST /v1/auth/oauth/begin` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / AUTHENTICATION | CONFIDENTIAL → SECRET | Mint signed OAuth state for an allowlisted redirect. |
@@ -144,6 +146,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Notify a user subject to category policy. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Place one of the caller's own records at a scope node. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Publish one domain event to the outbox for the caller's tenant. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Read a page of the cross-tenant journal under a cross-tenant module grant, without enqueueing work. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Re-deliver durable events to the caller's own subscriptions. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Open a pending approval whose resume job the module claims. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Answer one live value a callee verifier holds a capability's seal against. |
@@ -281,8 +284,8 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 43
-- `internal`: 54
+- `auth`: 45
+- `internal`: 55
 - `mfa`: 5
 - `org_admin`: 65
 - `org_member`: 56

@@ -27,8 +27,9 @@ pkg/auth/pg/session_store.go: (*SessionStore).FindByRefreshHash: WithControlPlan
 pkg/auth/pg/session_store.go: (*SessionStore).RevokeFamily: WithControlPlane
 pkg/auth/pg/session_store.go: (*SessionStore).RotateRefresh: WithControlPlane
 pkg/business/audit.go: (*DurableAuditEmitter).Emit: WithControlPlane
-pkg/business/audit.go: (*Service).AggregateAuditLog: WithControlPlane
-pkg/business/audit.go: (*Service).QueryAuditLog: WithControlPlane
+pkg/business/audit_delivery.go: (*Service).DeliverAuditEvents: WithControlPlane
+pkg/business/audit_delivery.go: (*Service).DeliverAuditEvents: WithControlPlane
+pkg/business/audit_storage.go: withinAuditScope: WithControlPlane
 pkg/business/connector_credentials.go: (*Service).SourceSigningSecret: WithControlPlane
 pkg/business/current_installation.go: (*Service).ModuleCurrentInstallation: WithControlPlane
 pkg/business/datasource_budget.go: (datasourceScheduler).Acquire: WithControlPlane
@@ -67,6 +68,7 @@ pkg/business/invitations.go: (*Service).ResendInvitation: As(System())
 pkg/business/invitations.go: (*Service).RevokeInvitation: WithControlPlane
 pkg/business/invitations.go: (*Service).invitationByToken: As(System())
 pkg/business/invitations.go: (*Service).pendingInvitationForSsoJit: As(System())
+pkg/business/journal_read.go: (*Service).ModuleReadJournal: WithControlPlane
 pkg/business/magic_links.go: (*Service).SendMagicLink: As(System())
 pkg/business/magic_links.go: (*Service).VerifyMagicLink: As(System())
 pkg/business/magic_links.go: (*Service).VerifyMagicLink: As(System())
@@ -127,6 +129,7 @@ pkg/business/privacy_jobs.go: (*Service).runPrivacyWorkflow: WithControlPlane
 pkg/business/privacy_jobs.go: (*Service).runPrivacyWorkflow: WithControlPlane
 pkg/business/privacy_jobs.go: (*Service).runPrivacyWorkflow: WithControlPlane
 pkg/business/retention.go: (*Service).PurgeExpiredWorkContextReplays: WithControlPlane
+pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
