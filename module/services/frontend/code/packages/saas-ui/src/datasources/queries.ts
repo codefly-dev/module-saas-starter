@@ -38,6 +38,21 @@ export function useListSources(client: DatasourceClient, orgId: string) {
 	});
 }
 
+/**
+ * The host's connector catalog, which providers a surface may offer. Disabled
+ * for a client that does not read it; the catalog changes only with a release.
+ */
+export function useDatasourceCatalog(client: DatasourceClient) {
+	const getCatalog = client.getCatalog?.bind(client);
+	return useQuery({
+		queryKey: ["datasource-catalog"],
+		queryFn: () => getCatalog?.() ?? [],
+		enabled: !!getCatalog,
+		retry: false,
+		staleTime: Number.POSITIVE_INFINITY,
+	});
+}
+
 export function useAddGitHubSource(client: DatasourceClient) {
 	const queryClient = useQueryClient();
 	return useMutation({

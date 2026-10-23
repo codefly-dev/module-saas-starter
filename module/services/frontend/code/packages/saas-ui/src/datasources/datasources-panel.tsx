@@ -46,6 +46,7 @@ import { readAppSetupReturn, scrubAppSetupReturn } from "./github-app-setup.js";
 import {
 	useAccessibleScopes,
 	useAddGitHubSource,
+	useDatasourceCatalog,
 	useDeleteSource,
 	useListSources,
 	useReconcileSource,
@@ -327,6 +328,21 @@ function DatasourcesPanelView({
 				)
 			: undefined;
 	const addMutation = useAddGitHubSource(client);
+	// The catalog decides what is offered: a provider that accepts new sources
+	// gets its connect form, if this kit has one, and every other provider is
+	// named with the host's reason it takes none. A client that does not read
+	// the catalog — or whose read failed — offers GitHub alone, as before the
+	// catalog was read; the host refuses a provider it does not admit either way.
+	const catalog = useDatasourceCatalog(client);
+	const accepts = (connector: string) =>
+		!!catalog.data?.some(
+			(provider) =>
+				provider.connector === connector && provider.acceptsNewSources,
+		);
+	const offerGitHub = catalog.isSuccess ? accepts("github") : true;
+	const refusedProviders = catalog.isSuccess
+		? catalog.data.filter((provider) => !provider.acceptsNewSources)
+		: [];
 	const reconcileMutation = useReconcileSource(client);
 	const deleteMutation = useDeleteSource(client);
 	const updateMutation = useUpdateSource(client);
@@ -599,12 +615,27 @@ function DatasourcesPanelView({
 							Repositories this organization ingests from.
 						</p>
 					</div>
-					{canManage && (
+					{canManage && offerGitHub && (
 						<Button type="button" onClick={() => setShowConnect(true)}>
 							Connect GitHub
 						</Button>
 					)}
 				</div>
+				{canManage && refusedProviders.length > 0 && (
+					<ul
+						aria-label="Providers that take no new sources"
+						className="type-body space-y-1 text-muted-foreground"
+					>
+						{refusedProviders.map((provider) => (
+							<li key={provider.connector}>
+								{provider.displayName} takes no new sources to sync yet
+								{provider.gap ? `: ${provider.gap}.` : "."}
+								{provider.acceptsOperations &&
+									" Its operations can still be connected."}
+							</li>
+						))}
+					</ul>
+				)}
 
 				{scopes.isError ? (
 					<p role="alert" className="type-body text-destructive">

@@ -1745,3 +1745,61 @@ describe("DatasourcesPanel for a viewer who manages nothing", () => {
 		expect(link.getAttribute("href")).toBe("/admin/datasources");
 	});
 });
+
+describe("DatasourcesPanel connector catalog", () => {
+	const github = {
+		connector: "github",
+		displayName: "GitHub",
+		description: "A GitHub repository.",
+		acceptsNewSources: true,
+		gap: "",
+		acceptsOperations: false,
+	};
+	const objectStorage = {
+		connector: "upload",
+		displayName: "Object storage",
+		description: "A bucket under a key prefix.",
+		acceptsNewSources: false,
+		gap: "no cursor, so every sync re-sends every object",
+		acceptsOperations: false,
+	};
+	const api = {
+		connector: "api",
+		displayName: "HTTP API",
+		description: "An HTTP API.",
+		acceptsNewSources: false,
+		gap: "one untyped response",
+		acceptsOperations: true,
+	};
+
+	it("offers what the catalog accepts and names the rest with the host's reason", async () => {
+		const client = fakeClient({
+			getCatalog: vi.fn(async () => [github, objectStorage, api]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const refused = await screen.findByRole("list", {
+			name: "Providers that take no new sources",
+		});
+		expect(
+			[...refused.querySelectorAll("li")].map((item) => item.textContent),
+		).toEqual([
+			"Object storage takes no new sources to sync yet: no cursor, so every sync re-sends every object.",
+			// An API takes no source to sync, and is still connected for calls.
+			"HTTP API takes no new sources to sync yet: one untyped response. Its operations can still be connected.",
+		]);
+		expect(screen.getByRole("button", { name: "Connect GitHub" })).toBeTruthy();
+	});
+
+	it("withholds GitHub when the catalog does not admit it", async () => {
+		const client = fakeClient({
+			getCatalog: vi.fn(async () => [
+				{ ...github, acceptsNewSources: false, gap: "not configured here" },
+			]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await screen.findByText(/GitHub takes no new sources to sync yet/);
+		expect(screen.queryByRole("button", { name: "Connect GitHub" })).toBeNull();
+	});
+});

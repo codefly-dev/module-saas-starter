@@ -57,6 +57,7 @@ export {
 export {
 	useAccessibleScopes,
 	useAddGitHubSource,
+	useDatasourceCatalog,
 	useDeleteSource,
 	useListSources,
 	useReconcileSource,
@@ -120,6 +121,7 @@ export type {
 	DatasourceClient,
 	DatasourceDirectoryView,
 	DatasourceProviderName,
+	DatasourceProviderView,
 	DatasourceStatusName,
 	DatasourceView,
 	DomainView,
