@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/codefly-dev/core/resources"
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/yaml.v3"
 
@@ -69,10 +70,9 @@ type deploymentModuleBinding struct {
 }
 
 type deploymentInterfaceBinding struct {
-	Service      string   `yaml:"service"`
-	Endpoint     string   `yaml:"endpoint"`
-	Visibility   string   `yaml:"visibility"`
-	AllowModules []string `yaml:"allow-modules,omitempty"`
+	Service    string `yaml:"service"`
+	Endpoint   string `yaml:"endpoint"`
+	Visibility string `yaml:"visibility"`
 }
 
 type deploymentServiceBinding struct {
@@ -732,13 +732,7 @@ type manifestEndpointReference struct {
 	Name string `yaml:"name"`
 }
 
-type manifestEndpoint struct {
-	Name         string   `yaml:"name"`
-	Visibility   string   `yaml:"visibility,omitempty"`
-	API          string   `yaml:"api,omitempty"`
-	AllowModules []string `yaml:"allow-modules,omitempty"`
-	Location     string   `yaml:"location,omitempty"`
-}
+type manifestEndpoint = resources.Endpoint
 
 func marshalGeneratedYAML(source string, value any) ([]byte, error) {
 	document, err := yaml.Marshal(value)
@@ -1350,9 +1344,8 @@ spec:
         - podSelector:
             matchLabels:
               codefly.dev/bootstrap-service: %s
-              job-name: %s
       ports:
-`, service, namespace, serviceApp, service, service)
+`, service, namespace, serviceApp, service)
 	writeNetworkPorts(source, ports, 8)
 	fmt.Fprintf(source, `---
 apiVersion: networking.k8s.io/v1
@@ -1364,7 +1357,6 @@ spec:
   podSelector:
     matchLabels:
       codefly.dev/bootstrap-service: %s
-      job-name: %s
   policyTypes:
     - Egress
   egress:
@@ -1373,7 +1365,7 @@ spec:
             matchLabels:
               app: %s
       ports:
-`, service, service, namespace, service, service, serviceApp)
+`, service, service, namespace, service, serviceApp)
 	writeNetworkPorts(source, ports, 8)
 }
 

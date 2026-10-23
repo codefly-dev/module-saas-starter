@@ -24,7 +24,7 @@ cd ~/Development/deus/codefly/module-saas-starter
 codefly run service --fixture dev-admin
 ```
 
-Expected graph: `vault + store + cache + telemetry → accounts →
+Expected graph: `vault + store + cache → accounts →
 auth-gateway → frontend` (plus marketing). Independent
 services may start concurrently. If any service
 hangs at "waiting for ready", check that step's `--debug` output.
@@ -214,12 +214,16 @@ Admin Portal integration; `IDENTITY_CLIENT_ID` and
 
 Configure the remaining adapters as Codefly configuration groups, then start
 the same Codefly-managed graph. For each of `email` (Resend),
-`product-analytics` (PostHog), `error-tracking` (Sentry), `observability` and
+`product-analytics` (PostHog), `error-tracking` (Sentry) and
 `abuse-protection` (Turnstile), copy
 `configurations/local-dogfood/<group>.env.example` and
 `<group>.secret.env.example` to their Git-ignored names and fill them in
 ([LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md#configure-providers-through-codefly)).
-Keep `observability.env.example` as it is for local (`debug`) telemetry.
+Operational telemetry has no configuration group. Use the environment's optional
+`telemetry:` block with the HTTPS operations intake.
+[CLI #1097](https://github.com/codefly-dev/cli/pull/1097) delivers the standard
+endpoint, service identity and resource variables to every service.
+With no endpoint, no traces or metrics are exported, including native local runs.
 Turnstile's published test keys drive the three abuse-protection cases:
 
 | Case | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | `TURNSTILE_SECRET_KEY` |
@@ -239,7 +243,7 @@ codefly run service --env local-dogfood
 - [ ] Grant analytics consent, navigate through onboarding, and verify bounded browser plus durable backend events in PostHog.
 - [ ] Withdraw analytics consent or log out. Browser capture stops immediately and identity resets.
 - [ ] Trigger controlled browser and backend errors. Sentry correlates release and environment without creating performance transactions.
-- [ ] With the `debug` exporter, exercise login/onboarding and observe trace/metric/log summaries from the in-graph telemetry service.
+- [ ] With `OTEL_EXPORTER_OTLP_ENDPOINT` unset, exercise login/onboarding and observe stdout logs. With a reachable collector configured, confirm trace and metric delivery. An invalid exporter setting must be logged without preventing the service from starting.
 - [ ] Switch Turnstile to the **fail** keys. Registration and waitlist submission fail without database writes.
 - [ ] Switch Turnstile to the **replay** keys. The first deterministic verification follows Cloudflare's fixture behavior; replay rejection leaves state unchanged.
 

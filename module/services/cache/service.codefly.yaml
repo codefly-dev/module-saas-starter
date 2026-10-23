@@ -3,7 +3,30 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: redis
-    version: 0.0.97
+    # v0.0.100 is the floor, held by the gate in accounts/code's
+    # manifests_test.go. Three independent reasons, each breaking something
+    # below its own threshold:
+    #
+    #   - v0.0.95 first emits the `cache` configuration group `cache.Open`
+    #     reads (service-redis #76). Below it, accounts/code's
+    #     pkg/infra/redis.go STOPGAP (#927) is the only way to reach this
+    #     dependency at all — cache.Open would fail with "cache.driver not
+    #     emitted" — so this floor keeps the documented fix reachable
+    #     whenever that stopgap is retired.
+    #   - v0.0.99 serializes the log writer every redis process shares
+    #     (service-redis d00ed105). Below it, a composition that runs
+    #     replicas — this one declares with-read-replicas below — panics
+    #     under load as one process's line is appended while another's is
+    #     cut out of the shared buffer.
+    #   - v0.0.100 answers the BuildCapabilities RPC so a selected Buildx
+    #     builder is honoured (service-redis e75e956, #117). Below it, a
+    #     render that mirrors a registry fails on this agent with "method
+    #     BuildCapabilities not implemented", since the agent never
+    #     implemented the RPC though it runs no build of its own.
+    #
+    # So the floor is v0.0.100. `agent.version` needs a published release
+    # rather than a tag, and v0.0.100 is published.
+    version: 0.0.100
     publisher: codefly.dev
 endpoints:
     - name: read

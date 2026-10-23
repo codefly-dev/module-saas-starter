@@ -41,5 +41,4 @@ services:
     - name: object-storage
     - name: policy-log
     - name: store
-    - name: telemetry
     - name: vault

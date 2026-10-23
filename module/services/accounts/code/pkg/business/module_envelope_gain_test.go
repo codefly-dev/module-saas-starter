@@ -89,3 +89,17 @@ func TestAPrincipalMayGainWithoutAWitness(t *testing.T) {
 		require.False(t, moduleEnvelopeOnlyAdds(after, before), "and undoing it is a narrowing")
 	})
 }
+
+func TestExistingBindingDelegationModeChangeRequiresAWitness(t *testing.T) {
+	envelope := func(mode string) []byte {
+		return []byte(`{"revision":1,"principals":{"reader":{"grant":{"operation_audiences":{"evidence":{"audience":"documents","invoke_scopes":[{"resource_kind":"documents","actions":["read"]}]` + mode + `}}}}}}`)
+	}
+	ordinary := envelope("")
+	explicitOrdinary := envelope(`,"delegation_mode":""`)
+	content := envelope(`,"delegation_mode":"content_read"`)
+	require.False(t, moduleEnvelopeOnlyAdds(ordinary, content), "adding restrictive semantics is not adding authority")
+	require.False(t, moduleEnvelopeOnlyAdds(content, ordinary))
+	require.False(t, moduleEnvelopeOnlyAdds(explicitOrdinary, content))
+	require.True(t, moduleEnvelopeOnlyAdds(content, content))
+	require.True(t, moduleEnvelopeOnlyAdds([]byte(`{"revision":1,"principals":{"reader":{"grant":{}}}}`), content), "a wholly new binding grants authority")
+}

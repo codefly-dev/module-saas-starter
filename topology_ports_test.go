@@ -23,10 +23,8 @@ endpoints:
   - name: authority
     api: grpc
     visibility: internal
-    allow-modules: ["*"]
   - name: connect
     visibility: internal
-    allow-modules: ["*"]
   - name: grpc
   - name: rest
 spec:

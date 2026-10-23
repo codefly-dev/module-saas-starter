@@ -65,7 +65,8 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
 // places, and it is what caught this branch moving the installer to 0.1.179
 // while this constant still said 0.1.171. Deriving it from the installer would
 // make the second assertion below tautological and lose that.
-const DEFAULT_CODEFLY_VERSION = 'source-5234ce248b092edf1138a16ec4140dfbc8745522';
+const DEFAULT_CODEFLY_VERSION = '0.1.197';
+const HISTORICAL_SOURCE_VERSION = 'source-5234ce248b092edf1138a16ec4140dfbc8745522';
 
 test('source qualification installs the exact owner commit and never falls back or releases it', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ci-cli-source-'));
@@ -73,14 +74,14 @@ test('source qualification installs the exact owner commit and never falls back 
     writeFileSync(join(dir, 'uname'), '#!/bin/sh\nif [ "$1" = -s ]; then echo Linux; else echo x86_64; fi\n', { mode: 0o755 });
     writeFileSync(join(dir, 'go'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$RUNNER_TEMP/go-args"\nprintf "%s\\n" "$GOWORK" "$GOBIN" > "$RUNNER_TEMP/go-env"\nexit "${TEST_GO_EXIT:-0}"\n', { mode: 0o755 });
     const pathFile = join(dir, 'github-path');
-    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, CODEFLY_VERSION: DEFAULT_CODEFLY_VERSION,
+    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, CODEFLY_VERSION: HISTORICAL_SOURCE_VERSION,
       RUNNER_TEMP: dir, GITHUB_PATH: pathFile, GITHUB_REF: 'refs/pull/1/merge' };
     const run = overrides => spawnSync('bash', [join(root, 'scripts/ci/install-codefly.sh')], {
       encoding: 'utf8', env: { ...env, ...overrides },
     });
     const success = run({});
     assert.equal(success.status, 0, success.stderr);
-    assert.ok(readFileSync(join(dir, 'go-args'), 'utf8').includes(`github.com/codefly-dev/cli/cmd/codefly@${DEFAULT_CODEFLY_VERSION.slice(7)}\n`));
+    assert.ok(readFileSync(join(dir, 'go-args'), 'utf8').includes(`github.com/codefly-dev/cli/cmd/codefly@${HISTORICAL_SOURCE_VERSION.slice(7)}\n`));
     assert.equal(readFileSync(join(dir, 'go-env'), 'utf8'), `off\n${dir}/codefly-bin\n`);
     assert.equal(readFileSync(pathFile, 'utf8'), `${dir}/codefly-bin\n`);
     writeFileSync(pathFile, '');

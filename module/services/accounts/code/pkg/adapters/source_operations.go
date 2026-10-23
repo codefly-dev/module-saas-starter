@@ -95,6 +95,9 @@ func (h *datasourceConnectHandler) ListSourceOperations(ctx context.Context, req
 	if err != nil {
 		return nil, err
 	}
+	if err := requireSourceOperationScope(ctx, req.Msg.OrgId, req.Msg.SourceId, "read"); err != nil {
+		return nil, err
+	}
 	if err := requireOrgMember(ctx, actor, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}

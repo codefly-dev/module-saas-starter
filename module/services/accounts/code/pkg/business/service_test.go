@@ -109,7 +109,7 @@ func runBusinessTests(m *testing.M) int {
 	setupDone := testdb.MeasureSetup("business-db", []string{"store", "vault"}, 10*time.Minute)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithExcludedDependencies("cache", "object-storage", "telemetry"),
+		sdk.WithExcludedDependencies("object-storage", "cache"),
 		// Keep this package-owned integration stack distinct from the outer
 		// service runtime and the other package TestMain stacks. The SDK gives
 		// each short-lived flow temporary host ports; the scope also isolates

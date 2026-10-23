@@ -11,6 +11,7 @@ import (
 
 	cache "github.com/codefly-dev/interface-cache/go/cache"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
@@ -27,6 +28,8 @@ type countingStore struct {
 	roles map[string]gen.OrgRole
 	err   error
 	loads atomic.Int64
+	// delay widens the window in which concurrent misses overlap.
+	delay time.Duration
 }
 
 func newCountingStore() *countingStore {
@@ -45,6 +48,7 @@ func (s *countingStore) set(orgID, userID string, role gen.OrgRole) {
 
 func (s *countingStore) GetOrgMembership(_ context.Context, orgID, userID string) (*gen.OrgMembership, error) {
 	s.loads.Add(1)
+	time.Sleep(s.delay)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {
@@ -165,6 +169,35 @@ func TestTwoInstancesShareFillsAndInvalidations(t *testing.T) {
 		role, err := b.Role(ctx, org, user)
 		return err == nil && role == gen.OrgRole_ORG_ROLE_ADMIN.String()
 	}, 2*time.Second, 10*time.Millisecond, "b's in-process copy must be evicted by a's invalidation")
+}
+
+// Concurrent misses of one key on two instances reach the store once: the
+// stack's FillLease mode. Under the cache's default fill (singleflight) each
+// instance would load it once. The same over a real Redis is the redis-db
+// suite's TestTwoInstancesLoadAMissingMembershipFromTheStoreOnce.
+func TestConcurrentMissesOnTwoInstancesLoadTheStoreOnce(t *testing.T) {
+	store := newCountingStore()
+	store.delay = 100 * time.Millisecond
+	org, user := uuid.NewString(), uuid.NewString()
+	store.set(org, user, gen.OrgRole_ORG_ROLE_MEMBER)
+	shared := cache.NewMemory()
+	a := newCache(t, shared, store)
+	b := newCache(t, shared.Share(), store)
+	ctx := verified(org, user)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for _, c := range []*membership.Cache{a, b, a, b} {
+		wg.Go(func() {
+			<-start
+			role, err := c.Role(ctx, org, user)
+			assert.NoError(t, err)
+			assert.Equal(t, gen.OrgRole_ORG_ROLE_MEMBER.String(), role)
+		})
+	}
+	close(start)
+	wg.Wait()
+	require.EqualValues(t, 1, store.loads.Load(), "one load from the store across both instances")
 }
 
 func TestInvalidateRefusesAnIDThatIsNotAUUID(t *testing.T) {

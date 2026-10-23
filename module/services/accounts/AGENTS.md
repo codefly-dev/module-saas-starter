@@ -393,8 +393,11 @@ request, not a grant: a carrier the pass no longer verifies is listed and still
 grants nothing. The page writes the next revision through `PutModuleEnvelope`,
 fenced on the revision the draft was started from, and names each refusal (a
 missing recent step-up, a revision written meanwhile, a document the parser
-refuses). There is no in-session step-up: an administrator whose second factor
-is not recent signs in again.
+refuses). There is no silent step-up: an administrator whose second factor is
+not recent is sent to the sign-in page with `step_up=1&next=<here>`, confirms
+the passkey, and lands back on the same page to write again
+(`features/auth/model/step-up.ts` — every sensitive screen turns `mfa_required`
+into that, never into a bare error).
 
 **The registry is fenced by the committed envelope revision.** Every module
 authority decision — `AuthorizeModuleCapability`, the work-context and

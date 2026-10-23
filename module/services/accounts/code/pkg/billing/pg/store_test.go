@@ -44,7 +44,7 @@ func runBillingStoreTests(m *testing.M) int {
 	setupDone := testdb.MeasureSetup("billing-db", []string{"store"}, 120*time.Second)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithExcludedDependencies("cache", "object-storage", "vault", "telemetry"),
+		sdk.WithExcludedDependencies("object-storage", "cache", "vault"),
 		sdk.WithNamingScope("pgbilling-test"),
 		sdk.WithTimeout(120*time.Second),
 		sdk.WithSilence("store"),

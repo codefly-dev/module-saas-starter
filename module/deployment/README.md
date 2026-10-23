@@ -388,7 +388,6 @@ services:
     - name: object-storage
     - name: policy-log
     - name: store
-    - name: telemetry
     # no `vault`: KEY_SERVICE_BACKEND=kms with
     # KEY_SERVICE_SIGNING_BACKEND=kms-wrapped reads none
 ```
