@@ -80,7 +80,7 @@ test("rejects checkout secrets and unsupported intervals", () => {
         revision: "catalog-v1",
         plans: [{ ...plan, interval: "quarter" }],
       }),
-    /invalid enum/i,
+    /invalid option/i,
   );
 });
 

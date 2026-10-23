@@ -169,13 +169,33 @@ import { createTaskTracker, mountIsolated } from "@codefly-dev/ui/lifecycle";
 import { resolveSkin } from "@codefly-dev/ui/skin";
 import { PluginRuntimeProvider, usePluginRuntime } from "@codefly-dev/ui/plugin-host/runtime";
 import { PluginRuntimeProvider as DirectProvider, usePluginRuntime as directHook } from "@codefly-dev/saas-plugin-react/runtime";
-import { ConnectGitHubForm, type DatasourceClient, type DatasourcesPanelProps } from "@codefly-dev/saas-ui";
+import { ConnectGitHubForm, connectGitHubSchema, editSourceSchema, type ConnectGitHubValues, type EditSourceValues, type DatasourceClient, type DatasourcesPanelProps } from "@codefly-dev/saas-ui";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import type { Resolver } from "react-hook-form";
 // The pre-catalog consumer still compiles, with neither new client method nor prop.
 const legacyClient: DatasourceClient = {listSources:async()=>[],addGitHubSource:async()=>{},reconcileSource:async(_o,_i,effectId)=>({effectId,status:"committed",jobId:"example-job"}),lookupReconcileSource:async()=>undefined,deleteSource:async()=>{}};
 const injected: DatasourcesPanelProps = {client:legacyClient,orgId:"example-org"};
 const bound: DatasourcesPanelProps = {gateway:{apiBase:"/api",getAccessToken:()=>null},orgId:"example-org"};
 void injected; void bound;
 import { DirectoryService } from "@codefly-dev/saas-sdk";
+const schema: z.ZodType<ConnectGitHubValues> = connectGitHubSchema;
+const connection: ConnectGitHubValues = schema.parse({ method: "public", repo: "Acme/example", targetCollection: "example" });
+const scope: EditSourceValues = editSourceSchema.parse({ paths: "docs/", fileExtensions: ".md" });
+if (connection.accessToken !== undefined || scope.paths !== "docs/") throw new Error("Schema output changed");
+const resolveConnection: Resolver<ConnectGitHubValues> = zodResolver(connectGitHubSchema);
+const resolveScope: Resolver<EditSourceValues> = zodResolver(editSourceSchema);
+async function proveSchemaValidation() {
+ const options = { fields: {}, shouldUseNativeValidation: false };
+ const accepted = await resolveConnection(connection, undefined, options);
+ if (Object.keys(accepted.errors).length) throw new Error("Public connection rejected");
+ const refused = await resolveConnection({ ...connection, method: "pat" }, undefined, options);
+ if (refused.errors.accessToken?.message !== "Access token is required") throw new Error("Missing token field error");
+ const bounded = await resolveScope({ paths: Array.from({ length: 65 }, (_, i) => "path" + i).join(",") }, undefined, options);
+ if (!bounded.errors.paths) throw new Error("Oversized scope accepted");
+ console.log("Registry consumer schema types and form validation passed");
+}
+void proveSchemaValidation();
 for (const value of [Disclosure, Accordion, Breadcrumb, Tree, RadioGroup, Surface, Timeline, ViewportOverlay, createTaskTracker, mountIsolated, resolveSkin, ConnectGitHubForm, DirectoryService]) {
  if (!value) throw new Error("Missing public export");
 }
