@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,45 +27,73 @@ import (
 
 // fakeService is the object-storage service's bound reads as its proto states
 // them: keys relative to the binding's prefix, a listing paged by
-// next_page_token, a Get at If-Match that streams a header then data. It
-// records every binding it was handed.
+// next_page_token, a GetMany at each item's If-Match that streams a header per
+// item and the bytes of each one found at it. It checks the bound credential,
+// can be throttled, counts every call, and records every binding it was handed.
 type fakeService struct {
 	storagev0.UnimplementedObjectStorageServer
-	mu       sync.Mutex
-	objects  map[string]string // full key -> content
-	pageSize int
-	err      error // returned by every call when set
-	unbound  bool  // a release from before the binding: Capabilities reports no bound caps
-	bindings []*storagev0.Binding
-	listReqs []*storagev0.ListRequest
-	gets     []*storagev0.GetRequest
+	mu            sync.Mutex
+	objects       map[string]string // full key -> content
+	pageSize      int
+	maxBatch      int    // max_get_many_items; 0 means 1000
+	secret        string // when set, the only secret the store accepts
+	err           error  // returned by every call when set
+	unbound       bool   // a release from before the binding: Capabilities reports no bound caps
+	unbatched     bool   // a release from before GetMany: no max_get_many_items
+	misorder      bool   // answers the first object under the second's index
+	truncate      bool   // sends one byte less of each object than its size
+	throttled     atomic.Bool
+	authenticated atomic.Bool
+	calls         atomic.Int64
+	bindings      []*storagev0.Binding
+	listReqs      []*storagev0.ListRequest
+	getManys      []*storagev0.GetManyRequest
 }
 
-func (f *fakeService) record(b *storagev0.Binding) {
+// call is what every RPC does first: count, record, then refuse as the
+// service would — its own error, a refused credential, a throttle.
+func (f *fakeService) call(b *storagev0.Binding) error {
+	f.calls.Add(1)
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.bindings = append(f.bindings, b)
+	err := f.err
+	f.mu.Unlock()
+	switch {
+	case err != nil:
+		return err
+	case f.secret != "" && b.GetCredential().GetAccessKey().GetSecret() != f.secret:
+		return status.Error(codes.PermissionDenied, "access denied")
+	case f.throttled.Load():
+		return status.Error(codes.ResourceExhausted, "slow down")
+	}
+	f.authenticated.Store(true)
+	return nil
 }
 
 func (f *fakeService) Capabilities(_ context.Context, req *storagev0.CapabilitiesRequest) (*storagev0.BackendCapabilities, error) {
-	f.record(req.GetBinding())
-	if f.err != nil {
-		return nil, f.err
+	if err := f.call(req.GetBinding()); err != nil {
+		return nil, err
 	}
 	if f.unbound {
 		return &storagev0.BackendCapabilities{Backend: "minio"}, nil
 	}
-	return &storagev0.BackendCapabilities{Backend: "s3", MaxObjectBytes: MaxObjectBytes, MaxListLimit: int32(f.pageSize)}, nil
+	batch := f.maxBatch
+	switch {
+	case f.unbatched:
+		batch = 0
+	case batch == 0:
+		batch = 1000
+	}
+	return &storagev0.BackendCapabilities{Backend: "s3", MaxObjectBytes: MaxObjectBytes, MaxListLimit: int32(f.pageSize), MaxGetManyItems: int32(batch)}, nil
 }
 
 func (f *fakeService) List(_ context.Context, req *storagev0.ListRequest) (*storagev0.ListResult, error) {
-	f.record(req.GetBinding())
+	if err := f.call(req.GetBinding()); err != nil {
+		return nil, err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listReqs = append(f.listReqs, req)
-	if f.err != nil {
-		return nil, f.err
-	}
 	folder := req.GetBinding().GetPrefix()
 	var rel []string
 	for key := range f.objects {
@@ -88,29 +117,49 @@ func (f *fakeService) List(_ context.Context, req *storagev0.ListRequest) (*stor
 	return res, nil
 }
 
-func (f *fakeService) Get(req *storagev0.GetRequest, stream grpc.ServerStreamingServer[storagev0.GetResponse]) error {
-	f.record(req.GetBinding())
+func (f *fakeService) GetMany(req *storagev0.GetManyRequest, stream grpc.ServerStreamingServer[storagev0.GetManyResponse]) error {
+	if err := f.call(req.GetBinding()); err != nil {
+		return err
+	}
 	f.mu.Lock()
-	f.gets = append(f.gets, req)
-	content, ok := f.objects[req.GetBinding().GetPrefix()+req.GetKey()]
-	err := f.err
+	f.getManys = append(f.getManys, req)
+	contents := make([]*string, len(req.GetItems()))
+	for i, item := range req.GetItems() {
+		if content, ok := f.objects[req.GetBinding().GetPrefix()+item.GetKey()]; ok {
+			contents[i] = &content
+		}
+	}
 	f.mu.Unlock()
-	switch {
-	case err != nil:
-		return err
-	case !ok:
-		return status.Error(codes.NotFound, "no such object")
-	case req.GetIfMatch() != etagOf(content):
-		return status.Error(codes.FailedPrecondition, "etag mismatch")
-	}
-	if err := stream.Send(&storagev0.GetResponse{Kind: &storagev0.GetResponse_Header{Header: &storagev0.GetHeader{
-		Info: &storagev0.ObjectInfo{Key: req.GetKey(), Etag: etagOf(content), Size: int64(len(content)), ContentType: "text/markdown"},
-	}}}); err != nil {
-		return err
-	}
-	for chunk := range slicesChunk([]byte(content), 3) {
-		if err := stream.Send(&storagev0.GetResponse{Kind: &storagev0.GetResponse_Data{Data: chunk}}); err != nil {
+	for i, item := range req.GetItems() {
+		header := &storagev0.GetManyHeader{Index: int32(i)}
+		if f.misorder && i == 0 {
+			header.Index = 1
+		}
+		switch content := contents[i]; {
+		case content == nil:
+			header.Outcome = storagev0.GetManyOutcome_GET_MANY_OUTCOME_NOT_FOUND
+		case item.GetIfMatch() != "" && item.GetIfMatch() != etagOf(*content):
+			header.Outcome = storagev0.GetManyOutcome_GET_MANY_OUTCOME_CHANGED
+		case len(*content) > MaxObjectBytes:
+			header.Outcome = storagev0.GetManyOutcome_GET_MANY_OUTCOME_TOO_LARGE
+		default:
+			header.Outcome = storagev0.GetManyOutcome_GET_MANY_OUTCOME_OK
+			header.Info = &storagev0.ObjectInfo{Key: item.GetKey(), Etag: etagOf(*content), Size: int64(len(*content)), ContentType: "text/markdown"}
+		}
+		if err := stream.Send(&storagev0.GetManyResponse{Kind: &storagev0.GetManyResponse_Header{Header: header}}); err != nil {
 			return err
+		}
+		if header.Outcome != storagev0.GetManyOutcome_GET_MANY_OUTCOME_OK {
+			continue
+		}
+		body := []byte(*contents[i])
+		if f.truncate {
+			body = body[:len(body)-1]
+		}
+		for chunk := range slicesChunk(body, 3) {
+			if err := stream.Send(&storagev0.GetManyResponse{Kind: &storagev0.GetManyResponse_Data{Data: chunk}}); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -192,38 +241,75 @@ func TestServiceBucketRefusesAListingPastItsPageBound(t *testing.T) {
 	}
 }
 
-// TestServiceBucketReadsEachObjectAtItsListedETag: each object is one Get of
-// its key relative to the binding, at If-Match its listed ETag — N objects are
-// N calls, which is the gap the provider is registered with — and an object
-// rewritten or deleted since its listing is ErrObjectChanged.
-func TestServiceBucketReadsEachObjectAtItsListedETag(t *testing.T) {
-	f := &fakeService{pageSize: 10, objects: map[string]string{"kb/2026-a.md": "alpha", "kb/2026-b.md": "bravo"}}
+// TestServiceBucketReadsABatchInOneCall: a batch is one GetMany of each key
+// relative to the binding, at If-Match its listed ETag, answered in request
+// order; a batch past the service's max_get_many_items is split; an object
+// rewritten or deleted since its listing is ErrObjectChanged, and one over the
+// service's cap is the envelope's ErrItemTooLarge.
+func TestServiceBucketReadsABatchInOneCall(t *testing.T) {
+	f := &fakeService{pageSize: 10, objects: map[string]string{"kb/2026-a.md": "alpha", "kb/2026-b.md": "bravo", "kb/2026-c.md": "charlie"}}
 	b := NewServiceBucket(serve(t, f), serviceConfig, "id", "secret")
 	items, err := b.List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := map[string]string{}
-	err = b.Read(context.Background(), items, func(it Item, contentType string, r io.Reader) error {
-		body, _ := io.ReadAll(r)
-		got[it.Key] = contentType + ":" + string(body)
-		return nil
-	})
+	read := func(b *ServiceBucket, items []Item) (map[string]string, error) {
+		got := map[string]string{}
+		err := b.Read(context.Background(), items, func(it Item, contentType string, r io.Reader) error {
+			body, _ := io.ReadAll(r)
+			got[it.Key] = contentType + ":" + string(body)
+			return nil
+		})
+		return got, err
+	}
+	got, err := read(b, items)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["kb/2026-a.md"] != "text/markdown:alpha" || got["kb/2026-b.md"] != "text/markdown:bravo" {
+	if got["kb/2026-a.md"] != "text/markdown:alpha" || got["kb/2026-b.md"] != "text/markdown:bravo" || got["kb/2026-c.md"] != "text/markdown:charlie" {
 		t.Fatalf("read %v", got)
 	}
-	if len(f.gets) != 2 || f.gets[0].GetKey() != "2026-a.md" || f.gets[0].GetIfMatch() != etagOf("alpha") {
-		t.Fatalf("gets = %v, want one per object, relative key, at If-Match", f.gets)
+	if len(f.getManys) != 1 || len(f.getManys[0].GetItems()) != 3 ||
+		f.getManys[0].GetItems()[0].GetKey() != "2026-a.md" || f.getManys[0].GetItems()[0].GetIfMatch() != etagOf("alpha") {
+		t.Fatalf("GetMany calls = %v, want one for the batch, relative keys, at If-Match", f.getManys)
+	}
+
+	small := &fakeService{pageSize: 10, maxBatch: 2, objects: f.objects}
+	if got, err := read(NewServiceBucket(serve(t, small), serviceConfig, "id", "secret"), items); err != nil || len(got) != 3 || len(small.getManys) != 2 {
+		t.Fatalf("a batch past max_get_many_items: read %d objects in %d calls (%v), want 3 in 2", len(got), len(small.getManys), err)
 	}
 
 	f.objects["kb/2026-a.md"] = "alpha, rewritten"
 	delete(f.objects, "kb/2026-b.md")
-	for _, it := range items {
-		if err := b.Read(context.Background(), []Item{it}, func(Item, string, io.Reader) error { return nil }); !errors.Is(err, ErrObjectChanged) {
+	for _, it := range items[:2] {
+		if _, err := read(b, []Item{it}); !errors.Is(err, ErrObjectChanged) {
 			t.Fatalf("reading %s after it changed = %v, want ErrObjectChanged", it.Key, err)
+		}
+	}
+	f.objects["kb/2026-c.md"] = strings.Repeat("x", MaxObjectBytes+1)
+	big := []Item{{Key: "kb/2026-c.md", ETag: etagOf(f.objects["kb/2026-c.md"]), Size: MaxObjectBytes + 1}}
+	if _, err := read(b, big); !errors.Is(err, connector.ErrItemTooLarge) {
+		t.Fatalf("reading an object over the service's cap = %v, want ErrItemTooLarge", err)
+	}
+}
+
+// TestServiceBucketRefusesAnAnswerItCannotAttribute: an object answered out of
+// request order, or whose bytes stop short of its listed size, is refused —
+// never delivered as another object's content or as a truncated file.
+func TestServiceBucketRefusesAnAnswerItCannotAttribute(t *testing.T) {
+	objects := map[string]string{"kb/2026-a.md": "alpha", "kb/2026-b.md": "bravo"}
+	items := []Item{{Key: "kb/2026-a.md", ETag: etagOf("alpha"), Size: 5}, {Key: "kb/2026-b.md", ETag: etagOf("bravo"), Size: 5}}
+	for name, f := range map[string]*fakeService{
+		"out of order": {pageSize: 10, misorder: true, objects: objects},
+		"short":        {pageSize: 10, truncate: true, objects: objects},
+	} {
+		delivered := 0
+		err := NewServiceBucket(serve(t, f), serviceConfig, "id", "secret").Read(context.Background(), items, func(Item, string, io.Reader) error {
+			delivered++
+			return nil
+		})
+		if err == nil || delivered != 0 {
+			t.Fatalf("%s answer: Read = %v after delivering %d objects, want a refusal before any", name, err, delivered)
 		}
 	}
 }
@@ -238,8 +324,12 @@ func TestServiceBucketRefusesAServiceThatIgnoresTheBinding(t *testing.T) {
 		t.Fatalf("List on an unbinding service = %v, want ErrBindingNotHonoured", err)
 	}
 	err := b.Read(context.Background(), []Item{{Key: "kb/2026-a.md", ETag: etagOf("alpha"), Size: 5}}, func(Item, string, io.Reader) error { return nil })
-	if !errors.Is(err, ErrBindingNotHonoured) || len(f.listReqs) != 0 || len(f.gets) != 0 {
-		t.Fatalf("Read = %v after %d lists and %d gets; an unbinding service is never listed or read", err, len(f.listReqs), len(f.gets))
+	if !errors.Is(err, ErrBindingNotHonoured) || len(f.listReqs) != 0 || len(f.getManys) != 0 {
+		t.Fatalf("Read = %v after %d lists and %d reads; an unbinding service is never listed or read", err, len(f.listReqs), len(f.getManys))
+	}
+	unbatched := &fakeService{pageSize: 10, unbatched: true, objects: f.objects}
+	if _, err := NewServiceBucket(serve(t, unbatched), serviceConfig, "id", "secret").List(context.Background()); !errors.Is(err, ErrBindingNotHonoured) {
+		t.Fatalf("List on a service with no batched read = %v, want ErrBindingNotHonoured", err)
 	}
 }
 

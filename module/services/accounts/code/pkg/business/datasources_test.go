@@ -2044,6 +2044,38 @@ func TestAddSourceNormalizesFileExtensions(t *testing.T) {
 	}
 }
 
+// TestAddSource_AdmitsAnObjectStorageSource is the admin path a composed
+// consumer drives: object storage is on the envelope, so AddSource takes a
+// source with a prefix and a key filter, seals its secret, enqueues its first
+// sync, and that sync delivers only what the filter admits.
+func TestAddSource_AdmitsAnObjectStorageSource(t *testing.T) {
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
+	fake := &fakeUploadBucket{objects: []fakeObject{
+		{key: "kb/guides/a.md", etag: "a", body: "A"}, {key: "kb/drafts/b.md", etag: "b", body: "B"},
+	}}
+	useUploadBucket(svc, fake)
+	cfg := uploadConfig()
+	cfg.ExcludePatterns = []string{`^drafts/`}
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "secretkey", Upload: cfg,
+	})
+	if err != nil {
+		t.Fatalf("AddSource(upload) = %v, want admitted", err)
+	}
+	if source.Upload == nil || source.Upload.Prefix != "kb/" || !slices.Equal(source.Upload.ExcludePatterns, []string{`^drafts/`}) ||
+		source.CredentialSecretRef == "" || source.CredentialSecretRef == "secretkey" {
+		t.Fatalf("stored source = %+v, want its config and a sealed secret", source)
+	}
+	takeConnectSync(t, producer, source)
+	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := uploadObjectJobs(producer); len(got) != 1 || got[0].GetAttributes()["upload.key"] != "kb/guides/a.md" {
+		t.Fatalf("delivered %v, want only kb/guides/a.md", got)
+	}
+}
+
 // TestAddSource_RefusesProvidersOffTheEnvelope holds the owner's settled rule:
 // a provider that does not pass the datasource conformance suite keeps its
 // existing sources running and takes no new one, refused before anything is
@@ -2053,7 +2085,6 @@ func TestAddSource_RefusesProvidersOffTheEnvelope(t *testing.T) {
 	svc, audit := newDatasourceService(store, &recordingProducer{}, nil)
 	inputs := map[string]business.AddSourceInput{
 		business.DatasourceProviderCrawler: {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides", Crawler: crawlerConfig()},
-		business.DatasourceProviderUpload:  {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "secretkey", Upload: uploadConfig()},
 	}
 	for provider, in := range inputs {
 		_, err := svc.AddSource(context.Background(), "actor-1", in)

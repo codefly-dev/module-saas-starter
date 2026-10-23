@@ -147,13 +147,16 @@ func (c *FilesConnector) Descriptor() connector.Descriptor {
 	return connector.Descriptor{
 		Key:         ConnectorKey,
 		DisplayName: "Object storage",
-		Description: "A bucket in an object store; the objects under a key prefix are pulled on sync, and only what changed is re-sent.",
+		Description: "A bucket in an object store, read through the object-storage service; the objects under a prefix that pass its key filter are pulled on sync. A source is one collection with one set of readers, so a bucket shared by several audiences is several sources.",
 		Interface:   connector.InterfaceFiles,
 		ConfigFields: []connector.ConfigField{
-			{Key: "endpoint", DisplayName: "Endpoint", Help: "The store's https base URL.", Required: true},
+			{Key: "endpoint", DisplayName: "Endpoint", Help: "The store's origin, http(s) with no path; the object-storage service refuses one that is not on the public internet.", Required: true},
 			{Key: "region", DisplayName: "Region", Help: "The bucket's region, e.g. us-east-1.", Required: true},
 			{Key: "bucket", DisplayName: "Bucket", Required: true},
 			{Key: "prefix", DisplayName: "Prefix", Help: "Key prefix to read under; empty means the whole bucket.", Required: false},
+			{Key: "include_patterns", DisplayName: "Include patterns", Help: "RE2 expressions over the key after the prefix; empty includes everything.", Required: false},
+			{Key: "exclude_patterns", DisplayName: "Exclude patterns", Help: "RE2 expressions over the key after the prefix; an excluded key is never read.", Required: false},
+			{Key: "file_extensions", DisplayName: "File types", Help: "Suffixes to keep, as for a GitHub source; empty keeps every type.", Required: false},
 			{Key: "access_key_id", DisplayName: "Access key ID", Required: true},
 		},
 		CredentialModes: []connector.CredentialMode{connector.CredentialStaticSecret},

@@ -550,7 +550,6 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 			return crawler.New(crawler.Config{SitemapURL: cfg.SitemapURL, MaxPages: cfg.MaxPages})
 		}
 	}
-	s.uploadConnector = objectstore.NewFilesConnector(s.uploadBucketForSource, objectManifests{s.store})
 	if s.newOAuth2Refresh == nil {
 		s.newOAuth2Refresh = apisource.RefreshOAuth2
 	}
@@ -1929,14 +1928,17 @@ var ErrUploadListingIncomplete = errors.New("upload listing is incomplete; remov
 // read fails the sync, which the next one lists afresh.
 func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (int, error) {
 	w := wool.Get(ctx).In("runUploadSync")
-	if s.uploadConnector == nil {
+	// The registered connector is the metered one: every listing and batched
+	// read spends the source credential's budget, as a GitHub sync does.
+	conn, ok := s.datasourceConnectors.Files(DatasourceProviderUpload)
+	if !ok {
 		return 0, w.NewError("datasource connector is not configured")
 	}
 	if source.Upload == nil {
 		return 0, w.NewError("upload source has no config")
 	}
 	src := connectorSource(source)
-	snapshot, err := s.uploadConnector.Changes(ctx, src, "")
+	snapshot, err := conn.Changes(ctx, src, "")
 	if errors.Is(err, objectstore.ErrListingIncomplete) {
 		return 0, w.Wrapf(fmt.Errorf("%w: %w", ErrUploadListingIncomplete, err), "list objects under %q", source.Upload.Prefix)
 	}
@@ -1956,7 +1958,7 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 		if len(batch) == 0 {
 			return nil
 		}
-		err := s.uploadConnector.FetchFiles(ctx, src, snapshot.To, batch, func(f connector.File, content io.Reader) error {
+		err := conn.FetchFiles(ctx, src, snapshot.To, batch, func(f connector.File, content io.Reader) error {
 			body, err := io.ReadAll(content)
 			if err != nil {
 				return err

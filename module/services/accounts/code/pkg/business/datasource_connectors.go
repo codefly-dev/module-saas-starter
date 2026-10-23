@@ -14,12 +14,12 @@ import (
 )
 
 // The host's datasource connectors, on the envelope in pkg/datasource/connector.
-// GitHub is the one conformant connector: it passes the conformance suite
-// (pkg/datasource/github/connector_conformance_test.go). The generic API and
-// the crawler still run on their own engines, outside the envelope; object
-// storage syncs through its envelope connector (objectstore.FilesConnector over
-// the object-storage service) but reads one object per call. All three are
-// registered non-conformant with their gap, so their existing sources keep
+// Two are conformant, each passing the conformance suite beside it: GitHub
+// (pkg/datasource/github/connector_conformance_test.go) and object storage,
+// read through the composed object-storage service
+// (pkg/datasource/objectstore/connector_conformance_test.go). The generic API
+// and the crawler still run on their own engines, outside the envelope; they
+// are registered non-conformant with their gap, so their existing sources keep
 // running and new ones are refused until each passes the suite (the owner's
 // settled question 7).
 
@@ -36,16 +36,6 @@ import (
 const (
 	gapAPIDatasource     = "one untyped response with no item identity, no cursor and no deletions; to be rebuilt as a records connector or retired"
 	gapCrawlerDatasource = "no cursor and no deletions (a page leaving the sitemap is never removed), and one fetch per page"
-	// Object storage DOES report deletions: runUploadSync closes a sync that saw
-	// the whole scope with the complete listing of what it delivered, which the
-	// store tombstones the rest against. This sentence once said the opposite
-	// — "a removed object is never removed" — which told every tenant of an
-	// object-storage source that their deletions were being ignored, when the
-	// mirror listing is exactly the mechanism that applies them. The sync reads
-	// through the object-storage connector, whose cursor exists; what remains is
-	// the service's single-key read (clause 8), and the host's sync re-sending
-	// what the cursor already says is unchanged.
-	gapUploadDatasource = "every sync re-sends every object in scope, and the object-storage service reads one object per call; deletions ARE applied, through the complete listing that closes a whole-scope sync"
 )
 
 // newDatasourceConnectorRegistry builds the host's registry. A registration
@@ -74,16 +64,10 @@ func (s *Service) newDatasourceConnectorRegistry() *connector.Registry {
 		CredentialModes: []connector.CredentialMode{connector.CredentialNone},
 		Gap:             gapCrawlerDatasource,
 	}))
-	must(r.RegisterNonConformant(connector.Descriptor{
-		Key: DatasourceProviderUpload, DisplayName: "Object storage",
-		Description:     "An S3-compatible bucket; the objects under a prefix that pass its key filter are pulled on sync. A source is one collection with one set of readers, so a bucket shared by several audiences is several sources.",
-		Interface:       connector.InterfaceFiles,
-		CredentialModes: []connector.CredentialMode{connector.CredentialStaticSecret},
-		// A bucket has no per-object access list, so the catalog says before a
-		// person asks that every object is readable by the collection's readers.
-		Readers: connector.ReadersSourceScoped,
-		Gap:     gapUploadDatasource,
-	}))
+	// Object storage reads through the composed object-storage service and
+	// passes the suite over its wire (objectstore/connector_conformance_test.go);
+	// metered like GitHub, per source credential.
+	must(r.Register(connector.Budgeted(objectstore.NewFilesConnector(s.uploadBucketForSource, objectManifests{s.store}), datasourceScheduler{s: s})))
 	return r
 }
 

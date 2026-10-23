@@ -53,7 +53,13 @@ func TestDatasourceCatalog_ProjectsTheRegistry(t *testing.T) {
 		len(github.GetConfigFields()) != 4 || github.GetConfigFields()[0].GetKey() != "repo" || !github.GetSupportsWebhook() {
 		t.Fatalf("GitHub entry = %v", github)
 	}
-	for _, key := range []string{business.DatasourceProviderAPI, business.DatasourceProviderCrawler, business.DatasourceProviderUpload} {
+	upload := byKey[business.DatasourceProviderUpload]
+	if !upload.GetConformant() || !upload.GetAcceptsNewSources() || upload.GetConformanceGap() != "" ||
+		upload.GetInterface() != gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_FILES ||
+		upload.GetBudget().GetMaxItemsPerCall() != 1000 || upload.GetBudget().GetMaxItemBytes() != 5<<20 {
+		t.Fatalf("object storage entry = %v, want conformant, accepting new sources, budgeted", upload)
+	}
+	for _, key := range []string{business.DatasourceProviderAPI, business.DatasourceProviderCrawler} {
 		p := byKey[key]
 		if p == nil || p.GetConformant() || p.GetAcceptsNewSources() || p.GetConformanceGap() == "" || p.GetBudget() != nil ||
 			p.GetProvider() == gen.DatasourceProvider_DATASOURCE_PROVIDER_UNSPECIFIED {

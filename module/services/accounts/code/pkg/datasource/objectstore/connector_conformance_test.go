@@ -7,9 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,9 +16,11 @@ import (
 )
 
 // TestFilesConnectorConformance runs the datasource conformance suite against
-// the object-storage connector, over a scripted bucket that requires a
-// sentinel credential and counts every call: one per listing, one per batched
-// read, which is the contract Bucket states.
+// the object-storage connector reading through ServiceBucket, the host's client
+// of the object-storage service, over an in-process fake of the service's gRPC
+// API: the binding, the paged listing and the batched read on the wire, a
+// sentinel credential the store checks, and every RPC counted — so clause 8's
+// bound is measured on the calls the host actually makes.
 func TestFilesConnectorConformance(t *testing.T) {
 	connectortest.RunFiles(t, newConformanceFixture)
 }
@@ -29,21 +29,24 @@ const conformanceCredential = "sentinel-secret-key-4c1d"
 const conformanceMaxItemBytes = 4 << 10
 
 // The suite lists 120 objects in one snapshot: the source is configured at the
-// ceiling, past the 100 an unconfigured source takes.
-var conformanceConfig = SourceConfig{Endpoint: "https://store.example.com", Region: "us-east-1", Bucket: "acme-docs", Prefix: "kb/", Scope: Scope{MaxObjects: maxObjectsCeiling}}
+// ceiling, past the 100 an unconfigured source takes. Its keys are written
+// without a prefix, so the source reads the whole bucket.
+var conformanceConfig = SourceConfig{Endpoint: "https://store.example.com", Region: "us-east-1", Bucket: "acme-docs", Scope: Scope{MaxObjects: maxObjectsCeiling}}
 
 type conformanceFixture struct {
-	store     *fakeStore
+	store     *fakeService
 	manifests *memoryManifests
 	conn      *FilesConnector
 	sources   int
 }
 
 func newConformanceFixture(t *testing.T) connectortest.FilesFixture {
-	f := &conformanceFixture{store: &fakeStore{objects: map[string]string{}}, manifests: &memoryManifests{}}
-	f.conn = NewFilesConnector(func(context.Context, connector.Source) (Bucket, error) {
+	f := &conformanceFixture{store: &fakeService{objects: map[string]string{}, pageSize: 50, secret: conformanceCredential}, manifests: &memoryManifests{}}
+	client := serve(t, f.store)
+	f.conn = NewFilesConnector(func(_ context.Context, src connector.Source) (Bucket, error) {
 		// The host resolves the credential per call; here it is the sentinel.
-		return &fakeBucket{store: f.store, credential: conformanceCredential}, nil
+		cfg, _ := src.Config.(SourceConfig)
+		return NewServiceBucket(client, cfg, "conformance-key", conformanceCredential), nil
 	}, f.manifests, WithMaxItemBytes(conformanceMaxItemBytes))
 	return f
 }
@@ -95,78 +98,9 @@ func (f *conformanceFixture) CredentialPresented() bool { return f.store.authent
 
 func (f *conformanceFixture) MaxItemBytes() int64 { return conformanceMaxItemBytes }
 
-// fakeStore is one bucket's objects, shared by every source of a fixture.
-type fakeStore struct {
-	mu            sync.Mutex
-	objects       map[string]string
-	calls         atomic.Int64
-	throttled     atomic.Bool
-	authenticated atomic.Bool
-}
-
 func etagOf(content string) string {
 	sum := md5.Sum([]byte(content))
 	return `"` + hex.EncodeToString(sum[:]) + `"`
-}
-
-// fakeBucket is the store as one call's credential sees it.
-type fakeBucket struct {
-	store      *fakeStore
-	credential string
-}
-
-var errDenied = errors.New("fake store: access denied")
-
-func (b *fakeBucket) call(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	b.store.calls.Add(1)
-	if b.credential != conformanceCredential {
-		return fmt.Errorf("%w: %w", connector.ErrCredentialRefused, errDenied)
-	}
-	b.store.authenticated.Store(true)
-	if b.store.throttled.Load() {
-		// SlowDown carries no reset; the connector estimates one.
-		return &connector.RateLimitedError{Scope: "credential", Cause: errors.New("fake store: SlowDown")}
-	}
-	return nil
-}
-
-func (b *fakeBucket) List(ctx context.Context) ([]Item, error) {
-	if err := b.call(ctx); err != nil {
-		return nil, err
-	}
-	b.store.mu.Lock()
-	defer b.store.mu.Unlock()
-	items := make([]Item, 0, len(b.store.objects))
-	for key, content := range b.store.objects {
-		items = append(items, Item{Key: key, ETag: etagOf(content), Size: int64(len(content))})
-	}
-	return items, nil
-}
-
-func (b *fakeBucket) Read(ctx context.Context, items []Item, visit func(Item, string, io.Reader) error) error {
-	if err := b.call(ctx); err != nil {
-		return err
-	}
-	b.store.mu.Lock()
-	contents := make([]string, len(items))
-	for i, it := range items {
-		content, ok := b.store.objects[it.Key]
-		if !ok || etagOf(content) != it.ETag {
-			b.store.mu.Unlock()
-			return ErrObjectChanged
-		}
-		contents[i] = content
-	}
-	b.store.mu.Unlock()
-	for i, it := range items {
-		if err := visit(it, "text/plain; charset=utf-8", strings.NewReader(contents[i])); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // memoryManifests retains every listing until forget.

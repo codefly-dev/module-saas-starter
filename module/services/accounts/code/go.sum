@@ -70,8 +70,8 @@ github.com/codefly-dev/sdk-go v0.4.1 h1:WUKYWxXfojTr88SkLtq0T8aqpV0o5pR/muUUcsUU
 github.com/codefly-dev/sdk-go v0.4.1/go.mod h1:zr9ts3kkWNv2XEFUXZB+ydfW6x5b6/NbUvBm4KVYNqs=
 github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458 h1:wBOL7QsuoC0HsS43gsH2+tpsipk4os077C2VUDkMUHg=
 github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458/go.mod h1:hwtrdGtgh8i2xzjgihyd4wY2u+UK7nHQz30OGKL0n+M=
-github.com/codefly-dev/service-object-storage v0.0.19-0.20261023164507-5708d5ef0e13 h1:bWDgJwcSzikiDsu1jfafT5mqTWtal3iELTReZtxEuKI=
-github.com/codefly-dev/service-object-storage v0.0.19-0.20261023164507-5708d5ef0e13/go.mod h1:EWIPBo3I31oxYOK5h0285CGwtGqgX+PbVJNAN2HyW6A=
+github.com/codefly-dev/service-object-storage v0.0.19-0.20261023174549-33ba749336b5 h1:SX80NgrB5n+DTM4UIow2EUTXoFOBw1HTx4hAF+8rrIk=
+github.com/codefly-dev/service-object-storage v0.0.19-0.20261023174549-33ba749336b5/go.mod h1:EWIPBo3I31oxYOK5h0285CGwtGqgX+PbVJNAN2HyW6A=
 github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211 h1:4KAPx8haCA/h4Kx5mB7D0rMriwLLKiOW9G9mMWuiQDw=
 github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211/go.mod h1:5mwz8oM8INcukJLc6C84zdRnmDQ/gkMNI8GxWMwgk+8=
 github.com/codefly-dev/service-redis/cache v0.3.0 h1:F0mb7T1xHJBJDgEmI3kPriyb2EmPxKgtmOxSIUylX7s=

@@ -33,9 +33,10 @@ const maxListPages = 20
 
 // ErrBindingNotHonoured: the service answered Capabilities under the binding
 // without the caps a bound call reports, which is a release from before the
-// binding existed. Such a service ignores the binding and serves its own
-// configured bucket, so nothing it lists or reads is taken for the source's.
-var ErrBindingNotHonoured = errors.New("objectstore: the object-storage service does not honour a per-call binding; it would serve its own bucket")
+// binding existed — such a service ignores the binding and serves its own
+// configured bucket, so nothing it lists or reads is taken for the source's —
+// or without a batch size, which is one from before GetMany.
+var ErrBindingNotHonoured = errors.New("objectstore: the object-storage service does not honour a per-call binding with a batched read; an older one would serve its own bucket")
 
 // ServiceBucket is one source's bucket as the object-storage service serves it.
 type ServiceBucket struct {
@@ -43,7 +44,7 @@ type ServiceBucket struct {
 	binding    *storagev0.Binding
 	folder     string // the binding's prefix: every key the service reports is relative to it
 	listPrefix string // the rest of the source's prefix, which a listing filters on
-	honoured   bool   // Capabilities under the binding reported its caps
+	maxBatch   int    // objects per GetMany, once Capabilities under the binding answered
 }
 
 // NewServiceBucket binds cfg and the source's access key to calls on client.
@@ -96,21 +97,90 @@ func (b *ServiceBucket) List(ctx context.Context) ([]Item, error) {
 	return nil, fmt.Errorf("%w: more than %d pages", ErrListingIncomplete, maxListPages)
 }
 
-// Read gets each object at its listed ETag. The service's bound read takes one
-// key per call, so a batch of N objects costs N calls: the gap the provider is
-// registered with until the service reads a batch in one call.
+// Read gets the batch at its listed ETags in one GetMany call per
+// max_get_many_items objects (1000, which is the connector's batch), streamed
+// back in request order: each object's header, then its bytes. An object
+// rewritten or gone since its listing is ErrObjectChanged; one over the
+// service's cap is the envelope's ErrItemTooLarge.
 func (b *ServiceBucket) Read(ctx context.Context, items []Item, visit func(Item, string, io.Reader) error) error {
 	if err := b.checkBinding(ctx); err != nil {
 		return err
 	}
-	for _, it := range items {
-		content, contentType, err := b.get(ctx, it)
+	for start := 0; start < len(items); start += b.maxBatch {
+		if err := b.readBatch(ctx, items[start:min(start+b.maxBatch, len(items))], visit); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *ServiceBucket) readBatch(ctx context.Context, items []Item, visit func(Item, string, io.Reader) error) error {
+	req := &storagev0.GetManyRequest{Binding: b.binding, Items: make([]*storagev0.GetManyItem, len(items))}
+	for i, it := range items {
+		req.Items[i] = &storagev0.GetManyItem{Key: strings.TrimPrefix(it.Key, b.folder), IfMatch: it.ETag}
+	}
+	stream, err := b.client.GetMany(ctx, req)
+	if err != nil {
+		return storeError(err)
+	}
+	var (
+		current     *Item
+		contentType string
+		content     bytes.Buffer
+		answered    int
+	)
+	finish := func() error {
+		if current == nil {
+			return nil
+		}
+		it := *current
+		current = nil
+		if int64(content.Len()) != it.Size {
+			return fmt.Errorf("%w: %s", ErrObjectChanged, it.Key)
+		}
+		return visit(it, contentType, bytes.NewReader(content.Bytes()))
+	}
+	for {
+		msg, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
 		if err != nil {
+			return storeError(err)
+		}
+		if data, ok := msg.GetKind().(*storagev0.GetManyResponse_Data); ok {
+			if current == nil || int64(content.Len()+len(data.Data)) > current.Size {
+				return fmt.Errorf("%w: the service sent bytes no listed object has", ErrObjectChanged)
+			}
+			content.Write(data.Data)
+			continue
+		}
+		if err := finish(); err != nil {
 			return err
 		}
-		if err := visit(it, contentType, bytes.NewReader(content)); err != nil {
-			return err
+		header := msg.GetHeader()
+		if int(header.GetIndex()) != answered {
+			return fmt.Errorf("objectstore: the service answered object %d where %d was next", header.GetIndex(), answered)
 		}
+		it := items[answered]
+		answered++
+		switch header.GetOutcome() {
+		case storagev0.GetManyOutcome_GET_MANY_OUTCOME_OK:
+			current, contentType = &it, header.GetInfo().GetContentType()
+			content.Reset()
+		case storagev0.GetManyOutcome_GET_MANY_OUTCOME_CHANGED, storagev0.GetManyOutcome_GET_MANY_OUTCOME_NOT_FOUND:
+			return fmt.Errorf("%w: %s", ErrObjectChanged, it.Key)
+		case storagev0.GetManyOutcome_GET_MANY_OUTCOME_TOO_LARGE:
+			return fmt.Errorf("%w: %s is over the object-storage service's cap", connector.ErrItemTooLarge, it.Key)
+		default:
+			return fmt.Errorf("objectstore: the service answered object %s with outcome %v", it.Key, header.GetOutcome())
+		}
+	}
+	if err := finish(); err != nil {
+		return err
+	}
+	if answered != len(items) {
+		return fmt.Errorf("%w: the service answered %d of %d objects", ErrObjectChanged, answered, len(items))
 	}
 	return nil
 }
@@ -118,63 +188,22 @@ func (b *ServiceBucket) Read(ctx context.Context, items []Item, visit func(Item,
 // checkBinding asks the service, once per Bucket, what a call under the binding
 // honours. A service that knows the binding reports the bound read's caps; one
 // that does not drops the unknown field, answers for its configured bucket,
-// and reports none — and would answer List and Get from that bucket too.
+// and reports none — and would answer List and Get from that bucket too. A
+// service that reports no batch size predates the batched read, which this
+// client needs.
 func (b *ServiceBucket) checkBinding(ctx context.Context) error {
-	if b.honoured {
+	if b.maxBatch > 0 {
 		return nil
 	}
 	caps, err := b.client.Capabilities(ctx, &storagev0.CapabilitiesRequest{Binding: b.binding})
 	if err != nil {
 		return storeError(err)
 	}
-	if caps.GetMaxObjectBytes() <= 0 || caps.GetMaxListLimit() <= 0 {
+	if caps.GetMaxObjectBytes() <= 0 || caps.GetMaxListLimit() <= 0 || caps.GetMaxGetManyItems() <= 0 {
 		return ErrBindingNotHonoured
 	}
-	b.honoured = true
+	b.maxBatch = int(caps.GetMaxGetManyItems())
 	return nil
-}
-
-func (b *ServiceBucket) get(ctx context.Context, it Item) ([]byte, string, error) {
-	stream, err := b.client.Get(ctx, &storagev0.GetRequest{Key: strings.TrimPrefix(it.Key, b.folder), IfMatch: it.ETag, Binding: b.binding})
-	if err != nil {
-		return nil, "", readError(err)
-	}
-	first, err := stream.Recv()
-	if err != nil {
-		return nil, "", readError(err)
-	}
-	header := first.GetHeader()
-	if header == nil {
-		return nil, "", errors.New("objectstore: the service sent data before the object's header")
-	}
-	var content bytes.Buffer
-	for {
-		msg, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, "", readError(err)
-		}
-		if int64(content.Len()+len(msg.GetData())) > it.Size {
-			return nil, "", ErrObjectChanged
-		}
-		content.Write(msg.GetData())
-	}
-	if int64(content.Len()) != it.Size {
-		return nil, "", ErrObjectChanged
-	}
-	return content.Bytes(), header.GetInfo().GetContentType(), nil
-}
-
-// readError is storeError for a read at a listed ETag: an object gone or
-// rewritten since its listing is not at that version any more.
-func readError(err error) error {
-	switch status.Code(err) {
-	case codes.NotFound, codes.FailedPrecondition:
-		return fmt.Errorf("%w: %w", ErrObjectChanged, err)
-	}
-	return storeError(err)
 }
 
 // storeError types the service's status for the envelope. PERMISSION_DENIED is
