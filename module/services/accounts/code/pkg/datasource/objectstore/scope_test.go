@@ -9,8 +9,7 @@ import (
 // TestWindow pins what a sync takes of a listing: the admitted keys in listing
 // order, at most the cap, with an excluded key dropped before it is counted.
 func TestWindow(t *testing.T) {
-	listed := []Entry{{Key: "docs/a.md"}, {Key: "docs/drafts/b.md"}, {Key: "docs/c.md"}, {Key: "docs/d.pdf"}}
-	key := func(e Entry) string { return e.Key }
+	listed := []Item{{Key: "docs/a.md"}, {Key: "docs/drafts/b.md"}, {Key: "docs/c.md"}, {Key: "docs/d.pdf"}}
 	noDrafts := func(k string) bool { return !strings.HasPrefix(k, "docs/drafts/") }
 	for _, tc := range []struct {
 		name  string
@@ -25,7 +24,7 @@ func TestWindow(t *testing.T) {
 		{"no cap configured is the default", Scope{InScope: noDrafts}, []string{"docs/a.md", "docs/c.md", "docs/d.pdf"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			kept, whole := Window(tc.scope, listed, key)
+			kept, whole := Window(tc.scope, listed)
 			var keys []string
 			for _, e := range kept {
 				keys = append(keys, e.Key)

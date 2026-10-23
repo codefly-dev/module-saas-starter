@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"accounts/pkg/datasource/objectstore"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -128,6 +129,11 @@ type Store interface {
 	// audit record names a source the same transaction actually deleted.
 	DeleteDatasourceSource(ctx context.Context, orgID, id string) (*RemovedDatasourceSource, error)
 	SetDatasourceSourceSynced(ctx context.Context, orgID, id string, syncedAt time.Time) error
+	// PutDatasourceObjectManifest retains an object-storage source's listing
+	// under its version, and GetDatasourceObjectManifest reads one back (false
+	// once pruned). Both MUST run inside the source's WithOrgTx.
+	PutDatasourceObjectManifest(ctx context.Context, orgID, sourceID, version string, objects []objectstore.Item) error
+	GetDatasourceObjectManifest(ctx context.Context, orgID, sourceID, version string) ([]objectstore.Item, bool, error)
 	// LockDatasourceSourceCredentialRef reads the source's current credential
 	// envelope under a row lock (SELECT … FOR UPDATE) so a refresh-and-rotate
 	// read-modify-write serializes against concurrent syncs of the same source.

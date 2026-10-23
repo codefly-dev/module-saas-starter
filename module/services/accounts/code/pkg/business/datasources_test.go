@@ -36,8 +36,9 @@ type datasourceFakeStore struct {
 	// label alongside the row. Modelling existence alone let a source come back
 	// with an empty collection name and no test could see it.
 	nodes       map[string]string
-	collections map[string]string // label -> node id
-	ordinals    map[string]int64  // source id -> next ordinal to hand out
+	collections map[string]string             // label -> node id
+	ordinals    map[string]int64              // source id -> next ordinal to hand out
+	manifests   map[string][]objectstore.Item // org/source/version -> retained listing
 
 	// beforeInstallationMark, when set, runs just before a park is applied.
 	beforeInstallationMark func(sourceID string)
@@ -60,6 +61,7 @@ func newDatasourceFakeStore() *datasourceFakeStore {
 		nodes:       map[string]string{},
 		collections: map[string]string{},
 		ordinals:    map[string]int64{},
+		manifests:   map[string][]objectstore.Item{},
 
 		setups:        map[string]*business.GitHubAppSetup{},
 		setupConsumed: map[string]bool{},
@@ -289,6 +291,20 @@ func (f *datasourceFakeStore) DeleteDatasourceSource(_ context.Context, orgID, i
 	return &business.RemovedDatasourceSource{
 		Provider: s.Provider, Repo: s.Repo, BoundaryNodeID: s.BoundaryNodeID,
 	}, nil
+}
+
+func (f *datasourceFakeStore) PutDatasourceObjectManifest(_ context.Context, orgID, sourceID, version string, objects []objectstore.Item) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.manifests[orgID+"/"+sourceID+"/"+version] = append([]objectstore.Item(nil), objects...)
+	return nil
+}
+
+func (f *datasourceFakeStore) GetDatasourceObjectManifest(_ context.Context, orgID, sourceID, version string) ([]objectstore.Item, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	items, ok := f.manifests[orgID+"/"+sourceID+"/"+version]
+	return items, ok, nil
 }
 
 func (f *datasourceFakeStore) SetDatasourceSourceSynced(_ context.Context, orgID, id string, syncedAt time.Time) error {
@@ -1271,35 +1287,65 @@ func (f *fakeCrawlerClient) Fetch(_ context.Context, pageURL string) (crawler.Pa
 	return crawler.Page{}, errors.New("unknown page")
 }
 
-// fakeUploadClient serves fixed objects without a live object store, driven one
-// key at a time. fetchErr injects a per-key error (e.g. objectstore.ErrObjectNotFound,
-// objectstore.ErrObjectTooLarge, or a generic failure); listErr fails the listing.
-type fakeUploadClient struct {
-	entries    []objectstore.Entry
-	objects    map[string]objectstore.Object
-	fetchErr   map[string]error
-	listErr    error
-	incomplete bool
-	listCalls  int
-	fetchCalls int
-	fetched    []string
+// fakeUploadBucket is a scripted store behind the object-storage connector: it
+// lists fixed objects and reads a batch in one Read call. readErr injects a
+// per-key read error (an object changed since its listing, a refused
+// credential); listErr fails the listing.
+type fakeUploadBucket struct {
+	objects     []fakeObject
+	contentType string
+	readErr     map[string]error
+	listErr     error
+	listCalls   int
+	readCalls   int
+	read        []string
 }
 
-func (f *fakeUploadClient) List(context.Context) (objectstore.Listing, error) {
+// fakeObject is one listed object; size overrides len(body) when set.
+type fakeObject struct {
+	key, etag, body string
+	size            int64
+}
+
+func (f *fakeUploadBucket) List(context.Context) ([]objectstore.Item, error) {
 	f.listCalls++
 	if f.listErr != nil {
-		return objectstore.Listing{}, f.listErr
+		return nil, f.listErr
 	}
-	return objectstore.Listing{Entries: f.entries, Complete: !f.incomplete}, nil
+	items := make([]objectstore.Item, 0, len(f.objects))
+	for _, o := range f.objects {
+		size := o.size
+		if size == 0 {
+			size = int64(len(o.body))
+		}
+		items = append(items, objectstore.Item{Key: o.key, ETag: o.etag, Size: size})
+	}
+	return items, nil
 }
 
-func (f *fakeUploadClient) Fetch(_ context.Context, key string) (objectstore.Object, error) {
-	f.fetchCalls++
-	f.fetched = append(f.fetched, key)
-	if err := f.fetchErr[key]; err != nil {
-		return objectstore.Object{}, err
+func (f *fakeUploadBucket) Read(_ context.Context, items []objectstore.Item, visit func(objectstore.Item, string, io.Reader) error) error {
+	f.readCalls++
+	for _, it := range items {
+		f.read = append(f.read, it.Key)
+		if err := f.readErr[it.Key]; err != nil {
+			return err
+		}
+		body := ""
+		for _, o := range f.objects {
+			if o.key == it.Key {
+				body = o.body
+			}
+		}
+		if err := visit(it, f.contentType, strings.NewReader(body)); err != nil {
+			return err
+		}
 	}
-	return f.objects[key], nil
+	return nil
+}
+
+// useUploadBucket makes fake the store every object-storage source reads.
+func useUploadBucket(svc *business.Service, fake *fakeUploadBucket) {
+	svc.SetDatasourceUploadBucketFactory(func(objectstore.SourceConfig, string, string) objectstore.Bucket { return fake })
 }
 
 func crawlerConfig() *business.CrawlerDatasourceConfig {
@@ -1533,16 +1579,13 @@ func TestRunDatasourceSync_CrawlerWholesaleFailureIsNotEmptySuccess(t *testing.T
 func TestRunDatasourceSync_UploadStreamsPerObject(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
-	var gotSecret string
-	fake := &fakeUploadClient{
-		entries: []objectstore.Entry{{Key: "kb/a.pdf", ETag: "etag-a"}, {Key: "kb/b.pdf", ETag: "etag-b"}},
-		objects: map[string]objectstore.Object{
-			"kb/a.pdf": {Key: "kb/a.pdf", Body: []byte("PDFA"), ContentType: "application/pdf", ETag: "etag-a"},
-			"kb/b.pdf": {Key: "kb/b.pdf", Body: []byte("PDFB"), ContentType: "application/pdf", ETag: "etag-b"},
-		},
-	}
-	svc.SetDatasourceUploadClientFactory(func(_ business.UploadDatasourceConfig, secret string) business.UploadContentClient {
-		gotSecret = secret
+	var gotKeyID, gotSecret string
+	var gotConfig objectstore.SourceConfig
+	fake := &fakeUploadBucket{contentType: "application/pdf", objects: []fakeObject{
+		{key: "kb/a.pdf", etag: "etag-a", body: "PDFA"}, {key: "kb/b.pdf", etag: "etag-b", body: "PDFB"},
+	}}
+	svc.SetDatasourceUploadBucketFactory(func(cfg objectstore.SourceConfig, keyID, secret string) objectstore.Bucket {
+		gotConfig, gotKeyID, gotSecret = cfg, keyID, secret
 		return fake
 	})
 	source := newUploadSource(t, svc)
@@ -1552,12 +1595,16 @@ func TestRunDatasourceSync_UploadStreamsPerObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Two object jobs, then the listing that closes the sync.
-	if enqueued != 2 || len(producer.jobs) != 3 || fake.listCalls != 1 || fake.fetchCalls != 2 {
-		t.Fatalf("enqueued=%d jobs=%d list=%d fetch=%d, want 2/3/1/2", enqueued, len(producer.jobs), fake.listCalls, fake.fetchCalls)
+	// Two object jobs, then the listing that closes the sync: one listing and
+	// one batched read.
+	if enqueued != 2 || len(producer.jobs) != 3 || fake.listCalls != 1 || fake.readCalls != 1 || len(fake.read) != 2 {
+		t.Fatalf("enqueued=%d jobs=%d list=%d read calls=%d objects read=%d, want 2/3/1/1/2", enqueued, len(producer.jobs), fake.listCalls, fake.readCalls, len(fake.read))
 	}
-	if gotSecret != "secretkey" {
-		t.Fatalf("secret handed to connector = %q, want the decrypted secret key", gotSecret)
+	if gotSecret != "secretkey" || gotKeyID != "AKIAEXAMPLE" {
+		t.Fatalf("credential bound to the store = %q/%q, want the source's key id and decrypted secret key", gotKeyID, gotSecret)
+	}
+	if gotConfig.Endpoint != "https://s3.us-east-1.amazonaws.com" || gotConfig.Bucket != "docs" || gotConfig.Prefix != "kb/" {
+		t.Fatalf("store bound to %+v, want the source's endpoint, bucket and prefix", gotConfig)
 	}
 	job := producer.jobs[0]
 	if job.GetTopic() != "datasource.upload.sync" || !job.GetScope().GetGlobal() {
@@ -1582,11 +1629,11 @@ func TestRunDatasourceSync_UploadStreamsPerObject(t *testing.T) {
 func TestRunDatasourceSync_UploadPropagatesFetchFailure(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
-	fake := &fakeUploadClient{
-		entries:  []objectstore.Entry{{Key: "kb/a.pdf", ETag: "e"}},
-		fetchErr: map[string]error{"kb/a.pdf": errors.New("AccessDenied")},
+	fake := &fakeUploadBucket{
+		objects: []fakeObject{{key: "kb/a.pdf", etag: "e", body: "A"}},
+		readErr: map[string]error{"kb/a.pdf": errors.New("AccessDenied")},
 	}
-	svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
+	useUploadBucket(svc, fake)
 	source := newUploadSource(t, svc)
 	takeConnectSync(t, producer, source)
 
@@ -1598,20 +1645,16 @@ func TestRunDatasourceSync_UploadPropagatesFetchFailure(t *testing.T) {
 	}
 }
 
-// A listed object deleted before its fetch (404) is skipped best-effort while the
-// rest still deliver; an oversized object is surfaced as an error.
-func TestRunDatasourceSync_UploadSkipsVanishedAndSurfacesOversized(t *testing.T) {
+// An object too large for the ingest inbox is known from its listed size: it is
+// never read, the rest still deliver, and the sync surfaces it without a
+// listing that would delete it.
+func TestRunDatasourceSync_UploadSurfacesOversizedWithoutReadingIt(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
-	fake := &fakeUploadClient{
-		entries: []objectstore.Entry{{Key: "ok.pdf", ETag: "e1"}, {Key: "gone.pdf", ETag: "e2"}, {Key: "huge.pdf", ETag: "e3"}},
-		objects: map[string]objectstore.Object{"ok.pdf": {Key: "ok.pdf", Body: []byte("OK"), ETag: "e1"}},
-		fetchErr: map[string]error{
-			"gone.pdf": objectstore.ErrObjectNotFound,
-			"huge.pdf": objectstore.ErrObjectTooLarge,
-		},
-	}
-	svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
+	fake := &fakeUploadBucket{objects: []fakeObject{
+		{key: "kb/ok.pdf", etag: "e1", body: "OK"}, {key: "kb/huge.pdf", etag: "e3", size: 2 << 20},
+	}}
+	useUploadBucket(svc, fake)
 	source := newUploadSource(t, svc)
 	takeConnectSync(t, producer, source)
 
@@ -1619,10 +1662,11 @@ func TestRunDatasourceSync_UploadSkipsVanishedAndSurfacesOversized(t *testing.T)
 	if err == nil {
 		t.Fatal("the oversized object must surface as an error")
 	}
-	// The vanished object is skipped and the deliverable one still enqueues; the
-	// undeliverable one keeps the sync from sending a listing that omits it.
-	if enqueued != 1 || len(producer.jobs) != 1 || producer.jobs[0].GetAttributes()["upload.key"] != "ok.pdf" {
-		t.Fatalf("enqueued=%d jobs=%d, want only ok.pdf delivered and no listing", enqueued, len(producer.jobs))
+	if enqueued != 1 || len(producer.jobs) != 1 || producer.jobs[0].GetAttributes()["upload.key"] != "kb/ok.pdf" {
+		t.Fatalf("enqueued=%d jobs=%d, want only kb/ok.pdf delivered and no listing", enqueued, len(producer.jobs))
+	}
+	if !reflect.DeepEqual(fake.read, []string{"kb/ok.pdf"}) {
+		t.Fatalf("read %v, want the oversized object never read", fake.read)
 	}
 }
 

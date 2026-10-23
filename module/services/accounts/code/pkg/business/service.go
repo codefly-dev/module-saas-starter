@@ -6,6 +6,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/datasource/connector"
+	"accounts/pkg/datasource/objectstore"
 	"accounts/pkg/email"
 	"accounts/pkg/events"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -101,7 +102,8 @@ type Service struct {
 	newGitHubClient          func(token string) GitHubContentClient
 	newAPIClient             func(cfg APIDatasourceConfig, credential string) APIContentClient
 	newCrawlerClient         func(cfg CrawlerDatasourceConfig) CrawlerContentClient
-	newUploadClient          func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient
+	newUploadBucket          func(cfg objectstore.SourceConfig, accessKeyID, secretAccessKey string) objectstore.Bucket
+	uploadConnector          *objectstore.FilesConnector
 	newOAuth2Refresh         OAuth2RefreshFunc // refreshes an OAuth 2.0 API source's access token
 	moduleProducer           jobs.Producer     // request-scoped, transactional outbox producer for the module-facing surface
 	moduleJobStore           jobs.Store        // privileged worker store (claim/finalize) for the module-facing surface

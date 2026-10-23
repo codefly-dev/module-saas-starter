@@ -19,6 +19,11 @@ service-dependencies:
       endpoints:
         - name: read
         - name: write
+    # Object-storage sources are read through this service, under a per-call
+    # binding of the source's bucket and credential (pkg/datasource/objectstore).
+    - name: object-storage
+      endpoints:
+        - name: grpc
     - name: store
       endpoints:
         - name: tcp

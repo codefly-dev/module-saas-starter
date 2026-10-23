@@ -17,6 +17,7 @@ import (
 	"accounts/pkg/business"
 	"accounts/pkg/datasource"
 	"accounts/pkg/datasource/apisource"
+	"accounts/pkg/datasource/objectstore"
 	"accounts/pkg/email"
 	"accounts/pkg/eventcatalog"
 	"accounts/pkg/githubconnector"
@@ -45,9 +46,11 @@ import (
 	"github.com/codefly-dev/core/workloadidentity/native"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
+	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	otelmetric "go.opentelemetry.io/otel/metric"
+	"google.golang.org/grpc"
 )
 
 func init() {
@@ -369,6 +372,15 @@ func doWork(ctx context.Context) (Clean, error) {
 	// documents module consumes. GITHUB_API_BASE_URL overrides api.github.com for
 	// GitHub Enterprise or tests.
 	service.SetDatasourceConnector(cipher, jobStore, os.Getenv("GITHUB_API_BASE_URL"))
+	// Object-storage sources are read through the composed object-storage
+	// service, under a per-call binding of each source's bucket and credential.
+	objectStorage, err := dialObjectStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if objectStorage != nil {
+		service.SetObjectStorage(storagev0.NewObjectStorageClient(objectStorage))
+	}
 	// Every provider credential's operations are metered in one window shared by
 	// every replica, so a sync a person starts is served before background work.
 	service.SetDatasourceBudgetStore(store)
@@ -1453,6 +1465,9 @@ func doWork(ctx context.Context) (Clean, error) {
 			} else {
 				sw.Info("redis cache closed")
 			}
+		}
+		if objectStorage != nil {
+			_ = objectStorage.Close()
 		}
 		sw.Info("closing store")
 		store.Close()
@@ -3009,4 +3024,25 @@ func registerMembershipCacheHealth(c *membership.Cache) {
 			o.ObserveInt64(gauge, storeOnly)
 			return nil
 		}, gauge)
+}
+
+// dialObjectStorage opens the connection to the composed object-storage
+// service. Codefly resolves its endpoint; the service's agent hands its per-run
+// token to consumers as the "token" secret of its object-storage configuration.
+// A deployed cell publishes no such token — it runs the service anonymous and
+// gates callers at the mesh — so an absent token dials without one. A
+// composition that leaves the service out has no endpoint for it: the host
+// then runs without object storage, and an object-storage sync refuses by name.
+func dialObjectStorage(ctx context.Context) (*grpc.ClientConn, error) {
+	network := codefly.For(ctx).Service("object-storage").Endpoint("grpc").API("grpc").NetworkInstance()
+	if network == nil || network.Address == "" {
+		wool.Get(ctx).Info("no object-storage service is composed; object-storage datasources cannot sync")
+		return nil, nil
+	}
+	token, _ := codefly.For(ctx).Service("object-storage").Secret("object-storage", "token")
+	conn, err := objectstore.Dial(network.Address, token)
+	if err != nil {
+		return nil, fmt.Errorf("dial object-storage: %w", err)
+	}
+	return conn, nil
 }

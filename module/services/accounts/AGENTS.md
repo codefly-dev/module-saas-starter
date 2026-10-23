@@ -1075,8 +1075,9 @@ prefix leaves the filter where it is.
   two collections with different readers. The catalog description says so.
 - **The filter is the host's whatever the store.** An S3-style listing takes a
   prefix and a delimiter only, so the object-storage service needs nothing for
-  this. When the envelope connector replaces `runUploadSync`, it takes the
-  same `Scope` (#1211).
+  this. The source's `Scope` rides on its `objectstore.SourceConfig`, so the
+  envelope connector applies it to the service's listing before the version is
+  digested (#1211).
 
 ## A datasource source is refreshed by three things, and one of them covers every provider
 
@@ -1215,31 +1216,43 @@ reconnected with a PAT or through the App, all reach.
 The `upload` provider — "Object storage" to a person — reads a bucket under a
 key prefix into a `collection` scope node. Its readers are source-scoped: a
 bucket has no per-object access list, so the model to offer is one collection
-per prefix, granted like any scope. It is registered non-conformant, so
-`AdmitNewSource` refuses a new one; existing sources sync on `runUploadSync`
-over the host's own S3 client (`pkg/datasource/objectstore/client.go`), daily
-and on "Sync now", re-sending every object and closing a whole-folder sync with
-the listing the store tombstones the rest against. `AddSource` refuses a
-webhook secret for it: there is no push path (#1211 b).
+per prefix, granted like any scope. `AddSource` refuses a webhook secret for it:
+there is no push path (#1211 b).
 
-The owner's direction (2026-10-21) is that the host **re-uses the composed
-object-storage service** rather than keep a store client of its own: the
-service takes a per-call bucket binding with the credential handed per call and
-owns the public-destination guard and the size caps
-(codefly-dev/service-object-storage#108). What lives here is what is per-source
-state:
+The host **re-uses the composed object-storage service** rather than keep a
+store client of its own (the owner's direction, 2026-10-21). This module
+composes it (`services/object-storage`, the `codefly.dev/object-storage` agent)
+and accounts depends on its `grpc` endpoint; `work.go` dials it with the token
+its agent publishes. The service takes a per-call bucket binding — kind,
+endpoint, region, bucket, prefix and the source's access key, for that one call
+— and owns the store protocol, every backend, the public-destination guard on
+each dial and the size cap (codefly-dev/service-object-storage#108). The host
+keeps what is per-source state:
 
-- **The retained listing is the cursor.** `objectstore.FilesConnector` versions
-  a source by the digest of its listing under its binding and diffs the current
-  listing against the one a version names. The host keeps those listings in
-  `datasource_object_manifests` (migration 46), tenant-owned — the control plane
-  has no grant — and pruned to the newest four per source by
+- **The sync reads through the connector.** `runUploadSync` takes a complete
+  snapshot through `objectstore.FilesConnector` (`Changes` from nothing), reads
+  it in batches with `FetchFiles`, delivers each object, and closes with the
+  listing the store tombstones the rest against. It still re-sends every object
+  in scope each sync; delivering only what the cursor says changed would change
+  what the consuming module receives, so it is its own change.
+- **The retained listing is the cursor.** The connector versions a source by
+  the digest of its scoped listing under its binding. The host keeps those
+  listings in `datasource_object_manifests` (migration 46), tenant-owned — the
+  control plane has no grant — and pruned to the newest four per source by
   `PutDatasourceObjectManifest`; a pruned or rebound version resyncs. Clause by
   clause, in [CONFORMANCE.md](./code/pkg/datasource/connector/CONFORMANCE.md).
-- **The connector reaches the store through `objectstore.Bucket`.** It lists the
-  prefix whole or fails (`ErrListingIncomplete` — a partial listing would read
-  every unlisted object as deleted) and reads a batch in one call at the listed
-  ETags. The implementation over the service is not written yet; until it is,
-  the connector is exercised only by the conformance suite over a scripted
-  bucket, the provider stays registered non-conformant, and `client.go` stays
-  the running engine. It is deleted when the service client lands, not extended.
+- **`objectstore.ServiceBucket` is the store.** It pages the listing (bounded;
+  past the bound it is `ErrListingIncomplete`, never a partial version) and
+  reads each object at `If-Match` its listed ETag. A source's prefix is a key
+  prefix and the binding's a folder, so the binding takes the prefix up to its
+  last `/` and the listing filters on the rest: an item keeps its full key.
+  Before it lists or reads it asks `Capabilities` under the binding and refuses
+  a service that reports no bound caps — a release from before the binding
+  would ignore it and serve its own bucket as the tenant's.
+- **Still non-conformant, by one clause.** The service's bound read takes one
+  key per call, so a batch of N objects is N calls (clause 8). The provider
+  stays registered non-conformant with that gap, and `AdmitNewSource` keeps
+  refusing a new source, until the service reads a batch in one call; then it is
+  registered through `connector.Budgeted` and the catalog admits it.
+- **A composition without the service** has no endpoint to resolve: the host
+  starts without object storage and an object-storage sync refuses by name.

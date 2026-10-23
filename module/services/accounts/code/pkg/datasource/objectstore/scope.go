@@ -34,12 +34,12 @@ func (s Scope) limit() int {
 // counted, so an excluded object never uses up the cap and is never fetched.
 // whole is false when the cap cut an admitted item: a caller that reads
 // absence as deletion must then not act on what it kept.
-func Window[T any](s Scope, items []T, key func(T) string) (kept []T, whole bool) {
+func Window(s Scope, items []Item) (kept []Item, whole bool) {
 	limit := s.limit()
-	kept = make([]T, 0, min(len(items), limit))
+	kept = make([]Item, 0, min(len(items), limit))
 	admitted := 0
 	for _, item := range items {
-		if s.InScope != nil && !s.InScope(key(item)) {
+		if s.InScope != nil && !s.InScope(item.Key) {
 			continue
 		}
 		if admitted++; admitted <= limit {

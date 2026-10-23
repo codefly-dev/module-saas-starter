@@ -43,6 +43,7 @@ depend on the database whose authority it witnesses.
 | Caller | Target endpoints | Kubernetes ports |
 | --- | --- | --- |
 | `accounts` | `cache/read`, `cache/write` | TCP 6379 |
+| `accounts` | `object-storage/grpc` | Codefly-assigned gRPC port |
 | `accounts` | `store/tcp` | TCP 5432 |
 | `accounts` | `telemetry/grpc` | Codefly-assigned OTLP gRPC port |
 | `accounts` | `vault/http` | TCP 8200 |

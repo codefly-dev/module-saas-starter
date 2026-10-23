@@ -23,6 +23,7 @@ import (
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
+	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -514,14 +515,6 @@ type CrawlerContentClient interface {
 	Fetch(ctx context.Context, pageURL string) (crawler.Page, error)
 }
 
-// UploadContentClient is the subset of the object-storage connector the Service
-// needs. The Service builds one per Source from its config and decrypted secret
-// access key and drives it item-at-a-time (List then Fetch).
-type UploadContentClient interface {
-	List(ctx context.Context) (objectstore.Listing, error)
-	Fetch(ctx context.Context, key string) (objectstore.Object, error)
-}
-
 // OAuth2RefreshFunc exchanges an OAuth 2.0 refresh token for a fresh access
 // token. It matches apisource.RefreshOAuth2; tests substitute a deterministic
 // implementation.
@@ -557,17 +550,7 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 			return crawler.New(crawler.Config{SitemapURL: cfg.SitemapURL, MaxPages: cfg.MaxPages})
 		}
 	}
-	if s.newUploadClient == nil {
-		s.newUploadClient = func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient {
-			return objectstore.New(objectstore.Config{
-				Endpoint:    cfg.Endpoint,
-				Region:      cfg.Region,
-				Bucket:      cfg.Bucket,
-				Prefix:      cfg.Prefix,
-				AccessKeyID: cfg.AccessKeyID,
-			}, secretAccessKey)
-		}
-	}
+	s.uploadConnector = objectstore.NewFilesConnector(s.uploadBucketForSource, objectManifests{s.store})
 	if s.newOAuth2Refresh == nil {
 		s.newOAuth2Refresh = apisource.RefreshOAuth2
 	}
@@ -621,10 +604,19 @@ func (s *Service) SetDatasourceCrawlerClientFactory(factory func(cfg CrawlerData
 	s.newCrawlerClient = factory
 }
 
-// SetDatasourceUploadClientFactory overrides how per-Source object-storage
-// clients are built. Tests use it to inject a fake without a live object store.
-func (s *Service) SetDatasourceUploadClientFactory(factory func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient) {
-	s.newUploadClient = factory
+// SetObjectStorage makes the composed object-storage service the store every
+// object-storage source is read through, under a per-call binding of the
+// source's bucket and credential. Without it an object-storage sync fails.
+func (s *Service) SetObjectStorage(client storagev0.ObjectStorageClient) {
+	s.newUploadBucket = func(cfg objectstore.SourceConfig, accessKeyID, secretAccessKey string) objectstore.Bucket {
+		return objectstore.NewServiceBucket(client, cfg, accessKeyID, secretAccessKey)
+	}
+}
+
+// SetDatasourceUploadBucketFactory overrides how an object-storage source's
+// Bucket is built. Tests use it to script a store without the service.
+func (s *Service) SetDatasourceUploadBucketFactory(factory func(cfg objectstore.SourceConfig, accessKeyID, secretAccessKey string) objectstore.Bucket) {
+	s.newUploadBucket = factory
 }
 
 // SetDatasourceOAuth2RefreshFunc overrides how an OAuth 2.0 access token is
@@ -1151,8 +1143,13 @@ func normalizeUploadConfig(cfg *UploadDatasourceConfig) (*UploadDatasourceConfig
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, errors.New("upload endpoint must be an absolute http(s) url")
 	}
+	// The object-storage service binds a store by its origin alone; a path,
+	// query or userinfo would be refused at every sync, so it is refused here.
+	if parsed.User != nil || strings.Trim(parsed.Path, "/") != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errors.New("upload endpoint must be the store's origin, with no path, query or userinfo")
+	}
 	out := &UploadDatasourceConfig{
-		Endpoint:    endpoint,
+		Endpoint:    parsed.Scheme + "://" + parsed.Host,
 		Region:      strings.TrimSpace(cfg.Region),
 		Bucket:      strings.TrimSpace(cfg.Bucket),
 		Prefix:      strings.TrimSpace(cfg.Prefix),
@@ -1910,97 +1907,92 @@ func crawlerIngestIdempotencyKey(sourceID, pageURL, contentSHA string) string {
 }
 
 // ErrUploadListingIncomplete reports an upload sync whose listing was not the
-// whole folder: the store truncated it, or the source's object cap cut it. The
-// objects it did list are still delivered, but no listing is sent, so nothing
-// is removed on a partial view; it fails the sync terminally rather than
-// retrying into the same cap.
+// whole scope: the prefix runs past what one listing pages through, or more
+// objects pass the key filter than the source's object cap. Nothing is
+// delivered and no listing is sent, so nothing is removed on a partial view; it
+// fails the sync terminally rather than retrying into the same cap.
 var ErrUploadListingIncomplete = errors.New("upload listing is incomplete; removals were not reconciled")
 
-// runUploadSync mirrors the source's folder into the documents store. It lists
-// the source's objects and fetches each one at a time, enqueuing an ingest
-// delivery per object, then closes the sync with the complete listing of every
-// object it delivered, so the store tombstones the entries whose objects are
-// gone. Every job of one sync carries one freshly allocated ordinal, which the
-// store ranks the listing against the writes it covers by.
+// runUploadSync mirrors the source's scope into the documents store. It takes a
+// complete snapshot through the object-storage connector — the listing within
+// the source's key filter and object cap, read through the object-storage
+// service — and fetches it in batches, enqueuing an ingest delivery per
+// object, then closes the sync with the complete listing of every object it
+// delivered, so the store tombstones the entries whose objects are gone. Every
+// job of one sync carries one freshly allocated ordinal, which the store ranks
+// the listing against the writes it covers by.
 //
-// The listing is sent only when the sync saw the whole folder and delivered
-// every object in it: a failed or truncated listing, a fetch failure, or an
-// object too large to deliver ends the sync without one, so a partial view can
-// never delete. A listed object deleted before its fetch is gone, and is left
-// out of the listing. A key ending in "/" is a folder marker, not a file, and
-// is neither delivered nor listed.
+// The listing is sent only when the sync saw the whole scope and delivered
+// every object in it: a failed listing, one the cap cuts, a fetch failure, or
+// an object too large to deliver ends the sync without one, so a partial view
+// can never delete. An object rewritten or deleted between the listing and its
+// read fails the sync, which the next one lists afresh.
 func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (int, error) {
 	w := wool.Get(ctx).In("runUploadSync")
-	if s.newUploadClient == nil {
+	if s.uploadConnector == nil {
 		return 0, w.NewError("datasource connector is not configured")
 	}
 	if source.Upload == nil {
 		return 0, w.NewError("upload source has no config")
 	}
-
-	secretKey, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
-	if err != nil {
-		return 0, w.Wrapf(err, "decrypt secret access key")
+	src := connectorSource(source)
+	snapshot, err := s.uploadConnector.Changes(ctx, src, "")
+	if errors.Is(err, objectstore.ErrListingIncomplete) {
+		return 0, w.Wrapf(fmt.Errorf("%w: %w", ErrUploadListingIncomplete, err), "list objects under %q", source.Upload.Prefix)
 	}
-	client := s.newUploadClient(*source.Upload, secretKey)
-
-	listing, err := client.List(ctx)
 	if err != nil {
 		return 0, w.Wrapf(err, "list objects")
 	}
-	// The source's key filter and object cap are the connector's Scope, applied
-	// to the listing before anything is fetched: an excluded object is never
-	// read and never counts against the cap, and the closing listing — built
-	// from what was delivered — names only matches, so narrowing the filter
-	// tombstones what it now excludes on the next sync.
-	scope := objectstore.Scope{InScope: uploadKeyScope(source.Upload), MaxObjects: source.Upload.MaxObjects}
-	entries, whole := objectstore.Window(scope, listing.Entries, func(e objectstore.Entry) string { return e.Key })
 	ordinal, err := s.allocateOrdinal(ctx, source.ID)
 	if err != nil {
 		return 0, w.Wrapf(err, "allocate ordinal")
 	}
 
-	enqueued := 0
-	oversized := 0
-	delivered := make([]uploadListingFile, 0, len(entries))
-	for _, entry := range entries {
-		if strings.HasSuffix(entry.Key, "/") {
-			continue
+	enqueued, oversized := 0, 0
+	delivered := make([]uploadListingFile, 0, len(snapshot.Changes))
+	var batch []connector.FileRef
+	var batchBytes int64
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
 		}
-		object, err := client.Fetch(ctx, entry.Key)
-		if err != nil {
-			if errors.Is(err, objectstore.ErrObjectNotFound) {
-				// Deleted between listing and fetch: it is gone, so it is not listed.
-				w.Warn("skipping vanished object", wool.Field("key", entry.Key))
-				continue
+		err := s.uploadConnector.FetchFiles(ctx, src, snapshot.To, batch, func(f connector.File, content io.Reader) error {
+			body, err := io.ReadAll(content)
+			if err != nil {
+				return err
 			}
-			if errors.Is(err, objectstore.ErrObjectTooLarge) {
-				oversized++
-				continue
+			fingerprint := uploadFingerprint(f.Provenance.GetItemVersion(), body)
+			if err := s.enqueueUploadIngest(ctx, source, f.Locator, body, f.ContentType, fingerprint, ordinal); err != nil {
+				return w.Wrapf(err, "enqueue %s", f.Locator)
 			}
-			// A permission or transport failure must not read as an empty bucket:
-			// surface it so the sync is retried and the misconfiguration is visible.
-			return enqueued, w.Wrapf(err, "fetch %s", entry.Key)
-		}
-		if len(object.Body) > maxIngestPayload {
+			delivered = append(delivered, uploadListingFile{Key: f.Locator, ETag: fingerprint})
+			enqueued++
+			return nil
+		})
+		batch, batchBytes = batch[:0], 0
+		return err
+	}
+	for _, ch := range snapshot.Changes {
+		// Objects too large for the ingest inbox cannot be delivered and the
+		// consumer holds no credentials to re-fetch them: never read, counted.
+		if ch.Size > maxIngestPayload {
 			oversized++
 			continue
 		}
-		fingerprint := uploadFingerprint(object, entry)
-		if err := s.enqueueUploadIngest(ctx, source, object, fingerprint, ordinal); err != nil {
-			return enqueued, w.Wrapf(err, "enqueue %s", entry.Key)
+		if len(batch) == objectstore.MaxObjectsPerBatch || batchBytes+ch.Size > objectstore.MaxBatchBytes {
+			if err := flush(); err != nil {
+				return enqueued, w.Wrapf(err, "fetch objects")
+			}
 		}
-		delivered = append(delivered, uploadListingFile{Key: object.Key, ETag: fingerprint})
-		enqueued++
+		batch = append(batch, connector.FileRef{ItemID: ch.Locator, ItemVersion: ch.ItemVersion})
+		batchBytes += ch.Size
+	}
+	if err := flush(); err != nil {
+		return enqueued, w.Wrapf(err, "fetch objects")
 	}
 
-	// Objects too large for the ingest inbox cannot be delivered and the consumer
-	// holds no credentials to re-fetch them; surface it instead of a clean sync.
 	if oversized > 0 {
 		return enqueued, w.NewError("%d object(s) exceed the ingest payload limit", oversized)
-	}
-	if !listing.Complete || !whole {
-		return enqueued, w.Wrapf(ErrUploadListingIncomplete, "listing of %d object(s) under %q", len(entries), source.Upload.Prefix)
 	}
 	if err := s.enqueueUploadListing(ctx, source, ordinal, delivered); err != nil {
 		return enqueued, w.Wrapf(err, "enqueue listing")
@@ -2068,24 +2060,20 @@ func (s *Service) enqueueUploadListing(ctx context.Context, source *DatasourceSo
 }
 
 // uploadFingerprint is the object's content fingerprint used to key delivery
-// idempotency: the ETag from the GET response, else the ETag from the listing,
-// else a hash of the body — so a re-pull of unchanged content always dedupes.
-func uploadFingerprint(object objectstore.Object, entry objectstore.Entry) string {
-	if object.ETag != "" {
-		return object.ETag
+// idempotency: the ETag the object was listed and read at, else a hash of the
+// body — so a re-pull of unchanged content always dedupes.
+func uploadFingerprint(etag string, body []byte) string {
+	if etag != "" {
+		return etag
 	}
-	if entry.ETag != "" {
-		return entry.ETag
-	}
-	digest := sha256.Sum256(object.Body)
+	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:])
 }
 
-func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSource, object objectstore.Object, fingerprint string, ordinal int64) error {
+func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSource, key string, body []byte, contentType, fingerprint string, ordinal int64) error {
 	if source.BoundaryNodeID == "" {
 		return wool.Get(ctx).NewError("datasource source has no resolvable boundary")
 	}
-	contentType := object.ContentType
 	if contentType == "" {
 		contentType = datasourceIngestContentType
 	}
@@ -2096,9 +2084,9 @@ func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSou
 			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceUploadSyncTopic,
 			Source:         datasourceUploadSyncSource,
-			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, object.Key, fingerprint+"\x00"+strconv.FormatInt(ordinal, 10)),
+			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, key, fingerprint+"\x00"+strconv.FormatInt(ordinal, 10)),
 			SchemaVersion:  datasourceIngestSchemaVersion,
-			Payload:        object.Body,
+			Payload:        body,
 			ContentType:    contentType,
 			MaxAttempts:    datasourceIngestMaxAttempts,
 			Attributes: map[string]string{
@@ -2106,7 +2094,7 @@ func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSou
 				attrOrgID:         source.OrgID,
 				attrBoundaryID:    source.BoundaryNodeID,
 				attrUploadBucket:  source.Upload.Bucket,
-				attrUploadKey:     object.Key,
+				attrUploadKey:     key,
 				attrUploadETag:    fingerprint,
 				attrUploadOrdinal: strconv.FormatInt(ordinal, 10),
 				attrChangeType:    changeTypeAdded,

@@ -56,14 +56,10 @@ func uploadObjectJobs(p *recordingProducer) []*jobsv1.NewJob {
 	return out
 }
 
-func mirrorClient() *fakeUploadClient {
-	return &fakeUploadClient{
-		entries: []objectstore.Entry{{Key: "loans/a.xlsx", ETag: "list-a"}, {Key: "loans/", ETag: "dir"}, {Key: "loans/b.xlsx", ETag: "list-b"}},
-		objects: map[string]objectstore.Object{
-			"loans/a.xlsx": {Key: "loans/a.xlsx", Body: []byte("A"), ETag: "get-a"},
-			"loans/b.xlsx": {Key: "loans/b.xlsx", Body: []byte("B"), ETag: "get-b"},
-		},
-	}
+func mirrorBucket() *fakeUploadBucket {
+	return &fakeUploadBucket{objects: []fakeObject{
+		{key: "loans/a.xlsx", etag: "get-a", body: "A"}, {key: "loans/", etag: "dir"}, {key: "loans/b.xlsx", etag: "get-b", body: "B"},
+	}}
 }
 
 // TestRunDatasourceSync_UploadClosesWithTheCompleteListing pins the mirror: a
@@ -73,8 +69,7 @@ func mirrorClient() *fakeUploadClient {
 func TestRunDatasourceSync_UploadClosesWithTheCompleteListing(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
-	fake := mirrorClient()
-	svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
+	useUploadBucket(svc, mirrorBucket())
 	source := newUploadSource(t, svc)
 
 	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
@@ -128,8 +123,7 @@ func TestRunDatasourceSync_UploadClosesWithTheCompleteListing(t *testing.T) {
 func TestRunDatasourceSync_UploadNextSyncRedeliversUnderANewOrdinal(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
-	fake := mirrorClient()
-	svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
+	useUploadBucket(svc, mirrorBucket())
 	source := newUploadSource(t, svc)
 	for i := 0; i < 2; i++ {
 		if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
@@ -155,8 +149,7 @@ func TestRunDatasourceSync_UploadNextSyncRedeliversUnderANewOrdinal(t *testing.T
 func TestRunDatasourceSync_UploadEmptiedFolderListsNothingExplicitly(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
-	fake := &fakeUploadClient{}
-	svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
+	useUploadBucket(svc, &fakeUploadBucket{})
 	source := newUploadSource(t, svc)
 	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
 		t.Fatal(err)
@@ -168,15 +161,17 @@ func TestRunDatasourceSync_UploadEmptiedFolderListsNothingExplicitly(t *testing.
 }
 
 // TestRunDatasourceSync_UploadFailedOrTruncatedListingNeverMirrors pins fail
-// closed: a listing error sends nothing, and a truncated listing still
-// delivers what it listed but sends no listing and fails the sync terminally.
+// closed: a listing error sends nothing; a listing past the source's object cap
+// delivers nothing, sends no listing and fails the sync terminally; and an
+// object changed between the listing and its read fails the sync without a
+// listing, for the next one to list afresh.
 func TestRunDatasourceSync_UploadFailedOrTruncatedListingNeverMirrors(t *testing.T) {
 	t.Run("listing error", func(t *testing.T) {
 		producer := &recordingProducer{}
 		svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
-		fake := mirrorClient()
+		fake := mirrorBucket()
 		fake.listErr = errors.New("AccessDenied")
-		svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
+		useUploadBucket(svc, fake)
 		source := newUploadSource(t, svc)
 		// Connecting enqueues the source's first sync request; this subtest counts
 		// everything on the producer, so that one is taken out of the way first.
@@ -188,23 +183,26 @@ func TestRunDatasourceSync_UploadFailedOrTruncatedListingNeverMirrors(t *testing
 			t.Fatalf("a failed listing enqueued %d job(s)", len(producer.jobs))
 		}
 	})
-	t.Run("truncated listing", func(t *testing.T) {
+	t.Run("listing past the object cap", func(t *testing.T) {
 		producer := &recordingProducer{}
-		store := newDatasourceFakeStore()
-		svc, _ := newDatasourceService(store, producer, nil)
-		fake := mirrorClient()
-		fake.incomplete = true
-		svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
-		source := newUploadSource(t, svc)
-		_, err := svc.RunDatasourceSync(context.Background(), source.ID)
+		svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
+		fake := mirrorBucket()
+		useUploadBucket(svc, fake)
+		cfg := uploadConfig()
+		cfg.MaxObjects = 1
+		source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
+			OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "secretkey", Upload: cfg,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		takeConnectSync(t, producer, source)
+		_, err = svc.RunDatasourceSync(context.Background(), source.ID)
 		if !errors.Is(err, business.ErrUploadListingIncomplete) {
-			t.Fatalf("truncated listing: err = %v, want ErrUploadListingIncomplete", err)
+			t.Fatalf("listing past the cap: err = %v, want ErrUploadListingIncomplete", err)
 		}
-		if len(uploadObjectJobs(producer)) != 2 {
-			t.Fatal("a truncated listing stopped delivering the objects it did list")
-		}
-		if listings := uploadListings(t, producer); len(listings) != 0 {
-			t.Fatalf("a truncated listing was sent as complete: %+v", listings)
+		if len(producer.jobs) != 0 || len(fake.read) != 0 {
+			t.Fatalf("a listing past the cap enqueued %d job(s) and read %v; it must deliver nothing", len(producer.jobs), fake.read)
 		}
 		if _, err := svc.SyncDatasourceSource(context.Background(), "actor-1", testOrg, source.ID); err != nil {
 			t.Fatal(err)
@@ -216,22 +214,21 @@ func TestRunDatasourceSync_UploadFailedOrTruncatedListingNeverMirrors(t *testing
 			t.Fatalf("handler error = %v, want a terminal ProcessingError", jobErr)
 		}
 		if listings := uploadListings(t, producer); len(listings) != 0 {
-			t.Fatal("the job handler's sync sent a listing of a truncated folder")
+			t.Fatal("the job handler's sync sent a listing of a folder past its cap")
 		}
 	})
-	t.Run("vanished object is left out of the listing", func(t *testing.T) {
+	t.Run("object changed since its listing", func(t *testing.T) {
 		producer := &recordingProducer{}
 		svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
-		fake := mirrorClient()
-		fake.fetchErr = map[string]error{"loans/b.xlsx": objectstore.ErrObjectNotFound}
-		svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
+		fake := mirrorBucket()
+		fake.readErr = map[string]error{"loans/b.xlsx": objectstore.ErrObjectChanged}
+		useUploadBucket(svc, fake)
 		source := newUploadSource(t, svc)
-		if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
-			t.Fatal(err)
+		if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err == nil {
+			t.Fatal("a sync whose object changed under it reported success")
 		}
-		listings := uploadListings(t, producer)
-		if len(listings) != 1 || len(*listings[0].Files) != 1 || (*listings[0].Files)[0].Key != "loans/a.xlsx" {
-			t.Fatalf("listing after a vanished object = %+v", listings)
+		if listings := uploadListings(t, producer); len(listings) != 0 {
+			t.Fatalf("a sync that could not read an object at its listed version sent a listing %+v", listings)
 		}
 	})
 }

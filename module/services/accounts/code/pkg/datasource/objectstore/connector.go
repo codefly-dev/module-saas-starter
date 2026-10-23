@@ -27,7 +27,10 @@ import (
 // ConnectorKey is the provider key object-storage sources are stored under.
 const ConnectorKey = "upload"
 
-// Budget limits. An object past MaxItemBytes is refused, never truncated.
+// Budget limits. An object past MaxItemBytes is refused, never truncated;
+// MaxObjectBytes is the cap the object-storage service puts on a bound read
+// (its Capabilities' max_object_bytes), so an object over it is refused here
+// from its listed size rather than by the service mid-read.
 const (
 	MaxObjectsPerBatch = 1000
 	MaxBatchBytes      = 64 << 20
@@ -38,13 +41,15 @@ const (
 // does not say when its limit resets.
 const estimatedThrottleWindow = time.Minute
 
-// SourceConfig is where one source reads: its store, bucket and key prefix. The
-// credential is not here; the host hands it to the Bucket per call.
+// SourceConfig is where one source reads: its store, bucket and key prefix, and
+// the Scope of what under that prefix one sync takes. The credential is not
+// here; the host hands it to the Bucket per call.
 type SourceConfig struct {
 	Endpoint string
 	Region   string
 	Bucket   string
 	Prefix   string
+	Scope    Scope
 }
 
 // binding names the configuration a version was listed under, so a version of
@@ -175,18 +180,28 @@ func (c *FilesConnector) open(ctx context.Context, src connector.Source) (Source
 	return cfg, bucket, nil
 }
 
-// list reads the current listing and its version. Folder markers (keys ending
-// in "/") are not files and are left out.
+// list reads the current listing within the source's Scope, and its version.
+// Folder markers (keys ending in "/") are not files and are left out. A listing
+// the Scope's cap cuts is ErrListingIncomplete: the version names every object
+// in scope or none.
 func (c *FilesConnector) list(ctx context.Context, cfg SourceConfig, bucket Bucket) (string, map[string]Item, error) {
 	items, err := bucket.List(ctx)
 	if err != nil {
 		return "", nil, c.envelopeError(err)
 	}
-	listed := make(map[string]Item, len(items))
+	files := make([]Item, 0, len(items))
 	for _, it := range items {
 		if !strings.HasSuffix(it.Key, "/") {
-			listed[it.Key] = it
+			files = append(files, it)
 		}
+	}
+	kept, whole := Window(cfg.Scope, files)
+	if !whole {
+		return "", nil, fmt.Errorf("%w: more than %d objects are in scope", ErrListingIncomplete, cfg.Scope.limit())
+	}
+	listed := make(map[string]Item, len(kept))
+	for _, it := range kept {
+		listed[it.Key] = it
 	}
 	return versionOf(cfg, listed), listed, nil
 }

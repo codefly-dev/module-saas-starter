@@ -385,6 +385,7 @@ services:
     - name: cache
     - name: frontend
     - name: marketing
+    - name: object-storage
     - name: policy-log
     - name: store
     - name: telemetry

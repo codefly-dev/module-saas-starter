@@ -38,6 +38,8 @@ services:
     endpoints: [http]
   - name: marketing
     endpoints: [http]
+  - name: object-storage
+    endpoints: [grpc]
   - name: policy-log
     endpoints: [grpc]
   - name: store

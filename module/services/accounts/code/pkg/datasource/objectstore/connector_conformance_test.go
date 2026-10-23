@@ -28,7 +28,9 @@ func TestFilesConnectorConformance(t *testing.T) {
 const conformanceCredential = "sentinel-secret-key-4c1d"
 const conformanceMaxItemBytes = 4 << 10
 
-var conformanceConfig = SourceConfig{Endpoint: "https://store.example.com", Region: "us-east-1", Bucket: "acme-docs", Prefix: "kb/"}
+// The suite lists 120 objects in one snapshot: the source is configured at the
+// ceiling, past the 100 an unconfigured source takes.
+var conformanceConfig = SourceConfig{Endpoint: "https://store.example.com", Region: "us-east-1", Bucket: "acme-docs", Prefix: "kb/", Scope: Scope{MaxObjects: maxObjectsCeiling}}
 
 type conformanceFixture struct {
 	store     *fakeStore

@@ -7,6 +7,7 @@ import (
 
 	"accounts/pkg/datasource/connector"
 	"accounts/pkg/datasource/github"
+	"accounts/pkg/datasource/objectstore"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,11 +15,13 @@ import (
 
 // The host's datasource connectors, on the envelope in pkg/datasource/connector.
 // GitHub is the one conformant connector: it passes the conformance suite
-// (pkg/datasource/github/connector_conformance_test.go). The generic API, the
-// crawler and object storage still run on their own engines, outside the
-// envelope; they are registered non-conformant with their gap, so their
-// existing sources keep running and new ones are refused until each passes the
-// suite (the owner's settled question 7).
+// (pkg/datasource/github/connector_conformance_test.go). The generic API and
+// the crawler still run on their own engines, outside the envelope; object
+// storage syncs through its envelope connector (objectstore.FilesConnector over
+// the object-storage service) but reads one object per call. All three are
+// registered non-conformant with their gap, so their existing sources keep
+// running and new ones are refused until each passes the suite (the owner's
+// settled question 7).
 
 // Why each legacy provider is not on the envelope yet, per connector. What
 // remains for each, clause by clause, and what it already honours, is in
@@ -34,13 +37,15 @@ const (
 	gapAPIDatasource     = "one untyped response with no item identity, no cursor and no deletions; to be rebuilt as a records connector or retired"
 	gapCrawlerDatasource = "no cursor and no deletions (a page leaving the sitemap is never removed), and one fetch per page"
 	// Object storage DOES report deletions: runUploadSync closes a sync that saw
-	// the whole folder with the complete listing of what it delivered, which the
-	// store tombstones the rest against. This sentence used to say the opposite
+	// the whole scope with the complete listing of what it delivered, which the
+	// store tombstones the rest against. This sentence once said the opposite
 	// — "a removed object is never removed" — which told every tenant of an
 	// object-storage source that their deletions were being ignored, when the
-	// mirror listing is exactly the mechanism that applies them. What remains is
-	// the cursor: with no version to diff from, every sync re-sends every object.
-	gapUploadDatasource = "no cursor, so every sync re-sends every object, and one fetch per object; deletions ARE applied, through the complete listing that closes a whole-folder sync"
+	// mirror listing is exactly the mechanism that applies them. The sync reads
+	// through the object-storage connector, whose cursor exists; what remains is
+	// the service's single-key read (clause 8), and the host's sync re-sending
+	// what the cursor already says is unchanged.
+	gapUploadDatasource = "every sync re-sends every object in scope, and the object-storage service reads one object per call; deletions ARE applied, through the complete listing that closes a whole-scope sync"
 )
 
 // newDatasourceConnectorRegistry builds the host's registry. A registration
@@ -162,10 +167,57 @@ func (s *Service) admitNewDatasource(provider string) error {
 // tenancy, and — for GitHub — its repository, branch and the host's own scope.
 func connectorSource(source *DatasourceSource) connector.Source {
 	src := connector.Source{ID: source.ID, OrgID: source.OrgID, BoundaryNodeID: source.BoundaryNodeID, CredentialKey: datasourceCredentialKey(source), PersonalOwnerUserID: source.PersonalOwnerUserID}
-	if source.Provider == DatasourceProviderGitHub {
+	switch {
+	case source.Provider == DatasourceProviderGitHub:
 		src.Config = github.SourceConfig{Repo: source.Repo, Branch: source.Branch, InScope: datasourceFileScope(source)}
+	case source.Provider == DatasourceProviderUpload && source.Upload != nil:
+		cfg := source.Upload
+		src.Config = objectstore.SourceConfig{
+			Endpoint: cfg.Endpoint, Region: cfg.Region, Bucket: cfg.Bucket, Prefix: cfg.Prefix,
+			Scope: objectstore.Scope{InScope: uploadKeyScope(cfg), MaxObjects: cfg.MaxObjects},
+		}
 	}
 	return src
+}
+
+// uploadBucketForSource resolves one object-storage source's Bucket, per call:
+// the host decrypts the source's secret access key and binds it to that call,
+// and the connector never sees it.
+func (s *Service) uploadBucketForSource(ctx context.Context, src connector.Source) (objectstore.Bucket, error) {
+	if s.newUploadBucket == nil {
+		return nil, errors.New("object storage is not configured: the host composes no object-storage service")
+	}
+	source, err := s.store.GetDatasourceSourceByID(ctx, src.ID)
+	if err != nil {
+		return nil, err
+	}
+	if source == nil || source.OrgID != src.OrgID || source.Provider != DatasourceProviderUpload || source.Upload == nil {
+		return nil, fmt.Errorf("datasource source %s is not an object-storage source of org %s", src.ID, src.OrgID)
+	}
+	secret, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt secret access key: %w", err)
+	}
+	cfg, _ := connectorSource(source).Config.(objectstore.SourceConfig)
+	return s.newUploadBucket(cfg, source.Upload.AccessKeyID, secret), nil
+}
+
+// objectManifests retains an object-storage source's listings in the store,
+// inside the source's org transaction.
+type objectManifests struct{ store Store }
+
+func (m objectManifests) Put(ctx context.Context, src connector.Source, version string, items []objectstore.Item) error {
+	return m.store.WithOrgTx(ctx, src.OrgID, func(ctx context.Context) error {
+		return m.store.PutDatasourceObjectManifest(ctx, src.OrgID, src.ID, version, items)
+	})
+}
+
+func (m objectManifests) Get(ctx context.Context, src connector.Source, version string) (items []objectstore.Item, ok bool, err error) {
+	err = m.store.WithOrgTx(ctx, src.OrgID, func(ctx context.Context) error {
+		items, ok, err = m.store.GetDatasourceObjectManifest(ctx, src.OrgID, src.ID, version)
+		return err
+	})
+	return items, ok, err
 }
 
 // githubRemoteForSource resolves the credentialed GitHub client for one source,

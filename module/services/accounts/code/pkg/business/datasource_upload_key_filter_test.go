@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
-	"accounts/pkg/datasource/objectstore"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -147,17 +146,11 @@ func objectKeys(p *recordingProducer) []string {
 func TestRunDatasourceSync_UploadKeyFilterNarrowingTombstonesOnlyTheExcluded(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), producer, nil)
-	fake := &fakeUploadClient{
-		entries: []objectstore.Entry{
-			{Key: "kb/guides/a.md", ETag: "a"}, {Key: "kb/guides/b.pdf", ETag: "b"},
-			{Key: "kb/drafts/c.md", ETag: "c"}, {Key: "kb/notes/d.md", ETag: "d"},
-		},
-		objects: map[string]objectstore.Object{},
-	}
-	for _, e := range fake.entries {
-		fake.objects[e.Key] = objectstore.Object{Key: e.Key, Body: []byte(e.Key), ETag: e.ETag}
-	}
-	svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
+	fake := &fakeUploadBucket{objects: []fakeObject{
+		{key: "kb/guides/a.md", etag: "a", body: "a"}, {key: "kb/guides/b.pdf", etag: "b", body: "b"},
+		{key: "kb/drafts/c.md", etag: "c", body: "c"}, {key: "kb/notes/d.md", etag: "d", body: "d"},
+	}}
+	useUploadBucket(svc, fake)
 	source := filteredUploadSource(t, svc, []string{`\.md$`, `^guides/`}, []string{`^drafts/`})
 	takeConnectSync(t, producer, source)
 
@@ -168,9 +161,9 @@ func TestRunDatasourceSync_UploadKeyFilterNarrowingTombstonesOnlyTheExcluded(t *
 	if got := objectKeys(producer); !reflect.DeepEqual(got, wide) {
 		t.Fatalf("enqueued = %v, want %v", got, wide)
 	}
-	sort.Strings(fake.fetched)
-	if !reflect.DeepEqual(fake.fetched, wide) {
-		t.Fatalf("fetched = %v, want only the matches %v: an excluded key is never read", fake.fetched, wide)
+	sort.Strings(fake.read)
+	if !reflect.DeepEqual(fake.read, wide) {
+		t.Fatalf("read = %v, want only the matches %v: an excluded key is never read", fake.read, wide)
 	}
 	if listings := uploadListings(t, producer); len(listings) != 1 || !reflect.DeepEqual(listedKeys(t, listings[0]), wide) {
 		t.Fatalf("closing listing does not name exactly the matches %v", wide)
