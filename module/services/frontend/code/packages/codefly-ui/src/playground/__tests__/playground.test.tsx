@@ -6,7 +6,7 @@ import {
 	screen,
 	within,
 } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { FixtureScenario } from "../../../stories/playground.stories.js";
 import { OperationLog, ScenarioSteps, Step } from "../index.js";
@@ -100,4 +100,19 @@ it("renders on the server and preserves an initialized dark palette on mount", (
 it("names an empty operation log", () => {
 	render(<OperationLog entries={[]} />);
 	expect(screen.getByText("No operations called yet.")).toBeTruthy();
+});
+
+it("leaves the theme control and document palette with the caller", () => {
+	const toggle = vi.fn();
+	document.documentElement.classList.add("dark");
+	const { rerender } = render(
+		<FixtureScenario.render actions={<button onClick={toggle}>Light mode</button>} />,
+	);
+	expect(screen.getAllByRole("button", { name: /Light mode/ })).toHaveLength(1);
+	expect(screen.queryByRole("button", { name: "Dark mode" })).toBeNull();
+	fireEvent.click(screen.getByRole("button", { name: "Light mode" }));
+	expect(toggle).toHaveBeenCalledOnce();
+	expect(document.documentElement.classList.contains("dark")).toBe(true);
+	rerender(<FixtureScenario.render />);
+	expect(screen.queryByRole("button", { name: /(Light|Dark) mode/ })).toBeNull();
 });

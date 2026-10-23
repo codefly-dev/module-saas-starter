@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "../src/layout/index.js";
 import {
 	CapabilityGuide,
@@ -44,7 +44,7 @@ const calls: PlaygroundOperation[] = [
 	},
 ];
 
-function Fixture() {
+function Fixture({ actions }: { actions?: ReactNode }) {
 	const [active, setActive] = useState("inspect");
 	const [entries, setEntries] = useState<PlaygroundOperation[]>([]);
 	const call = calls[active === "inspect" ? 0 : 1];
@@ -56,6 +56,7 @@ function Fixture() {
 			scenarios={scenarios}
 			active={active}
 			onSelect={setActive}
+			actions={actions}
 		>
 			<CapabilityGuide
 				capabilities={[
@@ -124,4 +125,6 @@ function Fixture() {
 	);
 }
 
-export const FixtureScenario = { render: () => <Fixture /> };
+export const FixtureScenario = {
+	render: (props: { actions?: ReactNode } = {}) => <Fixture {...props} />,
+};

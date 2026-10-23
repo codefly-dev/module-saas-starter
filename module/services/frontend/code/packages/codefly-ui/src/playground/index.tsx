@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { JsonView, TextBlock } from "../content/index.js";
 import {
 	Badge,
-	Button,
 	Card,
 	Disclosure,
 	Grid,
@@ -43,6 +42,7 @@ export interface PlaygroundShellProps {
 	scenarios: readonly PlaygroundScenario[];
 	active: string;
 	onSelect: (id: string) => void;
+	/** Caller-owned controls, including theme changes through its own provider. */
 	actions?: ReactNode;
 	notices?: ReactNode;
 	children: ReactNode;
@@ -96,23 +96,11 @@ function Navigation({
 	);
 }
 
-function toggleTheme() {
-	const root = document.documentElement;
-	// Preserve the preview's pre-render palette on mount; only a click changes it.
-	// Suppress transitions while foreground and background change together.
-	const style = document.createElement("style");
-	style.textContent = "*,*::before,*::after{transition:none!important}";
-	document.head.appendChild(style);
-	root.style.colorScheme = root.classList.toggle("dark") ? "dark" : "light";
-	void getComputedStyle(root).color;
-	requestAnimationFrame(() => requestAnimationFrame(() => style.remove()));
-}
-
 /** The shared frame. The page supplies navigation state, content and operations. */
 export function PlaygroundShell(props: PlaygroundShellProps) {
 	const scenario = props.scenarios.find((item) => item.id === props.active);
 	return (
-		<SidebarProvider>
+		<SidebarProvider className="[overflow-wrap:anywhere]">
 			<Navigation {...props} />
 			<SidebarInset className="min-w-0">
 				<Layout className="p-6">
@@ -126,10 +114,6 @@ export function PlaygroundShell(props: PlaygroundShellProps) {
 								className="min-w-0 flex-wrap justify-end"
 							>
 								{props.actions}
-								<Button variant="ghost" onClick={toggleTheme}>
-									<span className="dark:hidden">Dark mode</span>
-									<span className="hidden dark:inline">Light mode</span>
-								</Button>
 							</Stack>
 						</Stack>
 						<PageHeader
@@ -273,7 +257,11 @@ export type StepProps = Omit<PlaygroundOperation, "id"> &
 export function Step(props: StepProps) {
 	return (
 		<li>
-			<Card title={props.title} description={props.operation}>
+			<Card
+				className="[overflow-wrap:anywhere]"
+				title={props.title}
+				description={props.operation}
+			>
 				<Stack>
 					<Outcome result={props} />
 					<Exchange {...props} />
@@ -299,6 +287,7 @@ export function OperationLog({
 					{entries.map((entry) => (
 						<li key={entry.id}>
 							<Disclosure
+								className="[overflow-wrap:anywhere]"
 								title={
 									<>
 										{entry.operation}

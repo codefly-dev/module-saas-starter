@@ -738,7 +738,7 @@ tinted background in the tested default and supplied light/dark skins.
 ## A playground page supplies the work; the shell supplies the frame
 
 `@codefly-dev/ui/playground` (since 0.12.16) extracts the shared sidebar, page
-header, theme control and composition footer into `PlaygroundShell`. Pass
+header and composition footer into `PlaygroundShell`. Pass
 `title`, `moduleName`, `composition`, `scenarios`, `active` and `onSelect`; the
 shell closes mobile navigation after selection. Pages own scenario selection,
 transport, authorization, fixture data and actions, passed through children,
@@ -753,12 +753,15 @@ transport, authorization, fixture data and actions, passed through children,
 repeated operations. Supply only payloads appropriate for the viewer to inspect
 and copy. These are displays of caller-owned results, not an execution engine.
 
-The preview entry imports `@codefly-dev/ui/preview.css` once. Like the kit's
-browser harness, initialize the document's `dark` class before rendering (or
-on the server for SSR), and set `color-scheme` to the same mode. The shell
-preserves that palette on mount, so hydration never resets it to light. Its
-light/dark control changes the document class without color transitions; it
-does not persist a preference. The host owns theme initialization when embedded.
-The fixture is `stories/playground.stories.tsx`; run
+Pass the page's theme control through the existing `actions` slot, for example
+`actions={<ThemeControl />}` where `ThemeControl` uses the application's theme
+provider. The shell neither reads nor changes the document palette; the caller
+owns theme state, initialization, transitions and persistence. The browser harness
+uses the host theme provider and checks that its state matches the document after
+a toggle. A standalone preview initializes its palette before rendering and
+imports `@codefly-dev/ui/preview.css` once. The fixture is
+`stories/playground.stories.tsx`; run
 `node scripts/test-playground-browser.mjs` from the frontend code directory
 to exercise it in the existing package preview harness and capture screenshots.
+The browser checks also cover long operation names and refusal text, keyboard
+navigation and a locally scrolling wide table at phone width.
