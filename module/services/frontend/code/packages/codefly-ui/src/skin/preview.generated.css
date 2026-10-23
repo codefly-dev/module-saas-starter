@@ -2202,6 +2202,10 @@
     padding-left: calc(var(--appearance-spacing) * 5);
   }
 
+  .pl-6 {
+    padding-left: calc(var(--appearance-spacing) * 6);
+  }
+
   .text-center {
     text-align: center;
   }
@@ -4624,6 +4628,14 @@
   .ltr\:-translate-x-1\/2:where(:dir(ltr), [dir="ltr"], [dir="ltr"] *), .rtl\:-translate-x-1\/2:where(:dir(rtl), [dir="rtl"], [dir="rtl"] *) {
     --tw-translate-x: calc(calc(1 / 2 * 100%) * -1);
     translate: var(--tw-translate-x) var(--tw-translate-y);
+  }
+
+  .dark\:hidden:is(.dark *) {
+    display: none;
+  }
+
+  .dark\:inline:is(.dark *) {
+    display: inline;
   }
 
   .dark\:border-input:is(.dark *) {

@@ -150,6 +150,7 @@ solution measured where it had to reach past the kit.
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, `DashboardWidget`, `DashboardSectionHeader`, metric tiles + charts, `SortableGrid`/`SortableBoard`, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 | `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
+| `@codefly-dev/ui/playground` | `PlaygroundShell`, `CapabilityGuide`, `ScenarioSteps`/`Step`, `OperationLog` (React-only) |
 | `@codefly-dev/ui/board`           | `Board` (React-only)                                |
 | `@codefly-dev/ui/dashboard-catalog.json` | The dashboard components as an A2UI catalog — the exact document a consumer freezes |
 | `@codefly-dev/ui/dashboard-data.schema.json` | The data model those catalog bindings resolve against |
@@ -167,7 +168,7 @@ The plugin peers are published alongside the kit under `@codefly-dev` and are
 required. GitHub Packages omits `peerDependenciesMeta` from version metadata;
 marking unpublished peers optional therefore does not make a registry install
 work. Normal npm resolution now installs a complete published peer graph.
-The `./layout`, `./dashboard`, `./chat`, `./content`, `./board` and `./lifecycle`
+The `./layout`, `./dashboard`, `./chat`, `./content`, `./board`, `./playground` and `./lifecycle`
 entry points still do not import the plugin runtime; installing its peers does
 not bundle them into those presentation entry points.
 
@@ -733,3 +734,31 @@ Version 0.12.3 refreshes the default preview palette from appearance contract 2.
 Version 0.12.4 also makes destructive/danger Badge text mix 30% toward the active
 foreground, retaining its status hue while meeting small-text contrast on its
 tinted background in the tested default and supplied light/dark skins.
+
+## A playground page supplies the work; the shell supplies the frame
+
+`@codefly-dev/ui/playground` (since 0.12.16) extracts the shared sidebar, page
+header, theme control and composition footer into `PlaygroundShell`. Pass
+`title`, `moduleName`, `composition`, `scenarios`, `active` and `onSelect`; the
+shell closes mobile navigation after selection. Pages own scenario selection,
+transport, authorization, fixture data and actions, passed through children,
+`actions` and `notices`. The shell fetches nothing and grants no access.
+
+`CapabilityGuide` takes every public capability, including gaps: `demonstrated`,
+`reachable` (not demonstrated), or `unreachable`. The latter two require a
+`reason`. `ScenarioSteps` contains ordered `Step` children with an `operation`,
+`request`, optional `response`, and `state` (`pending`, `running`, `done`,
+`failed`); failures require `refusal` text. Responses use the kit's `JsonView`.
+`OperationLog` takes entries with unique call IDs in invocation order, including
+repeated operations. Supply only payloads appropriate for the viewer to inspect
+and copy. These are displays of caller-owned results, not an execution engine.
+
+The preview entry imports `@codefly-dev/ui/preview.css` once. Like the kit's
+browser harness, initialize the document's `dark` class before rendering (or
+on the server for SSR), and set `color-scheme` to the same mode. The shell
+preserves that palette on mount, so hydration never resets it to light. Its
+light/dark control changes the document class without color transitions; it
+does not persist a preference. The host owns theme initialization when embedded.
+The fixture is `stories/playground.stories.tsx`; run
+`node scripts/test-playground-browser.mjs` from the frontend code directory
+to exercise it in the existing package preview harness and capture screenshots.
