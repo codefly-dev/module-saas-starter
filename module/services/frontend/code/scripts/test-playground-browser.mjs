@@ -18,31 +18,39 @@ try {
 		stdin: {
 			contents: `import { createRoot } from "react-dom/client";
 import { FixtureScenario } from "./packages/codefly-ui/stories/playground.stories.tsx";
-import { Button, Table, TableBody, TableRow, TableCell } from "./packages/codefly-ui/src/layout/index.ts";
-import { PlaygroundShell, ScenarioSteps, Step, OperationLog } from "./packages/codefly-ui/src/playground/index.tsx";
-import { ThemeProvider, useTheme } from "./src/lib/theme-provider.tsx";
-function Fixture() {
- const { resolvedTheme, setTheme } = useTheme();
- return <><output hidden data-theme-owner={resolvedTheme} />
-  <FixtureScenario.render actions={<Button variant="ghost" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>
-   {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
-  </Button>} /></>;
-}
+import { Table, TableBody, TableRow, TableCell } from "./packages/codefly-ui/src/layout/index.ts";
+import { CapabilityGuide, PlaygroundShell, ScenarioSteps, Step, OperationLog } from "./packages/codefly-ui/src/playground/index.tsx";
+import { useState } from "react";
 const initialTheme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+function Fixture() {
+ const [mode, setMode] = useState(initialTheme);
+ const onModeChange = next => {
+  document.documentElement.classList.toggle("dark", next === "dark");
+  document.documentElement.style.colorScheme = next;
+  setMode(next);
+ };
+ return <><output hidden data-theme-owner={mode} />
+  <FixtureScenario.render theme={{mode, onModeChange}} /></>;
+}
 const root = createRoot(document.getElementById("root"));
-root.render(<ThemeProvider defaultTheme={initialTheme}><Fixture /></ThemeProvider>);
+root.render(<Fixture />);
 const operation = "Example." + "Operation".repeat(8);
 const refusal = "Permission denied: " + "reason".repeat(100);
 window.renderOverflowFixture = () => root.render(
  <PlaygroundShell title={operation} moduleName={operation} composition={operation}
   scenarios={Array.from({length: 30}, (_,i) => ({id: String(i), label: operation + i}))}
   active="0" onSelect={() => {}}>
+  <p id="consumer-text">Consumer text keeps its own wrapping policy.</p>
   <ScenarioSteps><Step title={operation} operation={operation} request={{value: "x".repeat(500)}}
    response={{code: "permission_denied"}} state="failed" refusal={refusal}>
    <Table><TableBody><TableRow>{Array.from({length: 8},(_,i) => <TableCell key={i}>{operation}</TableCell>)}</TableRow></TableBody></Table>
   </Step></ScenarioSteps>
   <OperationLog entries={[{id:"1", operation, request:{}, state:"failed", refusal}]} />
- </PlaygroundShell>);`,
+ </PlaygroundShell>);
+window.renderStandalone = component => root.render(component === "guide"
+ ? <CapabilityGuide capabilities={[{id:"1",title:operation,description:operation,status:"unreachable",reason:refusal}]} />
+ : component === "steps" ? <ScenarioSteps><Step title={operation} operation={operation} request={{}} state="failed" refusal={refusal} /></ScenarioSteps>
+ : <OperationLog entries={[{id:"1",operation,request:{},state:"failed",refusal}]} />);`,
 			resolveDir: root,
 			loader: "tsx",
 		},
@@ -59,35 +67,99 @@ window.renderOverflowFixture = () => root.render(
 	);
 	browser = await chromium.launch({ headless: true });
 	for (const dark of [false, true]) {
-		const page = await browser.newPage({ viewport: { width: 390, height: 1000 }, reducedMotion: "reduce" });
+		const page = await browser.newPage({
+			viewport: { width: 390, height: 1000 },
+			reducedMotion: "reduce",
+		});
 		page.setDefaultTimeout(10000);
-		await page.setContent(`<html class="${dark ? "dark" : ""}"><body><div id="root"></div></body></html>`);
+		await page.setContent(
+			`<html class="${dark ? "dark" : ""}"><body><div id="root"></div></body></html>`,
+		);
 		await page.addStyleTag({ content: css });
 		await page.addScriptTag({ path: bundle });
+		const fits = () =>
+			page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+		for (const component of ["guide", "steps", "log"]) {
+			await page.evaluate(
+				(component) => window.renderStandalone(component),
+				component,
+			);
+			await page
+				.getByRole("heading", {
+					name: {
+						guide: "Public capabilities",
+						steps: "Scenario steps",
+						log: "Operation log",
+					}[component],
+					exact: true,
+				})
+				.waitFor();
+			if (component === "log")
+				await page.getByRole("button", { name: /Operation.*Failed/ }).click();
+			assert(await fits(), `standalone ${component} overflows at 390px`);
+			assert(
+				await page
+					.locator("h3")
+					.evaluateAll((elements) =>
+						elements.every(
+							(el) => el.getBoundingClientRect().right <= innerWidth,
+						),
+					),
+				`standalone ${component} heading escapes viewport`,
+			);
+		}
 		await page.evaluate(() => window.renderOverflowFixture());
 		const operation = "Example." + "Operation".repeat(8);
 		await page.getByRole("heading", { name: operation, level: 1 }).waitFor();
-		const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 		assert(await fits(), "long step/title/footer overflow at 390px");
-		await expect(page.getByText("Permission denied: " + "reason".repeat(100), { exact: true })).toBeVisible();
+		assert.equal(
+			await page
+				.locator("#consumer-text")
+				.evaluate((el) => getComputedStyle(el).overflowWrap),
+			"normal",
+			"shell changes consumer wrapping",
+		);
+		await expect(
+			page.getByText("Running in " + operation, { exact: true }),
+		).toBeVisible();
+		await expect(page.getByRole("contentinfo")).toHaveCount(0);
+		await expect(
+			page.getByText("Permission denied: " + "reason".repeat(100), {
+				exact: true,
+			}),
+		).toBeVisible();
 		const table = page.locator('[data-slot="table-container"]');
-		assert(await table.evaluate(el => el.scrollWidth > el.clientWidth), "wide table should scroll locally");
-		await table.evaluate(el => { el.scrollLeft = el.scrollWidth; });
-		assert(await table.evaluate(el => el.scrollLeft > 0), "table cannot scroll to its last cell");
+		assert(
+			await table.evaluate((el) => el.scrollWidth > el.clientWidth),
+			"wide table should scroll locally",
+		);
+		await table.evaluate((el) => {
+			el.scrollLeft = el.scrollWidth;
+		});
+		assert(
+			await table.evaluate((el) => el.scrollLeft > 0),
+			"table cannot scroll to its last cell",
+		);
 		const disclosure = page.getByRole("button", { name: /Operation.*Failed/ });
 		await disclosure.focus();
 		await page.keyboard.press("Enter");
 		await expect(disclosure).toHaveAttribute("aria-expanded", "true");
 		assert(await fits(), "expanded long operation overflows at 390px");
 		await page.getByRole("button", { name: "Toggle Sidebar" }).click();
-		const last = page.getByRole("button", { name: operation + "29", exact: true });
+		await expect(page.getByRole("button", { name: operation + "0", exact: true })).toBeFocused();
+		const last = page.getByRole("button", {
+			name: operation + "29",
+			exact: true,
+		});
 		for (let index = 0; index < 29; index++) await page.keyboard.press("Tab");
 		await expect(last).toBeFocused();
 		await expect(last).toBeInViewport();
 		assert(await fits(), "long navigation overflows at 390px");
 		await page.keyboard.press("Enter");
 		await expect(page.getByRole("dialog")).toBeHidden();
-		await expect(page.getByRole("button", { name: "Toggle Sidebar" })).toBeFocused();
+		await expect(
+			page.getByRole("button", { name: "Toggle Sidebar" }),
+		).toBeFocused();
 		await page.close();
 	}
 	for (const dark of [false, true])
@@ -146,7 +218,12 @@ window.renderOverflowFixture = () => root.render(
 			await refused.focus();
 			await page.keyboard.press("Enter");
 			await expect(refused).toHaveAttribute("aria-expanded", "true");
-			await expect(page.getByRole("figure", { name: "Example.Update response", exact: true })).toHaveCount(2);
+			await expect(
+				page.getByRole("figure", {
+					name: "Example.Update response",
+					exact: true,
+				}),
+			).toHaveCount(2);
 			await page
 				.getByRole("button", {
 					name: dark ? "Light mode" : "Dark mode",
@@ -165,7 +242,10 @@ window.renderOverflowFixture = () => root.render(
 				),
 				!dark,
 			);
-			await expect(page.locator("[data-theme-owner]")).toHaveAttribute("data-theme-owner", dark ? "light" : "dark");
+			await expect(page.locator("[data-theme-owner]")).toHaveAttribute(
+				"data-theme-owner",
+				dark ? "light" : "dark",
+			);
 			await page
 				.getByRole("button", {
 					name: dark ? "Dark mode" : "Light mode",
@@ -182,11 +262,12 @@ window.renderOverflowFixture = () => root.render(
 			await page.screenshot({
 				path: join(output, `${dark ? "dark" : "light"}-${width}.png`),
 				fullPage: true,
+				animations: "disabled",
 			});
 			await page.close();
 		}
 	console.log(
-		`Passed light/dark × desktop/mobile: initial palette, provider-owned theme, navigation, refusals, log expansion and overflow (including long evidence and wide tables at 390px). Screenshots: ${output}`,
+		`Passed light/dark × desktop/mobile: initial palette, controlled kit theme, navigation, refusals, log expansion and standalone/in-shell overflow (including consumer wrapping and wide tables at 390px). Screenshots: ${output}`,
 	);
 } finally {
 	await browser?.close();

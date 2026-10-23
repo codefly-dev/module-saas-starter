@@ -7,6 +7,7 @@ import {
 	ScenarioSteps,
 	Step,
 	type PlaygroundOperation,
+	type PlaygroundThemeToggleProps,
 } from "../src/playground/index.js";
 
 const meta = { title: "Shared UI/Playground" };
@@ -44,7 +45,9 @@ const calls: PlaygroundOperation[] = [
 	},
 ];
 
-function Fixture({ actions }: { actions?: ReactNode }) {
+type FixtureProps = { actions?: ReactNode; theme?: PlaygroundThemeToggleProps };
+
+function Fixture({ actions, theme }: FixtureProps) {
 	const [active, setActive] = useState("inspect");
 	const [entries, setEntries] = useState<PlaygroundOperation[]>([]);
 	const call = calls[active === "inspect" ? 0 : 1];
@@ -57,6 +60,7 @@ function Fixture({ actions }: { actions?: ReactNode }) {
 			active={active}
 			onSelect={setActive}
 			actions={actions}
+			theme={theme}
 		>
 			<CapabilityGuide
 				capabilities={[
@@ -126,5 +130,5 @@ function Fixture({ actions }: { actions?: ReactNode }) {
 }
 
 export const FixtureScenario = {
-	render: (props: { actions?: ReactNode } = {}) => <Fixture {...props} />,
+	render: (props: FixtureProps = {}) => <Fixture {...props} />,
 };

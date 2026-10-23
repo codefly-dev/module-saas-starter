@@ -171,7 +171,7 @@ import { PluginRuntimeProvider, usePluginRuntime } from "@codefly-dev/ui/plugin-
 import { PluginRuntimeProvider as DirectProvider, usePluginRuntime as directHook } from "@codefly-dev/saas-plugin-react/runtime";
 import { ConnectGitHubForm } from "@codefly-dev/saas-ui";
 import { DirectoryService } from "@codefly-dev/saas-sdk";
-import { PlaygroundShell, CapabilityGuide, ScenarioSteps, Step, OperationLog } from "@codefly-dev/ui/playground";
+import { PlaygroundShell, PlaygroundThemeToggle, CapabilityGuide, ScenarioSteps, Step, OperationLog } from "@codefly-dev/ui/playground";
 for (const value of [Disclosure, Accordion, Breadcrumb, Tree, RadioGroup, Surface, Timeline, ViewportOverlay, createTaskTracker, mountIsolated, resolveSkin, ConnectGitHubForm, DirectoryService]) {
  if (!value) throw new Error("Missing public export");
 }
@@ -189,6 +189,8 @@ const playground = renderToStaticMarkup(createElement(PlaygroundShell, { title: 
  createElement(OperationLog, { key: "log", entries: [] }),
 ] }));
 if (!playground.includes("Example playground") || !playground.includes("Example.Read response")) throw new Error("Registry playground did not render");
+const theme = renderToStaticMarkup(createElement(PlaygroundThemeToggle, { mode: "dark", onModeChange() {} }));
+if (!theme.includes("Light mode")) throw new Error("Registry theme control did not render");
 console.log("Registry declarations, public exports, SSR and shared plugin context passed");
 `,
 	);

@@ -150,7 +150,7 @@ solution measured where it had to reach past the kit.
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, `DashboardWidget`, `DashboardSectionHeader`, metric tiles + charts, `SortableGrid`/`SortableBoard`, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 | `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
-| `@codefly-dev/ui/playground` | `PlaygroundShell`, `CapabilityGuide`, `ScenarioSteps`/`Step`, `OperationLog` (React-only) |
+| `@codefly-dev/ui/playground` | `PlaygroundShell`, `PlaygroundThemeToggle`, `CapabilityGuide`, `ScenarioSteps`/`Step`, `OperationLog` (React-only) |
 | `@codefly-dev/ui/board`           | `Board` (React-only)                                |
 | `@codefly-dev/ui/dashboard-catalog.json` | The dashboard components as an A2UI catalog — the exact document a consumer freezes |
 | `@codefly-dev/ui/dashboard-data.schema.json` | The data model those catalog bindings resolve against |
@@ -753,15 +753,34 @@ transport, authorization, fixture data and actions, passed through children,
 repeated operations. Supply only payloads appropriate for the viewer to inspect
 and copy. These are displays of caller-owned results, not an execution engine.
 
-Pass the page's theme control through the existing `actions` slot, for example
-`actions={<ThemeControl />}` where `ThemeControl` uses the application's theme
-provider. The shell neither reads nor changes the document palette; the caller
-owns theme state, initialization, transitions and persistence. The browser harness
-uses the host theme provider and checks that its state matches the document after
-a toggle. A standalone preview initializes its palette before rendering and
-imports `@codefly-dev/ui/preview.css` once. The fixture is
-`stories/playground.stories.tsx`; run
+The shell's optional `theme={{ mode, onModeChange }}` renders the kit's
+`PlaygroundThemeToggle`. It is a stateless light/dark button: the caller supplies
+the current mode and applies the requested mode through its theme owner. The kit
+never reads or changes the document palette. A host with its own control can
+omit `theme` and pass `actions={<ThemeControl />}` instead. Theme initialization,
+transitions and persistence remain with the caller. The host-free preview harness
+initializes the palette before rendering, imports `@codefly-dev/ui/preview.css`
+once, and applies the kit control's callback; no host application code is loaded.
+
+`className` overrides the shell's layout gutters (default `p-6`); use `p-0` inside
+an already padded host shell. `description` supplies the header fallback when
+there is no selected scenario description. Empty navigation displays a message;
+the composition caption stays in the page body, visible with navigation closed,
+and adds no footer landmark. The shell does not change how consumer content wraps.
+
+`CapabilityGuide`, `ScenarioSteps` and `OperationLog` each accept `title` and
+`emptyState` overrides. Empty steps render that message instead of an empty list.
+Pass `labels` to the shell, theme control, guide, step or log to override their
+navigation, composition, theme, capability/operation status and exchange copy;
+for example, `labels={{ failed: "Refused", request: "Input", response: "Output",
+noResponse: "Waiting for output" }}` on a step or log. Each component receives
+its own labels; the shell does not inject copy into consumer children. The log
+shows a call's status once, in its disclosure heading, and retains refusal or
+outcome text in the expanded body.
+
+The fixture is `stories/playground.stories.tsx`; run
 `node scripts/test-playground-browser.mjs` from the frontend code directory
 to exercise it in the existing package preview harness and capture screenshots.
-The browser checks also cover long operation names and refusal text, keyboard
-navigation and a locally scrolling wide table at phone width.
+Browser checks cover each evidence export standalone and inside the shell,
+including long operation/capability names, refusal text, keyboard navigation,
+consumer wrapping, and a locally scrolling wide table at phone width.
