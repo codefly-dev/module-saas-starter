@@ -1044,7 +1044,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -1562,6 +1562,30 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/saas-ui/src/datasources/connect-source.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@tanstack/react-query",
+        "react",
+        "./types.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Catalog-driven provider connection: the host descriptor supplies fields and admission; credentials live only for the operation.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "CatalogProviders"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "RefusedProvider"
+        }
+      ],
+      "coverage": "Owner previews and DOM interaction tests cover admitting, refusing, catalog removal and credential cleanup.",
+      "remaining": "Live external-provider and browser visual qualification under external skins."
+    },
+    {
       "source": "packages/saas-ui/src/datasources/credential-mode.tsx",
       "imports": [
         "@codefly-dev/ui/layout",
@@ -1590,7 +1614,8 @@
         "./types.js",
         "./util.js",
         "./sync-progress.js",
-        "./sync-progress-model.js"
+        "./sync-progress-model.js",
+        "./connect-source.js"
       ],
       "owner": "@codefly-dev/saas-ui",
       "disposition": "already canonical",
@@ -1615,6 +1640,14 @@
         {
           "file": "packages/saas-ui/stories/datasources.stories.tsx",
           "export": "Degraded"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "CatalogProviders"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "RefusedProvider"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
