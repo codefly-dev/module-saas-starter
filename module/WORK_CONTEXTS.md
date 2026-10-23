@@ -105,6 +105,88 @@ checked again on the return exchange.
 {"example":{"tenant":"019f6bf7-5b4b-74e5-8c17-092259bb1661","operation_audiences":{"generate":{"audience":"example-producer","invoke_scopes":[{"resource_kind":"results","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"results","actions":["read"]}]}}}}
 ```
 
+**Installed content reads.**
+
+An operation binding may explicitly set `"delegation_mode": "content_read"`
+in the host-owned module envelope grant. Empty or absent mode keeps the ordinary
+Model, proof and source-delegation exchange rules above. Unknown modes are
+invalid. This mode is retained while the host intersects the envelope ceiling
+with the installed manifest; it is never inferred from a resource name or from
+whether the target is currently present.
+
+```json
+{"audience":"content","delegation_mode":"content_read","invoke_scopes":[{"resource_kind":"documents","actions":["read"]}],"lookup_scopes":[{"resource_kind":"documents","actions":["read"]}]}
+```
+
+A marked binding requires nonempty read-only invoke scopes, no headless scopes
+and no source-delegation scopes. Optional lookup scopes remain a nonempty
+read-only subset of invoke scopes; lookup uses the same restricted child path.
+The parent must be a current human-owned root with no actor hops, addressed to
+the authenticated caller module. Existing actor parents, source-delegated
+parents and delegation references are refused. The host uses Core's Child
+operation to attach the actual module service actor and attenuate the parent.
+The child seals the exact installed binding plus the origin and target's
+current installation, presence generation, producer epoch and envelope revision.
+It cannot be renewed, exchanged again or transformed into another session.
+
+A collection-only reader may carry an eligible foreign content-read scope at
+StartTask for this installed hop. That is standing to request a read, not a
+content grant. Actual source listing and record reads still resolve the human's
+current collection/record visibility. The module actor's own permissions are
+not added to personal visibility. Removing a collection grant withholds those
+sources; removing/replacing either installation, changing presence, or removing
+and restoring the binding invalidates an already issued child. Missing or
+unavailable owner state cannot fall back to an ordinary exchange.
+
+Changing the mode of an existing binding is a policy restriction, including
+adding it where the mode was previously absent. The existing witnessed policy
+log path must authorize that envelope transition; adding a JSON field is not
+an additive grant. An entirely new binding remains subject to the normal grant
+and installation checks. A host without the configured policy-log witness
+refuses a mode migration and leaves the stored envelope revision unchanged.
+No local substitute witness or automatically inferred migration is supported.
+
+**Installed module actors.**
+
+`"delegation_mode": "module_actor"` is the same installed child for a module
+that acts on a person's behalf, so the callee can see which module acted. It
+takes the content-read rules above except that its invoke scopes are not
+limited to `read`. Its audience is one of three:
+
+- a module, which must serve every kind the binding names;
+- a `solution:` audience, held by the organization's installation of that
+  solution;
+- the host's own source operations (`saas-datasource`), where every scope names
+  `datasource.sources` with explicit source ids and carries only `invoke` and
+  `read`. The source surface then takes the call as the person's, with the
+  module acting, for those sources only, and rechecks the person's access to
+  the source on every call.
+
+Lookup, when declared, still yields only lookup scopes.
+
+```json
+{"audience":"solution:example-tools","delegation_mode":"module_actor","invoke_scopes":[{"resource_kind":"tickets","actions":["read","write"]}],"lookup_scopes":[{"resource_kind":"tickets","actions":["read"]}]}
+```
+
+The parent must be a current human-owned root with no actor hops, addressed to
+the authenticated caller module. Core's Child operation derives owner, tenant,
+task and expiry from that parent; the one hop it adds is the authenticated
+caller's module principal, never one the request names, so it equals the owner
+of the module Work Context the host issued that module. The hop is journaled
+like any on-behalf-of hop. The binding id is namespaced `installed-actor/` and
+commits to the caller's installation, presence and envelope facts and to the
+audience's installation where it has one: a module audience's presence and
+installation, or the organization's installation of a solution audience.
+Uninstalling, reinstalling or narrowing either side retires every child
+already issued. A callee's
+revision check confirms the hop from the binding it names
+(`ConfirmModuleHopBinding`); only the owner is a question for the
+authorization store. The child is terminal, as above.
+
+The mode is the binding's, never the request's. The chain-preserving exchange,
+StartTask and registered-agent actors are unchanged, and a binding without a
+mode keeps its owner-only child.
+
 Resource kinds, actions and resource ids are sorted and unique; wildcards are
 refused. Lookup scopes are optional: a binding that declares only invoke scopes
 redeems no lookup, and a lookup exchange under it is refused by name. When present,

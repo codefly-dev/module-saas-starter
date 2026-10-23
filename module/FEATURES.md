@@ -49,8 +49,8 @@ the auth-gateway in front so this code path isn't reached.
 | Test infra   | Playwright e2e against the real stack via `withDependencies` |
 
 Everything is orchestrated by Codefly: `codefly run service --fixture
-dev-admin` resolves the module's service graph and brings up all eight
-services—Postgres + Vault + Redis + object storage + telemetry + Accounts +
+dev-admin` resolves the module's service graph and brings up its
+services—Postgres + Vault + Redis + object storage + Accounts +
 the private auth gateway + frontend—with seed data in one command. Marketing
 remains a separate runtime and may be started, deployed, rolled back, or
 disabled without changing the authenticated product.
@@ -558,8 +558,8 @@ extraction contracts.
 |----------------|--------|-----------------------------------------------------------------|
 | Structured logs| ✅    | `wool` everywhere; user/org/action context auto-attached         |
 | Audit trail    | ✅    | Separate from app logs; queryable                                |
-| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and an in-graph OTLP gateway |
-| Tracing        | ✅    | Accounts resolves the Codefly collector endpoint and exports OTLP for the designated SigNoz backend |
+| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and Go runtime and request metrics pushed over OTLP to the HTTPS operations intake |
+| Tracing        | ✅    | Accounts and auth-gateway export OTLP to the HTTPS operations intake, whose address the platform delivers as `OTEL_EXPORTER_OTLP_ENDPOINT`, for the designated SigNoz backend |
 | Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser errors; trace sampling is fixed at zero |
 | Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; [SigNoz provisioning remains unsupported pending a pinned service qualification](SIGNOZ_PROVISIONING.md) |
 
@@ -616,6 +616,12 @@ the pre-existing opt-in rule, which refuses an ENROLLED member without recent
 evidence. So an enrolled org admin who has not stepped up recently is now refused on
 `AssignRole`, `RevokeRole`, `GrantScope`, `RevokeScope`, the role CRUD and
 `CreateAgentPrincipal`, where before this change nothing asked. That is intended —
+with one exemption: a `GrantScope` of a role whose every permission is a `read`
+(a collection shared with a member or a team) asks for no factor, because the
+subject gains nothing the factor protects; what is exempted is what the store says
+the role grants, never its name, and an unknown role is gated like any other
+(`roleGrantsOnlyReads`). When the gate does refuse, the frontend answers with a
+step-up (`step_up=1&next=<here>` on the sign-in page), not a bare error —
 granting authority inside a tenant is not an ordinary tenant mutation, whoever does
 it — and it is stated here because an operator reading only the paragraph above would
 not predict the refusal. An admin who has enrolled nothing is still admitted, so no
@@ -750,20 +756,38 @@ Environment variables consumed by the api:
 | `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
-| `OBSERVABILITY_EXPORTER`       | Required in-graph collector output: `debug` or `otlphttp`; the collector refuses to start when it is unset |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`  | External OTLP/HTTP destination used only by the collector    |
-| `OTEL_EXPORTER_OTLP_HEADERS`   | Secret external collector headers                            |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`  | The OTLP/gRPC target in the process environment: the operations intake's HTTPS OTLP/gRPC address, delivered from the environment's optional `telemetry:` declaration to every service. Unset means nothing is exported over OTLP; `https://` uses TLS, while `http://` is available for local plaintext receivers |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
 | `TURNSTILE_SECRET_KEY`         | Server-only Siteverify credential                            |
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
-When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the accounts service and the
-auth-gateway export unsampled request and Go runtime metrics through the in-graph
-OpenTelemetry collector. The auth-gateway covers both its HTTP gateway and gRPC ext_authz
-authorization service. Prometheus can alternatively scrape `/metrics` on each
-service's private REST endpoint; neither route is a module or public interface
-endpoint.
+The SDK's `Init` enables tracing when `OTEL_EXPORTER_OTLP_ENDPOINT` is
+present, and `ShutdownTelemetry` flushes traces on service shutdown. Services
+with no endpoint export nothing, including native `local` runs. Invalid exporter
+configuration is logged without stopping the service. Accounts and auth-gateway
+also install an OTLP metrics provider for unsampled request and Go runtime
+metrics; no scrape endpoint is served.
+
+Delivery uses OpenTelemetry process variables, not a module configuration group.
+The environment's optional `telemetry:` declaration is the platform delivery
+contract. [CLI #1097](https://github.com/codefly-dev/cli/pull/1097) supplies the
+standard endpoint, service identity and resource variables to every service;
+services that do not instrument telemetry can ignore them. The endpoint names
+the HTTPS operations intake, rather than a collector deployed by this module.
+`OTEL_SERVICE_NAME` selects trace identity, falling back to the SDK's
+`module/service` identity.
+Metrics also consume `OTEL_RESOURCE_ATTRIBUTES`. Core currently forwards only
+`service.name` and `library.name` to traces, so arbitrary resource attributes
+are not yet attached to trace exports.
+
+| Build or reuse | Verified implementation | Decision |
+| --- | --- | --- |
+| Environment delivery (user choice, 2026-10-21) | Merged [CLI #1097](https://github.com/codefly-dev/cli/pull/1097) environment telemetry injection; operations intake owned by infrastructure | Reuse every-service standard OTEL delivery; remove the overlapping scoped in-cell carrier. Released CLI v0.1.197 includes both this delivery and the squash-merged lifecycle implementation. |
+| Tracing lifecycle and identity | Released SDK v0.4.1 [Init / ShutdownTelemetry](https://github.com/codefly-dev/sdk-go/blob/v0.4.1/codefly.go#L66), using Core wool/otel | Reuse SDK lifecycle; remove per-service tracing bootstrap and its duplicate tests. |
+| Endpoint declaration validation | Core [Endpoint](https://github.com/codefly-dev/core/blob/v0.18.0/resources/endpoint.go#L134) / [InterfaceEndpoint](https://github.com/codefly-dev/core/blob/v0.18.0/resources/module.go#L69) YAML decoders | Reuse the Core decoders before projecting deployment fields. |
+| Metrics export and runtime instruments | OpenTelemetry OTLP metrics exporter and runtime instrumentation v0.71.0; Core/SDK provide no metrics bootstrap | Keep service wiring with the standard exporter. The services remain separate Go modules; no additional shared framework is introduced. |
+| GC activity instruments | Runtime v0.71.0 default instruments omit cycle count and cumulative GC pause CPU time; deprecated pause instruments measure wall time instead | Retain existing `go.gc.cycle.count` and `go.gc.pause.cpu_time` callbacks and their export assertions. |
 
 Frontend browser configuration. The server reads each value from its Codefly group per
 request (`identity`, `legal`, `product-features`, `product-analytics`, `error-tracking`,

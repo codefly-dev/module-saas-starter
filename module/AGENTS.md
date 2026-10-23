@@ -60,11 +60,13 @@ adding a REST-enabled RPC means editing it. Do not go looking for a generator.
 ## Go suites
 
 Every Go service here carries **its own `go.mod`** — `accounts`, `auth-gateway`,
-`store`, `telemetry` — and `tools` is another, with **no `go.work`** tying them
-together. So `go test ./...` only ever covers the module you run it in, and a
-service's suite is outside whatever you run from the tree root. The canonical
-repository adds its own root module (the module agent, the host, and the generated
-reference composition), for six in total; a consumer's root module is its own.
+`store` and `policy-log` — and `tools` is another, with **no `go.work`** tying them together. So
+`go test ./...` only ever covers the module you run it in, and a service's suite
+is outside whatever you run from the tree root. The canonical repository adds its
+own root module (the module agent, the host, and the generated reference
+composition); a consumer's root module is its own.
+`libraries/source-read-sdk/go` and `qualification/module-authority` are two more
+modules, outside this tree, that CI exercises in steps of their own.
 
 To exercise a service, run its suite from its own directory — its DB-backed
 suites need Codefly and Docker — or let `codefly ci run` do it.
@@ -83,8 +85,8 @@ which is only for older CLIs and reuses fixed local database directories across
 otherwise independent runs and migration revisions.
 
 Core is pinned per Go module. Accounts and auth-gateway currently select
-candidate presence/delivery revisions for the lifecycle PR; the gateway also
-selects the SDK candidate providing `ResolveDeliveredNetworkInstance`.
+candidate presence/delivery revisions for the lifecycle PR. Released SDK
+v0.4.1 includes the lifecycle APIs and owns tracing startup and shutdown.
 Their `go.mod` files are the exact source pins. The other services and tools
 retain their own released pins. These are development candidates, not release
 qualification: never ship a host release on an untagged pseudo-version.
@@ -103,15 +105,14 @@ Postgres 0.0.146 and Vault 0.0.42, which include their owners' outcome fixes.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-Lifecycle CI selects the exact CLI source candidate in
-`scripts/ci/install-codefly.sh` for every planner/executor job. It recognises
-the CLI-owned `artifact-cache` group without an authored default. This uses
-the canonical versioned Go install entrypoint; it does not require a CLI
-release for development qualification. The installer refuses release tags
-while the source candidate is selected. Restore a qualified released pin
-before publishing the host.
+CI selects released CLI v0.1.197 in `scripts/ci/install-codefly.sh` for every
+planner/executor job. This release includes the merged lifecycle/artifact-cache
+implementation and environment-wide standard OTEL delivery from the optional
+`telemetry:` declaration. The historical source candidate remains available only
+for explicit development qualification; release tags refuse source candidates.
 
-Outside the gateway's delivery candidate, services use released SDK v0.4.0.
+Accounts and auth-gateway use released SDK v0.4.1; other services retain their
+own released pins.
 Their listeners resolve allocated
 endpoints through `ResolveNetworkInstance`, which selects the delivered or local
 endpoint from the runtime environment; the removed `WithDefaultNetwork` switch

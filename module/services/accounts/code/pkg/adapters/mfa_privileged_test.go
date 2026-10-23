@@ -22,6 +22,7 @@ type mfaPolicyStore struct {
 	platformRole string
 	orgRole      gen.OrgRole
 	member       bool
+	roles        []*gen.Role
 }
 
 func (s *mfaPolicyStore) GetPlatformRole(context.Context, string) (string, error) {
@@ -41,6 +42,20 @@ func (s *mfaPolicyStore) WithUserTx(ctx context.Context, _ string, fn func(conte
 
 func (s *mfaPolicyStore) HasVerifiedMFA(context.Context, string) (bool, error) {
 	return false, nil
+}
+
+// The roles a grant may name. Empty means the role is unknown, which the gate
+// treats like any privilege-granting role.
+func (s *mfaPolicyStore) ListRoles(context.Context, string) ([]*gen.Role, error) {
+	return s.roles, nil
+}
+
+func (s *mfaPolicyStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s *mfaPolicyStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	return fn(ctx)
 }
 
 const (

@@ -102,7 +102,7 @@ func runPostgresInfraTests(m *testing.M) int {
 	setupDone := testdb.MeasureSetup("infra-db", []string{"store"}, 90*time.Second)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithExcludedDependencies("cache", "vault", "telemetry"),
+		sdk.WithExcludedDependencies("cache", "vault"),
 		sdk.WithNamingScope("test-infra"),
 		sdk.WithTimeout(90*time.Second),
 		sdk.WithSilence("store"),

@@ -5,8 +5,8 @@ description: Boot this module's whole service graph on a developer machine — w
 
 # Running the starter locally
 
-The graph is vault → store → cache → telemetry → accounts → auth-gateway →
-frontend, plus marketing. One command boots all of it with a fake-auth fixture:
+The graph is vault → store → cache → accounts → auth-gateway → frontend, plus
+marketing. One command boots all of it with a fake-auth fixture:
 
 ```bash
 codefly run service --fixture dev-admin
@@ -23,6 +23,14 @@ codefly run service --fixture dev-admin
 - No TTY (CI, pipes, MCP) auto-enables `--headless`.
 - Docker must be running. `codefly doctor` checks prerequisites; `codefly clear`
   reaps stray processes and containers between runs.
+- The module ships no collector. Standard OpenTelemetry process variables
+  select export: `OTEL_EXPORTER_OTLP_ENDPOINT` names the collector, with
+  `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` supplying identity.
+  CLIs implementing [CLI #1097](https://github.com/codefly-dev/cli/pull/1097)
+  deliver these for every service through an environment's optional `telemetry:`
+  block, pointing at the HTTPS operations intake.
+  Without an endpoint, SDK Init enables no tracing, including for `local`.
+  No module configuration group is required.
 
 For a real external identity provider and the production-grade provider stack,
 use the `local-dogfood` environment and its configuration groups:

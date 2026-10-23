@@ -10,6 +10,8 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+
+import { refusalToast } from "@/features/auth/model/step-up";
 import { UserLabel } from "@/components/user-label";
 import { UserPicker } from "@/components/user-picker";
 import { formatDate } from "@/shared/lib/utils";
@@ -75,7 +77,7 @@ export function AdminsPage() {
 					setUserId("");
 					setOpen(false);
 				},
-				onError: () => toast.error("Failed to grant role"),
+				onError: (error) => refusalToast(error, "Failed to grant role"),
 			},
 		);
 	}
@@ -141,7 +143,7 @@ export function AdminsPage() {
 										onClick={() =>
 											revokeRole.mutate(admin.userId, {
 												onSuccess: () => toast.success("Role revoked"),
-												onError: () => toast.error("Failed to revoke role"),
+												onError: (error) => refusalToast(error, "Failed to revoke role"),
 											})
 										}
 									>

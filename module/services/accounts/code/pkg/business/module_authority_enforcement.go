@@ -172,7 +172,7 @@ func requestedCeiling(request *solutionhost.Authority, held ModuleEnvelopePrinci
 			delegating = id
 		}
 	}
-	if delegating == "" && len(request.Bindings) == 1 {
+	if delegating == "" && len(request.Bindings) == 1 && held.Grant.OperationAudiences[request.Bindings[0].ID].DelegationMode == "" {
 		delegating = request.Bindings[0].ID
 	}
 	for _, binding := range request.Bindings {
@@ -182,11 +182,12 @@ func requestedCeiling(request *solutionhost.Authority, held ModuleEnvelopePrinci
 		invoke := scopesOf(binding.Operations[modulecontract.OperationInvoke])
 		audience := ModuleOperationAudience{
 			Audience:       binding.Audience,
+			DelegationMode: held.Grant.OperationAudiences[binding.ID].DelegationMode,
 			InvokeScopes:   invoke,
 			LookupScopes:   scopesOf(binding.Operations[modulecontract.OperationLookup]),
 			HeadlessScopes: nilIfEmpty(scopesOf(binding.Operations[modulecontract.OperationHeadless])),
 		}
-		if binding.ID == delegating {
+		if binding.ID == delegating && audience.DelegationMode == "" {
 			audience.SourceDelegationScopes = nilIfEmpty(invoke)
 		}
 		if grant.OperationAudiences == nil {
