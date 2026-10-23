@@ -54,13 +54,41 @@ closes a whole-folder sync.
 | 6 budget and backpressure | No declared `Budget`, and the connector is not metered by `datasource_credential_budgets`, so an object-storage sync cannot yield to a person's sync the way a GitHub one does. |
 | 8 bulk only | One `GetObject` per object. The listing is one call; the fetches are not. |
 
-**What closing it takes.** A `FilesConnector` over S3 whose version is a digest
-of the listing (key → ETag) and whose `Changes(from)` diffs the current listing
-against the one `from` names — which needs the previous listing to be retained,
-since S3 has no "what changed since" API. That is a store-shaped change, not
-just a connector: the host would have to keep the last manifest per source. Not
-done here because it is a design question about where that manifest lives, not a
-gap in a flow that already exists.
+**What closing it takes, and how far it has got.** The connector that closes
+clause 4 exists and passes `connectortest.RunFiles`
+(`pkg/datasource/objectstore/connector_conformance_test.go`); it is not yet what
+the host syncs through, so the registration above is unchanged and every
+object-storage source still runs on `runUploadSync`.
+
+- **The cursor is a retained listing.** An object store answers only "what is
+  there now", so `objectstore.FilesConnector` versions a source by a digest of
+  its listing (key, ETag, size) under its binding (endpoint, region, bucket,
+  prefix), and the host keeps the listing each version names in
+  `datasource_object_manifests` (migration 46; tenant-owned, the newest four
+  per source). `Changes(from)` diffs the current listing against the retained
+  one; a version whose listing was pruned, or that was listed under another
+  bucket or prefix, is `ErrResyncRequired`. A key that left and a key that
+  arrived with the same ETag and size are reported as one MOVED change — a
+  store has no rename, and the same bytes at a new key is what a move is.
+- **A fetch is at a version.** `FetchFiles` serves an object only at the ETag
+  the version's listing names; an object rewritten or deleted since is
+  `ErrItemNotFound`, never content the version did not have.
+- **The store is reached through a `Bucket`, not spoken to.** The connector
+  signs, dials and guards nothing: listing and reading are the composed
+  object-storage service's, under a per-call binding with the credential the
+  host decrypts (codefly-dev/service-object-storage#108). `client.go` in this
+  package is the engine `runUploadSync` still uses; it is deleted when the
+  `Bucket` over the service lands, not finished.
+- **Clause 8 rests on the service.** The suite's scripted bucket serves a batch
+  in one read, which is the contract `Bucket.Read` states. Whether the
+  service's binding serves a batch in one call or one call per object decides
+  whether that holds against a real store; until the client exists it is the
+  stated requirement, not a measured fact.
+
+What remains before the provider is registered conformant: the `Bucket` over the
+service, `runUploadSync` replaced by the envelope path, the connector registered
+through `connector.Budgeted` so it is metered by `datasource_credential_budgets`
+(clause 6), and the gap sentence above deleted.
 
 ## crawler — documentation website
 
@@ -146,6 +174,7 @@ not qualify database commit/rollback or cross-process serialization.
 | api | no | yes (records) | no | no | no |
 
 Object storage is the nearest: it is already on an admissible interface and
-already applies deletions, and one cursor stands between it and a second
-conformant implementation. That is what would demonstrate the model generalises,
-and it is the one worth doing next.
+already applies deletions, and its cursor is built and passes the suite against
+a scripted store. What stands between it and a second conformant implementation
+is the client of the object-storage service the host syncs through. That is
+what would demonstrate the model generalises.

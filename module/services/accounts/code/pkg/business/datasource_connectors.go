@@ -74,7 +74,10 @@ func (s *Service) newDatasourceConnectorRegistry() *connector.Registry {
 		Description:     "An S3-compatible bucket; objects under a prefix are pulled on sync.",
 		Interface:       connector.InterfaceFiles,
 		CredentialModes: []connector.CredentialMode{connector.CredentialStaticSecret},
-		Gap:             gapUploadDatasource,
+		// A bucket has no per-object access list, so the catalog says before a
+		// person asks that every object is readable by the collection's readers.
+		Readers: connector.ReadersSourceScoped,
+		Gap:     gapUploadDatasource,
 	}))
 	return r
 }
