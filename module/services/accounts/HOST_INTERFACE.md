@@ -144,3 +144,19 @@ red line: an authenticated caller for the audience probe; explicit scopes in bas
 cases with the empty ask as its own line; List as an administrator's read;
 `Session.bearer`; the elsewhere audience as its own fixture field; the hop names no
 binding until core decides.
+
+## The suite at 13 lines (2026-10-23 evening)
+
+The interface repository's suite (at `2e2bcf2`) now states the hop rule and the
+delegate rule: a module hops only on a token addressed to it, names the binding it
+exercises, and inherits from the owner, so a chain of modules can cross audiences.
+On accounts: 5 pass (Keys, sign-in, the person line, refusals by reason, the
+workload line), 3 skip because this harness states no permission matrix, no
+delegate chain and no installed solution yet, 5 fail.
+
+The hop line's new first step, a person's token naming its module's binding, is
+refused because the adapter sends no scopes for that shape; the host's
+`withOperationBindingScopes` (#1219) is the person half once it inherits the
+person's holdings rather than installation ids. The hop itself must then require
+the parent addressed to the acting module and re-derive from the owner, as the
+host's audience exchange already re-mints, so a chain crosses audiences.
