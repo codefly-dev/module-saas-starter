@@ -112,9 +112,10 @@ cannot diverge or fight during synchronization.
 
 ### Framework compatibility
 
-The initial supported line is Next.js `>=16.2 <17`, React `>=19.2 <20`, and
+The supported line is Next.js `>=16.4.1 <17`, React `>=19.2 <20`, and
 React DOM `>=19.2 <20`. CI pins the starter's tested versions (currently Next
-16.2.10 and React/React DOM 19.2.4). The contract package has no React runtime,
+16.4.1 and React/React DOM 19.2.8). The Next.js minimum includes the October 2026
+security fixes. The contract package has no React runtime,
 type, or peer dependency. The React package enforces its React peer range;
 framework-bearing UI packages will enforce corresponding Next.js and React DOM
 ranges if they are activated.

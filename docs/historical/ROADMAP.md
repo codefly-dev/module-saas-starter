@@ -1,5 +1,9 @@
 > **Historical.** Retired on 2026-09-17; kept for the record and not maintained. The one plan is [docs/PLAN.md](../PLAN.md).
 
+Framework versions below describe their dated changes, not the current security
+baseline. The starter now uses Next.js 16.4.1; see
+[Release gates](../../RELEASE_GATES.md#vulnerability-policy-and-its-one-exemption).
+
 # SaaS Starter implementation roadmap
 
 Status: active

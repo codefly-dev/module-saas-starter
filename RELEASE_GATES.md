@@ -487,6 +487,13 @@ deliberately different policies.
    `--outdated=false` keeps this step about vulnerabilities, not staleness. The
    two npm audits are production-dependency-only at high severity.
 
+The October 2026 frontend security baseline is Next.js 16.4.1 (also used by
+marketing), `@sentry/nextjs` 10.75.2 and transitive DOMPurify 3.4.17. The
+frontend's ESLint Next.js preset follows the framework version. DOMPurify is
+resolved through Swagger UI's existing dependency range; neither published UI
+kit package declares these dependencies. Regenerate locks with npm and rerun
+both production audits when moving this baseline.
+
 So `--fail-on-vuln=false` narrows *what blocks*, never *what is looked at*: the
 evidence report is the wider of the two, and the enforcement step is the
 narrower. A finding in a first-party dependency is un-mergeable; a finding in a

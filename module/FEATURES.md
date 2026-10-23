@@ -36,8 +36,8 @@ the auth-gateway in front so this code path isn't reached.
 | Layer        | Choice                                               |
 |--------------|------------------------------------------------------|
 | Backend      | Go, Connect-RPC + gRPC + grpc-gateway REST (one impl)|
-| Frontend     | Next.js 16 (App Router) + Connect-ES + TanStack Query|
-| Public site  | Separate Next.js 16 service + repository Markdown     |
+| Frontend     | Next.js 16.4.1 (App Router) + Connect-ES + TanStack Query|
+| Public site  | Separate Next.js 16.4.1 service + repository Markdown     |
 | Auth tokens  | Ed25519 JWT, OWASP refresh-token rotation            |
 | Identity     | WorkOS / Auth0 / Google / generic OIDC (prod), fixture (dev) |
 | Database     | Postgres                                             |
