@@ -4,6 +4,16 @@
   "status": "Implementation in progress; story coverage and closure evidence incomplete",
   "families": [
     {
+      "source": "packages/codefly-ui/src/playground/index.tsx",
+      "imports": ["react", "../content/index.js", "../layout/index.js"],
+      "owner": "@codefly-dev/ui/playground",
+      "disposition": "already canonical",
+      "reason": "Shared scenario frame and operation evidence composed from layout and content primitives.",
+      "stories": [{"file": "packages/codefly-ui/stories/playground.stories.tsx", "export": "FixtureScenario"}],
+      "coverage": "Owner fixture and Chromium light/dark desktop/mobile checks: navigation, refusals, log expansion, theme initialization and overflow.",
+      "remaining": "Live backend calls, external skins and screen-reader qualification."
+    },
+    {
       "source": "packages/codefly-ui/src/board/board.tsx",
       "imports": [
         "@dnd-kit/core",
@@ -5599,6 +5609,7 @@
     }
   ],
   "publicEntrypoints": {
+    "@codefly-dev/ui/playground": "packages/codefly-ui/src/playground/index.tsx",
     "@codefly-dev/ui": "packages/codefly-ui/src/index.ts",
     "@codefly-dev/ui/plugin-host": "packages/codefly-ui/src/plugin-host/index.ts",
     "@codefly-dev/ui/plugin-host/runtime": "packages/codefly-ui/src/plugin-host/runtime.ts",
