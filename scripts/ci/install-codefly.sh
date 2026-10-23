@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-source-5234ce248b092edf1138a16ec4140dfbc8745522}"
+version="${CODEFLY_VERSION:-0.1.202}"
 source_revision=""
 case "${version}" in
   source-5234ce248b092edf1138a16ec4140dfbc8745522)
@@ -68,6 +68,11 @@ case "${version}" in
     # Runnable derivation, and CLI-owned module contracts.codefly.yaml.
     # Digest from the signed release's checksums.txt (Linux amd64 archive).
     checksum=72950d9a1b28d8153f8266a13e1425d3584f8fbbe0a40ebe7e89a521d7eeac7f
+    ;;
+  0.1.202)
+    # Released successor to the source candidate above; retains CLI-owned
+    # artifact-cache resolution. Linux amd64 digest from release checksums.txt.
+    checksum=ebf7ad53a7cb75d114b9bd23e87187fb0292719747ce615525a00e7c36b262e0
     ;;
   *)
     echo "Unsupported Codefly CI version: ${version}" >&2
