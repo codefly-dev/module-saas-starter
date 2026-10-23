@@ -187,6 +187,18 @@ The mode is the binding's, never the request's. The chain-preserving exchange,
 StartTask and registered-agent actors are unchanged, and a binding without a
 mode keeps its owner-only child.
 
+**A parent that names its module's bindings.** A person's parent for a module
+that will exchange through its installed bindings may name those bindings
+instead of their scopes: `StartTask`'s `operation_bindings` takes binding ids
+of the audience module. The host resolves each one the way the exchange will
+(`ModuleOperationAudience`: the binding as installed at the organization,
+narrowed by that installation) and adds its invoke scopes, keeping each
+resource only if the person holds it by the check every mint makes. A binding
+the person holds nothing under is refused by name. So a source binding's ids
+come from the organization's installation, never from the caller. Only a
+direct human-owned mint takes it; an actor's mint and a resource-confined mint
+refuse it. A scope the caller also names is carried once.
+
 Resource kinds, actions and resource ids are sorted and unique; wildcards are
 refused. Lookup scopes are optional: a binding that declares only invoke scopes
 redeems no lookup, and a lookup exchange under it is refused by name. When present,

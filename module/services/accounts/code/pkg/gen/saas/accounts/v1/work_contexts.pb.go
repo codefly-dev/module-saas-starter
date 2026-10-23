@@ -173,9 +173,16 @@ type StartTaskWorkContextRequest struct {
 	// capability to this exact workspace and reject cross-workspace reuse.
 	WorkspaceId *string `protobuf:"bytes,9,opt,name=workspace_id,json=workspaceId,proto3,oneof" json:"workspace_id,omitempty"`
 	// Optional product/project attribution inside workspace_id.
-	ProjectId     *string `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3,oneof" json:"project_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ProjectId *string `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3,oneof" json:"project_id,omitempty"`
+	// Operation bindings of the audience module, by name, whose invoke scopes
+	// this capability carries beside authority_scopes. The host resolves each
+	// name to the binding as installed at org_id, narrowed by that installation
+	// exactly as the module's delegated exchange redeems it, and keeps each
+	// resource only if the person holds it. The caller names a binding and never
+	// its resource ids. A direct human-owned mint only.
+	OperationBindings []string `protobuf:"bytes,11,rep,name=operation_bindings,json=operationBindings,proto3" json:"operation_bindings,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *StartTaskWorkContextRequest) Reset() {
@@ -269,6 +276,13 @@ func (x *StartTaskWorkContextRequest) GetProjectId() string {
 		return *x.ProjectId
 	}
 	return ""
+}
+
+func (x *StartTaskWorkContextRequest) GetOperationBindings() []string {
+	if x != nil {
+		return x.OperationBindings
+	}
+	return nil
 }
 
 // StartInstallationTaskRequest is the headless (no-user-present) mint path. The
@@ -1201,7 +1215,7 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\rresource_kind\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\fresourceKind\x12/\n" +
 	"\aactions\x18\x02 \x03(\tB\x15\xbaH\x12\x92\x01\x0f\b\x01\x10@\x18\x01\"\ar\x05\x10\x01\x18\x80\x01R\aactions\x127\n" +
-	"\fresource_ids\x18\x03 \x03(\tB\x14\xbaH\x11\x92\x01\x0e\x10\x80\x02\x18\x01\"\ar\x05\x10\x01\x18\x80\x04R\vresourceIds\"\xa8\x04\n" +
+	"\fresource_ids\x18\x03 \x03(\tB\x14\xbaH\x11\x92\x01\x0e\x10\x80\x02\x18\x01\"\ar\x05\x10\x01\x18\x80\x04R\vresourceIds\"\xec\x04\n" +
 	"\x1bStartTaskWorkContextRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12$\n" +
 	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12,\n" +
@@ -1219,7 +1233,8 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\n" +
 	" \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x01R\tprojectId\x88\x01\x01B\x0f\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x01R\tprojectId\x88\x01\x01\x12B\n" +
+	"\x12operation_bindings\x18\v \x03(\tB\x13\xbaH\x10\x92\x01\r\x10@\x18\x01\"\ar\x05\x10\x01\x18\x80\x02R\x11operationBindingsB\x0f\n" +
 	"\r_workspace_idB\r\n" +
 	"\v_project_idJ\x04\b\x03\x10\x04R\n" +
 	"session_id\"\xab\x04\n" +
