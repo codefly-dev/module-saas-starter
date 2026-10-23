@@ -217,6 +217,25 @@ func TestRunDatasourceSync_UploadFailedOrTruncatedListingNeverMirrors(t *testing
 			t.Fatal("the job handler's sync sent a listing of a folder past its cap")
 		}
 	})
+	// The store's bucket gone between the listing and the reads: the service
+	// answers every object of the batch NOT_FOUND, which ServiceBucket reports
+	// as ErrObjectChanged. Tombstone authority is the closing listing alone, and
+	// it is sent only after a successful listing in the same sync and the
+	// delivery of every object in it — so this sync fails and deletes nothing.
+	t.Run("every object gone after its listing", func(t *testing.T) {
+		producer := &recordingProducer{}
+		svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
+		fake := mirrorBucket()
+		fake.readErr = map[string]error{"loans/a.xlsx": objectstore.ErrObjectChanged, "loans/b.xlsx": objectstore.ErrObjectChanged}
+		useUploadBucket(svc, fake)
+		source := newUploadSource(t, svc)
+		if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err == nil {
+			t.Fatal("a sync whose every object vanished under it reported success")
+		}
+		if listings := uploadListings(t, producer); len(listings) != 0 {
+			t.Fatalf("a sync that read none of its listed objects sent a listing %+v; it would tombstone the collection", listings)
+		}
+	})
 	t.Run("object changed since its listing", func(t *testing.T) {
 		producer := &recordingProducer{}
 		svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)

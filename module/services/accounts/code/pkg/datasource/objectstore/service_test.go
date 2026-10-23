@@ -350,6 +350,12 @@ func TestServiceBucketTypesTheServicesRefusals(t *testing.T) {
 			var limited *connector.RateLimitedError
 			return errors.As(err, &limited) && limited.ResetAt.After(time.Now().Add(20*time.Second))
 		}},
+		// A missing bucket is the store's error, never an empty listing: an
+		// empty one would be a version that names no object, and the sync's
+		// closing listing would tombstone the whole collection against it.
+		{"missing bucket", status.Error(codes.NotFound, "no such bucket"), func(err error) bool {
+			return status.Code(err) == codes.NotFound
+		}},
 		{"invalid binding", status.Error(codes.InvalidArgument, "bad bucket"), func(err error) bool {
 			return status.Code(err) == codes.InvalidArgument && !errors.Is(err, connector.ErrCredentialRefused)
 		}},
