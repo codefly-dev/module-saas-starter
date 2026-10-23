@@ -26,7 +26,10 @@ execution and teardown through the existing package lock. Business tests use
 Vault for hashing and encrypted credentials. Only the Redis target starts the
 `cache` service: it proves the org-membership
 cache stack across two instances and the Redis-held revocation, nonce and
-rate-limit state against the real server. Dependency exclusions prevent every
+rate-limit state against the real server, and runs the codefly.dev/cache
+conformance suite (`cachetest.Run` and `RunStack`: every mode the driver's
+declaration supports, the named pitfalls, the simulation's fixed seeds) against
+the service-redis driver the membership stack shares. Dependency exclusions prevent every
 other service from building or starting.
 
 With `go test -v`, database harnesses emit JSON timing records to stderr for
