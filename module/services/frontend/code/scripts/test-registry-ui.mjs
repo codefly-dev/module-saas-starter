@@ -171,6 +171,7 @@ import { PluginRuntimeProvider, usePluginRuntime } from "@codefly-dev/ui/plugin-
 import { PluginRuntimeProvider as DirectProvider, usePluginRuntime as directHook } from "@codefly-dev/saas-plugin-react/runtime";
 import { ConnectGitHubForm } from "@codefly-dev/saas-ui";
 import { DirectoryService } from "@codefly-dev/saas-sdk";
+import { PlaygroundShell, CapabilityGuide, ScenarioSteps, Step, OperationLog } from "@codefly-dev/ui/playground";
 for (const value of [Disclosure, Accordion, Breadcrumb, Tree, RadioGroup, Surface, Timeline, ViewportOverlay, createTaskTracker, mountIsolated, resolveSkin, ConnectGitHubForm, DirectoryService]) {
  if (!value) throw new Error("Missing public export");
 }
@@ -182,6 +183,12 @@ function Consumer() {
 }
 const html = renderToStaticMarkup(createElement(PluginRuntimeProvider, { runtime, children: createElement(Consumer) }));
 if (!html.includes("Registry verified")) throw new Error("Published control did not render");
+const playground = renderToStaticMarkup(createElement(PlaygroundShell, { title: "Example playground", moduleName: "Example Module", composition: "Example Composition", scenarios: [], active: "", onSelect() {}, children: [
+ createElement(CapabilityGuide, { key: "guide", capabilities: [] }),
+ createElement(ScenarioSteps, { key: "steps", children: createElement(Step, { title: "Read", operation: "Example.Read", request: {}, response: null, state: "done" }) }),
+ createElement(OperationLog, { key: "log", entries: [] }),
+] }));
+if (!playground.includes("Example playground") || !playground.includes("Example.Read response")) throw new Error("Registry playground did not render");
 console.log("Registry declarations, public exports, SSR and shared plugin context passed");
 `,
 	);
