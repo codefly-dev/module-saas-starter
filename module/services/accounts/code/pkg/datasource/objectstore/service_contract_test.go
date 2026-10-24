@@ -18,6 +18,8 @@ import (
 	"time"
 
 	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
+
+	"accounts/pkg/datasource/connector"
 )
 
 // The host's deletion authority rests on two things the object-storage service
@@ -236,5 +238,25 @@ func TestPinnedServiceRefusesAnIncompleteListing(t *testing.T) {
 		if errors.Is(err, ErrBindingNotHonoured) {
 			t.Fatalf("%s: the pinned gateway does not honour the binding: %v", name, err)
 		}
+	}
+}
+
+// TestPinnedServiceNamesATooLongListing: a store that answers a page with more
+// entries than it was asked for has not answered the listing the host asked
+// for. The pinned service refuses it and names the reason, and the host must
+// read that reason as an incomplete listing — which fails the sync with
+// nothing delivered — never as a throttle, which would block the credential
+// for every source sharing it and retry the same listing forever.
+func TestPinnedServiceNamesATooLongListing(t *testing.T) {
+	keys := map[string]string{}
+	for i := 0; i <= 1000; i++ {
+		keys[fmt.Sprintf("kb/%04d.md", i)] = "x"
+	}
+	store := httptest.NewServer(&scriptedS3{keys: keys})
+	defer store.Close()
+	_, err := contractBucket(startGateway(t, store), store, "kb/").List(context.Background())
+	var limited *connector.RateLimitedError
+	if !errors.Is(err, ErrListingIncomplete) || errors.As(err, &limited) {
+		t.Fatalf("a page of 1,001 entries = %v, want ErrListingIncomplete and no rate limit", err)
 	}
 }

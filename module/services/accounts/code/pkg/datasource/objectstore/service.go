@@ -237,22 +237,53 @@ func (b *ServiceBucket) checkBinding(ctx context.Context) error {
 	return nil
 }
 
-// storeError types the service's status for the envelope. PERMISSION_DENIED is
-// a credential the store refused or an endpoint the service's guard refused;
-// both are the source's configuration to fix, and the service's message names
-// which. RESOURCE_EXHAUSTED is a throttle: an object over the service's size
-// cap is refused before its read, from its listed size.
+// errorDomain is the ErrorInfo domain the object-storage service names every
+// refusal's reason under (codefly-dev/service-object-storage v0.0.19).
+const errorDomain = "object-storage.codefly.dev"
+
+// ErrDestinationRefused: the object-storage service's guard refused the
+// source's endpoint — not on the public internet, nor a composed dependency.
+// It is the source's configuration to fix; the credential was never tried.
+var ErrDestinationRefused = errors.New("objectstore: the object-storage service refused the source's endpoint")
+
+// storeError types the service's status for the envelope by the reason the
+// service names, not by its code: one code covers refusals that call for
+// opposite actions. A too-long listing or response is not a throttle — it
+// fails the listing (ErrListingIncomplete) rather than blocking the credential
+// and retrying forever — and a guard refusal is not a refused credential. A
+// throttle carries the store's RetryInfo. A status with no reason keeps the
+// code's reading: PERMISSION_DENIED a refused credential, RESOURCE_EXHAUSTED a
+// throttle.
 func storeError(err error) error {
 	st := status.Convert(err)
+	reason := ""
+	var retry *errdetails.RetryInfo
+	for _, d := range st.Details() {
+		switch d := d.(type) {
+		case *errdetails.ErrorInfo:
+			if d.GetDomain() == errorDomain {
+				reason = d.GetReason()
+			}
+		case *errdetails.RetryInfo:
+			retry = d
+		}
+	}
 	switch st.Code() {
 	case codes.PermissionDenied:
+		if reason == "DESTINATION_REFUSED" {
+			return fmt.Errorf("%w: %w", ErrDestinationRefused, err)
+		}
 		return fmt.Errorf("%w: %w", connector.ErrCredentialRefused, err)
 	case codes.ResourceExhausted:
+		switch reason {
+		case "RESPONSE_TOO_LARGE", "LISTING_TOO_LONG":
+			return fmt.Errorf("%w: %w", ErrListingIncomplete, err)
+		case "OBJECT_TOO_LARGE":
+			return fmt.Errorf("%w: %w", connector.ErrItemTooLarge, err)
+		}
 		limited := &connector.RateLimitedError{Scope: "credential", Cause: err}
-		for _, d := range st.Details() {
-			if retry, ok := d.(*errdetails.RetryInfo); ok && retry.GetRetryDelay() != nil {
-				limited.ResetAt = time.Now().Add(retry.GetRetryDelay().AsDuration())
-			}
+		if retry != nil && retry.GetRetryDelay() != nil {
+			limited.ResetAt = time.Now().Add(retry.GetRetryDelay().AsDuration())
 		}
 		return limited
 	}

@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/protoadapt"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"accounts/pkg/datasource/connector"
@@ -424,6 +425,14 @@ func TestCheckServiceAdmitsOnlyABatchedRead(t *testing.T) {
 // service's retry delay, and anything else keeps its status.
 func TestServiceBucketTypesTheServicesRefusals(t *testing.T) {
 	throttle, _ := status.New(codes.ResourceExhausted, "slow down").WithDetails(&errdetails.RetryInfo{RetryDelay: durationpb.New(30 * time.Second)})
+	reasoned := func(c codes.Code, reason string, details ...protoadapt.MessageV1) error {
+		st, _ := status.New(c, strings.ToLower(reason)).WithDetails(append([]protoadapt.MessageV1{&errdetails.ErrorInfo{Domain: errorDomain, Reason: reason}}, details...)...)
+		return st.Err()
+	}
+	notThrottle := func(err error) bool {
+		var limited *connector.RateLimitedError
+		return !errors.As(err, &limited)
+	}
 	for _, tc := range []struct {
 		name  string
 		err   error
@@ -433,6 +442,26 @@ func TestServiceBucketTypesTheServicesRefusals(t *testing.T) {
 			return errors.Is(err, connector.ErrCredentialRefused)
 		}},
 		{"throttled", throttle.Err(), func(err error) bool {
+			var limited *connector.RateLimitedError
+			return errors.As(err, &limited) && limited.ResetAt.After(time.Now().Add(20*time.Second))
+		}},
+		// The reason, not the code, decides (service-object-storage v0.0.19).
+		{"guard refused the endpoint", reasoned(codes.PermissionDenied, "DESTINATION_REFUSED"), func(err error) bool {
+			return errors.Is(err, ErrDestinationRefused) && !errors.Is(err, connector.ErrCredentialRefused)
+		}},
+		{"store rejected the credential", reasoned(codes.PermissionDenied, "CREDENTIAL_REJECTED"), func(err error) bool {
+			return errors.Is(err, connector.ErrCredentialRefused)
+		}},
+		{"listing too long", reasoned(codes.ResourceExhausted, "LISTING_TOO_LONG"), func(err error) bool {
+			return errors.Is(err, ErrListingIncomplete) && notThrottle(err)
+		}},
+		{"response too large", reasoned(codes.ResourceExhausted, "RESPONSE_TOO_LARGE"), func(err error) bool {
+			return errors.Is(err, ErrListingIncomplete) && notThrottle(err)
+		}},
+		{"object too large", reasoned(codes.ResourceExhausted, "OBJECT_TOO_LARGE"), func(err error) bool {
+			return errors.Is(err, connector.ErrItemTooLarge) && notThrottle(err)
+		}},
+		{"store throttled", reasoned(codes.ResourceExhausted, "STORE_THROTTLED", &errdetails.RetryInfo{RetryDelay: durationpb.New(30 * time.Second)}), func(err error) bool {
 			var limited *connector.RateLimitedError
 			return errors.As(err, &limited) && limited.ResetAt.After(time.Now().Add(20*time.Second))
 		}},

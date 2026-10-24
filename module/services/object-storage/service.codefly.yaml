@@ -3,7 +3,7 @@ version: 0.0.0
 agent:
     kind: codefly:service
     name: object-storage
-    version: 0.0.18
+    version: 0.0.19
     publisher: codefly.dev
 endpoints:
     - name: grpc
