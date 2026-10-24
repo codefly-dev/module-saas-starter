@@ -62,7 +62,7 @@ func TestAttack_TheBearerLessArmStripsGrpcMetadataIdentityHeaders(t *testing.T) 
 // Authorization header at all. A Basic credential is not "no bearer"; it takes
 // the person path, which accepts no such scheme.
 func TestAttack_AnyAuthorizationSchemeLeavesTheArm(t *testing.T) {
-	gw, module, installations, kid, wcPriv := operationHarness(t)
+	gw, module, admission, kid, wcPriv := operationHarness(t)
 	req := onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
 	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
 
@@ -71,8 +71,7 @@ func TestAttack_AnyAuthorizationSchemeLeavesTheArm(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 	require.Zero(t, module.calls)
-	require.Empty(t, admissionOf(t, gw).calls, "the arm was not selected")
-	require.Empty(t, installations.calls)
+	require.Empty(t, admission.calls, "the arm was not selected")
 }
 
 // TestAttack_TheBearerLessArmForwardsNoProxyCredential: a Proxy-Authorization
@@ -96,7 +95,7 @@ func TestAttack_TheBearerLessArmForwardsNoProxyCredential(t *testing.T) {
 // namespace, read after the strip: a caller's X-Org-Id and its source address
 // open no new bucket. Exhausting it refuses before accounts is asked anything.
 func TestAttack_TheBearerLessArmIsMeteredOnItsSignedTenant(t *testing.T) {
-	gw, module, installations, kid, wcPriv := operationHarness(t)
+	gw, module, admission, kid, wcPriv := operationHarness(t)
 	backend := &memoryBackend{}
 	gw.rateLimiter = &RateLimiter{backend: backend, limit: 2, burst: 1, stop: make(chan struct{}), proxies: newProxyTrust("")}
 	capability := operationCapability(t, kid, wcPriv, "documents", publisherSeal)
@@ -115,8 +114,7 @@ func TestAttack_TheBearerLessArmIsMeteredOnItsSignedTenant(t *testing.T) {
 	}
 	require.Equal(t, http.StatusTooManyRequests, serve(3))
 	require.Equal(t, 3, module.calls)
-	require.Len(t, admissionOf(t, gw).calls, 3, "a limited request never reaches the issuer")
-	require.Len(t, installations.calls, 3, "nor the installation read")
+	require.Len(t, admission.calls, 3, "a limited request never reaches the issuer")
 
 	var keys []string
 	backend.windows.Range(func(key, _ any) bool {
@@ -130,9 +128,9 @@ func TestAttack_TheBearerLessArmIsMeteredOnItsSignedTenant(t *testing.T) {
 
 // TestAttack_TheBearerLessArmFailsClosedWithoutItsLimiter: the arm's budget is a
 // security budget. A limiter backend that cannot answer refuses the request; it
-// does not wave it through to the issuer or the installation read.
+// does not wave it through to the issuer.
 func TestAttack_TheBearerLessArmFailsClosedWithoutItsLimiter(t *testing.T) {
-	gw, module, installations, kid, wcPriv := operationHarness(t)
+	gw, module, admission, kid, wcPriv := operationHarness(t)
 	gw.rateLimiter = &RateLimiter{backend: failingRateLimitBackend{}, limit: 100, burst: 20, stop: make(chan struct{}), proxies: newProxyTrust("")}
 
 	w := httptest.NewRecorder()
@@ -141,6 +139,5 @@ func TestAttack_TheBearerLessArmFailsClosedWithoutItsLimiter(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Contains(t, w.Body.String(), "rate limit service unavailable")
 	require.Zero(t, module.calls)
-	require.Empty(t, admissionOf(t, gw).calls)
-	require.Empty(t, installations.calls)
+	require.Empty(t, admission.calls)
 }

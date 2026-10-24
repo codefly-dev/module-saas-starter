@@ -106,22 +106,23 @@ workload endpoint with no `Authorization` and no `Cookie`, presenting a
 capability addressed to the alias, takes the bearer-less arm
 (`gateway_workload_operation.go`): a composed workload's headless operation
 context, minted at `/modules/_operation-context`. The arm reads no principal and
-decides nothing from the seal. It requires exactly one capability header (401
-`invalid work context` otherwise), strips identity (and
+decides nothing from the seal. It requires exactly one capability header and
+no `Connection` option naming it (401 `invalid work context` otherwise), strips
+identity (and
 `X-Forwarded-Client-Cert`) before its limiter, meters on
-`workload-operation:<tenant>` (fail closed), and only then asks accounts two
-things, per request and uncached: `WorkContextService/AdmitWorkloadOperation`,
-whether the capability is a module operation context for this alias (any
-refusal is 401 `authentication required`, logged with the issuer's reason; an
-error, a call past its 2 second bound, an answer naming another tenant or seal,
-or no client wired is 503), and `ListInstallations`, whether the signed tenant
-has an ACTIVE installation of the target (else 403) whose rows do not include
-the seal (else 401). It forwards no bearer, stamps only
-`x-codefly-installation-id` (the seal accounts admitted, so the CALLER's
-installation on this arm and the target's admitting installation on the person
-path; equal to the presented seal whenever a capability is presented), answers
-an upstream failure with a static 502, and logs every admit and refusal with
-alias, tenant, task, seal and presenter. It is the gateway's half of a
+`workload-operation:<tenant>` (fail closed), and only then makes one call, per
+request and uncached: `WorkContextService/AdmitWorkloadOperation` with the
+capability, the alias and the route's target, which answers whether the
+capability is a module operation context for this alias and whether the target
+is installed in its tenant. Not installed (or no target resolved) is 403; any
+other refusal, or the request refused as invalid, is 401 `authentication
+required`, logged with the issuer's reason; an error, a call past its 2 second
+bound, an answer naming another tenant or seal, or no client wired is 503. It
+forwards no bearer and stamps nothing: no identity header and no
+`x-codefly-installation-id` (a caller's is stripped), because the callee
+verifies the capability and no module-route consumer reads that header. It
+answers an upstream failure with a static 502, and logs every admit and refusal
+with alias, tenant, task, seal and presenter. It is the gateway's half of a
 solution's release-declared headless operation; a module calling a peer keeps
 its in-mesh seam instead.
 

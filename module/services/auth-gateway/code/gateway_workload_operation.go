@@ -14,32 +14,31 @@ package main
 // Selection is narrow and every other request takes the person path unchanged:
 // no Authorization and no Cookie header, the workload listener, and an
 // edge-inspected capability addressed to the alias this route resolved. Once
-// selected, the arm decides from two authority reads, both behind the tenant's
-// limiter:
-//
-//   - accounts' AdmitWorkloadOperation, the issuer's answer to whether the
-//     capability is a module operation context (StartModuleOperationTask) for
-//     this alias. The gateway cannot tell: core's Inspected withholds the owner,
-//     its kind and the chain, and a person's capability can be sealed to an
-//     installation that is not the target's (a source-operation context, an
-//     installation task, an installed binding's child). Accounts reads its own
-//     claims and admits that one shape; everything else is refused. It inspects
-//     and never verifies, so nothing is consumed on the way.
-//   - the tenant's ACTIVE installations, read from accounts per request: the
-//     target must be installed there, and the seal must not be one of the
-//     target's own rows (a module does not reach itself through this door).
+// selected, the arm decides from one authority read, behind the tenant's
+// limiter: accounts' AdmitWorkloadOperation, the issuer's answer to whether the
+// capability is a module operation context (StartModuleOperationTask) for this
+// alias, and whether the route's target is installed in its tenant. The gateway
+// cannot tell the first: core's Inspected withholds the owner, its kind and the
+// chain, and a person's capability can be sealed to an installation that is not
+// the target's (a source-operation context, an installation task, an installed
+// binding's child). Accounts reads the capability back against its own live
+// state and admits that one shape; everything else is refused. Nothing is
+// consumed on the way.
 //
 // A misreading refuses, never widens, and the callee verifies the capability at
 // full strength.
 //
 // What the upstream receives: the capability as presented, the path unchanged,
-// no bearer, no cookie, no identity header, and x-codefly-installation-id set to
-// the seal accounts admitted. Nothing names a principal: the gateway reads none.
+// and nothing else this gateway asserts. No bearer, no cookie, no identity
+// header, and no x-codefly-installation-id: a hop stamps nothing a callee would
+// read in place of verifying the token (core's Inspected, by design), and no
+// consumer of a module route reads that header.
 
 import (
 	"context"
 	"log"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"time"
 
@@ -48,43 +47,10 @@ import (
 	"github.com/codefly-dev/core/workcontext"
 	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
-
-const listInstallationsMethod = "/saas.accounts.v1.InstallationService/ListInstallations"
-
-// installationListingPageSize and installationListingPageLimit bound one
-// admission read the way the entitlement read beside it is bounded: a cursor
-// that never terminates is undecidable, never a short answer.
-const (
-	installationListingPageSize  = 200
-	installationListingPageLimit = solutionEntitlementPageLimit
-)
-
-// installationListingClient is the authority surface the arm consumes. The
-// interface exists so the arm can be exercised without an accounts process.
-type installationListingClient interface {
-	List(ctx context.Context, req *accountsv1.ListInstallationsRequest) (*accountsv1.ListInstallationsResponse, error)
-}
-
-// accountsInstallations invokes the organization's installation listing by
-// method name over the existing accounts connection, with the gateway's
-// cluster-internal credential: the shape of accountsSolutionEntitlements, and for
-// the same reason (only the vendored message types, no client stub).
-type accountsInstallations struct {
-	conn          *grpc.ClientConn
-	internalToken string
-}
-
-func (c *accountsInstallations) List(
-	ctx context.Context, req *accountsv1.ListInstallationsRequest,
-) (*accountsv1.ListInstallationsResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, solutionEntitlementCallTimeout)
-	defer cancel()
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", c.internalToken)
-	resp := &accountsv1.ListInstallationsResponse{}
-	return resp, c.conn.Invoke(ctx, listInstallationsMethod, req, resp)
-}
 
 const admitWorkloadOperationMethod = "/saas.accounts.v1.WorkContextService/AdmitWorkloadOperation"
 
@@ -140,80 +106,6 @@ func selectsWorkloadOperation(r *http.Request, capability *workcontext.Inspected
 		capability != nil &&
 		alias != moduleCapabilitiesAudience &&
 		capability.Audience() == alias
-}
-
-// workloadOperationInstallation is the arm's installation verdict. Like the
-// viewer admission it is not a boolean: "not installed", "the target's own
-// installation" and "I could not ask" are different answers.
-type workloadOperationInstallation int
-
-const (
-	workloadOperationInstalled workloadOperationInstallation = iota
-	// workloadOperationNotInstalled: the tenant has no ACTIVE installation of
-	// the target, or the route resolved no target.
-	workloadOperationNotInstalled
-	// workloadOperationSealOnTarget: the seal is one of the target's own
-	// installations, so the caller would be the module it addresses.
-	workloadOperationSealOnTarget
-	// workloadOperationUndecidable: no client wired, an RPC error, or a cursor
-	// that did not terminate. Answered 503, never admitted.
-	workloadOperationUndecidable
-)
-
-// workloadOperationInstallations reads the tenant's ACTIVE installations and
-// decides. Uncached, for the reason the viewer admission is: an uninstall
-// changes the answer with no write this replica would see.
-func (g *Gateway) workloadOperationInstallations(
-	ctx context.Context, tenant, seal string, routing *solutionRouting,
-) workloadOperationInstallation {
-	targetID := routing.GetTargetID()
-	if targetID == "" {
-		return workloadOperationNotInstalled
-	}
-	if g.installations == nil {
-		return workloadOperationUndecidable
-	}
-	// Every ACTIVE row of the target counts: keeping only the last row seen
-	// would read the others as some other installation's.
-	targetInstallations := map[string]bool{}
-	token := ""
-	for page := 0; page < installationListingPageLimit; page++ {
-		resp, err := g.installations.List(ctx, &accountsv1.ListInstallationsRequest{
-			OrgId:     tenant,
-			Status:    accountsv1.InstallationStatus_INSTALLATION_STATUS_ACTIVE,
-			PageSize:  installationListingPageSize,
-			PageToken: token,
-		})
-		if err != nil {
-			return workloadOperationUndecidable
-		}
-		for _, summary := range resp.GetInstallations() {
-			installation := summary.GetInstallation()
-			// The request asked for ACTIVE rows of this tenant; a row that is
-			// neither is not counted, whatever the authority returned.
-			if installation.GetId() == "" || installation.GetOrgId() != tenant ||
-				installation.GetStatus() != accountsv1.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
-				continue
-			}
-			if installation.GetTargetId() == targetID {
-				targetInstallations[installation.GetId()] = true
-			}
-		}
-		token = resp.GetNextPageToken()
-		if token == "" {
-			break
-		}
-		if page == installationListingPageLimit-1 {
-			return workloadOperationUndecidable
-		}
-	}
-	switch {
-	case len(targetInstallations) == 0:
-		return workloadOperationNotInstalled
-	case targetInstallations[seal]:
-		return workloadOperationSealOnTarget
-	}
-	return workloadOperationInstalled
 }
 
 // refusalReason is the log reason for an issuer's refusal:
@@ -275,6 +167,12 @@ func (g *Gateway) serveWorkloadOperation(
 		rec.refuse(w, http.StatusUnauthorized, "invalid work context", "no_seal")
 		return
 	}
+	// The capability is the one thing this arm forwards for the callee to
+	// verify, and it travels end to end: a Connection option may not name it.
+	if connectionNames(r.Header, carrier.HeaderName) {
+		rec.refuse(w, http.StatusUnauthorized, "invalid work context", "connection_names_capability")
+		return
+	}
 
 	// Strip BEFORE the limiter, as the person path does: a caller's X-Org-Id
 	// must never reach the key, and nothing below may read a header the caller
@@ -301,18 +199,33 @@ func (g *Gateway) serveWorkloadOperation(
 	reached := false
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
-		// The issuer decides what the capability is. Asked only behind the
-		// limiter, so an exhausted budget never reaches accounts.
+		targetID := routing.GetTargetID()
+		if targetID == "" {
+			rec.refuse(w, http.StatusForbidden, "module is not installed for this organization", "not_installed")
+			return
+		}
+		// The issuer decides, in one call, what the capability is and whether
+		// the target is installed. Asked only behind the limiter, so an
+		// exhausted budget never reaches accounts.
 		if g.workloadAdmission == nil {
 			rec.refuse(w, http.StatusServiceUnavailable, "module installation authority unavailable", "authority_unavailable")
 			return
 		}
 		answer, err := g.workloadAdmission.Admit(r.Context(), &accountsv1.AdmitWorkloadOperationRequest{
-			WorkContext: r.Header.Get(carrier.HeaderName), Alias: alias,
+			WorkContext: r.Header.Get(carrier.HeaderName), Alias: alias, TargetId: targetID,
 		})
 		switch {
+		case status.Code(err) == codes.InvalidArgument:
+			// Accounts refused the request's shape, which is the capability's
+			// or the alias's: a refusal, not an outage.
+			rec.refuse(w, http.StatusUnauthorized, "authentication required", "invalid_request")
+			return
 		case err != nil:
 			rec.refuse(w, http.StatusServiceUnavailable, "module installation authority unavailable", "authority_unavailable")
+			return
+		case answer.GetRefusal() == accountsv1.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_TARGET_NOT_INSTALLED:
+			// The answer a person gets whose organization never installed it.
+			rec.refuse(w, http.StatusForbidden, "module is not installed for this organization", refusalReason(answer.GetRefusal()))
 			return
 		case !answer.GetAdmitted():
 			// The answer a person's capability without its bearer has always had.
@@ -324,22 +237,6 @@ func (g *Gateway) serveWorkloadOperation(
 			rec.refuse(w, http.StatusServiceUnavailable, "module installation authority unavailable", "authority_mismatch")
 			return
 		}
-		switch g.workloadOperationInstallations(r.Context(), rec.tenant, rec.seal, routing) {
-		case workloadOperationUndecidable:
-			rec.refuse(w, http.StatusServiceUnavailable, "module installation authority unavailable", "authority_unavailable")
-			return
-		case workloadOperationNotInstalled:
-			rec.refuse(w, http.StatusForbidden, "module is not installed for this organization", "not_installed")
-			return
-		case workloadOperationSealOnTarget:
-			rec.refuse(w, http.StatusUnauthorized, "authentication required", "seal_on_target")
-			return
-		}
-		// The one header this arm stamps: the seal of the capability accounts
-		// admitted. An sdk consumer reading the carrier requires this header to
-		// equal the seal, and on the person path it equals the seal too. Here
-		// it names the CALLER's installation, not consent on the target's side.
-		r.Header.Set(installationConfinementHeader, answer.GetInstallationId())
 		rec.log("INFO: admitted", "admit")
 		g.proxyTo(w, r, routing.Upstream, entry)
 	}))
@@ -349,4 +246,16 @@ func (g *Gateway) serveWorkloadOperation(
 		// cannot tell which, and the reason says both.
 		rec.log("WARN: blocked", "limited_or_origin")
 	}
+}
+
+// connectionNames reports whether any Connection option on h names header.
+func connectionNames(h http.Header, header string) bool {
+	for _, value := range h.Values("Connection") {
+		for _, option := range strings.Split(value, ",") {
+			if strings.EqualFold(textproto.TrimString(option), header) {
+				return true
+			}
+		}
+	}
+	return false
 }

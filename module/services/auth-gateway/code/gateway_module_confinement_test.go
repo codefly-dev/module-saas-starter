@@ -268,8 +268,8 @@ func TestModuleRoute_TheSessionIsTheBindingAndTheOwnerIsNotRead(t *testing.T) {
 }
 
 // ON THE BEARER-LESS ARM a caller can assert no identity and no installation:
-// everything it sent under a gateway-owned name is gone, and the installation
-// header is the seal the capability is signed with.
+// everything it sent under a gateway-owned name is gone, and the arm stamps no
+// installation of its own in its place.
 func TestModuleRoute_TheBearerLessArmTakesNoIdentityFromTheCaller(t *testing.T) {
 	gw, module, _, kid, wcPriv := operationHarness(t)
 	req := onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
@@ -283,9 +283,7 @@ func TestModuleRoute_TheBearerLessArmTakesNoIdentityFromTheCaller(t *testing.T) 
 	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	require.Equal(t, publisherSeal, module.lastHeaders.Get(installationConfinementHeader),
-		"the installation is the signed seal, not the one the caller named")
-	for _, header := range []string{resourceConfinementHeader, "X-Org-Id", "X-User-Id", workloadPresenterHeader} {
+	for _, header := range []string{installationConfinementHeader, resourceConfinementHeader, "X-Org-Id", "X-User-Id", workloadPresenterHeader} {
 		require.Empty(t, module.lastHeaders.Values(header), "%s is the gateway's, never the caller's", header)
 	}
 }
@@ -295,7 +293,6 @@ func TestModuleRoute_TheBearerLessArmTakesNoIdentityFromTheCaller(t *testing.T) 
 // person, and the viewer admission names the target's installation.
 func TestModuleRoute_ABearerOnTheWorkloadListenerTakesThePersonPath(t *testing.T) {
 	gw, module, _, caller, kid, wcPriv, _ := confinedModuleHarness(t)
-	gw.installations = &installationsFake{err: errors.New("the arm must not be consulted")}
 	gw.workloadAdmission = &admissionFake{err: errors.New("the arm must not be consulted")}
 	capability := mintViewerCapability(t, kid, wcPriv, "documents", caller.subject, caller.org, caller.session)
 

@@ -222,7 +222,6 @@ func TestGateway_AMintedOperationContextReachesItsModuleWithoutABearer(t *testin
 	jwks := jwksServer(t, jwksDocument(map[string]ed25519.PublicKey{"key-1": pub}), nil)
 	gw.workContext = newWorkContextVerifier(jwks.URL)
 	module := declareModule(t, gw, "documents")
-	gw.installations = tenantInstalled()
 	admission := &admissionFake{}
 	gw.workloadAdmission = admission
 	mint.token = operationCapability(t, "key-1", wcPriv, "documents", publisherSeal)
@@ -252,10 +251,10 @@ func TestGateway_AMintedOperationContextReachesItsModuleWithoutABearer(t *testin
 	require.Equal(t, 1, module.calls)
 
 	// And a refusal on the arm logs the facts, never the token.
-	gw.installations = &installationsFake{}
+	admission.refusal = accountsv1.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_TARGET_NOT_INSTALLED
 	w = httptest.NewRecorder()
 	gw.ServeHTTP(w, onWorkloadEndpoint(publishRequest(capability)))
 	require.Equal(t, http.StatusForbidden, w.Code)
-	require.Contains(t, logs.String(), "reason=workload_operation_not_installed")
+	require.Contains(t, logs.String(), "reason=workload_operation_target_not_installed")
 	require.NotContains(t, logs.String(), capability)
 }

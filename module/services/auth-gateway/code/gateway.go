@@ -62,10 +62,6 @@ type Gateway struct {
 	// solution a viewer is currently using.
 	solutionEntitlements solutionEntitlementClient
 	workContext          *workContextVerifier
-	// installations answers an organization's ACTIVE installations for the
-	// bearer-less module arm (gateway_workload_operation.go). Set after
-	// construction; nil answers 503 there and never admits.
-	installations installationListingClient
 	// workloadAdmission asks accounts whether a capability on the bearer-less
 	// module arm is a module operation context. Set after construction; nil
 	// answers 503 there and never admits.
@@ -922,14 +918,10 @@ const resourceConfinementHeader = "x-codefly-resource"
 // entitlement authority and an empty value here would be a claim this process
 // cannot make.
 //
-// WHAT IT MEANS differs by arm, and one statement holds on both: when a
-// capability is presented with the request, it equals that capability's seal.
-// On a person's path it is
-// the TARGET's admitting installation, and a person's capability for that target
-// is sealed to it. On a declared module route's bearer-less arm it is the seal of
-// the headless operation context, which names the CALLER's own installation.
-// There it is not consent on the target's side, and an upstream must not read it
-// as such; the capability itself is what the upstream verifies.
+// A declared module route's bearer-less arm stamps NO value: a caller's is
+// stripped like any other, and the upstream verifies the operation context
+// itself. That arm admits on the caller's installation, which is not consent on
+// the target's side, so no header stating it could be read correctly here.
 const installationConfinementHeader = "x-codefly-installation-id"
 
 // solutionIdentityHeader and solutionPublisherHeader are the headers accounts

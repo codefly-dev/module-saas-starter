@@ -674,10 +674,10 @@ meters on the tenant. It then asks the issuer: accounts'
 `StartModuleOperationTask` signs, owned by a declared module principal other
 than the alias's and sealed to that principal's active installation, and
 refuses every person-owned kind, including those sealed elsewhere (see the seal
-rule above). It inspects and reads its own claims, and consumes nothing. The
-target must also be installed in the signed tenant, and the seal must not be
-one of its rows. The arm forwards the capability as presented and stamps only
-`x-codefly-installation-id` with the admitted seal. The callee verifies the
+rule above). It reads the capability back against its own live state and
+consumes nothing. In the same call it requires the route's target installed in
+the signed tenant, with the seal none of its rows. The arm forwards the
+capability as presented and stamps nothing beside it. The callee verifies the
 capability at full strength, as for any other carrier. The route's rules are in
 [GATEWAY_ROUTES.md](./GATEWAY_ROUTES.md#module-rest-routes).
 
