@@ -7,7 +7,10 @@ on:
     # immutable-package release track keyed to module.package.codefly.yaml.
     tags: ["v*", "module-package/v*"]
   pull_request:
-    branches: [main]
+    # release/** carries a patch line cut from a deploy-counter tag: a pull
+    # request into one gets the same checks as one into main, or it would merge
+    # with none.
+    branches: [main, "release/**"]
   # The merge queue builds each entry as `main + the PR` and reports the
   # required checks from THAT ref, which is the guarantee "require branches to
   # be up to date" was buying by making every author rebase by hand. Every
@@ -1398,10 +1401,30 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # A tag push names a commit, not a branch, so the branch a tag was cut
+      # from is not in the event. What decides "current" is whether main
+      # contains the tagged commit: a tag cut from a release/** patch line is
+      # not on main, and announcing it would make an interface current that
+      # lacks whatever main released since. Such a tag still passes every gate
+      # above; only the announcement waits for main's next tag.
+      - name: Check the tagged commit is on main
+        id: on-main
+        run: |
+          git fetch --no-tags origin main
+          if git merge-base --is-ancestor "${GITHUB_SHA}" FETCH_HEAD; then
+            echo "announce=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::notice::${GITHUB_REF_NAME} is not on main; the release is not announced."
+            echo "announce=false" >> "${GITHUB_OUTPUT}"
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.on-main.outputs.announce == 'true'
         with:
           node-version: 24
       - name: Dispatch surface-bump
+        if: steps.on-main.outputs.announce == 'true'
         env:
           HANDBOOK_REPOSITORY: ${{ vars.HANDBOOK_REPOSITORY }}
           GH_TOKEN: ${{ secrets.HANDBOOK_DISPATCH_TOKEN }}
