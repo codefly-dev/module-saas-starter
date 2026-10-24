@@ -106,6 +106,14 @@ constitutes organization consent.
 
 Module identity exchanges are described below; accounts owns their authority.
 
+A capability's seal follows its owner: a person's is sealed to the organization's
+installation of the audience it addresses, a module or installation principal's
+to its own. Accounts holds that as an invariant over every person mint, and
+`TestAPersonsCapabilityIsSealedToItsAudiencesInstallation` in accounts
+(`pkg/adapters/work_context_seal_pin_test.go`) pins it. The gateway reads no
+owner (core's `Inspected` carries none), so any decision this gateway makes from
+a seal rests on that test.
+
 ## What a runtime-registered upstream receives, and what it does not
 
 A runtime-registered upstream — a federated module prefix or a solution — receives

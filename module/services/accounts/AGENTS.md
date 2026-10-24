@@ -511,6 +511,33 @@ still lists that key accepts it. The capability's lifetime bounds the window:
 its holder mints a new one under the current key. Rotating the Work Context key
 therefore briefly refuses questions about capabilities already in flight.
 
+## A person's capability is sealed to its audience's installation
+
+Every capability a person owns is sealed to the organization's installation of
+the audience it addresses; a module or installation principal's is sealed to its
+own. That is an invariant every person mint keeps, not a default: `StartTask`
+resolves it, `remint` re-resolves it for a root session, an audience exchange, a
+renewal and a module's exchange through its operation binding, and
+`StartChildSession` (whose core `Child` keeps the parent's seal) refuses a
+person's child for an audience sealed elsewhere.
+
+The gateway's bearer-less module arm depends on it: it admits a capability with
+no bearer only when the seal names an active installation other than the
+target's, which a person's capability never does.
+`TestAPersonsCapabilityIsSealedToItsAudiencesInstallation`
+(`pkg/adapters/work_context_seal_pin_test.go`) pins it over every person mint. A
+new mint that issues a person's capability goes in that table; one that copies a
+parent's seal across audiences reopens the arm to a person's credential without
+its bearer.
+
+The arm reads the tenant's installations through `InstallationService/ListInstallations`
+(`EXPOSURE_INTERNAL`). Its contract comment in `installations.proto` names one
+caller, the gateway's viewer projection, with the tenant projected from a
+verified identity. The arm is a second caller of the same RPC with the same
+credential, and its tenant is the one an edge-verified Work Context names: a
+signed statement of this issuer's, never a value the request chose. The proto
+comment is to name it at the next regeneration of the accounts descriptors.
+
 ## Minting a module Work Context
 
 The identity itself is a **Work Context**. The auth-gateway brokers the exchange
