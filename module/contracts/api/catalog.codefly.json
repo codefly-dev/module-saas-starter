@@ -562,7 +562,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:a54c94b3d74017a0493e0b08e799a59c4bb2979779b66b75426d6d1095d31747",
+      "digest": "sha256:b9747dbf86865b80102acc72d003c1f133ef5df6629f5c5d9adc86302951e9ff",
       "services": [
         {
           "name": "AuthGatewayService",

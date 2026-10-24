@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -13,6 +14,7 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,6 +27,8 @@ import (
 // fakeAccountsOperationContextMint stands in for accounts' headless operation
 // mint on the internal listener, recording what the gateway forwarded.
 type fakeAccountsOperationContextMint struct {
+	// token, when set, is the context the mint answers instead of a placeholder.
+	token        string
 	code         codes.Code
 	requestCount int
 	lastPrefix   string
@@ -51,8 +55,12 @@ func (f *fakeAccountsOperationContextMint) handle(ctx context.Context, dec func(
 	if f.code != codes.OK {
 		return nil, status.Error(f.code, "denied")
 	}
+	token := f.token
+	if token == "" {
+		token = "operation-context-for-" + req.GetPrefix() + "-" + req.GetBinding()
+	}
 	return &accountsv1.ModuleMintOperationContextResponse{
-		Token:       "operation-context-for-" + req.GetPrefix() + "-" + req.GetBinding(),
+		Token:       token,
 		ExpiresAt:   timestamppb.New(f.expiresAt),
 		PrincipalId: "00000000-0000-4000-8000-00000000beef",
 		Tenant:      "11111111-1111-4111-8111-111111111111",
@@ -201,4 +209,50 @@ func TestGateway_ModuleOperationContext_MethodNotAllowed(t *testing.T) {
 
 	require.Equal(t, http.StatusMethodNotAllowed, w.Code)
 	require.Zero(t, mint.requestCount)
+}
+
+// THE WHOLE HEADLESS PUBLISH, in process: a composed workload mints its
+// operation context at /modules/_operation-context and presents it, with no
+// bearer, at the target module's route on the same workload endpoint. Accounts
+// is faked to answer a capability signed by the key the edge trusts, for the
+// alias, sealed to the publisher's own installation.
+func TestGateway_AMintedOperationContextReachesItsModuleWithoutABearer(t *testing.T) {
+	gw, mint := newOperationContextExchangeHarness(t)
+	pub, wcPriv := mustEd25519(t)
+	jwks := jwksServer(t, jwksDocument(map[string]ed25519.PublicKey{"key-1": pub}), nil)
+	gw.workContext = newWorkContextVerifier(jwks.URL)
+	module := declareModule(t, gw, "documents")
+	gw.installations = tenantInstalled()
+	mint.token = operationCapability(t, "key-1", wcPriv, "documents", publisherSeal)
+	logs := captureLog(t)
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, operationContextRequest(operationContextBody("publisher", "documents"), "publisher-projected-token", "test-internal-token"))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var minted map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &minted))
+	capability := minted["work_context"]
+	require.Equal(t, mint.token, capability)
+
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, onWorkloadEndpoint(publishRequest(capability)))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, 1, module.calls)
+	require.Equal(t, "/v1/documents/definitions:publish", module.lastPath)
+	require.Equal(t, capability, module.lastHeaders.Get(carrier.HeaderName))
+
+	// The same context on the public listener is a bearer-less request and
+	// nothing more.
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, publishRequest(capability))
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Equal(t, 1, module.calls)
+
+	// And a refusal on the arm logs the facts, never the token.
+	gw.installations = &installationsFake{}
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, onWorkloadEndpoint(publishRequest(capability)))
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, logs.String(), "reason=workload_operation_not_installed")
+	require.NotContains(t, logs.String(), capability)
 }

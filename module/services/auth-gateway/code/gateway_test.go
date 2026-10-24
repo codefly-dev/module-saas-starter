@@ -19,6 +19,8 @@ import (
 // fakeUpstream captures the headers an upstream would see after the
 // gateway forwards the request.
 type fakeUpstream struct {
+	// calls counts the requests that reached this upstream.
+	calls       int
 	lastHeaders http.Header
 	lastPath    string
 	lastMethod  string
@@ -31,6 +33,7 @@ type fakeUpstream struct {
 }
 
 func (f *fakeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.calls++
 	f.lastHeaders = r.Header.Clone()
 	f.lastPath = r.URL.Path
 	f.lastMethod = r.Method
