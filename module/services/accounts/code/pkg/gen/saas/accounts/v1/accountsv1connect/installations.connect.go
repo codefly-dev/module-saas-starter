@@ -100,15 +100,11 @@ type InstallationServiceClient interface {
 	// ListInstallations enumerates one organization's installations with their live
 	// health. It is internal-tier on purpose: it takes the organization as a request
 	// field, so only a caller holding the cluster-internal credential may ask, and
-	// the tenant it asks about is never one a browser supplied. The auth-gateway is
-	// its caller, for two reads. Its viewer projection asks about the tenant it
-	// projected from a verified identity; it sits beside
-	// PermissionService.ListAccessibleScopes for that reason, the two read together
-	// to answer what a viewer's organization installed and what that viewer was
-	// granted. Its declared module route's bearer-less arm asks about the tenant an
-	// edge-inspected Work Context names, a value this issuer signed, to admit a
-	// headless operation context only when the target is installed there; whether
-	// the context is one is WorkContextService/AdmitWorkloadOperation's answer.
+	// the tenant it asks about is the one the auth-gateway projected from a verified
+	// identity — never one a browser supplied. It sits beside
+	// PermissionService.ListAccessibleScopes for that reason: the two are read
+	// together to answer what a viewer's organization installed and what that viewer
+	// was granted.
 	ListInstallations(context.Context, *connect.Request[v1.ListInstallationsRequest]) (*connect.Response[v1.ListInstallationsResponse], error)
 	// ListAvailableSolutions is the catalogue: the solution targets an
 	// administrator may install right now.
@@ -133,8 +129,7 @@ type InstallationServiceClient interface {
 	// It is the org-admin companion to the internal ListInstallations, and it is a
 	// separate method rather than a relaxed policy on that one: ListInstallations
 	// is read by the gateway for an organisation it projected from a verified
-	// identity or that an edge-verified Work Context names, and a bare tenant
-	// credential must never reach it. This one binds
+	// identity, and a bare tenant credential must never reach it. This one binds
 	// the organisation to the caller's own admin membership, exactly as
 	// ListAvailableSolutions does, so no organisation's administrator can read
 	// another's. The one exception is inherited, not added here: a platform
@@ -347,15 +342,11 @@ type InstallationServiceHandler interface {
 	// ListInstallations enumerates one organization's installations with their live
 	// health. It is internal-tier on purpose: it takes the organization as a request
 	// field, so only a caller holding the cluster-internal credential may ask, and
-	// the tenant it asks about is never one a browser supplied. The auth-gateway is
-	// its caller, for two reads. Its viewer projection asks about the tenant it
-	// projected from a verified identity; it sits beside
-	// PermissionService.ListAccessibleScopes for that reason, the two read together
-	// to answer what a viewer's organization installed and what that viewer was
-	// granted. Its declared module route's bearer-less arm asks about the tenant an
-	// edge-inspected Work Context names, a value this issuer signed, to admit a
-	// headless operation context only when the target is installed there; whether
-	// the context is one is WorkContextService/AdmitWorkloadOperation's answer.
+	// the tenant it asks about is the one the auth-gateway projected from a verified
+	// identity — never one a browser supplied. It sits beside
+	// PermissionService.ListAccessibleScopes for that reason: the two are read
+	// together to answer what a viewer's organization installed and what that viewer
+	// was granted.
 	ListInstallations(context.Context, *connect.Request[v1.ListInstallationsRequest]) (*connect.Response[v1.ListInstallationsResponse], error)
 	// ListAvailableSolutions is the catalogue: the solution targets an
 	// administrator may install right now.
@@ -380,8 +371,7 @@ type InstallationServiceHandler interface {
 	// It is the org-admin companion to the internal ListInstallations, and it is a
 	// separate method rather than a relaxed policy on that one: ListInstallations
 	// is read by the gateway for an organisation it projected from a verified
-	// identity or that an edge-verified Work Context names, and a bare tenant
-	// credential must never reach it. This one binds
+	// identity, and a bare tenant credential must never reach it. This one binds
 	// the organisation to the caller's own admin membership, exactly as
 	// ListAvailableSolutions does, so no organisation's administrator can read
 	// another's. The one exception is inherited, not added here: a platform

@@ -6,8 +6,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
-import { InstallationStatus } from "@/gen/saas/accounts/v1/installation_listing_pb";
-import type { AvailableSolution } from "@/gen/saas/accounts/v1/installations_pb";
+import {
+	type AvailableSolution,
+	InstallationStatus,
+} from "@/gen/saas/accounts/v1/installations_pb";
 import { useAuth } from "@/lib/auth";
 import {
 	mayKeepRetainedRows,

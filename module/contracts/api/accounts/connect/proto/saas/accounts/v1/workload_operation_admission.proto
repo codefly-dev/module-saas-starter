@@ -18,7 +18,7 @@ import "buf/validate/validate.proto";
 //
 // They live in their own file, with deliberately minimal imports, so the
 // auth-gateway can generate the same types from the same source proto, as it
-// does for installation_listing.proto and solution_entitlements.proto. The
+// does for module_registration.proto and solution_entitlements.proto. The
 // gateway's copy is this file, byte for byte.
 
 // WorkloadOperationRefusal is why a capability was not admitted. The gateway

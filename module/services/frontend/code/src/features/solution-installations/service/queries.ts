@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { InstallationStatus } from "@/gen/saas/accounts/v1/installation_listing_pb";
-import type {
-	AvailableSolution,
-	OrganizationInstallation,
+import {
+	type AvailableSolution,
+	InstallationStatus,
+	type OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 

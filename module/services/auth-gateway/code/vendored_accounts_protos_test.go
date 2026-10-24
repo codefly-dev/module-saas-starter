@@ -11,7 +11,7 @@ import (
 
 // TestVendoredAccountsProtosAreAccounts holds every accounts proto this gateway
 // generates from byte-identical to the file accounts owns. The gateway carries
-// only the files whose imports it can resolve (installation_listing.proto,
+// only the files whose imports it can resolve (workload_operation_admission.proto,
 // module_registration.proto, solution_entitlements.proto and their peers), and
 // accounts keeps those files import-minimal for that reason. A copy that
 // drifted would decode a different wire shape from the one accounts writes,
