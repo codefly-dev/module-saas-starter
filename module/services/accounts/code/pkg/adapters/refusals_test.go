@@ -151,6 +151,10 @@ func TestBusinessRefusalsTravelUnderTheirCode(t *testing.T) {
 			fmt.Errorf("permission denied: %w: have support, need super_admin", business.ErrPlatformRoleRequired),
 			codes.PermissionDenied, business.ErrPlatformRoleRequired.Error(),
 		},
+		"no verified origin to build a link from": {
+			fmt.Errorf("CreateInvitation: cannot create invitation: %w", business.ErrPublicOriginUnavailable),
+			codes.FailedPrecondition, business.ErrPublicOriginUnavailable.Error(),
+		},
 		"seat quota": {
 			fmt.Errorf("AddOrgMember: %w", &business.EntitlementQuotaError{Feature: business.EntitlementSeats, Used: 5, Limit: 5}),
 			codes.ResourceExhausted, "seats quota exhausted: used 5 of 5",

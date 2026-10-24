@@ -50,6 +50,7 @@ var businessRefusals = []struct {
 	{business.ErrPlatformRoleRequired, codes.PermissionDenied},
 	{business.ErrImpersonationJustificationRequired, codes.InvalidArgument},
 	{business.ErrImpersonationTargetInactive, codes.FailedPrecondition},
+	{business.ErrPublicOriginUnavailable, codes.FailedPrecondition},
 	{business.ErrPrivacyWorkflowUnavailable, codes.FailedPrecondition},
 	{business.ErrPolicyLogUnreachable, codes.FailedPrecondition},
 }
