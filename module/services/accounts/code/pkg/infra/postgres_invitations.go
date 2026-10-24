@@ -28,6 +28,12 @@ func (s *PostgresStore) CreateInvitation(ctx context.Context, inv *business.Invi
 		inv.ID, inv.OrgID, inv.InviterID, inv.InviterDisplayName, inv.Email,
 		inv.Role, inv.TokenHash, inv.Status, inv.DeliveryStatus, inv.ExpiresAt,
 		inv.LastSentAt, inv.SendCount, inv.LastResendKeyHash)
+	// One live invitation per (organization, address): the partial unique
+	// index decides it, so the refusal is typed here rather than leaving the
+	// constraint's name to travel to the person who asked.
+	if uniqueViolation(err, "idx_invitations_pending_unique") {
+		return business.ErrInvitationAlreadyPending
+	}
 	return err
 }
 

@@ -151,15 +151,15 @@ func cookieTheRefreshToken(header http.Header, message proto.Message) {
 	header.Add("Set-Cookie", refreshCookie(token, refreshCookieMaxAgeSeconds).String())
 }
 
-// translateGRPCError converts a google.golang.org/grpc/status error
-// into a connect.Error with the matching code. Pass-through for
-// errors that are already connect.Errors or don't carry a gRPC status.
+// translateGRPCError converts what a handler returned into the connect.Error
+// the caller reads. Pass-through for errors that are already connect.Errors.
 //
-// The mapping mirrors Connect's own grpc → connect lookup table; we
-// only need a subset because handlers don't currently emit every
-// possible code. Anything we don't list explicitly falls back to
-// connect.CodeUnknown — the original Connect default — so behaviour
-// for unmapped codes is unchanged.
+// The Connect message is the status's own message, never grpc-go's rendering
+// of the whole status ("rpc error: code = … desc = …"): a caller matches on the
+// reason ("mfa_required") and a person reads the sentence. Anything that is not
+// a status is decided by refusalStatus — a known business refusal under its
+// code, every other error as Internal with a fixed sentence, its chain withheld
+// for the log.
 func translateGRPCError(err error) error {
 	if err == nil {
 		return nil
@@ -170,12 +170,12 @@ func translateGRPCError(err error) error {
 	if asConnectError(err, &ce) {
 		return err
 	}
-	st, ok := status.FromError(err)
-	if !ok {
-		return err
+	st, cause := refusalStatus(err)
+	underlying := errors.New(st.Message())
+	if cause != nil {
+		underlying = &withheldCause{cause: cause}
 	}
-	cc := connectCodeFromGRPC(st.Code())
-	translated := connect.NewError(cc, st.Err())
+	translated := connect.NewError(connectCodeFromGRPC(st.Code()), underlying)
 	// Carry the status's typed details (an ErrorInfo naming the reason, a
 	// RetryInfo naming when to retry) so a Connect caller can act on them as a
 	// gRPC caller does.

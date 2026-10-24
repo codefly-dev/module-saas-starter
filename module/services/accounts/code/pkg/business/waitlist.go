@@ -311,7 +311,7 @@ func (s *Service) InviteWaitlist(
 	req *gen.InviteWaitlistRequest,
 ) (*gen.WaitlistEntry, error) {
 	if s.emailOutbox == nil {
-		return nil, wool.Get(ctx).NewError("waitlist invitation delivery is unavailable")
+		return nil, ErrWaitlistDeliveryUnavailable
 	}
 	var entry *WaitlistEntry
 	err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
