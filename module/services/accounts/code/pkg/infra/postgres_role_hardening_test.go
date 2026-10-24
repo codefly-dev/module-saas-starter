@@ -85,6 +85,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"installations":                        {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_sources":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_source_operations":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"datasource_object_manifests":          {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_operation_attempts":        {selectRows: true, insertRows: true, deleteRows: true},
 	"codefly_effect_receipts":              {selectRows: true, insertRows: true, deleteRows: true},
 	"datasource_oauth_consumed_states":     {selectRows: true, insertRows: true, deleteRows: true},
@@ -371,11 +372,12 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "executable_artifact_approvals" {
 				want = relationPrivileges{}
 			}
-			// Callable-source declarations, OAuth state, attempts and receipts
-			// are tenant-only. The control plane must not read or mutate them.
+			// Callable-source declarations, OAuth state, attempts, receipts and
+			// retained object listings are tenant-only. The control plane must not read or mutate them.
 			switch relation {
 			case "datasource_source_operations", "datasource_oauth_consumed_states",
-				"datasource_operation_attempts", "codefly_effect_receipts":
+				"datasource_operation_attempts", "codefly_effect_receipts",
+				"datasource_object_manifests":
 				want = relationPrivileges{}
 			}
 			if relation == "feature_flags" {

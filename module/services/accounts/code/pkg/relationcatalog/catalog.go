@@ -141,6 +141,7 @@ var authorities = map[string]Authority{
 	"dashboards":                       {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"datasource_sources":               {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"datasource_source_operations":     {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
+	"datasource_object_manifests":      {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"datasource_operation_attempts":    {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"codefly_effect_receipts":          {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "tenant"},
 	"datasource_oauth_consumed_states": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},

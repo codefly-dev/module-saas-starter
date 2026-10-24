@@ -846,8 +846,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	// reads this declaration for. An edit never moves the boundary, but it is
 	// the collection whose contents the next snapshot replaces, so whoever may
 	// read that collection is exactly who needs to see it.
-	mutation(EventDatasourceSourceUpdated, CategorySystem, "A connected datasource's branch or path filters were changed.",
-		str("repo"), str("branch"), str("previous_branch"), strs("paths"), strs("file_extensions"), str("boundary")),
+	mutation(EventDatasourceSourceUpdated, CategorySystem, "A connected datasource's branch, path or key filters were changed.",
+		str("repo"), str("branch"), str("previous_branch"), strs("paths"), strs("file_extensions"), str("boundary"),
+		str("bucket"), str("prefix"), strs("include_patterns"), strs("exclude_patterns")),
 	observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...),
 	observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...),
 	observation(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",

@@ -19,6 +19,18 @@ export function parsePaths(raw: string | undefined): string[] {
 		.filter(Boolean);
 }
 
+/**
+ * One entry per non-empty line, trimmed. For values that may themselves hold a
+ * comma, such as a key pattern's `{1,3}`, where `parsePaths` would split it.
+ */
+export function parseLines(raw: string | undefined): string[] {
+	if (!raw) return [];
+	return raw
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+}
+
 function parseInstant(iso: string | undefined): Date | undefined {
 	if (!iso) return undefined;
 	const date = new Date(iso);

@@ -203,6 +203,28 @@ export interface ConnectGitHubInput {
 }
 
 /**
+ * An object-storage source, ready for `addObjectStorageSource`: a bucket and a
+ * key prefix in a store, the keys under it to ingest, and the access key the
+ * host encrypts at receipt.
+ */
+export interface ConnectObjectStorageInput {
+	orgId: string;
+	endpoint: string;
+	region: string;
+	bucket: string;
+	prefix: string;
+	/** RE2 patterns over the key with the prefix removed; empty admits all. */
+	includePatterns: string[];
+	/** RE2 patterns; a key matching one is never ingested. */
+	excludePatterns: string[];
+	fileExtensions: string[];
+	accessKeyId: string;
+	secretAccessKey: string;
+	targetCollection: string;
+	boundaryNodeId?: string;
+}
+
+/**
  * The person's own `api` source, ready for `addPersonalApiSource`: an API base
  * URL the person signs in to through the deployment's provider registration.
  * There is no credential field — the credential is the sign-in, which the
@@ -466,6 +488,11 @@ export interface DatasourceClient {
 	listActivity?(orgId: string, sourceId: string): Promise<SourceActivity[]>;
 	listSources(orgId: string): Promise<DatasourceView[]>;
 	addGitHubSource(input: ConnectGitHubInput): Promise<void>;
+	/**
+	 * Connects an object-storage source. Optional; a refused key filter comes
+	 * back as an error whose message leads with the field it names.
+	 */
+	addObjectStorageSource?(input: ConnectObjectStorageInput): Promise<void>;
 	/**
 	 * Creates the caller's own `api` source with the OAuth 2.0
 	 * authorization-code grant (`API_CREDENTIAL_KIND_OAUTH2` +

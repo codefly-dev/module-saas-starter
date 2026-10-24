@@ -4,6 +4,7 @@ import { Button, Input, Label, Textarea } from "@codefly-dev/ui/layout";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useId } from "react";
 import { useForm, useWatch } from "react-hook-form";
+import { CollectionField } from "./collection-field.js";
 import {
 	AccessTokenField,
 	AppInstallPrompt,
@@ -78,12 +79,6 @@ export function ConnectGitHubForm({
 		control: form.control,
 		name: "targetCollection",
 	});
-	const selected = collections?.find(
-		(collection) => collection.nodeId === boundaryNodeId,
-	);
-	const named =
-		selected ??
-		collections?.find((collection) => collection.label === targetCollection);
 
 	return (
 		<div
@@ -279,78 +274,22 @@ export function ConnectGitHubForm({
 						)}
 					</div>
 
-					<div className="space-y-2">
-						{collections && (
-							<>
-								<Label htmlFor={idFor("existing")}>Existing collection</Label>
-								<select
-									id={idFor("existing")}
-									aria-label="Existing collection"
-									value={boundaryNodeId ?? ""}
-									onChange={(event) => {
-										form.setValue("boundaryNodeId", event.target.value);
-										form.setValue(
-											"targetCollection",
-											collections.find(
-												(collection) =>
-													collection.nodeId === event.target.value,
-											)?.label ?? "",
-										);
-									}}
-								>
-									<option value="">Create a collection</option>
-									{collections.map((collection) => (
-										<option key={collection.nodeId} value={collection.nodeId}>
-											{collection.label}
-										</option>
-									))}
-								</select>
-							</>
-						)}
-						<Label htmlFor={idFor("collection")}>Target collection</Label>
-						<Input
-							id={idFor("collection")}
-							readOnly={!!selected}
-							aria-invalid={!!errors.targetCollection}
-							aria-describedby={
-								errors.targetCollection ? idFor("collection-error") : undefined
-							}
-							placeholder="Documents-store collection to land entries in"
-							{...form.register("targetCollection")}
-						/>
-						<p className="text-sm">
-							Connecting grants no read access to the creator or a default team.
-							Organization administrators explicitly grant members or teams read
-							access. Platform administrators read every collection without a
-							grant.
-						</p>
-						{collectionError ? (
-							<p role="alert">Couldn’t inspect collection grants.</p>
-						) : named ? (
-							<p>
-								Readers:{" "}
-								{named.grants.map((grant) => grant.subjectLabel).join(", ") ||
-									"No collection read grants"}
-								.{" "}
-								{readableNodeIds === undefined
-									? "Your read permission is unresolved."
-									: readableNodeIds.includes(named.nodeId)
-										? "You can read this collection."
-										: "You do not have read access. Ask an administrator for access."}
-							</p>
-						) : (
-							<p>
-								{collections
-									? "New collections have no read grants. Your read permission must be checked after creation."
-									: "Collection grants are unresolved. Inspect them in the host after connecting."}
-							</p>
-						)}
-						{errors.targetCollection && (
-							<p id={idFor("collection-error")} className={errorClass}>
-								{errors.targetCollection.message}
-							</p>
-						)}
-					</div>
+					<CollectionField
+						idFor={idFor}
+						{...(collections ? { collections } : {})}
+						{...(readableNodeIds ? { readableNodeIds } : {})}
+						{...(collectionError ? { collectionError } : {})}
+						{...(boundaryNodeId ? { boundaryNodeId } : {})}
+						targetCollection={targetCollection}
+						onSelect={(nodeId, label) => {
+							form.setValue("boundaryNodeId", nodeId);
+							form.setValue("targetCollection", label);
+						}}
+						inputProps={form.register("targetCollection")}
+						{...(errors.targetCollection?.message
+							? { error: errors.targetCollection.message }
+							: {})}
+					/>
 
 					{method === "pat" && (
 						<AccessTokenField

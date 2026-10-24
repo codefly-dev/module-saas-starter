@@ -2,14 +2,15 @@
 
 The datasource connector model ships with an envelope (`envelope.go`), a
 descriptor-driven registry (`registry.go`) and a conformance suite
-(`connectortest`). **GitHub is the only connector that passes it.** The generic
-API, the crawler and object storage run on engines of their own, are registered
+(`connectortest`). **Two connectors pass it: GitHub and object storage.** The
+generic API and the crawler run on engines of their own, are registered
 non-conformant with a gap, keep their existing sources running, and take no new
 ones.
 
-A suite with one conformant implementation has not yet shown the model
-generalises, which was the reason for having one. This document is the honest
-version of that: per connector, what it already honours, what remains, and what
+A suite with one conformant implementation had not shown the model generalises,
+which was the reason for having one; object storage is the second, on a store
+that answers "what is there now" rather than "what changed since". This document
+is the honest record: per connector, what it honours, what remains, and what
 closing it would actually take. It is held to `pkg/business/datasource_connectors.go`
 by `connector_conformance_record_test.go`, so a provider cannot be registered
 here without a section, or given a section that names no registered provider.
@@ -39,28 +40,76 @@ resync on rewritten history, deletions, provenance, bulk fetch in a bounded
 number of provider calls, typed rate limits with a reset time, typed refusals
 for an over-limit item or batch, and cancellation.
 
-## upload — object storage
+## upload — object storage, conformant
 
-**Registered gap:** no cursor, so every sync re-sends every object, and one
-fetch per object; deletions ARE applied, through the complete listing that
-closes a whole-folder sync.
+**Conformant.** `objectstore.FilesConnector` passes `connectortest.RunFiles`
+through `objectstore.ServiceBucket` — the host's client of the composed
+object-storage service (codefly-dev/service-object-storage, its per-call bucket
+binding and batched read from #108) — over an in-process fake of the service's
+gRPC API, so every clause is measured on the calls the host makes
+(`objectstore/connector_conformance_test.go`). The host signs, dials and guards
+nothing for a bucket; `client.go`, its own store client, is deleted. It is
+registered through `connector.Budgeted`, metered per provider credential like
+GitHub, and `AdmitNewSource` admits it; the host admits a new source only where
+a composed object-storage service can read a bucket (below).
 
-| Clause | Where it stands |
+| Clause | How it is honoured |
 | --- | --- |
-| 1 identity and tenancy | Honoured in substance. The object key is the provider's stable id and the ETag is its version; every enqueued job names the source, org and boundary. Not expressed through `connector.Key`/`Item`, because the connector is not on the envelope. |
-| 2 readers | No per-object access list is read, so every object is readable by whoever may read the boundary — which is `ReadersSourceScoped`, the model's own answer for a provider like this. Nothing to close. |
-| 4 versions and change sets | **The remaining gap.** There is no version to diff from, so `runUploadSync` re-lists and re-fetches the whole prefix on every sync. Deletions are not missing: a sync that saw the whole folder and delivered every object in it closes with the complete listing of what it delivered, and the store tombstones the rest; a failed or truncated listing sends none, so a partial view can never delete. |
-| 5 provenance | Key and ETag ride on each delivery; not in the envelope's shape. |
-| 6 budget and backpressure | No declared `Budget`, and the connector is not metered by `datasource_credential_budgets`, so an object-storage sync cannot yield to a person's sync the way a GitHub one does. |
-| 8 bulk only | One `GetObject` per object. The listing is one call; the fetches are not. |
+| 1 identity and tenancy | `connector.KeyFor(source, object key)`: the object key is the item id and its ETag its version. |
+| 2 readers | `ReadersSourceScoped`: a bucket has no per-object access list, so every object is readable by whoever may read the source's collection. |
+| 4 versions and change sets | A version is a digest of the listing within the source's key filter and object cap, under its binding; the host retains the listing each version names in `datasource_object_manifests` (migration 46; the newest four per source), and `Changes(from)` diffs against it. The host's own sync still takes a complete snapshot each time and re-sends every object, closing with the listing that tombstones the rest; delivering only what changed means moving `runUploadSync` onto the change-set path, which changes what the consuming module receives, so it is its own change. |
+| 5 provenance | Source, org, boundary, version, key and ETag on every fetched file. |
+| 6 budget and backpressure | A declared `Budget`, metered by `datasource_credential_budgets` through `connector.Budgeted`, keyed by the credential — a digest of the store's origin and the access key id, derived from the source's configuration on every use and never stored — so every source reading with one key at one store spends one quota and honours one provider throttle, whenever it was connected. A sync a person asks for may spend the reserved share; the scheduled pass yields. |
+| 8 bulk only | A batch is one `GetMany` per `max_get_many_items` (1000, the connector's batch): 120 objects cost one call after the listing. |
 
-**What closing it takes.** A `FilesConnector` over S3 whose version is a digest
-of the listing (key → ETag) and whose `Changes(from)` diffs the current listing
-against the one `from` names — which needs the previous listing to be retained,
-since S3 has no "what changed since" API. That is a store-shaped change, not
-just a connector: the host would have to keep the last manifest per source. Not
-done here because it is a design question about where that manifest lives, not a
-gap in a flow that already exists.
+**How it reads a store.**
+
+- **The binding.** `objectstore.ServiceBucket` names the source's endpoint,
+  region and bucket and carries its access key for each call; the service
+  never stores it. The binding carries **no prefix**: the service normalizes a
+  binding's prefix as a folder (no leading or trailing `/`), while a source's
+  prefix is a literal S3 key prefix — `/reports/` is not `reports/`, and `/` is
+  not the whole bucket. Every listing filters on the literal prefix, which the
+  service passes to the store unchanged, and every key travels whole, which is
+  what the consuming module has always been sent. A listed key outside the
+  literal prefix, or a page past the service's own page size, refuses the whole
+  listing. Before it lists or reads, it asks `Capabilities` under the binding
+  and refuses a service that reports no bound caps or no batch size — an older
+  one would serve its own bucket as the tenant's.
+- **Every call has a deadline**: 30 seconds per listing page or capability
+  question, five minutes per batched read. A store that answers and then
+  stalls does not hold a sync, and its worker's lease, past it.
+- **Admission needs a service that can read a bucket.** At start the host asks
+  the composed service, unbound, whether it reads a batch; one that does not —
+  the released 0.0.18 agent, or none composed — leaves object storage
+  unavailable: the catalog reports `accepts_new_sources: false` and `AddSource`
+  refuses by name.
+- **The guard and the caps are the service's.** A non-public endpoint is
+  refused there by name (`PERMISSION_DENIED`, reported as the envelope's
+  credential refusal: it is the source's configuration to fix either way). A
+  bound read is capped at 5 MiB, the connector's `MaxObjectBytes`, so an object
+  over it is refused from its listed size before it is read; one the service
+  still answers `TOO_LARGE` is the envelope's `ErrItemTooLarge`. A listing is
+  paged at the service's page size and bounded at 20 pages; past that it is
+  `ErrListingIncomplete`, never a partial version. **Completeness is the
+  service's to report:** the host takes an empty `next_page_token` as the end
+  of the listing, so a store that answers "truncated" with no continuation
+  token must be refused by the service, which owns the S3 parsing — the host
+  cannot recover a truncation signal the service discards.
+- **The scope is the connector's.** The key filter and the object cap are the
+  source's `objectstore.Scope`, applied to the listing before its digest: an
+  excluded object is never read and never counts against the cap, and a
+  listing the cap cuts is `ErrListingIncomplete`, which fails the sync
+  terminally with nothing delivered.
+- **A sync never empties a source that has files.** A host-owned invariant,
+  whatever any service answers: a listing that comes back empty for a source
+  whose last closing snapshot named objects is refused
+  (`ErrUploadEmptyListingRefused`) and closes nothing. The per-key scope check
+  cannot catch an empty answer for the wrong scope; this rule does.
+- **A fetch is at a version.** Each object of a batch is read at `If-Match` its
+  listed ETag; one rewritten or deleted since (`CHANGED`, `NOT_FOUND`) is
+  `ErrItemNotFound`, which fails the sync without a listing, and the next sync
+  lists afresh.
 
 ## crawler — documentation website
 
@@ -121,8 +170,9 @@ required path parameters, escaping, query/body routing, and GET body refusal.
 limits, token endpoint guards, and transport disclosure. `apisource/guard_test.go`
 holds the egress guard to the shared `auth/egresstest` vectors, one named case
 per non-global range, and proves the operation dial and every token exchange
-run the guard on the address being dialed; `crawler/guard_test.go` and
-`objectstore/guard_test.go` do the same for those connectors.
+run the guard on the address being dialed; `crawler/guard_test.go` does the
+same for the crawler. Object storage dials nothing: its guard is the
+object-storage service's.
 `connectortest.RunOperations`, run by `business/TestAPIOperationsConformance`,
 checks the host call path for unknown operations, schema and path refusals,
 GET body refusal, output caps, typed 429 responses and a lost mutation reply
@@ -141,11 +191,10 @@ not qualify database commit/rollback or cross-process serialization.
 | Connector | Conformant | Blocked by the interface | Deletions | Cursor | Budget |
 | --- | --- | --- | --- | --- | --- |
 | github | yes | — | yes | yes | declared and metered |
-| upload | no | no (files) | **yes** | no | no |
+| upload | yes | — | yes | yes (the host's sync still re-sends every object) | declared and metered |
 | crawler | no | yes (pages) | no | no | no |
 | api | no | yes (records) | no | no | no |
 
-Object storage is the nearest: it is already on an admissible interface and
-already applies deletions, and one cursor stands between it and a second
-conformant implementation. That is what would demonstrate the model generalises,
-and it is the one worth doing next.
+Object storage is the second conformant implementation, which is what shows the
+model generalises: the same envelope over a store with no history of its own,
+where the cursor is a listing the host retains.

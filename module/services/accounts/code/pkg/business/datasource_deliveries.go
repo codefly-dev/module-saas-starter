@@ -356,21 +356,15 @@ func (s *Service) parkUnreadablePublicSource(ctx context.Context, source *Dataso
 	w := wool.Get(ctx).In("parkUnreadablePublicSource")
 	terminal := jobs.NewProcessingError("datasource.public_repository_unreadable",
 		DatasourceReasonPublicRepositoryUnreadable+" This sync job will not retry.", false)
-	// Already parked for this: the job still stops, but the row is not rewritten
-	// and no second access_lost is recorded. A source is parked out of the
-	// reconcile sweep, so repeats arrive from "Sync now", which ignores status.
-	if source.Status == DatasourceStatusDegraded && source.StatusReason == DatasourceReasonPublicRepositoryUnreadable {
-		return terminal
-	}
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.MarkDatasourceSourceDegraded(ctx, source.ID, PublicRepositoryUnreadableDegradeReason())
-	}); err != nil {
-		// The park is what makes this visible; without it the tenant would see a
-		// source that simply stopped. Report the original failure so the job
-		// retries and the park is attempted again, rather than going terminal
-		// having recorded nothing.
+	parked, err := s.parkDatasourceSource(ctx, source, PublicRepositoryUnreadableDegradeReason())
+	if err != nil {
 		w.Warn("park unreadable public source failed", wool.Field("source", source.ID), wool.ErrField(err))
 		return cause
+	}
+	// Already parked for this: the job still stops, and no second access_lost
+	// is recorded.
+	if !parked {
+		return terminal
 	}
 	s.emit(ctx, source.ID, "system", EventDatasourceSourceAccessLost, "datasource", source.ID, source.OrgID,
 		map[string]any{
@@ -382,6 +376,26 @@ func (s *Service) parkUnreadablePublicSource(ctx context.Context, source *Dataso
 			"reason":          DatasourceAccessLostPublicRepositoryUnreadable,
 		})
 	return terminal
+}
+
+// parkDatasourceSource degrades a source a retry cannot fix, with the reason a
+// person acts on, so the reconcile sweep stops retrying it. It reports false,
+// writing nothing, when the source already stands parked for that reason: a
+// parked source is out of the sweep, so repeats arrive from "Sync now", which
+// ignores status. On an error the caller reports a RETRYABLE failure, never its
+// terminal one: the park is what makes the stop visible, and a job that went
+// terminal without it would leave a source that simply stopped, with nothing
+// on it to say why.
+func (s *Service) parkDatasourceSource(ctx context.Context, source *DatasourceSource, reason DatasourceDegradeReason) (bool, error) {
+	if source.Status == DatasourceStatusDegraded && source.StatusReason == reason.String() {
+		return false, nil
+	}
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.store.MarkDatasourceSourceDegraded(ctx, source.ID, reason)
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // CompileGitHubDelivery turns one raw push delivery into a change set, through
@@ -1032,7 +1046,8 @@ func forcedReconcileMode(mode string) bool {
 // connecting is an explicit act, and a source reconnected after being deleted
 // must not be dropped as a replay of the first one's schedule.
 func (s *Service) enqueueFirstPullSync(ctx context.Context, source *DatasourceSource) error {
-	return s.enqueuePullSync(ctx, source, datasourceSyncRequestSource, NewIDString())
+	_, err := s.enqueuePullSync(ctx, source, datasourceSyncRequestSource, NewIDString())
+	return err
 }
 
 // enqueueScheduledPullSync is the periodic reconcile for a provider the host
@@ -1043,15 +1058,16 @@ func (s *Service) enqueueFirstPullSync(ctx context.Context, source *DatasourceSo
 //
 // STOPGAP (issue #1112).
 func (s *Service) enqueueScheduledPullSync(ctx context.Context, source *DatasourceSource) error {
-	return s.enqueuePullSync(ctx, source, DatasourceScheduledSyncSource, scheduledReconcileKey(source))
+	_, err := s.enqueuePullSync(ctx, source, DatasourceScheduledSyncSource, scheduledReconcileKey(source))
+	return err
 }
 
 // enqueuePullSync enqueues one pull-provider sync request, the job the leased
 // sync worker performs through RunDatasourceSync. It is exactly the job
 // SyncDatasourceSource enqueues for these providers; only provenance and
-// idempotency key vary by caller.
-func (s *Service) enqueuePullSync(ctx context.Context, source *DatasourceSource, provenance, idempotencyKey string) error {
-	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
+// idempotency key vary by caller. It returns the job's id.
+func (s *Service) enqueuePullSync(ctx context.Context, source *DatasourceSource, provenance, idempotencyKey string) (string, error) {
+	response, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_OrganizationId{OrganizationId: source.OrgID}},
@@ -1067,7 +1083,10 @@ func (s *Service) enqueuePullSync(ctx context.Context, source *DatasourceSource,
 			Attributes:     map[string]string{attrSourceID: source.ID},
 		},
 	})
-	return err
+	if err != nil {
+		return "", err
+	}
+	return response.GetJobId(), nil
 }
 
 // pathInScope reports whether p is under one of the source's path prefixes at a

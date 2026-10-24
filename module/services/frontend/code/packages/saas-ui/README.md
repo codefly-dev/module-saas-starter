@@ -417,9 +417,19 @@ refreshes sources, collection grants and readable boundaries. Preview stories
   in its own shell — a line in a header, say — without re-deriving them from the
   phase names and getting the terminal cases wrong. `<SourceSyncProgress source
   report />` is the card, and `useSourceSync(client, orgId, source)` the read.
+- `<ConnectObjectStorageForm onSubmit={…} … />` — endpoint (https only),
+  region, bucket, prefix, the key filter (include and exclude RE2 patterns, one
+  per line, over the key after the prefix; file types as on GitHub), access key
+  id, the secret access key the host encrypts at receipt, and the target
+  collection. It states that a bucket has no per-object access list, so one
+  source is one collection with one set of readers. A host refusal of a pattern
+  leads with the field it names and is shown under that field. Map its values
+  with `objectStorageInputFrom(orgId, values)` for the client's optional
+  `addObjectStorageSource`. Nothing in the kit mounts it yet: the host refuses
+  new object-storage sources until the provider is conformant (#1211).
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
-  `useUpdateSource`, `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`,
-  `useMyAccountLinks`.
+  `useAddObjectStorageSource`, `useUpdateSource`, `useSyncSource`,
+  `useDeleteSource`, `useAccessibleScopes`, `useMyAccountLinks`.
 - `<EditSourceForm source onSubmit … />`, behind the row's **Edit**, changes
   what a connected source fetches: its branch and its path and file-type
   filters, bound by the same schema the connect form uses. It offers the connect
@@ -674,8 +684,8 @@ offer a Markdown preset. The host intersects suffixes with paths for snapshots
 and incremental changes; empty keeps all file types. The filter is selected at
 connection time and does not rewrite existing sources.
 
-The SDK peer floor is **0.3.35**: the datasource client maps an `api` source's
-credential kind and OAuth grant, and declares operations, with enums the SDK
-exports from that release (principal-name resolution needs 0.3.14's directory
-service). Earlier SDK versions must be rejected during installation rather than
+The SDK peer floor is **0.3.36**: the object-storage connect form sends an
+`upload` source's include and exclude key patterns, fields the SDK carries from
+that release (the `api` source's credential kind, OAuth grant and operations
+need 0.3.35; principal-name resolution needs 0.3.14's directory service). Earlier SDK versions must be rejected during installation rather than
 accepted and then failing when the component loads.

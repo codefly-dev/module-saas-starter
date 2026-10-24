@@ -227,8 +227,10 @@ A successful image build and matching materials alone do not establish that a
 generated-file change belongs in the PR. Reproduce recipes using the CI-pinned
 CLI and the released agents selected by the service manifests.
 Every topology service must declare image coverage, even if its recipe is absent
-from the checkout. Redis and Vault explicitly use the existing Codefly vendor
-image audit; an unknown agent is an error.
+from the checkout. Redis, Vault and object storage explicitly use the existing
+Codefly vendor image audit — the object-storage agent runs its gateway and MinIO
+images, both pinned by the agent, and builds nothing here; an unknown agent is
+an error.
 
 Changes to the image contract force the full service graph through CI. Before
 each canonical build attempt, CI snapshots Buildx history. After the build,

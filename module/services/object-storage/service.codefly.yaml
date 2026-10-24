@@ -1,0 +1,22 @@
+name: object-storage
+version: 0.0.0
+agent:
+    kind: codefly:service
+    name: object-storage
+    version: 0.0.19
+    publisher: codefly.dev
+endpoints:
+    - name: grpc
+spec:
+    backend: ""
+    bucket: ""
+    prefix: ""
+    region: ""
+    deployment:
+        # The agent binds its gRPC endpoint on the port Codefly allocates. The
+        # host reads tenant buckets through this service, so the service — not
+        # accounts — dials a tenant's store, on the public internet, with the
+        # service's guard refusing every non-public address. 443 is the port
+        # accounts allowed its own store client before.
+        public-egress-ports:
+            - 443
