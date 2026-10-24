@@ -918,8 +918,9 @@ const resourceConfinementHeader = "x-codefly-resource"
 // entitlement authority and an empty value here would be a claim this process
 // cannot make.
 //
-// WHAT IT MEANS differs by arm, and one statement holds on both: it equals the
-// seal of the capability presented with the request. On a person's path it is
+// WHAT IT MEANS differs by arm, and one statement holds on both: when a
+// capability is presented with the request, it equals that capability's seal.
+// On a person's path it is
 // the TARGET's admitting installation, and a person's capability for that target
 // is sealed to it. On a declared module route's bearer-less arm it is the seal of
 // the headless operation context, which names the CALLER's own installation.

@@ -106,18 +106,26 @@ workload endpoint with no `Authorization` and no `Cookie`, presenting a
 capability addressed to the alias, takes the bearer-less arm
 (`gateway_workload_operation.go`): a composed workload's headless operation
 context, minted at `/modules/_operation-context`. The arm reads no principal. It
-requires the signed tenant to have an ACTIVE installation of the target and the
-seal to name a different ACTIVE installation in that tenant, read from accounts'
-`ListInstallations` per request and uncached; a seal equal to the target's
-installation is a person's capability and answers 401 as before. It strips
-identity before its limiter, meters on `workload-operation:<tenant>` (fail
-closed), forwards no bearer, stamps only `x-codefly-installation-id` (the seal,
-so the CALLER's installation on this arm and the target's admitting installation
-on the person path; equal to the presented seal on both), answers an upstream
+requires exactly one capability header (401 `invalid work context` otherwise),
+the signed tenant to have an ACTIVE installation of the target, and the seal to
+name an ACTIVE installation in that tenant that is none of the target's, read
+from accounts' `ListInstallations` per request and uncached; a seal equal to any
+active installation of the target is a person's capability and answers 401 as
+before. It strips identity (and `X-Forwarded-Client-Cert`) before its limiter,
+meters on `workload-operation:<tenant>` (fail closed), forwards no bearer, stamps
+only `x-codefly-installation-id` (the seal, so the CALLER's installation on this
+arm and the target's admitting installation on the person path; equal to the
+presented seal whenever a capability is presented), answers an upstream
 failure with a static 502, and logs every admit and refusal with alias, tenant,
 task, seal and presenter. No installations client wired answers 503. It is the
 gateway's half of a solution's release-declared headless operation; a module
 calling a peer keeps its in-mesh seam instead.
+
+**Release note: deploy accounts before this gateway.** The arm relies on
+accounts refusing a person's child for another audience's installation
+(`StartChildSession`). An older accounts mints such a child, valid for up to 900
+seconds, which this arm would read as unattended work. Roll accounts first, and
+roll this gateway only once no older accounts replica is serving.
 
 The registry's `SolutionDeclaredBinding.kind` positively identifies each surface.
 An unspecified kind is refused by both. Neither presence nor a reusable alias
