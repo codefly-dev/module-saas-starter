@@ -71,14 +71,10 @@ func userStatusError(err error) error {
 }
 
 // invitationStatusError maps the refusals an invitation can meet to their
-// codes. Anything else is returned as it came, so the refusal seam reports it
-// as a fault with its cause in the log (refusalStatus) rather than this mapper
-// swallowing the cause under a fixed sentence.
+// codes, and a fault to the fixed sentence with its cause kept for the log
+// (refusalError) — sanitized here, not only by the interceptor after it.
 func invitationStatusError(err error) error {
-	if st, ok := businessRefusal(err); ok {
-		return st.Err()
-	}
-	return err
+	return refusalError(err)
 }
 
 func jobOperationStatusError(err error) error {

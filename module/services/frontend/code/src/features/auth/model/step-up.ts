@@ -55,11 +55,14 @@ export function stepUpToast(returnTo: string = here()): void {
 }
 
 /**
- * The codes under which the host's message is a sentence written for whoever
- * reads it: the rule the request broke, the field that was wrong, the record
- * that already exists, the limit that was hit. The host guarantees it — a
- * fault travels as Internal with a fixed sentence, never its call path — so
- * these are shown as sent. Every other code gets the screen's own fallback.
+ * The codes under which the host writes its message for whoever reads it: the
+ * rule the request broke, the field that was wrong, the record that already
+ * exists, the limit that was hit. accounts' refusal seam sends a business
+ * refusal under its sentinel's own sentence and a fault as Internal with a
+ * fixed sentence, so these are shown as sent. This is the host's rule, not a
+ * proof: a handler that wraps a call path under one of these codes is a host
+ * bug to fix where it is raised, not a reason to hide every reason here.
+ * Every other code gets the screen's own fallback.
  */
 const PERSON_FACING_CODES: ReadonlySet<Code> = new Set([
 	Code.InvalidArgument,

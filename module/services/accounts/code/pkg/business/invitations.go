@@ -375,6 +375,19 @@ func (s *Service) AcceptInvitation(
 	var org *gen.Organization
 	alreadyAccepted := false
 	if txErr := s.store.As(Identity{UserID: userID, OrgID: inv.OrgID}).Within(ctx, func(ctx context.Context) error {
+		// The administration lock comes first, in the documented order
+		// (administration, then membership), so acceptance serializes with
+		// deleting the organization: deletion holds it while it removes the
+		// roster and revokes pending invitations, and an acceptance that ran
+		// beside it could commit a membership into an archived organization.
+		if err := s.store.LockOrgAdministration(ctx, inv.OrgID); err != nil {
+			return w.Wrapf(err, "cannot lock organization administration")
+		}
+		if current, err := s.store.GetOrganization(ctx, inv.OrgID); err != nil {
+			return w.Wrapf(err, "cannot read organization")
+		} else if current == nil || current.ArchivedAt != nil {
+			return ErrInvitationUnavailable
+		}
 		fresh, lockErr := s.store.GetInvitationByID(ctx, inv.ID)
 		if lockErr != nil {
 			return lockErr
@@ -395,7 +408,8 @@ func (s *Service) AcceptInvitation(
 			// where the role-change path last put it. The pair lock keeps a
 			// concurrent direct add from landing between the check and the
 			// write. A non-member holds no administrative authority, so
-			// admitting one cannot break administrator continuity.
+			// admitting one cannot break administrator continuity; the
+			// administration lock above is for deletion, not continuity.
 			if err := s.store.LockOrgMembership(ctx, inv.OrgID, userID); err != nil {
 				return w.Wrapf(err, "cannot lock org membership")
 			}

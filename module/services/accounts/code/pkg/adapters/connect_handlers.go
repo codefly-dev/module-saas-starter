@@ -987,9 +987,6 @@ func (h *notificationConnectHandler) ListNotifications(ctx context.Context, req 
 		pageSize = 50
 	}
 	notes, nextToken, err := h.svc.ListNotifications(ctx, userID, pageSize, req.Msg.PageToken, business.NotificationFilter{OrgID: req.Msg.OrgId, UnreadOnly: req.Msg.UnreadOnly})
-	if errors.Is(err, business.ErrInvalidNotificationPageToken) || errors.Is(err, business.ErrInvalidNotificationFilter) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -1020,9 +1017,6 @@ func (h *notificationConnectHandler) MarkRead(ctx context.Context, req *connect.
 		return nil, translateGRPCError(err)
 	}
 	if err := h.svc.MarkRead(ctx, userID, req.Msg.Id); err != nil {
-		if errors.Is(err, business.ErrNotificationNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
@@ -1047,9 +1041,6 @@ func (h *notificationConnectHandler) DeleteNotification(ctx context.Context, req
 		return nil, translateGRPCError(err)
 	}
 	if err := h.svc.DeleteNotification(ctx, userID, req.Msg.Id); err != nil {
-		if errors.Is(err, business.ErrNotificationNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
@@ -1066,9 +1057,6 @@ func (h *notificationConnectHandler) ResolveNotificationAction(ctx context.Conte
 	}
 	actionURL, err := h.svc.ResolveNotificationAction(ctx, userID, req.Msg.Id)
 	if err != nil {
-		if errors.Is(err, business.ErrNotificationNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.ResolveNotificationActionResponse{ActionUrl: actionURL}), nil

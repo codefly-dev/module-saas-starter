@@ -53,6 +53,21 @@ var businessRefusals = []struct {
 	{business.ErrPublicOriginUnavailable, codes.FailedPrecondition},
 	{business.ErrPrivacyWorkflowUnavailable, codes.FailedPrecondition},
 	{business.ErrPolicyLogUnreachable, codes.FailedPrecondition},
+	{business.ErrDatasourceSourceNotFound, codes.NotFound},
+	{business.ErrDatasourceSyncNotFound, codes.NotFound},
+	// The source moved under the editor. FailedPrecondition and not Aborted:
+	// retrying the same request would be refused again for the same reason,
+	// and what resolves it is reopening the form on the current scope.
+	{business.ErrDatasourceSourceScopeChanged, codes.FailedPrecondition},
+	{business.ErrTriggerSourceNotFound, codes.NotFound},
+	// Told apart from "not found" on purpose: the source exists and an
+	// administrator can read it; what they may not do is bind their own
+	// authority to it.
+	{business.ErrTriggerSourcePersonal, codes.PermissionDenied},
+	{business.ErrSourceDelegationNotFound, codes.NotFound},
+	{business.ErrNotificationNotFound, codes.NotFound},
+	{business.ErrInvalidNotificationPageToken, codes.InvalidArgument},
+	{business.ErrInvalidNotificationFilter, codes.InvalidArgument},
 }
 
 // businessRefusal maps a known business refusal to its status.
@@ -76,6 +91,10 @@ func businessRefusal(err error) (*status.Status, bool) {
 // refusalStatus is the status a caller reads for err, and the cause withheld
 // from it when err is a fault (nil otherwise).
 func refusalStatus(err error) (*status.Status, error) {
+	var withheld *withheldCause
+	if errors.As(err, &withheld) {
+		return status.New(codes.Internal, internalRefusalMessage), withheld.cause
+	}
 	if st, ok := status.FromError(err); ok {
 		return st, nil
 	}
@@ -91,23 +110,58 @@ func refusalStatus(err error) (*status.Status, error) {
 	return status.New(codes.Internal, internalRefusalMessage), err
 }
 
-// withheldCause carries a fault inside the Connect error the caller receives:
-// the wire message is the fixed sentence, and the chain stays reachable for the
-// log through Unwrap.
+// withheldCause carries a fault to the caller as the fixed sentence: its
+// Error and its gRPC status say only that, and the chain stays reachable for
+// the log through Unwrap. It is safe on the wire by itself, without the
+// interceptors: grpc-go and connect-go both read the status or the message.
 type withheldCause struct{ cause error }
 
 func (e *withheldCause) Error() string { return internalRefusalMessage }
 func (e *withheldCause) Unwrap() error { return e.cause }
+func (e *withheldCause) GRPCStatus() *status.Status {
+	return status.New(codes.Internal, internalRefusalMessage)
+}
 
-// serverFault reports whether a code is the host's failure rather than the
-// caller's: an operator has something to fix, so it is logged as an error.
-func serverFault(code codes.Code) bool {
+// refusalError is refusalStatus as an error a handler can return: a status
+// for a refusal, a withheldCause for a fault. A mapper that ends in it never
+// sends a call path, whether or not an interceptor runs after it.
+func refusalError(err error) error {
+	if err == nil {
+		return nil
+	}
+	st, cause := refusalStatus(err)
+	if cause != nil {
+		return &withheldCause{cause: cause}
+	}
+	return st.Err()
+}
+
+// refusalLevel is the level a refused call is logged at.
+//
+// The interceptor sits outside authentication and the rate limit, so it sees
+// every anonymous or flooding request. Those refusals are DEBUG: an
+// unauthenticated flood must not become an unbounded WARN stream, and the
+// revocation-list outage behind "authorization temporarily unavailable" is
+// already logged once by the auth interceptor that refused it. Any other
+// refusal is the caller's (WARN) unless it is the host's fault (ERROR): an
+// operator has something to fix.
+func refusalLevel(code codes.Code, message string) wool.Loglevel {
+	switch {
+	case code == codes.Unauthenticated,
+		code == codes.ResourceExhausted && message == ErrRateLimited.Error(),
+		code == codes.Unavailable && message == authorizationUnavailableMessage:
+		return wool.DEBUG
+	}
 	switch code {
 	case codes.Internal, codes.Unknown, codes.DataLoss, codes.Unavailable, codes.DeadlineExceeded:
-		return true
+		return wool.ERROR
 	}
-	return false
+	return wool.WARN
 }
+
+// authorizationUnavailableMessage is the auth interceptors' fail-closed refusal
+// when the revocation list cannot be read.
+const authorizationUnavailableMessage = "authorization temporarily unavailable"
 
 // logRefusal writes the one line a refused call leaves for an operator. The
 // trace id is stamped by wool from the request's span, which is how a support
@@ -122,11 +176,14 @@ func logRefusal(ctx context.Context, procedure string, code codes.Code, message 
 		fields = append(fields, wool.Field("cause", cause.Error()))
 	}
 	w := wool.Get(ctx).In("refusal")
-	if serverFault(code) {
+	switch refusalLevel(code, message) {
+	case wool.DEBUG:
+		w.Debug("request refused", fields...)
+	case wool.ERROR:
 		w.Error("request failed", fields...)
-		return
+	default:
+		w.Warn("request refused", fields...)
 	}
-	w.Warn("request refused", fields...)
 }
 
 // connectRefusalInterceptor translates and logs every refusal on the Connect

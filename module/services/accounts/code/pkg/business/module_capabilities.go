@@ -793,7 +793,7 @@ func moduleJobError(w *wool.Wool, err error) error {
 	case errors.Is(err, jobs.ErrJobNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, jobs.ErrTransactionRequired):
-		return status.Error(codes.Internal, err.Error())
+		return status.Error(codes.Internal, jobs.ErrTransactionRequired.Error())
 	}
 	return w.Wrap(err)
 }
@@ -1093,24 +1093,27 @@ func (s *Service) ModuleCancelApproval(ctx context.Context, caller ModuleCaller,
 }
 
 // moduleApprovalError maps approval-engine errors onto gRPC codes by their typed
-// StoreError. An untyped error is an internal fault, NOT bad client input: the
-// previous blanket InvalidArgument told a module its request was malformed even
-// when the database failed, so it would retry the same request forever.
+// StoreError, under the store's own sentence rather than the wrapped chain. An
+// untyped error is an internal fault, NOT bad client input: the previous
+// blanket InvalidArgument told a module its request was malformed even when the
+// database failed, so it would retry the same request forever. A fault is
+// returned as it came: the adapters' refusal seam sends it as Internal with a
+// fixed sentence and logs the cause, which a status built here would lose.
 func moduleApprovalError(err error) error {
 	var se *StoreError
 	if errors.As(err, &se) {
 		switch se.StoreErrorType {
 		case ErrTypeValidation:
-			return status.Error(codes.InvalidArgument, err.Error())
+			return status.Error(codes.InvalidArgument, se.Error())
 		case ErrTypeNotFound:
-			return status.Error(codes.NotFound, err.Error())
+			return status.Error(codes.NotFound, se.Error())
 		case ErrTypeConflict:
-			return status.Error(codes.FailedPrecondition, err.Error())
+			return status.Error(codes.FailedPrecondition, se.Error())
 		case ErrTypePermission:
-			return status.Error(codes.PermissionDenied, err.Error())
+			return status.Error(codes.PermissionDenied, se.Error())
 		}
 	}
-	return status.Error(codes.Internal, err.Error())
+	return err
 }
 
 // enqueueApprovalResume appends the resume outbox job for an approved request.

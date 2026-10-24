@@ -393,7 +393,7 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	if err != nil {
 		if errors.Is(err, auth.ErrRevocationUnavailable) {
 			wool.Get(ctx).In("grpcPolicyInterceptor").Warn("revocation list unavailable, denying (fail-closed)", wool.ErrField(err))
-			return ctx, status.Error(codes.Unavailable, "authorization temporarily unavailable")
+			return ctx, status.Error(codes.Unavailable, authorizationUnavailableMessage)
 		}
 		wool.Get(ctx).In("grpcPolicyInterceptor").Debug("VerifyAccess failed", wool.ErrField(err))
 		return ctx, status.Error(codes.Unauthenticated, "invalid or expired access token")

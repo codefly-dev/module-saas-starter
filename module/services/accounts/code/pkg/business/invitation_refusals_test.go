@@ -81,3 +81,44 @@ func TestAcceptInvitationKeepsAnExistingMembersRole(t *testing.T) {
 	}
 	require.Equal(t, gen.OrgRole_ORG_ROLE_ADMIN, roles[inviteeID])
 }
+
+// Acceptance takes the organization's administration lock and re-reads the
+// organization under it, so a pending invitation into an organization that has
+// been archived — by a deletion it waited behind, or one that left the
+// invitation pending — admits nobody.
+func TestAcceptInvitationIntoAnArchivedOrganizationIsRefused(t *testing.T) {
+	clearData(t)
+	ownerID, orgID := mustUserAndOrg(t, testCtx, "archived-owner@test.invalid", "archived-owner", "Archived Org")
+	inviteeEmail := "archived-invitee@test.invalid"
+	registered, err := testService.RegisterUser(testCtx, &gen.RegisterUserRequest{
+		PrimaryEmail: inviteeEmail,
+		Identity: &gen.UserIdentity{
+			Provider: "email", ProviderId: "archived-invitee", ProviderEmail: inviteeEmail, EmailVerified: true,
+		},
+	})
+	require.NoError(t, err)
+	inviteeID := registered.User.Uuid
+
+	created, err := testService.CreateInvitation(testCtx, ownerID, &gen.CreateInvitationRequest{
+		OrgId: orgID, Email: inviteeEmail, Role: gen.InvitationRole_INVITATION_ROLE_MEMBER,
+	})
+	require.NoError(t, err)
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.ArchiveOrganization(ctx, orgID, ownerID)
+	}))
+
+	_, err = testService.AcceptInvitation(testCtx, inviteeID, &gen.AcceptInvitationRequest{
+		Credential: &gen.AcceptInvitationRequest_InvitationId{InvitationId: created.GetInvitation().GetId()},
+	})
+	require.ErrorIs(t, err, business.ErrInvitationUnavailable)
+
+	var members []*gen.OrgMembership
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		var err error
+		members, err = testStore.ListOrgMembers(ctx, orgID)
+		return err
+	}))
+	for _, member := range members {
+		require.NotEqual(t, inviteeID, member.GetUserId(), "no membership may land in an archived organization")
+	}
+}

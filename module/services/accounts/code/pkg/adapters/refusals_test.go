@@ -155,6 +155,10 @@ func TestBusinessRefusalsTravelUnderTheirCode(t *testing.T) {
 			fmt.Errorf("CreateInvitation: cannot create invitation: %w", business.ErrPublicOriginUnavailable),
 			codes.FailedPrecondition, business.ErrPublicOriginUnavailable.Error(),
 		},
+		"datasource source, without the call path": {
+			fmt.Errorf("UpdateSource: cannot update: %w", business.ErrDatasourceSourceNotFound),
+			codes.NotFound, business.ErrDatasourceSourceNotFound.Error(),
+		},
 		"seat quota": {
 			fmt.Errorf("AddOrgMember: %w", &business.EntitlementQuotaError{Feature: business.EntitlementSeats, Used: 5, Limit: 5}),
 			codes.ResourceExhausted, "seats quota exhausted: used 5 of 5",
@@ -193,4 +197,47 @@ func TestGRPCRefusalInterceptorLogsAndWithholds(t *testing.T) {
 	require.Equal(t, wool.ERROR, line.Level)
 	require.Equal(t, "/saas.accounts.v1.InvitationService/CreateInvitation", fields["procedure"])
 	require.Equal(t, "pq: connection refused", fields["cause"])
+}
+
+// The interceptor sits outside authentication and the rate limit, so the
+// refusals an anonymous flood produces are DEBUG, not an unbounded WARN stream.
+func TestRefusalLevels(t *testing.T) {
+	for name, tc := range map[string]struct {
+		code    codes.Code
+		message string
+		level   wool.Loglevel
+	}{
+		"unauthenticated":              {codes.Unauthenticated, "invalid or expired access token", wool.DEBUG},
+		"rate limited":                 {codes.ResourceExhausted, ErrRateLimited.Error(), wool.DEBUG},
+		"revocation list outage":       {codes.Unavailable, authorizationUnavailableMessage, wool.DEBUG},
+		"seat quota is the caller's":   {codes.ResourceExhausted, "seats quota exhausted: used 5 of 5", wool.WARN},
+		"permission is the caller's":   {codes.PermissionDenied, "permission denied", wool.WARN},
+		"another outage is the host's": {codes.Unavailable, "job operations are unavailable", wool.ERROR},
+		"a fault is the host's":        {codes.Internal, internalRefusalMessage, wool.ERROR},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.level, refusalLevel(tc.code, tc.message))
+		})
+	}
+}
+
+// invitationStatusError sanitizes a fault itself, so the sentence holds even
+// on a server whose chain lost the refusal interceptor; the cause still
+// reaches the log when the interceptor is there.
+func TestInvitationStatusErrorWithholdsAFaultWithoutTheInterceptor(t *testing.T) {
+	fault := errors.New("CreateInvitation: cannot create invitation: pq: relation does not exist")
+	mapped := invitationStatusError(fault)
+
+	st := status.Convert(mapped)
+	require.Equal(t, codes.Internal, st.Code())
+	require.Equal(t, internalRefusalMessage, st.Message())
+	require.Equal(t, internalRefusalMessage, mapped.Error())
+
+	_, cause := refusalStatus(mapped)
+	require.Equal(t, fault, cause)
+
+	var ce *connect.Error
+	require.ErrorAs(t, translateGRPCError(mapped), &ce)
+	require.Equal(t, connect.CodeInternal, ce.Code())
+	require.Equal(t, internalRefusalMessage, ce.Message())
 }
