@@ -84,6 +84,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		"/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings",
 		"/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
 		"/saas.accounts.v1.UsageService/ConsumeUsage",
+		"/saas.accounts.v1.WorkContextService/AdmitWorkloadOperation",
 		"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
 		"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
 		"/saas.accounts.v1.WorkContextService/ConsumeSingleUse",

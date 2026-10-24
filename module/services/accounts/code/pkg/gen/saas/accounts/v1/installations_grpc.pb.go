@@ -76,9 +76,9 @@ type InstallationServiceClient interface {
 	// PermissionService.ListAccessibleScopes for that reason, the two read together
 	// to answer what a viewer's organization installed and what that viewer was
 	// granted. Its declared module route's bearer-less arm asks about the tenant an
-	// edge-verified Work Context names, a value this issuer signed, to admit a
-	// headless operation context only when the target is installed there and the
-	// context is sealed to another active installation.
+	// edge-inspected Work Context names, a value this issuer signed, to admit a
+	// headless operation context only when the target is installed there; whether
+	// the context is one is WorkContextService/AdmitWorkloadOperation's answer.
 	ListInstallations(ctx context.Context, in *ListInstallationsRequest, opts ...grpc.CallOption) (*ListInstallationsResponse, error)
 	// ListAvailableSolutions is the catalogue: the solution targets an
 	// administrator may install right now.
@@ -294,9 +294,9 @@ type InstallationServiceServer interface {
 	// PermissionService.ListAccessibleScopes for that reason, the two read together
 	// to answer what a viewer's organization installed and what that viewer was
 	// granted. Its declared module route's bearer-less arm asks about the tenant an
-	// edge-verified Work Context names, a value this issuer signed, to admit a
-	// headless operation context only when the target is installed there and the
-	// context is sealed to another active installation.
+	// edge-inspected Work Context names, a value this issuer signed, to admit a
+	// headless operation context only when the target is installed there; whether
+	// the context is one is WorkContextService/AdmitWorkloadOperation's answer.
 	ListInstallations(context.Context, *ListInstallationsRequest) (*ListInstallationsResponse, error)
 	// ListAvailableSolutions is the catalogue: the solution targets an
 	// administrator may install right now.

@@ -318,6 +318,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"UsageService/GetUsageHistory":                                 "UTC hourly, daily, or monthly usage buckets for a bounded range.",
 	"UsageService/GetUsage":                                        "Current monthly meter total and effective limit.",
 	"UsageService/ListUsageMeters":                                 "Customer-visible meter catalog with current totals and limits.",
+	"WorkContextService/AdmitWorkloadOperation":                    "Answer whether a capability presented with no bearer at a module route is a module operation context for it, consuming nothing.",
 	"WorkContextService/ExchangeAudience":                          "Reissue one Task and Session lineage for another audience with attenuated authority.",
 	"WorkContextService/RenewWorkContext":                          "Let the current delegated actor extend its own Work Context past the TTL cap, attenuation-preserving.",
 	"WorkContextService/StartChildSession":                         "Exchange a current Work Context for an attenuated child-agent Session.",

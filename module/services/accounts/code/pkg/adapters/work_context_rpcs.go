@@ -1467,10 +1467,10 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 // the seal from the audience (StartTask, and remint for StartRootSession,
 // ExchangeAudience and RenewWorkContext). Core's Child cannot: a child keeps its
 // parent's seal, so a child for another audience would be a person's capability
-// sealed to an installation that is not its audience's. The gateway's bearer-less
-// module arm reads exactly that difference as "unattended work" (a module or
-// installation principal is sealed to its own installation), so such a child
-// would be admitted there without the person's bearer.
+// sealed to an installation that is not its audience's, which a verifier reading
+// the seal as the audience's installation would misplace. (The gateway's
+// bearer-less module arm no longer reads the seal that way: it admits only what
+// AdmitWorkloadOperation, reading the owner, says is a module operation context.)
 //
 // A same-audience child keeps the seal its audience resolves to now, and is
 // minted. A service principal is sealed to its own installation, which the

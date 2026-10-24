@@ -523,33 +523,66 @@ the parent's seal) refuses a person's child for an audience sealed elsewhere. It
 holds a child of a service principal's capability as it is, and refuses a child
 of any other owner kind.
 
-Two person-owned kinds are sealed elsewhere by design, each behind its own gate:
+Several person-owned kinds are sealed elsewhere by design, each behind its own
+gate:
 
 - a **source-operation context** (`startSourceOperation`): sealed to the
   installation of the module using the person's source delegation, and minted
   only by that module's identity exercising the delegation
   (`MintSourceOperationContext`, or the delegation arm of
   `ExchangeDelegatedOperationAudience`);
-- an **installation task** (`StartInstallationTask`): owned by the
-  installation's owner of record, sealed to that installation, and reached only
-  with an `EXPOSURE_INTERNAL` credential.
+- an **installation task** (`StartInstallationTask`, and an install step's
+  capability): owned by the installation's owner of record, sealed to that
+  installation, and reached only with an `EXPOSURE_INTERNAL` credential;
+- an **installed binding's child** (`exchangeInstalledBinding`, the
+  `content_read` and `module_actor` modes of
+  `ExchangeDelegatedOperationAudience`): a core `Child` of the person's
+  capability, so it keeps the parent's seal, the exchanging module's
+  installation, while addressing another module. It does not pass through
+  `StartChildSession`, so the child guard does not apply to it.
 
-The gateway's bearer-less module arm depends on it: it admits a capability with
-no bearer only when the seal names an active installation other than the
-target's. That admits module operation contexts and the two kinds above, the
-unattended-work family, and never a person's interactive capability.
 `TestAPersonsCapabilityIsSealedToItsAudiencesInstallation`
-(`pkg/adapters/work_context_seal_pin_test.go`) pins it over every person mint,
-and `TestEveryWorkContextMintIsClassifiedBySeal` enumerates every mint RPC from
-the generated descriptors and fails on one listed neither as person-sealed (with
-its case in that table) nor as sealed elsewhere (with its reason). A mint that
-copies a parent's seal across audiences reopens the arm to a person's credential
-without its bearer.
+(`pkg/adapters/work_context_seal_pin_test.go`) pins the rule over every person
+mint, and `TestEveryWorkContextMintIsClassifiedBySeal` enumerates every mint RPC
+from the generated descriptors and fails on one listed neither as person-sealed
+(with its case in that table) nor as sealed elsewhere (with its reason).
 
-The arm reads the tenant's installations through `InstallationService/ListInstallations`
-(`EXPOSURE_INTERNAL`). Its contract comment in `installations.proto` names both
+## The bearer-less module arm asks the issuer
+
+The gateway's bearer-less arm of `/v1/<alias>/*` admits exactly one shape, a
+module operation context (`StartModuleOperationTask`), and decides nothing from
+the seal itself: a seal on an installation other than the target's is carried
+by every kind above, all of them a person's. It asks
+`WorkContextService/AdmitWorkloadOperation` (`EXPOSURE_INTERNAL`, the
+gateway's internal credential, the tier `ListInstallations` sits in). Accounts,
+as the issuer, runs core's `Inspector` (signature under this issuer, window,
+audience equal to the alias), decodes its own claims and admits only a
+capability owned by a service principal with no actor chain, grant hop,
+operation binding, parent session or owner agent, with authority scopes, an
+idempotent replay policy and at most the operation-context window, whose owner
+is a declared module principal other than `ModulePrincipalID(alias)` and whose
+seal is that principal's ACTIVE installation in the tenant, read live. It never
+reaches `verifyFor`, `verifyIssued` or the replay store, so it consumes
+nothing: the callee verifies at full strength. A refusal is an answer with a
+`WorkloadOperationRefusal`; an error means it could not decide, and the gateway
+answers 503. The messages live in `workload_operation_admission.proto`, which
+the gateway vendors byte for byte.
+
+Two guards hold it (`pkg/adapters/workload_operation_admission_test.go`):
+`TestEveryMintHasAWorkloadOperationVerdict` mints through every mint RPC, every
+binding mode and every signing entrypoint, plus crafted variants of the
+operation-context shape, and asserts each verdict, with exactly one admitted;
+`TestWorkloadOperationTableNamesEveryMintAndOwnerKind` fails when a
+`saas.accounts.v1` RPC answering a token, an adapters function that signs (calls
+core's `Start` or `Child`, `mint` or `remint`) or a `PrincipalKind*` constant
+has no row. `TestAdmitWorkloadOperationConsumesNothing` pins that a single-use
+capability shown to it still verifies once at its callee.
+
+The arm also reads the tenant's installations through
+`InstallationService/ListInstallations` (`EXPOSURE_INTERNAL`), to require the
+target installed there. Its contract comment in `installations.proto` names both
 of the gateway's reads: the viewer projection, with the tenant projected from a
-verified identity, and the arm, whose tenant is the one an edge-verified Work
+verified identity, and the arm, whose tenant is the one an edge-inspected Work
 Context names, a signed statement of this issuer's and never a value the request
 chose. The messages the RPC takes and answers live in
 `installation_listing.proto`, which `installations.proto` imports and the

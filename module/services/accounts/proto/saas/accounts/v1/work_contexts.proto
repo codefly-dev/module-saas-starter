@@ -6,6 +6,7 @@ import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/workload_operation_admission.proto";
 import "saas/policy/v1/options.proto";
 
 // WorkContextReplayPolicy controls how a consumer may accept a signed Work
@@ -384,6 +385,30 @@ service WorkContextService {
   // a replay and returns ALREADY_EXISTS. A caller must treat that as the
   // capability being spent and fail the operation closed, not retry it.
   rpc ConsumeSingleUse(ConsumeSingleUseWorkContextRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // AdmitWorkloadOperation answers whether a capability presented with no
+  // bearer at the declared module route /v1/<alias>/* is a module operation
+  // context (StartModuleOperationTask) for that alias, and admits nothing else.
+  // The auth-gateway's bearer-less arm is its caller. Unlike the revision
+  // checks above, the signed capability itself crosses this boundary: the
+  // answer depends on its owner, owner kind and chain, which only the issuer
+  // reads. It inspects (signature under this issuer, window, audience) and
+  // reads its own claims; it never verifies, so nothing is consumed and the
+  // callee still verifies the capability at full strength. Internal-tier: the
+  // tenant it answers about is the one the capability names.
+  rpc AdmitWorkloadOperation(AdmitWorkloadOperationRequest) returns (AdmitWorkloadOperationResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
       tenant: TENANT_REQUIREMENT_NONE

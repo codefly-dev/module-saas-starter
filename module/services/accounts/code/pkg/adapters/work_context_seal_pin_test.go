@@ -22,12 +22,12 @@ import (
 //
 // A person's capability is sealed to the organization's installation of the
 // audience it addresses; a module or installation principal's is sealed to its
-// own installation. The gateway's bearer-less module arm depends on that
-// difference: it admits a capability for module X without a bearer only when the
-// seal names an active installation OTHER than the organization's installation
-// of X, which is what unattended work carries and what a person's capability
-// never does. A person mint that let the seal drift to another audience's
-// installation would be admitted there without the person's bearer.
+// own installation. The gateway's bearer-less module arm used to read that
+// difference as "unattended work"; it no longer reads the seal at all, and asks
+// AdmitWorkloadOperation instead, which admits only a module operation context
+// (workload_operation_admission_test.go pins every mint's verdict). The rule
+// still states where a person's capability is sealed, and a verifier that holds
+// the seal to the audience's installation relies on it.
 //
 // Every case below either mints a capability sealed to its audience's
 // installation, or is refused. Each parent that is re-derived is sealed to a
@@ -226,13 +226,14 @@ var personSealedMints = map[string]string{
 
 // notAudienceSealedMints is every RPC (or arm of one) that issues a capability
 // NOT sealed to its audience's installation, each by design and with the gate
-// that keeps it from a person's hands. The gateway's bearer-less module arm
-// admits these: a seal other than the target's is what they carry.
+// that keeps it from a person's hands. Of these, the gateway's bearer-less module
+// arm admits only the module operation context: it asks the issuer for the
+// owner rather than reading the seal.
 var notAudienceSealedMints = map[string]string{
 	"ModuleCapabilitiesService/MintModuleWorkContext":              "a module's own identity (StartModuleTask): owned by the module principal and sealed to its own installation",
 	"ModuleCapabilitiesService/MintModuleOperationContext":         "a module operation context (StartModuleOperationTask): owned by the module principal and sealed to its own installation",
 	"ModuleCapabilitiesService/MintSourceOperationContext":         "a source-operation context (StartSourceOperationTask): owned by the person, sealed to the USING module's installation, minted only by that module's identity exercising the person's source delegation",
-	"ModuleCapabilitiesService/ExchangeDelegatedOperationAudience": "its delegation_id arm and a source-delegation parent re-mint a source-operation context (startSourceOperation), sealed and gated as MintSourceOperationContext is",
+	"ModuleCapabilitiesService/ExchangeDelegatedOperationAudience": "its delegation_id arm and a source-delegation parent re-mint a source-operation context (startSourceOperation), sealed and gated as MintSourceOperationContext is; its installed content_read and module_actor modes derive a core Child of the person's capability (exchangeInstalledBinding), which keeps the exchanging module's seal",
 	"WorkContextService/StartInstallationTask":                     "an installation task: owned by the installation's owner of record, sealed to the installation it draws on, minted only with an EXPOSURE_INTERNAL credential",
 }
 

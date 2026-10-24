@@ -1,6 +1,6 @@
 kind: library
 name: saas-sdk
-version: 0.1.0
+version: 0.2.0
 languages:
     - name: typescript
       path: typescript/
@@ -8,11 +8,11 @@ languages:
         - '@codefly-dev/saas-sdk'
 sources:
     - package: codefly/saas-starter
-      version: 0.1.0
+      version: 0.2.0
       module: saas-starter
       service: accounts
       endpoint: connect
-      contract-digest: sha256:8e59a8dabb889185a44cb9e0d8c9cdc4fbef03b27e7c01f2cc581c69d2e8799a
+      contract-digest: sha256:6100316ada259d0f5b29458a686ca0dd430948b6770b3c0d69d2153716ce57d7
       services:
         - APIKeyService
         - AccessibleScopeService

@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **270 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **271 RPCs** across **36 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -269,6 +269,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.WebhookService/ReplayDelivery` | unary | `POST /v1/webhooks/deliveries/{id}:replay` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=webhooks:write; scope=webhooks:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: saas.webhook.replayed | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Create and audit a new attempt for a past delivery using its stable event ID. |
 | `/saas.accounts.v1.WebhookService/RotateSecret` | unary | `POST /v1/webhooks/{id}:rotateSecret` | `mfa` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; mfa=RECENT_STEP_UP; impersonation=FORBIDDEN | perm=webhooks:write; scope=webhooks:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: saas.webhook.secret_rotated | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Rotate the reveal-once signing secret with bounded dual-signature overlap. Requires recent MFA. |
 | `/saas.accounts.v1.WebhookService/TestWebhook` | unary | `POST /v1/webhooks/{id}:test` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=webhooks:write; scope=webhooks:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Send a test ping. |
+| `/saas.accounts.v1.WorkContextService/AdmitWorkloadOperation` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Answer whether a capability presented with no bearer at a module route is a module operation context for it, consuming nothing. |
 | `/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Authorize a filtered Evidence read from current tenant membership and RBAC facts. |
 | `/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Revalidate every subject and scope in a signed Work Context against current authority. |
 | `/saas.accounts.v1.WorkContextService/ConsumeSingleUse` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Claim a single-use Work Context exactly once; replays of the same context id fail closed. |
@@ -282,7 +283,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 43
-- `internal`: 54
+- `internal`: 55
 - `mfa`: 5
 - `org_admin`: 65
 - `org_member`: 56
