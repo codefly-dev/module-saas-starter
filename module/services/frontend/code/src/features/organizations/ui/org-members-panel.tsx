@@ -114,16 +114,21 @@ export function OrgMembersPanel({
 	// successful read leaves the roster rendered and the message unreachable.
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "this organization's members");
-	const members: OrgMembership[] = (withheld ? [] : (raw?.members ?? [])).map(
-		(m) => ({
-			orgId: m.orgId,
-			userId: m.userId,
-			userEmail: m.userEmail,
-			role: toOrgRole(m.role as unknown as number),
-			joinedAt: m.joinedAt
-				? timestampDate(m.joinedAt).toISOString()
-				: undefined,
-		}),
+	// Memoized: the table resets its page index whenever its data changes
+	// identity, and that reset re-renders this panel, so members rebuilt on every
+	// render would re-render it forever.
+	const members = useMemo<OrgMembership[]>(
+		() =>
+			(withheld ? [] : (raw?.members ?? [])).map((m) => ({
+				orgId: m.orgId,
+				userId: m.userId,
+				userEmail: m.userEmail,
+				role: toOrgRole(m.role as unknown as number),
+				joinedAt: m.joinedAt
+					? timestampDate(m.joinedAt).toISOString()
+					: undefined,
+			})),
+		[withheld, raw],
 	);
 
 	const invalidateRoster = () => {
