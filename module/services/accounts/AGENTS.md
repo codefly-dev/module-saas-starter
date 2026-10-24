@@ -513,22 +513,38 @@ therefore briefly refuses questions about capabilities already in flight.
 
 ## A person's capability is sealed to its audience's installation
 
-Every capability a person owns is sealed to the organization's installation of
-the audience it addresses; a module or installation principal's is sealed to its
-own. That is an invariant every person mint keeps, not a default: `StartTask`
-resolves it, `remint` re-resolves it for a root session, an audience exchange, a
-renewal and a module's exchange through its operation binding, and
-`StartChildSession` (whose core `Child` keeps the parent's seal) refuses a
-person's child for an audience sealed elsewhere.
+A capability a person's session issues, or a module re-mints for that person,
+is sealed to the organization's installation of the audience it addresses; a
+module principal's is sealed to its own. That is an invariant every such mint
+keeps, not a default: `StartTask` resolves it, `remint` re-resolves it for a
+root session, an audience exchange, a renewal and a module's exchange through
+its operation or read binding, and `StartChildSession` (whose core `Child` keeps
+the parent's seal) refuses a person's child for an audience sealed elsewhere. It
+holds a child of a service principal's capability as it is, and refuses a child
+of any other owner kind.
+
+Two person-owned kinds are sealed elsewhere by design, each behind its own gate:
+
+- a **source-operation context** (`startSourceOperation`): sealed to the
+  installation of the module using the person's source delegation, and minted
+  only by that module's identity exercising the delegation
+  (`MintSourceOperationContext`, or the delegation arm of
+  `ExchangeDelegatedOperationAudience`);
+- an **installation task** (`StartInstallationTask`): owned by the
+  installation's owner of record, sealed to that installation, and reached only
+  with an `EXPOSURE_INTERNAL` credential.
 
 The gateway's bearer-less module arm depends on it: it admits a capability with
 no bearer only when the seal names an active installation other than the
-target's, which a person's capability never does.
+target's. That admits module operation contexts and the two kinds above, the
+unattended-work family, and never a person's interactive capability.
 `TestAPersonsCapabilityIsSealedToItsAudiencesInstallation`
-(`pkg/adapters/work_context_seal_pin_test.go`) pins it over every person mint. A
-new mint that issues a person's capability goes in that table; one that copies a
-parent's seal across audiences reopens the arm to a person's credential without
-its bearer.
+(`pkg/adapters/work_context_seal_pin_test.go`) pins it over every person mint,
+and `TestEveryWorkContextMintIsClassifiedBySeal` enumerates every mint RPC from
+the generated descriptors and fails on one listed neither as person-sealed (with
+its case in that table) nor as sealed elsewhere (with its reason). A mint that
+copies a parent's seal across audiences reopens the arm to a person's credential
+without its bearer.
 
 The arm reads the tenant's installations through `InstallationService/ListInstallations`
 (`EXPOSURE_INTERNAL`). Its contract comment in `installations.proto` names one

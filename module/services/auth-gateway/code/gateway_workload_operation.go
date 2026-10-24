@@ -24,9 +24,11 @@ package main
 // the seal names an active installation in that tenant that is none of the
 // target's. The second half
 // is how a hop that reads no owner tells unattended work from a person: a
-// person's capability is sealed to the organization's installation of the
-// audience it addresses, which here is the target's own, while a module or
-// installation principal's is sealed to its own installation. Accounts holds
+// person's interactive capability is sealed to the organization's installation
+// of the audience it addresses, which here is the target's own, while a module
+// operation context, a source-operation context and an installation task are
+// each sealed to another installation (the unattended-work family, admitted by
+// design; see WORK_CONTEXTS.md). Accounts holds
 // that as an invariant (TestAPersonsCapabilityIsSealedToItsAudiencesInstallation
 // in accounts); this arm is sound only while it holds. A misreading refuses,
 // never widens, and the callee verifies the capability at full strength.
