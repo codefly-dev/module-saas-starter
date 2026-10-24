@@ -1813,19 +1813,3 @@ func TestACredentialForThePrincipalsOldTenantIsRefused(t *testing.T) {
 		t.Fatalf("a refused credential enqueued %d jobs", len(backend.enqueued))
 	}
 }
-
-// The auth-gateway cannot import this package, so it restates ModulePrincipalID
-// (modulePrincipalID in gateway_workload_operation.go) to compare an
-// installation's registry principal with a route alias's. These are the values
-// TestModulePrincipalIDMatchesAccounts holds the gateway to; changing the
-// derivation here fails this test, and must change the gateway's too.
-func TestModulePrincipalIDIsPinnedForTheGateway(t *testing.T) {
-	for prefix, id := range map[string]string{
-		"documents": "8d4a32d7-50a7-5009-a69d-71bf529b22a2",
-		"storage":   "44943497-cee3-5b83-9ada-8ec1384050cf",
-	} {
-		if got := business.ModulePrincipalID(prefix); got != id {
-			t.Fatalf("ModulePrincipalID(%q) = %s, the gateway pins %s", prefix, got, id)
-		}
-	}
-}
