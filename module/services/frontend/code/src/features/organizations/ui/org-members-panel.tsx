@@ -98,16 +98,24 @@ export function OrgMembersPanel({
 	// successful read leaves the roster rendered and the message unreachable.
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "this organization's members");
-	const members: OrgMembership[] = (withheld ? [] : (raw?.members ?? [])).map(
-		(m) => ({
-			orgId: m.orgId,
-			userId: m.userId,
-			userEmail: m.userEmail,
-			role: toOrgRole(m.role as unknown as number),
-			joinedAt: m.joinedAt
-				? timestampDate(m.joinedAt).toISOString()
-				: undefined,
-		}),
+	// The table's rows keep their identity until the roster itself changes.
+	// TanStack Table treats a new `data` array as new rows and queues a page
+	// reset, which is a state update on this component; a fresh array on every
+	// render therefore re-renders forever. Started from a click — picking a user
+	// below — that loop runs at the click's synchronous priority in microtasks
+	// and freezes the tab.
+	const members = useMemo<OrgMembership[]>(
+		() =>
+			(withheld ? [] : (raw?.members ?? [])).map((m) => ({
+				orgId: m.orgId,
+				userId: m.userId,
+				userEmail: m.userEmail,
+				role: toOrgRole(m.role as unknown as number),
+				joinedAt: m.joinedAt
+					? timestampDate(m.joinedAt).toISOString()
+					: undefined,
+			})),
+		[withheld, raw],
 	);
 
 	const invalidateRoster = () => {
@@ -149,6 +157,12 @@ export function OrgMembersPanel({
 			refusalToast(error, refusalMessage(error, "Failed to remove member")),
 	});
 
+	// The columns depend on what they call, never on the mutation result objects
+	// themselves: those are new on every render, and a new column definition
+	// remounts every cell — each row's role picker and dialogs — on each render.
+	const { mutate: changeRole, isPending: changingRole } = roleMutation;
+	const { mutate: removeMember } = removeMutation;
+
 	const columns = useMemo(
 		() => [
 			col.accessor("userEmail", {
@@ -164,10 +178,10 @@ export function OrgMembersPanel({
 						<Select
 							items={ASSIGNABLE_ROLES}
 							value={member.role}
-							disabled={roleMutation.isPending}
+							disabled={changingRole}
 							onValueChange={(next) => {
 								if (next && next !== member.role) {
-									roleMutation.mutate({
+									changeRole({
 										userId: member.userId,
 										role: next as OrgRole,
 									});
@@ -251,7 +265,7 @@ export function OrgMembersPanel({
 									<AlertDialogFooter>
 										<AlertDialogCancel>Cancel</AlertDialogCancel>
 										<AlertDialogAction
-											onClick={() => removeMutation.mutate(row.original.userId)}
+											onClick={() => removeMember(row.original.userId)}
 										>
 											Remove
 										</AlertDialogAction>
@@ -263,7 +277,7 @@ export function OrgMembersPanel({
 				},
 			}),
 		],
-		[removeMutation, roleMutation, orgId, orgName],
+		[changeRole, changingRole, removeMember, orgId, orgName],
 	);
 
 	const table = useReactTable({

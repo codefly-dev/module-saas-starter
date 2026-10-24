@@ -69,18 +69,24 @@ export function PlatformOrganizationsPage() {
 	const outcome = readOutcome(isError, error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the organizations");
-	const rows: PlatformOrganizationRow[] = (
-		withheld ? [] : (data?.organizations ?? [])
-	).map((entry) => ({
-		id: entry.organization?.id ?? "",
-		name: entry.organization?.name ?? "",
-		slug: entry.organization?.slug ?? "",
-		memberCount: entry.memberCount,
-		createdAt: entry.organization?.createdAt
-			? timestampDate(entry.organization.createdAt).toISOString()
-			: undefined,
-		archived: entry.organization?.archivedAt !== undefined,
-	}));
+	// Stable until the answer changes: TanStack Table resets the page on every
+	// new `data` array, and that reset re-renders this component, so rows built
+	// afresh on each render loop forever — synchronously, freezing the tab, when
+	// the first re-render comes from typing or a click.
+	const rows = useMemo<PlatformOrganizationRow[]>(
+		() =>
+			(withheld ? [] : (data?.organizations ?? [])).map((entry) => ({
+				id: entry.organization?.id ?? "",
+				name: entry.organization?.name ?? "",
+				slug: entry.organization?.slug ?? "",
+				memberCount: entry.memberCount,
+				createdAt: entry.organization?.createdAt
+					? timestampDate(entry.organization.createdAt).toISOString()
+					: undefined,
+				archived: entry.organization?.archivedAt !== undefined,
+			})),
+		[withheld, data],
+	);
 
 	const columns = useMemo(
 		() => [
