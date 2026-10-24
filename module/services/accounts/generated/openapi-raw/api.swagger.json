@@ -9000,7 +9000,7 @@
         },
         "registryPrincipalId": {
           "type": "string",
-          "description": "The module principal this installation was installed under: the registry\nprincipal whose delivered authority named the target's binding, written at\ninstall and never changed. A person's capability for a module audience is\nsealed to the active installation whose registry principal is that\naudience's, so a reader that must tell a person's seal from unattended work\ncompares this, not the route alias. Empty on a solution's installation and\non a row installed before the column existed; a reader treats empty as\nunknown, never as \"not this principal\"."
+          "description": "The module principal this installation was installed under: the registry\nprincipal whose delivered authority named the target's binding, written at\ninstall and never changed. A person's capability for a module audience is\nsealed to the active installation whose registry principal is that\naudience's, so a reader that must tell a person's seal from unattended work\ncompares this, not the route alias. Every install through InstallSolution,\na module's or a solution's, records one. Empty only on a row written before\nthe column existed (it is deliberately not backfilled: no principal is\ninferred) or one the store wrote with no registry principal. A capability\na module or solution identity mints is sealed only to a row carrying its\nprincipal. A reader treats empty as unknown, never as \"not this principal\"."
         }
       },
       "description": "Installation is one solution's bound identity in an org. Server-assigned ids;\nthe browser cannot attest to tenancy, the agent principal, or the scope node."
