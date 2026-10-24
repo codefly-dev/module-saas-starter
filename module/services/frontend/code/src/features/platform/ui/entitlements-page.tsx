@@ -32,6 +32,11 @@ import { useOrgEntitlements } from "../service/queries";
 
 const col = createColumnHelper<Entitlement>();
 
+// The rows when there is no answer. TanStack Table resets the page on every new
+// `data` array and that reset re-renders this page, so a fresh `[]` per render
+// would re-render it forever while the read is refused or disabled.
+const NO_ENTITLEMENTS: Entitlement[] = [];
+
 function UsageBar({ limit, used }: { limit: number; used: number }) {
 	if (limit <= 0) return null;
 	const pct = Math.min(100, Math.round((used / limit) * 100));
@@ -145,7 +150,7 @@ function EntitlementsPageForOrganization({ orgId }: { orgId: string }) {
 	);
 
 	const table = useReactTable({
-		data: (data?.entitlements ?? []) as Entitlement[],
+		data: (data?.entitlements ?? NO_ENTITLEMENTS) as Entitlement[],
 		columns,
 		getCoreRowModel: getCoreRowModel(),
 		getSortedRowModel: getSortedRowModel(),

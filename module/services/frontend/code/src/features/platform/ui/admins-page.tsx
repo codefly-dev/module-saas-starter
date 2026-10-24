@@ -52,6 +52,11 @@ import { usePlatformAdmins } from "../service/queries";
 
 const col = createColumnHelper<PlatformAdmin>();
 
+// The rows when there is no answer. TanStack Table resets the page on every new
+// `data` array and that reset re-renders this page, so a fresh `[]` per render
+// would re-render it forever while the read is refused or disabled.
+const NO_ADMINS: PlatformAdmin[] = [];
+
 const platformRoleLabels: Record<string, string> = {
 	super_admin: "Super admin",
 	billing: "Billing",
@@ -59,7 +64,7 @@ const platformRoleLabels: Record<string, string> = {
 };
 
 export function AdminsPage() {
-	const { data: admins = [], isLoading } = usePlatformAdmins();
+	const { data: admins = NO_ADMINS, isLoading } = usePlatformAdmins();
 	const grantRole = useGrantPlatformRole();
 	const revokeRole = useRevokePlatformRole();
 
