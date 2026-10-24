@@ -372,13 +372,22 @@ func activeInstallation(id, target string) *accountsv1.InstallationSummary {
 	}}
 }
 
+// moduleInstallation is the ACTIVE row of operationTenant for the module whose
+// alias and principal prefix are both name: its target, installed under its own
+// module principal.
+func moduleInstallation(id, name string) *accountsv1.InstallationSummary {
+	summary := activeInstallation(id, fakeSolutionTarget(name))
+	summary.Installation.RegistryPrincipalId = modulePrincipalID(name)
+	return summary
+}
+
 // tenantInstalled is a tenant that installed the target module (E) and the
 // publishing workload (W).
 func tenantInstalled() *installationsFake {
 	return &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
 		Installations: []*accountsv1.InstallationSummary{
-			activeInstallation(targetInstallation, fakeSolutionTarget("documents")),
-			activeInstallation(publisherSeal, fakeSolutionTarget("publisher")),
+			moduleInstallation(targetInstallation, "documents"),
+			moduleInstallation(publisherSeal, "publisher"),
 		},
 	}}}
 }
@@ -513,12 +522,54 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
 				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
 					Installations: []*accountsv1.InstallationSummary{
-						activeInstallation(targetInstallation, fakeSolutionTarget("documents")),
-						activeInstallation("55555555-5555-4555-8555-555555555555", fakeSolutionTarget("documents")),
-						activeInstallation(publisherSeal, fakeSolutionTarget("publisher")),
+						moduleInstallation(targetInstallation, "documents"),
+						moduleInstallation("55555555-5555-4555-8555-555555555555", "documents"),
+						moduleInstallation(publisherSeal, "publisher"),
 					},
 				}}}
 				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", targetInstallation)))
+			},
+			code: http.StatusUnauthorized, body: "authentication required",
+		},
+		// The alias and the module principal are independent names. Module A is
+		// routed at "storage" but its principal is "documents"; module B is
+		// routed at "documents" under principal "docstore". Accounts seals a
+		// person's StartTask(audience="documents") to A's installation, which is
+		// not B's target row, so only the registry principal tells it apart.
+		"a person's capability sealed to the alias's principal on another target": {
+			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
+				moduleA := activeInstallation("77777777-7777-4777-8777-777777777777", fakeSolutionTarget("storage"))
+				moduleA.Installation.RegistryPrincipalId = modulePrincipalID("documents")
+				moduleB := activeInstallation(targetInstallation, fakeSolutionTarget("documents"))
+				moduleB.Installation.RegistryPrincipalId = modulePrincipalID("docstore")
+				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
+					Installations: []*accountsv1.InstallationSummary{moduleA, moduleB, moduleInstallation(publisherSeal, "publisher")},
+				}}}
+				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", moduleA.Installation.Id)))
+			},
+			code: http.StatusUnauthorized, body: "authentication required",
+		},
+		// A row a withdrawn binding left ACTIVE under the alias's principal is
+		// still where accounts may seal a person's capability for the alias.
+		"a person's capability sealed to a stale row of the alias's principal": {
+			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
+				stale := activeInstallation("88888888-8888-4888-8888-888888888888", fakeSolutionTarget("documents-withdrawn"))
+				stale.Installation.RegistryPrincipalId = modulePrincipalID("documents")
+				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
+					Installations: []*accountsv1.InstallationSummary{moduleInstallation(targetInstallation, "documents"), stale, moduleInstallation(publisherSeal, "publisher")},
+				}}}
+				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", stale.Installation.Id)))
+			},
+			code: http.StatusUnauthorized, body: "authentication required",
+		},
+		// A seal row with no registry principal is unknown, and unknown never
+		// admits.
+		"a seal row with no registry principal": {
+			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
+				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
+					Installations: []*accountsv1.InstallationSummary{moduleInstallation(targetInstallation, "documents"), activeInstallation(publisherSeal, fakeSolutionTarget("publisher"))},
+				}}}
+				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
 			},
 			code: http.StatusUnauthorized, body: "authentication required",
 		},
@@ -541,7 +592,7 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 		"a tenant with no active installation of the target": {
 			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
 				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
-					Installations: []*accountsv1.InstallationSummary{activeInstallation(publisherSeal, fakeSolutionTarget("publisher"))},
+					Installations: []*accountsv1.InstallationSummary{moduleInstallation(publisherSeal, "publisher")},
 				}}}
 				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
 			},
@@ -732,11 +783,11 @@ func TestModuleRoute_TheBearerLessArmRefusesACapabilityWithNoTenantOrSeal(t *tes
 // not ACTIVE) counts for neither.
 func TestModuleRoute_TheBearerLessArmReadsEveryPageItNeeds(t *testing.T) {
 	gw, module, _, kid, wcPriv := operationHarness(t)
-	foreign := activeInstallation(publisherSeal, fakeSolutionTarget("publisher"))
+	foreign := moduleInstallation(publisherSeal, "publisher")
 	foreign.Installation.OrgId = "66666666-6666-4666-8666-666666666666"
 	installations := &installationsFake{pages: []*accountsv1.ListInstallationsResponse{
-		{Installations: []*accountsv1.InstallationSummary{activeInstallation(targetInstallation, fakeSolutionTarget("documents")), foreign}, NextPageToken: pageCursor(1)},
-		{Installations: []*accountsv1.InstallationSummary{activeInstallation(publisherSeal, fakeSolutionTarget("publisher"))}},
+		{Installations: []*accountsv1.InstallationSummary{moduleInstallation(targetInstallation, "documents"), foreign}, NextPageToken: pageCursor(1)},
+		{Installations: []*accountsv1.InstallationSummary{moduleInstallation(publisherSeal, "publisher")}},
 	}}
 	gw.installations = installations
 
@@ -754,4 +805,12 @@ func TestModuleRoute_TheBearerLessArmReadsEveryPageItNeeds(t *testing.T) {
 	gw.ServeHTTP(w, onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal))))
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 	require.Equal(t, 1, module.calls)
+}
+
+// modulePrincipalID restates accounts' business.ModulePrincipalID. These values
+// are accounts' own, and TestModulePrincipalIDIsPinnedForTheGateway in accounts
+// holds accounts to the same ones, so a change on either side fails a test.
+func TestModulePrincipalIDMatchesAccounts(t *testing.T) {
+	require.Equal(t, "8d4a32d7-50a7-5009-a69d-71bf529b22a2", modulePrincipalID("documents"))
+	require.Equal(t, "44943497-cee3-5b83-9ada-8ec1384050cf", modulePrincipalID("storage"))
 }

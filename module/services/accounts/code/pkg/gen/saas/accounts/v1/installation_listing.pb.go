@@ -186,8 +186,17 @@ type Installation struct {
 	// Why the install step failed: the solution's bounded refusal reason, or a
 	// fixed reason when it never answered. Empty unless status is FAILED.
 	FailureReason string `protobuf:"bytes,13,opt,name=failure_reason,json=failureReason,proto3" json:"failure_reason,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The module principal this installation was installed under: the registry
+	// principal whose delivered authority named the target's binding, written at
+	// install and never changed. A person's capability for a module audience is
+	// sealed to the active installation whose registry principal is that
+	// audience's, so a reader that must tell a person's seal from unattended work
+	// compares this, not the route alias. Empty on a solution's installation and
+	// on a row installed before the column existed; a reader treats empty as
+	// unknown, never as "not this principal".
+	RegistryPrincipalId string `protobuf:"bytes,14,opt,name=registry_principal_id,json=registryPrincipalId,proto3" json:"registry_principal_id,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Installation) Reset() {
@@ -300,6 +309,13 @@ func (x *Installation) GetRevokedReason() string {
 func (x *Installation) GetFailureReason() string {
 	if x != nil {
 		return x.FailureReason
+	}
+	return ""
+}
+
+func (x *Installation) GetRegistryPrincipalId() string {
+	if x != nil {
+		return x.RegistryPrincipalId
 	}
 	return ""
 }
@@ -496,7 +512,7 @@ var File_saas_accounts_v1_installation_listing_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_installation_listing_proto_rawDesc = "" +
 	"\n" +
-	"+saas/accounts/v1/installation_listing.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x94\x05\n" +
+	"+saas/accounts/v1/installation_listing.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd5\x05\n" +
 	"\fInstallation\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1f\n" +
 	"\x06org_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x126\n" +
@@ -512,7 +528,8 @@ const file_saas_accounts_v1_installation_listing_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampH\x00R\trevokedAt\x88\x01\x01\x12(\n" +
 	"\ttarget_id\x18\v \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\btargetId\x12/\n" +
 	"\x0erevoked_reason\x18\f \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\rrevokedReason\x12/\n" +
-	"\x0efailure_reason\x18\r \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\rfailureReasonB\r\n" +
+	"\x0efailure_reason\x18\r \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\rfailureReason\x12?\n" +
+	"\x15registry_principal_id\x18\x0e \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x13registryPrincipalIdB\r\n" +
 	"\v_revoked_atJ\x04\b\x04\x10\x05R\x13solution_identifier\"\xc1\x01\n" +
 	"\x18ListInstallationsRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12<\n" +

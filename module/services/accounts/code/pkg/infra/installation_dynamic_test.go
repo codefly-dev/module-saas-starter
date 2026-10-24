@@ -235,3 +235,28 @@ func TestDynamicInstallationDBTenancyChangeRevokesOnlyForbiddenOrganizations(t *
 		return err
 	}))
 }
+
+// The registry principal an installation was installed under travels on every
+// read of it: ListInstallations (which the gateway's bearer-less module arm
+// reads to tell a person's seal from unattended work), GetInstallation, and the
+// row InstallSolution returns.
+func TestInstallationReadsCarryTheRegistryPrincipal(t *testing.T) {
+	a := newDynamicInstall(t, "", "", "")
+	require.NotEmpty(t, a.principal)
+	require.Equal(t, a.principal, a.installation.GetRegistryPrincipalId())
+	require.NoError(t, testStore.WithOrgTx(testCtx, a.org, func(ctx context.Context) error {
+		got, _, err := testStore.GetInstallation(ctx, a.org, a.installation.Id)
+		if err != nil {
+			return err
+		}
+		require.Equal(t, a.principal, got.GetRegistryPrincipalId())
+		summaries, err := testStore.ListInstallations(ctx, a.org, gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, "", 100)
+		if err != nil {
+			return err
+		}
+		require.Len(t, summaries, 1)
+		require.Equal(t, a.installation.Id, summaries[0].GetInstallation().GetId())
+		require.Equal(t, a.principal, summaries[0].GetInstallation().GetRegistryPrincipalId())
+		return nil
+	}))
+}

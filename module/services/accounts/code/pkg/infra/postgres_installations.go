@@ -29,18 +29,20 @@ import (
 const installationColumns = `id::text, org_id::text, agent_principal_id::text,
 	owner_principal_id::text, co_owner_principal_ids::text[],
 	root_scope_node_id::text, status, created_at, revoked_at,
-	COALESCE(target_id::text, ''), COALESCE(revoked_reason, ''), COALESCE(failure_reason, '')`
+	COALESCE(target_id::text, ''), COALESCE(revoked_reason, ''), COALESCE(failure_reason, ''),
+	COALESCE(registry_principal_id::text, '')`
 
 func scanInstallation(row rowScanner) (*gen.Installation, error) {
 	var (
 		id, orgID, agentID, ownerID, rootNodeID, status string
 		targetID, revokedReason, failureReason          string
+		registryPrincipalID                             string
 		coOwners                                        []string
 		createdAt                                       time.Time
 		revokedAt                                       *time.Time
 	)
 	if err := row.Scan(&id, &orgID, &agentID, &ownerID, &coOwners,
-		&rootNodeID, &status, &createdAt, &revokedAt, &targetID, &revokedReason, &failureReason); err != nil {
+		&rootNodeID, &status, &createdAt, &revokedAt, &targetID, &revokedReason, &failureReason, &registryPrincipalID); err != nil {
 		return nil, err
 	}
 	out := &gen.Installation{
@@ -55,6 +57,7 @@ func scanInstallation(row rowScanner) (*gen.Installation, error) {
 		TargetId:            targetID,
 		RevokedReason:       revokedReason,
 		FailureReason:       failureReason,
+		RegistryPrincipalId: registryPrincipalID,
 	}
 	if revokedAt != nil {
 		out.RevokedAt = timestamppb.New(*revokedAt)
@@ -493,7 +496,8 @@ func installationHealthFromLabel(label string) gen.InstallationHealth {
 const installationListingColumns = `i.id::text, i.org_id::text, i.agent_principal_id::text,
 	i.owner_principal_id::text, i.co_owner_principal_ids::text[],
 	i.root_scope_node_id::text, i.status, i.created_at, i.revoked_at,
-	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), COALESCE(i.failure_reason, ''), ` + installationHealthLabel
+	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), COALESCE(i.failure_reason, ''),
+	COALESCE(i.registry_principal_id::text, ''), ` + installationHealthLabel
 
 // withHealthLabel scans one listing row: the installation's own columns through
 // scanInstallation, so the wire mapping has one definition, then the label.

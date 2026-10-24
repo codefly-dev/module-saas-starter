@@ -46,9 +46,20 @@ import (
 
 	"github.com/codefly-dev/core/workcontext"
 	carrier "github.com/codefly-dev/sdk-go/workcontext"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
+
+// modulePrincipalID is accounts' business.ModulePrincipalID: the registry
+// principal id of the module whose principal prefix is prefix, a UUIDv5 under
+// the URL namespace. Neither core nor the sdk exports it and the gateway cannot
+// import accounts, so it is restated here and pinned to accounts' value by
+// TestModulePrincipalIDMatchesAccounts on this side and
+// TestModulePrincipalIDIsPinnedForTheGateway on accounts' side.
+func modulePrincipalID(prefix string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/module-principal/"+prefix)).String()
+}
 
 const listInstallationsMethod = "/saas.accounts.v1.InstallationService/ListInstallations"
 
@@ -120,8 +131,9 @@ const (
 	// the target, or the route resolved no target.
 	workloadOperationNotInstalled
 	// workloadOperationPersonSealed: the seal is one of the target's own
-	// installations, which is what a person's capability for this module
-	// carries.
+	// installations, or an installation of the alias's module principal (or of
+	// an unknown one), which is where a person's capability for this module is
+	// sealed.
 	workloadOperationPersonSealed
 	// workloadOperationSealInactive: the seal names no ACTIVE installation in
 	// the tenant (revoked, another tenant's, unknown).
@@ -135,7 +147,7 @@ const (
 // Uncached, for the reason the viewer admission is: an uninstall changes the
 // answer with no write this replica would see.
 func (g *Gateway) admitWorkloadOperation(
-	ctx context.Context, tenant, seal string, routing *solutionRouting,
+	ctx context.Context, tenant, seal, alias string, routing *solutionRouting,
 ) workloadOperationAdmission {
 	targetID := routing.GetTargetID()
 	if targetID == "" {
@@ -149,6 +161,12 @@ func (g *Gateway) admitWorkloadOperation(
 	// read the others as some other installation's.
 	targetInstallations := map[string]bool{}
 	sealActive := false
+	// The registry principal of the seal's row. A person's capability for this
+	// alias is sealed to the active installation installed under the alias's
+	// module principal, which need not be the route's target: the route
+	// resolves the alias to a target, accounts resolves the audience to a
+	// principal, and the two are independent names.
+	sealPrincipal := ""
 	token := ""
 	for page := 0; page < installationListingPageLimit; page++ {
 		resp, err := g.installations.List(ctx, &accountsv1.ListInstallationsRequest{
@@ -173,6 +191,7 @@ func (g *Gateway) admitWorkloadOperation(
 			}
 			if installation.GetId() == seal {
 				sealActive = true
+				sealPrincipal = installation.GetRegistryPrincipalId()
 			}
 		}
 		// No early exit: whether the seal is ANOTHER row of the target is only
@@ -189,6 +208,11 @@ func (g *Gateway) admitWorkloadOperation(
 	case len(targetInstallations) == 0:
 		return workloadOperationNotInstalled
 	case targetInstallations[seal]:
+		return workloadOperationPersonSealed
+	case sealActive && (sealPrincipal == "" || sealPrincipal == modulePrincipalID(alias)):
+		// Sealed to the installation of the alias's own module principal, which
+		// is where accounts seals a person's capability for this audience. An
+		// empty principal is unknown, and unknown never admits.
 		return workloadOperationPersonSealed
 	case !sealActive:
 		return workloadOperationSealInactive
@@ -275,7 +299,7 @@ func (g *Gateway) serveWorkloadOperation(
 	reached := false
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
-		switch g.admitWorkloadOperation(r.Context(), rec.tenant, rec.seal, routing) {
+		switch g.admitWorkloadOperation(r.Context(), rec.tenant, rec.seal, alias, routing) {
 		case workloadOperationUndecidable:
 			rec.refuse(w, http.StatusServiceUnavailable, "module installation authority unavailable", "authority_unavailable")
 			return
