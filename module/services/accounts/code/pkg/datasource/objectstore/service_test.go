@@ -361,10 +361,21 @@ func TestServiceBucketReadsABatchInOneCall(t *testing.T) {
 			t.Fatalf("reading %s after it changed = %v, want ErrObjectChanged", it.Key, err)
 		}
 	}
+	// An object the service refuses as over its cap is skipped and the rest of
+	// the batch is still read; the read then names what it skipped.
 	f.objects["kb/2026-c.md"] = strings.Repeat("x", MaxObjectBytes+1)
-	big := []Item{{Key: "kb/2026-c.md", ETag: etagOf(f.objects["kb/2026-c.md"]), Size: MaxObjectBytes + 1}}
-	if _, err := read(b, big); !errors.Is(err, connector.ErrItemTooLarge) {
-		t.Fatalf("reading an object over the service's cap = %v, want ErrItemTooLarge", err)
+	f.objects["kb/2026-d.md"] = "delta"
+	mixed := []Item{
+		{Key: "kb/2026-c.md", ETag: etagOf(f.objects["kb/2026-c.md"]), Size: MaxObjectBytes + 1},
+		{Key: "kb/2026-d.md", ETag: etagOf("delta"), Size: 5},
+	}
+	got, err = read(b, mixed)
+	var skipped *TooLargeError
+	if !errors.As(err, &skipped) || !errors.Is(err, connector.ErrItemTooLarge) || len(skipped.Keys) != 1 || skipped.Keys[0] != "kb/2026-c.md" {
+		t.Fatalf("reading past an object over the service's cap = %v, want the oversized one named and skipped", err)
+	}
+	if got["kb/2026-d.md"] != "text/markdown:delta" {
+		t.Fatalf("read %v: the object after the oversized one was not read", got)
 	}
 }
 
@@ -448,6 +459,9 @@ func TestServiceBucketTypesTheServicesRefusals(t *testing.T) {
 		// The reason, not the code, decides (service-object-storage v0.0.19).
 		{"guard refused the endpoint", reasoned(codes.PermissionDenied, "DESTINATION_REFUSED"), func(err error) bool {
 			return errors.Is(err, ErrDestinationRefused) && !errors.Is(err, connector.ErrCredentialRefused)
+		}},
+		{"incomplete listing", reasoned(codes.Internal, "LISTING_INCOMPLETE"), func(err error) bool {
+			return errors.Is(err, ErrListingIncomplete) && notThrottle(err)
 		}},
 		{"store rejected the credential", reasoned(codes.PermissionDenied, "CREDENTIAL_REJECTED"), func(err error) bool {
 			return errors.Is(err, connector.ErrCredentialRefused)

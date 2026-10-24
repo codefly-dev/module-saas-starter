@@ -59,7 +59,7 @@ a composed object-storage service can read a bucket (below).
 | 2 readers | `ReadersSourceScoped`: a bucket has no per-object access list, so every object is readable by whoever may read the source's collection. |
 | 4 versions and change sets | A version is a digest of the listing within the source's key filter and object cap, under its binding; the host retains the listing each version names in `datasource_object_manifests` (migration 46; the newest four per source), and `Changes(from)` diffs against it. The host's own sync still takes a complete snapshot each time and re-sends every object, closing with the listing that tombstones the rest; delivering only what changed means moving `runUploadSync` onto the change-set path, which changes what the consuming module receives, so it is its own change. |
 | 5 provenance | Source, org, boundary, version, key and ETag on every fetched file. |
-| 6 budget and backpressure | A declared `Budget`, metered by `datasource_credential_budgets` through `connector.Budgeted`, keyed by the credential — a keyed digest of the store's origin and the access key id, fixed at connect — so every source reading with one key at one store spends one quota and honours one provider throttle. A sync a person asks for may spend the reserved share; the scheduled pass yields. |
+| 6 budget and backpressure | A declared `Budget`, metered by `datasource_credential_budgets` through `connector.Budgeted`, keyed by the credential — a digest of the store's origin and the access key id, derived from the source's configuration on every use and never stored — so every source reading with one key at one store spends one quota and honours one provider throttle, whenever it was connected. A sync a person asks for may spend the reserved share; the scheduled pass yields. |
 | 8 bulk only | A batch is one `GetMany` per `max_get_many_items` (1000, the connector's batch): 120 objects cost one call after the listing. |
 
 **How it reads a store.**
@@ -101,6 +101,11 @@ a composed object-storage service can read a bucket (below).
   excluded object is never read and never counts against the cap, and a
   listing the cap cuts is `ErrListingIncomplete`, which fails the sync
   terminally with nothing delivered.
+- **A sync never empties a source that has files.** A host-owned invariant,
+  whatever any service answers: a listing that comes back empty for a source
+  whose last closing snapshot named objects is refused
+  (`ErrUploadEmptyListingRefused`) and closes nothing. The per-key scope check
+  cannot catch an empty answer for the wrong scope; this rule does.
 - **A fetch is at a version.** Each object of a batch is read at `If-Match` its
   listed ETag; one rewritten or deleted since (`CHANGED`, `NOT_FOUND`) is
   `ErrItemNotFound`, which fails the sync without a listing, and the next sync

@@ -2,6 +2,7 @@ package business_test
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -52,7 +53,7 @@ func (r *recordingBudgets) take() []budgetSpend {
 func TestUploadSourcesOnOneCredentialSpendOneBudget(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
-	svc.SetDatasourceKeys(nil, []byte("a-delivered-link-key"))
+	// No delivered link key: the grouping must not depend on host configuration.
 	budgets := &recordingBudgets{}
 	svc.SetDatasourceBudgetStore(budgets)
 	useUploadBucket(svc, &fakeUploadBucket{objects: []fakeObject{{key: "kb/a.md", etag: "a", body: "A"}}})
@@ -90,10 +91,8 @@ func TestUploadSourcesOnOneCredentialSpendOneBudget(t *testing.T) {
 	if keyOf(staff) == keyOf(other) {
 		t.Fatal("sources on different credentials share a budget")
 	}
-	for _, s := range []*business.DatasourceSource{staff, interns, other} {
-		if s.Upload.CredentialBudgetKey == "" || s.Upload.CredentialBudgetKey == "AKIASHARED" {
-			t.Fatalf("source %s stores budget key %q, want a keyed digest", s.ID, s.Upload.CredentialBudgetKey)
-		}
+	if key := keyOf(staff); !strings.HasPrefix(key, "upload:credential:") || strings.Contains(key, "AKIASHARED") {
+		t.Fatalf("budget key %q, want a digest that names no credential in the clear", key)
 	}
 
 	handler := svc.NewDatasourceSyncJobHandler()
@@ -116,5 +115,47 @@ func TestUploadSourcesOnOneCredentialSpendOneBudget(t *testing.T) {
 	interactive, background := limitOf(requested.GetSource()), limitOf(business.DatasourceScheduledSyncSource)
 	if interactive <= background {
 		t.Fatalf("a requested sync spent against %d and the scheduled pass against %d, want the requested one to reach the reserved share", interactive, background)
+	}
+}
+
+// TestUploadSourcesConnectedBeforeGroupingShareOneBudget: review r2's g1. A
+// source stored before credential grouping existed — or connected on a host
+// with no delivered link key — carries nothing but its endpoint and access key
+// id. Its budget key is derived from those on every use, so two such sources on
+// one credential spend one quota and honour one provider block, with no
+// backfill. A source whose store spells its host differently in case is the
+// same credential.
+func TestUploadSourcesConnectedBeforeGroupingShareOneBudget(t *testing.T) {
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, &recordingProducer{}, nil)
+	budgets := &recordingBudgets{}
+	svc.SetDatasourceBudgetStore(budgets)
+	useUploadBucket(svc, &fakeUploadBucket{objects: []fakeObject{{key: "kb/a.md", etag: "a", body: "A"}}})
+	add := func(label, endpoint string) *business.DatasourceSource {
+		cfg := uploadConfig()
+		cfg.Endpoint = endpoint
+		source, err := svc.AddExistingSource(context.Background(), "actor-1", business.AddSourceInput{
+			OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: label, Credential: "secretkey", Upload: cfg,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return source
+	}
+	a, b := add("legacy a", "https://s3.us-east-1.amazonaws.com"), add("legacy b", "https://S3.US-EAST-1.AMAZONAWS.COM")
+	var keys []string
+	for _, src := range []*business.DatasourceSource{a, b} {
+		budgets.take()
+		if _, err := svc.RunDatasourceSync(context.Background(), src.ID); err != nil {
+			t.Fatal(err)
+		}
+		spends := budgets.take()
+		if len(spends) == 0 {
+			t.Fatal("a sync spent no budget")
+		}
+		keys = append(keys, spends[0].key)
+	}
+	if keys[0] != keys[1] || strings.HasPrefix(keys[0], "upload:source:") {
+		t.Fatalf("two sources on one credential spent under %q and %q, want one credential key", keys[0], keys[1])
 	}
 }

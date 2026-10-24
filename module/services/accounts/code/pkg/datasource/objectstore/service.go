@@ -63,12 +63,14 @@ type ServiceBucket struct {
 }
 
 // NewServiceBucket binds cfg and the source's access key to calls on client.
-// The binding carries no prefix: the service normalizes a binding's prefix as a
-// folder (no leading or trailing "/"), while a source's prefix is a literal S3
-// key prefix — "/reports/" is not "reports/", "/" is not the whole bucket, and
-// "reports-2026" matches "reports-2026-q1.pdf". So every listing filters on the
-// literal prefix, which the service passes to the store unchanged, and every
-// key travels whole.
+// A source's prefix is a literal S3 key prefix — "/reports/" is not "reports/",
+// "/" is not the whole bucket, and "reports-2026" matches "reports-2026-q1.pdf"
+// — and the binding carries none: every listing sends it as the request's own
+// prefix, every key travels whole, and the host refuses a listed key outside
+// it. The host's scope therefore does not rest on how a service treats a
+// binding's prefix (v0.0.19 keeps one literal; earlier releases normalized it
+// as a folder), and the contract tests hold the pinned service to the request
+// prefix being used as written.
 func NewServiceBucket(client storagev0.ObjectStorageClient, cfg SourceConfig, accessKeyID, secretAccessKey string) *ServiceBucket {
 	return &ServiceBucket{
 		client: client,
@@ -133,15 +135,31 @@ func (b *ServiceBucket) Read(ctx context.Context, items []Item, visit func(Item,
 	if err := b.checkBinding(ctx); err != nil {
 		return err
 	}
+	skipped := &TooLargeError{}
 	for start := 0; start < len(items); start += b.maxBatch {
-		if err := b.readBatch(ctx, items[start:min(start+b.maxBatch, len(items))], visit); err != nil {
+		if err := b.readBatch(ctx, items[start:min(start+b.maxBatch, len(items))], visit, skipped); err != nil {
 			return err
 		}
+	}
+	if len(skipped.Keys) > 0 {
+		return skipped
 	}
 	return nil
 }
 
-func (b *ServiceBucket) readBatch(ctx context.Context, items []Item, visit func(Item, string, io.Reader) error) error {
+// TooLargeError names the objects of a read the object-storage service refused
+// as over its cap. Every other object of the read was visited: the service
+// skips such an object and keeps streaming, and so does the host. It is the
+// envelope's ErrItemTooLarge.
+type TooLargeError struct{ Keys []string }
+
+func (e *TooLargeError) Error() string {
+	return fmt.Sprintf("objectstore: %d object(s) over the object-storage service's cap were skipped", len(e.Keys))
+}
+
+func (e *TooLargeError) Unwrap() error { return connector.ErrItemTooLarge }
+
+func (b *ServiceBucket) readBatch(ctx context.Context, items []Item, visit func(Item, string, io.Reader) error, skipped *TooLargeError) error {
 	req := &storagev0.GetManyRequest{Binding: b.binding, Items: make([]*storagev0.GetManyItem, len(items))}
 	for i, it := range items {
 		req.Items[i] = &storagev0.GetManyItem{Key: it.Key, IfMatch: it.ETag}
@@ -200,7 +218,7 @@ func (b *ServiceBucket) readBatch(ctx context.Context, items []Item, visit func(
 		case storagev0.GetManyOutcome_GET_MANY_OUTCOME_CHANGED, storagev0.GetManyOutcome_GET_MANY_OUTCOME_NOT_FOUND:
 			return fmt.Errorf("%w: %s", ErrObjectChanged, it.Key)
 		case storagev0.GetManyOutcome_GET_MANY_OUTCOME_TOO_LARGE:
-			return fmt.Errorf("%w: %s is over the object-storage service's cap", connector.ErrItemTooLarge, it.Key)
+			skipped.Keys = append(skipped.Keys, it.Key)
 		default:
 			return fmt.Errorf("objectstore: the service answered object %s with outcome %v", it.Key, header.GetOutcome())
 		}
@@ -267,6 +285,10 @@ func storeError(err error) error {
 		case *errdetails.RetryInfo:
 			retry = d
 		}
+	}
+	if reason == "LISTING_INCOMPLETE" {
+		// The store marked its listing truncated with no way to continue.
+		return fmt.Errorf("%w: %w", ErrListingIncomplete, err)
 	}
 	switch st.Code() {
 	case codes.PermissionDenied:

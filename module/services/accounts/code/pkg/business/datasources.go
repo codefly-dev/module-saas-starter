@@ -82,6 +82,19 @@ func SnapshotTooLargeDegradeReason(size, limit int) DatasourceDegradeReason {
 // stated as fact.
 const DatasourceReasonPublicRepositoryUnreadable = "GitHub no longer serves this repository without a credential — it may have been made private, renamed or deleted. Reconnect it through the GitHub App or with a repository-scoped fine-grained PAT."
 
+// ObjectStorageEndpointRefusedDegradeReason explains an object-storage source
+// whose endpoint the object-storage service refuses to dial: not on the public
+// internet, nor a composed dependency. Fixed text, nothing provider-supplied.
+func ObjectStorageEndpointRefusedDegradeReason() DatasourceDegradeReason {
+	return DatasourceDegradeReason{text: "The object-storage service refuses this source's endpoint: it is not on the public internet. Connect the source with a public endpoint to resume syncing."}
+}
+
+// ObjectStorageCredentialRejectedDegradeReason explains an object-storage
+// source whose store rejected its access key. Fixed text.
+func ObjectStorageCredentialRejectedDegradeReason() DatasourceDegradeReason {
+	return DatasourceDegradeReason{text: "The store rejected this source's access key. Connect the source again with a valid key to resume syncing."}
+}
+
 // PublicRepositoryUnreadableDegradeReason is that sentence as a stored reason.
 func PublicRepositoryUnreadableDegradeReason() DatasourceDegradeReason {
 	return DatasourceDegradeReason{text: DatasourceReasonPublicRepositoryUnreadable}
@@ -371,10 +384,6 @@ type UploadDatasourceConfig struct {
 	IncludePatterns []string `json:"include_patterns,omitempty"`
 	ExcludePatterns []string `json:"exclude_patterns,omitempty"`
 	FileExtensions  []string `json:"file_extensions,omitempty"`
-	// CredentialBudgetKey groups the sources that read with one access key at
-	// one store under one budget (uploadCredentialBudgetKey). Empty on a source
-	// connected before it, which keeps a budget of its own.
-	CredentialBudgetKey string `json:"credential_budget_key,omitempty"`
 }
 
 // DatasourceSource is one connected external datasource. CredentialSecretRef and
@@ -947,7 +956,6 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 			}
 			return nil, w.Wrap(err)
 		}
-		cfg.CredentialBudgetKey = s.uploadCredentialBudgetKey(cfg)
 		source.Upload = cfg
 	default:
 		return nil, w.NewError("unknown datasource provider")
@@ -1956,7 +1964,23 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 		return 0, w.Wrapf(fmt.Errorf("%w: %w", ErrUploadListingIncomplete, err), "list objects under %q", source.Upload.Prefix)
 	}
 	if err != nil {
+		s.parkRefusedUploadSource(ctx, source, err)
 		return 0, w.Wrapf(err, "list objects")
+	}
+	// A host-owned invariant, whatever any service version answers: a sync
+	// never closes with a snapshot that empties a source that has files. Such a
+	// snapshot tombstones every entry mirrored from the source, and a store or
+	// service that wrongly answers "empty" — a rewritten scope, a discarded
+	// truncation — is the case that has already happened. Emptying a source is
+	// an explicit operation, not a side effect of a listing.
+	if len(snapshot.Changes) == 0 {
+		held, err := s.uploadSourceMayHoldFiles(ctx, source)
+		if err != nil {
+			return 0, w.Wrapf(err, "read the source's last snapshot")
+		}
+		if held {
+			return 0, w.Wrapf(ErrUploadEmptyListingRefused, "listing under %q", source.Upload.Prefix)
+		}
 	}
 	ordinal, err := s.allocateOrdinal(ctx, source.ID)
 	if err != nil {
@@ -1985,6 +2009,18 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 			return nil
 		})
 		batch, batchBytes = batch[:0], 0
+		// An object the object-storage service refuses as over its cap is
+		// skipped and the rest of the batch is delivered; like an object over
+		// the ingest limit, it keeps this sync from sending a listing that
+		// would tombstone it.
+		var skipped *objectstore.TooLargeError
+		if errors.As(err, &skipped) {
+			oversized += len(skipped.Keys)
+			return nil
+		}
+		if err != nil {
+			s.parkRefusedUploadSource(ctx, source, err)
+		}
 		return err
 	}
 	for _, ch := range snapshot.Changes {
@@ -2014,11 +2050,62 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 	}
 
 	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
-		return s.store.SetDatasourceSourceSynced(ctx, source.OrgID, source.ID, time.Now().UTC())
+		return s.store.RecordDatasourceSnapshotSent(ctx, source.OrgID, source.ID, time.Now().UTC(), len(delivered))
 	}); err != nil {
 		return enqueued, w.Wrapf(err, "record sync time")
 	}
 	return enqueued, nil
+}
+
+// ErrUploadEmptyListingRefused reports an object-storage sync whose listing
+// came back empty for a source that has files. It is refused, not closed: the
+// collection is left as it is, and emptying a source is an explicit operation.
+var ErrUploadEmptyListingRefused = errors.New("upload listing is empty for a source that has files; refused rather than tombstoning every entry")
+
+// uploadSourceMayHoldFiles reports whether an object-storage source's mirrored
+// entries may be non-empty: its last closing snapshot named objects, or it
+// synced before that count was recorded (migration 47), which is unknown and
+// so treated as having files. A source that never synced holds nothing.
+func (s *Service) uploadSourceMayHoldFiles(ctx context.Context, source *DatasourceSource) (bool, error) {
+	var items int
+	var known bool
+	err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
+		var err error
+		items, known, err = s.store.DatasourceSourceLastSnapshot(ctx, source.OrgID, source.ID)
+		return err
+	})
+	if err != nil {
+		return false, err
+	}
+	if known {
+		return items > 0, nil
+	}
+	return source.LastSyncedAt != nil, nil
+}
+
+// parkRefusedUploadSource parks an object-storage source a retry cannot fix:
+// the object-storage service's guard refused its endpoint, or its store
+// rejected its access key. The source is degraded with a reason a person can
+// act on — change the endpoint, or connect it again with a valid key — so the
+// reconcile sweep stops retrying it. Any other error leaves it as it is.
+func (s *Service) parkRefusedUploadSource(ctx context.Context, source *DatasourceSource, err error) {
+	var reason DatasourceDegradeReason
+	switch {
+	case errors.Is(err, objectstore.ErrDestinationRefused):
+		reason = ObjectStorageEndpointRefusedDegradeReason()
+	case errors.Is(err, connector.ErrCredentialRefused):
+		reason = ObjectStorageCredentialRejectedDegradeReason()
+	default:
+		return
+	}
+	if source.Status == DatasourceStatusDegraded && source.StatusReason == reason.String() {
+		return
+	}
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.store.MarkDatasourceSourceDegraded(ctx, source.ID, reason)
+	}); err != nil {
+		wool.Get(ctx).Warn("could not park a refused object-storage source", wool.Field("source_id", source.ID), wool.ErrField(err))
+	}
 }
 
 // uploadListingFile is one delivered object in an upload sync's listing: its
@@ -2159,13 +2246,32 @@ func (s *Service) NewDatasourceSyncJobHandler() jobs.Handler {
 			// The folder is larger than one listing reaches; a retry lists the
 			// same page. Fail terminally so it is visible, not retried forever.
 			return jobs.NewProcessingError("datasource.upload_listing_incomplete", err.Error(), false)
+		case errors.Is(err, ErrUploadEmptyListingRefused):
+			// The collection is left as it is; a retry would list the same.
+			return jobs.NewProcessingError("datasource.upload_empty_listing_refused", ErrUploadEmptyListingRefused.Error(), false)
+		case errors.Is(err, objectstore.ErrDestinationRefused):
+			// The source is parked: its endpoint must change, not be retried.
+			return jobs.NewProcessingError("datasource.upload_destination_refused", "the object-storage service refuses the source's endpoint", false)
+		case errors.Is(err, connector.ErrCredentialRefused):
+			// The source is parked until it is connected with a valid key.
+			return jobs.NewProcessingError("datasource.credential_rejected", "the store rejected the source's credential", false)
 		case errors.Is(err, ErrOAuth2ReauthRequired):
 			// The refresh token is permanently dead; replaying it can never
 			// succeed, so fail the job terminally rather than burning retries.
 			return jobs.NewProcessingError("datasource.oauth2_reauth_required", err.Error(), false)
-		default:
-			return err
 		}
+		// A throttle — the store's, or the host's own budget yielding — backs
+		// off until the limit resets rather than on the queue's schedule.
+		var limited *connector.RateLimitedError
+		if errors.As(err, &limited) {
+			failure := jobs.NewProcessingError("datasource.rate_limited", "the provider rate limited the source's credential", true)
+			var typed *jobs.ProcessingError
+			if errors.As(failure, &typed) {
+				typed.NotBefore = limited.ResetAt
+			}
+			return failure
+		}
+		return err
 	}
 }
 

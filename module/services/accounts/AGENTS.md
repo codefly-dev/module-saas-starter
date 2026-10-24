@@ -1260,8 +1260,9 @@ keeps what is per-source state:
   the provider passes the conformance suite through `ServiceBucket` over the
   service's wire and is registered through `connector.Budgeted`: a sync spends
   its credential's budget, keyed by a digest of the store's origin and access
-  key id so sources sharing one key share one quota, and a requested sync may
-  spend the reserved share. Where a compatible service is composed,
+  key id derived from the source's configuration on every use (never stored,
+  so sources connected at any time share one quota on one key), and a
+  requested sync may spend the reserved share. Where a compatible service is composed,
   `GetDatasourceCatalog` reports `accepts_new_sources` and `AddSource` takes a
   new source with its prefix and key filter. That is the whole admin path a
   composed consumer drives — catalog, `AddSource`, sync — with no portal step.
@@ -1269,7 +1270,26 @@ keeps what is per-source state:
   wires the composed service through `Service.SetObjectStorage`, which first
   asks it, unbound, whether it reads a batch (`objectstore.CheckService`) and
   refuses to wire one that does not. A composition without the service, or with one
-  from before the binding (the released 0.0.18 agent this module pins today),
+  from before the binding (0.0.18 and earlier; this module pins 0.0.19),
   leaves object storage unavailable: the catalog says so, `AddSource` refuses
   with `ErrObjectStorageUnavailable`, and an existing source's sync fails by
   name.
+- **A sync never empties a source that has files** — a host-owned invariant,
+  whatever any service version answers. A closing snapshot with no files
+  tombstones every entry mirrored from the source, and a service that wrongly
+  answers "empty" (a rewritten scope, a discarded truncation) has happened.
+  So a listing that comes back empty for a source whose last closing snapshot
+  named objects — `datasource_sources.last_snapshot_items`, migration 47,
+  written only when a snapshot is sent; unknown on a source synced before it,
+  which counts as having files — is refused with
+  `ErrUploadEmptyListingRefused` (job code
+  `datasource.upload_empty_listing_refused`), closes nothing, and leaves the
+  collection as it is. Emptying a source is an explicit operation.
+- **Each refusal gets the action its reason names**, not one generic retry:
+  a throttle (`STORE_THROTTLED`) is retried no earlier than the store's reset;
+  an object over the service's cap (`OBJECT_TOO_LARGE`) is skipped and the
+  sync goes on, then surfaces it without a closing snapshot; a guard refusal
+  (`DESTINATION_REFUSED`) or a rejected access key (`CREDENTIAL_REJECTED`)
+  parks the source as degraded, with a fixed reason asking for a new endpoint
+  or a valid key, and fails the job terminally; an incomplete, too-long or
+  too-large listing is the terminal incomplete-listing disposition.

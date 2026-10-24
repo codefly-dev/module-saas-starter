@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"accounts/pkg/datasource/objectstore"
 
@@ -76,4 +77,59 @@ func TestPostgresDatasourceObjectManifestRefusesAMalformedVersion(t *testing.T) 
 	})
 	require.Error(t, err)
 	require.True(t, strings.Contains(err.Error(), "check"), "want the version CHECK to refuse it, got %v", err)
+}
+
+// TestPostgresDatasourceSnapshotCountRoundTrips pins the host's record of
+// whether an object-storage source has files, which the empty-listing
+// invariant reads: unknown until a closing snapshot is recorded, then the count
+// that snapshot named — zero included — and the sync time with it; another
+// organization reads nothing of it.
+func TestPostgresDatasourceSnapshotCountRoundTrips(t *testing.T) {
+	userID := seedUser(t)
+	orgID := seedOrg(t, userID)
+	sourceID := seedDatasourceSource(t, orgID)
+	last := func(org string) (int, bool, error) {
+		var items int
+		var known bool
+		err := testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+			var err error
+			items, known, err = testStore.DatasourceSourceLastSnapshot(ctx, orgID, sourceID)
+			return err
+		})
+		return items, known, err
+	}
+	record := func(items int) {
+		require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			return testStore.RecordDatasourceSnapshotSent(ctx, orgID, sourceID, time.Now().UTC(), items)
+		}))
+	}
+
+	_, known, err := last(orgID)
+	require.NoError(t, err)
+	require.False(t, known, "a source that never sent a snapshot has no recorded count")
+
+	record(3)
+	items, known, err := last(orgID)
+	require.NoError(t, err)
+	require.True(t, known)
+	require.Equal(t, 3, items)
+	var synced *time.Time
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		source, err := testStore.GetDatasourceSource(ctx, orgID, sourceID)
+		if err == nil && source != nil {
+			synced = source.LastSyncedAt
+		}
+		return err
+	}))
+	require.NotNil(t, synced, "recording a snapshot records the sync time")
+
+	record(0)
+	items, known, err = last(orgID)
+	require.NoError(t, err)
+	require.True(t, known)
+	require.Equal(t, 0, items, "an empty snapshot is recorded as zero, not as unknown")
+
+	otherOrg := seedOrg(t, seedUser(t))
+	_, known, err = last(otherOrg)
+	require.False(t, known && err == nil, "another organization must not read a source's snapshot count")
 }

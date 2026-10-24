@@ -129,6 +129,13 @@ type Store interface {
 	// audit record names a source the same transaction actually deleted.
 	DeleteDatasourceSource(ctx context.Context, orgID, id string) (*RemovedDatasourceSource, error)
 	SetDatasourceSourceSynced(ctx context.Context, orgID, id string, syncedAt time.Time) error
+	// RecordDatasourceSnapshotSent records a sync that sent its closing
+	// snapshot: the sync time, and how many objects the snapshot named.
+	// DatasourceSourceLastSnapshot reads that count back; known is false for a
+	// source that never recorded one. Both MUST run inside the source's
+	// WithOrgTx.
+	RecordDatasourceSnapshotSent(ctx context.Context, orgID, id string, syncedAt time.Time, items int) error
+	DatasourceSourceLastSnapshot(ctx context.Context, orgID, id string) (items int, known bool, err error)
 	// PutDatasourceObjectManifest retains an object-storage source's listing
 	// under its version, and GetDatasourceObjectManifest reads one back (false
 	// once pruned). Both MUST run inside the source's WithOrgTx.

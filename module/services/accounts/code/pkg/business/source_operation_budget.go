@@ -31,32 +31,11 @@ func (s *Service) apiCredentialBudgetKey(cfg *APIDatasourceConfig, credential st
 			identity[3] = cfg.PersonalOwnerUserID
 		}
 	}
-	return s.credentialBudgetKey("api", identity)
-}
-
-// uploadCredentialBudgetKey groups object-storage sources that read with the
-// same access key at the same store, so every source on one credential spends
-// one quota and honours one provider throttle, as the scheduler's contract
-// says (connector/budget.go). Fixed at connect, like an API source's.
-func (s *Service) uploadCredentialBudgetKey(cfg *UploadDatasourceConfig) string {
-	if cfg == nil || len(s.datasourceLinkKey) == 0 {
-		return ""
-	}
-	origin, err := url.Parse(cfg.Endpoint)
-	if err != nil {
-		return ""
-	}
-	return s.credentialBudgetKey("upload", []string{origin.Scheme, origin.Host, cfg.AccessKeyID})
-}
-
-// credentialBudgetKey names one provider credential without storing a
-// plaintext fingerprint of it: a keyed digest, domain-separated per provider.
-func (s *Service) credentialBudgetKey(provider string, identity []string) string {
 	encoded, _ := json.Marshal(identity)
 	mac := hmac.New(sha256.New, s.datasourceLinkKey)
-	_, _ = mac.Write([]byte("datasource-" + provider + "-budget\x00"))
+	_, _ = mac.Write([]byte("datasource-api-budget\x00"))
 	_, _ = mac.Write(encoded)
-	return provider + ":credential:" + hex.EncodeToString(mac.Sum(nil))
+	return "api:credential:" + hex.EncodeToString(mac.Sum(nil))
 }
 
 var apiOperationBudget = connector.Budget{OperationsPerWindow: 60, Window: time.Minute, BackgroundSharePercent: 80}

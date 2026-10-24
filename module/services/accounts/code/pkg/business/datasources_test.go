@@ -39,6 +39,7 @@ type datasourceFakeStore struct {
 	collections map[string]string             // label -> node id
 	ordinals    map[string]int64              // source id -> next ordinal to hand out
 	manifests   map[string][]objectstore.Item // org/source/version -> retained listing
+	snapshots   map[string]int                // source id -> objects its last closing snapshot named
 
 	// beforeInstallationMark, when set, runs just before a park is applied.
 	beforeInstallationMark func(sourceID string)
@@ -62,6 +63,7 @@ func newDatasourceFakeStore() *datasourceFakeStore {
 		collections: map[string]string{},
 		ordinals:    map[string]int64{},
 		manifests:   map[string][]objectstore.Item{},
+		snapshots:   map[string]int{},
 
 		setups:        map[string]*business.GitHubAppSetup{},
 		setupConsumed: map[string]bool{},
@@ -304,6 +306,23 @@ func (f *datasourceFakeStore) GetDatasourceObjectManifest(_ context.Context, org
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	items, ok := f.manifests[orgID+"/"+sourceID+"/"+version]
+	return items, ok, nil
+}
+
+func (f *datasourceFakeStore) RecordDatasourceSnapshotSent(ctx context.Context, orgID, id string, syncedAt time.Time, items int) error {
+	if err := f.SetDatasourceSourceSynced(ctx, orgID, id, syncedAt); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.snapshots[id] = items
+	return nil
+}
+
+func (f *datasourceFakeStore) DatasourceSourceLastSnapshot(_ context.Context, _ string, id string) (int, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	items, ok := f.snapshots[id]
 	return items, ok, nil
 }
 
@@ -1295,6 +1314,7 @@ type fakeUploadBucket struct {
 	objects     []fakeObject
 	contentType string
 	readErr     map[string]error
+	skipOnErr   bool // a readErr item is skipped and the read continues, as ServiceBucket does for an object over the service's cap
 	listErr     error
 	listCalls   int
 	readCalls   int
@@ -1325,9 +1345,14 @@ func (f *fakeUploadBucket) List(context.Context) ([]objectstore.Item, error) {
 
 func (f *fakeUploadBucket) Read(_ context.Context, items []objectstore.Item, visit func(objectstore.Item, string, io.Reader) error) error {
 	f.readCalls++
+	var skipped error
 	for _, it := range items {
 		f.read = append(f.read, it.Key)
 		if err := f.readErr[it.Key]; err != nil {
+			if f.skipOnErr {
+				skipped = err
+				continue
+			}
 			return err
 		}
 		body := ""
@@ -1340,7 +1365,7 @@ func (f *fakeUploadBucket) Read(_ context.Context, items []objectstore.Item, vis
 			return err
 		}
 	}
-	return nil
+	return skipped
 }
 
 // useUploadBucket makes fake the store every object-storage source reads.
