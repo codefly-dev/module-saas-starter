@@ -83,7 +83,12 @@ const SKIP_FILE = (rel) =>
   rel.endsWith(".tsbuildinfo") ||
   rel.endsWith(".DS_Store");
 
-const MAX_BYTES = 512 * 1024;
+// The cap bounds what one text file costs to read, not what the gate covers: a file over it is
+// reported, never skipped. It sits above the largest generated text the tree carries (the
+// accounts service catalog, which grows by about 1.7 KB per RPC and crossed 512 KiB with
+// AdmitWorkloadOperation), so a generated file outgrowing the cap is a red gate to raise it
+// again, not a reason to allowlist a file every RPC description reaches.
+const MAX_BYTES = 1024 * 1024;
 
 // A slug is an identifier-ish run: a hyphenated repository name, a dotted hostname, an email
 // address, an UPPER_SNAKE constant, a camelCase identifier. Splitting it on separators yields
