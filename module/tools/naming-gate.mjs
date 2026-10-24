@@ -313,7 +313,8 @@ export function namingErrors(moduleRoot = MODULE_ROOT, scanRoot = canonicalScanR
     // gate is declining to read, and a reader of a green run has to be able to see that.
     if (statSync(abs).size > MAX_BYTES) {
       errors.push(
-        `${rel}: too large to scan (over ${MAX_BYTES} bytes) — split it, or allowlist it in ` +
+        `${rel}: too large to scan (over ${MAX_BYTES} bytes): split it; for generated text that ` +
+          "grew, raise MAX_BYTES in tools/naming-gate.mjs; or allowlist it in " +
           "tools/naming-allowlist.json with a reason and a ticket",
       );
       continue;
