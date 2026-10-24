@@ -262,6 +262,16 @@ answered by one set of functions for minting and verifying alike
   is sealed to the organization's installation of it, held while the person is an
   active member; an organization that never installed the audience is minted
   nothing. A module's is sealed to the installation its mint resolved.
+  This is an invariant, not a default: every capability a person owns is sealed
+  to the installation of the audience it addresses, on every mint that issues
+  one. `StartChildSession` is the one derivation core cannot re-seal (a child
+  keeps its parent's seal), so it refuses a person's child for an audience whose
+  installation is not the parent's seal. Source-operation contexts and
+  installation tasks are not exceptions: they are minted for a module or an
+  installation, and sealed to that principal's own installation. The gateway's
+  bearer-less module arm reads the seal as the owner's kind on this rule
+  (`TestAPersonsCapabilityIsSealedToItsAudiencesInstallation` pins it over every
+  person mint).
 - **Epoch.** The owner's authorization revision in the organization. Membership
   and role changes advance a person's; installing a module and every change to
   its installation's revision advance a module principal's (migration 35).
