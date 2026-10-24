@@ -239,13 +239,18 @@ jobs:
           # Renders to "false" when the label is absent; the gate requires an
           # affirmative token, so only the label opens the escape hatch.
           AUTHZ_ALLOW_BROADENING: ${{ contains(github.event.pull_request.labels.*.name, 'authz-broadening-approved') }}
+          # The branch the pull request merges into: main, or a release/** patch
+          # line. Diffing a patch line's pull request against main would report
+          # everything main gained since the line was cut, or hide a broadening
+          # main already carries. Outside a pull request it is main, as before.
+          BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
         run: |
-          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          git fetch --no-tags origin "refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
           base="$(mktemp)"
-          if git show origin/main:module/services/accounts/generated/authz-methods.json > "${base}" 2>/dev/null; then
+          if git show "origin/${BASE_REF}:module/services/accounts/generated/authz-methods.json" > "${base}" 2>/dev/null; then
             node module/tools/authz-coverage-gate.mjs no-broadening --base "${base}"
           else
-            echo "no authorization catalog on main yet; nothing to diff"
+            echo "no authorization catalog on ${BASE_REF} yet; nothing to diff"
           fi
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -520,12 +525,26 @@ jobs:
           # contract once a concurrent change lands is caught where it has to
           # be: the merge queue builds main + the PR afresh, so there HEAD^1 IS
           # current main.
+          #
+          # A tag whose commit is not on main was cut from a release/** patch
+          # line. Its baseline is the line's base, where it forked from main
+          # (the release it patches), not main as it stands: main may have
+          # gained messages since, which the line lacks and would report as
+          # deletions. Every tag on main, and every other event, keeps main.
           if git rev-parse --verify -q HEAD^2 >/dev/null; then
             baseline_rev="HEAD^1"
           else
             git fetch --no-tags origin \
               refs/heads/main:refs/remotes/origin/main
             baseline_rev="origin/main"
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              if git merge-base --is-ancestor HEAD origin/main; then on_main=0; else on_main=$?; fi
+              case "${on_main}" in
+                0) ;;
+                1) baseline_rev="$(git merge-base HEAD origin/main)" ;;
+                *) echo "::error::cannot tell whether ${GITHUB_REF_NAME} is on main (git exit ${on_main})"; exit 1 ;;
+              esac
+            fi
           fi
           echo "proto baseline: ${baseline_rev} ($(git rev-parse --short "${baseline_rev}"))"
           git archive "${baseline_rev}" module/services/accounts/proto | tar -x -C "${baseline}"
@@ -1413,12 +1432,22 @@ jobs:
         id: on-main
         run: |
           git fetch --no-tags origin main
-          if git merge-base --is-ancestor "${GITHUB_SHA}" FETCH_HEAD; then
-            echo "announce=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "::notice::${GITHUB_REF_NAME} is not on main; the release is not announced."
-            echo "announce=false" >> "${GITHUB_OUTPUT}"
-          fi
+          # 1 is "not an ancestor"; anything else is git failing to answer,
+          # which must fail the step rather than read as "not on main".
+          if git merge-base --is-ancestor "${GITHUB_SHA}" FETCH_HEAD; then on_main=0; else on_main=$?; fi
+          case "${on_main}" in
+            0)
+              echo "announce=true" >> "${GITHUB_OUTPUT}"
+              ;;
+            1)
+              echo "::notice::${GITHUB_REF_NAME} is not on main; the release is not announced."
+              echo "announce=false" >> "${GITHUB_OUTPUT}"
+              ;;
+            *)
+              echo "::error::cannot tell whether ${GITHUB_REF_NAME} is on main (git exit ${on_main})"
+              exit 1
+              ;;
+          esac
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: steps.on-main.outputs.announce == 'true'
         with:

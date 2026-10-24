@@ -148,6 +148,15 @@ With both present, a dispatch the handbook rejects still fails the job.
 including that an unconfigured run dispatches nothing at all — and runs in
 `release-contract`.
 
+Only a tag on `main` is announced. A tag push names a commit, not a branch, so
+`handbook-surface-bump` first asks whether `main` contains the tagged commit
+(`git merge-base --is-ancestor`). A tag cut from a `release/**` patch line is
+not on `main`: it passes every gate and publishes every artifact, but it is not
+announced as current, because it lacks whatever `main` released after the line
+was cut. `main`'s next tag carries the announcement. Exit 1 of that check is
+"not on main"; any other failure fails the job rather than skipping the
+announcement silently.
+
 ### The contract test
 
 `release-contract` runs `scripts/ci/release-gates.mjs check`, which parses every
@@ -794,6 +803,18 @@ To cut a deploy-counter tag:
    `agent.codefly.yaml`.
 2. Commit it as `release: v0.0.N`.
 3. Tag that commit with an annotated `v0.0.N` tag and push the tag.
+
+**Patch lines.** A fix for a deployment pinned to an older deploy-counter tag
+goes on a `release/**` branch cut from that tag, through a pull request into
+it; pull requests into `release/**` get the same checks as pull requests into
+`main`. A tag on the line passes every release gate and publishes its artifacts
+like a tag on `main`, with two differences. It is not announced as current
+(only a tag on `main` is; see `handbook-surface-bump` above). And the gates that
+compare against a baseline compare against the line's base, not against `main`
+as it stands: the authorization no-broadening check diffs a pull request
+against the branch it merges into, and the protobuf breaking-change check on a
+tag that is not on `main` compares against its merge base with `main`, the
+release the line patches.
 
 To cut an immutable module-package release:
 
