@@ -101,7 +101,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID string, req *gen.Crea
 		if err != nil {
 			return w.Wrapf(err, "cannot check API key quota")
 		}
-		if err := quota.RequireAvailable(); err != nil {
+		if err := admitCardinality(ctx, req.OrganizationId, quota); err != nil {
 			return err
 		}
 		if err := s.store.CreateAPIKey(ctx, key, keyHash); err != nil {

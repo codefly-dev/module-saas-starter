@@ -1,7 +1,7 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import { describe, expect, it } from "vitest";
 
-import { isMFARequired, stepUpHref } from "./step-up";
+import { isMFARequired, refusalMessage, stepUpHref } from "./step-up";
 
 describe("isMFARequired", () => {
 	it("recognises the host's refusal as a Connect error", () => {
@@ -34,5 +34,60 @@ describe("stepUpHref", () => {
 		expect(stepUpHref("/admin/platform/admins?tab=1")).toBe(
 			"/auth/login?step_up=1&next=%2Fadmin%2Fplatform%2Fadmins%3Ftab%3D1",
 		);
+	});
+});
+
+describe("refusalMessage", () => {
+	it("shows the server's own words when the organization would lose its last administrator", () => {
+		expect(
+			refusalMessage(
+				new ConnectError(
+					"organization must keep at least one owner or admin",
+					Code.FailedPrecondition,
+				),
+				"Failed to remove member",
+			),
+		).toBe("organization must keep at least one owner or admin");
+	});
+
+	// The host sends the quota's own sentence, never the wrapped call path, so
+	// the person learns which limit they hit.
+	it("shows the quota the request hit", () => {
+		expect(
+			refusalMessage(
+				new ConnectError(
+					"seats quota exhausted: used 5 of 5",
+					Code.ResourceExhausted,
+				),
+				"Failed to add member",
+			),
+		).toBe("seats quota exhausted: used 5 of 5");
+	});
+
+	it("does not put server internals in front of the user", () => {
+		expect(
+			refusalMessage(
+				new ConnectError(
+					'cannot remove member: pq: connection refused "10.0.0.4:5432"',
+					Code.Internal,
+				),
+				"Failed to remove member",
+			),
+		).toBe("Failed to remove member");
+	});
+
+	it("falls back for an error that never reached the server", () => {
+		expect(
+			refusalMessage(new Error("network down"), "Failed to add member"),
+		).toBe("Failed to add member");
+	});
+
+	it("falls back when the server sent no message to show", () => {
+		expect(
+			refusalMessage(
+				new ConnectError("", Code.FailedPrecondition),
+				"Failed to remove member",
+			),
+		).toBe("Failed to remove member");
 	});
 });

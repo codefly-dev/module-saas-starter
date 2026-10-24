@@ -153,8 +153,8 @@ func (s *Service) ConsumeUsage(ctx context.Context, in ConsumeUsageInput) (*Usag
 
 	var receipt *UsageReceipt
 	if err := s.store.WithOrgTx(ctx, in.OrgID, func(ctx context.Context) error {
-		limit, err := resolveEffectiveLimitInTx(
-			ctx, s.store, in.OrgID, meter.EntitlementKey, now,
+		limit, err := s.effectiveLimitInTx(
+			ctx, in.OrgID, meter.EntitlementKey, now,
 		)
 		if err != nil {
 			return err
@@ -164,6 +164,9 @@ func (s *Service) ConsumeUsage(ctx context.Context, in ConsumeUsageInput) (*Usag
 		return err
 	}); err != nil {
 		return nil, fmt.Errorf("consume usage: %w", err)
+	}
+	if !receipt.Accepted && !receipt.Duplicate {
+		logQuotaRefusal(ctx, in.OrgID, meter.EntitlementKey, receipt.Used, receipt.Limit)
 	}
 	return receipt, nil
 }
@@ -188,8 +191,8 @@ func (s *Service) GetUsage(ctx context.Context, orgID, meter string) (*UsageSnap
 		OrgID: orgID, Meter: meter, PeriodStart: periodStart, PeriodEnd: periodEnd,
 	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		limit, err := resolveEffectiveLimitInTx(
-			ctx, s.store, orgID, definition.EntitlementKey, now,
+		limit, err := s.effectiveLimitInTx(
+			ctx, orgID, definition.EntitlementKey, now,
 		)
 		if err != nil {
 			return err
@@ -217,8 +220,8 @@ func (s *Service) ListUsageMeters(ctx context.Context, orgID string) ([]UsageMet
 	snapshots := make([]UsageMeterSnapshot, 0, len(definitions))
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		for _, definition := range definitions {
-			limit, err := resolveEffectiveLimitInTx(
-				ctx, s.store, orgID, definition.EntitlementKey, observedAt,
+			limit, err := s.effectiveLimitInTx(
+				ctx, orgID, definition.EntitlementKey, observedAt,
 			)
 			if err != nil {
 				return err
