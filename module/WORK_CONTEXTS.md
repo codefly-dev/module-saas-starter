@@ -262,16 +262,30 @@ answered by one set of functions for minting and verifying alike
   is sealed to the organization's installation of it, held while the person is an
   active member; an organization that never installed the audience is minted
   nothing. A module's is sealed to the installation its mint resolved.
-  This is an invariant, not a default: every capability a person owns is sealed
-  to the installation of the audience it addresses, on every mint that issues
-  one. `StartChildSession` is the one derivation core cannot re-seal (a child
-  keeps its parent's seal), so it refuses a person's child for an audience whose
-  installation is not the parent's seal. Source-operation contexts and
-  installation tasks are not exceptions: they are minted for a module or an
-  installation, and sealed to that principal's own installation. The gateway's
-  bearer-less module arm reads the seal as the owner's kind on this rule
-  (`TestAPersonsCapabilityIsSealedToItsAudiencesInstallation` pins it over every
-  person mint).
+  This is an invariant, not a default: every capability a person's own session
+  or a module's re-mint for that person issues is sealed to the installation of
+  the audience it addresses. `StartChildSession` is the one derivation core
+  cannot re-seal (a child keeps its parent's seal), so it refuses a person's
+  child for an audience whose installation is not the parent's seal.
+  Two kinds of person-owned capability are sealed elsewhere, by design, and
+  each has its own mint gate:
+  - **Source-operation contexts** (`startSourceOperation`,
+    `pkg/adapters/source_delegation.go`): owned by the person, sealed to the
+    installation of the module USING the person's source delegation. Only that
+    module's identity, exercising a delegation the person granted to one of its
+    bindings, mints one.
+  - **Installation tasks** (`mintInstallationTask`,
+    `pkg/adapters/work_context_rpcs.go`): owned by the installation's owner of
+    record, sealed to the installation the authority is drawn from. Only an
+    `EXPOSURE_INTERNAL` credential reaches `StartInstallationTask`.
+
+  The gateway's bearer-less module arm admits a capability whose seal is an
+  active installation other than the target's, so it admits these two kinds as
+  well as module operation contexts: that is the unattended-work family it is
+  for, and no person's interactive session can produce one.
+  `TestAPersonsCapabilityIsSealedToItsAudiencesInstallation` pins the rule over
+  every person mint, and `TestEveryWorkContextMintIsClassifiedBySeal` fails on
+  any mint RPC that names neither where it seals nor why.
 - **Epoch.** The owner's authorization revision in the organization. Membership
   and role changes advance a person's; installing a module and every change to
   its installation's revision advance a module principal's (migration 35).

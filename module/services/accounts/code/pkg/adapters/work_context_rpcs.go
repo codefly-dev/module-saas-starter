@@ -1441,15 +1441,22 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 // would be admitted there without the person's bearer.
 //
 // A same-audience child keeps the seal its audience resolves to now, and is
-// minted. A principal that is not a person is sealed to its own installation,
-// which the audience does not change, and is not held here.
+// minted. A service principal is sealed to its own installation, which the
+// audience does not change, and is not held here. Any other owner kind is
+// refused: the rule is stated for these two, and a kind it does not name is not
+// read as either.
 // TestAPersonsCapabilityIsSealedToItsAudiencesInstallation pins the invariant
 // over every person mint.
 func (s *WorkContextAuthorityServer) requireChildKeepsAudienceSeal(
 	ctx context.Context, parent *basev0.WorkContextV1, audience string,
 ) error {
-	if parent.GetOwnerPrincipalKind() != business.PrincipalKindHuman {
+	switch parent.GetOwnerPrincipalKind() {
+	case business.PrincipalKindHuman:
+	case business.PrincipalKindService:
 		return nil
+	default:
+		return status.Error(codes.PermissionDenied,
+			"a child Work Context is derived only from a person's or a service principal's")
 	}
 	installation, err := s.audienceInstallation(ctx, parent.GetTenantId(), audience)
 	if err != nil {
