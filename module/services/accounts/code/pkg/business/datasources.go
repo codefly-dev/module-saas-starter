@@ -1964,8 +1964,7 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 		return 0, w.Wrapf(fmt.Errorf("%w: %w", ErrUploadListingIncomplete, err), "list objects under %q", source.Upload.Prefix)
 	}
 	if err != nil {
-		s.parkRefusedUploadSource(ctx, source, err)
-		return 0, w.Wrapf(err, "list objects")
+		return 0, w.Wrapf(s.parkRefusedUploadSource(ctx, source, err), "list objects")
 	}
 	// A host-owned invariant, whatever any service version answers: a sync
 	// never closes with a snapshot that empties a source that has files. Such a
@@ -2019,9 +2018,9 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 			return nil
 		}
 		if err != nil {
-			s.parkRefusedUploadSource(ctx, source, err)
+			return s.parkRefusedUploadSource(ctx, source, err)
 		}
-		return err
+		return nil
 	}
 	for _, ch := range snapshot.Changes {
 		// Objects too large for the ingest inbox cannot be delivered and the
@@ -2087,8 +2086,10 @@ func (s *Service) uploadSourceMayHoldFiles(ctx context.Context, source *Datasour
 // the object-storage service's guard refused its endpoint, or its store
 // rejected its access key. The source is degraded with a reason a person can
 // act on — change the endpoint, or connect it again with a valid key — so the
-// reconcile sweep stops retrying it. Any other error leaves it as it is.
-func (s *Service) parkRefusedUploadSource(ctx context.Context, source *DatasourceSource, err error) {
+// reconcile sweep stops retrying it. Any other error is returned as it is. A
+// park that fails returns its own error in place of the refusal, so the job
+// retries and the park is attempted again (parkDatasourceSource).
+func (s *Service) parkRefusedUploadSource(ctx context.Context, source *DatasourceSource, err error) error {
 	var reason DatasourceDegradeReason
 	switch {
 	case errors.Is(err, objectstore.ErrDestinationRefused):
@@ -2096,16 +2097,13 @@ func (s *Service) parkRefusedUploadSource(ctx context.Context, source *Datasourc
 	case errors.Is(err, connector.ErrCredentialRefused):
 		reason = ObjectStorageCredentialRejectedDegradeReason()
 	default:
-		return
+		return err
 	}
-	if source.Status == DatasourceStatusDegraded && source.StatusReason == reason.String() {
-		return
+	if _, perr := s.parkDatasourceSource(ctx, source, reason); perr != nil {
+		wool.Get(ctx).Warn("could not park a refused object-storage source", wool.Field("source_id", source.ID), wool.ErrField(perr))
+		return fmt.Errorf("park the refused object-storage source: %w", perr)
 	}
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.MarkDatasourceSourceDegraded(ctx, source.ID, reason)
-	}); err != nil {
-		wool.Get(ctx).Warn("could not park a refused object-storage source", wool.Field("source_id", source.ID), wool.ErrField(err))
-	}
+	return err
 }
 
 // uploadListingFile is one delivered object in an upload sync's listing: its

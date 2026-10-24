@@ -203,6 +203,60 @@ func TestUploadRefusalsGetTheJobPolicyTheirReasonNames(t *testing.T) {
 	}
 }
 
+// degradeFailingStore is a store whose park write fails while broken is set.
+type degradeFailingStore struct {
+	*datasourceFakeStore
+	broken bool
+}
+
+func (s *degradeFailingStore) MarkDatasourceSourceDegraded(ctx context.Context, id string, reason business.DatasourceDegradeReason) error {
+	if s.broken {
+		return errors.New("store unavailable")
+	}
+	return s.datasourceFakeStore.MarkDatasourceSourceDegraded(ctx, id, reason)
+}
+
+// TestUploadRefusalWhoseParkFailsRetries: the park is what makes a refused
+// source's stop visible, so a refusal whose park write fails is not terminal —
+// a terminal job would leave the source reading active with nothing on it to
+// say why it stopped. The job retries instead, and the next attempt parks it.
+// The rule the GitHub public-source park already followed; both now share it.
+func TestUploadRefusalWhoseParkFailsRetries(t *testing.T) {
+	refused, _ := status.New(codes.PermissionDenied, "refused").WithDetails(&errdetails.ErrorInfo{Domain: "object-storage.codefly.dev", Reason: "DESTINATION_REFUSED"})
+	producer := &recordingProducer{}
+	store := &degradeFailingStore{datasourceFakeStore: newDatasourceFakeStore(), broken: true}
+	svc, _ := newDatasourceService(store, producer, nil)
+	if err := svc.SetObjectStorage(context.Background(), listingService{list: func(*storagev0.ListRequest) (*storagev0.ListResult, error) { return nil, refused.Err() }}); err != nil {
+		t.Fatal(err)
+	}
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "secretkey", Upload: uploadConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = runSyncJob(t, svc, producer, source, "github.sync.request")
+	var failure *jobs.ProcessingError
+	if err == nil || (errors.As(err, &failure) && !failure.Retryable) {
+		t.Fatalf("a refusal whose park failed = %v, want a retryable failure", err)
+	}
+	if errors.Is(err, objectstore.ErrDestinationRefused) {
+		t.Fatalf("a refusal whose park failed still carries the refusal: %v", err)
+	}
+	if got := store.sources[source.ID]; got.Status == business.DatasourceStatusDegraded {
+		t.Fatalf("source = %s, want it as it was while the park cannot be written", got.Status)
+	}
+
+	store.broken = false
+	if failure := processingFailure(t, runSyncJob(t, svc, producer, source, "github.sync.request")); failure.Retryable || failure.Failure.GetCode() != "datasource.upload_destination_refused" {
+		t.Fatalf("retry = %s retryable=%v, want the terminal refusal once parked", failure.Failure.GetCode(), failure.Retryable)
+	}
+	if got := store.sources[source.ID]; got.Status != business.DatasourceStatusDegraded || got.StatusReason != business.ObjectStorageEndpointRefusedDegradeReason().String() {
+		t.Fatalf("source = %s %q, want parked by the retry", got.Status, got.StatusReason)
+	}
+}
+
 // TestUploadSyncSkipsAnObjectTheServiceCapsAndContinues: an object the
 // object-storage service refuses as over its cap is skipped and the sync goes
 // on — the rest of its batch and every later batch are delivered — then

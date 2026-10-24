@@ -1291,5 +1291,8 @@ keeps what is per-source state:
   sync goes on, then surfaces it without a closing snapshot; a guard refusal
   (`DESTINATION_REFUSED`) or a rejected access key (`CREDENTIAL_REJECTED`)
   parks the source as degraded, with a fixed reason asking for a new endpoint
-  or a valid key, and fails the job terminally; an incomplete, too-long or
-  too-large listing is the terminal incomplete-listing disposition.
+  or a valid key, and fails the job terminally — unless the park itself cannot
+  be written, when the job retries instead, so a source never stops with
+  nothing on it to say why (`parkDatasourceSource`, the park the GitHub
+  unreadable-public-repository path goes through as well); an incomplete, too-long or too-large
+  listing is the terminal incomplete-listing disposition.
