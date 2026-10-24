@@ -60,14 +60,16 @@ type WorkContextServiceClient interface {
 	ConsumeSingleUse(ctx context.Context, in *ConsumeSingleUseWorkContextRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// AdmitWorkloadOperation answers whether a capability presented with no
 	// bearer at the declared module route /v1/<alias>/* is a module operation
-	// context (StartModuleOperationTask) for that alias, and admits nothing else.
+	// context (StartModuleOperationTask) for that alias, and admits nothing else;
+	// and whether the route's target is installed in the capability's tenant.
 	// The auth-gateway's bearer-less arm is its caller. Unlike the revision
 	// checks above, the signed capability itself crosses this boundary: the
 	// answer depends on its owner, owner kind and chain, which only the issuer
-	// reads. It inspects (signature under this issuer, window, audience) and
-	// reads its own claims; it never verifies, so nothing is consumed and the
-	// callee still verifies the capability at full strength. Internal-tier: the
-	// tenant it answers about is the one the capability names.
+	// reads. It reads the capability back (core's Authority.ReadBack: signature
+	// under this issuer, window, audience, revision, seal, epochs) and never
+	// verifies it as presented, so nothing is consumed and the callee still
+	// verifies at full strength. Internal-tier: the tenant it answers about is
+	// the one the capability names.
 	AdmitWorkloadOperation(ctx context.Context, in *AdmitWorkloadOperationRequest, opts ...grpc.CallOption) (*AdmitWorkloadOperationResponse, error)
 	StartTask(ctx context.Context, in *StartTaskWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
@@ -228,14 +230,16 @@ type WorkContextServiceServer interface {
 	ConsumeSingleUse(context.Context, *ConsumeSingleUseWorkContextRequest) (*emptypb.Empty, error)
 	// AdmitWorkloadOperation answers whether a capability presented with no
 	// bearer at the declared module route /v1/<alias>/* is a module operation
-	// context (StartModuleOperationTask) for that alias, and admits nothing else.
+	// context (StartModuleOperationTask) for that alias, and admits nothing else;
+	// and whether the route's target is installed in the capability's tenant.
 	// The auth-gateway's bearer-less arm is its caller. Unlike the revision
 	// checks above, the signed capability itself crosses this boundary: the
 	// answer depends on its owner, owner kind and chain, which only the issuer
-	// reads. It inspects (signature under this issuer, window, audience) and
-	// reads its own claims; it never verifies, so nothing is consumed and the
-	// callee still verifies the capability at full strength. Internal-tier: the
-	// tenant it answers about is the one the capability names.
+	// reads. It reads the capability back (core's Authority.ReadBack: signature
+	// under this issuer, window, audience, revision, seal, epochs) and never
+	// verifies it as presented, so nothing is consumed and the callee still
+	// verifies at full strength. Internal-tier: the tenant it answers about is
+	// the one the capability names.
 	AdmitWorkloadOperation(context.Context, *AdmitWorkloadOperationRequest) (*AdmitWorkloadOperationResponse, error)
 	StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error)
 	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a

@@ -3,10 +3,15 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
 	"go/ast"
+	"go/importer"
 	"go/parser"
 	"go/token"
+	"go/types"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -14,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
@@ -21,8 +27,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -48,9 +57,37 @@ func admissionContext(t *testing.T) context.Context {
 	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", admissionTestToken))
 }
 
+// admissionTarget is the route's target every row asks about, and
+// admissionTargetRow the tenant's ACTIVE installation of it: a row that is
+// none of the minted capabilities' seals.
+const (
+	admissionTarget    = "019f6bf7-7777-7777-8777-777777777777"
+	admissionTargetRow = "019f6bf7-8888-7888-8888-888888888888"
+)
+
+// installTargetRows answers the tenant's ACTIVE installations of
+// admissionTarget with rows, for the rest of the test.
+func installTargetRows(t *testing.T, rows ...string) {
+	t.Helper()
+	previous := workloadTargetInstallations
+	t.Cleanup(func() { workloadTargetInstallations = previous })
+	workloadTargetInstallations = func(_ context.Context, _, target string) ([]string, error) {
+		if target != admissionTarget {
+			return nil, nil
+		}
+		return rows, nil
+	}
+}
+
+// admitWorkload asks the issuer about token at alias, for admissionTarget. A
+// test that has not said which rows the target has gets admissionTargetRow.
 func admitWorkload(t *testing.T, server *WorkContextAuthorityServer, token, alias string) *gen.AdmitWorkloadOperationResponse {
 	t.Helper()
-	answer, err := server.AdmitWorkloadOperation(admissionContext(t), &gen.AdmitWorkloadOperationRequest{WorkContext: token, Alias: alias})
+	if workloadTargetInstallations == nil {
+		installTargetRows(t, admissionTargetRow)
+	}
+	answer, err := server.AdmitWorkloadOperation(admissionContext(t),
+		&gen.AdmitWorkloadOperationRequest{WorkContext: token, Alias: alias, TargetId: admissionTarget})
 	require.NoError(t, err)
 	return answer
 }
@@ -264,13 +301,76 @@ func workloadOperationRows() []admissionRow {
 				require.NoError(t, err)
 				return workContextSingleton, "documents", token
 			}},
-		{"module operation context sealed to another installation", "", svc, gen.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS,
+		{"module operation context after its module was reinstalled", "", svc, gen.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT,
 			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
 				authority, _ := moduleOperationFixture(t)
-				authority.InstallationID = uuid.NewString()
+				// Minted and read back against the business service's live
+				// module authority, which holds the principal to its one
+				// installation as the store does; between the two the module
+				// is reinstalled, so the capability no longer describes live
+				// state (the read-back finds its revision superseded).
+				live := &sealedModuleAuthority{currentModuleAuthority: currentModuleAuthority{service: service}, installation: "installation-current"}
+				service.SetModuleAuthorityReads(live, nil)
+				workContextSingleton.seals = service
+				authority.InstallationID = "installation-current"
 				token, _, err := workContextSingleton.StartModuleOperationTask(context.Background(), authority)
 				require.NoError(t, err)
+				live.installation = "installation-replaced"
 				return workContextSingleton, "modelservice", token
+			}},
+		{"module operation context after its module was uninstalled", "", svc, gen.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				authority, _ := moduleOperationFixture(t)
+				token, _, err := workContextSingleton.StartModuleOperationTask(context.Background(), authority)
+				require.NoError(t, err)
+				// Read back against the business service, whose live module
+				// authority now holds no installation for the principal.
+				service.SetModuleAuthorityReads(uninstalledModuleAuthority{currentModuleAuthority{service: service}}, nil)
+				workContextSingleton.seals = service
+				return workContextSingleton, "modelservice", token
+			}},
+		{"module operation context after its module's tenant changed", "", svc, gen.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				authority, _ := moduleOperationFixture(t)
+				token, _, err := workContextSingleton.StartModuleOperationTask(context.Background(), authority)
+				require.NoError(t, err)
+				moved, err := moduleregistrytest.Parse(strings.Replace(headlessPrincipals, moduleWorkContextTenant, "66666666-6666-4666-8666-666666666666", 1))
+				require.NoError(t, err)
+				service.SetModuleCapabilities(nil, nil, moved)
+				workContextSingleton.seals = service
+				return workContextSingleton, "modelservice", token
+			}},
+		{"module operation context, target not installed", "", svc, gen.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_TARGET_NOT_INSTALLED,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				installTargetRows(t)
+				installModuleOperationContextService(t, headlessPrincipals)
+				installModuleWorkContextAuthority(t)
+				resp, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
+				require.NoError(t, err)
+				return workContextSingleton, "modelservice", resp.GetToken()
+			}},
+		{"module operation context sealed to one of the target's rows", "", svc, gen.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_SEAL_ON_TARGET,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				installModuleOperationContextService(t, headlessPrincipals)
+				installModuleWorkContextAuthority(t)
+				resp, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
+				require.NoError(t, err)
+				decoded, err := workcontext.Decode(resp.GetToken())
+				require.NoError(t, err)
+				installTargetRows(t, admissionTargetRow, decoded.Seal().GetInstallationId())
+				return workContextSingleton, "modelservice", resp.GetToken()
+			}},
+		{"a capability whose revision moved since it was minted", "", human, gen.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				exchangeInstallationService(t)
+				seals := newSealAnswersFake(12)
+				server := newCoreTestServer(t, &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 12}}, seals)
+				token, _ := mintTestCapability(t, server, testCapability{
+					Audience: "documents", Tenant: renewOrgID, Owner: renewActorID,
+					Scopes: []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
+				})
+				seals.revision = 13
+				return server, "documents", token
 			}},
 		{"service principal no module declares", "", svc, gen.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS,
 			operationShape(func(r *mintRequest) { r.Start.OwnerPrincipalID = uuid.NewString() })},
@@ -326,62 +426,360 @@ func TestEveryMintHasAWorkloadOperationVerdict(t *testing.T) {
 	require.Equal(t, 1, admittedRows, "exactly one shape is admitted")
 }
 
-// mintEntrypointRows maps every adapters function that signs a capability
-// (calls core's Start or Child, mint or remint) to the rows that exercise it.
+// mintEntrypointRows maps every adapters declaration that signs a capability to
+// the rows that exercise it, keyed by receiver type and name ("var name" for a
+// package-level variable). A declaration signs when it references a method of
+// core's *workcontext.Authority other than ReadBack (Start, Child, Grant, as a
+// call, a method value or a method expression), or this server's own mint or
+// remint.
 var mintEntrypointRows = map[string][]string{
-	"mint":                     {"StartTask", "module operation context", "operation context shape, single-use"},
-	"remint":                   {"StartRootSession", "ExchangeAudience", "RenewWorkContext", "operation exchange, plain binding", "read exchange, plain binding"},
-	"StartTask":                {"StartTask"},
-	"StartRootSession":         {"StartRootSession"},
-	"exchangeVerifiedParent":   {"ExchangeAudience", "operation exchange, plain binding", "read exchange, plain binding"},
-	"RenewWorkContext":         {"RenewWorkContext"},
-	"StartChildSession":        {"StartChildSession"},
-	"exchangeInstalledBinding": {"operation exchange, content_read, invoke", "operation exchange, module_actor, invoke"},
-	"startSourceOperation":     {"source-operation context", "operation exchange, source delegation reference", "operation exchange, source delegation parent"},
-	"mintInstallationTask":     {"installation task", "installation step"},
-	"StartModuleTask":          {"module identity"},
-	// The installer route's handler calls its mint field, StartModuleTask.
-	"token":                    {"installer token route"},
-	"StartModuleOperationTask": {"module operation context", "module operation context for its own module"},
+	"(*WorkContextAuthorityServer).mint":                     {"StartTask", "module operation context", "operation context shape, single-use"},
+	"(*WorkContextAuthorityServer).remint":                   {"StartRootSession", "ExchangeAudience", "RenewWorkContext", "operation exchange, plain binding", "read exchange, plain binding"},
+	"(*WorkContextAuthorityServer).StartTask":                {"StartTask"},
+	"(*WorkContextAuthorityServer).StartRootSession":         {"StartRootSession"},
+	"(*WorkContextAuthorityServer).exchangeVerifiedParent":   {"ExchangeAudience", "operation exchange, plain binding", "read exchange, plain binding"},
+	"(*WorkContextAuthorityServer).RenewWorkContext":         {"RenewWorkContext"},
+	"(*WorkContextAuthorityServer).StartChildSession":        {"StartChildSession"},
+	"(*WorkContextAuthorityServer).exchangeInstalledBinding": {"operation exchange, content_read, invoke", "operation exchange, module_actor, invoke"},
+	"(*WorkContextAuthorityServer).startSourceOperation":     {"source-operation context", "operation exchange, source delegation reference", "operation exchange, source delegation parent"},
+	"(*WorkContextAuthorityServer).mintInstallationTask":     {"installation task", "installation step"},
+	"(*WorkContextAuthorityServer).StartModuleTask":          {"module identity", "installer token route"},
+	"(*WorkContextAuthorityServer).StartModuleOperationTask": {"module operation context", "module operation context for its own module"},
 }
 
-// signingFunctions walks the package's non-test sources and returns every
-// function whose body calls a method named Start, Child, mint or remint.
+// isSigningMethod reports the methods a signing function references: every method
+// of core's Authority except the read-back, and this server's own two signing
+// helpers.
+func isSigningMethod(fn *types.Func) bool {
+	recv := fn.Type().(*types.Signature).Recv()
+	if recv == nil {
+		return false
+	}
+	target := types.Unalias(recv.Type())
+	if pointer, ok := target.(*types.Pointer); ok {
+		target = types.Unalias(pointer.Elem())
+	}
+	typeName, ok := target.(*types.Named)
+	if !ok {
+		return false
+	}
+	object := typeName.Obj()
+	switch {
+	case object.Pkg() != nil && object.Pkg().Path() == "github.com/codefly-dev/core/workcontext" && object.Name() == "Authority":
+		return fn.Name() != "ReadBack"
+	case object.Pkg() != nil && object.Pkg().Path() == "accounts/pkg/adapters" && object.Name() == "WorkContextAuthorityServer":
+		return fn.Name() == "mint" || fn.Name() == "remint"
+	}
+	return false
+}
+
+// signingFunctions type-checks the package's non-test sources and returns
+// every function that references a signing method, by the type the method is
+// declared on rather than by its name: a call, a method value bound to a
+// variable and a method expression all count.
 func signingFunctions(t *testing.T) map[string]bool {
 	t.Helper()
-	files, err := filepath.Glob("*.go")
-	require.NoError(t, err)
-	found := map[string]bool{}
+	// Export data for every dependency, from the go command, so the check
+	// resolves imports exactly as the build does.
+	cmd := exec.Command("go", "list", "-export", "-deps", "-f", "{{.ImportPath}}\t{{.Export}}", ".")
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	listed, err := cmd.Output()
+	require.NoError(t, err, "go list -export")
+	exports := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(listed)), "\n") {
+		path, export, _ := strings.Cut(line, "\t")
+		exports[path] = export
+	}
 	fset := token.NewFileSet()
-	for _, path := range files {
+	paths, err := filepath.Glob("*.go")
+	require.NoError(t, err)
+	var files []*ast.File
+	for _, path := range paths {
 		if strings.HasSuffix(path, "_test.go") {
 			continue
 		}
-		src, err := os.ReadFile(path)
+		file, err := parser.ParseFile(fset, path, nil, 0)
 		require.NoError(t, err)
-		file, err := parser.ParseFile(fset, path, src, 0)
-		require.NoError(t, err)
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
+		files = append(files, file)
+	}
+	info := &types.Info{Selections: map[*ast.SelectorExpr]*types.Selection{}, Uses: map[*ast.Ident]types.Object{}}
+	config := types.Config{Importer: importer.ForCompiler(fset, "gc", func(path string) (io.ReadCloser, error) {
+		export, ok := exports[path]
+		if !ok || export == "" {
+			return nil, fmt.Errorf("no export data for %s", path)
+		}
+		return os.Open(export)
+	})}
+	_, err = config.Check("accounts/pkg/adapters", fset, files, info)
+	require.NoError(t, err)
+
+	found := map[string]bool{}
+	signs := func(node ast.Node) bool {
+		signing := false
+		ast.Inspect(node, func(node ast.Node) bool {
+			sel, ok := node.(*ast.SelectorExpr)
+			if !ok {
+				return true
 			}
-			ast.Inspect(fn.Body, func(node ast.Node) bool {
-				call, ok := node.(*ast.CallExpr)
-				if !ok {
-					return true
+			var method *types.Func
+			if selection, ok := info.Selections[sel]; ok {
+				method, _ = selection.Obj().(*types.Func)
+			} else {
+				method, _ = info.Uses[sel.Sel].(*types.Func)
+			}
+			if method != nil && isSigningMethod(method) {
+				signing = true
+			}
+			return true
+		})
+		return signing
+	}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			switch decl := decl.(type) {
+			case *ast.FuncDecl:
+				if decl.Body == nil || !signs(decl.Body) {
+					continue
 				}
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-					switch sel.Sel.Name {
-					case "Start", "Child", "mint", "remint":
-						found[fn.Name.Name] = true
+				name := decl.Name.Name
+				if decl.Recv != nil && len(decl.Recv.List) == 1 {
+					name = "(" + types.ExprString(decl.Recv.List[0].Type) + ")." + name
+				}
+				found[name] = true
+			case *ast.GenDecl:
+				for _, spec := range decl.Specs {
+					value, ok := spec.(*ast.ValueSpec)
+					if !ok || !signs(value) {
+						continue
+					}
+					for _, name := range value.Names {
+						found["var "+name.Name] = true
 					}
 				}
-				return true
-			})
+			}
 		}
 	}
 	return found
+}
+
+// serviceParentRow presents a service principal's capability, shaped like a
+// module operation context, as the parent of a re-mint, and pins the verdict:
+// every re-mint refuses it at the mint. The owner a re-mint resolves current
+// authority for must hold an organization membership and authorization
+// revision, which a declared module principal does not. The two delegated
+// exchanges are also run against PostgreSQL
+// (pkg/infra/service_parent_exchange_test.go), the store this fixture's fake
+// answers for.
+type serviceParentRow struct {
+	rpc  string
+	code codes.Code
+	mint func(t *testing.T) (*WorkContextAuthorityServer, string, error)
+}
+
+// serviceParent is a service principal's capability for audience, sealed to
+// installation: the module operation context's shape, owned by module.
+func serviceParent(t *testing.T, server *WorkContextAuthorityServer, tenant, module, audience, installation string, scopes ...*basev0.WorkScopeV1) string {
+	t.Helper()
+	if len(scopes) == 0 {
+		scopes = []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}}
+	}
+	token, _ := mintTestCapability(t, server, testCapability{
+		Audience: audience, Tenant: tenant, Owner: business.ModulePrincipalID(module), OwnerKind: business.PrincipalKindService,
+		Scopes:       scopes,
+		Installation: installation, TTL: business.ModuleOperationContextTTL,
+	})
+	return token
+}
+
+func serviceParentRows() []serviceParentRow {
+	// The caller is the module principal itself: the most a re-mint could be
+	// asked by the owner of the parent.
+	owner := func() context.Context {
+		return stampVerifiedIdentity(context.Background(), business.ModulePrincipalID("tool"), renewOrgID, auth.Assurance{})
+	}
+	renewServer := func(t *testing.T) (*WorkContextAuthorityServer, string) {
+		exchangeInstallationService(t)
+		server := newRenewTestServer(t)
+		return server, serviceParent(t, server, renewOrgID, "tool", "tool.test", testInstallation("tool.test"))
+	}
+	return []serviceParentRow{
+		{rpc: "WorkContextService/StartRootSession", code: codes.PermissionDenied, mint: func(t *testing.T) (*WorkContextAuthorityServer, string, error) {
+			server, parent := renewServer(t)
+			token, err := sealPinIssued(server.StartRootSession(owner(), &gen.StartRootSessionWorkContextRequest{
+				OrgId: renewOrgID, ParentWorkContextToken: parent, SessionId: renewSession, Audience: "documents", TtlSeconds: 60,
+			}))
+			return server, token, err
+		}},
+		{rpc: "WorkContextService/ExchangeAudience", code: codes.PermissionDenied, mint: func(t *testing.T) (*WorkContextAuthorityServer, string, error) {
+			server, parent := renewServer(t)
+			token, err := sealPinIssued(server.ExchangeAudience(owner(), &gen.ExchangeWorkContextAudienceRequest{
+				OrgId: renewOrgID, ParentWorkContextToken: parent, Audience: "documents", TtlSeconds: 60,
+				AttenuatedScopes: []*gen.WorkContextScope{{ResourceKind: "evidence", Actions: []string{"read"}}},
+			}))
+			return server, token, err
+		}},
+		{rpc: "WorkContextService/StartChildSession", code: codes.PermissionDenied, mint: func(t *testing.T) (*WorkContextAuthorityServer, string, error) {
+			server, parent := renewServer(t)
+			token, err := sealPinIssued(server.StartChildSession(owner(), sealPinChildRequest(parent, "tool.test")))
+			return server, token, err
+		}},
+		{rpc: "WorkContextService/RenewWorkContext", code: codes.PermissionDenied, mint: func(t *testing.T) (*WorkContextAuthorityServer, string, error) {
+			server, parent := renewServer(t)
+			token, err := sealPinIssued(server.RenewWorkContext(owner(), &gen.RenewWorkContextRequest{
+				OrgId: renewOrgID, ParentWorkContextToken: parent, TtlSeconds: 60,
+			}))
+			return server, token, err
+		}},
+		{rpc: "ModuleCapabilitiesService/ExchangeDelegatedOperationAudience", code: codes.FailedPrecondition, mint: func(t *testing.T) (*WorkContextAuthorityServer, string, error) {
+			_, _, client, _ := sourceReadFixture(t)
+			service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
+			service.SetModuleCapabilities(nil, nil, installedOperationRegistry(true))
+			// A declared module's own capability, addressed to the exchanging one.
+			parent := serviceParent(t, workContextSingleton, readOrg, "example", "example", "installation-example",
+				&basev0.WorkScopeV1{ResourceKind: "results", Actions: []string{"read", "write"}})
+			req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "generate", ParentWorkContextToken: parent})
+			req.Header().Set(workContextHeader, mintModuleIdentity(t, business.ModulePrincipalID("example"), readOrg))
+			req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
+			out, err := client.ExchangeDelegatedOperationAudience(context.Background(), req)
+			if err != nil {
+				return workContextSingleton, "", err
+			}
+			return workContextSingleton, out.Msg.GetToken(), nil
+		}},
+		{rpc: "ModuleCapabilitiesService/ExchangeDelegatedReadAudience", code: codes.FailedPrecondition, mint: func(t *testing.T) (*WorkContextAuthorityServer, string, error) {
+			_, _, client, _ := sourceReadFixture(t)
+			installReadBinding()
+			// A declared module's own capability, addressed to the exchanging one.
+			parent := serviceParent(t, workContextSingleton, readOrg, "example", "example", "installation-example",
+				&basev0.WorkScopeV1{ResourceKind: "results", Actions: []string{"read", "write"}})
+			out, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent))
+			if err != nil {
+				return workContextSingleton, "", err
+			}
+			return workContextSingleton, out.Msg.GetToken(), nil
+		}},
+	}
+}
+
+// A module operation context presented to every re-mint is refused at the mint.
+func TestEveryRemintOfAServicePrincipalsParentHasAVerdict(t *testing.T) {
+	for _, row := range serviceParentRows() {
+		t.Run(row.rpc, func(t *testing.T) {
+			_, token, err := row.mint(t)
+			require.Error(t, err)
+			code := status.Code(err)
+			if code == codes.Unknown {
+				// The module exchanges answer through the Connect client.
+				code = codes.Code(connect.CodeOf(err))
+			}
+			require.Equal(t, row.code, code, "%v", err)
+			require.Empty(t, token)
+		})
+	}
+}
+
+// accountsMethods lists "Service/Method" for every saas.accounts.v1 method
+// matching keep, sorted.
+func accountsMethods(keep func(protoreflect.MethodDescriptor) bool) []string {
+	var out []string
+	protoregistry.GlobalFiles.RangeFilesByPackage("saas.accounts.v1", func(file protoreflect.FileDescriptor) bool {
+		for i := 0; i < file.Services().Len(); i++ {
+			service := file.Services().Get(i)
+			for j := 0; j < service.Methods().Len(); j++ {
+				if method := service.Methods().Get(j); keep(method) {
+					out = append(out, string(service.Name())+"/"+string(method.Name()))
+				}
+			}
+		}
+		return true
+	})
+	sort.Strings(out)
+	return out
+}
+
+// capabilityFields are the field names a signed capability travels under.
+var capabilityFields = map[protoreflect.Name]bool{"token": true, "work_context": true, "work_context_token": true}
+
+// answersCapability reports whether a message carries a signed capability
+// anywhere inside it: IssuedWorkContext, or a string field of an accounts
+// message named as one, at any depth. Another package's field of the same name
+// is not this issuer's capability (saas.jobs.v1.Job's token is a lease id).
+func answersCapability(message protoreflect.MessageDescriptor) bool {
+	return containsField(message, map[protoreflect.FullName]bool{}, func(field protoreflect.FieldDescriptor) bool {
+		return field.Kind() == protoreflect.StringKind && capabilityFields[field.Name()] &&
+			field.ContainingMessage().ParentFile().Package() == "saas.accounts.v1"
+	}, "saas.accounts.v1.IssuedWorkContext")
+}
+
+// takesParent reports whether a message carries a parent capability at any depth.
+func takesParent(message protoreflect.MessageDescriptor) bool {
+	return containsField(message, map[protoreflect.FullName]bool{}, func(field protoreflect.FieldDescriptor) bool {
+		return field.Name() == "parent_work_context_token"
+	}, "")
+}
+
+func containsField(message protoreflect.MessageDescriptor, seen map[protoreflect.FullName]bool,
+	match func(protoreflect.FieldDescriptor) bool, wanted protoreflect.FullName,
+) bool {
+	if message.FullName() == wanted {
+		return true
+	}
+	if seen[message.FullName()] {
+		return false
+	}
+	seen[message.FullName()] = true
+	fields := message.Fields()
+	for i := 0; i < fields.Len(); i++ {
+		field := fields.Get(i)
+		if match(field) {
+			return true
+		}
+		if field.Message() != nil && containsField(field.Message(), seen, match, wanted) {
+			return true
+		}
+	}
+	return false
+}
+
+// The capability detection reaches through nesting: a response that wraps
+// IssuedWorkContext, or a capability field, in another message is found.
+func TestCapabilityDetectionIsTransitive(t *testing.T) {
+	issued, err := protoregistry.GlobalFiles.FindDescriptorByName("saas.accounts.v1.IssuedWorkContext")
+	require.NoError(t, err)
+	file, err := protodesc.NewFile(&descriptorpb.FileDescriptorProto{
+		Name:       proto.String("saas/accounts/v1/zz_capability_detection.proto"),
+		Package:    proto.String("saas.accounts.v1"),
+		Syntax:     proto.String("proto3"),
+		Dependency: []string{issued.ParentFile().Path()},
+		MessageType: []*descriptorpb.DescriptorProto{
+			{Name: proto.String("ZzDetectionWrapped"), Field: []*descriptorpb.FieldDescriptorProto{{
+				Name: proto.String("issued"), Number: proto.Int32(1), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+				Type: descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(), TypeName: proto.String(".saas.accounts.v1.IssuedWorkContext"),
+			}}},
+			{Name: proto.String("ZzDetectionInner"), Field: []*descriptorpb.FieldDescriptorProto{{
+				Name: proto.String("work_context"), Number: proto.Int32(1), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+				Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+			}, {
+				Name: proto.String("parent_work_context_token"), Number: proto.Int32(2), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+				Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+			}}},
+			{Name: proto.String("ZzDetectionOuter"), Field: []*descriptorpb.FieldDescriptorProto{{
+				Name: proto.String("inner"), Number: proto.Int32(1), Label: descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(),
+				Type: descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(), TypeName: proto.String(".saas.accounts.v1.ZzDetectionInner"),
+			}}},
+			{Name: proto.String("ZzDetectionPlain"), Field: []*descriptorpb.FieldDescriptorProto{{
+				Name: proto.String("next_page_token"), Number: proto.Int32(1), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+				Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+			}}},
+		},
+	}, protoregistry.GlobalFiles)
+	require.NoError(t, err)
+	messages := file.Messages()
+	require.True(t, answersCapability(messages.ByName("ZzDetectionWrapped")), "IssuedWorkContext one level down")
+	require.True(t, answersCapability(messages.ByName("ZzDetectionOuter")), "a capability field two levels down")
+	require.True(t, takesParent(messages.ByName("ZzDetectionOuter")), "a parent field two levels down")
+	require.False(t, answersCapability(messages.ByName("ZzDetectionPlain")))
+	require.False(t, takesParent(messages.ByName("ZzDetectionPlain")))
 }
 
 // ownerKindConstants reads every PrincipalKind* constant business declares.
@@ -430,18 +828,8 @@ func TestWorkloadOperationTableNamesEveryMintAndOwnerKind(t *testing.T) {
 		kinds[row.kind] = true
 	}
 
-	var minting []string
-	protoregistry.GlobalFiles.RangeFilesByPackage("saas.accounts.v1", func(file protoreflect.FileDescriptor) bool {
-		for i := 0; i < file.Services().Len(); i++ {
-			service := file.Services().Get(i)
-			for j := 0; j < service.Methods().Len(); j++ {
-				method := service.Methods().Get(j)
-				if method.Output().Fields().ByName("token") != nil {
-					minting = append(minting, string(service.Name())+"/"+string(method.Name()))
-				}
-			}
-		}
-		return true
+	minting := accountsMethods(func(method protoreflect.MethodDescriptor) bool {
+		return answersCapability(method.Output())
 	})
 	require.NotEmpty(t, minting)
 	sort.Strings(minting)
@@ -462,6 +850,27 @@ func TestWorkloadOperationTableNamesEveryMintAndOwnerKind(t *testing.T) {
 	}
 	for fn := range mintEntrypointRows {
 		require.True(t, signing[fn], "mintEntrypointRows names %s, which no longer signs a capability", fn)
+	}
+
+	// Every re-mint (an RPC that answers a capability and takes a parent) has a
+	// service-parent row, and a module's re-mint is also run against
+	// PostgreSQL, whose refusal the fake only mirrors.
+	parents := map[string]bool{}
+	for _, row := range serviceParentRows() {
+		parents[row.rpc] = true
+	}
+	postgres, err := os.ReadFile(filepath.Join("..", "infra", "service_parent_exchange_test.go"))
+	require.NoError(t, err)
+	remints := accountsMethods(func(method protoreflect.MethodDescriptor) bool {
+		return answersCapability(method.Output()) && takesParent(method.Input())
+	})
+	require.NotEmpty(t, remints)
+	for _, rpc := range remints {
+		require.True(t, parents[rpc], "%s re-mints a parent and serviceParentRows has no row for it", rpc)
+		service, method, _ := strings.Cut(rpc, "/")
+		if service == "ModuleCapabilitiesService" {
+			require.Contains(t, string(postgres), "."+method+"(", "%s has no PostgreSQL-backed row in pkg/infra/service_parent_exchange_test.go", rpc)
+		}
 	}
 
 	for kind := range ownerKindConstants(t) {
@@ -511,12 +920,15 @@ func TestAdmitWorkloadOperationIsInternalAndFailsClosed(t *testing.T) {
 	installModuleWorkContextAuthority(t)
 	resp, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
 	require.NoError(t, err)
-	request := &gen.AdmitWorkloadOperationRequest{WorkContext: resp.GetToken(), Alias: "modelservice"}
+	request := &gen.AdmitWorkloadOperationRequest{WorkContext: resp.GetToken(), Alias: "modelservice", TargetId: admissionTarget}
+	installTargetRows(t, admissionTargetRow)
 
 	SetInternalToken(admissionTestToken)
 	t.Cleanup(func() { SetInternalToken("") })
 	_, err = workContextSingleton.AdmitWorkloadOperation(context.Background(), request)
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
+	_, err = workContextSingleton.AdmitWorkloadOperation(context.Background(), &gen.AdmitWorkloadOperationRequest{})
+	require.Equal(t, codes.Unauthenticated, status.Code(err), "the credential is checked before the request is validated")
 	bearer := stampVerifiedIdentity(context.Background(), readOwner, readOrg, auth.Assurance{})
 	_, err = workContextSingleton.AdmitWorkloadOperation(bearer, request)
 	require.Equal(t, codes.Unauthenticated, status.Code(err), "a person's identity is not the internal credential")
@@ -525,8 +937,20 @@ func TestAdmitWorkloadOperationIsInternalAndFailsClosed(t *testing.T) {
 	_, err = unconfigured.AdmitWorkloadOperation(admissionContext(t), request)
 	require.Equal(t, codes.Unavailable, status.Code(err))
 
-	service.SetModuleAuthorityReads(unavailableModuleAuthority{currentModuleAuthority{service: service}}, nil)
+	// The target's installations cannot be read.
+	workloadTargetInstallations = func(context.Context, string, string) ([]string, error) {
+		return nil, errors.New("installations unavailable")
+	}
 	answer, err := workContextSingleton.AdmitWorkloadOperation(admissionContext(t), request)
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	require.Nil(t, answer)
+
+	// The read-back's live seal cannot be read: not a refusal of the
+	// capability, so not an answer either.
+	installTargetRows(t, admissionTargetRow)
+	service.SetModuleAuthorityReads(unavailableModuleAuthority{currentModuleAuthority{service: service}}, nil)
+	workContextSingleton.seals = service
+	answer, err = workContextSingleton.AdmitWorkloadOperation(admissionContext(t), request)
 	require.Equal(t, codes.Unavailable, status.Code(err))
 	require.Nil(t, answer)
 }
@@ -536,4 +960,31 @@ type unavailableModuleAuthority struct{ currentModuleAuthority }
 
 func (unavailableModuleAuthority) LiveModuleAuthority(context.Context, string, string, string) (*business.LiveModuleAuthority, error) {
 	return nil, errors.New("authority read unavailable")
+}
+
+// sealedModuleAuthority answers a module principal's one installation and, as
+// the store's read does, nothing for any other installation id.
+type sealedModuleAuthority struct {
+	currentModuleAuthority
+	installation string
+}
+
+func (f *sealedModuleAuthority) LiveModuleAuthority(ctx context.Context, principal, org, installation string) (*business.LiveModuleAuthority, error) {
+	live, err := f.currentModuleAuthority.LiveModuleAuthority(ctx, principal, org, installation)
+	if err != nil {
+		return nil, err
+	}
+	live.InstallationID = f.installation
+	if installation != "" && installation != live.InstallationID {
+		return nil, business.ErrModuleInstallationInactive
+	}
+	return live, nil
+}
+
+// uninstalledModuleAuthority is a live authority read that finds no ACTIVE
+// installation for the principal: the module was uninstalled.
+type uninstalledModuleAuthority struct{ currentModuleAuthority }
+
+func (uninstalledModuleAuthority) LiveModuleAuthority(context.Context, string, string, string) (*business.LiveModuleAuthority, error) {
+	return nil, business.ErrModuleInstallationInactive
 }

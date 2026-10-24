@@ -11,15 +11,15 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/workload_operation_admission.proto.
  */
 export const file_saas_accounts_v1_workload_operation_admission: GenFile = /*@__PURE__*/
-  fileDesc("CjNzYWFzL2FjY291bnRzL3YxL3dvcmtsb2FkX29wZXJhdGlvbl9hZG1pc3Npb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiXQodQWRtaXRXb3JrbG9hZE9wZXJhdGlvblJlcXVlc3QSIQoMd29ya19jb250ZXh0GAEgASgJQgu6SAhyBhABGICAAhIZCgVhbGlhcxgCIAEoCUIKukgHcgUQARiABCKsAQoeQWRtaXRXb3JrbG9hZE9wZXJhdGlvblJlc3BvbnNlEhAKCGFkbWl0dGVkGAEgASgIEjsKB3JlZnVzYWwYAiABKA4yKi5zYWFzLmFjY291bnRzLnYxLldvcmtsb2FkT3BlcmF0aW9uUmVmdXNhbBIRCgl0ZW5hbnRfaWQYAyABKAkSFwoPaW5zdGFsbGF0aW9uX2lkGAQgASgJEg8KB3Rhc2tfaWQYBSABKAkqvAIKGFdvcmtsb2FkT3BlcmF0aW9uUmVmdXNhbBIqCiZXT1JLTE9BRF9PUEVSQVRJT05fUkVGVVNBTF9VTlNQRUNJRklFRBAAEiwKKFdPUktMT0FEX09QRVJBVElPTl9SRUZVU0FMX05PVF9JTlNQRUNURUQQARIwCixXT1JLTE9BRF9PUEVSQVRJT05fUkVGVVNBTF9PV05FUl9OT1RfU0VSVklDRRACEjQKMFdPUktMT0FEX09QRVJBVElPTl9SRUZVU0FMX05PVF9PUEVSQVRJT05fQ09OVEVYVBADEi4KKldPUktMT0FEX09QRVJBVElPTl9SRUZVU0FMX09XTkVSX0lTX1RBUkdFVBAEEi4KKldPUktMT0FEX09QRVJBVElPTl9SRUZVU0FMX1NFQUxfTk9UX09XTkVSUxAFQscBChRjb20uc2Fhcy5hY2NvdW50cy52MUIfV29ya2xvYWRPcGVyYXRpb25BZG1pc3Npb25Qcm90b1ABWixhY2NvdW50cy9wa2cvZ2VuL3NhYXMvYWNjb3VudHMvdjE7YWNjb3VudHN2MaICA1NBWKoCEFNhYXMuQWNjb3VudHMuVjHKAhBTYWFzXEFjY291bnRzXFYx4gIcU2Fhc1xBY2NvdW50c1xWMVxHUEJNZXRhZGF0YeoCElNhYXM6OkFjY291bnRzOjpWMWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("CjNzYWFzL2FjY291bnRzL3YxL3dvcmtsb2FkX29wZXJhdGlvbl9hZG1pc3Npb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiegodQWRtaXRXb3JrbG9hZE9wZXJhdGlvblJlcXVlc3QSIQoMd29ya19jb250ZXh0GAEgASgJQgu6SAhyBhABGICAAhIZCgVhbGlhcxgCIAEoCUIKukgHcgUQARiABBIbCgl0YXJnZXRfaWQYAyABKAlCCLpIBXIDsAEBIqwBCh5BZG1pdFdvcmtsb2FkT3BlcmF0aW9uUmVzcG9uc2USEAoIYWRtaXR0ZWQYASABKAgSOwoHcmVmdXNhbBgCIAEoDjIqLnNhYXMuYWNjb3VudHMudjEuV29ya2xvYWRPcGVyYXRpb25SZWZ1c2FsEhEKCXRlbmFudF9pZBgDIAEoCRIXCg9pbnN0YWxsYXRpb25faWQYBCABKAkSDwoHdGFza19pZBgFIAEoCSrMAwoYV29ya2xvYWRPcGVyYXRpb25SZWZ1c2FsEioKJldPUktMT0FEX09QRVJBVElPTl9SRUZVU0FMX1VOU1BFQ0lGSUVEEAASLAooV09SS0xPQURfT1BFUkFUSU9OX1JFRlVTQUxfTk9UX0lOU1BFQ1RFRBABEjAKLFdPUktMT0FEX09QRVJBVElPTl9SRUZVU0FMX09XTkVSX05PVF9TRVJWSUNFEAISNAowV09SS0xPQURfT1BFUkFUSU9OX1JFRlVTQUxfTk9UX09QRVJBVElPTl9DT05URVhUEAMSLgoqV09SS0xPQURfT1BFUkFUSU9OX1JFRlVTQUxfT1dORVJfSVNfVEFSR0VUEAQSLgoqV09SS0xPQURfT1BFUkFUSU9OX1JFRlVTQUxfU0VBTF9OT1RfT1dORVJTEAUSMwovV09SS0xPQURfT1BFUkFUSU9OX1JFRlVTQUxfVEFSR0VUX05PVF9JTlNUQUxMRUQQBhItCilXT1JLTE9BRF9PUEVSQVRJT05fUkVGVVNBTF9TRUFMX09OX1RBUkdFVBAHEioKJldPUktMT0FEX09QRVJBVElPTl9SRUZVU0FMX05PVF9DVVJSRU5UEAhCxwEKFGNvbS5zYWFzLmFjY291bnRzLnYxQh9Xb3JrbG9hZE9wZXJhdGlvbkFkbWlzc2lvblByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate]);
 
 /**
  * @generated from message saas.accounts.v1.AdmitWorkloadOperationRequest
  */
 export type AdmitWorkloadOperationRequest = Message<"saas.accounts.v1.AdmitWorkloadOperationRequest"> & {
   /**
-   * The capability as presented, encoded. It is inspected and read, never
-   * verified: nothing it carries is consumed.
+   * The capability as presented, encoded. It is read back by its issuer, never
+   * verified as presented: nothing it carries is consumed.
    *
    * @generated from field: string work_context = 1;
    */
@@ -32,6 +32,14 @@ export type AdmitWorkloadOperationRequest = Message<"saas.accounts.v1.AdmitWorkl
    * @generated from field: string alias = 2;
    */
   alias: string;
+
+  /**
+   * The immutable solution target the route's alias resolved to, from the
+   * gateway's own routing. The tenant must have an ACTIVE installation of it.
+   *
+   * @generated from field: string target_id = 3;
+   */
+  targetId: string;
 };
 
 /**
@@ -137,6 +145,31 @@ export enum WorkloadOperationRefusal {
    * @generated from enum value: WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS = 5;
    */
   SEAL_NOT_OWNERS = 5,
+
+  /**
+   * The tenant has no ACTIVE installation of the route's target. The gateway
+   * answers this one 403, as it answers a person whose organization never
+   * installed the module.
+   *
+   * @generated from enum value: WORKLOAD_OPERATION_REFUSAL_TARGET_NOT_INSTALLED = 6;
+   */
+  TARGET_NOT_INSTALLED = 6,
+
+  /**
+   * The seal is one of the target's own installations: the caller would be the
+   * module it addresses.
+   *
+   * @generated from enum value: WORKLOAD_OPERATION_REFUSAL_SEAL_ON_TARGET = 7;
+   */
+  SEAL_ON_TARGET = 7,
+
+  /**
+   * The issuer's live state has moved past the capability: its authorization
+   * revision is superseded, or an epoch it carries has advanced.
+   *
+   * @generated from enum value: WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT = 8;
+   */
+  NOT_CURRENT = 8,
 }
 
 /**

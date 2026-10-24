@@ -491,9 +491,10 @@ so matching on a bare reason across the whole service is wrong.
 ## Reading back a capability this host issued
 
 A capability presented with a QUESTION is read back, never verified:
-`CheckWorkContextRecordAccess`, `ListReadableSourceCollections` and the
-module-parent reads (`GetCurrentInstallation`, the executable-artifact reads) go
-through `WorkContextAuthorityServer.readBack`, which is core's
+`CheckWorkContextRecordAccess`, `ListReadableSourceCollections`, the
+module-parent reads (`GetCurrentInstallation`, the executable-artifact reads)
+and `AdmitWorkloadOperation` (through `readBackFor`, which takes the audience
+from the question) go through `WorkContextAuthorityServer.readBack`, which is core's
 `Authority.ReadBack`. It makes every check a verifier makes against live state —
 signature, issuer, audience, window, revision, seal, epochs, binding — and never
 touches the replay store, so the consumer that verified and consumed a
@@ -553,41 +554,46 @@ The gateway's bearer-less arm of `/v1/<alias>/*` admits exactly one shape, a
 module operation context (`StartModuleOperationTask`), and decides nothing from
 the seal itself: a seal on an installation other than the target's is carried
 by every kind above, all of them a person's. It asks
-`WorkContextService/AdmitWorkloadOperation` (`EXPOSURE_INTERNAL`, the
-gateway's internal credential, the tier `ListInstallations` sits in). Accounts,
-as the issuer, runs core's `Inspector` (signature under this issuer, window,
-audience equal to the alias), decodes its own claims and admits only a
-capability owned by a service principal with no actor chain, grant hop,
-operation binding, parent session or owner agent, with authority scopes, an
-idempotent replay policy and at most the operation-context window, whose owner
-is a declared module principal other than `ModulePrincipalID(alias)` and whose
-seal is that principal's ACTIVE installation in the tenant, read live. It never
-reaches `verifyFor`, `verifyIssued` or the replay store, so it consumes
-nothing: the callee verifies at full strength. A refusal is an answer with a
-`WorkloadOperationRefusal`; an error means it could not decide, and the gateway
-answers 503. The messages live in `workload_operation_admission.proto`, which
-the gateway vendors byte for byte.
+`WorkContextService/AdmitWorkloadOperation{work_context, alias, target_id}`
+(`EXPOSURE_INTERNAL`, the gateway's internal credential, checked before the
+request is validated), one call per request. Accounts, as the issuer, reads the
+capability back (`readBackFor`, core's `Authority.ReadBack` with the alias as
+audience: signature, window, live revision, seal and epochs, never the replay
+store), and admits only a capability owned by a service principal with no actor
+chain, grant hop, operation binding, parent session or owner agent, with
+authority scopes, an idempotent replay policy and at most the
+operation-context window, whose owner is a declared module principal other
+than `ModulePrincipalID(alias)`, and whose tenant has an ACTIVE installation of
+`target_id` (`ActiveTargetInstallations`) that is not the seal. A refusal is an
+answer with a `WorkloadOperationRefusal`; an error means a live read could not
+answer, and the gateway answers 503. The messages live in
+`workload_operation_admission.proto`, which the gateway vendors byte for byte.
 
-Two guards hold it (`pkg/adapters/workload_operation_admission_test.go`):
+Three tests hold it (`pkg/adapters/workload_operation_admission_test.go`):
 `TestEveryMintHasAWorkloadOperationVerdict` mints through every mint RPC, every
 binding mode and every signing entrypoint, plus crafted variants of the
 operation-context shape, and asserts each verdict, with exactly one admitted;
+`TestEveryRemintOfAServicePrincipalsParentHasAVerdict` presents a service
+principal's capability to every re-mint; and
 `TestWorkloadOperationTableNamesEveryMintAndOwnerKind` fails when a
-`saas.accounts.v1` RPC answering a token, an adapters function that signs (calls
-core's `Start` or `Child`, `mint` or `remint`) or a `PrincipalKind*` constant
-has no row. `TestAdmitWorkloadOperationConsumesNothing` pins that a single-use
-capability shown to it still verifies once at its callee.
+`saas.accounts.v1` RPC whose response carries a capability at any depth
+(`IssuedWorkContext`, or an accounts field named `token` or `work_context`), a
+re-mint RPC (one that also takes `parent_work_context_token` at any depth), an
+adapters declaration referencing a method of core's `*workcontext.Authority`
+other than `ReadBack` (or this server's `mint` or `remint`), found by type and
+keyed by receiver and name, whether a function, a method, a method value or a
+package-level variable, or a `PrincipalKind*` constant has no row
+(`TestCapabilityDetectionIsTransitive` holds the depth). `TestAdmitWorkloadOperationConsumesNothing`
+pins that a single-use capability shown to it still verifies once at its callee.
 
-The arm also reads the tenant's installations through
-`InstallationService/ListInstallations` (`EXPOSURE_INTERNAL`), to require the
-target installed there. Its contract comment in `installations.proto` names both
-of the gateway's reads: the viewer projection, with the tenant projected from a
-verified identity, and the arm, whose tenant is the one an edge-inspected Work
-Context names, a signed statement of this issuer's and never a value the request
-chose. The messages the RPC takes and answers live in
-`installation_listing.proto`, which `installations.proto` imports and the
-gateway vendors byte for byte, as it does `module_registration.proto` and
-`solution_entitlements.proto`.
+Every re-mint refuses a service principal's capability as its parent: the
+owner a re-mint resolves current authority for needs an organization membership
+and an authorization revision, which a declared module principal does not have.
+`TestEveryRemintOfAServicePrincipalsParentHasAVerdict` pins it per re-mint, and
+`TestADelegatedExchangeRefusesAModuleOperationContextAsItsParent` (`pkg/infra`)
+runs both delegated exchanges against PostgreSQL with a real module operation
+context. The adapters' `workContextAuthorityFake` refuses a declared module
+owner as the store does.
 
 ## Minting a module Work Context
 

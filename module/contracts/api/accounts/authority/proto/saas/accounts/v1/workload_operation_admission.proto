@@ -11,8 +11,9 @@ import "buf/validate/validate.proto";
 // A forwarding hop cannot answer it. Core's Inspector, which is all a hop runs,
 // withholds the owner, the owner's kind, the actor chain and the operation
 // binding, and those are exactly what tell a module's unattended work from a
-// person's capability. Accounts signed the capability and can read its own
-// claims, so the gateway asks it. WorkContextService/AdmitWorkloadOperation
+// person's capability. Accounts signed the capability and reads it back, held
+// against its own live state, so the gateway asks it, and asks in the same call
+// whether the route's target is installed. WorkContextService/AdmitWorkloadOperation
 // takes and answers these messages.
 //
 // They live in their own file, with deliberately minimal imports, so the
@@ -41,11 +42,21 @@ enum WorkloadOperationRefusal {
   // The owner is not a declared module principal, or the seal is not an ACTIVE
   // installation in the tenant installed under that principal.
   WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS = 5;
+  // The tenant has no ACTIVE installation of the route's target. The gateway
+  // answers this one 403, as it answers a person whose organization never
+  // installed the module.
+  WORKLOAD_OPERATION_REFUSAL_TARGET_NOT_INSTALLED = 6;
+  // The seal is one of the target's own installations: the caller would be the
+  // module it addresses.
+  WORKLOAD_OPERATION_REFUSAL_SEAL_ON_TARGET = 7;
+  // The issuer's live state has moved past the capability: its authorization
+  // revision is superseded, or an epoch it carries has advanced.
+  WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT = 8;
 }
 
 message AdmitWorkloadOperationRequest {
-  // The capability as presented, encoded. It is inspected and read, never
-  // verified: nothing it carries is consumed.
+  // The capability as presented, encoded. It is read back by its issuer, never
+  // verified as presented: nothing it carries is consumed.
   string work_context = 1 [
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 32768
@@ -56,6 +67,9 @@ message AdmitWorkloadOperationRequest {
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 512
   ];
+  // The immutable solution target the route's alias resolved to, from the
+  // gateway's own routing. The tenant must have an ACTIVE installation of it.
+  string target_id = 3 [(buf.validate.field).string.uuid = true];
 }
 
 message AdmitWorkloadOperationResponse {

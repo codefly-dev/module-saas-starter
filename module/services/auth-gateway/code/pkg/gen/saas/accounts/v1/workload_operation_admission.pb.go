@@ -46,6 +46,16 @@ const (
 	// The owner is not a declared module principal, or the seal is not an ACTIVE
 	// installation in the tenant installed under that principal.
 	WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS WorkloadOperationRefusal = 5
+	// The tenant has no ACTIVE installation of the route's target. The gateway
+	// answers this one 403, as it answers a person whose organization never
+	// installed the module.
+	WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_TARGET_NOT_INSTALLED WorkloadOperationRefusal = 6
+	// The seal is one of the target's own installations: the caller would be the
+	// module it addresses.
+	WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_SEAL_ON_TARGET WorkloadOperationRefusal = 7
+	// The issuer's live state has moved past the capability: its authorization
+	// revision is superseded, or an epoch it carries has advanced.
+	WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT WorkloadOperationRefusal = 8
 )
 
 // Enum value maps for WorkloadOperationRefusal.
@@ -57,6 +67,9 @@ var (
 		3: "WORKLOAD_OPERATION_REFUSAL_NOT_OPERATION_CONTEXT",
 		4: "WORKLOAD_OPERATION_REFUSAL_OWNER_IS_TARGET",
 		5: "WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS",
+		6: "WORKLOAD_OPERATION_REFUSAL_TARGET_NOT_INSTALLED",
+		7: "WORKLOAD_OPERATION_REFUSAL_SEAL_ON_TARGET",
+		8: "WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT",
 	}
 	WorkloadOperationRefusal_value = map[string]int32{
 		"WORKLOAD_OPERATION_REFUSAL_UNSPECIFIED":           0,
@@ -65,6 +78,9 @@ var (
 		"WORKLOAD_OPERATION_REFUSAL_NOT_OPERATION_CONTEXT": 3,
 		"WORKLOAD_OPERATION_REFUSAL_OWNER_IS_TARGET":       4,
 		"WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS":       5,
+		"WORKLOAD_OPERATION_REFUSAL_TARGET_NOT_INSTALLED":  6,
+		"WORKLOAD_OPERATION_REFUSAL_SEAL_ON_TARGET":        7,
+		"WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT":           8,
 	}
 )
 
@@ -97,12 +113,15 @@ func (WorkloadOperationRefusal) EnumDescriptor() ([]byte, []int) {
 
 type AdmitWorkloadOperationRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The capability as presented, encoded. It is inspected and read, never
-	// verified: nothing it carries is consumed.
+	// The capability as presented, encoded. It is read back by its issuer, never
+	// verified as presented: nothing it carries is consumed.
 	WorkContext string `protobuf:"bytes,1,opt,name=work_context,json=workContext,proto3" json:"work_context,omitempty"`
 	// The route alias the gateway resolved from the request path. The capability
 	// must be addressed to it.
-	Alias         string `protobuf:"bytes,2,opt,name=alias,proto3" json:"alias,omitempty"`
+	Alias string `protobuf:"bytes,2,opt,name=alias,proto3" json:"alias,omitempty"`
+	// The immutable solution target the route's alias resolved to, from the
+	// gateway's own routing. The tenant must have an ACTIVE installation of it.
+	TargetId      string `protobuf:"bytes,3,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -147,6 +166,13 @@ func (x *AdmitWorkloadOperationRequest) GetWorkContext() string {
 func (x *AdmitWorkloadOperationRequest) GetAlias() string {
 	if x != nil {
 		return x.Alias
+	}
+	return ""
+}
+
+func (x *AdmitWorkloadOperationRequest) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
 	}
 	return ""
 }
@@ -235,24 +261,28 @@ var File_saas_accounts_v1_workload_operation_admission_proto protoreflect.FileDe
 
 const file_saas_accounts_v1_workload_operation_admission_proto_rawDesc = "" +
 	"\n" +
-	"3saas/accounts/v1/workload_operation_admission.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\"q\n" +
+	"3saas/accounts/v1/workload_operation_admission.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\"\x98\x01\n" +
 	"\x1dAdmitWorkloadOperationRequest\x12.\n" +
 	"\fwork_context\x18\x01 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\vworkContext\x12 \n" +
 	"\x05alias\x18\x02 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x05alias\"\xe1\x01\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x05alias\x12%\n" +
+	"\ttarget_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\"\xe1\x01\n" +
 	"\x1eAdmitWorkloadOperationResponse\x12\x1a\n" +
 	"\badmitted\x18\x01 \x01(\bR\badmitted\x12D\n" +
 	"\arefusal\x18\x02 \x01(\x0e2*.saas.accounts.v1.WorkloadOperationRefusalR\arefusal\x12\x1b\n" +
 	"\ttenant_id\x18\x03 \x01(\tR\btenantId\x12'\n" +
 	"\x0finstallation_id\x18\x04 \x01(\tR\x0einstallationId\x12\x17\n" +
-	"\atask_id\x18\x05 \x01(\tR\x06taskId*\xbc\x02\n" +
+	"\atask_id\x18\x05 \x01(\tR\x06taskId*\xcc\x03\n" +
 	"\x18WorkloadOperationRefusal\x12*\n" +
 	"&WORKLOAD_OPERATION_REFUSAL_UNSPECIFIED\x10\x00\x12,\n" +
 	"(WORKLOAD_OPERATION_REFUSAL_NOT_INSPECTED\x10\x01\x120\n" +
 	",WORKLOAD_OPERATION_REFUSAL_OWNER_NOT_SERVICE\x10\x02\x124\n" +
 	"0WORKLOAD_OPERATION_REFUSAL_NOT_OPERATION_CONTEXT\x10\x03\x12.\n" +
 	"*WORKLOAD_OPERATION_REFUSAL_OWNER_IS_TARGET\x10\x04\x12.\n" +
-	"*WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS\x10\x05B\xcb\x01\n" +
+	"*WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS\x10\x05\x123\n" +
+	"/WORKLOAD_OPERATION_REFUSAL_TARGET_NOT_INSTALLED\x10\x06\x12-\n" +
+	")WORKLOAD_OPERATION_REFUSAL_SEAL_ON_TARGET\x10\a\x12*\n" +
+	"&WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT\x10\bB\xcb\x01\n" +
 	"\x14com.saas.accounts.v1B\x1fWorkloadOperationAdmissionProtoP\x01Z0auth-gateway/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
