@@ -1,3 +1,4 @@
+import { catalogProvider, sourceRequest } from "./catalog.js";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import {
 	AccessBasis,
@@ -93,6 +94,14 @@ export function datasourceClientOverTransport(
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
 	return {
+		async getCatalog() {
+			const response = await client.getDatasourceCatalog({});
+			return response.providers.map(catalogProvider);
+		},
+		async addSource(input) {
+			const response = await client.addSource(sourceRequest(input));
+			notifySourceSyncRequested(response.datasource?.id ?? "");
+		},
 		async beginAccountLink(orgId, connector, redirectUri, sourceId) {
 			const response = await client.beginDatasourceAccountLink({
 				orgId,
@@ -473,7 +482,9 @@ const syncPhaseNames: Partial<Record<SourceSyncPhase, SourceSyncPhaseName>> = {
 	[SourceSyncPhase.FAILED]: "failed",
 };
 
-const syncTriggerNames: Partial<Record<SourceSyncTrigger, SourceSyncTriggerName>> = {
+const syncTriggerNames: Partial<
+	Record<SourceSyncTrigger, SourceSyncTriggerName>
+> = {
 	[SourceSyncTrigger.MANUAL]: "manual",
 	[SourceSyncTrigger.SCHEDULED]: "scheduled",
 	[SourceSyncTrigger.WEBHOOK]: "webhook",
@@ -628,11 +639,12 @@ const oauth2GrantNames: Partial<
 	[ApiOAuth2Config_Grant.AUTHORIZATION_CODE]: "authorization_code",
 };
 
-const providerNames: Partial<Record<DatasourceProvider, DatasourceProviderName>> =
-	{
-		[DatasourceProvider.GITHUB]: "github",
-		[DatasourceProvider.API]: "api",
-	};
+const providerNames: Partial<
+	Record<DatasourceProvider, DatasourceProviderName>
+> = {
+	[DatasourceProvider.GITHUB]: "github",
+	[DatasourceProvider.API]: "api",
+};
 
 const statusNames: Partial<Record<DatasourceStatus, DatasourceStatusName>> = {
 	[DatasourceStatus.ACTIVE]: "active",

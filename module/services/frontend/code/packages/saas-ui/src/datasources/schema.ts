@@ -77,14 +77,16 @@ export const connectGitHubSchema = z
 		accessToken: z.string().max(1024, "Access token too long").optional(),
 		webhookSecret: z.string().max(1024, "Webhook secret too long").optional(),
 	})
-	.superRefine((values, ctx) => {
+	.check((ctx) => {
+		const values = ctx.value;
 		if (
 			values.method !== "app" &&
 			values.method !== "public" &&
 			!values.accessToken
 		) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
+			ctx.issues.push({
+				input: values,
+				code: "custom",
 				path: ["accessToken"],
 				message: "Access token is required",
 			});
