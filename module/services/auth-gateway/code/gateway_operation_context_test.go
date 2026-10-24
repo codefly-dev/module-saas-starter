@@ -238,7 +238,7 @@ func TestGateway_AMintedOperationContextReachesItsModuleWithoutABearer(t *testin
 	gw.ServeHTTP(w, onWorkloadEndpoint(publishRequest(capability)))
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Equal(t, 1, module.calls)
-	require.Equal(t, "/v1/documents/definitions:publish", module.lastPath)
+	require.Equal(t, "/v1/documents/items:write", module.lastPath)
 	require.Equal(t, capability, module.lastHeaders.Get(carrier.HeaderName))
 
 	// The same context on the public listener is a bearer-less request and

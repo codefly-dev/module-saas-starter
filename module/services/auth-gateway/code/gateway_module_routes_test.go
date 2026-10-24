@@ -407,7 +407,7 @@ func operationCapability(t *testing.T, kid string, priv ed25519.PrivateKey, audi
 }
 
 func publishRequest(capability string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, "/v1/documents/definitions:publish", strings.NewReader(`{"bundle":"b"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/documents/items:write", strings.NewReader(`{"bundle":"b"}`))
 	if capability != "" {
 		req.Header.Set(carrier.HeaderName, capability)
 	}
@@ -436,20 +436,22 @@ func TestModuleRoute_AWorkloadOperationContextIsAdmittedWithoutABearer(t *testin
 	gw, module, installations, kid, wcPriv := operationHarness(t)
 	logs := captureLog(t)
 	capability := operationCapability(t, kid, wcPriv, "documents", publisherSeal)
+	req := onWorkloadEndpoint(publishRequest(capability))
+	req.Header.Set("X-Forwarded-Client-Cert", "By=spiffe://cluster.local/ns/edge/sa/gateway;URI=spiffe://cluster.local/ns/apps/sa/publisher")
 
 	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, onWorkloadEndpoint(publishRequest(capability)))
+	gw.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Equal(t, 1, module.calls)
-	require.Equal(t, "/v1/documents/definitions:publish", module.lastPath, "the path is forwarded unchanged")
+	require.Equal(t, "/v1/documents/items:write", module.lastPath, "the path is forwarded unchanged")
 	require.Equal(t, `{"bundle":"b"}`, module.lastBody)
 	require.Equal(t, capability, module.lastHeaders.Get(carrier.HeaderName), "the capability is forwarded as presented")
 	require.Equal(t, publisherSeal, module.lastHeaders.Get(installationConfinementHeader),
 		"the one stamped header is the capability's own seal")
 	for _, header := range []string{
 		"Authorization", "Cookie", "Proxy-Authorization", "X-User-Id", "X-Org-Id", "X-Session-Id", "X-Scopes",
-		"X-Credential-Kind", resourceConfinementHeader, "X-Codefly-Gateway-Token",
+		"X-Credential-Kind", resourceConfinementHeader, "X-Codefly-Gateway-Token", "X-Forwarded-Client-Cert",
 	} {
 		require.Empty(t, module.lastHeaders.Values(header), "%s must not reach the upstream on the bearer-less arm", header)
 	}
@@ -504,6 +506,31 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", targetInstallation)))
 			},
 			code: http.StatusUnauthorized, body: "authentication required", asked: true,
+		},
+		// The tenant may hold more than one ACTIVE row of the target. A seal
+		// equal to ANY of them is a person's, not only the last row read.
+		"a capability sealed to the first of two rows of the target": {
+			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
+				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
+					Installations: []*accountsv1.InstallationSummary{
+						activeInstallation(targetInstallation, fakeSolutionTarget("documents")),
+						activeInstallation("55555555-5555-4555-8555-555555555555", fakeSolutionTarget("documents")),
+						activeInstallation(publisherSeal, fakeSolutionTarget("publisher")),
+					},
+				}}}
+				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", targetInstallation)))
+			},
+			code: http.StatusUnauthorized, body: "authentication required",
+		},
+		// Core's Inspector verified the first capability header only; a second
+		// is a value nothing verified, so the arm admits exactly one.
+		"two capability headers": {
+			prepare: func(t *testing.T, _ *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
+				req := onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
+				req.Header.Add(carrier.HeaderName, operationCapability(t, kid, wcPriv, "documents", targetInstallation))
+				return req
+			},
+			code: http.StatusUnauthorized, body: "invalid work context",
 		},
 		"a seal that names no active installation in the tenant": {
 			prepare: func(t *testing.T, _ *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {

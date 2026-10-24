@@ -123,7 +123,7 @@ func TestAttack_TheBearerLessArmIsMeteredOnItsSignedTenant(t *testing.T) {
 	})
 	require.Len(t, keys, 1, "one bucket, whatever X-Org-Id and source address the caller sent")
 	require.True(t, strings.HasPrefix(keys[0], "rl:workload-operation:"+operationTenant+":"), keys[0])
-	require.Contains(t, logs.String(), "reason=workload_operation_limited")
+	require.Contains(t, logs.String(), "reason=workload_operation_limited_or_origin")
 }
 
 // TestAttack_TheBearerLessArmFailsClosedWithoutItsLimiter: the arm's budget is a

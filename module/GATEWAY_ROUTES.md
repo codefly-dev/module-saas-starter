@@ -125,13 +125,15 @@ there may name the alias or `module-capabilities`; anything else is 401
 - **The bearer-less arm, on the workload endpoint only**, for a headless
   operation context. Selected by: no `Authorization` and no `Cookie` header, the
   workload listener, and a capability whose audience is the alias. Then: a
-  presenter when the gateway is deployed; a non-empty signed tenant and seal;
-  every identity header stripped, `Authorization` and `Proxy-Authorization`
-  dropped; the budget keyed `workload-operation:<tenant>`, failing closed; and
-  accounts' `ListInstallations` for that tenant (ACTIVE, uncached) must show an
-  installation of the target (else 403) and the seal as a DIFFERENT active
-  installation (else 401 `authentication required`, the answer a person's
-  capability has without its bearer). 503 when the authority cannot answer or
+  presenter when the gateway is deployed; exactly one capability header and a
+  non-empty signed tenant and seal (else 401 `invalid work context`); every
+  identity header stripped, `Authorization`, `Proxy-Authorization` and
+  `X-Forwarded-Client-Cert` dropped; the budget keyed
+  `workload-operation:<tenant>`, failing closed; and accounts'
+  `ListInstallations` for that tenant (ACTIVE, uncached) must show an
+  installation of the target (else 403) and the seal as an active installation
+  that is none of the target's (else 401 `authentication required`, the answer a
+  person's capability has without its bearer). 503 when the authority cannot answer or
   is not wired. Admitted requests carry no bearer and no identity header, and
   `x-codefly-installation-id` is set to the seal, which names the CALLER's
   installation, not consent on the target's side. An upstream failure is a

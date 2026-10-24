@@ -21,7 +21,8 @@ package main
 //   - the tenant's ACTIVE installations, read from accounts per request.
 //
 // It admits only when the tenant has an active installation of the TARGET, and
-// the seal names a DIFFERENT active installation in that tenant. The second half
+// the seal names an active installation in that tenant that is none of the
+// target's. The second half
 // is how a hop that reads no owner tells unattended work from a person: a
 // person's capability is sealed to the organization's installation of the
 // audience it addresses, which here is the target's own, while a module or
@@ -42,6 +43,7 @@ import (
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/workcontext"
+	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -115,8 +117,9 @@ const (
 	// workloadOperationNotInstalled: the tenant has no ACTIVE installation of
 	// the target, or the route resolved no target.
 	workloadOperationNotInstalled
-	// workloadOperationPersonSealed: the seal is the target's own installation,
-	// which is what a person's capability for this module carries.
+	// workloadOperationPersonSealed: the seal is one of the target's own
+	// installations, which is what a person's capability for this module
+	// carries.
 	workloadOperationPersonSealed
 	// workloadOperationSealInactive: the seal names no ACTIVE installation in
 	// the tenant (revoked, another tenant's, unknown).
@@ -139,7 +142,11 @@ func (g *Gateway) admitWorkloadOperation(
 	if g.installations == nil {
 		return workloadOperationUndecidable
 	}
-	targetInstallation, sealActive := "", false
+	// Every ACTIVE row of the target counts: the seal of a person's capability
+	// for this module is one of them, and keeping only the last row seen would
+	// read the others as some other installation's.
+	targetInstallations := map[string]bool{}
+	sealActive := false
 	token := ""
 	for page := 0; page < installationListingPageLimit; page++ {
 		resp, err := g.installations.List(ctx, &accountsv1.ListInstallationsRequest{
@@ -160,17 +167,14 @@ func (g *Gateway) admitWorkloadOperation(
 				continue
 			}
 			if installation.GetTargetId() == targetID {
-				targetInstallation = installation.GetId()
+				targetInstallations[installation.GetId()] = true
 			}
 			if installation.GetId() == seal {
 				sealActive = true
 			}
 		}
-		// Both positive facts settle it on a partial read; a missing one is
-		// only conclusive after the whole set, so it waits for the last page.
-		if targetInstallation != "" && sealActive {
-			break
-		}
+		// No early exit: whether the seal is ANOTHER row of the target is only
+		// conclusive after the whole set, so every page is read.
 		token = resp.GetNextPageToken()
 		if token == "" {
 			break
@@ -180,9 +184,9 @@ func (g *Gateway) admitWorkloadOperation(
 		}
 	}
 	switch {
-	case targetInstallation == "":
+	case len(targetInstallations) == 0:
 		return workloadOperationNotInstalled
-	case seal == targetInstallation:
+	case targetInstallations[seal]:
 		return workloadOperationPersonSealed
 	case !sealActive:
 		return workloadOperationSealInactive
@@ -228,6 +232,13 @@ func (g *Gateway) serveWorkloadOperation(
 		rec.refuse(w, http.StatusUnauthorized, "authentication required", "presenter_missing")
 		return
 	}
+	// Exactly one capability. Core's Inspector read the first value the
+	// request carried; a second one is a value nothing here verified, and an
+	// upstream that read it instead would act on it.
+	if len(r.Header.Values(carrier.HeaderName)) != 1 {
+		rec.refuse(w, http.StatusUnauthorized, "invalid work context", "capability_not_single")
+		return
+	}
 	if rec.tenant == "" {
 		rec.refuse(w, http.StatusUnauthorized, "invalid work context", "no_tenant")
 		return
@@ -243,6 +254,11 @@ func (g *Gateway) serveWorkloadOperation(
 	stripAllIdentityHeaders(r)
 	r.Header.Del("Authorization")
 	r.Header.Del("Proxy-Authorization")
+	// A client certificate chain is the mesh's statement about the hop that
+	// reached this gateway, not about the caller, and nothing upstream may read
+	// one off a request this arm forwards. The authenticated listener already
+	// removed it on a cell; natively nothing did.
+	r.Header.Del("X-Forwarded-Client-Cert")
 
 	// The budget is the signed tenant's own namespace, fail closed: with no
 	// X-Org-Id the generic key would be the waypoint's address, one bucket for
@@ -282,7 +298,8 @@ func (g *Gateway) serveWorkloadOperation(
 	}))
 	if !reached {
 		// Refused by the limiter (429, or 503 with its backend down) or by the
-		// cross-origin binding, each of which wrote its own answer.
-		rec.log("WARN: blocked", "limited")
+		// cross-origin binding, each of which wrote its own answer; the log
+		// cannot tell which, and the reason says both.
+		rec.log("WARN: blocked", "limited_or_origin")
 	}
 }
