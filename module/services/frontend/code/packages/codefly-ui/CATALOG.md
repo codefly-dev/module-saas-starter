@@ -15,6 +15,7 @@ not evidence that all primitives, stories or production callers had migrated.
 | `dashboard-catalog.json`, `dashboard-data.schema.json` | The dashboard vocabulary as an A2UI catalog and the data model it binds to — documents, not components ([README](./README.md#the-chart-vocabulary-is-published-not-just-implemented)) |
 | `chat` (rank 3) | Resolved messages and injected send action |
 | `table` (rank 3) | DataTable driven by an injected TanStack table instance |
+| `playground` (rank 3) | Scenario shell, capability coverage, ordered operation steps and expandable request/response history |
 | `board` (rank 3) | Board: a collection in columns by a field, dragged or moved from a menu, committing nothing |
 
 Composite tiers compose layout; they do not import sibling composites. No tier

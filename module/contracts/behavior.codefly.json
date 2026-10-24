@@ -132,6 +132,7 @@
             "@codefly-dev/ui/table",
             "@codefly-dev/ui/content",
             "@codefly-dev/ui/board",
+            "@codefly-dev/ui/playground",
             "@codefly-dev/ui/lifecycle",
             "@codefly-dev/ui/plugin-host",
             "@codefly-dev/ui/plugin-host/runtime",
