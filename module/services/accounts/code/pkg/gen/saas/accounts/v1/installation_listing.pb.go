@@ -191,9 +191,12 @@ type Installation struct {
 	// install and never changed. A person's capability for a module audience is
 	// sealed to the active installation whose registry principal is that
 	// audience's, so a reader that must tell a person's seal from unattended work
-	// compares this, not the route alias. Empty on a solution's installation and
-	// on a row installed before the column existed; a reader treats empty as
-	// unknown, never as "not this principal".
+	// compares this, not the route alias. Every install through InstallSolution,
+	// a module's or a solution's, records one. Empty only on a row written before
+	// the column existed (it is deliberately not backfilled: no principal is
+	// inferred) or one the store wrote with no registry principal. A capability
+	// a module or solution identity mints is sealed only to a row carrying its
+	// principal. A reader treats empty as unknown, never as "not this principal".
 	RegistryPrincipalId string `protobuf:"bytes,14,opt,name=registry_principal_id,json=registryPrincipalId,proto3" json:"registry_principal_id,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache

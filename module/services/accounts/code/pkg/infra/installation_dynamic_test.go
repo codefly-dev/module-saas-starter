@@ -240,10 +240,22 @@ func TestDynamicInstallationDBTenancyChangeRevokesOnlyForbiddenOrganizations(t *
 // read of it: ListInstallations (which the gateway's bearer-less module arm
 // reads to tell a person's seal from unattended work), GetInstallation, and the
 // row InstallSolution returns.
+//
+// The row is a SOLUTION's installation, the bearer-less arm's main caller: a
+// solution's module identity mints an operation context sealed to the row
+// LiveModuleAuthority resolves for its principal, so that row carries the
+// principal by construction (the read selects on registry_principal_id), and
+// the arm, which refuses a seal row with none, admits it.
 func TestInstallationReadsCarryTheRegistryPrincipal(t *testing.T) {
 	a := newDynamicInstall(t, "", "", "")
 	require.NotEmpty(t, a.principal)
 	require.Equal(t, a.principal, a.installation.GetRegistryPrincipalId())
+	// newDynamicInstall installs with Kind "solution"; the insert trigger
+	// refuses a kind the registry does not declare.
+	live, err := testStore.LiveModuleAuthority(testCtx, a.principal, a.org, "")
+	require.NoError(t, err)
+	require.Equal(t, a.installation.Id, live.InstallationID,
+		"the seal a module identity of this solution mints is this row, which carries its principal")
 	require.NoError(t, testStore.WithOrgTx(testCtx, a.org, func(ctx context.Context) error {
 		got, _, err := testStore.GetInstallation(ctx, a.org, a.installation.Id)
 		if err != nil {
