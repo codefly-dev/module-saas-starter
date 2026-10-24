@@ -7756,7 +7756,7 @@
     },
     "/v1/installations": {
       "get": {
-        "description": "It is the org-admin companion to the internal ListInstallations, and it is a\nseparate method rather than a relaxed policy on that one: ListInstallations\nis read by the gateway for an organisation it projected from a verified\nidentity, and a bare tenant credential must never reach it. This one binds\nthe organisation to the caller's own admin membership, exactly as\nListAvailableSolutions does, so no organisation's administrator can read\nanother's. The one exception is inherited, not added here: a platform\nsuper administrator (not impersonating) passes the organisation-admin check\nfor every organisation, as on every other organisation-admin method, and so\nmay list any organisation's installations.",
+        "description": "It is the org-admin companion to the internal ListInstallations, and it is a\nseparate method rather than a relaxed policy on that one: ListInstallations\nis read by the gateway for an organisation it projected from a verified\nidentity or that an edge-verified Work Context names, and a bare tenant\ncredential must never reach it. This one binds\nthe organisation to the caller's own admin membership, exactly as\nListAvailableSolutions does, so no organisation's administrator can read\nanother's. The one exception is inherited, not added here: a platform\nsuper administrator (not impersonating) passes the organisation-admin check\nfor every organisation, as on every other organisation-admin method, and so\nmay list any organisation's installations.",
         "operationId": "InstallationService_ListOrganizationInstallations",
         "parameters": [
           {

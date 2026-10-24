@@ -547,12 +547,14 @@ copies a parent's seal across audiences reopens the arm to a person's credential
 without its bearer.
 
 The arm reads the tenant's installations through `InstallationService/ListInstallations`
-(`EXPOSURE_INTERNAL`). Its contract comment in `installations.proto` names one
-caller, the gateway's viewer projection, with the tenant projected from a
-verified identity. The arm is a second caller of the same RPC with the same
-credential, and its tenant is the one an edge-verified Work Context names: a
-signed statement of this issuer's, never a value the request chose. The proto
-comment is to name it at the next regeneration of the accounts descriptors.
+(`EXPOSURE_INTERNAL`). Its contract comment in `installations.proto` names both
+of the gateway's reads: the viewer projection, with the tenant projected from a
+verified identity, and the arm, whose tenant is the one an edge-verified Work
+Context names, a signed statement of this issuer's and never a value the request
+chose. The messages the RPC takes and answers live in
+`installation_listing.proto`, which `installations.proto` imports and the
+gateway vendors byte for byte, as it does `module_registration.proto` and
+`solution_entitlements.proto`.
 
 ## Minting a module Work Context
 

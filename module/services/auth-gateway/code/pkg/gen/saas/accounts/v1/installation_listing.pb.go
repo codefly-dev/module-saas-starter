@@ -24,6 +24,9 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// InstallationStatus is the lifecycle of an installation row. An uninstall is a
+// soft delete (status=revoked, revoked_at set) so the agent, grants, and audit
+// trail remain resolvable.
 type InstallationStatus int32
 
 const (
@@ -83,6 +86,12 @@ func (InstallationStatus) EnumDescriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_installation_listing_proto_rawDescGZIP(), []int{0}
 }
 
+// InstallationHealth is resolved live from current authority facts, never
+// stored. It is the observable form of the fail-closed mint rule: a
+// StartInstallationTask fails exactly when health is not HEALTHY, and transfer
+// or re-enable restores it. NO_ELIGIBLE_OWNER means neither the owner of record
+// nor any co-owner is currently an org admin (the Zapier-class "connection owner
+// left the org" failure), surfaced rather than silently reassigned.
 type InstallationHealth int32
 
 const (
@@ -141,6 +150,8 @@ func (InstallationHealth) EnumDescriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_installation_listing_proto_rawDescGZIP(), []int{1}
 }
 
+// Installation is one solution's bound identity in an org. Server-assigned ids;
+// the browser cannot attest to tenancy, the agent principal, or the scope node.
 type Installation struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -293,6 +304,10 @@ func (x *Installation) GetFailureReason() string {
 	return ""
 }
 
+// ListInstallationsRequest asks what one organization has installed. Every other
+// RPC on this service names a single installation, so until this existed nothing
+// could answer "what has this org installed?" — which is the authority read a
+// per-organization solution projection is built on (issue #949).
 type ListInstallationsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -367,6 +382,10 @@ func (x *ListInstallationsRequest) GetPageToken() string {
 	return ""
 }
 
+// InstallationSummary is one row of the listing: the installation, plus the health
+// resolved live beside it exactly as GetInstallation resolves it for one. Health
+// travels with the row because a consumer that renders an installed solution as
+// unavailable would otherwise need one GetInstallation per installation.
 type InstallationSummary struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Installation  *Installation          `protobuf:"bytes,1,opt,name=installation,proto3" json:"installation,omitempty"`

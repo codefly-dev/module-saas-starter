@@ -94,12 +94,23 @@ breaking:
       # SolutionBackendBinding (#1118): the reported upstream half, deleted
       # with the report — a solution's address is resolved, never recorded.
       - saas/accounts/v1/solution_registry.proto
+      # Installation, ListInstallationsRequest, InstallationSummary and
+      # ListInstallationsResponse moved to installation_listing.proto so the
+      # auth-gateway can generate the ListInstallations messages from the same
+      # source file without vendoring the policy options and google.api this
+      # file imports. Same package, same fully-qualified names, same wire
+      # format; every RPC stays where it was.
+      - saas/accounts/v1/installations.proto
       # ModuleMintRegistrationRequest/Response and
       # SolutionMintRegistrationRequest/Response (#1056): the registration
       # credentials and the secrets that minted them are deleted. Presence is
       # delivered, so nothing registers at runtime and nothing verifies either
       # credential.
       - saas/accounts/v1/module_registration.proto
+    # InstallationStatus and InstallationHealth moved to
+    # installation_listing.proto with the messages above, for the same reason.
+    ENUM_NO_DELETE:
+      - saas/accounts/v1/installations.proto
     # ListMyAccessibleScopes moved from PermissionService to the new
     # AccessibleScopeService in accessible_scopes.proto (issue #577), which changes
     # its Connect/gRPC procedure path. Its REST route (GET /v1/accessible-scopes) is

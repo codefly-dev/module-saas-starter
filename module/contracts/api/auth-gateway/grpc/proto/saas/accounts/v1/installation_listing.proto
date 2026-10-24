@@ -5,19 +5,21 @@ package saas.accounts.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
-// ============================================================================
-// The installation listing, as the auth-gateway reads it.
+// The installation listing: an installation, its lifecycle and health, and the
+// messages InstallationService/ListInstallations takes and answers.
 //
-// accounts declares these messages in installations.proto beside the
-// InstallationService, which imports the policy options and google.api this
-// gateway does not vendor. The gateway calls one internal-tier RPC,
-// InstallationService/ListInstallations, so it carries the messages that RPC
-// takes and answers, copied definition for definition from installations.proto
-// and nothing else. TestVendoredInstallationListingMatchesAccounts holds every
-// definition here byte-identical to the one accounts declares, so the two
-// cannot drift on the wire.
-// ============================================================================
+// These definitions live in their own file, with deliberately minimal imports,
+// so the auth-gateway can generate the same types from the same source proto
+// and call ListInstallations over the internal listener, as it does for
+// module_registration.proto and solution_entitlements.proto. installations.proto
+// imports this file; the service and every other installation message stay
+// there. Sharing the generated definition rather than restating the wire shape
+// is what keeps the two sides from drifting: the gateway's copy is this file,
+// byte for byte.
 
+// InstallationStatus is the lifecycle of an installation row. An uninstall is a
+// soft delete (status=revoked, revoked_at set) so the agent, grants, and audit
+// trail remain resolvable.
 enum InstallationStatus {
   INSTALLATION_STATUS_UNSPECIFIED = 0;
   INSTALLATION_STATUS_ACTIVE = 1;
@@ -30,6 +32,12 @@ enum InstallationStatus {
   INSTALLATION_STATUS_FAILED = 4;
 }
 
+// InstallationHealth is resolved live from current authority facts, never
+// stored. It is the observable form of the fail-closed mint rule: a
+// StartInstallationTask fails exactly when health is not HEALTHY, and transfer
+// or re-enable restores it. NO_ELIGIBLE_OWNER means neither the owner of record
+// nor any co-owner is currently an org admin (the Zapier-class "connection owner
+// left the org" failure), surfaced rather than silently reassigned.
 enum InstallationHealth {
   INSTALLATION_HEALTH_UNSPECIFIED = 0;
   INSTALLATION_HEALTH_HEALTHY = 1;
@@ -39,6 +47,8 @@ enum InstallationHealth {
   INSTALLATION_HEALTH_STANDING_GRANT_MISSING = 5;
 }
 
+// Installation is one solution's bound identity in an org. Server-assigned ids;
+// the browser cannot attest to tenancy, the agent principal, or the scope node.
 message Installation {
   string id = 1 [(buf.validate.field).string.uuid = true];
   string org_id = 2 [(buf.validate.field).string.uuid = true];
@@ -84,6 +94,10 @@ message Installation {
   string failure_reason = 13 [(buf.validate.field).string.max_len = 512];
 }
 
+// ListInstallationsRequest asks what one organization has installed. Every other
+// RPC on this service names a single installation, so until this existed nothing
+// could answer "what has this org installed?" — which is the authority read a
+// per-organization solution projection is built on (issue #949).
 message ListInstallationsRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   // Restrict to one lifecycle status. UNSPECIFIED returns every status, so a
@@ -100,6 +114,10 @@ message ListInstallationsRequest {
   string page_token = 4;
 }
 
+// InstallationSummary is one row of the listing: the installation, plus the health
+// resolved live beside it exactly as GetInstallation resolves it for one. Health
+// travels with the row because a consumer that renders an installed solution as
+// unavailable would otherwise need one GetInstallation per installation.
 message InstallationSummary {
   Installation installation = 1;
   InstallationHealth health = 2;

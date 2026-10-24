@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
+import { InstallationStatus } from "@/gen/saas/accounts/v1/installation_listing_pb";
 import type {
 	GrantInstallationToTeamResponse,
 	OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
-import { InstallationStatus } from "@/gen/saas/accounts/v1/installations_pb";
 import { useAuth } from "@/lib/auth";
 import {
 	Badge,

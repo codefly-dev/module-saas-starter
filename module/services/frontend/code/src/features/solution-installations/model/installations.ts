@@ -4,11 +4,13 @@ import type { ComponentProps } from "react";
 import type { CollectionReadGrant } from "@/gen/saas/accounts/v1/authorization_pb";
 import type { Role } from "@/gen/saas/accounts/v1/common_pb";
 import {
-	type AvailableSolution,
 	InstallationHealth,
-	type InstallationReadiness,
 	InstallationStatus,
-	type OrganizationInstallation,
+} from "@/gen/saas/accounts/v1/installation_listing_pb";
+import type {
+	AvailableSolution,
+	InstallationReadiness,
+	OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import type { Badge } from "@/shared/ui";
 

@@ -3861,7 +3861,7 @@ var File_saas_accounts_v1_platform_admin_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\n" +
-	"%saas/accounts/v1/platform_admin.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$saas/accounts/v1/authorization.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a$saas/accounts/v1/installations.proto\x1a(saas/accounts/v1/solution_registry.proto\x1a\x1fsaas/events/v1/operations.proto\x1a\x17saas/jobs/v1/jobs.proto\x1a\x1csaas/policy/v1/options.proto\"q\n" +
+	"%saas/accounts/v1/platform_admin.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$saas/accounts/v1/authorization.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a+saas/accounts/v1/installation_listing.proto\x1a(saas/accounts/v1/solution_registry.proto\x1a\x1fsaas/events/v1/operations.proto\x1a\x17saas/jobs/v1/jobs.proto\x1a\x1csaas/policy/v1/options.proto\"q\n" +
 	"\x12SearchUsersRequest\x12\x14\n" +
 	"\x05query\x18\x01 \x01(\tR\x05query\x12&\n" +
 	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d \x00R\bpageSize\x12\x1d\n" +
@@ -4380,7 +4380,7 @@ func file_saas_accounts_v1_platform_admin_proto_init() {
 	}
 	file_saas_accounts_v1_authorization_proto_init()
 	file_saas_accounts_v1_common_proto_init()
-	file_saas_accounts_v1_installations_proto_init()
+	file_saas_accounts_v1_installation_listing_proto_init()
 	file_saas_accounts_v1_solution_registry_proto_init()
 	file_saas_accounts_v1_platform_admin_proto_msgTypes[34].OneofWrappers = []any{
 		(*CatalogueDesired_DeclaredRevision)(nil),
