@@ -55,32 +55,46 @@ export function stepUpToast(returnTo: string = here()): void {
 }
 
 /**
- * The message for a refused mutation. Two refusals carry a sentence written for
- * whoever is reading it, and a generic "Failed to …" would send them looking
- * for an outage instead of at the rule they hit: a precondition the request may
- * not break ("organization must keep at least one owner or admin") and an
- * exhausted quota ("seats quota exhausted: used 5 of 5"). Every other code can
- * carry server internals, so it gets the screen's own fallback.
+ * The codes under which the host writes its message for whoever reads it: the
+ * rule the request broke, the field that was wrong, the record that already
+ * exists, the limit that was hit. accounts' refusal seam sends a business
+ * refusal under its sentinel's own sentence and a fault as Internal with a
+ * fixed sentence, so these are shown as sent. This is the host's rule, not a
+ * proof: a handler that wraps a call path under one of these codes is a host
+ * bug to fix where it is raised, not a reason to hide every reason here.
+ * Every other code gets the screen's own fallback.
+ */
+const PERSON_FACING_CODES: ReadonlySet<Code> = new Set([
+	Code.InvalidArgument,
+	Code.NotFound,
+	Code.AlreadyExists,
+	Code.PermissionDenied,
+	Code.FailedPrecondition,
+	Code.ResourceExhausted,
+	Code.Unauthenticated,
+]);
+
+/**
+ * The message for a refused mutation: the host's own sentence when it wrote
+ * one for the person ("this address already has a pending invitation…",
+ * "seats quota exhausted: used 5 of 5"), the step-up sentence for
+ * `mfa_required`, and the screen's fallback otherwise.
  */
 export function refusalMessage(error: unknown, fallback: string): string {
+	if (isMFARequired(error)) return STEP_UP_MESSAGE;
 	if (!(error instanceof ConnectError)) return fallback;
-	if (
-		error.code !== Code.FailedPrecondition &&
-		error.code !== Code.ResourceExhausted
-	) {
-		return fallback;
-	}
+	if (!PERSON_FACING_CODES.has(error.code)) return fallback;
 	return error.rawMessage || fallback;
 }
 
 /**
  * The toast for a refused mutation: the step-up when the host asked for a
- * recent factor, the screen's own message otherwise.
+ * recent factor, the host's reason or the screen's own message otherwise.
  */
 export function refusalToast(error: unknown, fallback: string): void {
 	if (isMFARequired(error)) {
 		stepUpToast();
 		return;
 	}
-	toast.error(fallback);
+	toast.error(refusalMessage(error, fallback));
 }

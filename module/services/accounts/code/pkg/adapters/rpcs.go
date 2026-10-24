@@ -70,25 +70,11 @@ func userStatusError(err error) error {
 	return err
 }
 
+// invitationStatusError maps the refusals an invitation can meet to their
+// codes, and a fault to the fixed sentence with its cause kept for the log
+// (refusalError) — sanitized here, not only by the interceptor after it.
 func invitationStatusError(err error) error {
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, business.ErrOrgAdminContinuity):
-		return status.Error(codes.FailedPrecondition, business.ErrOrgAdminContinuity.Error())
-	case errors.Is(err, business.ErrInvitationUnavailable):
-		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, business.ErrInvitationEmailMismatch):
-		return status.Error(codes.PermissionDenied, err.Error())
-	case errors.Is(err, business.ErrInvitationEmailUnverified):
-		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.Is(err, business.ErrInvitationExpired):
-		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.Is(err, business.ErrEntitlementQuotaExceeded):
-		return quotaRefusal(err)
-	default:
-		return status.Error(codes.Internal, "invitation operation failed")
-	}
+	return refusalError(err)
 }
 
 func jobOperationStatusError(err error) error {
@@ -1642,7 +1628,7 @@ func (s *InvitationServer) CreateInvitation(ctx context.Context, req *gen.Create
 		return nil, err
 	}
 	response, err := service.CreateInvitation(ctx, actorID, req)
-	return response, quotaStatusError(err)
+	return response, invitationStatusError(err)
 }
 
 func (s *InvitationServer) InspectInvitation(ctx context.Context, req *gen.InspectInvitationRequest) (*gen.InvitationSummary, error) {
