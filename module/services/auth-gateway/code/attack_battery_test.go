@@ -71,7 +71,8 @@ func TestAttack_AnyAuthorizationSchemeLeavesTheArm(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 	require.Zero(t, module.calls)
-	require.Empty(t, installations.calls, "the arm was not selected")
+	require.Empty(t, admissionOf(t, gw).calls, "the arm was not selected")
+	require.Empty(t, installations.calls)
 }
 
 // TestAttack_TheBearerLessArmForwardsNoProxyCredential: a Proxy-Authorization
@@ -93,7 +94,7 @@ func TestAttack_TheBearerLessArmForwardsNoProxyCredential(t *testing.T) {
 // generic key would be the waypoint's address, one bucket for every tenant on a
 // cell. The arm's budget is the tenant the capability is signed for, in its own
 // namespace, read after the strip: a caller's X-Org-Id and its source address
-// open no new bucket. Exhausting it refuses before the authority is asked.
+// open no new bucket. Exhausting it refuses before accounts is asked anything.
 func TestAttack_TheBearerLessArmIsMeteredOnItsSignedTenant(t *testing.T) {
 	gw, module, installations, kid, wcPriv := operationHarness(t)
 	backend := &memoryBackend{}
@@ -114,7 +115,8 @@ func TestAttack_TheBearerLessArmIsMeteredOnItsSignedTenant(t *testing.T) {
 	}
 	require.Equal(t, http.StatusTooManyRequests, serve(3))
 	require.Equal(t, 3, module.calls)
-	require.Len(t, installations.calls, 3, "a limited request never reaches the admission read")
+	require.Len(t, admissionOf(t, gw).calls, 3, "a limited request never reaches the issuer")
+	require.Len(t, installations.calls, 3, "nor the installation read")
 
 	var keys []string
 	backend.windows.Range(func(key, _ any) bool {
@@ -128,7 +130,7 @@ func TestAttack_TheBearerLessArmIsMeteredOnItsSignedTenant(t *testing.T) {
 
 // TestAttack_TheBearerLessArmFailsClosedWithoutItsLimiter: the arm's budget is a
 // security budget. A limiter backend that cannot answer refuses the request; it
-// does not wave it through to the authority read.
+// does not wave it through to the issuer or the installation read.
 func TestAttack_TheBearerLessArmFailsClosedWithoutItsLimiter(t *testing.T) {
 	gw, module, installations, kid, wcPriv := operationHarness(t)
 	gw.rateLimiter = &RateLimiter{backend: failingRateLimitBackend{}, limit: 100, burst: 20, stop: make(chan struct{}), proxies: newProxyTrust("")}
@@ -139,5 +141,6 @@ func TestAttack_TheBearerLessArmFailsClosedWithoutItsLimiter(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Contains(t, w.Body.String(), "rate limit service unavailable")
 	require.Zero(t, module.calls)
+	require.Empty(t, admissionOf(t, gw).calls)
 	require.Empty(t, installations.calls)
 }

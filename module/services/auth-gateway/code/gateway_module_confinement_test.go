@@ -296,6 +296,7 @@ func TestModuleRoute_TheBearerLessArmTakesNoIdentityFromTheCaller(t *testing.T) 
 func TestModuleRoute_ABearerOnTheWorkloadListenerTakesThePersonPath(t *testing.T) {
 	gw, module, _, caller, kid, wcPriv, _ := confinedModuleHarness(t)
 	gw.installations = &installationsFake{err: errors.New("the arm must not be consulted")}
+	gw.workloadAdmission = &admissionFake{err: errors.New("the arm must not be consulted")}
 	capability := mintViewerCapability(t, kid, wcPriv, "documents", caller.subject, caller.org, caller.session)
 
 	w := httptest.NewRecorder()

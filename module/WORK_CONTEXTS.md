@@ -349,7 +349,7 @@ answered by one set of functions for minting and verifying alike
   the audience it addresses. `StartChildSession` is the one derivation core
   cannot re-seal (a child keeps its parent's seal), so it refuses a person's
   child for an audience whose installation is not the parent's seal.
-  Two kinds of person-owned capability are sealed elsewhere, by design, and
+  Several kinds of person-owned capability are sealed elsewhere, by design, and
   each has its own mint gate:
   - **Source-operation contexts** (`startSourceOperation`,
     `pkg/adapters/source_delegation.go`): owned by the person, sealed to the
@@ -359,12 +359,16 @@ answered by one set of functions for minting and verifying alike
   - **Installation tasks** (`mintInstallationTask`,
     `pkg/adapters/work_context_rpcs.go`): owned by the installation's owner of
     record, sealed to the installation the authority is drawn from. Only an
-    `EXPOSURE_INTERNAL` credential reaches `StartInstallationTask`.
+    `EXPOSURE_INTERNAL` credential reaches `StartInstallationTask`, and an
+    install step is signed by the host itself.
+  - **Installed binding children** (`exchangeInstalledBinding`,
+    `pkg/adapters/installed_content_read.go`): a module's `content_read` or
+    `module_actor` exchange of a person's capability derives a core `Child`,
+    which keeps the parent's seal (the exchanging module's installation) while
+    addressing another module.
 
-  The gateway's bearer-less module arm admits a capability whose seal is an
-  active installation other than the target's, so it admits these two kinds as
-  well as module operation contexts: that is the unattended-work family it is
-  for, and no person's interactive session can produce one.
+  So a seal on an installation other than the audience's does not mean
+  unattended work, and nothing decides that from the seal.
   `TestAPersonsCapabilityIsSealedToItsAudiencesInstallation` pins the rule over
   every person mint, and `TestEveryWorkContextMintIsClassifiedBySeal` fails on
   any mint RPC that names neither where it seals nor why.
@@ -664,12 +668,16 @@ endpoint, with no bearer: the declared module route's bearer-less arm. A
 composed workload with no person present, such as a solution's release
 publisher, reaches the module it is bound to this way; modules keep calling
 their peers in-mesh. The edge checks what core's `Inspector` can (signature,
-issuer, window, the route's audience, shape), then the signed tenant's ACTIVE
-installations: the target must be installed there, and the seal must name a
-different active installation, which is what unattended work carries and what a
-person's capability never does (see the seal rule above). It strips every
-identity header, meters on the tenant, forwards the capability as presented and
-stamps only `x-codefly-installation-id` with the seal. The callee verifies the
+issuer, window, the route's audience, shape), strips every identity header and
+meters on the tenant. It then asks the issuer: accounts'
+`AdmitWorkloadOperation` admits a capability only if it is exactly what
+`StartModuleOperationTask` signs, owned by a declared module principal other
+than the alias's and sealed to that principal's active installation, and
+refuses every person-owned kind, including those sealed elsewhere (see the seal
+rule above). It inspects and reads its own claims, and consumes nothing. The
+target must also be installed in the signed tenant, and the seal must not be
+one of its rows. The arm forwards the capability as presented and stamps only
+`x-codefly-installation-id` with the admitted seal. The callee verifies the
 capability at full strength, as for any other carrier. The route's rules are in
 [GATEWAY_ROUTES.md](./GATEWAY_ROUTES.md#module-rest-routes).
 

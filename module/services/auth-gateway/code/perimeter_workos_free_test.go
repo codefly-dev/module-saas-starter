@@ -190,8 +190,8 @@ var httpAllowedPerimeterFiles = map[string]bool{
 	// gateway_workload_operation.go is the bearer-less arm of a declared module
 	// route. It verifies no token itself (core's Inspector already ran at the
 	// route, with local keys), and its only network calls are the internal gRPC
-	// hop to accounts for the tenant's installations and the proxy hop to the
-	// declared upstream. It reaches no external IdP.
+	// hops to accounts (the issuer's admission and the tenant's installations)
+	// and the proxy hop to the declared upstream. It reaches no external IdP.
 	"gateway_workload_operation.go": true,
 	// gateway_cors.go answers cross-origin access for registered clients. It
 	// decides from the registry snapshot and from the client id the ext_authz

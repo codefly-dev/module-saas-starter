@@ -14,52 +14,42 @@ package main
 // Selection is narrow and every other request takes the person path unchanged:
 // no Authorization and no Cookie header, the workload listener, and an
 // edge-inspected capability addressed to the alias this route resolved. Once
-// selected, the arm decides from three signed facts and one authority read:
+// selected, the arm decides from two authority reads, both behind the tenant's
+// limiter:
 //
-//   - the tenant and the seal the capability names (core's Inspector checked the
-//     signature, issuer, window, audience and shape at the route);
-//   - the tenant's ACTIVE installations, read from accounts per request.
+//   - accounts' AdmitWorkloadOperation, the issuer's answer to whether the
+//     capability is a module operation context (StartModuleOperationTask) for
+//     this alias. The gateway cannot tell: core's Inspected withholds the owner,
+//     its kind and the chain, and a person's capability can be sealed to an
+//     installation that is not the target's (a source-operation context, an
+//     installation task, an installed binding's child). Accounts reads its own
+//     claims and admits that one shape; everything else is refused. It inspects
+//     and never verifies, so nothing is consumed on the way.
+//   - the tenant's ACTIVE installations, read from accounts per request: the
+//     target must be installed there, and the seal must not be one of the
+//     target's own rows (a module does not reach itself through this door).
 //
-// It admits only when the tenant has an active installation of the TARGET, and
-// the seal names an active installation in that tenant that is none of the
-// target's. The second half
-// is how a hop that reads no owner tells unattended work from a person: a
-// person's interactive capability is sealed to the organization's installation
-// of the audience it addresses, which here is the target's own, while a module
-// operation context, a source-operation context and an installation task are
-// each sealed to another installation (the unattended-work family, admitted by
-// design; see WORK_CONTEXTS.md). Accounts holds
-// that as an invariant (TestAPersonsCapabilityIsSealedToItsAudiencesInstallation
-// in accounts); this arm is sound only while it holds. A misreading refuses,
-// never widens, and the callee verifies the capability at full strength.
+// A misreading refuses, never widens, and the callee verifies the capability at
+// full strength.
 //
 // What the upstream receives: the capability as presented, the path unchanged,
 // no bearer, no cookie, no identity header, and x-codefly-installation-id set to
-// the seal. Nothing names a principal, because nothing here read one.
+// the seal accounts admitted. Nothing names a principal: the gateway reads none.
 
 import (
 	"context"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/workcontext"
 	carrier "github.com/codefly-dev/sdk-go/workcontext"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
-
-// modulePrincipalID is accounts' business.ModulePrincipalID: the registry
-// principal id of the module whose principal prefix is prefix, a UUIDv5 under
-// the URL namespace. Neither core nor the sdk exports it and the gateway cannot
-// import accounts, so it is restated here and pinned to accounts' value by
-// TestModulePrincipalIDMatchesAccounts on this side and
-// TestModulePrincipalIDIsPinnedForTheGateway on accounts' side.
-func modulePrincipalID(prefix string) string {
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/module-principal/"+prefix)).String()
-}
 
 const listInstallationsMethod = "/saas.accounts.v1.InstallationService/ListInstallations"
 
@@ -96,6 +86,38 @@ func (c *accountsInstallations) List(
 	return resp, c.conn.Invoke(ctx, listInstallationsMethod, req, resp)
 }
 
+const admitWorkloadOperationMethod = "/saas.accounts.v1.WorkContextService/AdmitWorkloadOperation"
+
+// workloadAdmissionCallTimeout bounds the issuer's answer. A caller waits on it
+// in the request path, as on the client registry's on-demand lookup, so it is
+// that lookup's bound rather than a background reconcile's; past it the arm
+// answers 503 and admits nothing.
+var workloadAdmissionCallTimeout = 2 * time.Second
+
+// workloadAdmissionClient is the issuer's half of the arm. The interface exists
+// so the arm can be exercised without an accounts process.
+type workloadAdmissionClient interface {
+	Admit(ctx context.Context, req *accountsv1.AdmitWorkloadOperationRequest) (*accountsv1.AdmitWorkloadOperationResponse, error)
+}
+
+// accountsWorkloadAdmission invokes AdmitWorkloadOperation by method name over
+// the existing accounts connection, with the gateway's cluster-internal
+// credential, the shape of accountsInstallations.
+type accountsWorkloadAdmission struct {
+	conn          *grpc.ClientConn
+	internalToken string
+}
+
+func (c *accountsWorkloadAdmission) Admit(
+	ctx context.Context, req *accountsv1.AdmitWorkloadOperationRequest,
+) (*accountsv1.AdmitWorkloadOperationResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, workloadAdmissionCallTimeout)
+	defer cancel()
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", c.internalToken)
+	resp := &accountsv1.AdmitWorkloadOperationResponse{}
+	return resp, c.conn.Invoke(ctx, admitWorkloadOperationMethod, req, resp)
+}
+
 // workloadOperationTenantKey carries the signed tenant from the arm to the rate
 // limiter. A private context key, set only by serveWorkloadOperation: no header
 // and no other route can select the budget it keys.
@@ -120,35 +142,30 @@ func selectsWorkloadOperation(r *http.Request, capability *workcontext.Inspected
 		capability.Audience() == alias
 }
 
-// workloadOperationAdmission is the arm's authority verdict. Like the viewer
-// admission it is not a boolean: "not installed", "not unattended work" and "I
-// could not ask" are different answers.
-type workloadOperationAdmission int
+// workloadOperationInstallation is the arm's installation verdict. Like the
+// viewer admission it is not a boolean: "not installed", "the target's own
+// installation" and "I could not ask" are different answers.
+type workloadOperationInstallation int
 
 const (
-	workloadOperationAdmitted workloadOperationAdmission = iota
+	workloadOperationInstalled workloadOperationInstallation = iota
 	// workloadOperationNotInstalled: the tenant has no ACTIVE installation of
 	// the target, or the route resolved no target.
 	workloadOperationNotInstalled
-	// workloadOperationPersonSealed: the seal is one of the target's own
-	// installations, or an installation of the alias's module principal (or of
-	// an unknown one), which is where a person's capability for this module is
-	// sealed.
-	workloadOperationPersonSealed
-	// workloadOperationSealInactive: the seal names no ACTIVE installation in
-	// the tenant (revoked, another tenant's, unknown).
-	workloadOperationSealInactive
+	// workloadOperationSealOnTarget: the seal is one of the target's own
+	// installations, so the caller would be the module it addresses.
+	workloadOperationSealOnTarget
 	// workloadOperationUndecidable: no client wired, an RPC error, or a cursor
 	// that did not terminate. Answered 503, never admitted.
 	workloadOperationUndecidable
 )
 
-// admitWorkloadOperation reads the tenant's ACTIVE installations and decides.
-// Uncached, for the reason the viewer admission is: an uninstall changes the
-// answer with no write this replica would see.
-func (g *Gateway) admitWorkloadOperation(
-	ctx context.Context, tenant, seal, alias string, routing *solutionRouting,
-) workloadOperationAdmission {
+// workloadOperationInstallations reads the tenant's ACTIVE installations and
+// decides. Uncached, for the reason the viewer admission is: an uninstall
+// changes the answer with no write this replica would see.
+func (g *Gateway) workloadOperationInstallations(
+	ctx context.Context, tenant, seal string, routing *solutionRouting,
+) workloadOperationInstallation {
 	targetID := routing.GetTargetID()
 	if targetID == "" {
 		return workloadOperationNotInstalled
@@ -156,17 +173,9 @@ func (g *Gateway) admitWorkloadOperation(
 	if g.installations == nil {
 		return workloadOperationUndecidable
 	}
-	// Every ACTIVE row of the target counts: the seal of a person's capability
-	// for this module is one of them, and keeping only the last row seen would
-	// read the others as some other installation's.
+	// Every ACTIVE row of the target counts: keeping only the last row seen
+	// would read the others as some other installation's.
 	targetInstallations := map[string]bool{}
-	sealActive := false
-	// The registry principal of the seal's row. A person's capability for this
-	// alias is sealed to the active installation installed under the alias's
-	// module principal, which need not be the route's target: the route
-	// resolves the alias to a target, accounts resolves the audience to a
-	// principal, and the two are independent names.
-	sealPrincipal := ""
 	token := ""
 	for page := 0; page < installationListingPageLimit; page++ {
 		resp, err := g.installations.List(ctx, &accountsv1.ListInstallationsRequest{
@@ -189,13 +198,7 @@ func (g *Gateway) admitWorkloadOperation(
 			if installation.GetTargetId() == targetID {
 				targetInstallations[installation.GetId()] = true
 			}
-			if installation.GetId() == seal {
-				sealActive = true
-				sealPrincipal = installation.GetRegistryPrincipalId()
-			}
 		}
-		// No early exit: whether the seal is ANOTHER row of the target is only
-		// conclusive after the whole set, so every page is read.
 		token = resp.GetNextPageToken()
 		if token == "" {
 			break
@@ -208,16 +211,15 @@ func (g *Gateway) admitWorkloadOperation(
 	case len(targetInstallations) == 0:
 		return workloadOperationNotInstalled
 	case targetInstallations[seal]:
-		return workloadOperationPersonSealed
-	case sealActive && (sealPrincipal == "" || sealPrincipal == modulePrincipalID(alias)):
-		// Sealed to the installation of the alias's own module principal, which
-		// is where accounts seals a person's capability for this audience. An
-		// empty principal is unknown, and unknown never admits.
-		return workloadOperationPersonSealed
-	case !sealActive:
-		return workloadOperationSealInactive
+		return workloadOperationSealOnTarget
 	}
-	return workloadOperationAdmitted
+	return workloadOperationInstalled
+}
+
+// refusalReason is the log reason for an issuer's refusal:
+// WORKLOAD_OPERATION_REFUSAL_OWNER_NOT_SERVICE logs as owner_not_service.
+func refusalReason(refusal accountsv1.WorkloadOperationRefusal) string {
+	return strings.ToLower(strings.TrimPrefix(refusal.String(), "WORKLOAD_OPERATION_REFUSAL_"))
 }
 
 // workloadOperationRecord is what every admit and refusal on the arm logs. The
@@ -299,26 +301,45 @@ func (g *Gateway) serveWorkloadOperation(
 	reached := false
 	g.rateLimitThenServe(w, r, entry, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
-		switch g.admitWorkloadOperation(r.Context(), rec.tenant, rec.seal, alias, routing) {
+		// The issuer decides what the capability is. Asked only behind the
+		// limiter, so an exhausted budget never reaches accounts.
+		if g.workloadAdmission == nil {
+			rec.refuse(w, http.StatusServiceUnavailable, "module installation authority unavailable", "authority_unavailable")
+			return
+		}
+		answer, err := g.workloadAdmission.Admit(r.Context(), &accountsv1.AdmitWorkloadOperationRequest{
+			WorkContext: r.Header.Get(carrier.HeaderName), Alias: alias,
+		})
+		switch {
+		case err != nil:
+			rec.refuse(w, http.StatusServiceUnavailable, "module installation authority unavailable", "authority_unavailable")
+			return
+		case !answer.GetAdmitted():
+			// The answer a person's capability without its bearer has always had.
+			rec.refuse(w, http.StatusUnauthorized, "authentication required", refusalReason(answer.GetRefusal()))
+			return
+		case answer.GetTenantId() != rec.tenant || answer.GetInstallationId() != rec.seal:
+			// The issuer read other claims than the edge did: nothing here can
+			// say which is right, so nothing is admitted.
+			rec.refuse(w, http.StatusServiceUnavailable, "module installation authority unavailable", "authority_mismatch")
+			return
+		}
+		switch g.workloadOperationInstallations(r.Context(), rec.tenant, rec.seal, routing) {
 		case workloadOperationUndecidable:
 			rec.refuse(w, http.StatusServiceUnavailable, "module installation authority unavailable", "authority_unavailable")
 			return
 		case workloadOperationNotInstalled:
 			rec.refuse(w, http.StatusForbidden, "module is not installed for this organization", "not_installed")
 			return
-		case workloadOperationPersonSealed:
-			// The answer a person's capability without its bearer has always had.
-			rec.refuse(w, http.StatusUnauthorized, "authentication required", "person_sealed")
-			return
-		case workloadOperationSealInactive:
-			rec.refuse(w, http.StatusUnauthorized, "authentication required", "seal_inactive")
+		case workloadOperationSealOnTarget:
+			rec.refuse(w, http.StatusUnauthorized, "authentication required", "seal_on_target")
 			return
 		}
-		// The one header this arm stamps: the seal of the capability it admitted.
-		// An sdk consumer reading the carrier requires this header to equal the
-		// seal, and on the person path it equals the seal too. Here it names the
-		// CALLER's installation, not consent on the target's side.
-		r.Header.Set(installationConfinementHeader, rec.seal)
+		// The one header this arm stamps: the seal of the capability accounts
+		// admitted. An sdk consumer reading the carrier requires this header to
+		// equal the seal, and on the person path it equals the seal too. Here
+		// it names the CALLER's installation, not consent on the target's side.
+		r.Header.Set(installationConfinementHeader, answer.GetInstallationId())
 		rec.log("INFO: admitted", "admit")
 		g.proxyTo(w, r, routing.Upstream, entry)
 	}))

@@ -258,6 +258,9 @@ func main() {
 		// The organization-level installation read the bearer-less module arm
 		// admits on, over the same connection and uncached for the same reason.
 		gateway.installations = &accountsInstallations{conn: internalAPIConn, internalToken: authz.internalToken}
+		// The issuer's answer to what a bearer-less capability is, over the
+		// same connection, asked per request.
+		gateway.workloadAdmission = &accountsWorkloadAdmission{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway.requireWorkloadPresenter = !codefly.IsLocal()
 		go gateway.solutions.reconcile(ctx)
 		go gateway.clients.reconcile(ctx)

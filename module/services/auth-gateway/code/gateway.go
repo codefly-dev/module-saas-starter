@@ -66,6 +66,10 @@ type Gateway struct {
 	// bearer-less module arm (gateway_workload_operation.go). Set after
 	// construction; nil answers 503 there and never admits.
 	installations installationListingClient
+	// workloadAdmission asks accounts whether a capability on the bearer-less
+	// module arm is a module operation context. Set after construction; nil
+	// answers 503 there and never admits.
+	workloadAdmission workloadAdmissionClient
 	// requireWorkloadPresenter makes the bearer-less arm require the waypoint
 	// presenter the workload listener authenticated. Set outside native
 	// development, where the listener already requires one.

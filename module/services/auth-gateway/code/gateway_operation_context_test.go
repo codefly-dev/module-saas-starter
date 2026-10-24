@@ -223,6 +223,8 @@ func TestGateway_AMintedOperationContextReachesItsModuleWithoutABearer(t *testin
 	gw.workContext = newWorkContextVerifier(jwks.URL)
 	module := declareModule(t, gw, "documents")
 	gw.installations = tenantInstalled()
+	admission := &admissionFake{}
+	gw.workloadAdmission = admission
 	mint.token = operationCapability(t, "key-1", wcPriv, "documents", publisherSeal)
 	logs := captureLog(t)
 
@@ -240,6 +242,7 @@ func TestGateway_AMintedOperationContextReachesItsModuleWithoutABearer(t *testin
 	require.Equal(t, 1, module.calls)
 	require.Equal(t, "/v1/documents/items:write", module.lastPath)
 	require.Equal(t, capability, module.lastHeaders.Get(carrier.HeaderName))
+	require.Len(t, admission.calls, 1, "accounts said what the context is")
 
 	// The same context on the public listener is a bearer-less request and
 	// nothing more.

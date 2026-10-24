@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +19,9 @@ import (
 	"github.com/codefly-dev/core/workcontext"
 	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 // Routing a declared module (issue #952).
@@ -364,6 +368,39 @@ func pageCursor(index int) string {
 	return fmt.Sprintf("page-%d", index)
 }
 
+// admissionFake stands in for accounts' AdmitWorkloadOperation. By default it
+// admits, echoing the presented capability's own tenant, seal and task the way
+// accounts answers them; refusal or err replace the answer, and answer, when
+// set, is returned as it is.
+type admissionFake struct {
+	refusal accountsv1.WorkloadOperationRefusal
+	err     error
+	answer  *accountsv1.AdmitWorkloadOperationResponse
+	calls   []*accountsv1.AdmitWorkloadOperationRequest
+}
+
+func (f *admissionFake) Admit(
+	_ context.Context, req *accountsv1.AdmitWorkloadOperationRequest,
+) (*accountsv1.AdmitWorkloadOperationResponse, error) {
+	f.calls = append(f.calls, req)
+	switch {
+	case f.err != nil:
+		return nil, f.err
+	case f.answer != nil:
+		return f.answer, nil
+	case f.refusal != accountsv1.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_UNSPECIFIED:
+		return &accountsv1.AdmitWorkloadOperationResponse{Refusal: f.refusal}, nil
+	}
+	decoded, err := workcontext.Decode(req.GetWorkContext())
+	if err != nil {
+		return &accountsv1.AdmitWorkloadOperationResponse{Refusal: accountsv1.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_NOT_INSPECTED}, nil
+	}
+	claims := decoded.Context()
+	return &accountsv1.AdmitWorkloadOperationResponse{
+		Admitted: true, TenantId: claims.GetTenantId(), InstallationId: claims.GetSeal().GetInstallationId(), TaskId: claims.GetTaskId(),
+	}, nil
+}
+
 // activeInstallation is one ACTIVE row of operationTenant.
 func activeInstallation(id, target string) *accountsv1.InstallationSummary {
 	return &accountsv1.InstallationSummary{Installation: &accountsv1.Installation{
@@ -373,12 +410,9 @@ func activeInstallation(id, target string) *accountsv1.InstallationSummary {
 }
 
 // moduleInstallation is the ACTIVE row of operationTenant for the module whose
-// alias and principal prefix are both name: its target, installed under its own
-// module principal.
+// alias is name.
 func moduleInstallation(id, name string) *accountsv1.InstallationSummary {
-	summary := activeInstallation(id, fakeSolutionTarget(name))
-	summary.Installation.RegistryPrincipalId = modulePrincipalID(name)
-	return summary
+	return activeInstallation(id, fakeSolutionTarget(name))
 }
 
 // tenantInstalled is a tenant that installed the target module (E) and the
@@ -393,7 +427,8 @@ func tenantInstalled() *installationsFake {
 }
 
 // operationHarness is a gateway with the edge verifier, the module "documents"
-// declared, and a tenant that installed it and the publishing workload.
+// declared, a tenant that installed it and the publishing workload, and an
+// issuer that admits.
 func operationHarness(t *testing.T) (gw *Gateway, module *fakeUpstream, installations *installationsFake, kid string, wcPriv ed25519.PrivateKey) {
 	t.Helper()
 	gw, _, _, _ = newGatewayHarness(t)
@@ -404,10 +439,20 @@ func operationHarness(t *testing.T) (gw *Gateway, module *fakeUpstream, installa
 	module = declareModule(t, gw, "documents")
 	installations = tenantInstalled()
 	gw.installations = installations
+	gw.workloadAdmission = &admissionFake{}
 	return gw, module, installations, kid, wcPriv
 }
 
-// operationCapability is a module operation context for audience, sealed to seal.
+// admissionOf is the issuer fake the harness wired.
+func admissionOf(t *testing.T, gw *Gateway) *admissionFake {
+	t.Helper()
+	fake, ok := gw.workloadAdmission.(*admissionFake)
+	require.True(t, ok, "the gateway is not wired with admissionFake")
+	return fake
+}
+
+// operationCapability is a capability for audience, sealed to seal. The edge
+// cannot tell what kind it is; the issuer fake answers that.
 func operationCapability(t *testing.T, kid string, priv ed25519.PrivateKey, audience, seal string) string {
 	t.Helper()
 	return mintCapability(t, kid, priv, edgeCapability{
@@ -434,13 +479,15 @@ func captureLog(t *testing.T) *bytes.Buffer {
 }
 
 // THE ARM ADMITS A HEADLESS OPERATION CONTEXT. No bearer, the workload endpoint,
-// a capability for this alias sealed to the publisher's own installation (W)
-// in a tenant that installed the target (E, not W).
+// a capability for this alias that accounts admits as a module operation
+// context, sealed to the publisher's own installation (W), in a tenant that
+// installed the target (E, not W).
 //
-// What the upstream holds is the capability and the one header stating its
-// seal, and nothing that names a person. ext_authz is not consulted: it denies
-// every request without a bearer, so a 200 here is a request it never saw, and
-// it stamps x-user-id and x-credential-kind on every allow, which are absent.
+// What the upstream holds is the capability and the one header stating the
+// admitted seal, and nothing that names a person. ext_authz is not consulted: it
+// denies every request without a bearer, so a 200 here is a request it never
+// saw, and it stamps x-user-id and x-credential-kind on every allow, which are
+// absent.
 func TestModuleRoute_AWorkloadOperationContextIsAdmittedWithoutABearer(t *testing.T) {
 	gw, module, installations, kid, wcPriv := operationHarness(t)
 	logs := captureLog(t)
@@ -456,8 +503,8 @@ func TestModuleRoute_AWorkloadOperationContextIsAdmittedWithoutABearer(t *testin
 	require.Equal(t, "/v1/documents/items:write", module.lastPath, "the path is forwarded unchanged")
 	require.Equal(t, `{"bundle":"b"}`, module.lastBody)
 	require.Equal(t, capability, module.lastHeaders.Get(carrier.HeaderName), "the capability is forwarded as presented")
-	require.Equal(t, publisherSeal, module.lastHeaders.Get(installationConfinementHeader),
-		"the one stamped header is the capability's own seal")
+	require.Equal(t, []string{publisherSeal}, module.lastHeaders.Values(installationConfinementHeader),
+		"the one stamped header is the seal accounts admitted, once")
 	for _, header := range []string{
 		"Authorization", "Cookie", "Proxy-Authorization", "X-User-Id", "X-Org-Id", "X-Session-Id", "X-Scopes",
 		"X-Credential-Kind", resourceConfinementHeader, "X-Codefly-Gateway-Token", "X-Forwarded-Client-Cert",
@@ -465,6 +512,10 @@ func TestModuleRoute_AWorkloadOperationContextIsAdmittedWithoutABearer(t *testin
 		require.Empty(t, module.lastHeaders.Values(header), "%s must not reach the upstream on the bearer-less arm", header)
 	}
 
+	admission := admissionOf(t, gw)
+	require.Len(t, admission.calls, 1)
+	require.Equal(t, capability, admission.calls[0].GetWorkContext(), "the issuer is shown the capability as presented")
+	require.Equal(t, "documents", admission.calls[0].GetAlias(), "and the alias the route resolved")
 	require.Len(t, installations.calls, 1)
 	require.Equal(t, operationTenant, installations.calls[0].GetOrgId(), "the tenant is the capability's, signed")
 	require.Equal(t, accountsv1.InstallationStatus_INSTALLATION_STATUS_ACTIVE, installations.calls[0].GetStatus())
@@ -477,13 +528,49 @@ func TestModuleRoute_AWorkloadOperationContextIsAdmittedWithoutABearer(t *testin
 	require.NotContains(t, line, capability, "the token is never logged")
 }
 
+// THE ISSUER DECIDES. A capability the edge inspects, addressed to this alias
+// and sealed to an active installation that is not the target's, is exactly
+// what a source-operation context, an installation task or an installed
+// binding's child looks like to a hop: each is a person's. Before the arm asked
+// accounts it admitted all of them on the seal; every refusal accounts gives is
+// now a 401, the answer a person's capability without its bearer has always had.
+func TestModuleRoute_TheBearerLessArmAdmitsOnlyWhatTheIssuerAdmits(t *testing.T) {
+	for _, refusal := range []accountsv1.WorkloadOperationRefusal{
+		accountsv1.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_NOT_INSPECTED,
+		accountsv1.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_OWNER_NOT_SERVICE,
+		accountsv1.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_NOT_OPERATION_CONTEXT,
+		accountsv1.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_OWNER_IS_TARGET,
+		accountsv1.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS,
+	} {
+		t.Run(refusal.String(), func(t *testing.T) {
+			gw, module, installations, kid, wcPriv := operationHarness(t)
+			admissionOf(t, gw).refusal = refusal
+			logs := captureLog(t)
+			capability := operationCapability(t, kid, wcPriv, "documents", publisherSeal)
+
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, onWorkloadEndpoint(publishRequest(capability)))
+
+			require.Equal(t, http.StatusUnauthorized, w.Code, w.Body.String())
+			require.Contains(t, w.Body.String(), "authentication required")
+			require.Zero(t, module.calls)
+			require.Empty(t, installations.calls, "a refused capability asks nothing more")
+			require.Contains(t, logs.String(), "reason=workload_operation_"+refusalReason(refusal))
+			require.NotContains(t, logs.String(), capability)
+		})
+	}
+	// Every refusal the issuer names is one of the above.
+	require.Len(t, accountsv1.WorkloadOperationRefusal_name, 6)
+}
+
 // Every refusal, each with one fact broken and the rest held equal.
 func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 	for name, test := range map[string]struct {
 		prepare func(t *testing.T, gw *Gateway, installations *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request
 		code    int
 		body    string
-		asked   bool
+		// asked is whether the issuer was asked.
+		asked bool
 	}{
 		// The arm is the workload endpoint's alone: the public listener never
 		// selects it, so the request takes the person path and has no bearer.
@@ -508,16 +595,16 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 			},
 			code: http.StatusUnauthorized, body: "invalid work context",
 		},
-		// A person's capability for this module is sealed to the target's own
-		// installation, and without its bearer it is answered as it always was.
-		"a person-sealed capability": {
+		// Sealed to the target's own installation: whatever the issuer says,
+		// the caller would be the module it addresses.
+		"a capability sealed to the target's installation": {
 			prepare: func(t *testing.T, _ *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
 				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", targetInstallation)))
 			},
 			code: http.StatusUnauthorized, body: "authentication required", asked: true,
 		},
 		// The tenant may hold more than one ACTIVE row of the target. A seal
-		// equal to ANY of them is a person's, not only the last row read.
+		// equal to ANY of them is refused, not only the last row read.
 		"a capability sealed to the first of two rows of the target": {
 			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
 				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
@@ -529,49 +616,7 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 				}}}
 				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", targetInstallation)))
 			},
-			code: http.StatusUnauthorized, body: "authentication required",
-		},
-		// The alias and the module principal are independent names. Module A is
-		// routed at "storage" but its principal is "documents"; module B is
-		// routed at "documents" under principal "docstore". Accounts seals a
-		// person's StartTask(audience="documents") to A's installation, which is
-		// not B's target row, so only the registry principal tells it apart.
-		"a person's capability sealed to the alias's principal on another target": {
-			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
-				moduleA := activeInstallation("77777777-7777-4777-8777-777777777777", fakeSolutionTarget("storage"))
-				moduleA.Installation.RegistryPrincipalId = modulePrincipalID("documents")
-				moduleB := activeInstallation(targetInstallation, fakeSolutionTarget("documents"))
-				moduleB.Installation.RegistryPrincipalId = modulePrincipalID("docstore")
-				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
-					Installations: []*accountsv1.InstallationSummary{moduleA, moduleB, moduleInstallation(publisherSeal, "publisher")},
-				}}}
-				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", moduleA.Installation.Id)))
-			},
-			code: http.StatusUnauthorized, body: "authentication required",
-		},
-		// A row a withdrawn binding left ACTIVE under the alias's principal is
-		// still where accounts may seal a person's capability for the alias.
-		"a person's capability sealed to a stale row of the alias's principal": {
-			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
-				stale := activeInstallation("88888888-8888-4888-8888-888888888888", fakeSolutionTarget("documents-withdrawn"))
-				stale.Installation.RegistryPrincipalId = modulePrincipalID("documents")
-				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
-					Installations: []*accountsv1.InstallationSummary{moduleInstallation(targetInstallation, "documents"), stale, moduleInstallation(publisherSeal, "publisher")},
-				}}}
-				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", stale.Installation.Id)))
-			},
-			code: http.StatusUnauthorized, body: "authentication required",
-		},
-		// A seal row with no registry principal is unknown, and unknown never
-		// admits.
-		"a seal row with no registry principal": {
-			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
-				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
-					Installations: []*accountsv1.InstallationSummary{moduleInstallation(targetInstallation, "documents"), activeInstallation(publisherSeal, fakeSolutionTarget("publisher"))},
-				}}}
-				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
-			},
-			code: http.StatusUnauthorized, body: "authentication required",
+			code: http.StatusUnauthorized, body: "authentication required", asked: true,
 		},
 		// Core's Inspector verified the first capability header only; a second
 		// is a value nothing verified, so the arm admits exactly one.
@@ -583,12 +628,6 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 			},
 			code: http.StatusUnauthorized, body: "invalid work context",
 		},
-		"a seal that names no active installation in the tenant": {
-			prepare: func(t *testing.T, _ *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
-				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", "44444444-4444-4444-8444-444444444444")))
-			},
-			code: http.StatusUnauthorized, body: "authentication required", asked: true,
-		},
 		"a tenant with no active installation of the target": {
 			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
 				gw.installations = &installationsFake{pages: []*accountsv1.ListInstallationsResponse{{
@@ -596,7 +635,7 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 				}}}
 				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
 			},
-			code: http.StatusForbidden, body: "module is not installed for this organization",
+			code: http.StatusForbidden, body: "module is not installed for this organization", asked: true,
 		},
 		"a route that resolves no target": {
 			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
@@ -610,28 +649,62 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 				require.NoError(t, gw.solutions.refresh(context.Background()))
 				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
 			},
-			code: http.StatusForbidden, body: "module is not installed for this organization",
+			code: http.StatusForbidden, body: "module is not installed for this organization", asked: true,
 		},
-		"an authority that errors": {
+		"an issuer that errors": {
+			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
+				gw.workloadAdmission = &admissionFake{err: errors.New("accounts down: dial tcp 10.0.0.7:9090")}
+				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
+			},
+			code: http.StatusServiceUnavailable, body: "module installation authority unavailable",
+		},
+		"no issuer wired": {
+			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
+				gw.workloadAdmission = nil
+				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
+			},
+			code: http.StatusServiceUnavailable, body: "module installation authority unavailable",
+		},
+		// The issuer's facts must be the ones the edge inspected: an answer for
+		// another seal or tenant is one nothing here can arbitrate.
+		"an admission naming another seal": {
+			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
+				gw.workloadAdmission = &admissionFake{answer: &accountsv1.AdmitWorkloadOperationResponse{
+					Admitted: true, TenantId: operationTenant, InstallationId: "44444444-4444-4444-8444-444444444444", TaskId: "task-1",
+				}}
+				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
+			},
+			code: http.StatusServiceUnavailable, body: "module installation authority unavailable",
+		},
+		"an admission naming another tenant": {
+			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
+				gw.workloadAdmission = &admissionFake{answer: &accountsv1.AdmitWorkloadOperationResponse{
+					Admitted: true, TenantId: "66666666-6666-4666-8666-666666666666", InstallationId: publisherSeal, TaskId: "task-1",
+				}}
+				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
+			},
+			code: http.StatusServiceUnavailable, body: "module installation authority unavailable",
+		},
+		"an installation listing that errors": {
 			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
 				gw.installations = &installationsFake{err: errors.New("accounts down: dial tcp 10.0.0.7:9090")}
 				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
 			},
-			code: http.StatusServiceUnavailable, body: "module installation authority unavailable",
+			code: http.StatusServiceUnavailable, body: "module installation authority unavailable", asked: true,
 		},
 		"a cursor that never terminates": {
 			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
 				gw.installations = &installationsFake{endless: true}
 				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
 			},
-			code: http.StatusServiceUnavailable, body: "module installation authority unavailable",
+			code: http.StatusServiceUnavailable, body: "module installation authority unavailable", asked: true,
 		},
-		"no installation authority wired": {
+		"no installation listing wired": {
 			prepare: func(t *testing.T, gw *Gateway, _ *installationsFake, kid string, wcPriv ed25519.PrivateKey) *http.Request {
 				gw.installations = nil
 				return onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
 			},
-			code: http.StatusServiceUnavailable, body: "module installation authority unavailable",
+			code: http.StatusServiceUnavailable, body: "module installation authority unavailable", asked: true,
 		},
 		// No edge verifier means no inspected capability, so the arm is never
 		// selected and the person path answers.
@@ -663,6 +736,7 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			gw, module, installations, kid, wcPriv := operationHarness(t)
+			admission := admissionOf(t, gw)
 			logs := captureLog(t)
 			req := test.prepare(t, gw, installations, kid, wcPriv)
 
@@ -673,7 +747,9 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 			require.Contains(t, w.Body.String(), test.body)
 			require.Zero(t, module.calls, "nothing reaches the upstream")
 			if test.asked {
-				require.Len(t, installations.calls, 1)
+				require.Len(t, admission.calls, 1)
+			} else {
+				require.Empty(t, admission.calls, "the default issuer was not the one asked")
 			}
 			require.NotContains(t, logs.String(), req.Header.Get(carrier.HeaderName), "no refusal logs the token")
 			require.NotContains(t, w.Body.String(), "10.0.0.7", "no refusal carries the authority's error")
@@ -686,8 +762,9 @@ func TestModuleRoute_TheBearerLessArmRefuses(t *testing.T) {
 // presenter, because the arm runs no ext_authz and this line is its only record.
 func TestModuleRoute_TheBearerLessArmLogsEachRefusal(t *testing.T) {
 	gw, _, _, kid, wcPriv := operationHarness(t)
+	admissionOf(t, gw).refusal = accountsv1.WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_OWNER_NOT_SERVICE
 	logs := captureLog(t)
-	capability := operationCapability(t, kid, wcPriv, "documents", targetInstallation)
+	capability := operationCapability(t, kid, wcPriv, "documents", publisherSeal)
 	req := onWorkloadEndpoint(publishRequest(capability))
 	req = req.WithContext(context.WithValue(req.Context(), workloadPresenterKey{}, "spiffe://cluster.local/ns/apps/sa/publisher"))
 
@@ -696,8 +773,8 @@ func TestModuleRoute_TheBearerLessArmLogsEachRefusal(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 	line := logs.String()
-	require.Contains(t, line, "reason=workload_operation_person_sealed")
-	for _, fact := range []string{`alias="documents"`, `tenant="` + operationTenant + `"`, `task="task-1"`, `seal="` + targetInstallation + `"`, `presenter="spiffe://cluster.local/ns/apps/sa/publisher"`} {
+	require.Contains(t, line, "reason=workload_operation_owner_not_service")
+	for _, fact := range []string{`alias="documents"`, `tenant="` + operationTenant + `"`, `task="task-1"`, `seal="` + publisherSeal + `"`, `presenter="spiffe://cluster.local/ns/apps/sa/publisher"`} {
 		require.Contains(t, line, fact)
 	}
 	require.NotContains(t, line, capability)
@@ -755,6 +832,7 @@ func TestModuleRoute_TheBearerLessArmRefusesWhatTheEdgeRefuses(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code)
 			require.Contains(t, w.Body.String(), "invalid work context")
 			require.Zero(t, module.calls)
+			require.Empty(t, admissionOf(t, gw).calls)
 			require.Empty(t, installations.calls)
 		})
 	}
@@ -775,19 +853,20 @@ func TestModuleRoute_TheBearerLessArmRefusesACapabilityWithNoTenantOrSeal(t *tes
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 	require.Contains(t, w.Body.String(), "invalid work context")
 	require.Zero(t, module.calls)
+	require.Empty(t, admissionOf(t, gw).calls)
 	require.Empty(t, installations.calls)
 }
 
-// The two facts may sit on different pages: the arm follows the cursor until it
-// holds both, and a row the authority should not have returned (another tenant,
-// not ACTIVE) counts for neither.
+// The target's rows may sit on any page: the arm follows the cursor to the end,
+// so a row of the target on a later page counts, and a row the authority should
+// not have returned (another tenant) counts for nothing.
 func TestModuleRoute_TheBearerLessArmReadsEveryPageItNeeds(t *testing.T) {
 	gw, module, _, kid, wcPriv := operationHarness(t)
-	foreign := moduleInstallation(publisherSeal, "publisher")
+	foreign := moduleInstallation(targetInstallation, "documents")
 	foreign.Installation.OrgId = "66666666-6666-4666-8666-666666666666"
 	installations := &installationsFake{pages: []*accountsv1.ListInstallationsResponse{
-		{Installations: []*accountsv1.InstallationSummary{moduleInstallation(targetInstallation, "documents"), foreign}, NextPageToken: pageCursor(1)},
-		{Installations: []*accountsv1.InstallationSummary{moduleInstallation(publisherSeal, "publisher")}},
+		{Installations: []*accountsv1.InstallationSummary{foreign, moduleInstallation(publisherSeal, "publisher")}, NextPageToken: pageCursor(1)},
+		{Installations: []*accountsv1.InstallationSummary{moduleInstallation(targetInstallation, "documents")}},
 	}}
 	gw.installations = installations
 
@@ -798,19 +877,98 @@ func TestModuleRoute_TheBearerLessArmReadsEveryPageItNeeds(t *testing.T) {
 	require.Len(t, installations.calls, 2)
 	require.Equal(t, pageCursor(1), installations.calls[1].GetPageToken())
 
-	// The seal only on the foreign row: not an active installation of THIS tenant.
+	// A seal on the target's row that only the second page names is still the
+	// target's.
+	w = httptest.NewRecorder()
+	gw.ServeHTTP(w, onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", targetInstallation))))
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// The target only on the foreign row: not installed in THIS tenant.
 	installations.pages = installations.pages[:1]
 	installations.pages[0].NextPageToken = ""
 	w = httptest.NewRecorder()
 	gw.ServeHTTP(w, onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal))))
-	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Equal(t, 1, module.calls)
 }
 
-// modulePrincipalID restates accounts' business.ModulePrincipalID. These values
-// are accounts' own, and TestModulePrincipalIDIsPinnedForTheGateway in accounts
-// holds accounts to the same ones, so a change on either side fails a test.
-func TestModulePrincipalIDMatchesAccounts(t *testing.T) {
-	require.Equal(t, "8d4a32d7-50a7-5009-a69d-71bf529b22a2", modulePrincipalID("documents"))
-	require.Equal(t, "44943497-cee3-5b83-9ada-8ec1384050cf", modulePrincipalID("storage"))
+// accountsAdmissionServer is accounts' AdmitWorkloadOperation on a real gRPC
+// listener: it records the method, the internal credential and the request,
+// and answers admit, or blocks until the caller gives up.
+type accountsAdmissionServer struct {
+	block    bool
+	token    []string
+	requests []*accountsv1.AdmitWorkloadOperationRequest
+}
+
+func startAccountsAdmission(t *testing.T, fake *accountsAdmissionServer) *grpc.ClientConn {
+	t.Helper()
+	server := grpc.NewServer()
+	server.RegisterService(&grpc.ServiceDesc{
+		ServiceName: "saas.accounts.v1.WorkContextService",
+		HandlerType: (*any)(nil),
+		Methods: []grpc.MethodDesc{{
+			MethodName: "AdmitWorkloadOperation",
+			Handler: func(_ any, ctx context.Context, dec func(any) error, _ grpc.UnaryServerInterceptor) (any, error) {
+				req := &accountsv1.AdmitWorkloadOperationRequest{}
+				if err := dec(req); err != nil {
+					return nil, err
+				}
+				md, _ := metadata.FromIncomingContext(ctx)
+				fake.token = md.Get("x-codefly-internal-token")
+				fake.requests = append(fake.requests, req)
+				if fake.block {
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}
+				return &accountsv1.AdmitWorkloadOperationResponse{Admitted: true, TenantId: operationTenant, InstallationId: publisherSeal, TaskId: "task-1"}, nil
+			},
+		}},
+		Metadata: "saas/accounts/v1/work_contexts.proto",
+	}, fake)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+// The production client asks the method accounts serves, with the internal
+// credential, and gives up at its bound: an issuer that does not answer is a
+// 503 on the arm, never an admission.
+func TestAccountsWorkloadAdmissionAsksTheIssuerWithinItsBound(t *testing.T) {
+	t.Run("asks with the internal credential", func(t *testing.T) {
+		fake := &accountsAdmissionServer{}
+		client := &accountsWorkloadAdmission{conn: startAccountsAdmission(t, fake), internalToken: "test-internal-token"}
+
+		answer, err := client.Admit(context.Background(), &accountsv1.AdmitWorkloadOperationRequest{WorkContext: "wc", Alias: "documents"})
+		require.NoError(t, err)
+		require.True(t, answer.GetAdmitted())
+		require.Equal(t, []string{"test-internal-token"}, fake.token)
+		require.Len(t, fake.requests, 1)
+		require.Equal(t, "wc", fake.requests[0].GetWorkContext())
+		require.Equal(t, "documents", fake.requests[0].GetAlias())
+	})
+	t.Run("an issuer that does not answer is a 503", func(t *testing.T) {
+		previous := workloadAdmissionCallTimeout
+		workloadAdmissionCallTimeout = 50 * time.Millisecond
+		t.Cleanup(func() { workloadAdmissionCallTimeout = previous })
+		fake := &accountsAdmissionServer{block: true}
+		gw, module, installations, kid, wcPriv := operationHarness(t)
+		gw.workloadAdmission = &accountsWorkloadAdmission{conn: startAccountsAdmission(t, fake), internalToken: "test-internal-token"}
+
+		started := time.Now()
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal))))
+
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, w.Body.String())
+		require.Contains(t, w.Body.String(), "module installation authority unavailable")
+		require.Less(t, time.Since(started), 5*time.Second, "bounded by the call timeout")
+		require.Len(t, fake.requests, 1)
+		require.Zero(t, module.calls)
+		require.Empty(t, installations.calls)
+	})
 }

@@ -129,19 +129,18 @@ there may name the alias or `module-capabilities`; anything else is 401
   non-empty signed tenant and seal (else 401 `invalid work context`); every
   identity header stripped, `Authorization`, `Proxy-Authorization` and
   `X-Forwarded-Client-Cert` dropped; the budget keyed
-  `workload-operation:<tenant>`, failing closed; and accounts'
+  `workload-operation:<tenant>`, failing closed; then accounts'
+  `AdmitWorkloadOperation` must admit the capability as a module operation
+  context for the alias (a refusal is 401 `authentication required`, the answer
+  a person's capability has without its bearer), and accounts'
   `ListInstallations` for that tenant (ACTIVE, uncached) must show an
-  installation of the target (else 403) and the seal as an active installation
-  that is none of the target's and whose registry principal is known and is not
-  the alias's module principal (else 401 `authentication required`, the answer
-  a person's capability has without its bearer). The principal check is what
-  holds when a module's alias and principal differ: accounts seals a person's
-  capability by principal, the route resolves by alias. 503 when the authority cannot answer or
-  is not wired. Admitted requests carry no bearer and no identity header, and
-  `x-codefly-installation-id` is set to the seal, which names the CALLER's
-  installation, not consent on the target's side. An upstream failure is a
-  static 502. Every admit and refusal is logged with alias, tenant, task, seal
-  and presenter, never the token.
+  installation of the target (else 403) that is not the seal (else 401). 503
+  when either cannot answer in time or is not wired, or the admission names
+  another tenant or seal. Admitted requests carry no bearer and no identity
+  header, and `x-codefly-installation-id` is set to the admitted seal, which
+  names the CALLER's installation, not consent on the target's side. An
+  upstream failure is a static 502. Every admit and refusal is logged with
+  alias, tenant, task, seal and presenter, never the token.
 
 Elsewhere the same request is a bearer-less request: 401 on `rest`, 401 with a
 `module-capabilities` capability, 401 for a capability sealed to the target's own

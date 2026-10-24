@@ -105,30 +105,29 @@ cookie, or arriving on `rest`) takes the person path above. A request on the
 workload endpoint with no `Authorization` and no `Cookie`, presenting a
 capability addressed to the alias, takes the bearer-less arm
 (`gateway_workload_operation.go`): a composed workload's headless operation
-context, minted at `/modules/_operation-context`. The arm reads no principal. It
-requires exactly one capability header (401 `invalid work context` otherwise),
-the signed tenant to have an ACTIVE installation of the target, and the seal to
-name an ACTIVE installation in that tenant that is none of the target's and
-whose `registry_principal_id` is set and is not `modulePrincipalID(alias)`, read
-from accounts' `ListInstallations` per request and uncached; any other seal may
-be a person's capability (accounts seals one by the audience's principal, which
-need not be the route alias's target) and answers 401 as before.
-`modulePrincipalID` restates accounts' `ModulePrincipalID`, pinned on both sides
-by test. It strips identity (and `X-Forwarded-Client-Cert`) before its limiter,
-meters on `workload-operation:<tenant>` (fail closed), forwards no bearer, stamps
-only `x-codefly-installation-id` (the seal, so the CALLER's installation on this
-arm and the target's admitting installation on the person path; equal to the
-presented seal whenever a capability is presented), answers an upstream
-failure with a static 502, and logs every admit and refusal with alias, tenant,
-task, seal and presenter. No installations client wired answers 503. It is the
-gateway's half of a solution's release-declared headless operation; a module
-calling a peer keeps its in-mesh seam instead.
+context, minted at `/modules/_operation-context`. The arm reads no principal and
+decides nothing from the seal. It requires exactly one capability header (401
+`invalid work context` otherwise), strips identity (and
+`X-Forwarded-Client-Cert`) before its limiter, meters on
+`workload-operation:<tenant>` (fail closed), and only then asks accounts two
+things, per request and uncached: `WorkContextService/AdmitWorkloadOperation`,
+whether the capability is a module operation context for this alias (any
+refusal is 401 `authentication required`, logged with the issuer's reason; an
+error, a call past its 2 second bound, an answer naming another tenant or seal,
+or no client wired is 503), and `ListInstallations`, whether the signed tenant
+has an ACTIVE installation of the target (else 403) whose rows do not include
+the seal (else 401). It forwards no bearer, stamps only
+`x-codefly-installation-id` (the seal accounts admitted, so the CALLER's
+installation on this arm and the target's admitting installation on the person
+path; equal to the presented seal whenever a capability is presented), answers
+an upstream failure with a static 502, and logs every admit and refusal with
+alias, tenant, task, seal and presenter. It is the gateway's half of a
+solution's release-declared headless operation; a module calling a peer keeps
+its in-mesh seam instead.
 
-**Release note: deploy accounts before this gateway.** The arm relies on
-accounts refusing a person's child for another audience's installation
-(`StartChildSession`). An older accounts mints such a child, valid for up to 900
-seconds, which this arm would read as unattended work. Roll accounts first, and
-roll this gateway only once no older accounts replica is serving.
+**Release note: deploy accounts before this gateway.** The arm calls
+`AdmitWorkloadOperation`, which an older accounts does not serve: there every
+bearer-less request answers 503 and nothing is admitted. Roll accounts first.
 
 The registry's `SolutionDeclaredBinding.kind` positively identifies each surface.
 An unspecified kind is refused by both. Neither presence nor a reusable alias
@@ -136,19 +135,19 @@ constitutes organization consent.
 
 Module identity exchanges are described below; accounts owns their authority.
 
-A person's interactive capability is sealed to the organization's installation
-of the audience it addresses, a module principal's to its own. Two person-owned
-kinds are sealed elsewhere by design: a source-operation context, sealed to the
-installation of the module using the person's source delegation and minted only
-by that module's identity, and an installation task, sealed to its installation
-and minted only with an `EXPOSURE_INTERNAL` credential. The bearer-less arm
-admits all three kinds (the unattended-work family) and never a person's
-interactive capability. Accounts holds that as an invariant over every person
-mint: `TestAPersonsCapabilityIsSealedToItsAudiencesInstallation` and
-`TestEveryWorkContextMintIsClassifiedBySeal` in accounts
-(`pkg/adapters/work_context_seal_pin_test.go`) pin it. The gateway reads no
-owner (core's `Inspected` carries none), so any decision this gateway makes from
-a seal rests on that test.
+The gateway reads no owner (core's `Inspected` carries none), so it cannot tell
+a module operation context from a person's capability by anything it holds: a
+source-operation context, an installation task and an installed binding's child
+are each a person's and each sealed to an installation that is not the target's.
+That is why the arm asks the issuer rather than reading the seal. Accounts
+admits exactly one shape, and two tests in accounts
+(`pkg/adapters/workload_operation_admission_test.go`) hold it there:
+`TestEveryMintHasAWorkloadOperationVerdict` asserts the verdict for every mint
+RPC, binding mode and signing entrypoint, with only `StartModuleOperationTask`
+admitted, and `TestWorkloadOperationTableNamesEveryMintAndOwnerKind` fails when a
+mint RPC, a signing entrypoint or an owner kind appears that the table does not
+name. On this side, `TestModuleRoute_TheBearerLessArmAdmitsOnlyWhatTheIssuerAdmits`
+pins every refusal to 401 before anything else is read.
 
 ## What a runtime-registered upstream receives, and what it does not
 
@@ -429,7 +428,8 @@ on this endpoint and nowhere else: on `rest` they are unexposed paths (`404`).
 The fourth workload-only surface is the bearer-less arm of `/v1/<alias>/*`
 (above): on `rest` the same request is an unauthenticated one, `401`. Unlike the
 exchanges it proves no workload with a projected token: it admits a capability
-on the strength of its signature, its seal and, on a cell, the presenter. A
+on the strength of its signature, the issuer's admission of its shape and, on a
+cell, the presenter. A
 deployed gateway requires that presenter again in the arm itself.
 The listener puts the authenticated presenter in private request context and
 removes the raw headers. `moduleMintContext` sends that principal to accounts

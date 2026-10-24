@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+
+// Workload operation admission: the issuer's answer to whether a capability
+// presented with no bearer at a declared module route is a module operation
+// context, the one shape that route admits without a person.
+//
+// A forwarding hop cannot answer it. Core's Inspector, which is all a hop runs,
+// withholds the owner, the owner's kind, the actor chain and the operation
+// binding, and those are exactly what tell a module's unattended work from a
+// person's capability. Accounts signed the capability and can read its own
+// claims, so the gateway asks it. WorkContextService/AdmitWorkloadOperation
+// takes and answers these messages.
+//
+// They live in their own file, with deliberately minimal imports, so the
+// auth-gateway can generate the same types from the same source proto, as it
+// does for installation_listing.proto and solution_entitlements.proto. The
+// gateway's copy is this file, byte for byte.
+
+// WorkloadOperationRefusal is why a capability was not admitted. The gateway
+// logs it and answers every refusal alike.
+enum WorkloadOperationRefusal {
+  WORKLOAD_OPERATION_REFUSAL_UNSPECIFIED = 0;
+  // Not a capability this issuer signed, inside its window, addressed to the
+  // alias; or the alias is one no operation context is minted for.
+  WORKLOAD_OPERATION_REFUSAL_NOT_INSPECTED = 1;
+  // Owned by a principal that is not a service: a person, an agent, or a kind
+  // this issuer does not name.
+  WORKLOAD_OPERATION_REFUSAL_OWNER_NOT_SERVICE = 2;
+  // A service principal's capability that is not shaped as a module operation
+  // context: it carries an actor chain, a grant hop, an operation binding, a
+  // parent session or an owner agent, names no authority scope, or has another
+  // replay policy or a longer window.
+  WORKLOAD_OPERATION_REFUSAL_NOT_OPERATION_CONTEXT = 3;
+  // Owned by the module principal the alias names: a module does not reach
+  // itself through this route.
+  WORKLOAD_OPERATION_REFUSAL_OWNER_IS_TARGET = 4;
+  // The owner is not a declared module principal, or the seal is not an ACTIVE
+  // installation in the tenant installed under that principal.
+  WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS = 5;
+}
+
+message AdmitWorkloadOperationRequest {
+  // The capability as presented, encoded. It is inspected and read, never
+  // verified: nothing it carries is consumed.
+  string work_context = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 32768
+  ];
+  // The route alias the gateway resolved from the request path. The capability
+  // must be addressed to it.
+  string alias = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+}
+
+message AdmitWorkloadOperationResponse {
+  bool admitted = 1;
+  // Set when admitted is false.
+  WorkloadOperationRefusal refusal = 2;
+  // The signed facts the gateway logs and forwards, set only when admitted:
+  // the tenant, the installation the capability is sealed to (the CALLING
+  // module's), and the task.
+  string tenant_id = 3;
+  string installation_id = 4;
+  string task_id = 5;
+}
