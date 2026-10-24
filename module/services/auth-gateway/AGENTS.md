@@ -100,6 +100,25 @@ live entitlement to the resolved target, without caching that decision. Accounts
 intersects the delivered authority, envelope and organization's installation
 scope. The path is forwarded unchanged; a module owns its `/v1/<alias>` surface.
 
+**A declared module route has two arms.** A request carrying a bearer (or a
+cookie, or arriving on `rest`) takes the person path above. A request on the
+workload endpoint with no `Authorization` and no `Cookie`, presenting a
+capability addressed to the alias, takes the bearer-less arm
+(`gateway_workload_operation.go`): a composed workload's headless operation
+context, minted at `/modules/_operation-context`. The arm reads no principal. It
+requires the signed tenant to have an ACTIVE installation of the target and the
+seal to name a different ACTIVE installation in that tenant, read from accounts'
+`ListInstallations` per request and uncached; a seal equal to the target's
+installation is a person's capability and answers 401 as before. It strips
+identity before its limiter, meters on `workload-operation:<tenant>` (fail
+closed), forwards no bearer, stamps only `x-codefly-installation-id` (the seal,
+so the CALLER's installation on this arm and the target's admitting installation
+on the person path; equal to the presented seal on both), answers an upstream
+failure with a static 502, and logs every admit and refusal with alias, tenant,
+task, seal and presenter. No installations client wired answers 503. It is the
+gateway's half of a solution's release-declared headless operation; a module
+calling a peer keeps its in-mesh seam instead.
+
 The registry's `SolutionDeclaredBinding.kind` positively identifies each surface.
 An unspecified kind is refused by both. Neither presence nor a reusable alias
 constitutes organization consent.
@@ -149,9 +168,12 @@ An upstream also receives the identity `ext_authz` stamped: the subject, the ten
 the session, the credential kind and the scope ceiling. That names the person
 independently of the bearer beside it.
 
-**SP-GW-07's second half is open, recorded as `SA-F-BEARER`.** The invariant is that
-an upstream receives a host-minted context bound to THAT upstream's own audience —
-not merely that it stops receiving the person's session. The host access token
+**SP-GW-07's second half is open on the person path, recorded as `SA-F-BEARER`.**
+The invariant is that an upstream receives a host-minted context bound to THAT
+upstream's own audience — not merely that it stops receiving the person's session.
+The bearer-less module arm is the first path that meets it: the upstream receives
+an operation context accounts minted for its own audience, and no bearer, no
+cookie and no identity header. A person's request still carries the bearer. The host access token
 carries one host-wide audience and the person's full authority, so a declared
 upstream holding it holds more than it needs, and that exposure is real while this
 stays open. What closes it: a host-minted context bound to the upstream's own
@@ -387,6 +409,11 @@ admits the waypoint alone; comparing `By` does not establish that network fact.
 The three module credential exchanges (`/modules/_work-context`,
 `/modules/_operation-context`, `/modules/_source-operation-context`) are served
 on this endpoint and nowhere else: on `rest` they are unexposed paths (`404`).
+The fourth workload-only surface is the bearer-less arm of `/v1/<alias>/*`
+(above): on `rest` the same request is an unauthenticated one, `401`. Unlike the
+exchanges it proves no workload with a projected token: it admits a capability
+on the strength of its signature, its seal and, on a cell, the presenter. A
+deployed gateway requires that presenter again in the arm itself.
 The listener puts the authenticated presenter in private request context and
 removes the raw headers. `moduleMintContext` sends that principal to accounts
 with the existing gateway-provenance credential, separately from the internal

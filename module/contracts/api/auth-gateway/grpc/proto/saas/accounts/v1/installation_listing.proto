@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+// ============================================================================
+// The installation listing, as the auth-gateway reads it.
+//
+// accounts declares these messages in installations.proto beside the
+// InstallationService, which imports the policy options and google.api this
+// gateway does not vendor. The gateway calls one internal-tier RPC,
+// InstallationService/ListInstallations, so it carries the messages that RPC
+// takes and answers, copied definition for definition from installations.proto
+// and nothing else. TestVendoredInstallationListingMatchesAccounts holds every
+// definition here byte-identical to the one accounts declares, so the two
+// cannot drift on the wire.
+// ============================================================================
+
+enum InstallationStatus {
+  INSTALLATION_STATUS_UNSPECIFIED = 0;
+  INSTALLATION_STATUS_ACTIVE = 1;
+  INSTALLATION_STATUS_REVOKED = 2;
+  // Installed, and waiting for the solution to acknowledge its standard install
+  // step. Nothing can use a pending installation.
+  INSTALLATION_STATUS_PENDING = 3;
+  // The solution refused its install step, or never answered within the
+  // attempt budget. Nothing can use it; an administrator may retry it.
+  INSTALLATION_STATUS_FAILED = 4;
+}
+
+enum InstallationHealth {
+  INSTALLATION_HEALTH_UNSPECIFIED = 0;
+  INSTALLATION_HEALTH_HEALTHY = 1;
+  INSTALLATION_HEALTH_NO_ELIGIBLE_OWNER = 2;
+  INSTALLATION_HEALTH_AGENT_REVOKED = 3;
+  INSTALLATION_HEALTH_AGENT_DISABLED = 4;
+  INSTALLATION_HEALTH_STANDING_GRANT_MISSING = 5;
+}
+
+message Installation {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  string agent_principal_id = 3 [(buf.validate.field).string.uuid = true];
+  // Was `solution_identifier`: the free-text route alias. It was the join key
+  // every reader used, and because an alias is deliberately reusable by a later
+  // binding, an installation that named one inherited whatever took it next.
+  // Replaced by target_id below. Reserved rather than reused so no consumer can
+  // read an alias out of a field that now carries an identity.
+  reserved 4;
+  reserved "solution_identifier";
+  string owner_principal_id = 5 [(buf.validate.field).string.uuid = true];
+  repeated string co_owner_principal_ids = 6;
+  string root_scope_node_id = 7 [(buf.validate.field).string.uuid = true];
+  InstallationStatus status = 8;
+  google.protobuf.Timestamp created_at = 9;
+  optional google.protobuf.Timestamp revoked_at = 10;
+  // The immutable solution target this installation was consented to: one
+  // continuous period of one binding's presence on this host. It is never
+  // reused, so a replacement binding — even one claiming the same route alias —
+  // is a different target and inherits nothing.
+  //
+  // Deliberately NOT accompanied by the route alias. The alias is a property of
+  // the target that a later generation may move, and resolving it here would
+  // mean joining the host's presence state into a request-path listing — which
+  // would require granting request traffic read over every organisation's
+  // presence to answer about one. A consumer that needs the alias asks
+  // ListAvailableSolutions, which serves accepted applied state, and joins on
+  // this id.
+  //
+  // Empty only on a revoked historical row whose target could not be
+  // established at the cutover; an active installation always names one.
+  string target_id = 11 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Why a revoked installation was revoked, when it was not an administrator
+  // uninstalling: the installation-identity cutover, or a tenancy narrowing that
+  // withdrew this organisation. Empty on an active row.
+  string revoked_reason = 12 [(buf.validate.field).string.max_len = 512];
+  // Why the install step failed: the solution's bounded refusal reason, or a
+  // fixed reason when it never answered. Empty unless status is FAILED.
+  string failure_reason = 13 [(buf.validate.field).string.max_len = 512];
+}
+
+message ListInstallationsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // Restrict to one lifecycle status. UNSPECIFIED returns every status, so a
+  // caller that must see only live installs asks for ACTIVE explicitly rather
+  // than leaning on a default that would silently widen if the enum grew.
+  InstallationStatus status = 2;
+  // Page bound. 0 -> server default; capped so an organization with many
+  // installations can never return an unbounded result in one call.
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 500
+  }];
+  // Opaque cursor from a previous response's next_page_token; empty for page one.
+  string page_token = 4;
+}
+
+message InstallationSummary {
+  Installation installation = 1;
+  InstallationHealth health = 2;
+}
+
+message ListInstallationsResponse {
+  repeated InstallationSummary installations = 1;
+  // Set when more installations remain; pass it back as page_token. Empty on the
+  // last page.
+  string next_page_token = 2;
+}

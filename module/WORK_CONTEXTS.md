@@ -563,6 +563,20 @@ A composed module reaches it through the gateway's `POST
 /modules/_operation-context` ([services/auth-gateway/AGENTS.md](./services/auth-gateway/AGENTS.md)),
 which brokers to accounts exactly as `/modules/_work-context` does.
 
+The minted context is presented at `/v1/<audience>/*` on the same workload
+endpoint, with no bearer: the declared module route's bearer-less arm. A
+composed workload with no person present, such as a solution's release
+publisher, reaches the module it is bound to this way; modules keep calling
+their peers in-mesh. The edge checks what core's `Inspector` can (signature,
+issuer, window, the route's audience, shape), then the signed tenant's ACTIVE
+installations: the target must be installed there, and the seal must name a
+different active installation, which is what unattended work carries and what a
+person's capability never does (see the seal rule above). It strips every
+identity header, meters on the tenant, forwards the capability as presented and
+stamps only `x-codefly-installation-id` with the seal. The callee verifies the
+capability at full strength, as for any other carrier. The route's rules are in
+[GATEWAY_ROUTES.md](./GATEWAY_ROUTES.md#module-rest-routes).
+
 ## Operation contexts from a source delegation
 
 A datasource source's sync is neither of the cases above. It runs as a module

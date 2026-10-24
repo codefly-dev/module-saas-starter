@@ -112,6 +112,36 @@ correspondence check.
 The generated and explicit route catalogs own the complete module REST surface.
 Unknown paths return 404. Module workloads cannot add a proxy target at runtime.
 
+A composed module declared in the solution registry is reached at
+`/v1/<alias>/*`, only after both catalogs found no route, with the path
+forwarded unchanged (`handleDeclaredModule`). An edge-inspected Work Context
+there may name the alias or `module-capabilities`; anything else is 401
+`invalid work context`. The route then has two arms:
+
+- **The person's bearer path.** ext_authz verifies the bearer and stamps the
+  person; accounts admits the viewer to the module's installation per request;
+  the bearer travels (SA-F-BEARER), the cookie never does;
+  `x-codefly-installation-id` names the target's admitting installation.
+- **The bearer-less arm, on the workload endpoint only**, for a headless
+  operation context. Selected by: no `Authorization` and no `Cookie` header, the
+  workload listener, and a capability whose audience is the alias. Then: a
+  presenter when the gateway is deployed; a non-empty signed tenant and seal;
+  every identity header stripped, `Authorization` and `Proxy-Authorization`
+  dropped; the budget keyed `workload-operation:<tenant>`, failing closed; and
+  accounts' `ListInstallations` for that tenant (ACTIVE, uncached) must show an
+  installation of the target (else 403) and the seal as a DIFFERENT active
+  installation (else 401 `authentication required`, the answer a person's
+  capability has without its bearer). 503 when the authority cannot answer or
+  is not wired. Admitted requests carry no bearer and no identity header, and
+  `x-codefly-installation-id` is set to the seal, which names the CALLER's
+  installation, not consent on the target's side. An upstream failure is a
+  static 502. Every admit and refusal is logged with alias, tenant, task, seal
+  and presenter, never the token.
+
+Elsewhere the same request is a bearer-less request: 401 on `rest`, 401 with a
+`module-capabilities` capability, 401 for a capability sealed to the target's own
+installation.
+
 `saas.frontend.plugins.v1` catalogs all 36 Next.js pages and the admin plugin
 catch-all. The environment topology generator owns the deployed ingress
 VirtualService, so the target-neutral route catalog does not carry a namespace,
