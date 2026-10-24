@@ -108,10 +108,13 @@ capability addressed to the alias, takes the bearer-less arm
 context, minted at `/modules/_operation-context`. The arm reads no principal. It
 requires exactly one capability header (401 `invalid work context` otherwise),
 the signed tenant to have an ACTIVE installation of the target, and the seal to
-name an ACTIVE installation in that tenant that is none of the target's, read
-from accounts' `ListInstallations` per request and uncached; a seal equal to any
-active installation of the target is a person's capability and answers 401 as
-before. It strips identity (and `X-Forwarded-Client-Cert`) before its limiter,
+name an ACTIVE installation in that tenant that is none of the target's and
+whose `registry_principal_id` is set and is not `modulePrincipalID(alias)`, read
+from accounts' `ListInstallations` per request and uncached; any other seal may
+be a person's capability (accounts seals one by the audience's principal, which
+need not be the route alias's target) and answers 401 as before.
+`modulePrincipalID` restates accounts' `ModulePrincipalID`, pinned on both sides
+by test. It strips identity (and `X-Forwarded-Client-Cert`) before its limiter,
 meters on `workload-operation:<tenant>` (fail closed), forwards no bearer, stamps
 only `x-codefly-installation-id` (the seal, so the CALLER's installation on this
 arm and the target's admitting installation on the person path; equal to the

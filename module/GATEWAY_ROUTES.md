@@ -132,8 +132,11 @@ there may name the alias or `module-capabilities`; anything else is 401
   `workload-operation:<tenant>`, failing closed; and accounts'
   `ListInstallations` for that tenant (ACTIVE, uncached) must show an
   installation of the target (else 403) and the seal as an active installation
-  that is none of the target's (else 401 `authentication required`, the answer a
-  person's capability has without its bearer). 503 when the authority cannot answer or
+  that is none of the target's and whose registry principal is known and is not
+  the alias's module principal (else 401 `authentication required`, the answer
+  a person's capability has without its bearer). The principal check is what
+  holds when a module's alias and principal differ: accounts seals a person's
+  capability by principal, the route resolves by alias. 503 when the authority cannot answer or
   is not wired. Admitted requests carry no bearer and no identity header, and
   `x-codefly-installation-id` is set to the seal, which names the CALLER's
   installation, not consent on the target's side. An upstream failure is a
