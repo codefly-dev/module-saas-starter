@@ -29,9 +29,20 @@ func WithService(s *business.Service) {
 
 func quotaStatusError(err error) error {
 	if errors.Is(err, business.ErrEntitlementQuotaExceeded) {
-		return status.Error(codes.ResourceExhausted, err.Error())
+		return quotaRefusal(err)
 	}
 	return err
+}
+
+// quotaRefusal carries the quota's own sentence ("seats quota exhausted: used
+// 5 of 5"), never the wrapped chain: the message is shown to the person who hit
+// the limit, and the internal call path is not theirs to read.
+func quotaRefusal(err error) error {
+	var quota *business.EntitlementQuotaError
+	if errors.As(err, &quota) {
+		return status.Error(codes.ResourceExhausted, quota.Error())
+	}
+	return status.Error(codes.ResourceExhausted, business.ErrEntitlementQuotaExceeded.Error())
 }
 
 // orgMembershipStatusError maps the administrative-continuity invariant to a
@@ -74,7 +85,7 @@ func invitationStatusError(err error) error {
 	case errors.Is(err, business.ErrInvitationExpired):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, business.ErrEntitlementQuotaExceeded):
-		return status.Error(codes.ResourceExhausted, err.Error())
+		return quotaRefusal(err)
 	default:
 		return status.Error(codes.Internal, "invitation operation failed")
 	}

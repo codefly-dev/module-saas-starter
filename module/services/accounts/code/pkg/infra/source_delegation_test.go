@@ -200,7 +200,7 @@ func (w *delegationWorld) service(t *testing.T, registry business.ModulePrincipa
 	installCapabilityFixture(t, svc, w.org, w.admin)
 	installCapabilityFixture(t, svc, w.otherOrg, w.other)
 	bindDelegationModules(svc, svc.ModulePrincipals())
-	svc.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
+	svc.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore, business.PlansSold))
 	svc.SetDatasourceConnector(delegationCipher{}, delegationProducer{}, "")
 	svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return delegationGitHub{} })
 	if w.audit == nil {

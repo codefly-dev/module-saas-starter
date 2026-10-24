@@ -122,7 +122,7 @@ func (s *Service) CreateInvitation(
 		if err != nil {
 			return w.Wrapf(err, "cannot check seat quota")
 		}
-		if err := quota.RequireAvailable(); err != nil {
+		if err := admitCardinality(ctx, req.OrgId, quota); err != nil {
 			return err
 		}
 		if org, err := s.store.GetOrganization(ctx, req.OrgId); err == nil && org != nil {

@@ -64,6 +64,7 @@ func newUsageService(t *testing.T, store business.Store) *business.Service {
 	t.Helper()
 	service, err := business.NewService(store)
 	require.NoError(t, err)
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store, business.PlansSold))
 	return service
 }
 

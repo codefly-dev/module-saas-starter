@@ -55,6 +55,25 @@ export function stepUpToast(returnTo: string = here()): void {
 }
 
 /**
+ * The message for a refused mutation. Two refusals carry a sentence written for
+ * whoever is reading it, and a generic "Failed to …" would send them looking
+ * for an outage instead of at the rule they hit: a precondition the request may
+ * not break ("organization must keep at least one owner or admin") and an
+ * exhausted quota ("seats quota exhausted: used 5 of 5"). Every other code can
+ * carry server internals, so it gets the screen's own fallback.
+ */
+export function refusalMessage(error: unknown, fallback: string): string {
+	if (!(error instanceof ConnectError)) return fallback;
+	if (
+		error.code !== Code.FailedPrecondition &&
+		error.code !== Code.ResourceExhausted
+	) {
+		return fallback;
+	}
+	return error.rawMessage || fallback;
+}
+
+/**
  * The toast for a refused mutation: the step-up when the host asked for a
  * recent factor, the screen's own message otherwise.
  */

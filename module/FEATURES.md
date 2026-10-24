@@ -741,7 +741,7 @@ Environment variables consumed by the api:
 | `VAULT_ADDR`, `VAULT_TOKEN`    | Signing-key storage; falls back to ephemeral key in dev     |
 | Codefly `application` configuration | Canonical product origin, `ORGANIZATION_CREATION` (`open` default, `platform_admin`, `disabled`), and optional one-time bootstrap admin email |
 | Codefly `identity` configuration | Required provider adapter, browser endpoints, client credentials, token validation, and exact redirect allowlist; see `LOCAL_DOGFOODING.md` |
-| `BILLING_PROVIDER`             | Explicit `disabled` (default) or `stripe` adapter            |
+| `BILLING_PROVIDER`             | Explicit `disabled` (default) or `stripe` adapter. Also whether the deployment sells plans: only `stripe` enforces plan limits; `disabled` resolves every entitlement as unlimited ([USAGE_METERING.md](./USAGE_METERING.md#only-a-deployment-that-sells-plans-enforces-them)) |
 | `STRIPE_API_KEY`               | Required in Stripe mode; test/live scope is operator-owned   |
 | `STRIPE_WEBHOOK_SECRET`        | Required in Stripe mode; exact-body webhook verification     |
 | Codefly `email` configuration  | `EMAIL_PROVIDER` (`resend`, `disabled`, or `log` — the log sink only in the `local` environment, and the default only there; outside it an unset provider refuses to boot), `EMAIL_FROM` (required for a deployed `resend`), `RESEND_API_BASE`; secrets `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET` (both required in Resend mode). Read only through the group, never the process environment |
