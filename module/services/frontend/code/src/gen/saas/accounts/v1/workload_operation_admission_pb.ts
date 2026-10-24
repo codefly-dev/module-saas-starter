@@ -139,8 +139,8 @@ export enum WorkloadOperationRefusal {
   OWNER_IS_TARGET = 4,
 
   /**
-   * The owner is not a declared module principal, or the seal is not an ACTIVE
-   * installation in the tenant installed under that principal.
+   * The owner is not a declared module principal, so no installation of its
+   * can stand behind the seal.
    *
    * @generated from enum value: WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS = 5;
    */
@@ -165,7 +165,9 @@ export enum WorkloadOperationRefusal {
 
   /**
    * The issuer's live state has moved past the capability: its authorization
-   * revision is superseded, or an epoch it carries has advanced.
+   * revision is superseded, an epoch it carries has advanced, the seal names an
+   * installation the owner no longer holds, or the owner's module was
+   * uninstalled or now belongs to another tenant.
    *
    * @generated from enum value: WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT = 8;
    */

@@ -39,8 +39,8 @@ enum WorkloadOperationRefusal {
   // Owned by the module principal the alias names: a module does not reach
   // itself through this route.
   WORKLOAD_OPERATION_REFUSAL_OWNER_IS_TARGET = 4;
-  // The owner is not a declared module principal, or the seal is not an ACTIVE
-  // installation in the tenant installed under that principal.
+  // The owner is not a declared module principal, so no installation of its
+  // can stand behind the seal.
   WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS = 5;
   // The tenant has no ACTIVE installation of the route's target. The gateway
   // answers this one 403, as it answers a person whose organization never
@@ -50,7 +50,9 @@ enum WorkloadOperationRefusal {
   // module it addresses.
   WORKLOAD_OPERATION_REFUSAL_SEAL_ON_TARGET = 7;
   // The issuer's live state has moved past the capability: its authorization
-  // revision is superseded, or an epoch it carries has advanced.
+  // revision is superseded, an epoch it carries has advanced, the seal names an
+  // installation the owner no longer holds, or the owner's module was
+  // uninstalled or now belongs to another tenant.
   WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT = 8;
 }
 

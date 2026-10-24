@@ -43,8 +43,8 @@ const (
 	// Owned by the module principal the alias names: a module does not reach
 	// itself through this route.
 	WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_OWNER_IS_TARGET WorkloadOperationRefusal = 4
-	// The owner is not a declared module principal, or the seal is not an ACTIVE
-	// installation in the tenant installed under that principal.
+	// The owner is not a declared module principal, so no installation of its
+	// can stand behind the seal.
 	WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_SEAL_NOT_OWNERS WorkloadOperationRefusal = 5
 	// The tenant has no ACTIVE installation of the route's target. The gateway
 	// answers this one 403, as it answers a person whose organization never
@@ -54,7 +54,9 @@ const (
 	// module it addresses.
 	WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_SEAL_ON_TARGET WorkloadOperationRefusal = 7
 	// The issuer's live state has moved past the capability: its authorization
-	// revision is superseded, or an epoch it carries has advanced.
+	// revision is superseded, an epoch it carries has advanced, the seal names an
+	// installation the owner no longer holds, or the owner's module was
+	// uninstalled or now belongs to another tenant.
 	WorkloadOperationRefusal_WORKLOAD_OPERATION_REFUSAL_NOT_CURRENT WorkloadOperationRefusal = 8
 )
 
