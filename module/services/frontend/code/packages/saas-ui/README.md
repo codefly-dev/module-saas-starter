@@ -583,6 +583,19 @@ elapsed through `Intl.RelativeTimeFormat`, for a consumer's own shell.
 
 ## Installing from a solution
 
+Version 0.13 requires Zod `^4.6.6`, `@hookform/resolvers >=5.1.0` and
+React Hook Form `>=7.55.0`. The exported source schemas use Zod 4 declarations
+and its `check` refinement hook; Zod 3 cannot consume them. Zod 4.6.6 is the
+minimum patched release for GHSA-mrhx-c7xc-m3w5. The resolver must understand
+Zod 4 errors so invalid form input becomes a field error instead of a thrown
+exception. The co-versioned `@codefly-dev/ui` peer is `^0.13.0`.
+
+The `example-registry-ui` consumer in `scripts/test-registry-ui.mjs` installs
+packed packages through a registry fixture, compiles imports of both source
+schemas and their inferred value types, and exercises valid, missing-token and
+oversized-scope input through the form resolver. Run it from the frontend with
+`npm run test:published-ui` after building the workspace packages.
+
 This package is published to GitHub Packages under the org's `@codefly-dev`
 scope, so a consumer needs that scope routed to the GitHub registry with a read
 token:

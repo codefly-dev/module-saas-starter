@@ -37,7 +37,7 @@ export function TeamForm({
 	error,
 }: TeamFormProps) {
 	const editing = mode === "edit";
-	const form = useForm<CreateTeamValues>({
+	const form = useForm({
 		resolver: zodResolver(createTeamSchema),
 		defaultValues: {
 			name: initial?.name ?? "",
