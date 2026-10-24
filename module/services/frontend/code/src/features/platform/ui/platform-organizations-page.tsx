@@ -69,18 +69,23 @@ export function PlatformOrganizationsPage() {
 	const outcome = readOutcome(isError, error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the organizations");
-	const rows: PlatformOrganizationRow[] = (
-		withheld ? [] : (data?.organizations ?? [])
-	).map((entry) => ({
-		id: entry.organization?.id ?? "",
-		name: entry.organization?.name ?? "",
-		slug: entry.organization?.slug ?? "",
-		memberCount: entry.memberCount,
-		createdAt: entry.organization?.createdAt
-			? timestampDate(entry.organization.createdAt).toISOString()
-			: undefined,
-		archived: entry.organization?.archivedAt !== undefined,
-	}));
+	// Memoized: the table resets its page index whenever its data changes
+	// identity, and that reset re-renders this page, so rows rebuilt on every
+	// render would re-render it forever.
+	const rows = useMemo<PlatformOrganizationRow[]>(
+		() =>
+			(withheld ? [] : (data?.organizations ?? [])).map((entry) => ({
+				id: entry.organization?.id ?? "",
+				name: entry.organization?.name ?? "",
+				slug: entry.organization?.slug ?? "",
+				memberCount: entry.memberCount,
+				createdAt: entry.organization?.createdAt
+					? timestampDate(entry.organization.createdAt).toISOString()
+					: undefined,
+				archived: entry.organization?.archivedAt !== undefined,
+			})),
+		[withheld, data],
+	);
 
 	const columns = useMemo(
 		() => [
