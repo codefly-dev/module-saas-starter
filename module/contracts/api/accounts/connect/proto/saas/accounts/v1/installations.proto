@@ -5,8 +5,8 @@ package saas.accounts.v1;
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
-import "google/protobuf/timestamp.proto";
 import "saas/accounts/v1/authorization.proto";
+import "saas/accounts/v1/installation_listing.proto";
 import "saas/policy/v1/options.proto";
 
 // ============================================================================
@@ -21,83 +21,6 @@ import "saas/policy/v1/options.proto";
 // installation into a short-lived Work Context lives on WorkContextService
 // (StartInstallationTask) beside the other mints.
 // ============================================================================
-
-// InstallationStatus is the lifecycle of an installation row. An uninstall is a
-// soft delete (status=revoked, revoked_at set) so the agent, grants, and audit
-// trail remain resolvable.
-enum InstallationStatus {
-  INSTALLATION_STATUS_UNSPECIFIED = 0;
-  INSTALLATION_STATUS_ACTIVE = 1;
-  INSTALLATION_STATUS_REVOKED = 2;
-  // Installed, and waiting for the solution to acknowledge its standard install
-  // step. Nothing can use a pending installation.
-  INSTALLATION_STATUS_PENDING = 3;
-  // The solution refused its install step, or never answered within the
-  // attempt budget. Nothing can use it; an administrator may retry it.
-  INSTALLATION_STATUS_FAILED = 4;
-}
-
-// InstallationHealth is resolved live from current authority facts, never
-// stored. It is the observable form of the fail-closed mint rule: a
-// StartInstallationTask fails exactly when health is not HEALTHY, and transfer
-// or re-enable restores it. NO_ELIGIBLE_OWNER means neither the owner of record
-// nor any co-owner is currently an org admin (the Zapier-class "connection owner
-// left the org" failure), surfaced rather than silently reassigned.
-enum InstallationHealth {
-  INSTALLATION_HEALTH_UNSPECIFIED = 0;
-  INSTALLATION_HEALTH_HEALTHY = 1;
-  INSTALLATION_HEALTH_NO_ELIGIBLE_OWNER = 2;
-  INSTALLATION_HEALTH_AGENT_REVOKED = 3;
-  INSTALLATION_HEALTH_AGENT_DISABLED = 4;
-  INSTALLATION_HEALTH_STANDING_GRANT_MISSING = 5;
-}
-
-// Installation is one solution's bound identity in an org. Server-assigned ids;
-// the browser cannot attest to tenancy, the agent principal, or the scope node.
-message Installation {
-  string id = 1 [(buf.validate.field).string.uuid = true];
-  string org_id = 2 [(buf.validate.field).string.uuid = true];
-  string agent_principal_id = 3 [(buf.validate.field).string.uuid = true];
-  // Was `solution_identifier`: the free-text route alias. It was the join key
-  // every reader used, and because an alias is deliberately reusable by a later
-  // binding, an installation that named one inherited whatever took it next.
-  // Replaced by target_id below. Reserved rather than reused so no consumer can
-  // read an alias out of a field that now carries an identity.
-  reserved 4;
-  reserved "solution_identifier";
-  string owner_principal_id = 5 [(buf.validate.field).string.uuid = true];
-  repeated string co_owner_principal_ids = 6;
-  string root_scope_node_id = 7 [(buf.validate.field).string.uuid = true];
-  InstallationStatus status = 8;
-  google.protobuf.Timestamp created_at = 9;
-  optional google.protobuf.Timestamp revoked_at = 10;
-  // The immutable solution target this installation was consented to: one
-  // continuous period of one binding's presence on this host. It is never
-  // reused, so a replacement binding — even one claiming the same route alias —
-  // is a different target and inherits nothing.
-  //
-  // Deliberately NOT accompanied by the route alias. The alias is a property of
-  // the target that a later generation may move, and resolving it here would
-  // mean joining the host's presence state into a request-path listing — which
-  // would require granting request traffic read over every organisation's
-  // presence to answer about one. A consumer that needs the alias asks
-  // ListAvailableSolutions, which serves accepted applied state, and joins on
-  // this id.
-  //
-  // Empty only on a revoked historical row whose target could not be
-  // established at the cutover; an active installation always names one.
-  string target_id = 11 [
-    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
-    (buf.validate.field).string.uuid = true
-  ];
-  // Why a revoked installation was revoked, when it was not an administrator
-  // uninstalling: the installation-identity cutover, or a tenancy narrowing that
-  // withdrew this organisation. Empty on an active row.
-  string revoked_reason = 12 [(buf.validate.field).string.max_len = 512];
-  // Why the install step failed: the solution's bounded refusal reason, or a
-  // fixed reason when it never answered. Empty unless status is FAILED.
-  string failure_reason = 13 [(buf.validate.field).string.max_len = 512];
-}
 
 message InstallSolutionRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
@@ -217,42 +140,6 @@ message GetInstallationResponse {
   Installation installation = 1;
   // Resolved live at read time from current authority facts.
   InstallationHealth health = 2;
-}
-
-// ListInstallationsRequest asks what one organization has installed. Every other
-// RPC on this service names a single installation, so until this existed nothing
-// could answer "what has this org installed?" — which is the authority read a
-// per-organization solution projection is built on (issue #949).
-message ListInstallationsRequest {
-  string org_id = 1 [(buf.validate.field).string.uuid = true];
-  // Restrict to one lifecycle status. UNSPECIFIED returns every status, so a
-  // caller that must see only live installs asks for ACTIVE explicitly rather
-  // than leaning on a default that would silently widen if the enum grew.
-  InstallationStatus status = 2;
-  // Page bound. 0 -> server default; capped so an organization with many
-  // installations can never return an unbounded result in one call.
-  int32 page_size = 3 [(buf.validate.field).int32 = {
-    gte: 0
-    lte: 500
-  }];
-  // Opaque cursor from a previous response's next_page_token; empty for page one.
-  string page_token = 4;
-}
-
-// InstallationSummary is one row of the listing: the installation, plus the health
-// resolved live beside it exactly as GetInstallation resolves it for one. Health
-// travels with the row because a consumer that renders an installed solution as
-// unavailable would otherwise need one GetInstallation per installation.
-message InstallationSummary {
-  Installation installation = 1;
-  InstallationHealth health = 2;
-}
-
-message ListInstallationsResponse {
-  repeated InstallationSummary installations = 1;
-  // Set when more installations remain; pass it back as page_token. Empty on the
-  // last page.
-  string next_page_token = 2;
 }
 
 // InstallationService composes and administers installations. The headless mint
@@ -431,11 +318,15 @@ service InstallationService {
   // ListInstallations enumerates one organization's installations with their live
   // health. It is internal-tier on purpose: it takes the organization as a request
   // field, so only a caller holding the cluster-internal credential may ask, and
-  // the tenant it asks about is the one the auth-gateway projected from a verified
-  // identity — never one a browser supplied. It sits beside
-  // PermissionService.ListAccessibleScopes for that reason: the two are read
-  // together to answer what a viewer's organization installed and what that viewer
-  // was granted.
+  // the tenant it asks about is never one a browser supplied. The auth-gateway is
+  // its caller, for two reads. Its viewer projection asks about the tenant it
+  // projected from a verified identity; it sits beside
+  // PermissionService.ListAccessibleScopes for that reason, the two read together
+  // to answer what a viewer's organization installed and what that viewer was
+  // granted. Its declared module route's bearer-less arm asks about the tenant an
+  // edge-verified Work Context names, a value this issuer signed, to admit a
+  // headless operation context only when the target is installed there and the
+  // context is sealed to another active installation.
   rpc ListInstallations(ListInstallationsRequest) returns (ListInstallationsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
@@ -496,7 +387,8 @@ service InstallationService {
   // It is the org-admin companion to the internal ListInstallations, and it is a
   // separate method rather than a relaxed policy on that one: ListInstallations
   // is read by the gateway for an organisation it projected from a verified
-  // identity, and a bare tenant credential must never reach it. This one binds
+  // identity or that an edge-verified Work Context names, and a bare tenant
+  // credential must never reach it. This one binds
   // the organisation to the caller's own admin membership, exactly as
   // ListAvailableSolutions does, so no organisation's administrator can read
   // another's. The one exception is inherited, not added here: a platform

@@ -3,9 +3,11 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { describe, expect, it } from "vitest";
 import { RoleSchema } from "@/gen/saas/accounts/v1/common_pb";
 import {
-	AvailableSolutionSchema,
 	InstallationHealth,
 	InstallationSchema,
+} from "@/gen/saas/accounts/v1/installation_listing_pb";
+import {
+	AvailableSolutionSchema,
 	OrganizationInstallationSchema,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import {
