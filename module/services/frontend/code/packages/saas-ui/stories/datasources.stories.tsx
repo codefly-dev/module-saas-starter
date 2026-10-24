@@ -15,6 +15,12 @@ import {
 	type SourceSyncView,
 } from "../src/index.js";
 
+import {
+	exampleProvider,
+	repositoryProvider,
+	refusedProvider,
+} from "./catalog-fixtures.js";
+
 export default { title: "SaaS UI/Datasources" };
 const source: DatasourceView = {
 	id: "example-source",
@@ -39,17 +45,31 @@ const degradedSource: DatasourceView = {
 function Preview({
 	state,
 }: {
-	state: "populated" | "empty" | "loading" | "error" | "degraded";
+	state:
+		| "populated"
+		| "empty"
+		| "loading"
+		| "error"
+		| "degraded"
+		| "catalog"
+		| "refused";
 }) {
 	const [queryClient] = useState(
 		() => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 	);
 	const [client] = useState<DatasourceClient>(() => ({
+		getCatalog: async () =>
+			state === "refused"
+				? [refusedProvider]
+				: [repositoryProvider, exampleProvider, refusedProvider],
+		addSource: async () => {
+			throw new Error("Connection is unavailable in this preview.");
+		},
 		listSources: async () => {
 			if (state === "loading") return new Promise(() => {});
 			if (state === "error") throw new Error("Example provider unavailable");
 			if (state === "degraded") return [degradedSource];
-			return state === "empty" ? [] : [source];
+			return ["empty", "catalog", "refused"].includes(state) ? [] : [source];
 		},
 		listAccessibleScopes: async () => [
 			{
@@ -76,6 +96,8 @@ function Preview({
 		</QueryClientProvider>
 	);
 }
+export const CatalogProviders = { render: () => <Preview state="catalog" /> };
+export const RefusedProvider = { render: () => <Preview state="refused" /> };
 export const Populated = { render: () => <Preview state="populated" /> };
 export const Empty = { render: () => <Preview state="empty" /> };
 export const Loading = { render: () => <Preview state="loading" /> };

@@ -403,7 +403,54 @@ export interface SourceReconcileReceipt {
 	jobId: string;
 }
 
+/** Catalog additions are optional so existing injected clients keep compiling. */
+export interface DatasourceConnectField {
+	key: string;
+	displayName: string;
+	help: string;
+	required: boolean;
+	format: "text" | "lines" | "json";
+}
+
+export interface DatasourceProviderView {
+	provider: number;
+	connector: string;
+	displayName: string;
+	description: string;
+	acceptsNewSources: boolean;
+	gap: string;
+	fields: DatasourceConnectField[];
+	credentialModes: string[];
+	supportsWebhook: boolean;
+	/** A newer host may describe a field this installed SDK cannot encode. */
+	unsupportedReason?: string;
+	/** Whether the existing organization-app setup operations serve this provider. */
+	supportsOrganizationAppSetup?: boolean;
+}
+
+/** Transient operation input. Never put this value in query/mutation state. */
+export type DatasourceCredential =
+	| { kind: "none" | "org_app" }
+	| {
+			kind: "static_secret";
+			secret: string;
+			webhookSecret?: string;
+			oauth2ClientSecret?: string;
+	  };
+
+export interface ConnectSourceInput {
+	orgId: string;
+	provider: DatasourceProviderView;
+	/** Raw form values; the adapter encodes them using the SDK descriptor. */
+	config: Record<string, string>;
+	credential: DatasourceCredential;
+	targetCollection: string;
+	boundaryNodeId?: string;
+}
+
 export interface DatasourceClient {
+	getCatalog?(): Promise<DatasourceProviderView[]>;
+	addSource?(input: ConnectSourceInput): Promise<void>;
 	listCollections?(orgId: string): Promise<CollectionAccessView[]>;
 	listGrantSubjects?(orgId: string): Promise<CollectionGrantSubject[]>;
 	grantCollectionRead?(

@@ -19,6 +19,8 @@ import type {
 	SourceReconcileReceipt,
 } from "../types.js";
 
+import { repositoryProvider } from "../../../stories/catalog-fixtures.js";
+
 afterEach(cleanup);
 
 function renderWithClient(ui: ReactElement) {
@@ -34,6 +36,8 @@ function fakeClient(
 	overrides: Partial<DatasourceClient> = {},
 ): DatasourceClient {
 	return {
+		getCatalog: vi.fn(async () => [repositoryProvider]),
+		addSource: vi.fn(async () => {}),
 		listSources: vi.fn(async () => [] as DatasourceView[]),
 		addGitHubSource: vi.fn(async () => {}),
 		reconcileSource: vi.fn(async (_orgId, _id, effectId: string) => ({
@@ -81,7 +85,7 @@ async function openConnectForm(client: DatasourceClient) {
 	fireEvent.change(screen.getByLabelText("Target collection"), {
 		target: { value: "docs" },
 	});
-	fireEvent.change(screen.getByLabelText("Access token"), {
+	fireEvent.change(screen.getByLabelText("Credential"), {
 		target: { value: "ghp_token" },
 	});
 }
@@ -217,17 +221,20 @@ describe("DatasourcesPanel", () => {
 		["paused", "Paused", "warning"],
 		["degraded", "Degraded", "danger"],
 		["unknown", "Unknown", "neutral"],
-	] as const)("paints a %s source in its status tone", async (status, label, tone) => {
-		const source: DatasourceView = { ...sampleSource, status };
-		const client = fakeClient({ listSources: vi.fn(async () => [source]) });
-		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	] as const)(
+		"paints a %s source in its status tone",
+		async (status, label, tone) => {
+			const source: DatasourceView = { ...sampleSource, status };
+			const client = fakeClient({ listSources: vi.fn(async () => [source]) });
+			renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		const badge = (await screen.findByText(label)).closest(
-			"[data-slot=badge]",
-		);
-		expect(badge?.getAttribute("data-tone")).toBe(tone);
-		expect(badge?.querySelector("[data-slot=badge-dot]")).toBeTruthy();
-	});
+			const badge = (await screen.findByText(label)).closest(
+				"[data-slot=badge]",
+			);
+			expect(badge?.getAttribute("data-tone")).toBe(tone);
+			expect(badge?.querySelector("[data-slot=badge-dot]")).toBeTruthy();
+		},
+	);
 
 	it("leaves the status cell quiet for an active source", async () => {
 		// Nearly every row is active, so badging it too buries the states that
@@ -380,7 +387,7 @@ describe("DatasourcesPanel", () => {
 		expect(screen.getByText("Never")).toBeTruthy();
 	});
 
-	it("submits the connect form through addGitHubSource", async () => {
+	it("submits the connect form through addSource", async () => {
 		const client = fakeClient();
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
@@ -390,34 +397,36 @@ describe("DatasourcesPanel", () => {
 		fireEvent.change(screen.getByLabelText("Repository"), {
 			target: { value: "codefly-dev/module-saas-starter" },
 		});
-		fireEvent.change(screen.getByLabelText("Paths (optional)"), {
+		fireEvent.change(screen.getByLabelText("Paths"), {
 			target: { value: "docs/\nsrc/api/" },
 		});
-		fireEvent.click(
-			screen.getByRole("button", { name: "Markdown only (.md)" }),
-		);
+		fireEvent.change(screen.getByLabelText("File types"), {
+			target: { value: ".md" },
+		});
 		fireEvent.change(screen.getByLabelText("Target collection"), {
 			target: { value: "docs" },
 		});
-		fireEvent.change(screen.getByLabelText("Access token"), {
+		fireEvent.change(screen.getByLabelText("Credential"), {
 			target: { value: "ghp_token" },
 		});
-		fireEvent.click(
-			screen.getByRole("button", { name: /^validate and connect$/i }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: /^connect source$/i }));
 
-		await waitFor(() =>
-			expect(client.addGitHubSource).toHaveBeenCalledTimes(1),
-		);
-		expect(client.addGitHubSource).toHaveBeenCalledWith({
+		await waitFor(() => expect(client.addSource).toHaveBeenCalledTimes(1));
+		expect(client.addSource).toHaveBeenCalledWith({
 			orgId: "org-1",
-			repo: "codefly-dev/module-saas-starter",
-			paths: ["docs/", "src/api/"],
-			fileExtensions: [".md"],
-			branch: "",
+			provider: repositoryProvider,
+			config: {
+				repo: "codefly-dev/module-saas-starter",
+				paths: "docs/\nsrc/api/",
+				file_extensions: ".md",
+				branch: "",
+			},
 			targetCollection: "docs",
-			accessToken: "ghp_token",
-			webhookSecret: "",
+			credential: {
+				kind: "static_secret",
+				secret: "ghp_token",
+				webhookSecret: "",
+			},
 		});
 	});
 
@@ -452,38 +461,32 @@ describe("DatasourcesPanel", () => {
 		fireEvent.change(screen.getByLabelText("Target collection"), {
 			target: { value: "docs" },
 		});
-		fireEvent.change(screen.getByLabelText("Access token"), {
+		fireEvent.change(screen.getByLabelText("Credential"), {
 			target: { value: "ghp_token" },
 		});
-		fireEvent.click(
-			screen.getByRole("button", { name: /^validate and connect$/i }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: /^connect source$/i }));
 
 		expect(
-			await screen.findByText(/acme\/handbook is connected and syncing/),
+			await screen.findByText(/Source is connected and syncing/),
 		).toBeTruthy();
 		// And it is an offer, not a gate: it can be put away.
 		fireEvent.click(screen.getByRole("button", { name: "Not now" }));
 		await waitFor(() =>
-			expect(
-				screen.queryByText(/acme\/handbook is connected and syncing/),
-			).toBeNull(),
+			expect(screen.queryByText(/Source is connected and syncing/)).toBeNull(),
 		);
 	});
 
 	it("surfaces a connect failure in the form and keeps the dialog open", async () => {
 		const client = fakeClient({
-			addGitHubSource: vi.fn(async () => {
-				throw new Error("invalid access token");
+			addSource: vi.fn(async () => {
+				throw new Error("Could not connect the source");
 			}),
 		});
 		await openConnectForm(client);
-		fireEvent.click(
-			screen.getByRole("button", { name: /^validate and connect$/i }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: /^connect source$/i }));
 
 		const alert = await screen.findByRole("alert");
-		expect(alert.textContent).toContain("invalid access token");
+		expect(alert.textContent).toContain("Could not connect the source");
 		// Dialog stays open so the user can correct the input, not silently vanish.
 		expect(screen.getByLabelText("Repository")).toBeTruthy();
 	});
@@ -719,7 +722,7 @@ describe("DatasourcesPanel boundary column", () => {
 		const client = fakeClient({
 			listSources: vi.fn(async () => [sampleSource]),
 			listAccessibleScopes: vi.fn(async () => scopes),
-			addGitHubSource: vi.fn(async () => {
+			addSource: vi.fn(async () => {
 				scopes = [
 					{
 						nodeId: boundaryId,
@@ -733,9 +736,7 @@ describe("DatasourcesPanel boundary column", () => {
 		await openConnectForm(client);
 		expect(await screen.findByText("11111111")).toBeTruthy();
 
-		fireEvent.click(
-			screen.getByRole("button", { name: /^validate and connect$/i }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: /^connect source$/i }));
 
 		await waitFor(() => expect(screen.getByText("Docs")).toBeTruthy());
 	});
@@ -1042,9 +1043,13 @@ describe("GitHub App onboarding", () => {
 	afterEach(() => landOn(""));
 
 	it("offers the App as the default and keeps the PAT as a named alternative", async () => {
-		renderWithClient(<DatasourcesPanel client={appClient()} orgId="org-1" />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: /connect github/i }),
+		render(
+			<ConnectGitHubForm
+				onSubmit={vi.fn()}
+				onCancel={vi.fn()}
+				isPending={false}
+				onBeginAppSetup={async () => {}}
+			/>,
 		);
 
 		const method = screen.getByLabelText("Authentication") as HTMLSelectElement;
@@ -1061,9 +1066,12 @@ describe("GitHub App onboarding", () => {
 	it("falls back to the PAT path when the client cannot drive App setup", async () => {
 		// A consumer adapting its own client need not implement the App RPCs; the
 		// surface must degrade to the token form rather than offer a dead button.
-		renderWithClient(<DatasourcesPanel client={fakeClient()} orgId="org-1" />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: /connect github/i }),
+		render(
+			<ConnectGitHubForm
+				onSubmit={vi.fn()}
+				onCancel={vi.fn()}
+				isPending={false}
+			/>,
 		);
 
 		const method = screen.getByLabelText("Authentication") as HTMLSelectElement;
@@ -1075,82 +1083,34 @@ describe("GitHub App onboarding", () => {
 		expect(screen.getByLabelText("Access token")).toBeTruthy();
 	});
 
-	it("connects a public repository with no token and no webhook secret", async () => {
+	it("connects without a credential when the catalog offers that mode", async () => {
 		const client = fakeClient();
-		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: /connect github/i }),
+		await openConnectForm(client);
+		fireEvent.change(
+			screen.getByLabelText("Webhook signing secret (optional)"),
+			{ target: { value: "example-secret" } },
 		);
-		// A secret typed on the token path must not ride along after switching.
-		fireEvent.change(screen.getByLabelText("Webhook secret (optional)"), {
-			target: { value: "whsec" },
-		});
-		fireEvent.change(screen.getByLabelText("Authentication"), {
-			target: { value: "public" },
-		});
-
-		// No token to paste, and no webhook to configure on a repository the
-		// tenant may not administer; the trade-off is spelled out instead.
-		expect(screen.queryByLabelText("Access token")).toBeNull();
-		expect(screen.queryByLabelText("Webhook secret (optional)")).toBeNull();
-		expect(
-			screen.getByText(/60 unauthenticated requests an hour/),
-		).toBeTruthy();
-
-		fireEvent.change(screen.getByLabelText("Repository"), {
-			target: { value: "codefly-dev/module-saas-starter" },
-		});
-		fireEvent.change(screen.getByLabelText("Target collection"), {
-			target: { value: "docs" },
-		});
-		fireEvent.click(
-			screen.getByRole("button", { name: /^connect public repository$/i }),
+		fireEvent.click(screen.getByRole("radio", { name: "No credential" }));
+		expect(screen.queryByLabelText("Credential")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Connect source" }));
+		await waitFor(() => expect(client.addSource).toHaveBeenCalledTimes(1));
+		expect(client.addSource).toHaveBeenCalledWith(
+			expect.objectContaining({ credential: { kind: "none" } }),
 		);
-
-		await waitFor(() =>
-			expect(client.addGitHubSource).toHaveBeenCalledTimes(1),
-		);
-		expect(client.addGitHubSource).toHaveBeenCalledWith({
-			orgId: "org-1",
-			repo: "codefly-dev/module-saas-starter",
-			paths: [],
-			fileExtensions: [],
-			branch: "",
-			targetCollection: "docs",
-			accessToken: undefined,
-			webhookSecret: "",
-		});
 	});
 
-	it("surfaces the host's refusal of a repository that is not public", async () => {
+	it("does not echo operation failures that may contain a credential", async () => {
 		const client = fakeClient({
-			addGitHubSource: vi.fn(async () => {
-				throw new ConnectError(
-					"No access token was supplied and that repository is not public.",
-					Code.FailedPrecondition,
-				);
+			addSource: vi.fn(async () => {
+				throw new Error("example-secret is invalid");
 			}),
 		});
-		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: /connect github/i }),
+		await openConnectForm(client);
+		fireEvent.click(screen.getByRole("button", { name: "Connect source" }));
+		expect((await screen.findByRole("alert")).textContent).toContain(
+			"Could not connect",
 		);
-		fireEvent.change(screen.getByLabelText("Authentication"), {
-			target: { value: "public" },
-		});
-		fireEvent.change(screen.getByLabelText("Repository"), {
-			target: { value: "acme/private" },
-		});
-		fireEvent.change(screen.getByLabelText("Target collection"), {
-			target: { value: "docs" },
-		});
-		fireEvent.click(
-			screen.getByRole("button", { name: /^connect public repository$/i }),
-		);
-
-		const alert = await screen.findByRole("alert");
-		expect(alert.textContent).toContain("not public");
-		expect(screen.getByLabelText("Repository")).toBeTruthy();
+		expect(document.body.textContent).not.toContain("example-secret");
 	});
 
 	it("sends the browser to the install URL the host minted", async () => {
@@ -1161,8 +1121,9 @@ describe("GitHub App onboarding", () => {
 		fireEvent.click(
 			await screen.findByRole("button", { name: /connect github/i }),
 		);
+		fireEvent.click(screen.getByRole("radio", { name: "Organization app" }));
 		fireEvent.click(
-			screen.getByRole("button", { name: /install or select repositories/i }),
+			screen.getByRole("button", { name: "Install organization app" }),
 		);
 
 		await waitFor(() =>
@@ -1553,7 +1514,7 @@ describe("GitHub App onboarding", () => {
 
 		// Reopening to connect a second repository the same installation grants.
 		fireEvent.click(
-			await screen.findByRole("button", { name: /connect github/i }),
+			await screen.findByRole("button", { name: /Choose another repository/i }),
 		);
 
 		const option = (await screen.findByRole("option", {
@@ -1595,17 +1556,13 @@ describe("GitHub App onboarding", () => {
 		// begin and complete are independently optional. Offering the install with
 		// no way to redeem what comes back strands the tenant on a completed
 		// GitHub install with nothing to show for it.
-		const client = fakeClient({
-			beginGitHubAppSetup: vi.fn(async () => ({
-				installUrl:
-					"https://github.com/apps/codefly/installations/new?state=s1",
-				state: "s1",
-				expiresAt: undefined,
-			})),
-		});
-		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: /connect github/i }),
+
+		render(
+			<ConnectGitHubForm
+				onSubmit={vi.fn()}
+				onCancel={vi.fn()}
+				isPending={false}
+			/>,
 		);
 
 		const method = screen.getByLabelText("Authentication") as HTMLSelectElement;
