@@ -482,7 +482,8 @@ and scoped-grant transaction. No second registry, issuer or grant table.
   `NotFound`; absent policies, missing required scopes and ambiguous HTTP
   templates are named refusals. Whole-kind requirements cannot be satisfied by
   scopes limited to selected resources. Connect POSTs use the gRPC method policy;
-  HTTP templates support the interface's single-segment placeholders. Advisory
+  HTTP templates support the interface's segment placeholders, literal custom
+  verbs and final `{path=**}` catch-alls. Advisory
   checks return the same reason beside the verified capability.
 - Installation responses project the existing role, revision and team grants.
   Migration 47 routes root-team exposure changes through the installation's
@@ -548,3 +549,40 @@ fields in commits already on this branch, including `86267c97`, `ab8577b3`
 and `435e80b0`. Repairing those commits requires rewriting published history;
 this task permits fast-forward pushes only. New work uses the requested
 GitHub no-reply author and committer identity.
+
+### HTTP solution policies and local refusal diagnosis
+
+Codefly CLI `608561e2b` publishes `x-codefly-authority-policy` on each HTTP
+operation. Its `MethodPolicies` reader turns these into `MethodPolicyV1` rows
+named `VERB /path`, in the same signed `AuthorityManifestV1` that carries RPC
+policies from `authority.hop.v1.policy`. Accounts stores and checks both kinds
+through the existing signed-pair owner; it does not parse OpenAPI independently.
+The HTTP matcher follows the reference authority's route grammar, including
+`{id}:publish` and a final `{path=**}`. An empty capture, wrong verb, unknown
+route, undeclared policy, missing scope or ambiguous template is refused.
+
+The Accounts conformance harness adds a signed **solution** delivery through the
+tenant listener, then calls `Issue` and `Check` over that listener. It exercises
+a scoped HTTP read, a multi-segment checked-caller route, a write refused for
+missing authority, an unmarked route and unknown/wrong-verb routes. These local
+cases complement the shared suite's signed RPC-policy case.
+The full rerun remains **13 passed / 3 failed / 3 skipped** in the shared suite,
+plus **2 passed** local cases (signed HTTP policy and ended session). This is
+host-listener qualification, not a live composed hop running in ENFORCE mode.
+
+Two other live refusals are separate from policy storage:
+
+- `audience ... declares no content` comes from `ModuleContentResources` reading
+  the derived principal's `Resources`. In the inspected local composition, the
+  affected envelope entry declared only its tenant, and Accounts logged that
+  the manifest requested no authority and the envelope stood whole. The
+  composition must declare the intended content resources and the module must
+  publish its authority contract; method policies cannot manufacture consent.
+- The Accounts log contains 21 `workload credential refused` replies between
+  12:42 and 12:45 on 2026-10-25. An earlier 12:27:32 delivery was refused because
+  a gRPC endpoint address was not an HTTP(S) origin, and later calls still
+  reported that audience as uncomposed. However, `ModulePrefixOfWorkload`
+  returns token-review or workload-ownership errors without logging their
+  underlying cause; the adapter exposes a fixed refusal. The log therefore
+  does **not** prove which failure caused those 21 replies. Runtime credential
+  expiry or rotation has not been established as the cause.

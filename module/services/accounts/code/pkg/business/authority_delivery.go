@@ -226,16 +226,46 @@ func methodRouteMatches(declared, method string) bool {
 		return false
 	}
 	want, got := strings.Split(template, "/"), strings.Split(path, "/")
+	// The published HTTP contract uses the reference authority's route grammar:
+	// {name} within a segment, or a final {name=**} taking the remaining path,
+	// optionally followed by a literal custom verb such as :settle.
+	if last := want[len(want)-1]; strings.Contains(last, "=**}") {
+		open, end := strings.IndexByte(last, '{'), strings.Index(last, "=**}")
+		if open < 0 || end <= open+1 || len(got) < len(want) {
+			return false
+		}
+		prefix, suffix := last[:open], last[end+4:]
+		rest := strings.Join(got[len(want)-1:], "/")
+		if !strings.HasPrefix(rest, prefix) || !strings.HasSuffix(rest, suffix) || len(rest) <= len(prefix)+len(suffix) {
+			return false
+		}
+		want, got = want[:len(want)-1], got[:len(want)-1]
+	}
 	if len(want) != len(got) {
 		return false
 	}
 	for i, part := range want {
-		if part == got[i] {
-			continue
-		}
-		if !strings.HasPrefix(part, "{") || !strings.HasSuffix(part, "}") || got[i] == "" {
+		if !methodSegmentMatches(part, got[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+func methodSegmentMatches(template, segment string) bool {
+	open := strings.IndexByte(template, '{')
+	if open < 0 {
+		return template == segment
+	}
+	end := strings.IndexByte(template[open:], '}')
+	if end <= 1 || !strings.HasPrefix(segment, template[:open]) || strings.ContainsAny(template[open+1:open+end], "={}") {
+		return false
+	}
+	rest, tail := segment[open:], template[open+end+1:]
+	for i := 1; i <= len(rest); i++ {
+		if methodSegmentMatches(tail, rest[i:]) {
+			return true
+		}
+	}
+	return false
 }

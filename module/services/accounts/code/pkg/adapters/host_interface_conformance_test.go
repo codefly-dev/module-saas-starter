@@ -43,6 +43,8 @@ import (
 	"accounts/pkg/business"
 	"accounts/pkg/business/compositiontest"
 	"accounts/pkg/business/executiontest"
+	authorityv1 "accounts/pkg/gen/host/authority/v1"
+	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	sessionv1 "accounts/pkg/gen/host/session/v1"
 	"accounts/pkg/infra"
 )
@@ -171,7 +173,7 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	for _, grant := range registry {
 		ceilings.Principals[grant.Prefix] = business.ModuleEnvelopePrincipal{Grant: grant}
 	}
-	for name, kinds := range map[string][]string{"conformance-methods": {"example-records"}, "conformance-probe": {"probe"}, "conformance-solution": {"conformance.page"}} {
+	for name, kinds := range map[string][]string{"conformance-methods": {"example-records"}, "conformance-probe": {"probe"}, "conformance-solution": {"conformance.page"}, "conformance-routes": {"example-records"}} {
 		ceilings.Principals[name] = business.ModuleEnvelopePrincipal{Grant: business.ModulePrincipalGrant{Tenant: fixtureOrganization, Resources: kinds}}
 	}
 	// The database install fence reads the same approval revision as the registry.
@@ -287,6 +289,57 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 			{Token: "fixture-maya", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: false},
 			{Token: "fixture-omar", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
 		},
+	})
+
+	t.Run("a signed solution delivery governs its HTTP routes", func(t *testing.T) {
+		const audience = "conformance-routes"
+		m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: audience, Alias: audience, Kind: solutionhost.KindSolution, Generation: 1,
+			Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: audience, Version: "0.1.0"},
+			Workloads: []solutionhost.Workload{{Service: "api", Container: "app"}}, Authority: &solutionhost.Authority{Principal: audience, ResourceKinds: []string{"example-records"}}}
+		raw, err := solutionhost.SignedPayload(m)
+		require.NoError(t, err)
+		// These are the rows Codefly derives from x-codefly-authority-policy on
+		// HTTP operations: the same signed sidecar as protobuf method policies.
+		doc, err := proto.Marshal(&compositionv1.AuthorityManifestV1{Module: audience, Generation: 1, CoreManifestDigest: delivery.Digest(raw), Methods: []*compositionv1.MethodPolicyV1{
+			{Method: "GET /v1/example/pages/{id}", Requires: []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: []string{"read"}}}},
+			{Method: "POST /v1/example/pages/{id}:publish", Requires: []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: []string{"write"}}}},
+			{Method: "POST /v1/example/modules/{path=**}", AnyCheckedCaller: true},
+			{Method: "GET /v1/example/unmarked"},
+		}})
+		require.NoError(t, err)
+		envelope, err := delivery.Sign(doc, signer.KeyID(), signer.Sign)
+		require.NoError(t, err)
+		_, err = compositionv1.NewCompositionServiceClient(conn).ApplyManifest(ctx, &compositionv1.ApplyManifestRequest{
+			Carrier:   &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())},
+			Authority: &compositionv1.SignedManifestV1{Document: doc, Envelope: envelope}, Credential: "delivery:" + audience,
+		})
+		require.NoError(t, err)
+		sess, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "dev-bob"})
+		require.NoError(t, err)
+		bearer := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())
+		client := authorityv1.NewAuthorityServiceClient(conn)
+		issued, err := client.Issue(bearer, &authorityv1.IssueRequest{OrganizationId: fixtureOrganization, Audience: audience,
+			As:     &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
+			Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: []string{"read"}}},
+		})
+		require.NoError(t, err)
+		for _, tc := range []struct {
+			method string
+			code   codes.Code
+		}{
+			{"GET /v1/example/pages/one", codes.OK},
+			{"POST /v1/example/modules/example.Service/Read", codes.OK},
+			{"POST /v1/example/pages/one:publish", codes.PermissionDenied},
+			{"GET /v1/example/unmarked", codes.PermissionDenied},
+			{"GET /v1/example/missing", codes.NotFound},
+			{"GET /v1/example/modules/example.Service/Read", codes.NotFound},
+		} {
+			_, err := client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: audience, Method: tc.method})
+			require.Equal(t, tc.code, status.Code(err), "%s: %v", tc.method, err)
+			if tc.code != codes.OK {
+				require.Contains(t, status.Convert(err).Message(), tc.method)
+			}
+		}
 	})
 
 	// Beyond the suite: the session a page reads is the live one. A fixture

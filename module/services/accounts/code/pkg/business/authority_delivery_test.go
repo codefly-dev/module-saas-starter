@@ -83,3 +83,37 @@ func TestMethodPolicyRequiresWholeKindAuthority(t *testing.T) {
 	doc.Methods = append(doc.Methods, &compositionv1.MethodPolicyV1{Method: "GET /records/{another}", AnyCheckedCaller: true})
 	require.ErrorContains(t, checkMethodPolicy(doc, "example", "GET /records/one", held), "more than one")
 }
+
+func TestHTTPPolicyMatchesPublishedRouteTemplates(t *testing.T) {
+	for _, tc := range []struct {
+		declared, request string
+		matches           bool
+	}{
+		{"POST /v1/example/{path=**}", "POST /v1/example/service/Read", true},
+		{"POST /v1/example/{path=**}", "POST /v1/example/Read", true},
+		{"POST /v1/example/{path=**}", "POST /v1/example/", false},
+		{"POST /v1/example/{path=**}", "GET /v1/example/service/Read", false},
+		{"POST /v1/example/{path=**}", "POST /v1/other/service/Read", false},
+		{"POST /v1/example/{path=**}:settle", "POST /v1/example/one/two:settle", true},
+		{"POST /v1/example/{path=**}:settle", "POST /v1/example/one/two", false},
+		{"POST /v1/example/{path=**}:settle", "POST /v1/example/:settle", false},
+		{"POST /v1/example/{id}:settle", "POST /v1/example/one:settle", true},
+		{"POST /v1/example/{id}:settle", "POST /v1/example/:settle", false},
+		{"POST /v1/example/{id}:settle", "POST /v1/example/one:delete", false},
+		{"POST /v1/example/{id}:settle", "POST /v1/example/one/two:settle", false},
+		{"GET /v1/example/{name}.{ext}", "GET /v1/example/one.json", true},
+		{"GET /v1/example/{name}.{ext}", "GET /v1/example/one.", false},
+		{"GET /v1/example/{path=**}/tail", "GET /v1/example/one/tail", false},
+		{"GET /v1/example/=**}", "GET /v1/example/one", false},
+		{"GET /v1/example/{}", "GET /v1/example/one", false},
+	} {
+		t.Run(tc.declared+" against "+tc.request, func(t *testing.T) {
+			require.Equal(t, tc.matches, methodRouteMatches(tc.declared, tc.request))
+		})
+	}
+	doc := &compositionv1.AuthorityManifestV1{Methods: []*compositionv1.MethodPolicyV1{
+		{Method: "POST /v1/example/{path=**}", AnyCheckedCaller: true},
+		{Method: "POST /v1/example/{service}/{method}", AnyCheckedCaller: true},
+	}}
+	require.ErrorContains(t, checkMethodPolicy(doc, "example", "POST /v1/example/service/Read", nil), "more than one declared route")
+}
