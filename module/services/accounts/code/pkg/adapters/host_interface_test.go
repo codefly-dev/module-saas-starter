@@ -164,8 +164,9 @@ func TestInstallationWireNamesItsTargetByName(t *testing.T) {
 	}
 }
 
-// Only a workload's issue through a binding it declares may leave its audience
-// to the binding; every other shape that names no audience is refused by name.
+// Only an issue through a binding the acting module declares (a workload's, or
+// a child's with the workload as actor) may leave its audience to the binding;
+// every other shape that names no audience is refused by name.
 func TestAnIssueWithNoAudienceIsAWorkloadThroughABinding(t *testing.T) {
 	for name, req := range map[string]*authorityv1.IssueRequest{
 		"person":               {As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, OperationBindingId: "documents"},

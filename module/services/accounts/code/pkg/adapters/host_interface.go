@@ -201,17 +201,24 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	return &authorityv1.IssueResponse{Token: issued.GetToken(), ExpiresAtUnix: issued.GetExpiresAt().GetSeconds(), Context: wire}, nil
 }
 
-// bindingAudience is the audience of an issue that names none: a workload's
-// issue through a binding it declares is addressed to that binding's audience,
-// as the interface's callers (a hop's ForModule) send it. Any other shape names
+// bindingAudience is the audience of an issue that names none: an issue
+// through a binding the acting module declares is addressed to that binding's
+// audience, as the interface's callers send it (a hop's ForModule as the
+// workload, its ForChild with the workload as actor). Any other shape names
 // its audience.
 func bindingAudience(ctx context.Context, req *authorityv1.IssueRequest) (string, error) {
-	workload, ok := req.GetAs().(*authorityv1.IssueRequest_Workload)
+	var credential string
+	switch as := req.GetAs().(type) {
+	case *authorityv1.IssueRequest_Workload:
+		credential = as.Workload.GetCredential()
+	case *authorityv1.IssueRequest_ParentToken:
+		credential = req.GetActor().GetCredential()
+	}
 	binding := req.GetOperationBindingId()
-	if !ok || binding == "" || service == nil {
+	if credential == "" || binding == "" || service == nil {
 		return "", status.Error(codes.InvalidArgument, "an issue names its audience")
 	}
-	prefix, err := service.ModulePrefixOfWorkload(ctx, workload.Workload.GetCredential())
+	prefix, err := service.ModulePrefixOfWorkload(ctx, credential)
 	if err != nil {
 		if mapped := moduleIdentityError(err, codes.PermissionDenied, "workload credential refused"); mapped != nil {
 			return "", mapped
