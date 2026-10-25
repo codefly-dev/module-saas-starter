@@ -93,7 +93,12 @@ func methodPolicyRefusal(audience, method string) string {
 // Issue maps each owner shape onto the mint that already exists for it.
 func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueRequest) (*authorityv1.IssueResponse, error) {
 	if req.GetAudience() == "" {
-		return nil, status.Error(codes.InvalidArgument, "an issue names its audience")
+		derived, err := bindingAudience(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		req = proto.CloneOf(req)
+		req.Audience = derived
 	}
 	// An audience that is not composed does not exist, by the contract: refused
 	// NotFound by name before any mint, rather than as the host's own
@@ -194,6 +199,30 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &authorityv1.IssueResponse{Token: issued.GetToken(), ExpiresAtUnix: issued.GetExpiresAt().GetSeconds(), Context: wire}, nil
+}
+
+// bindingAudience is the audience of an issue that names none: a workload's
+// issue through a binding it declares is addressed to that binding's audience,
+// as the interface's callers (a hop's ForModule) send it. Any other shape names
+// its audience.
+func bindingAudience(ctx context.Context, req *authorityv1.IssueRequest) (string, error) {
+	workload, ok := req.GetAs().(*authorityv1.IssueRequest_Workload)
+	binding := req.GetOperationBindingId()
+	if !ok || binding == "" || service == nil {
+		return "", status.Error(codes.InvalidArgument, "an issue names its audience")
+	}
+	prefix, err := service.ModulePrefixOfWorkload(ctx, workload.Workload.GetCredential())
+	if err != nil {
+		if mapped := moduleIdentityError(err, codes.PermissionDenied, "workload credential refused"); mapped != nil {
+			return "", mapped
+		}
+		return "", status.Error(codes.PermissionDenied, "workload credential refused")
+	}
+	declared, ok := service.ModulePrincipals()[business.ModulePrincipalID(prefix)].OperationAudiences[binding]
+	if !ok || declared.Audience == "" {
+		return "", status.Errorf(codes.NotFound, "operation binding %q is not declared by %s", binding, prefix)
+	}
+	return declared.Audience, nil
 }
 
 // ListResources: GAP. The host answers resource coverage through its own

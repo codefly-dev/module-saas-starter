@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"accounts/pkg/auth"
@@ -159,5 +160,20 @@ func TestInstallationWireNamesItsTargetByName(t *testing.T) {
 	}
 	if got := installationToWire(row, "").GetTarget(); got != row.TargetId {
 		t.Fatalf("target = %q, want the presence id when no alias is known", got)
+	}
+}
+
+// Only a workload's issue through a binding it declares may leave its audience
+// to the binding; every other shape that names no audience is refused by name.
+func TestAnIssueWithNoAudienceIsAWorkloadThroughABinding(t *testing.T) {
+	for name, req := range map[string]*authorityv1.IssueRequest{
+		"person":               {As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, OperationBindingId: "documents"},
+		"workload, no binding": {As: &authorityv1.IssueRequest_Workload{Workload: &authorityv1.WorkloadCredential{Credential: "x"}}},
+		"child":                {As: &authorityv1.IssueRequest_ParentToken{ParentToken: "p"}, OperationBindingId: "documents"},
+	} {
+		_, err := bindingAudience(context.Background(), req)
+		if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "names its audience") {
+			t.Errorf("%s: %v, want the audience refused by name", name, err)
+		}
 	}
 }
