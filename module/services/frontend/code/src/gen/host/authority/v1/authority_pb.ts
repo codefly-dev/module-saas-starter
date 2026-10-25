@@ -52,6 +52,7 @@ export type IssueRequest = Message<"host.authority.v1.IssueRequest"> & {
   } | {
     /**
      * An installation acting for itself, with the scope the organisation consented to.
+     * actor must authenticate a workload of that installation's solution.
      *
      * @generated from field: host.authority.v1.InstallationRef installation = 3;
      */
@@ -109,15 +110,18 @@ export type IssueRequest = Message<"host.authority.v1.IssueRequest"> & {
   operationBindingId: string;
 
   /**
-   * The organisation the work runs in, for an owner shape that does not carry one.
+   * The organisation the work runs in. A workload may leave this empty when
+   * exactly one organisation has an active installation of its module.
+   * Otherwise it must name the organisation of the work item;
+   * absent or ambiguous installation authority is refused with a reason.
    *
    * @generated from field: string organization_id = 9;
    */
   organizationId: string;
 
   /**
-   * The actor a child hop delegates to, as a workload credential; required with
-   * parent_token and with delegation.
+   * The acting workload credential; required with parent_token, delegation,
+   * and installation. For installation it must name the installed solution.
    *
    * @generated from field: host.authority.v1.WorkloadCredential actor = 10;
    */
@@ -452,6 +456,7 @@ export type CheckRequest = Message<"host.authority.v1.CheckRequest"> & {
    * declares is only reported, in CheckResponse.refusal, and the verified
    * capability is answered. A hop in a composition that runs permissive
    * (hop/ENFORCEMENT=warn) asks this way and logs the refusal it did not make.
+   * Hosts may refuse advisory outside local development runs.
    *
    * @generated from field: bool advisory = 4;
    */
@@ -695,7 +700,7 @@ export const ResourceGrantSchema: GenMessage<ResourceGrant> = /*@__PURE__*/
   messageDesc(file_host_authority_v1_authority, 18);
 
 /**
- * AuthorityService is implemented by the host (accounts) and by the authority gateway.
+ * AuthorityService is implemented by the host (accounts) and by the local authority.
  *
  * @generated from service host.authority.v1.AuthorityService
  */

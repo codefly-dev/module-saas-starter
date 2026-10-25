@@ -4,7 +4,7 @@
 
 // The session interface, at the browser edge: a person signs in and the host
 // opens a session, and a page's runtime asks who the bearer a request carries is.
-// The authority gateway signs in fixture people; the host signs in real ones. A
+// The local authority signs in fixture people; the host signs in real ones. A
 // module never calls this: it is called through the hop.
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file host/session/v1/session.proto.
  */
 export const file_host_session_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("Ch1ob3N0L3Nlc3Npb24vdjEvc2Vzc2lvbi5wcm90bxIPaG9zdC5zZXNzaW9uLnYxIhoKGExpc3RGaXh0dXJlUGVvcGxlUmVxdWVzdCJLChlMaXN0Rml4dHVyZVBlb3BsZVJlc3BvbnNlEi4KBnBlb3BsZRgBIAMoCzIeLmhvc3Quc2Vzc2lvbi52MS5GaXh0dXJlUGVyc29uIoIBCg1GaXh0dXJlUGVyc29uEhEKCXBlcnNvbl9pZBgBIAEoCRINCgVlbWFpbBgCIAEoCRIXCg9vcmdhbml6YXRpb25faWQYAyABKAkSDQoFcm9sZXMYBCADKAkSEAoIdGVhbV9pZHMYBSADKAkSFQoNZml4dHVyZV90b2tlbhgGIAEoCSIQCg5DdXJyZW50UmVxdWVzdCImCg1TaWduSW5SZXF1ZXN0EhUKDWZpeHR1cmVfdG9rZW4YASABKAkiegoHU2Vzc2lvbhISCgpzZXNzaW9uX2lkGAEgASgJEhEKCXBlcnNvbl9pZBgCIAEoCRIXCg9vcmdhbml6YXRpb25faWQYAyABKAkSDQoFcm9sZXMYBCADKAkSEAoIdGVhbV9pZHMYBSADKAkSDgoGYmVhcmVyGAYgASgJMuACCg5TZXNzaW9uU2VydmljZRJiCgZTaWduSW4SHi5ob3N0LnNlc3Npb24udjEuU2lnbkluUmVxdWVzdBoYLmhvc3Quc2Vzc2lvbi52MS5TZXNzaW9uIh6C0+STAhg6ASoiEy92MS9zZXNzaW9uOnNpZ24taW4SWQoHQ3VycmVudBIfLmhvc3Quc2Vzc2lvbi52MS5DdXJyZW50UmVxdWVzdBoYLmhvc3Quc2Vzc2lvbi52MS5TZXNzaW9uIhOC0+STAg0SCy92MS9zZXNzaW9uEo4BChFMaXN0Rml4dHVyZVBlb3BsZRIpLmhvc3Quc2Vzc2lvbi52MS5MaXN0Rml4dHVyZVBlb3BsZVJlcXVlc3QaKi5ob3N0LnNlc3Npb24udjEuTGlzdEZpeHR1cmVQZW9wbGVSZXNwb25zZSIigtPkkwIcEhovdjEvc2Vzc2lvbi9maXh0dXJlLXBlb3BsZUKtAQoTY29tLmhvc3Quc2Vzc2lvbi52MUIMU2Vzc2lvblByb3RvUAFaKmFjY291bnRzL3BrZy9nZW4vaG9zdC9zZXNzaW9uL3YxO3Nlc3Npb252MaICA0hTWKoCD0hvc3QuU2Vzc2lvbi5WMcoCD0hvc3RcU2Vzc2lvblxWMeICG0hvc3RcU2Vzc2lvblxWMVxHUEJNZXRhZGF0YeoCEUhvc3Q6OlNlc3Npb246OlYxYgZwcm90bzM", [file_google_api_annotations]);
+  fileDesc("Ch1ob3N0L3Nlc3Npb24vdjEvc2Vzc2lvbi5wcm90bxIPaG9zdC5zZXNzaW9uLnYxIhoKGExpc3RGaXh0dXJlUGVvcGxlUmVxdWVzdCJLChlMaXN0Rml4dHVyZVBlb3BsZVJlc3BvbnNlEi4KBnBlb3BsZRgBIAMoCzIeLmhvc3Quc2Vzc2lvbi52MS5GaXh0dXJlUGVyc29uIoIBCg1GaXh0dXJlUGVyc29uEhEKCXBlcnNvbl9pZBgBIAEoCRINCgVlbWFpbBgCIAEoCRIXCg9vcmdhbml6YXRpb25faWQYAyABKAkSDQoFcm9sZXMYBCADKAkSEAoIdGVhbV9pZHMYBSADKAkSFQoNZml4dHVyZV90b2tlbhgGIAEoCSIQCg5DdXJyZW50UmVxdWVzdCImCg1TaWduSW5SZXF1ZXN0EhUKDWZpeHR1cmVfdG9rZW4YASABKAkiugEKB1Nlc3Npb24SEgoKc2Vzc2lvbl9pZBgBIAEoCRIRCglwZXJzb25faWQYAiABKAkSFwoPb3JnYW5pemF0aW9uX2lkGAMgASgJEg0KBXJvbGVzGAQgAygJEhAKCHRlYW1faWRzGAUgAygJEg4KBmJlYXJlchgGIAEoCRIbChNwZXJzb25fZGlzcGxheV9uYW1lGAcgASgJEiEKGW9yZ2FuaXphdGlvbl9kaXNwbGF5X25hbWUYCCABKAky4AIKDlNlc3Npb25TZXJ2aWNlEmIKBlNpZ25JbhIeLmhvc3Quc2Vzc2lvbi52MS5TaWduSW5SZXF1ZXN0GhguaG9zdC5zZXNzaW9uLnYxLlNlc3Npb24iHoLT5JMCGDoBKiITL3YxL3Nlc3Npb246c2lnbi1pbhJZCgdDdXJyZW50Eh8uaG9zdC5zZXNzaW9uLnYxLkN1cnJlbnRSZXF1ZXN0GhguaG9zdC5zZXNzaW9uLnYxLlNlc3Npb24iE4LT5JMCDRILL3YxL3Nlc3Npb24SjgEKEUxpc3RGaXh0dXJlUGVvcGxlEikuaG9zdC5zZXNzaW9uLnYxLkxpc3RGaXh0dXJlUGVvcGxlUmVxdWVzdBoqLmhvc3Quc2Vzc2lvbi52MS5MaXN0Rml4dHVyZVBlb3BsZVJlc3BvbnNlIiKC0+STAhwSGi92MS9zZXNzaW9uL2ZpeHR1cmUtcGVvcGxlQq0BChNjb20uaG9zdC5zZXNzaW9uLnYxQgxTZXNzaW9uUHJvdG9QAVoqYWNjb3VudHMvcGtnL2dlbi9ob3N0L3Nlc3Npb24vdjE7c2Vzc2lvbnYxogIDSFNYqgIPSG9zdC5TZXNzaW9uLlYxygIPSG9zdFxTZXNzaW9uXFYx4gIbSG9zdFxTZXNzaW9uXFYxXEdQQk1ldGFkYXRh6gIRSG9zdDo6U2Vzc2lvbjo6VjFiBnByb3RvMw", [file_google_api_annotations]);
 
 /**
  * ListFixturePeopleRequest asks for every fixture person.
@@ -189,12 +189,26 @@ export type Session = Message<"host.session.v1.Session"> & {
 
   /**
    * The credential the person presents on every call as `authorization: Bearer
-   * <bearer>`; whatever this implementation authenticates a person by. The mini
-   * gateway hands back the session id; the host hands back its access token.
+   * <bearer>`; whatever this implementation authenticates a person by. The local
+   * authority hands back the session id; the host hands back its access token.
    *
    * @generated from field: string bearer = 6;
    */
   bearer: string;
+
+  /**
+   * The person's display name, for the browser session surface.
+   *
+   * @generated from field: string person_display_name = 7;
+   */
+  personDisplayName: string;
+
+  /**
+   * The signed-in organisation's display name.
+   *
+   * @generated from field: string organization_display_name = 8;
+   */
+  organizationDisplayName: string;
 };
 
 /**

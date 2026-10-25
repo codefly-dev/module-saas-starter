@@ -8003,7 +8003,7 @@
         },
         "advisory": {
           "type": "boolean",
-          "description": "Advisory asks for the policy decision without its refusal: the capability\nis still verified and refused when it is not sound, but what the method\ndeclares is only reported, in CheckResponse.refusal, and the verified\ncapability is answered. A hop in a composition that runs permissive\n(hop/ENFORCEMENT=warn) asks this way and logs the refusal it did not make."
+          "description": "Advisory asks for the policy decision without its refusal: the capability\nis still verified and refused when it is not sound, but what the method\ndeclares is only reported, in CheckResponse.refusal, and the verified\ncapability is answered. A hop in a composition that runs permissive\n(hop/ENFORCEMENT=warn) asks this way and logs the refusal it did not make.\nHosts may refuse advisory outside local development runs."
         }
       },
       "description": "CheckRequest presents a capability for verification."
@@ -9496,7 +9496,7 @@
         },
         "installation": {
           "$ref": "#/definitions/v1InstallationRef",
-          "description": "An installation acting for itself, with the scope the organisation consented to."
+          "description": "An installation acting for itself, with the scope the organisation consented to.\nactor must authenticate a workload of that installation's solution."
         },
         "parentToken": {
           "type": "string",
@@ -9529,11 +9529,11 @@
         },
         "organizationId": {
           "type": "string",
-          "description": "The organisation the work runs in, for an owner shape that does not carry one."
+          "description": "The organisation the work runs in. A workload may leave this empty when\nexactly one organisation has an active installation of its module.\nOtherwise it must name the organisation of the work item;\nabsent or ambiguous installation authority is refused with a reason."
         },
         "actor": {
           "$ref": "#/definitions/v1WorkloadCredential",
-          "description": "The actor a child hop delegates to, as a workload credential; required with\nparent_token and with delegation."
+          "description": "The acting workload credential; required with parent_token, delegation,\nand installation. For installation it must name the installed solution."
         },
         "operation": {
           "type": "string",
@@ -11865,7 +11865,15 @@
         },
         "bearer": {
           "type": "string",
-          "description": "The credential the person presents on every call as `authorization: Bearer\n\u003cbearer\u003e`; whatever this implementation authenticates a person by. The mini\ngateway hands back the session id; the host hands back its access token."
+          "description": "The credential the person presents on every call as `authorization: Bearer\n\u003cbearer\u003e`; whatever this implementation authenticates a person by. The local\nauthority hands back the session id; the host hands back its access token."
+        },
+        "personDisplayName": {
+          "type": "string",
+          "description": "The person's display name, for the browser session surface."
+        },
+        "organizationDisplayName": {
+          "type": "string",
+          "description": "The signed-in organisation's display name."
         }
       },
       "description": "Session is an open session."

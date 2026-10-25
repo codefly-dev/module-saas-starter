@@ -38,7 +38,7 @@ export type ApplyManifestRequest = Message<"host.composition.v1.ApplyManifestReq
    * envelope over it. An implementation verifies the envelope against the release
    * keys it pins and reads the manifest from the verified document, never from
    * the request, so what composes a module is the same signed document on the
-   * authority gateway and on the host.
+   * local authority and on the host.
    *
    * @generated from field: host.composition.v1.SignedManifestV1 carrier = 2;
    */
@@ -46,7 +46,7 @@ export type ApplyManifestRequest = Message<"host.composition.v1.ApplyManifestReq
 
   /**
    * The credential of the workload delivering the manifest, as that
-   * implementation attests workloads: the launcher's on the authority gateway, the
+   * implementation attests workloads: the launcher's on the local authority, the
    * delivery service account's on the host. A manifest is delivered by its own
    * module's delivery workload and by nothing else.
    *
@@ -121,7 +121,8 @@ export type AuthorityManifestV1 = Message<"host.composition.v1.AuthorityManifest
   /**
    * The roles a solution declares a person may hold on an installation of it,
    * as ModuleManifestV1.roles declares them through the sketch: each within
-   * the solution's own kinds (its scope ceilings), one of them installer.
+   * the solution's own scope ceilings or explicit invoke/lookup binding scopes,
+   * one of them installer. Headless-only scopes cannot supply a role grant.
    * Core's manifest carries no roles, so they travel here until it does. A
    * module declares none; a module's delivery listing any is refused.
    *
@@ -292,8 +293,9 @@ export type ModuleManifestV1 = Message<"host.composition.v1.ModuleManifestV1"> &
 
   /**
    * The roles a solution declares a person may hold on an installation of it,
-   * each within what the solution serves; one is named installer, held by
-   * whoever installs it. A module declares none.
+   * each within what the solution serves or explicitly consumes through
+   * invoke/lookup bindings; one is named installer, held by whoever installs it.
+   * Headless-only scopes cannot supply a role grant. A module declares none.
    *
    * @generated from field: repeated host.composition.v1.RoleV1 roles = 8;
    */
@@ -440,7 +442,7 @@ export const PageV1Schema: GenMessage<PageV1> = /*@__PURE__*/
   messageDesc(file_host_composition_v1_composition, 9);
 
 /**
- * CompositionService is implemented by the host and by the authority gateway.
+ * CompositionService is implemented by the host and by the local authority.
  *
  * @generated from service host.composition.v1.CompositionService
  */
