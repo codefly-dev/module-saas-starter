@@ -41,7 +41,7 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 	}
 	// A solution that declares roles is installed holding one of its own: the
 	// role is the solution's word, never the organisation's catalogue's.
-	authority, err := s.deliveredTargetAuthority(ctx, available)
+	authority, _, err := s.deliveredTargetAuthority(ctx, available)
 	if err != nil {
 		return nil, false, err
 	}

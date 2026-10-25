@@ -53,15 +53,22 @@ func (s *Service) DeliveredSolutionAuthority(ctx context.Context, principal stri
 	return s.solutionAuthorityOf(doc, manifest), nil
 }
 
-// deliveredTargetAuthority is DeliveredSolutionAuthority for an installable target.
-func (s *Service) deliveredTargetAuthority(ctx context.Context, target *AvailableSolutionTarget) (*SolutionAuthority, error) {
+// deliveredTargetAuthority is DeliveredSolutionAuthority for an installable
+// target; a nil declaration comes with why the target declares none.
+func (s *Service) deliveredTargetAuthority(ctx context.Context, target *AvailableSolutionTarget) (*SolutionAuthority, string, error) {
 	doc, manifest, err := s.appliedAuthorityDocumentOf(ctx, target.RouteAlias, func(binding string, _ *solutionhost.ModuleManifest) bool {
 		return binding == target.BindingID
 	})
-	if err != nil {
-		return nil, err
+	if errors.Is(err, errNoAuthorityDocument) {
+		return nil, err.Error(), nil
 	}
-	return s.solutionAuthorityOf(doc, manifest), nil
+	if err != nil {
+		return nil, "", err
+	}
+	if authority := s.solutionAuthorityOf(doc, manifest); authority != nil {
+		return authority, "", nil
+	}
+	return nil, fmt.Sprintf("%s's applied delivery declares no solution roles", target.RouteAlias), nil
 }
 
 func (s *Service) solutionAuthorityOf(doc *compositionv1.AuthorityManifestV1, manifest *solutionhost.ModuleManifest) *SolutionAuthority {
@@ -218,6 +225,40 @@ func SolutionRoleOf(name string) string {
 	}
 	_, role, _ := strings.Cut(provenance, ";role=")
 	return role
+}
+
+// solutionExposureRole is the role a team is granted when an installation of
+// target is exposed to it without a role named: the solution's own role of the
+// installation's standing role's name, which permits using the solution. An
+// installation made before solution roles were read, whose standing role is a
+// catalogue role of that name, is exposed this way too, its standing grant
+// untouched. An empty id says the standing role itself is granted, and why.
+func (s *Service) solutionExposureRole(ctx context.Context, orgID, installationID string, target *AvailableSolutionTarget) (string, string, error) {
+	if target == nil {
+		return "", "the installation's target is no longer offered to this organization", nil
+	}
+	authority, why, err := s.deliveredTargetAuthority(ctx, target)
+	if err != nil || authority == nil {
+		return "", why, err
+	}
+	reader, ok := s.store.(hostInstallationReader)
+	if !ok {
+		return "", "", fmt.Errorf("installation role reader is not wired")
+	}
+	var standing string
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		var e error
+		_, standing, _, e = reader.InstallationRoleRevision(ctx, orgID, installationID)
+		return e
+	}); err != nil {
+		return "", "", err
+	}
+	role := SolutionRoleOf(standing)
+	if _, declared := authority.Roles[role]; !declared {
+		return "", fmt.Sprintf("%s declares no role named after the standing role %q; its roles are %s", target.RouteAlias, role, strings.Join(authority.RoleNames(), ", ")), nil
+	}
+	id, err := s.solutionRoleID(ctx, orgID, target.TargetID, target.RouteAlias, authority, role)
+	return id, "", err
 }
 
 // solutionRoleID is the id of the role an installation of targetID holds, and

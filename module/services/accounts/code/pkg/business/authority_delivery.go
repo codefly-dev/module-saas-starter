@@ -145,16 +145,25 @@ func (s *Service) CheckDeliveredMethod(ctx context.Context, audience, method str
 // current pins, beside that manifest. A principal with no applied delivery, or
 // one delivered without an authority document, answers nil and no error.
 func (s *Service) appliedAuthorityDocument(ctx context.Context, audience string) (*compositionv1.AuthorityManifestV1, *solutionhost.ModuleManifest, error) {
-	return s.appliedAuthorityDocumentOf(ctx, audience, func(_ string, manifest *solutionhost.ModuleManifest) bool {
+	doc, manifest, err := s.appliedAuthorityDocumentOf(ctx, audience, func(_ string, manifest *solutionhost.ModuleManifest) bool {
 		return manifest.Authority.Principal == audience
 	})
+	if errors.Is(err, errNoAuthorityDocument) {
+		return nil, nil, nil
+	}
+	return doc, manifest, err
 }
 
+// errNoAuthorityDocument is an applied delivery that carries no signed
+// authority document, or no applied delivery at all.
+var errNoAuthorityDocument = errors.New("no applied authority document")
+
 // appliedAuthorityDocumentOf is appliedAuthorityDocument for the first applied
-// binding is chooses; audience names it in a refusal.
+// binding is chooses; audience names it in a refusal. Finding no document is
+// errNoAuthorityDocument, naming why.
 func (s *Service) appliedAuthorityDocumentOf(ctx context.Context, audience string, is func(binding string, manifest *solutionhost.ModuleManifest) bool) (*compositionv1.AuthorityManifestV1, *solutionhost.ModuleManifest, error) {
 	if s.deliveryStore == nil || s.deliveryVerifier == nil {
-		return nil, nil, nil
+		return nil, nil, fmt.Errorf("%w: this host has no signed delivery wired", errNoAuthorityDocument)
 	}
 	records, err := s.ListSolutionHostBindings(ctx)
 	if err != nil {
@@ -178,7 +187,7 @@ func (s *Service) appliedAuthorityDocumentOf(ctx context.Context, audience strin
 			return nil, nil, err
 		}
 		if record == nil {
-			return nil, nil, nil
+			return nil, nil, fmt.Errorf("%w: %s's applied generation %d has no inbox record", errNoAuthorityDocument, audience, manifest.Generation)
 		}
 		core, err := solutionhost.VerifyDelivered(ctx, carrierOf(record), s.deliveryVerifier)
 		if err != nil {
@@ -188,7 +197,7 @@ func (s *Service) appliedAuthorityDocumentOf(ctx context.Context, audience strin
 			return nil, nil, fmt.Errorf("%s applied delivery digest differs from its inbox", audience)
 		}
 		if record.AuthorityDocument == nil {
-			return nil, nil, nil
+			return nil, nil, fmt.Errorf("%w: %s's applied generation %d was delivered without its authority document", errNoAuthorityDocument, audience, manifest.Generation)
 		}
 		doc, err := s.verifyAuthorityDocument(&compositionv1.SignedManifestV1{Document: record.AuthorityDocument, Envelope: record.AuthorityEnvelope}, core)
 		if err != nil {
@@ -196,7 +205,7 @@ func (s *Service) appliedAuthorityDocumentOf(ctx context.Context, audience strin
 		}
 		return doc, manifest, nil
 	}
-	return nil, nil, nil
+	return nil, nil, fmt.Errorf("%w: no applied delivery of %s declares its authority", errNoAuthorityDocument, audience)
 }
 
 func checkMethodPolicy(doc *compositionv1.AuthorityManifestV1, audience, method string, held []*basev0.WorkScopeV1) error {

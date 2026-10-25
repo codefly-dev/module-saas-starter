@@ -247,6 +247,16 @@ func (s *Service) GrantInstallationToTeam(
 		alias = row.Target.RouteAlias
 	}
 
+	// Naming no role is the installation's role: the solution's own of that
+	// name when it declares roles, the standing role otherwise. Resolved here,
+	// before the transaction, because the declaration is control-plane state.
+	why := ""
+	if roleID == "" {
+		if roleID, why, err = s.solutionExposureRole(ctx, orgID, installationID, row.Target); err != nil {
+			return nil, w.Wrapf(err, "cannot expose installation to team")
+		}
+	}
+
 	out := &InstallationGrant{Unmet: unmet}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		path, err := s.installationStore().InstallationRootScopePath(ctx, orgID, installationID)
@@ -270,8 +280,12 @@ func (s *Service) GrantInstallationToTeam(
 			return err
 		}
 		if !permits {
-			return NewStoreError(fmt.Errorf("%w: role %s does not permit %s:%s, so a grant of it would expose nothing",
-				ErrRoleDoesNotExposeSolution, roleID, ResourceTypeSolution, ActionUseSolution), ErrTypeValidation)
+			reason := fmt.Errorf("%w: role %s does not permit %s:%s, so a grant of it would expose nothing",
+				ErrRoleDoesNotExposeSolution, roleID, ResourceTypeSolution, ActionUseSolution)
+			if why != "" {
+				reason = fmt.Errorf("%w (the installation's standing role was granted because %s)", reason, why)
+			}
+			return NewStoreError(reason, ErrTypeValidation)
 		}
 		out.Grant, err = s.grantScopeTx(ctx, actorID, &gen.GrantScopeRequest{
 			OrgId:       orgID,
