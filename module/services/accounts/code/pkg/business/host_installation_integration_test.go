@@ -3,10 +3,12 @@
 package business_test
 
 import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
-	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestHostInstallationExposesItsOwnRoleOnlyAfterAcknowledgement(t *testing.T) {

@@ -1,17 +1,19 @@
 package business
 
 import (
-	"accounts/internal/deliverytest"
-	authorityv1 "accounts/pkg/gen/host/authority/v1"
-	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	"context"
 	"crypto"
+	"testing"
+
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
-	"testing"
+
+	"accounts/internal/deliverytest"
+	authorityv1 "accounts/pkg/gen/host/authority/v1"
+	compositionv1 "accounts/pkg/gen/host/composition/v1"
 )
 
 func TestAuthorityDocumentMustBeTheSignedPair(t *testing.T) {

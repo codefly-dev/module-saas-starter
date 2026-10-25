@@ -5,10 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	"accounts/internal/deliverytest"
-	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
+
+	"accounts/internal/deliverytest"
+	compositionv1 "accounts/pkg/gen/host/composition/v1"
 )
 
 // The receipt and applied state are separate, as they are in Postgres. The

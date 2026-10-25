@@ -3,16 +3,18 @@
 package infra_test
 
 import (
-	"accounts/internal/deliverytest"
-	"accounts/pkg/business"
-	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	"context"
 	"crypto"
+	"testing"
+
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
-	"testing"
+
+	"accounts/internal/deliverytest"
+	"accounts/pkg/business"
+	compositionv1 "accounts/pkg/gen/host/composition/v1"
 )
 
 func TestCompositionPersistsOneImmutablePolicyPair(t *testing.T) {

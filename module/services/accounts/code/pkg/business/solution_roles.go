@@ -8,11 +8,12 @@ import (
 	"sort"
 	"strings"
 
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	"github.com/codefly-dev/core/solutionhost"
+
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
-	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
-	"github.com/codefly-dev/core/solutionhost"
 )
 
 // A solution's roles decide what a person holds through it (the owner's rule:

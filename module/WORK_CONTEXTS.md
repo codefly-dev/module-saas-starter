@@ -321,8 +321,8 @@ rejected with the reason rather than one call failing later.
 
 Name the resource by its **stable identity**, not by a digest of its current
 definition. The module principal registry is derived, each reconcile pass, from
-the applied module manifests and the module envelope, so re-issuing this entry is
-an envelope revision. A grant that has to be re-issued whenever
+applied signed manifests, narrowed by an administrative envelope when one exists,
+so re-issuing this entry is an envelope revision. A grant that has to be re-issued whenever
 the producer's definition moves leaves the consumer without access from the
 moment that definition moves until the new revision and its deliveries are
 applied, and each accounts replica derives its own registry on its own pass, so

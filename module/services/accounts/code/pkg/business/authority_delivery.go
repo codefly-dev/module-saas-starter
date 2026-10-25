@@ -7,13 +7,14 @@ import (
 	"slices"
 	"strings"
 
-	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 	"google.golang.org/protobuf/proto"
+
+	compositionv1 "accounts/pkg/gen/host/composition/v1"
 )
 
 var ErrDeliveredMethodUnknown = errors.New("delivered method is unknown")
