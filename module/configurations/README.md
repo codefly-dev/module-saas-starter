@@ -84,13 +84,27 @@ same group, so a cell asserts the mesh once.
 | Key | Empty means | Set to |
 | --- | --- | --- |
 | `mesh-protected` | `false`: plaintext to a routable in-cluster address is refused | `true` only when every in-cluster hop is carried by a mutually authenticated mesh. Any value other than `true` or `false` fails the boot |
-| `mesh-egress-hosts` | no host is admitted at a mesh egress address: every guarded egress path admits public addresses only | on a cell whose ambient mesh resolves declared egress hosts to addresses it allocated, the hosts accounts declares as external reach, `host` or `host:port` (443 when omitted) — the same list the environment's egress declaration gives the cell for `saas/accounts`. Refuses the boot without `mesh-protected=true` |
-| `mesh-egress-range` | `240.240.0.0/16` (Istio ambient's default) when `mesh-egress-hosts` is set | the CIDR prefixes the mesh allocates egress addresses from, inside `240.0.0.0/4` or `2001:2::/48`. Any other range, or a value without `mesh-protected=true`, refuses the boot |
+| `mesh-egress-range` | `240.240.0.0/16` (Istio ambient's default) | the CIDR prefixes the mesh allocates egress addresses from, inside `240.0.0.0/4` or `2001:2::/48`. Any other range, or a value without `mesh-protected=true`, refuses the boot |
 
-A listed host is admitted only at an address inside the range, and only when
-it is the host the client asked for. An IP literal, an unlisted host resolving
-into the range, and every private, loopback, link-local or metadata address
-stay refused. See [Mesh egress](../CALLABLE_SOURCES.md#mesh-egress).
+The hosts admitted at a mesh egress address are not authored here: they are
+[`egress`](#egress)/`HOSTS`, which Codefly generates from the environment's
+egress declaration. A declared host is admitted only at an address inside the
+range, only when it is the host the client asked for, and only when
+`mesh-protected=true`; without the mesh assertion declared hosts are inert. An
+IP literal, an undeclared host resolving into the range, and every private,
+loopback, link-local or metadata address stay refused. See
+[Mesh egress](../CALLABLE_SOURCES.md#mesh-egress).
+
+## egress
+
+Codefly-owned: the module ships no file for it, and render refuses an authored
+one. Codefly generates it from the environment's `egress` declaration and
+delivers it to accounts, which lists `egress` among its workspace
+configuration dependencies.
+
+| Key | Empty means | Holds |
+| --- | --- | --- |
+| `HOSTS` | the environment declares no egress: no host is admitted at a mesh egress address, and every guarded egress path admits public addresses only | the hosts the environment declares as external reach, `host:port` (443 when the declaration omits the port), comma-separated and sorted. Admitted at a mesh egress address only with `internal-transport/mesh-protected=true`; inert otherwise |
 
 ## datasource-oauth
 

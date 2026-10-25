@@ -33,6 +33,10 @@ workspace-configuration-dependencies:
     - datasource-keys
     - datasource-oauth
     - email
+    # Codefly-owned: HOSTS, generated from the environment's egress
+    # declaration, admitted by guarded egress on a meshed cell (code/work.go,
+    # configureMeshEgress). No authored file.
+    - egress
     - federation
     # The roles a composing workspace's people hold at the modules it composes,
     # added to the selected fixture (fixtures/workspace_grants.go): a document,

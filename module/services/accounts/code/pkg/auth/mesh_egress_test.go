@@ -97,8 +97,9 @@ func TestMeshEgressRangeIsTheConfiguredOne(t *testing.T) {
 	}
 }
 
-// Without the mesh assertion nothing may be declared, and a meshed deployment
-// that declares no host installs nothing.
+// Without the mesh assertion no range may be set, any malformed entry is
+// refused whether meshed or not, and a meshed deployment that declares no host
+// installs nothing.
 func TestConfigureMeshEgressRefusesWhatItCannotAdmit(t *testing.T) {
 	t.Cleanup(func() { _ = auth.ConfigureMeshEgress(false, "", "") })
 	for _, tc := range []struct {
@@ -107,8 +108,9 @@ func TestConfigureMeshEgressRefusesWhatItCannotAdmit(t *testing.T) {
 		hosts, ranges string
 		want          error
 	}{
-		{"hosts without the mesh", false, "api.declared.example", "", auth.ErrMeshEgressWithoutMesh},
 		{"range without the mesh", false, "", auth.DefaultMeshEgressRange, auth.ErrMeshEgressWithoutMesh},
+		{"hosts and a range without the mesh", false, "api.declared.example", auth.DefaultMeshEgressRange, auth.ErrMeshEgressWithoutMesh},
+		{"malformed host without the mesh", false, "*.declared.example", "", auth.ErrInvalidMeshEgress},
 		{"IP literal host", true, "240.240.0.5", "", auth.ErrInvalidMeshEgress},
 		{"numeric last label", true, "api.example.240", "", auth.ErrInvalidMeshEgress},
 		{"bracketed IPv6 host", true, "[2001:2::5]:443", "", auth.ErrInvalidMeshEgress},
@@ -143,6 +145,28 @@ func TestConfigureMeshEgressRefusesWhatItCannotAdmit(t *testing.T) {
 	}
 	if auth.AdmitsDestination(egresstest.DeclaredHost+":443", netip.MustParseAddr("240.240.0.5")) {
 		t.Fatal("meshed with no declared host admitted the mesh range")
+	}
+}
+
+// Declared hosts without the mesh assertion — every environment declares its
+// egress, meshed or not — start the service and admit nothing: a declared host
+// resolving into the mesh range is refused, and a public answer is judged as
+// before. Installing them replaces an earlier meshed policy.
+func TestConfigureMeshEgressDeclaredHostsAreInertWithoutTheMesh(t *testing.T) {
+	configureMeshEgress(t, true, egresstest.DeclaredHost, "")
+	if err := auth.ConfigureMeshEgress(false, egresstest.DeclaredHost+", hooks.declared.example:8443", ""); err != nil {
+		t.Fatalf("declared hosts without the mesh = %v, want the service to start", err)
+	}
+	for requested, address := range map[string]string{
+		egresstest.DeclaredHost + ":443": "240.240.0.5",
+		"hooks.declared.example:8443":    "240.240.0.5",
+	} {
+		if auth.AdmitsDestination(requested, netip.MustParseAddr(address)) {
+			t.Errorf("%s at %s admitted without the mesh", requested, address)
+		}
+	}
+	if !auth.AdmitsDestination(egresstest.DeclaredHost+":443", netip.MustParseAddr("93.184.216.34")) {
+		t.Error("a declared host resolving public refused without the mesh")
 	}
 }
 

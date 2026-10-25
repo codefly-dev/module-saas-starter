@@ -234,11 +234,12 @@ func assertSecretDefaultIsPlaceholder(t *testing.T, name string) {
 
 func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 	for _, group := range declaredWorkspaceConfigGroups(t) {
-		// CLI supplies this group per native run. An authored path (even an
-		// empty placeholder) conflicts with its render-owned declaration.
-		if group == "artifact-cache" {
+		// The CLI supplies these groups: artifact-cache per native run, egress
+		// from the environment's egress declaration. An authored path (even an
+		// empty placeholder) conflicts with its CLI-owned declaration.
+		if group == "artifact-cache" || group == "egress" {
 			for _, directory := range []string{moduleConfigLocalDir, workspaceConfigLocalDir} {
-				for _, suffix := range []string{".env", ".secret.env"} {
+				for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
 					path := filepath.Join(directory, group+suffix)
 					if _, err := os.Lstat(path); !os.IsNotExist(err) {
 						t.Errorf("CLI-owned group %s must have no authored default at %s", group, path)

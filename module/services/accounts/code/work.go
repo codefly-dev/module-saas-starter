@@ -2773,30 +2773,31 @@ func configureLocalEgress(isLocal, inCluster bool) error {
 // On a cell whose ambient mesh resolves each declared egress host to an
 // address it allocated (240.240.0.0/16 by default), those addresses are not
 // public, so without this every guarded path refuses the hosts the cell exists
-// to reach. Three values, all in the internal-transport group:
+// to reach. Three values:
 //
-//   - mesh-protected, the mesh assertion the group already carries. Without it
-//     nothing is admitted, and declaring hosts or a range refuses startup;
-//   - mesh-egress-hosts: the hosts this service declares as external reach, as
-//     `host` or `host:port` (443 when omitted) — the same list the environment's
-//     egress declaration gives the cell for saas/accounts;
-//   - mesh-egress-range: the CIDR prefixes the mesh allocates from, inside
-//     240.0.0.0/4 or 2001:2::/48; 240.240.0.0/16 when empty.
+//   - internal-transport/mesh-protected, the mesh assertion the group already
+//     carries. Without it nothing is admitted: declared hosts are inert, and a
+//     mesh egress range refuses startup;
+//   - egress/HOSTS: the hosts the environment's egress declaration gives this
+//     service, as `host:port`, which Codefly generates and delivers;
+//   - internal-transport/mesh-egress-range: the CIDR prefixes the mesh
+//     allocates from, inside 240.0.0.0/4 or 2001:2::/48; 240.240.0.0/16 when
+//     empty.
 func configureMeshEgress(source meshtransport.Source) error {
 	meshed, err := meshtransport.Protected(source)
 	if err != nil {
 		return err
 	}
-	// Literal group and key, so the configuration-dependency gate sees the read.
-	hosts, _ := source.WorkspaceValue("internal-transport", "mesh-egress-hosts")
+	// Literal groups and keys, so the configuration-dependency gate sees the reads.
+	hosts, _ := source.WorkspaceValue("egress", "HOSTS")
 	ranges, _ := source.WorkspaceValue("internal-transport", "mesh-egress-range")
 	if err := auth.ConfigureMeshEgress(meshed, hosts, ranges); err != nil {
-		return fmt.Errorf("internal-transport/mesh-egress-hosts, internal-transport/mesh-egress-range: %w", err)
+		return fmt.Errorf("egress/HOSTS, internal-transport/mesh-egress-range: %w", err)
 	}
-	if strings.TrimSpace(hosts) != "" {
+	if meshed && strings.TrimSpace(hosts) != "" {
 		wool.Get(context.Background()).In("configureMeshEgress").Info(
 			"guarded egress admits these declared hosts at the mesh's egress addresses",
-			wool.Field("internal-transport/mesh-egress-hosts", hosts),
+			wool.Field("egress/HOSTS", hosts),
 			wool.Field("internal-transport/mesh-egress-range", ranges))
 	}
 	return nil

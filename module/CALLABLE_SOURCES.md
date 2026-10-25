@@ -211,7 +211,7 @@ concrete address a connection is about to reach:
 - an address in the **mesh egress range** is admitted only when the deployment
   asserts its mesh (`internal-transport/mesh-protected=true`) **and** the client
   asked for a **hostname** that is declared, on the declared port, in
-  `internal-transport/mesh-egress-hosts`;
+  `egress/HOSTS`;
 - everything else is refused exactly as before: an IP literal (never a declared
   host, whatever range it is in), an undeclared hostname resolving into the
   range, and every loopback, link-local, metadata, private or other non-public
@@ -228,27 +228,29 @@ Control hook judging that literal against the host:port the client asked for,
 so a later DNS answer cannot replace a judged one. The webhook client keeps its
 own resolve-and-pin dial and asks the same rule.
 
-Configuration ([configuration groups](configurations/README.md#internal-transport)):
+Configuration. The hosts are the environment's `egress` declaration for
+`saas/accounts`, the same entry the cell renders its egress ServiceEntries
+from; Codefly generates [`egress`](configurations/README.md#egress)/`HOSTS`
+from it (`api.example.com:443,hooks.example.com:8443`) and delivers it to
+accounts, so nothing here lists them. The mesh assertion and the range are
+[`internal-transport`](configurations/README.md#internal-transport) values:
 
 ```
 mesh-protected=true
-mesh-egress-hosts=api.example.com,hooks.example.com
 mesh-egress-range=240.240.0.0/16
 ```
 
-- **Empty by default.** No host is admitted at a mesh address until one is
-  listed.
-- **Refused without the mesh.** Hosts or a range without
-  `mesh-protected=true` refuse startup, naming the keys.
-- **The range is bounded.** `mesh-egress-range` defaults to `240.240.0.0/16`
-  when hosts are listed. A configured prefix must lie inside `240.0.0.0/4` or
-  `2001:2::/48`, the blocks Istio allocates from, which no pod, node, Service or
-  metadata address uses.
-- **The list mirrors the environment's egress declaration.** The cell renders
-  its egress ServiceEntries from the environment's `egress` entry for
-  `saas/accounts`; this key lists the same hosts. Codefly does not yet deliver
-  that declaration to the service it describes, so the two are kept equal by
-  hand until it does.
+- **Nothing declared, nothing admitted.** No host is admitted at a mesh
+  address until the environment declares one.
+- **Inert without the mesh.** Declared hosts on a deployment without
+  `mesh-protected=true` start the service and admit nothing: a declared host
+  resolving into the range is refused there like any other reserved address.
+  A `mesh-egress-range` without `mesh-protected=true` refuses startup, naming
+  the keys, because a range is only ever set by hand for a mesh.
+- **The range is bounded.** `mesh-egress-range` defaults to `240.240.0.0/16`.
+  A configured prefix must lie inside `240.0.0.0/4` or `2001:2::/48`, the
+  blocks Istio allocates from, which no pod, node, Service or metadata address
+  uses.
 
 ## Local egress
 

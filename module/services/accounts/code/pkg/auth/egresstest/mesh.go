@@ -36,14 +36,11 @@ type MeshCase struct {
 }
 
 // Configuration is what a case installs with auth.ConfigureMeshEgress: the
-// mesh assertion, and the declared host only on a meshed deployment (declared
-// hosts without the assertion refuse startup). The range is left to its
-// default, 240.240.0.0/16.
+// mesh assertion and the declared host, which every deployment carries from
+// its environment's egress declaration and which is inert without the
+// assertion. The range is left to its default, 240.240.0.0/16.
 func (c MeshCase) Configuration() (meshed bool, hosts, ranges string) {
-	if !c.Meshed {
-		return false, "", ""
-	}
-	return true, DeclaredHost, ""
+	return c.Meshed, DeclaredHost, ""
 }
 
 // Requested is the "host:port" the client asks for.

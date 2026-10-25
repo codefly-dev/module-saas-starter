@@ -50,10 +50,12 @@ import (
 // rebinding cannot pass a check made on an earlier answer.
 //
 // The configuration is the deployment's, read once at boot
-// (ConfigureMeshEgress). The declared hosts mirror the environment's egress
-// declaration for this service — the same list the cell renders its egress
-// ServiceEntries from — because the platform does not yet deliver that
-// declaration to the service it describes.
+// (ConfigureMeshEgress). The declared hosts are the environment's egress
+// declaration — the same list the cell renders its egress ServiceEntries from —
+// which Codefly delivers to the service as the workspace value egress/HOSTS.
+// They are inert without the mesh assertion: an environment declares its
+// egress whether or not its deployment is meshed, and on one that is not, no
+// declared host is admitted anywhere IsPublicDestination would refuse it.
 
 // DialControl is the shape of a net.Dialer Control hook.
 type DialControl = func(network, address string, c syscall.RawConn) error
@@ -89,9 +91,10 @@ var meshEgressRangeBounds = []netip.Prefix{
 // accepts.
 var meshEgressHostPattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$`)
 
-// ErrMeshEgressWithoutMesh reports declared mesh egress on a deployment that
-// did not assert its mesh. It refuses startup.
-var ErrMeshEgressWithoutMesh = errors.New("mesh egress is configured, but the deployment does not assert a mesh (internal-transport/mesh-protected is not true)")
+// ErrMeshEgressWithoutMesh reports a mesh egress range set on a deployment
+// that did not assert its mesh. It refuses startup: a range is set by hand,
+// for a mesh, so setting one on a deployment that asserts none is a mistake.
+var ErrMeshEgressWithoutMesh = errors.New("a mesh egress range is configured, but the deployment does not assert a mesh (internal-transport/mesh-protected is not true)")
 
 // ErrInvalidMeshEgress reports a declared host or a range that cannot be
 // admitted as written. It refuses startup.
@@ -113,10 +116,13 @@ var meshEgress atomic.Pointer[meshEgressPolicy]
 // omitted); ranges is a comma- or whitespace-separated list of CIDR prefixes,
 // DefaultMeshEgressRange when empty.
 //
-// Nothing is installed when hosts is empty. Hosts or ranges without the mesh
-// assertion are refused, as is any malformed entry: a partially-understood
-// admission is never installed.
+// Nothing is installed when hosts is empty or the deployment is not meshed:
+// declared hosts without the mesh assertion are inert, admitting nothing
+// beyond IsPublicDestination. A range without the mesh assertion is refused,
+// as is any malformed entry, meshed or not: a partially-understood admission
+// is never installed.
 func ConfigureMeshEgress(meshed bool, hosts, ranges string) error {
+	meshEgress.Store(nil)
 	declared, err := parseMeshEgressHosts(hosts)
 	if err != nil {
 		return err
@@ -125,10 +131,10 @@ func ConfigureMeshEgress(meshed bool, hosts, ranges string) error {
 	if err != nil {
 		return err
 	}
-	if !meshed && (len(declared) > 0 || len(prefixes) > 0) {
+	if !meshed && len(prefixes) > 0 {
 		return ErrMeshEgressWithoutMesh
 	}
-	if len(declared) == 0 {
+	if !meshed || len(declared) == 0 {
 		meshEgress.Store(nil)
 		return nil
 	}
