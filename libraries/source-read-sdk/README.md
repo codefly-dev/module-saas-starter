@@ -1,80 +1,74 @@
-# Source collection projection SDK
+# Accounts module-tier client
 
-Generated Go client for the Accounts module-facing capability service. Import
+Generated Go client for Accounts' module tier (`ModuleCapabilitiesService` on
+the `authority` endpoint): the connected-source seams (ClaimJobs, HeartbeatJob,
+AckJob, NackJob, FetchDatasourceBlob, FetchDatasourceFiles,
+MintSourceOperationContext, ListReadableSourceCollections) and the rest of the
+module capability surface. Import
 `github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go` at the
-reviewed commit. The standalone Go module has no consumer-local replacement.
+reviewed commit.
+
+The bindings and the facade are `codefly generate client` output and are never
+edited by hand. The library carries every descriptor it needs and imports no
+other SDK, so a binary that links it registers each `saas.*` proto once. Do
+not link it beside another copy of the same descriptors (an older SDK that
+vendors `saas/events/v1` too): pick one.
 
 ```go
-client, err := accounts.NewInternal(internalURL, authenticatedOptions...)
+client, err := accounts.NewInternal(authorityURL, connect.WithInterceptors(workContext))
 // Handle err before using client.
-result, err := client.ModuleCapabilities().
-    ListReadableSourceCollections(ctx, &accountsv1.ListReadableSourceCollectionsRequest{
-        PageSize: 1000, PageToken: cursor,
-    })
+jobs, err := client.ModuleCapabilities().ClaimJobs(ctx, &accountsv1.ModuleClaimJobsRequest{Queue: "datasource"})
 ```
 
-`NewInternal` selects HTTP/2 gRPC for the Accounts internal endpoint (h2c for
-`http://`, certificate-verified TLS for `https://`). Credentials are supplied
-through Connect interceptors. `New(gateway, options...)` also enforces gRPC;
-a custom gateway must provide an HTTP/2-capable client.
-Source projection calls must carry one original signed viewer Work Context in
-`x-codefly-work-context`, audience the calling module's registration prefix and
-kind-wide `read` on a resource type that module declares its content under, plus
-the cluster-internal perimeter credential. Only the declared types are honoured;
-a module that declares none reads nothing. Installation/module credentials
-are not a viewer. Never put either credential or a minting secret in a browser.
-The empty request contains no tenant, subject, scopes, or boundary authority.
+`NewInternal` selects HTTP/2 gRPC for the Accounts `authority` endpoint (h2c for
+`http://`, certificate-verified TLS for `https://`). The facade skips streaming
+RPCs; for FetchDatasourceBlob and FetchDatasourceFiles build the generated
+`accountsv1connect` client on `InternalGateway(authorityURL)` with
+`connect.WithGRPC()`.
+
+## Credentials
+
+Every call proves the calling module itself; no shared perimeter credential is
+sent or accepted on this tier.
+
+- The module-capability calls carry the module's own Work Context in
+  `x-codefly-work-context`: the one the authority issues the workload for
+  audience `module-capabilities` (Issue, from the workload's credential).
+- ListReadableSourceCollections carries the original signed viewer Work
+  Context instead: audience the calling module's registration prefix and
+  kind-wide `read` on a resource type that module declares.
+- ExchangeDelegatedReadAudience and ExchangeDelegatedOperationAudience carry
+  the module's own Work Context in the header and the viewer parent only in the
+  request body. Never substitute one for the other.
+- MintSourceOperationContext authenticates with the module pod's workload
+  credential in the request (`service_account_token`), which Accounts reviews
+  and binds to the running build.
+
+Never put a Work Context or a workload credential in a browser, and never log
+request or response bodies.
+
+## Source collections
 
 Drain `next_page_token` until empty. Each collection has `source_id`,
 `boundary_id`, `origin`, `container`, `ref`, and literal `paths`. Empty means
 no current readable sources; any error invalidates a partial enumeration.
-Changed source/grant or authorization revisions invalidate existing cursors;
-standing-grant expiration also requires a restart. Source pages are joined and
-limited in the database, under the same snapshot as authority verification. Current owner and
-all delegated actor grants are intersected in the authenticated tenant.
-Every provider the host connects is projected. `container` is what the
-consuming module's ingest keys the source's entries under: the repository for
-a GitHub source, the source id for every other provider.
+Changed source/grant or authorization revisions invalidate existing cursors.
+`container` is what the consuming module's ingest keys the source's entries
+under: the repository for a GitHub source, the source id for every other
+provider.
 
-A server adapter deriving the active session organization from authenticated
-identity and exchanging a bearer for a viewer Work Context remains a separate
-runtime seam. Never choose the first membership or trust browser scopes.
+## Regenerate
 
-Regenerate from the repository root after exporting contracts:
+From the repository root:
 
 ```sh
-codefly generate contracts saas-starter
-(cd libraries/source-read-sdk/go && go run ./cmd/generate --root ../../..)
+codefly generate client --from saas-starter/accounts/authority --name source-read-sdk \
+  --language go --services ModuleCapabilitiesService \
+  --go-module github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go \
+  --output libraries/source-read-sdk --force
 ```
 
-The generated client imports policy, jobs and Work Context descriptors from
-`github.com/codefly-dev/saas-sdk-go`; it does not vendor duplicates. It can be
-composed with consumers of that SDK in one Go binary. Applications embedding
-private Accounts module-capability descriptors must still use one binding set
-for those owner types.
-
-The generator trims the descriptor set to the selected service’s transitive
-imports before invoking Codefly, then pins the facade to the internal gRPC
-protocol. Unrelated Accounts services are not generated.
-
-## Delegated read-only audience exchange
-
-The same public client exposes:
-
-```go
-child, err := client.ModuleCapabilities().ExchangeDelegatedReadAudience(ctx,
-    &accountsv1.ModuleExchangeDelegatedReadAudienceRequest{
-        BindingId: "installed-read",
-        ParentWorkContextToken: originalViewerToken,
-    })
-```
-
-For this method, the interceptor sends the **calling module's own** signed Work
-Context in `x-codefly-work-context` and the internal perimeter credential in
-`x-codefly-internal-token`. The viewer parent is exclusively in the request body.
-Do not substitute the viewer for the module credential or the module for the
-viewer parent. Installation fixes the incoming audience, target audience and
-read scopes; the parent must already admit them. Before using `child.token`, the
-consumer must verify its signature, target audience and preserved viewer lineage.
-Do not log request/response bodies or credentials. This read-only exchange does
-not grant mutation scopes or provide durable bearer custody.
+Generation from this service's proto tree needs a CLI that names sources by
+their buf module (codefly-dev/cli `2c6225ad`); earlier CLIs compile the
+excluded `codefly/` tree and the vendored `codefly/base` under the wrong names
+and fail.

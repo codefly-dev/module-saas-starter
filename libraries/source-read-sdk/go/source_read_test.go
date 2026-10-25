@@ -2,7 +2,6 @@ package accounts_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,8 +12,6 @@ import (
 	accounts "github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go"
 	v1 "github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go/gen/saas/accounts/v1"
 	rpc "github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go/gen/saas/accounts/v1/accountsv1connect"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 type projection struct {
@@ -22,7 +19,7 @@ type projection struct {
 }
 
 func (projection) ListReadableSourceCollections(_ context.Context, r *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error) {
-	if r.Msg.GetPageToken() != "cursor" || r.Header().Get("X-Codefly-Work-Context") != "original-viewer" || r.Header().Get("X-Codefly-Internal-Token") != "perimeter" {
+	if r.Msg.GetPageToken() != "cursor" || r.Header().Get("X-Codefly-Work-Context") != "original-viewer" || r.Header().Get("X-Codefly-Internal-Token") != "" {
 		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
 	}
 	return connect.NewResponse(&v1.ListReadableSourceCollectionsResponse{Collections: []*v1.ReadableSourceCollection{{SourceId: "source", BoundaryId: "collection", Origin: "github", Container: "acme/handbook", Paths: []string{"docs"}}}}), nil
@@ -45,7 +42,6 @@ func TestGeneratedSourceProjectionUsesInternalGRPC(t *testing.T) {
 	credentials := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			req.Header().Set("X-Codefly-Work-Context", "original-viewer")
-			req.Header().Set("X-Codefly-Internal-Token", "perimeter")
 			return next(ctx, req)
 		}
 	})
@@ -58,58 +54,8 @@ func TestGeneratedSourceProjectionUsesInternalGRPC(t *testing.T) {
 		t.Fatalf("%v %v", result, err)
 	}
 }
-func TestContractContainsOnlyRequiredDescriptors(t *testing.T) {
-	raw, err := os.ReadFile("../contract/contract.binpb")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var set descriptorpb.FileDescriptorSet
-	if err := proto.Unmarshal(raw, &set); err != nil {
-		t.Fatal(err)
-	}
-	files := map[string]*descriptorpb.FileDescriptorProto{}
-	for _, f := range set.File {
-		files[f.GetName()] = f
-		if f.GetName() != "saas/accounts/v1/module_capabilities.proto" && len(f.Service) != 0 {
-			t.Fatalf("unrelated service generated from %s", f.GetName())
-		}
-	}
-	seen := map[string]bool{}
-	var visit func(string)
-	visit = func(name string) {
-		if seen[name] {
-			return
-		}
-		seen[name] = true
-		f := files[name]
-		if f == nil {
-			t.Fatalf("missing dependency %s", name)
-		}
-		for _, dep := range f.Dependency {
-			visit(dep)
-		}
-	}
-	visit("saas/accounts/v1/module_capabilities.proto")
-	if len(seen) != len(files) {
-		t.Fatalf("%d unrelated descriptors shipped", len(files)-len(seen))
-	}
-	raw, err = os.ReadFile("../contract/catalog.codefly.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var catalog struct {
-		Endpoints []struct{ Services []struct{ Name string } }
-	}
-	if err := json.Unmarshal(raw, &catalog); err != nil {
-		t.Fatal(err)
-	}
-	if len(catalog.Endpoints) != 1 || len(catalog.Endpoints[0].Services) != 1 || catalog.Endpoints[0].Services[0].Name != "ModuleCapabilitiesService" {
-		t.Fatal("unrelated service exposed")
-	}
-}
-
 func (projection) ExchangeDelegatedReadAudience(_ context.Context, r *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
-	if r.Header().Get("X-Codefly-Work-Context") != "calling-module" || r.Header().Get("X-Codefly-Internal-Token") != "perimeter" || r.Msg.GetParentWorkContextToken() != "original-viewer" || r.Msg.GetBindingId() != "installed-read" {
+	if r.Header().Get("X-Codefly-Work-Context") != "calling-module" || r.Header().Get("X-Codefly-Internal-Token") != "" || r.Msg.GetParentWorkContextToken() != "original-viewer" || r.Msg.GetBindingId() != "installed-read" {
 		return nil, connect.NewError(connect.CodeUnauthenticated, nil)
 	}
 	return connect.NewResponse(&v1.IssuedWorkContext{Token: "viewer-child"}), nil
@@ -133,7 +79,6 @@ func TestPublicSDKDelegatedExchangePreservesSeparateCredentials(t *testing.T) {
 			credentials := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 				return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 					req.Header().Set("X-Codefly-Work-Context", module)
-					req.Header().Set("X-Codefly-Internal-Token", "perimeter")
 					return next(ctx, req)
 				}
 			})
@@ -153,10 +98,12 @@ func TestPublicSDKDelegatedExchangePreservesSeparateCredentials(t *testing.T) {
 	}
 }
 
-func TestSharedDescriptorsAreNotVendored(t *testing.T) {
-	for _, path := range []string{"gen/saas/policy", "gen/saas/jobs", "gen/saas/accounts/v1/work_contexts.pb.go"} {
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatalf("shared descriptor must come from public SDK, found %s: %v", path, err)
-		}
+func TestGeneratedLibraryDoesNotImportLegacySDK(t *testing.T) {
+	raw, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "github.com/codefly-dev/saas-sdk-go") {
+		t.Fatal("generated client depends on retired SDK")
 	}
 }

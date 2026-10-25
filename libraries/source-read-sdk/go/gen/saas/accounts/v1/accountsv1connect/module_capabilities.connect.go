@@ -5,14 +5,14 @@
 package accountsv1connect
 
 import (
-	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go/gen/saas/accounts/v1"
-	v11 "github.com/codefly-dev/saas-sdk-go/gen/saas/accounts/v1"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	http "net/http"
 	strings "strings"
+
+	connect "connectrpc.com/connect"
+	v1 "github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go/gen/saas/accounts/v1"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file and the connect package are
@@ -132,6 +132,9 @@ const (
 	// ModuleCapabilitiesServiceReplayEventsProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's ReplayEvents RPC.
 	ModuleCapabilitiesServiceReplayEventsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
+	// ModuleCapabilitiesServiceResolveWorkContextAuthorityProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's ResolveWorkContextAuthority RPC.
+	ModuleCapabilitiesServiceResolveWorkContextAuthorityProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority"
 )
 
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
@@ -148,11 +151,11 @@ type ModuleCapabilitiesServiceClient interface {
 	RevokeExecutableArtifact(context.Context, *connect.Request[v1.ModuleRevokeExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
-	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error)
+	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// ExchangeDelegatedOperationAudience authenticates the module independently
 	// of a current parent context and exchanges only an installed operation's
 	// invoke scopes, or its read-only receipt-lookup subset.
-	ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error)
+	ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
@@ -165,7 +168,10 @@ type ModuleCapabilitiesServiceClient interface {
 	// access oracles can resolve it. Bounded by the resource types the caller
 	// principal's grant declares.
 	PlaceRecord(context.Context, *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error)
-	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+	// EnqueueJob appends durable work for a tenant- or subject-scoped queue. A
+	// subject-scoped job whose subject is not a member of the tenant is
+	// FAILED_PRECONDITION with reason TENANT_MEMBERSHIP_MISSING; see REFUSALS,
+	// and key on the reason rather than the code.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
 	ClaimJobs(context.Context, *connect.Request[v1.ModuleClaimJobsRequest]) (*connect.Response[v1.ModuleClaimJobsResponse], error)
@@ -175,10 +181,17 @@ type ModuleCapabilitiesServiceClient interface {
 	AckJob(context.Context, *connect.Request[v1.ModuleAckJobRequest]) (*connect.Response[emptypb.Empty], error)
 	// NackJob fails a leased job as retryable or permanent.
 	NackJob(context.Context, *connect.Request[v1.ModuleNackJobRequest]) (*connect.Response[emptypb.Empty], error)
-	// NotifyUser delivers a notification subject to category policy.
+	// NotifyUser delivers a notification subject to category policy. A recipient
+	// who is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
+	// already used for different content, and a host that cannot re-read live
+	// authority, are FAILED_PRECONDITION too under their own reasons, so the
+	// reason — not the code — says which happened; see REFUSALS.
 	NotifyUser(context.Context, *connect.Request[v1.ModuleNotifyUserRequest]) (*connect.Response[v1.ModuleNotifyUserResponse], error)
 	// NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
-	// see the request.
+	// see the request. It names no recipient, so it has no non-member refusal; an
+	// idempotency_key already used for different content is FAILED_PRECONDITION
+	// with reason NOTIFICATION_IDEMPOTENCY_CONFLICT.
 	NotifyOrgAdmins(context.Context, *connect.Request[v1.ModuleNotifyOrgAdminsRequest]) (*connect.Response[v1.ModuleNotifyOrgAdminsResponse], error)
 	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *connect.Request[v1.ModuleRequestApprovalRequest]) (*connect.Response[v1.ModuleRequestApprovalResponse], error)
@@ -192,7 +205,11 @@ type ModuleCapabilitiesServiceClient interface {
 	// into the namespaces the operator bound to it; see the request.
 	DeclareAuditEventTypes(context.Context, *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
-	// whole set of other subjects whose rows that viewer may read.
+	// whole set of other subjects whose rows that viewer may read. A viewer who
+	// is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING; a set too large to serve whole is
+	// FAILED_PRECONDITION with reason SUBJECT_VISIBILITY_SET_TOO_LARGE, and only
+	// the reason tells a consumer which it got.
 	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
 	// FetchDatasourceBlob streams one datasource file blob to the module that
 	// resolves a change set's blob sha. Authorized by the caller principal's
@@ -244,6 +261,14 @@ type ModuleCapabilitiesServiceClient interface {
 	ListSubscriptions(context.Context, *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error)
 	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
 	ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error)
+	// ResolveWorkContextAuthority answers one live value a callee's verifier
+	// holds a capability's seal against: the installation it was sealed to and
+	// its revision, a principal's epoch, the build the issuer approves for a
+	// principal, an operation binding, the authorization revision a capability's
+	// owner carries, or an approval grant. It is the surface a composed module
+	// builds its seal, revision and grant sources on; see the block above
+	// ModuleResolveWorkContextAuthorityRequest for what a caller may ask.
+	ResolveWorkContextAuthority(context.Context, *connect.Request[v1.ModuleResolveWorkContextAuthorityRequest]) (*connect.Response[v1.ModuleResolveWorkContextAuthorityResponse], error)
 }
 
 // NewModuleCapabilitiesServiceClient constructs a client for the
@@ -281,13 +306,13 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("RevokeExecutableArtifact")),
 			connect.WithClientOptions(opts...),
 		),
-		exchangeDelegatedReadAudience: connect.NewClient[v1.ModuleExchangeDelegatedReadAudienceRequest, v11.IssuedWorkContext](
+		exchangeDelegatedReadAudience: connect.NewClient[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedReadAudience")),
 			connect.WithClientOptions(opts...),
 		),
-		exchangeDelegatedOperationAudience: connect.NewClient[v1.ModuleExchangeDelegatedOperationAudienceRequest, v11.IssuedWorkContext](
+		exchangeDelegatedOperationAudience: connect.NewClient[v1.ModuleExchangeDelegatedOperationAudienceRequest, v1.IssuedWorkContext](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceExchangeDelegatedOperationAudienceProcedure,
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedOperationAudience")),
@@ -449,6 +474,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ReplayEvents")),
 			connect.WithClientOptions(opts...),
 		),
+		resolveWorkContextAuthority: connect.NewClient[v1.ModuleResolveWorkContextAuthorityRequest, v1.ModuleResolveWorkContextAuthorityResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceResolveWorkContextAuthorityProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ResolveWorkContextAuthority")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -458,8 +489,8 @@ type moduleCapabilitiesServiceClient struct {
 	approveExecutableArtifact          *connect.Client[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
 	authorizeExecutableArtifact        *connect.Client[v1.ModuleExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
 	revokeExecutableArtifact           *connect.Client[v1.ModuleRevokeExecutableArtifactRequest, v1.ModuleExecutableArtifactResponse]
-	exchangeDelegatedReadAudience      *connect.Client[v1.ModuleExchangeDelegatedReadAudienceRequest, v11.IssuedWorkContext]
-	exchangeDelegatedOperationAudience *connect.Client[v1.ModuleExchangeDelegatedOperationAudienceRequest, v11.IssuedWorkContext]
+	exchangeDelegatedReadAudience      *connect.Client[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext]
+	exchangeDelegatedOperationAudience *connect.Client[v1.ModuleExchangeDelegatedOperationAudienceRequest, v1.IssuedWorkContext]
 	checkWorkContextRecordAccess       *connect.Client[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse]
 	listReadableSourceCollections      *connect.Client[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse]
 	placeRecord                        *connect.Client[v1.ModulePlaceRecordRequest, v1.ModulePlaceRecordResponse]
@@ -486,6 +517,7 @@ type moduleCapabilitiesServiceClient struct {
 	unsubscribe                        *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
 	listSubscriptions                  *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
 	replayEvents                       *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
+	resolveWorkContextAuthority        *connect.Client[v1.ModuleResolveWorkContextAuthorityRequest, v1.ModuleResolveWorkContextAuthorityResponse]
 }
 
 // GetCurrentInstallation calls saas.accounts.v1.ModuleCapabilitiesService.GetCurrentInstallation.
@@ -513,13 +545,13 @@ func (c *moduleCapabilitiesServiceClient) RevokeExecutableArtifact(ctx context.C
 
 // ExchangeDelegatedReadAudience calls
 // saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience.
-func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx context.Context, req *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error) {
+func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx context.Context, req *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return c.exchangeDelegatedReadAudience.CallUnary(ctx, req)
 }
 
 // ExchangeDelegatedOperationAudience calls
 // saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience.
-func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedOperationAudience(ctx context.Context, req *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error) {
+func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedOperationAudience(ctx context.Context, req *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return c.exchangeDelegatedOperationAudience.CallUnary(ctx, req)
 }
 
@@ -659,6 +691,12 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req 
 	return c.replayEvents.CallUnary(ctx, req)
 }
 
+// ResolveWorkContextAuthority calls
+// saas.accounts.v1.ModuleCapabilitiesService.ResolveWorkContextAuthority.
+func (c *moduleCapabilitiesServiceClient) ResolveWorkContextAuthority(ctx context.Context, req *connect.Request[v1.ModuleResolveWorkContextAuthorityRequest]) (*connect.Response[v1.ModuleResolveWorkContextAuthorityResponse], error) {
+	return c.resolveWorkContextAuthority.CallUnary(ctx, req)
+}
+
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
@@ -673,11 +711,11 @@ type ModuleCapabilitiesServiceHandler interface {
 	RevokeExecutableArtifact(context.Context, *connect.Request[v1.ModuleRevokeExecutableArtifactRequest]) (*connect.Response[v1.ModuleExecutableArtifactResponse], error)
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
-	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error)
+	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// ExchangeDelegatedOperationAudience authenticates the module independently
 	// of a current parent context and exchanges only an installed operation's
 	// invoke scopes, or its read-only receipt-lookup subset.
-	ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error)
+	ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
@@ -690,7 +728,10 @@ type ModuleCapabilitiesServiceHandler interface {
 	// access oracles can resolve it. Bounded by the resource types the caller
 	// principal's grant declares.
 	PlaceRecord(context.Context, *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error)
-	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+	// EnqueueJob appends durable work for a tenant- or subject-scoped queue. A
+	// subject-scoped job whose subject is not a member of the tenant is
+	// FAILED_PRECONDITION with reason TENANT_MEMBERSHIP_MISSING; see REFUSALS,
+	// and key on the reason rather than the code.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
 	ClaimJobs(context.Context, *connect.Request[v1.ModuleClaimJobsRequest]) (*connect.Response[v1.ModuleClaimJobsResponse], error)
@@ -700,10 +741,17 @@ type ModuleCapabilitiesServiceHandler interface {
 	AckJob(context.Context, *connect.Request[v1.ModuleAckJobRequest]) (*connect.Response[emptypb.Empty], error)
 	// NackJob fails a leased job as retryable or permanent.
 	NackJob(context.Context, *connect.Request[v1.ModuleNackJobRequest]) (*connect.Response[emptypb.Empty], error)
-	// NotifyUser delivers a notification subject to category policy.
+	// NotifyUser delivers a notification subject to category policy. A recipient
+	// who is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING, never PERMISSION_DENIED. An idempotency_key
+	// already used for different content, and a host that cannot re-read live
+	// authority, are FAILED_PRECONDITION too under their own reasons, so the
+	// reason — not the code — says which happened; see REFUSALS.
 	NotifyUser(context.Context, *connect.Request[v1.ModuleNotifyUserRequest]) (*connect.Response[v1.ModuleNotifyUserResponse], error)
 	// NotifyOrgAdmins notifies a tenant's administrators, resolved at send time;
-	// see the request.
+	// see the request. It names no recipient, so it has no non-member refusal; an
+	// idempotency_key already used for different content is FAILED_PRECONDITION
+	// with reason NOTIFICATION_IDEMPOTENCY_CONFLICT.
 	NotifyOrgAdmins(context.Context, *connect.Request[v1.ModuleNotifyOrgAdminsRequest]) (*connect.Response[v1.ModuleNotifyOrgAdminsResponse], error)
 	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *connect.Request[v1.ModuleRequestApprovalRequest]) (*connect.Response[v1.ModuleRequestApprovalResponse], error)
@@ -717,7 +765,11 @@ type ModuleCapabilitiesServiceHandler interface {
 	// into the namespaces the operator bound to it; see the request.
 	DeclareAuditEventTypes(context.Context, *connect.Request[v1.ModuleDeclareAuditEventTypesRequest]) (*connect.Response[v1.ModuleDeclareAuditEventTypesResponse], error)
 	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
-	// whole set of other subjects whose rows that viewer may read.
+	// whole set of other subjects whose rows that viewer may read. A viewer who
+	// is not a member of the tenant is FAILED_PRECONDITION with reason
+	// TENANT_MEMBERSHIP_MISSING; a set too large to serve whole is
+	// FAILED_PRECONDITION with reason SUBJECT_VISIBILITY_SET_TOO_LARGE, and only
+	// the reason tells a consumer which it got.
 	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
 	// FetchDatasourceBlob streams one datasource file blob to the module that
 	// resolves a change set's blob sha. Authorized by the caller principal's
@@ -769,6 +821,14 @@ type ModuleCapabilitiesServiceHandler interface {
 	ListSubscriptions(context.Context, *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error)
 	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
 	ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error)
+	// ResolveWorkContextAuthority answers one live value a callee's verifier
+	// holds a capability's seal against: the installation it was sealed to and
+	// its revision, a principal's epoch, the build the issuer approves for a
+	// principal, an operation binding, the authorization revision a capability's
+	// owner carries, or an approval grant. It is the surface a composed module
+	// builds its seal, revision and grant sources on; see the block above
+	// ModuleResolveWorkContextAuthorityRequest for what a caller may ask.
+	ResolveWorkContextAuthority(context.Context, *connect.Request[v1.ModuleResolveWorkContextAuthorityRequest]) (*connect.Response[v1.ModuleResolveWorkContextAuthorityResponse], error)
 }
 
 // NewModuleCapabilitiesServiceHandler builds an HTTP handler from the service implementation. It
@@ -970,6 +1030,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ReplayEvents")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceResolveWorkContextAuthorityHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceResolveWorkContextAuthorityProcedure,
+		svc.ResolveWorkContextAuthority,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ResolveWorkContextAuthority")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ModuleCapabilitiesServiceGetCurrentInstallationProcedure:
@@ -1036,6 +1102,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceListSubscriptionsHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceReplayEventsProcedure:
 			moduleCapabilitiesServiceReplayEventsHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceResolveWorkContextAuthorityProcedure:
+			moduleCapabilitiesServiceResolveWorkContextAuthorityHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1061,11 +1129,11 @@ func (UnimplementedModuleCapabilitiesServiceHandler) RevokeExecutableArtifact(co
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.RevokeExecutableArtifact is not implemented"))
 }
 
-func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error) {
+func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience is not implemented"))
 }
 
-func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v11.IssuedWorkContext], error) {
+func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedOperationAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedOperationAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedOperationAudience is not implemented"))
 }
 
@@ -1171,4 +1239,8 @@ func (UnimplementedModuleCapabilitiesServiceHandler) ListSubscriptions(context.C
 
 func (UnimplementedModuleCapabilitiesServiceHandler) ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ResolveWorkContextAuthority(context.Context, *connect.Request[v1.ModuleResolveWorkContextAuthorityRequest]) (*connect.Response[v1.ModuleResolveWorkContextAuthorityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ResolveWorkContextAuthority is not implemented"))
 }
