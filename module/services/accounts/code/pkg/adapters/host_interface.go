@@ -134,10 +134,20 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 			return nil, interfaceStatus(rerr)
 		}
 		if authority != nil {
+			if binding := req.GetOperationBindingId(); binding != "" {
+				return nil, status.Errorf(codes.Unimplemented, "person-owned operation binding %q at solution %s requires solution-role binding projection", binding, req.GetAudience())
+			}
 			issued, err = s.solutionPersonIssue(ctx, identity.OrgID.String(), req.GetAudience(), authority, held, scopes, ttl)
 			break
 		}
-		if len(scopes) == 0 {
+		var bindings []string
+		if binding := req.GetOperationBindingId(); binding != "" {
+			if operation := req.GetOperation(); operation != "" && operation != "invoke" {
+				return nil, status.Errorf(codes.InvalidArgument, "a person-owned issue carries invoke scopes for operation binding %q; operation %q is refused", binding, operation)
+			}
+			bindings = []string{binding}
+		}
+		if len(scopes) == 0 && len(bindings) == 0 {
 			// An empty ask is everything the person holds at the audience.
 			if scopes, err = s.workContexts.personHoldings(ctx, identity.OrgID.String(), req.GetAudience()); err != nil {
 				return nil, interfaceStatus(err)
@@ -147,6 +157,7 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		// one as the identity tuple's third element.
 		issued, err = s.workContexts.StartTask(ctx, &gen.StartTaskWorkContextRequest{
 			OrgId: identity.OrgID.String(), TaskId: uuid.NewString(), Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
+			OperationBindings: bindings,
 		})
 	case *authorityv1.IssueRequest_Installation:
 		issued, err = s.forInstallation(ctx, as.Installation.GetInstallationId(), req, scopes)

@@ -507,11 +507,12 @@ exposure with the actual generated team id, one revision bump, unchanged replay,
 and foreign-organization refusal. Resource grants, durable delegation and
 installation-revocation conformance remain skipped.
 
-`module/tools` still fails only `TestServiceCatalogProceduresAppearInAPIContractCatalog`
-for the fourteen host procedures. The CLI contract exporter rejects the Connect
+Before the catalog repair described below, `module/tools` failed only
+`TestServiceCatalogProceduresAppearInAPIContractCatalog`
+for the fourteen host procedures. The earlier CLI contract exporter rejected the Connect
 surface's five proto packages in `cmd/generate/contracts.go`'s package-selection
 function (`proto declares services in multiple packages ... a contract endpoint
-must be single-package`). The owner fix must retain the endpoint's explicit
+must be single-package`). The owner fix described below retains the endpoint's explicit
 service surface across packages in its descriptor and contract catalog, with a
 regression using an owned API plus implemented interfaces. No generated contract
 was hand-edited or partially retained.
@@ -542,8 +543,8 @@ contract must settle or preserve the approval path before claiming a fresh
 composed ENFORCE run.
 
 Validation: Accounts adapters, business, infra and cataloggen suites pass;
-`go vet ./...`, the naming gate and the boundary gate pass. `module/tools`
-has only the contract-catalog failure described above. The full requested
+`go vet ./...`, the naming gate and the boundary gate pass. At that checkpoint, `module/tools`
+had only the contract-catalog failure described above, now repaired below. The full requested
 `commit-identity-gate.mjs check origin/main HEAD` remains red on 38 identity
 fields in commits already on this branch, including `86267c97`, `ab8577b3`
 and `435e80b0`. Repairing those commits requires rewriting published history;
@@ -586,3 +587,61 @@ Two other live refusals are separate from policy storage:
   underlying cause; the adapter exposes a fixed refusal. The log therefore
   does **not** prove which failure caused those 21 replies. Runtime credential
   expiry or rotation has not been established as the cause.
+
+## Combined integration on 2026-10-25
+
+The installation REST registration (#1185), source-operation declaration fence
+(#1188), and person operation-binding mint (#1219) are merged here with their
+original commits and authorship. The REST routes remain product APIs: the host
+Connect installation interface does not replace them. The source fence refuses
+an admitted declaration that changed before replay or provider dispatch.
+
+The host person adapter now passes `operation_binding_id` to StartTask's
+`operation_bindings`, without first expanding an empty ask into unrelated audience
+holdings. StartTask's schema requires scopes or binding names; the existing
+resolver expands names under its authority span. A binding-only request is valid,
+an empty request is refused, and a person's binding mint accepts invoke only.
+The regression mints the installed source scope, including its resource ID, and
+has the module redeem that parent. Missing personal authority remains a named
+refusal. The separate solution-role mint does not yet project named bindings and
+now refuses that shape explicitly instead of silently ignoring the binding.
+
+The shared suite remains **13 passed / 3 failed / 3 skipped**, plus **2 passing
+local cases**. Forward-only manifests, signed RPC policies and signed HTTP
+solution policies pass. The three remaining shared failures are:
+
+- Installation-owned issuance: this harness still supplies no installed-solution
+  fixture or its workload credential.
+- Child hop: the initial mint now reaches the binding resolver and refuses the
+  viewer by name. The resolver retains a scope only when all its actions are
+  held at the parent audience; the fixture's combined invoke/read binding does
+  not project the person's read holding at the target audience. The next fix
+  belongs in that binding/holdings owner, without widening the fixture grants.
+- Pending installation exposure: the shared fixture never acknowledges the
+  installation and uses the literal team ID `finance`. The host-generated team
+  and acknowledgement hooks are still required at the conformance owner; the
+  existing PostgreSQL test covers pending refusal, acknowledgement and exposure.
+
+The fourteen missing host procedures in the published API catalog are fixed at
+the CLI exporter, source `8de0f6674550fb040f03bc6cb2530116878c8c6b` in CLI #1128.
+Complete contract, runnable and SDK regeneration retains the explicit served
+surface across packages. The client-service guard now resolves full service names
+across that surface and still checks imported-service leaks. Root/tools Core pins
+validate the new format; service pins are unchanged, and release tags still
+refuse the source CLI candidate. The SDK candidate is 0.3.37.
+
+The newer installation-identity and solution-role commits on the shared branch
+are retained. Their moved control-plane read is recorded by regenerating the
+existing call-site inventory. All generated conflicts were regenerated through
+their owners, including after rebasing; no generated conflict was resolved by
+selecting individual output lines. These are owner integration fixes, reusing
+existing REST registration, delivery, source dispatch, binding resolution and
+minting. They add no parallel policy or authorization store.
+
+Validation of the combined tree: Accounts adapters, business, infra,
+permissionsplugin and cataloggen pass; the source-operation and person-binding
+race tests pass; `module/tools` passes, including the formerly failing API
+catalog test. Accounts/tools vet and the SDK's 107 tests and build pass. The
+boundary gate caught consumer-specific names in a newly integrated role test;
+those authored fixture names are generic now, and the boundary gate passes.
+No live composed ENFORCE run or release is qualified by these checks.
