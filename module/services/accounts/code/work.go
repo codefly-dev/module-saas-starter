@@ -24,6 +24,7 @@ import (
 	"accounts/pkg/jobs"
 	"accounts/pkg/keyservice"
 	"accounts/pkg/membership"
+	"accounts/pkg/meshtransport"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
 	"accounts/pkg/redisstate"
@@ -2695,6 +2696,9 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 	if err := configureLocalEgress(isLocal, infra.InCluster()); err != nil {
 		return err
 	}
+	if err := configureMeshEgress(codefly.For(ctx)); err != nil {
+		return err
+	}
 	selection, err := keyservice.Selection(ctx, isLocal)
 	if err != nil {
 		return err
@@ -2761,6 +2765,41 @@ func configureLocalEgress(isLocal, inCluster bool) error {
 	default:
 		return fmt.Errorf("datasource-oauth/local_egress: %w", err)
 	}
+}
+
+// configureMeshEgress installs the mesh egress admission every guarded egress
+// path applies, or refuses to start on one it cannot install.
+//
+// On a cell whose ambient mesh resolves each declared egress host to an
+// address it allocated (240.240.0.0/16 by default), those addresses are not
+// public, so without this every guarded path refuses the hosts the cell exists
+// to reach. Three values, all in the internal-transport group:
+//
+//   - mesh-protected, the mesh assertion the group already carries. Without it
+//     nothing is admitted, and declaring hosts or a range refuses startup;
+//   - mesh-egress-hosts: the hosts this service declares as external reach, as
+//     `host` or `host:port` (443 when omitted) — the same list the environment's
+//     egress declaration gives the cell for saas/accounts;
+//   - mesh-egress-range: the CIDR prefixes the mesh allocates from, inside
+//     240.0.0.0/4 or 2001:2::/48; 240.240.0.0/16 when empty.
+func configureMeshEgress(source meshtransport.Source) error {
+	meshed, err := meshtransport.Protected(source)
+	if err != nil {
+		return err
+	}
+	// Literal group and key, so the configuration-dependency gate sees the read.
+	hosts, _ := source.WorkspaceValue("internal-transport", "mesh-egress-hosts")
+	ranges, _ := source.WorkspaceValue("internal-transport", "mesh-egress-range")
+	if err := auth.ConfigureMeshEgress(meshed, hosts, ranges); err != nil {
+		return fmt.Errorf("internal-transport/mesh-egress-hosts, internal-transport/mesh-egress-range: %w", err)
+	}
+	if strings.TrimSpace(hosts) != "" {
+		wool.Get(context.Background()).In("configureMeshEgress").Info(
+			"guarded egress admits these declared hosts at the mesh's egress addresses",
+			wool.Field("internal-transport/mesh-egress-hosts", hosts),
+			wool.Field("internal-transport/mesh-egress-range", ranges))
+	}
+	return nil
 }
 
 // requireApplicationBaseURL refuses to start a deployed runtime without the

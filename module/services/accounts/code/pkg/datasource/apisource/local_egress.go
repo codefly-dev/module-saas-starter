@@ -13,8 +13,8 @@ import (
 // reaches a stub OAuth provider and API running beside it (issue #1087), and
 // why no deployed composition can use it.
 //
-// guardDial refuses every address auth.IsPublicDestinationDialAddress does not
-// classify as public. That is right for every deployed host, and it also means
+// guardDial refuses every address auth.AdmitsDestinationDialAddress does not
+// admit. That is right for every deployed host, and it also means
 // a local host cannot reach an httptest-style provider on its own machine. The
 // allowance is a separate admission in front of that guard, not a change to it:
 // an address it does not list is judged by guardDial, and so by the shared

@@ -183,14 +183,72 @@ Teredo are refused outright rather than decoded, because a network-specific
 NAT64 prefix cannot be recognised and a decoded public address is still reached
 through a translator on the host's own network. A v4-mapped `::ffff:a.b.c.d` is
 judged as `a.b.c.d`. A zoned address, or one the guard cannot parse, is refused.
-The one exception is a local runtime's explicit list of loopback addresses,
-described in [Local egress](#local-egress); every address it does not list is
-still judged by the guard.
+Every guard asks one rule, `auth.AdmitsDestination`: that classifier, plus a
+declared host a meshed cell resolves into its mesh egress range, described in
+[Mesh egress](#mesh-egress). The one other exception is a local runtime's
+explicit list of loopback addresses, described in [Local egress](#local-egress);
+every address it does not list is still judged by the guard.
 Named refusal/receipt/audit constructors discard provider error bodies and raw
 transport errors. Credential reflection in a successful provider body is refused.
 Audit records actor, source, operation, effect, effect ID and the closed outcome
 vocabulary (`committed`, `refused`, `unresolved`, `rate_limited`), never input,
 output, tokens or URLs. Failed operation resolution uses an `UNKNOWN` effect.
+
+## Mesh egress
+
+On a cell whose ambient mesh carries egress, the mesh answers DNS for each host
+the deployment declares as external reach with an address it allocated itself:
+Istio ambient's auto-allocated ServiceEntry addresses, `240.240.0.0/16` by
+default. It routes a connection to that address through its egress waypoint to
+the real host. The address is reserved space, so the public-address classifier
+refuses it, and without an admission every guarded path refuses the hosts the
+cell exists to reach.
+
+The rule every guarded path applies (`pkg/auth/mesh_egress.go`), to the
+concrete address a connection is about to reach:
+
+- a **public** address is admitted, as before;
+- an address in the **mesh egress range** is admitted only when the deployment
+  asserts its mesh (`internal-transport/mesh-protected=true`) **and** the client
+  asked for a **hostname** that is declared, on the declared port, in
+  `internal-transport/mesh-egress-hosts`;
+- everything else is refused exactly as before: an IP literal (never a declared
+  host, whatever range it is in), an undeclared hostname resolving into the
+  range, and every loopback, link-local, metadata, private or other non-public
+  address whatever name produced it.
+
+Both conditions are needed. Any name a tenant controls can answer with a mesh
+address, which the mesh then routes to whichever declared host owns it, so the
+range alone would admit a tenant's name. A declared name answering with
+`10.0.0.1` is not a mesh answer, so the name alone would admit it.
+
+It is decided on the address actually dialled. Each guarded client resolves the
+requested host, then dials each answer as an IP literal, with the dial's
+Control hook judging that literal against the host:port the client asked for,
+so a later DNS answer cannot replace a judged one. The webhook client keeps its
+own resolve-and-pin dial and asks the same rule.
+
+Configuration ([configuration groups](configurations/README.md#internal-transport)):
+
+```
+mesh-protected=true
+mesh-egress-hosts=api.example.com,hooks.example.com
+mesh-egress-range=240.240.0.0/16
+```
+
+- **Empty by default.** No host is admitted at a mesh address until one is
+  listed.
+- **Refused without the mesh.** Hosts or a range without
+  `mesh-protected=true` refuse startup, naming the keys.
+- **The range is bounded.** `mesh-egress-range` defaults to `240.240.0.0/16`
+  when hosts are listed. A configured prefix must lie inside `240.0.0.0/4` or
+  `2001:2::/48`, the blocks Istio allocates from, which no pod, node, Service or
+  metadata address uses.
+- **The list mirrors the environment's egress declaration.** The cell renders
+  its egress ServiceEntries from the environment's `egress` entry for
+  `saas/accounts`; this key lists the same hosts. Codefly does not yet deliver
+  that declaration to the service it describes, so the two are kept equal by
+  hand until it does.
 
 ## Local egress
 

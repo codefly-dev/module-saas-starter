@@ -14,7 +14,10 @@ import (
 // it: callable sources (datasource/apisource), the crawler and object-store
 // connectors, outbound webhooks and the Slack notifier that shares their client
 // (business.WebhookEndpointPolicy), and Client ID Metadata Document fetches.
-// Each of those guards' tests holds the vectors in auth/egresstest. The
+// Each of those guards' tests holds the vectors in auth/egresstest. Each guard
+// asks AdmitsDestination (mesh_egress.go), which is this classifier plus one
+// admission: a host the deployment declares, resolved by a meshed cell into its
+// mesh egress range. The
 // per-organization OIDC discovery, JWKS and token clients (auth/oidc) have no
 // guard: nothing exposes ConfigureOrgIdentityProvider over RPC, so no tenant
 // names their destination today.
@@ -178,13 +181,17 @@ func IsPublicDestination(address netip.Addr) bool {
 // a public destination. A address it cannot parse is refused: a guard that
 // cannot tell what it is about to reach must not admit it.
 func IsPublicDestinationDialAddress(address string) bool {
+	parsed, ok := parseDialAddress(address)
+	return ok && IsPublicDestination(parsed)
+}
+
+// parseDialAddress is the IP of a dialer's "ip:port", and false when it is
+// not one.
+func parseDialAddress(address string) (netip.Addr, bool) {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
-		return false
+		return netip.Addr{}, false
 	}
 	parsed, err := netip.ParseAddr(host)
-	if err != nil {
-		return false
-	}
-	return IsPublicDestination(parsed)
+	return parsed, err == nil
 }

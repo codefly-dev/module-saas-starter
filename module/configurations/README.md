@@ -76,6 +76,22 @@ is the shipped behaviour:
 | `ACCOUNTS_REVOCATION_FAIL_OPEN` | a token whose revocation status cannot be read is denied — fail **closed** | `true`, only when fronting accounts directly with no auth-gateway, to keep the direct verify path serving through a revocation-store outage at the cost of a revoked token's remaining TTL |
 | `RBAC_CENTRAL_ENFORCEMENT` | `shadow`: request-time central RBAC admission classifies only | `enforce` to hard-deny. Any other value fails the boot, so a typo cannot leave enforcement off |
 
+## internal-transport
+
+The mesh assertion and the egress it carries. The composed modules read the
+same group, so a cell asserts the mesh once.
+
+| Key | Empty means | Set to |
+| --- | --- | --- |
+| `mesh-protected` | `false`: plaintext to a routable in-cluster address is refused | `true` only when every in-cluster hop is carried by a mutually authenticated mesh. Any value other than `true` or `false` fails the boot |
+| `mesh-egress-hosts` | no host is admitted at a mesh egress address: every guarded egress path admits public addresses only | on a cell whose ambient mesh resolves declared egress hosts to addresses it allocated, the hosts accounts declares as external reach, `host` or `host:port` (443 when omitted) — the same list the environment's egress declaration gives the cell for `saas/accounts`. Refuses the boot without `mesh-protected=true` |
+| `mesh-egress-range` | `240.240.0.0/16` (Istio ambient's default) when `mesh-egress-hosts` is set | the CIDR prefixes the mesh allocates egress addresses from, inside `240.0.0.0/4` or `2001:2::/48`. Any other range, or a value without `mesh-protected=true`, refuses the boot |
+
+A listed host is admitted only at an address inside the range, and only when
+it is the host the client asked for. An IP literal, an unlisted host resolving
+into the range, and every private, loopback, link-local or metadata address
+stay refused. See [Mesh egress](../CALLABLE_SOURCES.md#mesh-egress).
+
 ## datasource-oauth
 
 Accounts reads three JSON maps and one local-only list. This version supports
