@@ -3,6 +3,7 @@ package business
 import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -62,12 +63,54 @@ func (s *Service) ReadHostInstallation(ctx context.Context, orgID, id string) (*
 	return out, nil
 }
 
-// ExposeHostInstallation uses the installation's standing role. The existing
-// grant owner authenticates team tenancy, requires an active installation,
-// serializes with uninstall and emits the scope-grant audit transactionally.
+// ExposeHostInstallation grants a team the installation's role. For a
+// solution that declares roles, that is the solution's own role of the
+// standing role's name (solutionRoleID), which permits using the solution; an
+// installation made holding a catalogue role of that name, before solution
+// roles were read, is exposed this way too, with no change to its standing
+// grant. Otherwise it is the standing role itself. The existing grant owner
+// authenticates team tenancy, requires an active installation, serializes
+// with uninstall and emits the scope-grant audit transactionally.
 func (s *Service) ExposeHostInstallation(ctx context.Context, actor, org, id, team string) (*HostInstallationDetails, error) {
-	if _, err := s.GrantInstallationToTeam(ctx, actor, org, id, team, ""); err != nil {
+	details, err := s.ReadHostInstallation(ctx, org, id)
+	if err != nil {
+		return nil, err
+	}
+	authority, err := s.installedSolutionAuthority(ctx, org, details.Target)
+	if err != nil {
+		return nil, err
+	}
+	return s.exposeHostInstallation(ctx, actor, org, details, team, authority)
+}
+
+func (s *Service) exposeHostInstallation(ctx context.Context, actor, org string, details *HostInstallationDetails, team string, authority *SolutionAuthority) (*HostInstallationDetails, error) {
+	id := details.Installation.GetId()
+	roleID := ""
+	if authority != nil {
+		var err error
+		if roleID, err = s.solutionRoleID(ctx, org, details.Installation.GetTargetId(), details.Target, authority, details.Role); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := s.GrantInstallationToTeam(ctx, actor, org, id, team, roleID); err != nil {
 		return nil, err
 	}
 	return s.ReadHostInstallation(ctx, org, id)
+}
+
+// installedSolutionAuthority is the role declaration of the target an
+// organisation's catalogue offers under alias, or nil when it declares none
+// or is no longer offered.
+func (s *Service) installedSolutionAuthority(ctx context.Context, org, alias string) (*SolutionAuthority, error) {
+	if alias == "" {
+		return nil, nil
+	}
+	available, err := s.availableTargetNamed(ctx, org, alias)
+	if errors.Is(err, ErrInstallTargetNotPresent) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.deliveredTargetAuthority(ctx, available)
 }
