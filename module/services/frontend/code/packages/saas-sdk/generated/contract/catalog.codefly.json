@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "",
       "path": "contract.binpb",
-      "digest": "sha256:883f2906ff626c52c7c7fb235269ae6986999042290493de55224ad27b812498",
+      "digest": "sha256:3b86d71a90847e9a310f7a89e0c6e9c406e26a96d9007cff15e6cb99d3c26622",
       "services": [
         {
           "name": "AuthorityService",

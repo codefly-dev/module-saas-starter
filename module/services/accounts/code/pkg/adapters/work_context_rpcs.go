@@ -541,6 +541,10 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
 	}
+	if err := requireOperationBindingMint(ctx, req); err != nil {
+		return nil, err
+	}
+	authorityScopes := req.GetAuthorityScopes()
 	eligible := mintContentReads(req.GetAudience())
 	var standing []string
 	if service != nil && req.GetActorPrincipalId() == "" {
@@ -551,8 +555,15 @@ func (s *WorkContextAuthorityServer) StartTask(
 			return nil, err
 		}
 		defer release()
+		// Inside the authority span, so the installation the bindings resolve
+		// against is the one this capability is signed under.
+		if names := req.GetOperationBindings(); len(names) > 0 {
+			if authorityScopes, err = s.withOperationBindingScopes(ctx, req.GetOrgId(), req.GetAudience(), authorityScopes, names); err != nil {
+				return nil, err
+			}
+		}
 		var kinds []string
-		for _, scope := range req.GetAuthorityScopes() {
+		for _, scope := range authorityScopes {
 			if len(scope.GetActions()) == 1 && scope.GetActions()[0] == "read" {
 				kinds = append(kinds, scope.GetResourceKind())
 			}
@@ -565,7 +576,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 		direct := eligible
 		eligible = func(kind string) bool { return direct(kind) || slices.Contains(foreign, kind) }
 	}
-	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes(), eligible)
+	permissions, scopes, err := workContextScopes(authorityScopes, eligible)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}

@@ -5366,6 +5366,13 @@
           },
           "type": "array"
         },
+        "operationBindings": {
+          "description": "Operation bindings of the audience module, by name, whose invoke scopes\nthis capability carries beside authority_scopes. The host resolves each\nname to the binding as installed at org_id, narrowed by that installation\nexactly as the module's delegated exchange redeems it, and keeps each\nresource only if the person holds it. The caller names a binding and never\nits resource ids. A direct human-owned mint only.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "orgId": {
           "type": "string"
         },

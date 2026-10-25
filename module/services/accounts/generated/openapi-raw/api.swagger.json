@@ -12274,6 +12274,13 @@
         "projectId": {
           "type": "string",
           "description": "Optional product/project attribution inside workspace_id."
+        },
+        "operationBindings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Operation bindings of the audience module, by name, whose invoke scopes\nthis capability carries beside authority_scopes. The host resolves each\nname to the binding as installed at org_id, narrowed by that installation\nexactly as the module's delegated exchange redeems it, and keeps each\nresource only if the person holds it. The caller names a binding and never\nits resource ids. A direct human-owned mint only."
         }
       },
       "description": "StartTaskWorkContextRequest mints a Task capability for the caller. Its Session\nis the one the caller authenticated with — or a fresh one when it has none —\nassigned by the issuer and returned in IssuedWorkContext, never named by the\ncaller: a session a caller could name is one it could name after another\ncredential's, and a confined credential is paired with a capability on the\nsession alone."
