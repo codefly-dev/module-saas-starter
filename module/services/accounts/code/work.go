@@ -2027,6 +2027,7 @@ func configuredSolutionHostBindingReconciler(
 	service.SetModuleNamespaceRule(namespaces)
 	service.SetSolutionDelivery(keyVerifier, store, carrier)
 	service.SetSolutionDeliveryCoordinate(coordinate)
+	service.SetAuthorityDocumentVerifier(verifier.VerifyAuthority)
 	service.SetModuleEnvelopeDeliveryHost(hostModule)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
@@ -2056,6 +2057,7 @@ func configuredSolutionHostBindingReconciler(
 	// A delivery or an envelope write asks for a pass now, so what it changes
 	// is in force within one pass instead of one interval.
 	service.SetModuleRegistryPassTrigger(reconciler.Trigger)
+	service.SetCompositionReconcile(reconciler.RunOnce)
 
 	// EXECUTION-BOUND MINTING, wired here because this is where its inputs
 	// exist: the reviewer is the environment's mechanism (a TokenReview of a

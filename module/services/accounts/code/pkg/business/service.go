@@ -162,9 +162,11 @@ type Service struct {
 	// The delivery inbox's wiring. All of it or none: ReceiveSolutionDelivery
 	// fails closed and names the gap when any is absent, because a deployment
 	// that mounted the endpoint without a verifier must not accept documents.
-	deliveryVerifier *solutionhost.Verifier
-	deliveryStore    SolutionDeliveryStore
-	deliveryCarrier  SolutionDeliveryCarrierAuthorizer
+	deliveryVerifier          *solutionhost.Verifier
+	authorityDocumentVerifier func([]byte, []byte) (string, error)
+	compositionReconcile      func(context.Context) error
+	deliveryStore             SolutionDeliveryStore
+	deliveryCarrier           SolutionDeliveryCarrierAuthorizer
 	// deliveryCoordinate is this host's coordinate, which every admission is
 	// decided under.
 	deliveryCoordinate string

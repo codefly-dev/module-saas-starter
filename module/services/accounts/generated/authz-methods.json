@@ -279,7 +279,7 @@
       "client_streaming": false,
       "server_streaming": false,
       "policy": {
-        "exposure": "EXPOSURE_INTERNAL",
+        "exposure": "EXPOSURE_PUBLIC",
         "tenant": "TENANT_REQUIREMENT_NONE",
         "permissions": [],
         "scopes": [],
@@ -290,22 +290,22 @@
           "emission": "AUDIT_EMISSION_NONE"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
-        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
-        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "internal",
+      "policy_tier": "public",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "host/composition/v1/composition.proto",
-      "policy_sha256": "21769738674c352d8e593fbc1243fc7b42fd53493f59de9c11b349dbde550700",
-      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+      "policy_sha256": "90ea62af2032838dca17493b92a392c82e93bbfc2e6a0ee11af81ee203a46333",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
       "procedure": "/host.installation.v1.InstallationService/GrantToTeam",
@@ -323,10 +323,8 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [
-            "saas.installation.created"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
@@ -343,7 +341,7 @@
         "service": "accounts"
       },
       "source_proto": "host/installation/v1/installation.proto",
-      "policy_sha256": "1bcc0da1738d725ece80382fc7c3ab4b571c0dbfdf4858377ccf3cb355c3640a",
+      "policy_sha256": "4f7b9dcf6153d167ed0a86850cc6208082079a327f0d542f81891dc0105b481d",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

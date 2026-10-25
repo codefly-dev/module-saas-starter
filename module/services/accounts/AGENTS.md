@@ -120,6 +120,22 @@ writes: the manifest's `authority` is the request, the envelope's per-principal
 manifest's `(service, container)` spelled by the namespace rule. The envelope
 names no workload and approves no build.
 
+## Composition interface delivery
+
+`CompositionService/ApplyManifest` accepts the same authenticated signed delivery
+on the Connect listener and synchronously runs the existing reconciler. Its
+optional authority document is signed by the same pinned key and bound to the
+core manifest digest, module and generation. Both carriers persist in one inbox
+row (migration 46). An exact replay preserves policy; a rewritten pair is refused.
+`AuthorityService/Check` reads and verifies only the applied pair and requires
+whole-kind authority for whole-kind method requirements. A missing policy refuses
+the named method. `HOST_INTERFACE.md` records conformance and remaining gaps.
+
+`InstallationService/GrantToTeam` uses the installation's standing role under the
+existing grant transaction. A pending installation must be acknowledged first.
+Root team-grant changes advance the installation revision through migration 47;
+unchanged re-grants preserve it. Scope-grant audit is reused.
+
 ## The solution's runtime boundary is derived from its delivered binding
 
 A runtime task is reachable only under the boundary of the Work Context that

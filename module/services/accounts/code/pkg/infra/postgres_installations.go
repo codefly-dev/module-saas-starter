@@ -996,8 +996,10 @@ func installationTeamGrants(
 // path. A revoked installation is not found either: exposing an uninstalled
 // solution would grant reach into a node nothing is installed at.
 //
-// It takes a SHARE lock on the installation row, held until the caller's
-// transaction ends. UninstallSolution flips the row to revoked with an UPDATE,
+// It takes an UPDATE lock on the installation row, held until the caller's
+// transaction ends. Exposure changes its revision in this transaction too,
+// so an UPDATE lock prevents concurrent grants from deadlocking on upgrade.
+// UninstallSolution flips the row to revoked with an UPDATE,
 // which that lock blocks, so the two serialize on the row: an uninstall that
 // commits first leaves the row revoked, and this read — waiting on it, then
 // re-checking `status = 'active'` against the committed row — finds nothing; a
@@ -1009,7 +1011,7 @@ func (s *PostgresStore) InstallationRootScopePath(ctx context.Context, orgID, in
 		  FROM installations i
 		  JOIN scope_nodes n ON n.id = i.root_scope_node_id
 		 WHERE i.org_id = $1 AND i.id::text = $2 AND i.status = 'active'
-		   FOR SHARE OF i`,
+		   FOR UPDATE OF i`,
 		orgID, installationID).Scan(&path)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", business.NewStoreError(
@@ -1099,3 +1101,22 @@ func (t trailingColumns) Scan(dest ...any) error {
 }
 
 var _ business.InstallationStore = (*PostgresStore)(nil)
+
+// InstallationRoleRevision reads the standing grant at this installation's own
+// root, including pending consent. It never chooses among ambiguous roles.
+func (s *PostgresStore) InstallationRoleRevision(ctx context.Context, org, id string) (string, string, uint64, error) {
+	var roleID, role string
+	var revision uint64
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+ SELECT r.id::text, r.name, i.revision
+ FROM installations i JOIN scope_nodes n ON n.id=i.root_scope_node_id
+ JOIN scope_grants g ON g.org_id=i.org_id AND g.subject_kind='principal'
+   AND g.subject_id=i.agent_principal_id AND g.scope_path=n.scope_path
+ JOIN roles r ON r.id=g.role_id
+ WHERE i.org_id=$1 AND i.id=$2 AND i.status <> 'revoked'
+ AND 1 = (SELECT count(*) FROM scope_grants own WHERE own.org_id=i.org_id AND own.subject_kind='principal' AND own.subject_id=i.agent_principal_id AND own.scope_path=n.scope_path)`, org, id).Scan(&roleID, &role, &revision)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("installation %s standing role and revision: %w", id, err)
+	}
+	return roleID, role, revision, nil
+}

@@ -15,8 +15,8 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/host.authority.v1.AuthorityService/Keys` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / STANDARD_READ | PUBLIC → PUBLIC | Return the issuer and the public keys a verifier pins. |
 | `/host.authority.v1.AuthorityService/ListResources` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Answer which resources of one kind a checked capability covers for one action (not yet served here). |
 | `/host.authority.v1.AuthorityService/RevokeDelegation` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.work_context.task_started | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | End a delegation (not yet served here). |
-| `/host.composition.v1.CompositionService/ApplyManifest` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | OPTIONAL / INTERNAL | INTERNAL → INTERNAL | Deliver one module instance's manifest at one generation; the ceiling is the manifest. |
-| `/host.installation.v1.InstallationService/GrantToTeam` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | SUCCESS: saas.installation.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Expose an installation to a team under the installation's role. |
+| `/host.composition.v1.CompositionService/ApplyManifest` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Deliver one module instance's manifest at one generation; the ceiling is the manifest. |
+| `/host.installation.v1.InstallationService/GrantToTeam` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Expose an installation to a team under the installation's role. |
 | `/host.installation.v1.InstallationService/Install` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | SUCCESS: saas.installation.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Install one target at one organisation under the least role it needs; pending until its install step is acknowledged. |
 | `/host.installation.v1.InstallationService/List` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List what one organisation has installed. |
 | `/host.session.v1.SessionService/Current` | unary | `GET /v1/session` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Answer the session the caller's bearer belongs to, without the bearer. |
@@ -297,9 +297,9 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 47
-- `internal`: 56
+- `internal`: 55
 - `mfa`: 5
 - `org_admin`: 68
 - `org_member`: 57
 - `platform_admin`: 29
-- `public`: 23
+- `public`: 24

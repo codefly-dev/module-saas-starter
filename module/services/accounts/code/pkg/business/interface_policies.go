@@ -69,6 +69,8 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		p.ResponseSensitivity = policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL
 		return p
 	}
+	exposureGrant := adminWrite("")
+	exposureGrant.Audit = &policyv1.AuditPolicy{Emission: policyv1.AuditEmission_AUDIT_EMISSION_NONE} // the scope-grant owner emits it
 	return map[string]*policyv1.MethodPolicy{
 		"/host.authority.v1.AuthorityService/Issue": authenticatedMint("saas.work_context.task_started"),
 		// Check is authenticated by the token it checks: the caller is whoever holds it,
@@ -83,19 +85,20 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		"/host.authority.v1.AuthorityService/Delegate":         sessionMint("saas.work_context.task_started"),
 		"/host.authority.v1.AuthorityService/RevokeDelegation": sessionMint("saas.work_context.task_started"),
 		"/host.authority.v1.AuthorityService/GetDelegation":    read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		// Authentication belongs to signed delivery and its workload credential.
 		"/host.composition.v1.CompositionService/ApplyManifest": {
-			Exposure: policyv1.Exposure_EXPOSURE_INTERNAL, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
+			Exposure: policyv1.Exposure_EXPOSURE_PUBLIC, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
 			Mfa: policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
 			// The delivery path this will route into emits saas.solution.host_binding_applied itself (outside RPC); declaring it here too would double it.
 			Audit:               &policyv1.AuditPolicy{Emission: policyv1.AuditEmission_AUDIT_EMISSION_NONE},
 			Idempotency:         policyv1.IdempotencyRequirement_IDEMPOTENCY_REQUIREMENT_OPTIONAL,
-			RateLimit:           policyv1.RateLimitClass_RATE_LIMIT_CLASS_INTERNAL,
-			RequestSensitivity:  policyv1.Sensitivity_SENSITIVITY_INTERNAL,
+			RateLimit:           policyv1.RateLimitClass_RATE_LIMIT_CLASS_AUTHENTICATION,
+			RequestSensitivity:  policyv1.Sensitivity_SENSITIVITY_SECRET,
 			ResponseSensitivity: policyv1.Sensitivity_SENSITIVITY_INTERNAL,
 			PlatformRole:        policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
 		},
 		"/host.installation.v1.InstallationService/Install":     adminWrite("saas.installation.created"),
-		"/host.installation.v1.InstallationService/GrantToTeam": adminWrite("saas.installation.created"),                                                                                                                /* GAP: no exposure event is registered; narrowed is the nearest */
+		"/host.installation.v1.InstallationService/GrantToTeam": exposureGrant,
 		"/host.installation.v1.InstallationService/List":        read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's view is the entitlement listing
 		// Current is the caller's own session: authenticated by the bearer it
 		// describes, organisation-less like the session itself may be.

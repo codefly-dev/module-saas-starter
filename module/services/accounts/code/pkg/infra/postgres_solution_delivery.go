@@ -26,7 +26,7 @@ import (
 const solutionDeliveryManifestKind = "manifest"
 
 const solutionDeliveryColumns = `document_id, generation, content_hash,
-	payload, bundle, signer_identity, ownership_domain, received_at`
+	payload, bundle, signer_identity, ownership_domain, received_at, authority_document, authority_envelope`
 
 // RecordDeliveredDocument inserts one received carrier, and reports whether the
 // row was new.
@@ -48,15 +48,15 @@ func (s *PostgresStore) RecordDeliveredDocument(
 	executor := s.getQueryExecutor(ctx)
 
 	var storedHash string
-	var storedPayload []byte
+	var storedPayload, storedAuthority []byte
 	err := executor.QueryRow(ctx, `
 		INSERT INTO public.solution_delivery_documents (kind, `+solutionDeliveryColumns+`)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (kind, document_id, generation) DO NOTHING
-		RETURNING content_hash, payload`,
+		RETURNING content_hash, payload, authority_document`,
 		solutionDeliveryManifestKind, record.Binding, int64(record.Generation), record.ContentHash, //nolint:gosec // a manifest generation is a small positive counter
-		record.Payload, record.Envelope, record.SignerIdentity, record.OwnershipDomain, record.ReceivedAt,
-	).Scan(&storedHash, &storedPayload)
+		record.Payload, record.Envelope, record.SignerIdentity, record.OwnershipDomain, record.ReceivedAt, record.AuthorityDocument, record.AuthorityEnvelope,
+	).Scan(&storedHash, &storedPayload, &storedAuthority)
 	if err == nil {
 		return true, nil
 	}
@@ -64,13 +64,13 @@ func (s *PostgresStore) RecordDeliveredDocument(
 		return false, err
 	}
 	if err := executor.QueryRow(ctx, `
-		SELECT content_hash, payload FROM public.solution_delivery_documents
+		SELECT content_hash, payload, authority_document FROM public.solution_delivery_documents
 		 WHERE kind = $1 AND document_id = $2 AND generation = $3`,
 		solutionDeliveryManifestKind, record.Binding, int64(record.Generation), //nolint:gosec // a manifest generation is a small positive counter
-	).Scan(&storedHash, &storedPayload); err != nil {
+	).Scan(&storedHash, &storedPayload, &storedAuthority); err != nil {
 		return false, err
 	}
-	if storedHash == record.ContentHash && bytes.Equal(storedPayload, record.Payload) {
+	if storedHash == record.ContentHash && bytes.Equal(storedPayload, record.Payload) && bytes.Equal(storedAuthority, record.AuthorityDocument) && (storedAuthority == nil) == (record.AuthorityDocument == nil) {
 		return false, nil
 	}
 	return false, fmt.Errorf("%w: binding %s generation %d was delivered as %s and is now offered as %s",
@@ -125,7 +125,7 @@ func scanSolutionDelivery(row pgx.Row) (*business.SolutionDeliveryRecord, error)
 	)
 	if err := row.Scan(&record.Binding, &generation, &record.ContentHash,
 		&record.Payload, &record.Envelope, &record.SignerIdentity, &record.OwnershipDomain,
-		&record.ReceivedAt); err != nil {
+		&record.ReceivedAt, &record.AuthorityDocument, &record.AuthorityEnvelope); err != nil {
 		return nil, err
 	}
 	record.Generation = uint64(generation) //nolint:gosec // CHECKed positive

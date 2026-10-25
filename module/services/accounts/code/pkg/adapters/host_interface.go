@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/codefly-dev/core/workcontext"
@@ -67,10 +68,18 @@ func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckR
 	// audience module's delivery declares for it; advisory reports that
 	// decision beside the capability instead of refusing.
 	refusal := ""
+	refusalCode := codes.PermissionDenied
 	if method := req.GetMethod(); method != "" {
-		refusal = methodPolicyRefusal(req.GetAudience(), method)
+		if service == nil {
+			refusal = methodPolicyRefusal(req.GetAudience(), method)
+		} else if err := service.CheckDeliveredMethod(ctx, req.GetAudience(), method, verified.Context().GetAuthorityScopes()); err != nil {
+			refusal = err.Error()
+			if errors.Is(err, business.ErrDeliveredMethodUnknown) {
+				refusalCode = codes.NotFound
+			}
+		}
 		if refusal != "" && !req.GetAdvisory() {
-			return nil, status.Error(codes.PermissionDenied, refusal)
+			return nil, status.Error(refusalCode, refusal)
 		}
 	}
 	wire, err := workContextToWire(verified.Context())
@@ -80,12 +89,7 @@ func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckR
 	return &authorityv1.CheckResponse{Context: wire, AuthorizationRevision: verified.Context().GetAuthorizationRevision(), Refusal: refusal}, nil
 }
 
-// methodPolicyRefusal is what the audience module's delivered method policy
-// refuses for method. GAP (HOST_INTERFACE.md 4): this host receives no
-// AuthorityManifestV1, so no module has a delivered method policy, and the
-// interface's rule for that case applies: every check naming a method is
-// refused, by name. A hop running permissive (hop/ENFORCEMENT=warn) receives it
-// as the advisory refusal and lets the call through.
+// methodPolicyRefusal names the fail-closed answer when no service is wired.
 func methodPolicyRefusal(audience, method string) string {
 	return fmt.Sprintf("%s's delivery declares no method policy, so %s is refused", audience, method)
 }
@@ -264,13 +268,26 @@ type HostCompositionServer struct {
 	compositionv1.UnimplementedCompositionServiceServer
 }
 
-// ApplyManifest: GAP (rung 1). The host learns a module from a signed
-// ModuleManifest delivered to /platform/_delivery/manifest and reconciles it
-// through the solution host bindings; the interface's ModuleManifestV1 is the
-// proto form of that document. Serving it here means the delivery path accepts
-// the proto manifest, with the ceiling read from it rather than from the envelope.
-func (s *HostCompositionServer) ApplyManifest(context.Context, *compositionv1.ApplyManifestRequest) (*compositionv1.ApplyManifestResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "apply manifest: accounts learns a module through signed delivery at /platform/_delivery/manifest today; not yet behind the interface")
+// ApplyManifest authenticates the signed carrier at the delivery owner.
+func (s *HostCompositionServer) ApplyManifest(ctx context.Context, req *compositionv1.ApplyManifestRequest) (*compositionv1.ApplyManifestResponse, error) {
+	if service == nil {
+		return nil, status.Error(codes.Unavailable, "composition service is not wired")
+	}
+	out, err := service.ApplyComposition(ctx, req)
+	if err == nil {
+		return out, nil
+	}
+	httpStatus, reason := solutionDeliveryStatus(err)
+	code := codes.Unavailable
+	switch httpStatus {
+	case http.StatusBadRequest:
+		code = codes.InvalidArgument
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity:
+		code = codes.PermissionDenied
+	case http.StatusConflict:
+		code = codes.FailedPrecondition
+	}
+	return nil, status.Error(code, reason)
 }
 
 // HostInstallationServer serves codefly.dev/installation over the installation service.
@@ -301,7 +318,11 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 	}
 	resp := &installationv1.ListResponse{}
 	for _, row := range out.GetInstallations() {
-		resp.Installations = append(resp.Installations, installationToWire(row.GetInstallation(), row.GetTarget().GetRouteAlias()))
+		details, err := s.service.ReadHostInstallation(ctx, req.GetOrganizationId(), row.GetInstallation().GetId())
+		if err != nil {
+			return nil, mapInstallationError(err)
+		}
+		resp.Installations = append(resp.Installations, hostInstallationToWire(details))
 	}
 	return resp, nil
 }
@@ -325,13 +346,18 @@ func (s *HostInstallationServer) Install(ctx context.Context, req *installationv
 	case err != nil:
 		return nil, mapInstallationError(err)
 	case !installed:
-		return nil, status.Errorf(codes.AlreadyExists, "organization %s already holds installation %s of %q", req.GetOrganizationId(), installation.GetId(), req.GetTarget())
+		return nil, status.Errorf(codes.PermissionDenied, "organization %s already holds installation %s of %q", req.GetOrganizationId(), installation.GetId(), req.GetTarget())
 	}
-	return installationToWire(installation, req.GetTarget()), nil
+	details, err := s.service.ReadHostInstallation(ctx, req.GetOrganizationId(), installation.GetId())
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	out := hostInstallationToWire(details)
+	out.Target = req.GetTarget()
+	return out, nil
 }
 
-// GrantToTeam: GAP (rung 1), same resolver: the host grants a role id at the
-// installation's root; the interface grants the installation's own role.
+// GrantToTeam resolves the installation's standing role through the grant owner.
 func (s *HostInstallationServer) GrantToTeam(ctx context.Context, req *installationv1.GrantToTeamRequest) (*installationv1.Installation, error) {
 	actorID, err := requireAuth(ctx)
 	if err != nil {
@@ -340,7 +366,11 @@ func (s *HostInstallationServer) GrantToTeam(ctx context.Context, req *installat
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "grant to team: accounts grants a role id at the root; the installation's own role is not yet resolved behind the interface")
+	details, err := s.service.ExposeHostInstallation(ctx, actorID, req.GetOrganizationId(), req.GetInstallationId(), req.GetTeamId())
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	return hostInstallationToWire(details), nil
 }
 
 // HostSessionServer serves codefly.dev/session over fixture authentication.
@@ -538,4 +568,10 @@ func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, 
 		return nil, interfaceStatus(err)
 	}
 	return s.bindingHop(ctx, prefix, parent, req)
+}
+
+func hostInstallationToWire(details *business.HostInstallationDetails) *installationv1.Installation {
+	out := installationToWire(details.Installation, details.Target)
+	out.Role, out.Revision, out.TeamIds = details.Role, details.Revision, details.TeamIDs
+	return out
 }

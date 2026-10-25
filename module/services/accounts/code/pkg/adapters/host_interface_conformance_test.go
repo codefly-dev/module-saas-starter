@@ -6,10 +6,15 @@ package adapters
 // list in HOST_INTERFACE.md; the suite is never loosened to make a line green.
 
 import (
+	"accounts/internal/deliverytest"
 	"context"
+	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
+	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
+	"github.com/codefly-dev/core/solutionhost"
 	"net"
 	"os"
 	"sync"
@@ -116,21 +121,21 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	registry := business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("documents"): {
 			Prefix: "documents", Resources: []string{"example-records"}, Tenant: fixtureOrganization,
-			Workloads: []business.ModuleWorkload{{Namespace: "acme", ServiceAccount: "documents", Container: "app"}},
+			Workloads: []business.ModuleWorkload{{Namespace: "documents", ServiceAccount: "documents", Container: "app"}},
 			OperationAudiences: map[string]business.ModuleOperationAudience{
 				"model": {Audience: "model", InvokeScopes: invokes},
 			},
 		},
 		business.ModulePrincipalID("org-directory"): {
 			Prefix: "org-directory", Resources: []string{"directory.entry"}, Tenant: fixtureOrganization,
-			Workloads: []business.ModuleWorkload{{Namespace: "acme", ServiceAccount: "org-directory", Container: "app"}},
+			Workloads: []business.ModuleWorkload{{Namespace: "org-directory", ServiceAccount: "org-directory", Container: "app"}},
 			OperationAudiences: map[string]business.ModuleOperationAudience{
 				"documents": {Audience: "documents", InvokeScopes: reads, LookupScopes: lookups, HeadlessScopes: reads},
 			},
 		},
 		business.ModulePrincipalID("model"): {
 			Prefix: "model", Resources: []string{"modelservice.profiles"}, Tenant: fixtureOrganization,
-			Workloads: []business.ModuleWorkload{{Namespace: "acme", ServiceAccount: "model", Container: "app"}},
+			Workloads: []business.ModuleWorkload{{Namespace: "model", ServiceAccount: "model", Container: "app"}},
 			OperationAudiences: map[string]business.ModuleOperationAudience{
 				"records": {Audience: "documents", InvokeScopes: reads, LookupScopes: lookups},
 			},
@@ -138,9 +143,9 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	}
 	cluster := executiontest.New()
 	svc.SetExecutionBinding(cluster)
-	workloadCredential := cluster.Run(executiontest.Workload{Namespace: "acme", ServiceAccount: "org-directory", Container: "app"})
-	documentsCredential := cluster.Run(executiontest.Workload{Namespace: "acme", ServiceAccount: "documents", Container: "app"})
-	modelCredential := cluster.Run(executiontest.Workload{Namespace: "acme", ServiceAccount: "model", Container: "app"})
+	workloadCredential := cluster.Run(executiontest.Workload{Namespace: "org-directory", ServiceAccount: "org-directory", Container: "app"})
+	documentsCredential := cluster.Run(executiontest.Workload{Namespace: "documents", ServiceAccount: "documents", Container: "app"})
+	modelCredential := cluster.Run(executiontest.Workload{Namespace: "model", ServiceAccount: "model", Container: "app"})
 	svc.SetModuleCapabilities(store, nil, registry)
 
 	// The declared registry is what delivery derives; the ceiling is the manifest,
@@ -152,6 +157,59 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	composed := compositiontest.NewComposedModuleInstallations(svc, store)
 	svc.SetModuleAuthorityReads(composed, nil)
 	svc.SetWorkContextSealStore(composed)
+
+	// Signed delivery uses the production inbox, verifier and reconciler. The
+	// fixture's ceiling is explicit; no warn mode or unsigned sketch is used.
+	signer := deliverytest.Signer(t, "conformance-release")
+	verifier := deliverytest.Verifier(t, map[string][]string{signer.KeyID(): {"acme"}})
+	svc.SetSolutionDelivery(verifier, store, conformanceCarrier{})
+	svc.SetSolutionDeliveryCoordinate("conformance-host")
+	svc.SetAuthorityDocumentVerifier(func(doc, envelope []byte) (string, error) {
+		return delivery.Verify(doc, envelope, map[string]crypto.PublicKey{signer.KeyID(): signer.Public()})
+	})
+	ceilings := business.ModuleEnvelope{Revision: 1, Principals: map[string]business.ModuleEnvelopePrincipal{}}
+	for _, grant := range registry {
+		ceilings.Principals[grant.Prefix] = business.ModuleEnvelopePrincipal{Grant: grant}
+	}
+	for name, kinds := range map[string][]string{"conformance-methods": {"example-records"}, "conformance-probe": {"probe"}, "conformance-solution": {"conformance.page"}} {
+		ceilings.Principals[name] = business.ModuleEnvelopePrincipal{Grant: business.ModulePrincipalGrant{Tenant: fixtureOrganization, Resources: kinds}}
+	}
+	// The database install fence reads the same approval revision as the registry.
+	principals := map[string]any{}
+	for prefix, entry := range ceilings.Principals {
+		principals[prefix] = map[string]any{"grant": map[string]any{"tenant": entry.Grant.Tenant, "resources": entry.Grant.Resources, "operation_audiences": entry.Grant.OperationAudiences}}
+	}
+	envelope, err := json.Marshal(map[string]any{"revision": 1, "principals": principals})
+	require.NoError(t, err)
+	svc.SetModuleEnvelopeStore(store)
+	_, err = svc.PutModuleEnvelope(ctx, "00000000-0000-7000-8000-0000000000a1", 0, envelope)
+	require.NoError(t, err)
+	reconciler, err := business.NewSolutionHostBindingReconciler(svc, business.SolutionHostBindingReconcilerConfig{
+		Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host", Envelopes: svc,
+	})
+	require.NoError(t, err)
+	svc.SetCompositionReconcile(reconciler.RunOnce)
+	for _, grant := range registry {
+		m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: grant.Prefix, Alias: grant.Prefix, Kind: solutionhost.KindModule, Generation: 1,
+			Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: grant.Prefix, Version: "0.1.0"},
+			Workloads: []solutionhost.Workload{{Service: grant.Prefix, Container: "app"}}, Authority: &solutionhost.Authority{Principal: grant.Prefix, ResourceKinds: grant.Resources}}
+		for name, binding := range grant.OperationAudiences {
+			operations := map[string][]string{}
+			for operation, scopes := range map[string][]business.ModuleOperationScope{"invoke": binding.InvokeScopes, "headless": binding.HeadlessScopes, "lookup": binding.LookupScopes} {
+				for _, scope := range scopes {
+					for _, action := range scope.Actions {
+						operations[operation] = append(operations[operation], scope.ResourceKind+":"+action)
+					}
+				}
+			}
+			m.Authority.Bindings = append(m.Authority.Bindings, solutionhost.AuthorityBinding{ID: name, Audience: binding.Audience, Operations: operations})
+		}
+		doc, err := solutionhost.SignedPayload(m)
+		require.NoError(t, err)
+		_, _, err = svc.ReceiveSolutionDelivery(ctx, deliverytest.Carrier(t, doc, signer.KeyID()), "Bearer delivery:"+grant.Prefix)
+		require.NoError(t, err)
+	}
+	require.NoError(t, reconciler.RunOnce(ctx))
 
 	previous := service
 	service = svc
@@ -195,8 +253,12 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	}, 20*time.Second, 100*time.Millisecond, "the Connect listener did not come up")
 
 	conformance.Run(t, conn, registeredDescriptors(t), conformance.Fixture{
-		Organization: fixtureOrganization,
-		ViewerToken:  "dev-bob", AdminToken: "dev-alice",
+		Organization:   fixtureOrganization,
+		HostCoordinate: "conformance-host", HostDomain: "acme",
+		SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
+		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
+		DeliveryCredential: func(module string) string { return "delivery:" + module },
+		ViewerToken:        "dev-bob", AdminToken: "dev-alice",
 		Audience: "documents", ReadKind: "example-records",
 		// The credential a pod of org-directory's declared workload presents.
 		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
@@ -284,4 +346,14 @@ func (r *memoryRevoker) RevokeSession(_ context.Context, sessionID string, _ tim
 func (r *memoryRevoker) IsSessionRevoked(_ context.Context, sessionID string) (bool, error) {
 	_, revoked := r.sessions.Load(sessionID)
 	return revoked, nil
+}
+
+// These test owners stand in for the platform's delivery account and approval.
+type conformanceCarrier struct{}
+
+func (conformanceCarrier) AuthorizeCarrier(_ context.Context, credential, namespace string) error {
+	if credential != "Bearer delivery:"+namespace {
+		return fmt.Errorf("not the delivery workload of %s", namespace)
+	}
+	return nil
 }

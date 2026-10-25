@@ -1,6 +1,7 @@
 package business
 
 import (
+	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	"context"
 	"errors"
 	"fmt"
@@ -38,6 +39,9 @@ type SolutionDeliveryRecord struct {
 	// Envelope is the DSSE envelope verbatim, so reconciliation verifies the
 	// same bytes under the current pins.
 	Envelope []byte
+	// Authority is the signed policy paired with this exact generation.
+	AuthorityDocument []byte
+	AuthorityEnvelope []byte
 	// SignerIdentity is the pinned key id the verifier attested, and
 	// OwnershipDomain the domain the manifest speaks for, both recorded at
 	// receipt so an operator can see who delivered what.
@@ -163,6 +167,10 @@ type SolutionDeliveryCarrierAuthorizer interface {
 func (s *Service) ReceiveSolutionDelivery(
 	ctx context.Context, raw []byte, credential string,
 ) (SolutionDeliveryDisposition, *SolutionDeliveryRecord, error) {
+	return s.receiveSolutionDelivery(ctx, raw, credential, nil)
+}
+
+func (s *Service) receiveSolutionDelivery(ctx context.Context, raw []byte, credential string, authority *compositionv1.SignedManifestV1) (SolutionDeliveryDisposition, *SolutionDeliveryRecord, error) {
 	if s.deliveryVerifier == nil || s.deliveryStore == nil || s.deliveryCarrier == nil || s.deliveryCoordinate == "" {
 		// Fail closed and say so. A deployment that wired the endpoint without
 		// a verifier or a coordinate must not accept documents.
@@ -181,6 +189,9 @@ func (s *Service) ReceiveSolutionDelivery(
 		return "", nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
 	}
 
+	if _, err := s.verifyAuthorityDocument(authority, delivered); err != nil {
+		return "", nil, err
+	}
 	records, err := s.ListSolutionHostBindings(ctx)
 	if err != nil {
 		return "", nil, err
@@ -245,6 +256,10 @@ func (s *Service) ReceiveSolutionDelivery(
 		SignerIdentity:  delivered.Signer().KeyID,
 		OwnershipDomain: manifest.Host.Domain,
 		ReceivedAt:      time.Now().UTC(),
+	}
+	if authority != nil {
+		stored.AuthorityDocument = authority.GetDocument()
+		stored.AuthorityEnvelope = authority.GetEnvelope()
 	}
 	var inserted bool
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {

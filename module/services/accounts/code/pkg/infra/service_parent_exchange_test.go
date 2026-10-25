@@ -36,18 +36,21 @@ func TestADelegatedExchangeRefusesAModuleOperationContextAsItsParent(t *testing.
 		m := productionPathManifest(t, b.solutionID, 1)
 		m.Kind = solutionhost.KindModule
 		m.Authority = &solutionhost.Authority{Principal: b.solutionID, ResourceKinds: []string{"documents"}}
+		if b == s.primary {
+			m.Authority.Bindings = []solutionhost.AuthorityBinding{{ID: "publish", Audience: target.solutionID, Operations: map[string][]string{"invoke": {"documents:read"}, "headless": {"documents:read"}}}}
+		}
 		manifests[b.solutionID] = m
 	}
 	read := []business.ModuleOperationScope{{ResourceKind: "documents", Actions: []string{"read"}}}
 	// The operation context's audience is the target; its scopes are read.
 	grants := map[string]business.ModuleEnvelopePrincipal{
-		s.prefix:          {Grant: business.ModulePrincipalGrant{Tenant: s.tenant, Resources: []string{"documents"}}},
+		s.prefix:          {Grant: business.ModulePrincipalGrant{Tenant: s.tenant, Resources: []string{"documents"}, OperationAudiences: map[string]business.ModuleOperationAudience{"publish": {Audience: target.solutionID, InvokeScopes: read, HeadlessScopes: read}}}},
 		target.solutionID: {Grant: business.ModulePrincipalGrant{Tenant: s.tenant, Resources: []string{"documents"}}},
 	}
 	rev := s.currentRevision(t)
 	wire := map[string]any{}
 	for prefix, entry := range grants {
-		wire[prefix] = map[string]any{"grant": map[string]any{"tenant": entry.Grant.Tenant, "resources": entry.Grant.Resources}}
+		wire[prefix] = map[string]any{"grant": map[string]any{"tenant": entry.Grant.Tenant, "resources": entry.Grant.Resources, "operation_audiences": entry.Grant.OperationAudiences}}
 	}
 	raw, err := json.Marshal(map[string]any{"revision": rev + 1, "principals": wire})
 	require.NoError(t, err)

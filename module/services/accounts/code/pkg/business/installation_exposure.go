@@ -208,7 +208,7 @@ func (s *Service) ListOrganizationInstallations(
 // each an ordinary grant too, so a grant that exposed a solution and carried
 // nothing because a later statement failed is not a state this can reach.
 //
-// The resolution takes a SHARE lock on the installation row and holds it to
+// The resolution takes an UPDATE lock on the installation row and holds it to
 // commit (InstallationRootScopePath). An uninstall revokes that row with an
 // UPDATE, so the two serialize: if the uninstall commits first, the resolution
 // finds no active installation and nothing is written; if the resolution locks
@@ -252,6 +252,18 @@ func (s *Service) GrantInstallationToTeam(
 		path, err := s.installationStore().InstallationRootScopePath(ctx, orgID, installationID)
 		if err != nil {
 			return err
+		}
+		// The host interface names the installation's own role. Resolve it
+		// under the same installation lock as the exposure write.
+		if roleID == "" {
+			reader, ok := s.store.(hostInstallationReader)
+			if !ok {
+				return fmt.Errorf("installation role reader is not wired")
+			}
+			roleID, _, _, err = reader.InstallationRoleRevision(ctx, orgID, installationID)
+			if err != nil {
+				return err
+			}
 		}
 		permits, err := s.installationStore().RolePermits(ctx, roleID, ResourceTypeSolution, ActionUseSolution)
 		if err != nil {

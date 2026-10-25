@@ -874,7 +874,7 @@
       ],
       "http_bindings": [],
       "policy": {
-        "exposure": "EXPOSURE_INTERNAL",
+        "exposure": "EXPOSURE_PUBLIC",
         "tenant": "TENANT_REQUIREMENT_NONE",
         "permissions": [],
         "scopes": [],
@@ -885,15 +885,15 @@
           "emission": "AUDIT_EMISSION_NONE"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
-        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
-        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "internal",
+      "policy_tier": "public",
       "description": "Deliver one module instance's manifest at one generation; the ceiling is the manifest.",
       "owner": {
         "module": "saas-starter",
@@ -924,10 +924,8 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [
-            "saas.installation.created"
-          ],
-          "emission": "AUDIT_EMISSION_SUCCESS"
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",

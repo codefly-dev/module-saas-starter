@@ -33,8 +33,8 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		seen[policy.FullMethod] = struct{}{}
 		streaming[policy.FullMethod] = policy.Streaming
 	}
+	// ApplyManifest authenticates its signed carrier on the tenant listener.
 	require.ElementsMatch(t, []string{
-		"/host.composition.v1.CompositionService/ApplyManifest",
 		"/saas.accounts.v1.ModuleCapabilitiesService/ApproveExecutableArtifact",
 		"/saas.accounts.v1.ModuleCapabilitiesService/GetCurrentInstallation",
 		"/saas.accounts.v1.ModuleCapabilitiesService/AuthorizeExecutableArtifact",

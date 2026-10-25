@@ -34,18 +34,19 @@ serves on a laptop is served here on a cell, and the authority interface reposit
    (`/modules/_operation-context`) from a pod token and an installed binding, not
    on an accounts RPC. Moving the broker's attestation behind `Issue` is the fix;
    the adapter returns Unimplemented naming it.
-4. **ApplyManifest**: accounts learns a module through signed delivery at
-   `/platform/_delivery/manifest`; the interface's `ModuleManifestV1` is the proto
-   form of that document. The delivery path must accept it, with the ceiling read
-   from the manifest and not from the envelope. Unimplemented, named.
-5. **Install is served; GrantToTeam is not.** Both name the target and the role;
-   accounts installs by target id, agent identifier and role id.
-   `business.Service.InstallTargetByName` resolves the target from the
-   organisation's catalogue (`ListAvailableSolutions`) and the role from its role
-   catalogue, then calls `InstallSolution`; `Install` uses it (2026-10-25).
-   `GrantToTeam` still answers Unimplemented, named.
-6. **No exposure audit event** exists; `GrantToTeam`'s policy borrows
-   `saas.installation.created` until one is registered.
+4. **Method-policy delivery closed (2026-10-25).** `ApplyManifest` accepts the
+   signed core carrier and its optional signed `AuthorityManifestV1` through
+   the tenant listener. The existing delivery owner authenticates the carrier,
+   persists the pair and reconciles it synchronously. `Check` enforces the
+   exact applied generation's method policy. Details and limits below.
+5. **Install and GrantToTeam are served.** Install resolves the target and role
+   through the existing catalogues. GrantToTeam resolves the installation's
+   standing role under its installation lock and uses `GrantInstallationToTeam`.
+   Pending installations remain unexposable until the durable install step is
+   acknowledged. The shared suite still needs fixture hooks for that acknowledgement
+   and the host-generated team id.
+6. **Exposure audit reused.** The existing scope-grant transaction emits the
+   audit event; the interface adds no duplicate installation-created event.
 7. **Closed 2026-10-22.** The interfaces carry the host's names (publisher `codefly.dev`, packages `host.*.v1`), so this repository carries no consumer name; the naming gate is at its main baseline.
 8. **The conformance harness** needs accounts booted with its store (the test
    Postgres each package persists) and the fixture people; the suite takes a
@@ -442,7 +443,7 @@ directly, not through the frontend's vitest suite (no installed dependencies).
 ## Fixture installations (2026-10-25)
 
 A fresh local run used to come up with nothing installed: each organisation's
-administrator installed the wiki and each module by hand through the install
+administrator installed the solution and each module by hand through the install
 API. A fixture now declares its installations (`installations:` with `org`,
 `target`, `role`, `owner`), in the fixture file or in the composing workspace's
 `fixture-grants.yaml`, since a target's name and a module's role are the
@@ -454,3 +455,96 @@ the declared installations are performed after every delivery pass
 revoked) is reused, and any other refusal is reported with the pass, naming the
 installation. A host with no delivery surface says it installs nothing.
 Team grants are not declared yet (GrantToTeam, gap 5).
+
+## Signed method-policy delivery (2026-10-25)
+
+Classification: fixes at the Accounts delivery, authorization and installation
+owners. Reused Core signature/admission checks, the existing carrier authorizer,
+append-only delivery inbox, binding reconciler, Work Context scope containment,
+and scoped-grant transaction. No second registry, issuer or grant table.
+
+- `ApplyManifest` is callable on the declared Connect endpoint. Its authentication
+  is the signed carrier plus the delivering module's workload credential. An
+  unsigned sketch is refused. The raw interface credential is adapted to the
+  existing carrier authorizer's Bearer-header input. HTTP delivery retains its
+  existing refusal classification, including unavailable identity review.
+- The authority document uses the same proven trust pins and signer as its core
+  manifest and must name its module, generation and digest. The authority
+  library owns DSSE verification and method-policy vocabulary validation.
+  Duplicate or contradictory method policies and resource-specific requirements
+  are refused before anything is persisted.
+- Migration 46 stores authority document and envelope in the same immutable inbox
+  row as the core carrier. Exact replay is allowed. Adding, replacing or dropping
+  policy at that same generation is refused. A newer desired receipt cannot
+  change the policy of the applied generation. Apply acknowledges only the
+  generation the existing reconciler actually applied.
+- `Check` re-verifies the applied pair with current pins. Unknown methods are
+  `NotFound`; absent policies, missing required scopes and ambiguous HTTP
+  templates are named refusals. Whole-kind requirements cannot be satisfied by
+  scopes limited to selected resources. Connect POSTs use the gRPC method policy;
+  HTTP templates support the interface's single-segment placeholders. Advisory
+  checks return the same reason beside the verified capability.
+- Installation responses project the existing role, revision and team grants.
+  Migration 47 routes root-team exposure changes through the installation's
+  existing revision owner; unchanged re-grants do not bump it. Grant and uninstall
+  serialize under an UPDATE lock, avoiding a SHARE-to-UPDATE upgrade race.
+  Existing scope-grant audit is the audit for exposure.
+- The delegated-parent regression now declares and approves the operation binding
+  it mints before testing the person-only exchange refusal. Its previous failure
+  was at mint setup, before either exchange was exercised.
+
+The signed conformance harness now persists its approval revision and delivers
+its fixture modules through the real inbox and reconciler. On conformance pin
+`06d0d3b8567448b991e4a7ab591ccc8ab1c32681`, the latest run is **13 passed,
+3 failed, 3 skipped** among the nineteen shared cases, plus the passing local
+ended-session case. Method-policy enforcement and forward-only manifest delivery
+pass. The failures are installation-owned issuance (no installation fixture),
+the person's binding mint (PR #1219), and installation exposure: the shared case
+never acknowledges the pending installation and hard-codes team id `finance`.
+The host's direct PostgreSQL test proves pending refusal, acknowledgement,
+exposure with the actual generated team id, one revision bump, unchanged replay,
+and foreign-organization refusal. Resource grants, durable delegation and
+installation-revocation conformance remain skipped.
+
+`module/tools` still fails only `TestServiceCatalogProceduresAppearInAPIContractCatalog`
+for the fourteen host procedures. The CLI contract exporter rejects the Connect
+surface's five proto packages in `cmd/generate/contracts.go`'s package-selection
+function (`proto declares services in multiple packages ... a contract endpoint
+must be single-package`). The owner fix must retain the endpoint's explicit
+service surface across packages in its descriptor and contract catalog, with a
+regression using an owned API plus implemented interfaces. No generated contract
+was hand-edited or partially retained.
+
+Generation used the corrected CLI candidate from PR #1128 and the documented
+repository catalog chain. The installed CLI ignored template input selection;
+that entire invalid baseline was discarded before rerunning the corrected CLI.
+The clean-input catalog check also found `email` before `egress` in Accounts'
+authored manifest; ordering those inputs restored generation. Complete generated
+output is retained. The control-plane call-site inventory is regenerated by its
+own documented test generator: new reads are the applied signed policy and the
+installation target projection; delivery's transaction moved into its shared
+receiver.
+
+No composed deployment, live edge/hop ENFORCE run, frontend journey or release was
+qualified. The shared method-policy test exercises enforce refusals against real
+Accounts. Existing envelope and installation-consent ceilings still govern
+issuance; storing authority scope ceilings and solution roles does not replace
+those existing owners or project new roles into the organization catalogue.
+
+A fresh-run integration remains open: CLI PR #1128's composition-interface route
+explicitly skips module-envelope delivery (`cmd/run/launcher.go`, `newDeliverer`).
+Accounts still requires the approved envelope to derive its registry. This test
+persists that approval; it does not prove a clean CLI composition can supply it.
+Removing that approval is a separate authorization-model change, and this patch
+does not silently substitute delivery for administrator consent. The CLI/host
+contract must settle or preserve the approval path before claiming a fresh
+composed ENFORCE run.
+
+Validation: Accounts adapters, business, infra and cataloggen suites pass;
+`go vet ./...`, the naming gate and the boundary gate pass. `module/tools`
+has only the contract-catalog failure described above. The full requested
+`commit-identity-gate.mjs check origin/main HEAD` remains red on 38 identity
+fields in commits already on this branch, including `86267c97`, `ab8577b3`
+and `435e80b0`. Repairing those commits requires rewriting published history;
+this task permits fast-forward pushes only. New work uses the requested
+GitHub no-reply author and committer identity.

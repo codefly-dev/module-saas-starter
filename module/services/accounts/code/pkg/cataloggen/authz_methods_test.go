@@ -50,8 +50,8 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	// for the composition interface's ApplyManifest. Picking either side's
 	// number would be silently wrong, so this is read off the regenerated
 	// generated/authz-methods.json.
-	require.Equal(t, 56, internalCount)   // includes the internal retained-frontend read
-	require.Equal(t, 19, failClosedCount) // +2: the session interface's SignIn and ListFixturePeople are rate-limited as authentication and fail closed
+	require.Equal(t, 55, internalCount)   // ApplyManifest now authenticates its signed carrier on the tenant listener
+	require.Equal(t, 20, failClosedCount) // +1: signed composition delivery; +2: the session interface's SignIn and ListFixturePeople are rate-limited as authentication and fail closed
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(
 		t,
