@@ -14,7 +14,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestHostChildIssueBindsParentToAuthenticatedActor(t *testing.T) {
+// hostChildFixture is a host whose one composed module, tool.test, runs as a
+// workload the cluster attests: the issuer, the interface over it and the
+// module's credential.
+func hostChildFixture(t *testing.T) (*WorkContextAuthorityServer, *HostAuthorityServer, string) {
+	t.Helper()
 	previous := service
 	svc, err := business.NewService(renewMembershipStore{})
 	require.NoError(t, err)
@@ -29,7 +33,26 @@ func TestHostChildIssueBindsParentToAuthenticatedActor(t *testing.T) {
 	declareTestAudiences(svc)
 	credential := cluster.Run(executiontest.Workload{Namespace: workload.Namespace, ServiceAccount: workload.ServiceAccount, Container: workload.Container})
 	issuer := newCoreTestServer(t, &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 12}}, newSealAnswersFake(12))
-	server := NewHostAuthorityServer(issuer, nil)
+	return issuer, NewHostAuthorityServer(issuer, nil), credential
+}
+
+// hostChildHop mints a person's single-use capability addressed to tool.test
+// and has tool.test hop on it to documents through the interface.
+func hostChildHop(t *testing.T, issuer *WorkContextAuthorityServer, server *HostAuthorityServer, credential string) (*authorityv1.IssueResponse, error) {
+	t.Helper()
+	parent, _ := mintTestCapability(t, issuer, testCapability{
+		Audience: "tool.test", Tenant: renewOrgID, Owner: renewActorID, Replay: workcontext.ReplaySingleUse,
+		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
+	})
+	return server.Issue(context.Background(), &authorityv1.IssueRequest{
+		As:    &authorityv1.IssueRequest_ParentToken{ParentToken: parent},
+		Actor: &authorityv1.WorkloadCredential{Credential: credential}, Audience: "documents",
+		Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
+	})
+}
+
+func TestHostChildIssueBindsParentToAuthenticatedActor(t *testing.T) {
+	issuer, server, credential := hostChildFixture(t)
 	for _, audience := range []string{"tool.test", "documents"} {
 		t.Run(audience, func(t *testing.T) {
 			parent, _ := mintTestCapability(t, issuer, testCapability{

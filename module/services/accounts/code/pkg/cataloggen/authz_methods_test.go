@@ -45,10 +45,12 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	// declared-presence RPC this branch adds. Base 49, main +4, this branch +1;
 	// then -2 when MintModuleRegistration and MintSolutionRegistration were
 	// deleted with their secrets (#1056), and +1 for the live-authority read a
-	// callee's verifier asks (#1107) — picking either side's number would be
-	// silently wrong, so this is read off the regenerated
+	// callee's verifier asks (#1107), +1 for the issuer's admission of a
+	// bearer-less module route's capability (AdmitWorkloadOperation), and +1
+	// for the composition interface's ApplyManifest. Picking either side's
+	// number would be silently wrong, so this is read off the regenerated
 	// generated/authz-methods.json.
-	require.Equal(t, 55, internalCount) // +1: the composition interface's ApplyManifest is internal // includes the internal retained-frontend read
+	require.Equal(t, 56, internalCount) // includes the internal retained-frontend read
 	require.Equal(t, 18, failClosedCount) // +1: the authority interface's Issue is rate-limited as sensitive and fails closed
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(

@@ -29,13 +29,25 @@ type workContextAuthorityFake struct {
 	installationErr  error
 }
 
+// ResolveWorkContextAuthority answers the configured facts, except for an owner
+// the store holds no membership row for: a declared module principal, which the
+// deployment declares rather than registers in any organization. The store
+// refuses those (ErrTypeNotFound, "current organization membership and
+// authorization revision required"), and so does this fake, so no test can
+// read success for a module owner the store would never give.
 func (f *workContextAuthorityFake) ResolveWorkContextAuthority(
 	_ context.Context,
 	_ string,
-	_ string,
+	owner string,
 	_ string,
 	_ []business.WorkContextPermission,
 ) (*business.WorkContextAuthorityFacts, error) {
+	if service != nil && service.IsDeclaredModulePrincipal(owner) {
+		return nil, business.NewStoreError(
+			errors.New("current organization membership and authorization revision required"),
+			business.ErrTypeNotFound,
+		)
+	}
 	return f.facts, f.err
 }
 

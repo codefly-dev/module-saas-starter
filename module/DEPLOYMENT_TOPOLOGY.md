@@ -44,7 +44,6 @@ depend on the database whose authority it witnesses.
 | --- | --- | --- |
 | `accounts` | `cache/read`, `cache/write` | TCP 6379 |
 | `accounts` | `store/tcp` | TCP 5432 |
-| `accounts` | `telemetry/grpc` | Codefly-assigned OTLP gRPC port |
 | `accounts` | `vault/http` | TCP 8200 |
 | `auth-gateway` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |
 | `auth-gateway` | `cache/write` | TCP 6379 |
@@ -59,25 +58,49 @@ own that the cell's mesh admits from composed workloads alone (an
 delivers). Both ports are allocated by Codefly. Solution upstreams are reached
 over plain HTTP at the address the Codefly SDK resolves for the endpoint their
 applied presence declares; no workload serves or presents an SVID. Istio routes apex/`www`/docs hosts to `marketing/http` and `app` to
-`frontend/http`. Accounts, frontend, marketing, and telemetry may reach
-public IP space only over TCP 443. The public rules exclude private, loopback,
+`frontend/http`. Accounts, frontend, and marketing may reach
+public IP space only over TCP 443; `auth-gateway` has no public egress. The public rules exclude private, loopback,
 link-local, metadata, documentation, benchmark, multicast, and other
 special-purpose IPv4/IPv6 ranges. Temporal's gRPC frontend and HTTP UI remain
 module-visible without a public ingress route.
 
 ## Network-policy model
 
-The topology-policy golden contains 25 `NetworkPolicy` resources:
+Authored endpoints and module-interface exports declare `visibility: internal`
+without `allow-modules`. Core derives the modules that can reach an internal
+endpoint from the consumers' declared runtime dependencies. A target never
+lists its consumers. Interface visibility defaults to internal; a service
+endpoint still defaults to private. The catalog retains its `MODULE` enum for
+internal reach, while network and mesh policies admit only declared dependency
+edges. Public frontend and marketing endpoints explicitly declare
+`exposure: public`, preserving their existing public addresses.
+
+Promotion requires a released CLI with Core's consumer-derived allow-list
+support. The module agent,
+accounts, auth-gateway, store migrator, and module tools require stable Core 0.14
+or later to load these declarations and derive consumer access. The runtime SDK
+also loads the module when resolving local endpoints or secrets. Core 0.13 refuses
+internal interface exports without an authored list. The CI pin at CLI 0.1.171
+still loads the module with its older Core 0.7, but does not derive cross-module
+access: an internal endpoint with no authored list denies other modules. It is
+not a compatible promotion driver for this declaration model.
+
+The topology-policy golden contains 19 `NetworkPolicy` resources:
 
 - one namespace-wide ingress/egress default deny;
 - DNS and Istio control-plane egress for all injected workloads;
 - Istio ingress only to the public frontend and marketing HTTP ports;
 - target ingress and caller egress policies for every declared dependency;
-- HTTPS public egress only for accounts, frontend, marketing, and telemetry.
+- HTTPS public egress only for accounts, frontend, and marketing.
 
 There is no `allow-intra-namespace` rule. Adding a service dependency or port
 requires changing the topology binding and reviewing both generated directions
 of the edge.
+
+Store bootstrap ingress and egress select the agent's stable
+`codefly.dev/bootstrap-service: store` pod label. Postgres names the immutable
+migration Job with a digest of its rendered pod template, so its Kubernetes
+`job-name` changes with the image or inputs and cannot be a fixed selector.
 
 Pod selectors use the `app: <service>` labels emitted by the pinned Codefly
 agents. Services whose agent uses a different Kubernetes identity declare its
@@ -88,10 +111,20 @@ topology binding in the same change; pinned deployment schema/render validation
 is tracked by `P1-CI-004`.
 
 The generated Codefly dependency declarations contain exact endpoint
-references. Accounts resolves `telemetry/grpc` through the SDK and passes that
-exact Codefly-owned address to both tracing and metrics; no product
-configuration owns a local collector port. The generated NetworkPolicy remains
-the hard endpoint/port enforcement boundary.
+references. The module owns no collector: accounts and auth-gateway export traces
+and metrics to the HTTPS operations intake. The environment's optional
+`telemetry:` declaration lets the CLI deliver the standard OTEL variables to
+every service. Without an endpoint the services export nothing.
+
+The generated NetworkPolicy remains the endpoint/port enforcement boundary for
+services the module declares. Auth-gateway has no direct public TCP 443 egress.
+The selected ambient waypoint route uses the existing
+[`allow-ambient-hbone-transport` policy](../gitops.go#L2255), which admits TCP
+15008 transport for every pod without a destination restriction. The route does
+not require a new module collector-egress field or a broad public-egress rule.
+Live CNI handling of HBONE, waypoint routing, DNS, TLS and actual telemetry
+export remain unqualified; successful new-environment export is a rollout
+prerequisite.
 
 The AWS overlay replaces stateful services with managed dependencies. A
 pod-selector rule cannot authorize an RDS, ElastiCache, external Vault, or S3
@@ -301,7 +334,7 @@ exports, and missing descriptor-required accounts protocols.
 
 Parity tests build every artifact twice, compare all checked-in outputs, parse
 the generated files through Codefly's resource model, and strictly inspect all
-25 NetworkPolicy golden documents. After the module generator creates the
+19 NetworkPolicy golden documents. After the module generator creates the
 consumer-owned GitOps tree, render an environment with:
 
 ```sh

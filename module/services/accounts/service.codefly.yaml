@@ -22,9 +22,6 @@ service-dependencies:
     - name: store
       endpoints:
         - name: tcp
-    - name: telemetry
-      endpoints:
-        - name: grpc
     - name: vault
       endpoints:
         - name: http
@@ -44,7 +41,6 @@ workspace-configuration-dependencies:
     - internal-auth
     - internal-transport
     - key-service
-    - observability
     - product-analytics
     - security
     - vault

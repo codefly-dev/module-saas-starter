@@ -1,7 +1,7 @@
 schema: codefly/module-package/v2
 kind: module-package
 id: codefly/saas-starter
-version: 0.1.0
+version: 0.2.0
 minimum-codefly-version: ">=0.3.32 <1.0.0"
 artifact-roots:
   - contracts
@@ -18,12 +18,12 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/authority/contract.binpb
-        digest: sha256:373a8f3a22b7968c36dd9faffb9be5ef64213b1de2a532f5e567007bd65caaa7
+        digest: sha256:c2af68c66470556658bef9c7d6f36b577057067ba51446698c9c60356109a898
       - endpoint: connect
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:373a8f3a22b7968c36dd9faffb9be5ef64213b1de2a532f5e567007bd65caaa7
+        digest: sha256:c2af68c66470556658bef9c7d6f36b577057067ba51446698c9c60356109a898
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:
@@ -31,7 +31,7 @@ services:
         kind: protobuf
         package: saas.gateway.auth.v1
         path: contracts/api/auth-gateway/grpc/contract.binpb
-        digest: sha256:a54c94b3d74017a0493e0b08e799a59c4bb2979779b66b75426d6d1095d31747
+        digest: sha256:282b2820ed0d1e8a693dad827b0446d65843a7d1f0328a6d137e8aec0c129291
   - name: cache
     endpoints: [read, write]
   - name: frontend
@@ -42,8 +42,6 @@ services:
     endpoints: [grpc]
   - name: store
     endpoints: [tcp]
-  - name: telemetry
-    endpoints: [grpc]
   - name: vault
     endpoints: [http]
 fixtures:
@@ -102,6 +100,7 @@ migrations:
 breaking-changes:
   - Consumers resolve the immutable package into a disposable projection instead of editing Starter-owned files.
   - "Audit event types are namespaced under `saas.*` (`auth.login` -> `saas.auth.login`). The wire value of `audit_events.event_type`, the `X-Webhook-Event` header, and webhook routing keys all change; migration 116 rewrites stored history and existing subscriptions in place, so a live subscriber keeps firing, but a consumer that re-creates a subscription from a hardcoded pre-namespace name, or emits one through `ModuleEmitAuditEvent`, is now rejected. No alias layer."
+  - "The telemetry service and its dependency contract are removed. SDK Init exports traces when OTEL_EXPORTER_OTLP_ENDPOINT is delivered; no endpoint means no tracing, including native local runs. Exporter initialization failures are logged without stopping the service. Accounts and auth-gateway push metrics to the same endpoint and no longer serve /metrics. Telemetry uses standard process variables, not the removed observability configuration group. Deliver standard OTEL variables to every service through the environment telemetry declaration using a compatible CLI. Existing consumers of the telemetry service must migrate to the HTTPS operations intake."
 reserved-namespaces:
   - "@codefly/saas-"
   - "@codefly-dev/saas-"

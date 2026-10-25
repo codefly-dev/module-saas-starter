@@ -312,7 +312,7 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	if err != nil {
 		if errors.Is(err, auth.ErrRevocationUnavailable) {
 			wool.Get(ctx).In("connectPolicyInterceptor").Warn("revocation list unavailable, denying (fail-closed)", wool.ErrField(err))
-			return ctx, connect.NewError(connect.CodeUnavailable, errors.New("authorization temporarily unavailable"))
+			return ctx, connect.NewError(connect.CodeUnavailable, errors.New(authorizationUnavailableMessage))
 		}
 		wool.Get(ctx).In("connectPolicyInterceptor").Debug("VerifyAccess failed", wool.ErrField(err))
 		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid or expired access token"))

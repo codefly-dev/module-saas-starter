@@ -112,7 +112,7 @@ func continuityService(t *testing.T, store business.Store) *business.Service {
 	t.Helper()
 	service, err := business.NewService(store)
 	require.NoError(t, err)
-	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store))
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store, business.PlansSold))
 	// A POLICY LOG, because RemoveOrgMember is now a witnessed narrowing.
 	//
 	// Without one it refuses outright — which is the fail-closed design working,

@@ -148,15 +148,8 @@ func (h *datasourceConnectHandler) UpdateSource(
 	}
 	source, jobID, err := h.svc.UpdateSource(ctx, actorID, input)
 	if err != nil {
-		if errors.Is(err, business.ErrDatasourceSourceNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
-		// The source moved under the editor. FailedPrecondition and not Aborted:
-		// retrying the same request would be refused again for the same reason,
-		// and what resolves it is reopening the form on the current scope.
-		if errors.Is(err, business.ErrDatasourceSourceScopeChanged) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
-		}
+		// Not found and a scope that moved under the editor are business
+		// refusals (refusalStatus): each travels with its own sentence.
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.UpdateSourceResponse{
@@ -216,9 +209,6 @@ func (h *datasourceConnectHandler) GetSource(
 	}
 	source, err := h.svc.GetDatasourceSourceForActor(ctx, req.Msg.OrgId, req.Msg.Id, actorID)
 	if err != nil {
-		if errors.Is(err, business.ErrDatasourceSourceNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.GetSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source))}), nil
@@ -251,9 +241,6 @@ func (h *datasourceConnectHandler) SyncSource(
 			}
 			return nil, connect.NewError(code, errors.New(failure.Failure.Message))
 		}
-		if errors.Is(err, business.ErrDatasourceSourceNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.SyncSourceResponse{JobId: jobID}), nil
@@ -276,9 +263,6 @@ func (h *datasourceConnectHandler) GetSourceSync(
 	}
 	operation, err := h.svc.GetDatasourceSync(ctx, req.Msg.OrgId, req.Msg.SourceId, req.Msg.JobId)
 	if err != nil {
-		if errors.Is(err, business.ErrDatasourceSourceNotFound) || errors.Is(err, business.ErrDatasourceSyncNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	response := &gen.GetSourceSyncResponse{JobId: operation.JobID, State: operation.State}

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/codefly-dev/core/wool"
 )
 
 var ErrEntitlementQuotaExceeded = errors.New("entitlement quota exceeded")
@@ -43,11 +45,40 @@ func (q CardinalityQuota) RequireAvailable() error {
 }
 
 // EntitlementChecker resolves feature access and transaction-scoped
-// cardinality quotas for an organization.
+// cardinality quotas for an organization. It is the one place an effective
+// limit is decided: the cardinality quotas, the metered usage ledger, the
+// usage read-outs and the entitlement view all ask it.
 type EntitlementChecker interface {
 	HasFeature(ctx context.Context, orgID string, feature string) (bool, error)
 	GetLimit(ctx context.Context, orgID string, feature string) (int64, error)
 	CheckCardinalityQuotaInTx(ctx context.Context, orgID string, feature string) (CardinalityQuota, error)
+	// EffectiveLimitInTx resolves one feature's limit inside the caller's
+	// tenant transaction: -1 unlimited, 0 disabled, >0 a cap.
+	EffectiveLimitInTx(ctx context.Context, orgID string, feature string, now time.Time) (int64, error)
+}
+
+// PlanPolicy says whether this deployment sells plans. A plan's limits are
+// what a customer bought; a deployment that sells none has nothing to hold an
+// organization to, so it enforces no plan limit at all — not the default plan's
+// seats, API keys or meters, and not its disabled features.
+type PlanPolicy int
+
+const (
+	// PlansSold enforces each organization's plan and its overrides.
+	PlansSold PlanPolicy = iota + 1
+	// NoPlansSold resolves every feature as unlimited.
+	NoPlansSold
+)
+
+// PlanPolicyForBillingProvider maps the billing configuration's provider to the
+// plan policy. A deployment sells plans exactly when it takes payment for them:
+// only a configured billing provider can move an organization off the default
+// plan, so without one the plan rows describe nothing anyone bought.
+func PlanPolicyForBillingProvider(provider string) PlanPolicy {
+	if provider == "stripe" {
+		return PlansSold
+	}
+	return NoPlansSold
 }
 
 // Plan represents a subscription plan.
@@ -133,13 +164,15 @@ type OrgEntitlementsView struct {
 	Entitlements []OrgEntitlement
 }
 
-// DefaultEntitlementChecker resolves entitlements from plan + overrides.
+// DefaultEntitlementChecker resolves entitlements from plan + overrides when
+// the deployment sells plans, and as unlimited when it does not.
 type DefaultEntitlementChecker struct {
 	store Store
+	plans PlanPolicy
 }
 
-func NewDefaultEntitlementChecker(store Store) *DefaultEntitlementChecker {
-	return &DefaultEntitlementChecker{store: store}
+func NewDefaultEntitlementChecker(store Store, plans PlanPolicy) *DefaultEntitlementChecker {
+	return &DefaultEntitlementChecker{store: store, plans: plans}
 }
 
 // HasFeature checks if an org has access to a boolean feature.
@@ -159,15 +192,28 @@ func (c *DefaultEntitlementChecker) HasFeature(ctx context.Context, orgID string
 // Phase 2B) plus plan_entitlements (global). Bracket the per-tenant
 // reads in WithOrgTx.
 func (c *DefaultEntitlementChecker) GetLimit(ctx context.Context, orgID string, feature string) (int64, error) {
+	if c.plans != PlansSold {
+		return -1, nil
+	}
 	var limit int64
 	if err := c.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var err error
-		limit, err = resolveEffectiveLimitInTx(ctx, c.store, orgID, feature, time.Now().UTC())
+		limit, err = c.EffectiveLimitInTx(ctx, orgID, feature, time.Now().UTC())
 		return err
 	}); err != nil {
 		return 0, err
 	}
 	return limit, nil
+}
+
+// EffectiveLimitInTx is the override-then-plan resolution when the deployment
+// sells plans, and -1 (unlimited) when it does not. The caller holds the
+// tenant transaction.
+func (c *DefaultEntitlementChecker) EffectiveLimitInTx(ctx context.Context, orgID string, feature string, now time.Time) (int64, error) {
+	if c.plans != PlansSold {
+		return -1, nil
+	}
+	return resolveEffectiveLimitInTx(ctx, c.store, orgID, feature, now)
 }
 
 func resolveEffectiveLimitInTx(ctx context.Context, store Store, orgID, feature string, now time.Time) (int64, error) {
@@ -208,7 +254,7 @@ func (c *DefaultEntitlementChecker) CheckCardinalityQuotaInTx(ctx context.Contex
 	if err := c.store.LockEntitlementQuota(ctx, orgID, feature); err != nil {
 		return CardinalityQuota{}, err
 	}
-	limit, err := resolveEffectiveLimitInTx(ctx, c.store, orgID, feature, time.Now().UTC())
+	limit, err := c.EffectiveLimitInTx(ctx, orgID, feature, time.Now().UTC())
 	if err != nil {
 		return CardinalityQuota{}, err
 	}
@@ -219,11 +265,40 @@ func (c *DefaultEntitlementChecker) CheckCardinalityQuotaInTx(ctx context.Contex
 	return CardinalityQuota{Feature: feature, Used: used, Limit: limit}, nil
 }
 
+var errEntitlementCheckerMissing = errors.New("entitlement checker is not configured")
+
 func (s *Service) cardinalityQuotaInTx(ctx context.Context, orgID string, feature string) (CardinalityQuota, error) {
 	if s.entitlements == nil {
-		return CardinalityQuota{}, errors.New("entitlement checker is not configured")
+		return CardinalityQuota{}, errEntitlementCheckerMissing
 	}
 	return s.entitlements.CheckCardinalityQuotaInTx(ctx, orgID, feature)
+}
+
+// admitCardinality refuses a live resource the quota has no room for, and logs
+// the refusal: a quota is a business rule a person hits, and an operator asked
+// "why was this refused" must find the answer in the log, not only in the
+// caller's response. Ids and counts only.
+func admitCardinality(ctx context.Context, orgID string, quota CardinalityQuota) error {
+	err := quota.RequireAvailable()
+	if err != nil {
+		logQuotaRefusal(ctx, orgID, quota.Feature, quota.Used, quota.Limit)
+	}
+	return err
+}
+
+func logQuotaRefusal(ctx context.Context, orgID, feature string, used, limit int64) {
+	wool.Get(ctx).Warn("entitlement quota refused",
+		wool.Field("org_id", orgID),
+		wool.Field("feature", feature),
+		wool.Field("used", used),
+		wool.Field("limit", limit))
+}
+
+func (s *Service) effectiveLimitInTx(ctx context.Context, orgID, feature string, now time.Time) (int64, error) {
+	if s.entitlements == nil {
+		return 0, errEntitlementCheckerMissing
+	}
+	return s.entitlements.EffectiveLimitInTx(ctx, orgID, feature, now)
 }
 
 // GetOrgEntitlements returns the resolved view (plan name + per-
@@ -281,16 +356,13 @@ func (s *Service) GetOrgEntitlements(ctx context.Context, orgID string) (*OrgEnt
 		out.Entitlements = make([]OrgEntitlement, 0, len(planFeatures))
 
 		for _, fl := range planFeatures {
-			limit := fl.Limit
-			hasOverride := false
-			if o, ok := overrideMap[fl.Feature]; ok {
-				hasOverride = true
-				if o.LimitValue == nil {
-					limit = -1 // override → unlimited
-				} else {
-					limit = *o.LimitValue
-				}
+			// The same resolution every admission uses, so the view never
+			// shows a limit the deployment does not enforce.
+			limit, err := s.effectiveLimitInTx(ctx, orgID, fl.Feature, now)
+			if err != nil {
+				return fmt.Errorf("limit for %s: %w", fl.Feature, err)
 			}
+			_, hasOverride := overrideMap[fl.Feature]
 			used, err := resolveUsageInTx(ctx, s.store, orgID, fl.Feature, periodStart)
 			if err != nil {
 				return fmt.Errorf("usage for %s: %w", fl.Feature, err)

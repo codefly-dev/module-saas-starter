@@ -109,7 +109,7 @@ func runBusinessTests(m *testing.M) int {
 	setupDone := testdb.MeasureSetup("business-db", []string{"store", "vault"}, 10*time.Minute)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithExcludedDependencies("cache", "telemetry"),
+		sdk.WithExcludedDependencies("cache"),
 		// Keep this package-owned integration stack distinct from the outer
 		// service runtime and the other package TestMain stacks. The SDK gives
 		// each short-lived flow temporary host ports; the scope also isolates
@@ -193,7 +193,7 @@ func runBusinessTests(m *testing.M) int {
 	defer auditEmitter.Close()
 	service.SetAuditEmitter(auditEmitter)
 
-	entitlementChecker := business.NewDefaultEntitlementChecker(store)
+	entitlementChecker := business.NewDefaultEntitlementChecker(store, business.PlansSold)
 	service.SetEntitlementChecker(entitlementChecker)
 
 	// The audit_events.event_type foreign key (migration 116) resolves against

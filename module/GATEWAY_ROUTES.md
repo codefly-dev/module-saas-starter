@@ -112,6 +112,41 @@ correspondence check.
 The generated and explicit route catalogs own the complete module REST surface.
 Unknown paths return 404. Module workloads cannot add a proxy target at runtime.
 
+A composed module declared in the solution registry is reached at
+`/v1/<alias>/*`, only after both catalogs found no route, with the path
+forwarded unchanged (`handleDeclaredModule`). An edge-inspected Work Context
+there may name the alias or `module-capabilities`; anything else is 401
+`invalid work context`. The route then has two arms:
+
+- **The person's bearer path.** ext_authz verifies the bearer and stamps the
+  person; accounts admits the viewer to the module's installation per request;
+  the bearer travels (SA-F-BEARER), the cookie never does;
+  `x-codefly-installation-id` names the target's admitting installation.
+- **The bearer-less arm, on the workload endpoint only**, for a headless
+  operation context. Selected by: no `Authorization` and no `Cookie` header, the
+  workload listener, and a capability whose audience is the alias. Then: a
+  presenter when the gateway is deployed; exactly one capability header and a
+  non-empty signed tenant and seal (else 401 `invalid work context`); every
+  identity header stripped, `Authorization`, `Proxy-Authorization` and
+  `X-Forwarded-Client-Cert` dropped; the budget keyed
+  `workload-operation:<tenant>`, failing closed; then one call to accounts'
+  `AdmitWorkloadOperation` with the capability, the alias and the route's
+  target: it must admit the capability as a module operation context for the
+  alias with the target installed (ACTIVE) in its tenant and the seal none of
+  the target's rows. Not installed is 403; any other refusal is 401
+  `authentication required`, the answer a person's capability has without its
+  bearer. 503 when it cannot answer in time or is not wired, or names another
+  tenant or seal. A `Connection` option naming the capability is 401 `invalid
+  work context`. Admitted requests carry the capability and nothing the
+  gateway asserts: no bearer, no identity header, no
+  `x-codefly-installation-id`. An upstream failure is a static 502. Every
+  admit and refusal is logged with alias, tenant, task, seal and presenter,
+  never the token.
+
+Elsewhere the same request is a bearer-less request: 401 on `rest`, 401 with a
+`module-capabilities` capability, 401 for a capability sealed to the target's own
+installation.
+
 `saas.frontend.plugins.v1` catalogs all 36 Next.js pages and the admin plugin
 catch-all. The environment topology generator owns the deployed ingress
 VirtualService, so the target-neutral route catalog does not carry a namespace,

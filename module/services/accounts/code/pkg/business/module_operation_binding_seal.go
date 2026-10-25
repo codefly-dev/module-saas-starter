@@ -17,6 +17,14 @@ func ModuleOperationBindingID(principalID, bindingID string) string {
 	return moduleOperationBindingPrefix + principalID + "/" + bindingID
 }
 
+// IsModuleOperationBindingOf reports whether id names one of principalID's own
+// installed operation bindings: the only operation binding a module operation
+// context (StartModuleOperationTask) is sealed to.
+func IsModuleOperationBindingOf(id, principalID string) bool {
+	owner, _, ok := parseModuleOperationBindingID(id)
+	return ok && owner == principalID
+}
+
 func parseModuleOperationBindingID(id string) (principalID, bindingID string, ok bool) {
 	rest, isModule := strings.CutPrefix(id, moduleOperationBindingPrefix)
 	if !isModule {

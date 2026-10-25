@@ -77,7 +77,9 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 		return fmt.Errorf("otelconnect: %w", otelErr)
 	}
 
-	auth := connect.WithInterceptors(otelIc, connectAuthInterceptor(func() auth.JWTMinter {
+	// connectRefusalInterceptor sits inside otel (its line carries the trace)
+	// and outside auth and the rate limit (their refusals are logged too).
+	auth := connect.WithInterceptors(otelIc, connectRefusalInterceptor(), connectAuthInterceptor(func() auth.JWTMinter {
 		if service == nil {
 			return nil
 		}

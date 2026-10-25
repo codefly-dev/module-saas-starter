@@ -37,16 +37,9 @@ func (h *datasourceConnectHandler) DelegateSourceTriggers(
 	}
 	references, err := h.svc.DelegateSourceTriggers(ctx, actorID, req.Msg.OrgId, req.Msg.SourceId)
 	if err != nil {
-		if errors.Is(err, business.ErrTriggerSourceNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
-		// Told apart from "not found" on purpose: the source exists and an
-		// administrator can read it, and what they may not do is bind their own
-		// authority to it. A NotFound here would send an operator looking for a
-		// source that is in front of them.
-		if errors.Is(err, business.ErrTriggerSourcePersonal) {
-			return nil, connect.NewError(connect.CodePermissionDenied, err)
-		}
+		// Not found, and personal to another member, are business refusals
+		// (refusalStatus): the second is PermissionDenied on purpose, since a
+		// NotFound would send an operator looking for a source in front of them.
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.DelegateSourceTriggersResponse{

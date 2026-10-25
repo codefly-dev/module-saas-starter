@@ -34,6 +34,14 @@ func main() {
 		panic(fmt.Sprintf("codefly init failed: %v", err))
 	}
 
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := codefly.ShutdownTelemetry(shutdownCtx); err != nil {
+			log.Printf("shutdown: OTEL tracing: %v", err)
+		}
+	}()
+
 	// Refuse before anything is served: a deployed gateway holding a shipped
 	// placeholder, or a perimeter credential too short to be one, decides
 	// perimeter membership on a published value.
@@ -63,31 +71,11 @@ func main() {
 		panic(fmt.Sprintf("Codefly workload endpoint is unavailable: %v", err))
 	}
 	workloadPort := workloadNet.Port
-	var otelProvider *wooltel.Provider
 	var otelMetricProvider *otelMetrics
-	if observabilityEnabled() {
-		collectorNetwork, err := codefly.For(ctx).
-			Service("telemetry").
-			Endpoint("grpc").
-			API("grpc").
-			ResolveNetworkInstance()
+	if otlpEndpointConfigured() {
+		otelMetricProvider, err = enableOTELMetrics(ctx)
 		if err != nil {
-			panic(fmt.Sprintf("resolve telemetry collector through Codefly: %v", err))
-		}
-		otelProvider, err = wooltel.Enable(
-			wooltel.WithServiceName("saas-starter-auth-gateway"),
-			wooltel.WithEndpoint(collectorNetwork.Host),
-			wooltel.WithInsecure(),
-		)
-		if err != nil {
-			panic(fmt.Sprintf("configure OTEL tracing: %v", err))
-		}
-		otelMetricProvider, err = enableOTELMetrics(ctx, "saas-starter-auth-gateway", collectorNetwork.Host)
-		if err != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = otelProvider.Shutdown(shutdownCtx)
-			cancel()
-			panic(fmt.Sprintf("configure OTEL metrics: %v", err))
+			log.Printf("OTEL metrics exporter could not be built; service continues without metrics export: %v", err)
 		}
 	}
 	defer func() {
@@ -96,11 +84,6 @@ func main() {
 		if otelMetricProvider != nil {
 			if err := otelMetricProvider.Shutdown(shutdownCtx); err != nil {
 				log.Printf("shutdown: OTEL metrics: %v", err)
-			}
-		}
-		if otelProvider != nil {
-			if err := otelProvider.Shutdown(shutdownCtx); err != nil {
-				log.Printf("shutdown: OTEL tracing: %v", err)
 			}
 		}
 	}()
@@ -272,6 +255,10 @@ func main() {
 		// connection. It is not a cache: the answer is per viewer and must not
 		// outlive a revoke, so every request asks.
 		gateway.solutionEntitlements = &accountsSolutionEntitlements{conn: internalAPIConn, internalToken: authz.internalToken}
+		// The issuer's answer to what a bearer-less capability is, over the
+		// same connection, asked per request.
+		gateway.workloadAdmission = &accountsWorkloadAdmission{conn: internalAPIConn, internalToken: authz.internalToken}
+		gateway.requireWorkloadPresenter = !codefly.IsLocal()
 		go gateway.solutions.reconcile(ctx)
 		go gateway.clients.reconcile(ctx)
 		if apiHTTPURL != "" {

@@ -357,7 +357,7 @@ func TestInvitationAndEmailJobCommitOrRollBackTogether(t *testing.T) {
 	require.NoError(t, err)
 	rejectingService, err := business.NewService(testStore)
 	require.NoError(t, err)
-	rejectingService.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
+	rejectingService.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore, business.PlansSold))
 	rejectingService.SetEmailOutbox(rejectingOutbox, "https://app.example.com")
 	_, err = rejectingService.CreateInvitation(testCtx, ownerID, &accountsv1.CreateInvitationRequest{
 		OrgId: orgID, Email: "rollback-invite@example.com", Role: accountsv1.InvitationRole_INVITATION_ROLE_MEMBER,
@@ -376,7 +376,7 @@ func TestInvitationAndEmailJobCommitOrRollBackTogether(t *testing.T) {
 	require.NoError(t, err)
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
-	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore, business.PlansSold))
 	service.SetEmailOutbox(outbox, "https://app.example.com")
 	response, err := service.CreateInvitation(testCtx, ownerID, &accountsv1.CreateInvitationRequest{
 		OrgId: orgID, Email: "queued-invite@example.com", Role: accountsv1.InvitationRole_INVITATION_ROLE_MEMBER,
@@ -418,7 +418,7 @@ func TestInvitationAndNotificationCommitOrRollBackTogether(t *testing.T) {
 	store := rejectingNotificationStore{Store: testStore}
 	service, err := business.NewService(store)
 	require.NoError(t, err)
-	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store))
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store, business.PlansSold))
 
 	_, err = service.CreateInvitation(testCtx, ownerID, &accountsv1.CreateInvitationRequest{
 		OrgId: orgID, Email: invitee.GetPrimaryEmail(), Role: accountsv1.InvitationRole_INVITATION_ROLE_MEMBER,
@@ -455,7 +455,7 @@ func TestInvitationCreatesActionableNotificationForExistingUser(t *testing.T) {
 
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
-	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore, business.PlansSold))
 	outbox, err := email.NewOutbox(
 		testStore,
 		infra.NewPostgresTemplateStore(testStore),

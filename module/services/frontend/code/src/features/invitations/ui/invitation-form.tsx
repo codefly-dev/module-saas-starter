@@ -3,6 +3,7 @@
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { refusalMessage, refusalToast } from "@/features/auth/model/step-up";
 import {
 	InvitationDeliveryStatus,
 	InvitationRole,
@@ -63,7 +64,13 @@ export function InvitationForm({ orgId }: { orgId: string }) {
 						setLink({ url: response.acceptUrl, email: invited });
 					}
 				},
-				onError: () => toast.error("Failed to create invitation"),
+				// A full organization is refused with the quota it hit; say so
+				// rather than "Failed", which reads as an outage.
+				onError: (error) =>
+					refusalToast(
+						error,
+						refusalMessage(error, "Failed to create invitation"),
+					),
 			},
 		);
 	}

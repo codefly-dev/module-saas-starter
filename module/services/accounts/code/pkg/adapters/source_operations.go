@@ -56,7 +56,7 @@ func declarationsToProto(in []operations.Declaration) ([]*gen.SourceOperation, e
 	for _, d := range in {
 		p, err := declarationToProto(d)
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
+			return nil, translateGRPCError(err)
 		}
 		out = append(out, p)
 	}
@@ -93,6 +93,9 @@ func (h *datasourceConnectHandler) ListSourceOperations(ctx context.Context, req
 	ctx = connectCtx(ctx, req.Header())
 	actor, err := callerID(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireSourceOperationScope(ctx, req.Msg.OrgId, req.Msg.SourceId, "read"); err != nil {
 		return nil, err
 	}
 	if err := requireOrgMember(ctx, actor, req.Msg.OrgId); err != nil {

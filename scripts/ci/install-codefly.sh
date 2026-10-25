@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-source-5234ce248b092edf1138a16ec4140dfbc8745522}"
+version="${CODEFLY_VERSION:-0.1.197}"
 source_revision=""
 case "${version}" in
   source-5234ce248b092edf1138a16ec4140dfbc8745522)
@@ -62,6 +62,11 @@ case "${version}" in
   0.1.179)
     # Previous generator pin; retained for explicit historical qualifications.
     checksum=6e7666ef095815a77c10fb1644c69e17b0e8869476c18713bfaa496971b5c45f
+    ;;
+  0.1.197)
+    # Includes the merged lifecycle/artifact-cache changes (cli#994) and
+    # environment-wide standard OTEL delivery (cli#1097).
+    checksum=f426ca8ad8c13be4a8aba63c3618a866cb35462a9eb08def2a59b4d9b8290827
     ;;
   0.1.185)
     # Released Core v0.18.0 and cli#947: scope-slot delivery, endpoint-served

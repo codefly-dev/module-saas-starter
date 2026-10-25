@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-const localOrHTTPSURL = z.string().url().superRefine((value, context) => {
+const localOrHTTPSURL = z.string().url().check((context) => {
+  const value = context.value;
   const url = new URL(value);
   if (
     url.username ||
@@ -10,8 +11,9 @@ const localOrHTTPSURL = z.string().url().superRefine((value, context) => {
       !url.hostname.endsWith(".localhost") &&
       !url.hostname.endsWith(".svc.cluster.local"))
   ) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
+    context.issues.push({
+      input: value,
+      code: "custom",
       message: "must be HTTPS outside localhost or an in-cluster service",
     });
   }

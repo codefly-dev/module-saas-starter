@@ -48,5 +48,4 @@ services:
     - name: marketing
     - name: policy-log
     - name: store
-    - name: telemetry
     - name: vault

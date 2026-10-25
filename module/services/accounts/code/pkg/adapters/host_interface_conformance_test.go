@@ -77,7 +77,7 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(auditEmitter.Close)
 	svc.SetAuditEmitter(auditEmitter)
-	svc.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store))
+	svc.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store, business.NoPlansSold))
 	require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
 	}))

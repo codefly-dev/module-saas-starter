@@ -70,7 +70,7 @@ func (s *catalogUsageStore) GetUsageBuckets(
 func TestConsumeUsageResolvesTheCatalogEntitlementLink(t *testing.T) {
 	catalog := parseUsageCatalogForTest(t, "customer", "sum")
 	store := &catalogUsageStore{}
-	service := &Service{store: store, usageMeters: catalog}
+	service := &Service{store: store, usageMeters: catalog, entitlements: NewDefaultEntitlementChecker(store, PlansSold)}
 
 	_, err := service.ConsumeUsage(t.Context(), ConsumeUsageInput{
 		OrgID:          "11111111-1111-4111-8111-111111111111",
@@ -86,7 +86,7 @@ func TestConsumeUsageResolvesTheCatalogEntitlementLink(t *testing.T) {
 func TestUsageHistoryRejectsNonCustomerMetersBeforeStorage(t *testing.T) {
 	catalog := parseUsageCatalogForTest(t, "operator", "sum")
 	store := &catalogUsageStore{}
-	service := &Service{store: store, usageMeters: catalog}
+	service := &Service{store: store, usageMeters: catalog, entitlements: NewDefaultEntitlementChecker(store, PlansSold)}
 	from := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 	_, _, err := service.GetUsageHistory(

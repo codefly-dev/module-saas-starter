@@ -1,7 +1,7 @@
 {
   "schema": "codefly/module-api-contracts/v1",
   "package": "codefly/saas-starter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "endpoints": [
     {
       "service": "accounts",
@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:373a8f3a22b7968c36dd9faffb9be5ef64213b1de2a532f5e567007bd65caaa7",
+      "digest": "sha256:c2af68c66470556658bef9c7d6f36b577057067ba51446698c9c60356109a898",
       "services": [
         {
           "name": "APIKeyService",
@@ -487,6 +487,7 @@
           "name": "WorkContextService",
           "fullName": "saas.accounts.v1.WorkContextService",
           "procedures": [
+            "/saas.accounts.v1.WorkContextService/AdmitWorkloadOperation",
             "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
             "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
             "/saas.accounts.v1.WorkContextService/ConsumeSingleUse",

@@ -277,6 +277,24 @@ func (s *WorkContextAuthorityServer) readBack(ctx context.Context, encoded strin
 		workcontext.ReadBackCheck{Audience: claims.GetAudience(), Grants: noApprovalGrants{}})
 }
 
+// readBackFor is readBack for a question whose subject names the audience the
+// capability must have been minted for, rather than taking it from the
+// capability: the gateway's bearer-less arm asks about the alias its route
+// resolved, and a capability addressed anywhere else is not the one it asks
+// about. Every other check, and the untouched replay store, are readBack's.
+func (s *WorkContextAuthorityServer) readBackFor(ctx context.Context, encoded, audience string) (*workcontext.ReadBackCapability, error) {
+	if !s.configured() {
+		return nil, ErrWorkContextAuthorityUnconfigured
+	}
+	decoded, err := workcontext.Decode(encoded)
+	if err != nil {
+		return nil, err
+	}
+	claims := decoded.Context()
+	return s.coreAuthority(claims.GetTenantId(), claims.GetOwnerPrincipalId()).ReadBack(ctx, encoded,
+		workcontext.ReadBackCheck{Audience: audience, Grants: noApprovalGrants{}})
+}
+
 // delegationHop is one actor hop a mint appends after the owner's session.
 type delegationHop struct {
 	PrincipalID   string
