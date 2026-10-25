@@ -39,16 +39,17 @@ func envelopeJSONAt(t *testing.T, doc map[string]any, revision uint64) []byte {
 	return raw
 }
 
-// Only a pure grant skips the policy-log witness: whole principals added,
-// everything else the same value. With no policy log
-// wired, a write that needs the witness is refused and writes nothing, so "it
-// landed" is the proof a change was applied unwitnessed.
+// Only a pure grant skips the policy-log witness: whole principals added, and a
+// kept principal holding at least what it held by the rule an installation's
+// consent is held to its ceiling with. With no policy log wired, a write that
+// needs the witness is refused and writes nothing, so "it landed" is the proof
+// a change was applied unwitnessed.
 //
-// Every shape below is a real narrowing that a comparison by "more JSON means
-// more authority" let through: a resource list that appears restricts an
-// audience that was unrestricted, a required kind that appears refuses
-// artifacts that passed, and a tenant that is set removes every other
-// organization.
+// Every refused shape below is a real narrowing that a comparison by "more
+// JSON means more authority" let through: a resource list that appears
+// restricts an audience that was unrestricted, a required kind that appears
+// refuses artifacts that passed, and a tenant that is set removes every other
+// organization. A member added to an allowlist is not one of them: it lands.
 func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 	s := newRegistryScenario(t, "rvf")
 	digest := "sha256:" + strings.Repeat("ab", 32)
@@ -91,9 +92,6 @@ func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 		mutate func(doc map[string]any)
 	}{
 		{"a content resource removed", func(doc map[string]any) { grant(doc)["resources"] = []any{} }},
-		// Even an addition inside a section: the section is compared for
-		// equality, never for "at least as much".
-		{"a queue added to a granted principal", func(doc map[string]any) { grant(doc)["queues"] = []any{"reports.render", "reports.extra"} }},
 		{"lookup scope restricted from every resource to one id (resource_ids added)", func(doc map[string]any) {
 			opAudience(doc)["lookup_scopes"].([]any)[0].(map[string]any)["resource_ids"] = []any{"p1"}
 		}},
@@ -123,7 +121,17 @@ func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 		})
 	}
 
-	// And the pure grant: a whole principal added beside the ones granted.
+	// The pure grants: a member added to a granted principal's allowlist, and a
+	// whole principal added beside the ones granted.
+	t.Run("a queue added to a granted principal lands with no witness", func(t *testing.T) {
+		next := envelopeJSONClone(t, state)
+		grant(next)["queues"] = []any{"reports.render", "reports.extra"}
+		current := s.currentRevision(t)
+		_, err := s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, envelopeJSONAt(t, next, current+1))
+		require.NoError(t, err)
+		require.Equal(t, current+1, s.currentRevision(t))
+		state = next
+	})
 	t.Run("a principal added lands with no witness", func(t *testing.T) {
 		next := envelopeJSONClone(t, state)
 		next["principals"].(map[string]any)["added-"+s.prefix] = map[string]any{"grant": map[string]any{"cross_tenant": true}}
