@@ -297,9 +297,6 @@ func (h *datasourceConnectHandler) RevokeSourceDelegation(
 	}
 	delegation, err := h.svc.RevokeSourceDelegation(ctx, actorID, req.Msg.OrgId, req.Msg.Id)
 	if err != nil {
-		if errors.Is(err, business.ErrSourceDelegationNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.RevokeSourceDelegationResponse{Delegation: sourceDelegationToProto(delegation)}), nil

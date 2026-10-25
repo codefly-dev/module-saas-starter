@@ -179,6 +179,7 @@ const injected: DatasourcesPanelProps = {client:legacyClient,orgId:"example-org"
 const bound: DatasourcesPanelProps = {gateway:{apiBase:"/api",getAccessToken:()=>null},orgId:"example-org"};
 void injected; void bound;
 import { DirectoryService } from "@codefly-dev/saas-sdk";
+import { PlaygroundShell, PlaygroundThemeToggle, CapabilityGuide, ScenarioSteps, Step, OperationLog } from "@codefly-dev/ui/playground";
 const schema: z.ZodType<ConnectGitHubValues> = connectGitHubSchema;
 const connection: ConnectGitHubValues = schema.parse({ method: "public", repo: "Acme/example", targetCollection: "example" });
 const scope: EditSourceValues = editSourceSchema.parse({ paths: "docs/", fileExtensions: ".md" });
@@ -207,6 +208,14 @@ function Consumer() {
 }
 const html = renderToStaticMarkup(createElement(PluginRuntimeProvider, { runtime, children: createElement(Consumer) }));
 if (!html.includes("Registry verified")) throw new Error("Published control did not render");
+const playground = renderToStaticMarkup(createElement(PlaygroundShell, { title: "Example playground", moduleName: "Example Module", composition: "Example Composition", scenarios: [], active: "", onSelect() {}, children: [
+ createElement(CapabilityGuide, { key: "guide", capabilities: [] }),
+ createElement(ScenarioSteps, { key: "steps", children: createElement(Step, { title: "Read", operation: "Example.Read", request: {}, response: null, state: "done" }) }),
+ createElement(OperationLog, { key: "log", entries: [] }),
+] }));
+if (!playground.includes("Example playground") || !playground.includes("Example.Read response")) throw new Error("Registry playground did not render");
+const theme = renderToStaticMarkup(createElement(PlaygroundThemeToggle, { mode: "dark", onModeChange() {} }));
+if (!theme.includes("Light mode")) throw new Error("Registry theme control did not render");
 console.log("Registry declarations, public exports, SSR and shared plugin context passed");
 `,
 	);

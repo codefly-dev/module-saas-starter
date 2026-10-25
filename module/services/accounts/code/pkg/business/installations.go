@@ -261,6 +261,43 @@ func (s *Service) ListInstallations(ctx context.Context, req *gen.ListInstallati
 	return &gen.ListInstallationsResponse{Installations: summaries, NextPageToken: nextToken}, nil
 }
 
+// activeTargetInstallationPageLimit bounds ActiveTargetInstallations: a cursor
+// that has not ended after this many full pages is an error, never a short
+// answer.
+const activeTargetInstallationPageLimit = 20
+
+// ActiveTargetInstallations answers the ids of orgID's ACTIVE installations of
+// targetID, read through ListInstallations page by page. It is the admission
+// read of the gateway's bearer-less module arm, asked inside
+// AdmitWorkloadOperation so the gateway makes one call; the arm needs every
+// row, because a seal on ANY of them is the target's own.
+func (s *Service) ActiveTargetInstallations(ctx context.Context, orgID, targetID string) ([]string, error) {
+	var ids []string
+	token := ""
+	for page := 0; page < activeTargetInstallationPageLimit; page++ {
+		resp, err := s.ListInstallations(ctx, &gen.ListInstallationsRequest{
+			OrgId:     orgID,
+			Status:    gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE,
+			PageSize:  listInstallationsMaxPageSize,
+			PageToken: token,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, summary := range resp.GetInstallations() {
+			installation := summary.GetInstallation()
+			if installation.GetOrgId() == orgID && installation.GetTargetId() == targetID &&
+				installation.GetStatus() == gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+				ids = append(ids, installation.GetId())
+			}
+		}
+		if token = resp.GetNextPageToken(); token == "" {
+			return ids, nil
+		}
+	}
+	return nil, fmt.Errorf("installations of organization %s did not end within %d pages", orgID, activeTargetInstallationPageLimit)
+}
+
 // TransferInstallationOwnership reassigns the owner of record and replaces the
 // co-owner succession set. The new owner must be a current org admin; the store
 // fails closed otherwise.

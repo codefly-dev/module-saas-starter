@@ -24,6 +24,26 @@ export default defineConfig([
 			"react-hooks/incompatible-library": "warn",
 		},
 	},
+	{
+		files: ["src/**/*.{ts,tsx}"],
+		rules: {
+			// TanStack Table resets the page on every new `data` array, and the
+			// reset re-renders the component holding the table, so rows built
+			// inline in the call are a new array on every render and never settle.
+			// Hoist an empty fallback to a module-level constant and memoize
+			// derived rows. A destructuring default (`{ data = [] } = useX()`) is
+			// the same bug that this selector cannot see.
+			"no-restricted-syntax": [
+				"error",
+				{
+					selector:
+						"CallExpression[callee.name='useReactTable'] > ObjectExpression > Property[key.name='data'] :matches(ArrayExpression, CallExpression, NewExpression)",
+					message:
+						"useReactTable `data` must keep its identity across renders: no inline `[]`, `?? []`, `.map()` or `.filter()` here. Use a module-level empty constant or a useMemo.",
+				},
+			],
+		},
+	},
 
 	{
 		files: ["**/*.{test,spec}.{ts,tsx}", "tests/**/*.{ts,tsx}"],

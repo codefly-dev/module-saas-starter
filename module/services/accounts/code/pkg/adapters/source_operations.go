@@ -56,7 +56,7 @@ func declarationsToProto(in []operations.Declaration) ([]*gen.SourceOperation, e
 	for _, d := range in {
 		p, err := declarationToProto(d)
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
+			return nil, translateGRPCError(err)
 		}
 		out = append(out, p)
 	}

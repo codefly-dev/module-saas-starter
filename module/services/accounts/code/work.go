@@ -804,8 +804,16 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, err
 	}
 
-	entitlementChecker := business.NewDefaultEntitlementChecker(store)
-	service.SetEntitlementChecker(entitlementChecker)
+	// A deployment sells plans exactly when it takes payment for them. One that
+	// does not enforces no plan limit: the default plan's seats, keys and meters
+	// describe nothing anyone bought. The value is validated below, where the
+	// billing provider is wired.
+	billingProvider := strings.ToLower(strings.TrimSpace(os.Getenv("BILLING_PROVIDER")))
+	planPolicy := business.PlanPolicyForBillingProvider(billingProvider)
+	if planPolicy == business.NoPlansSold {
+		w.Info("plan limits are not enforced: this deployment sells no plans (BILLING_PROVIDER is not stripe)")
+	}
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store, planPolicy))
 
 	// Redis wiring. accounts declares the `cache` dependency, and one client on
 	// it carries two different things:
@@ -1013,7 +1021,6 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	// forwarded identity headers.
 	var stripeWebhookWorker *jobs.Worker
 	var billingWorkerPool interface{ Close() }
-	billingProvider := strings.ToLower(strings.TrimSpace(os.Getenv("BILLING_PROVIDER")))
 	switch billingProvider {
 	case "", "disabled":
 		if os.Getenv("STRIPE_API_KEY") != "" || os.Getenv("STRIPE_WEBHOOK_SECRET") != "" {

@@ -1418,6 +1418,9 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireChildKeepsAudienceSeal(ctx, parent.Context(), req.GetAudience()); err != nil {
+		return nil, err
+	}
 	permissions, scopes, err := workContextScopes(req.GetGrantedScopes(), mintContentReads(req.GetAudience()))
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -1454,6 +1457,48 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 		return nil, err
 	}
 	return issuedWorkContext(token, signed), nil
+}
+
+// requireChildKeepsAudienceSeal refuses a child of a PERSON's capability that
+// would carry another installation's seal.
+//
+// The invariant: a capability owned by a person is sealed to the organization's
+// installation of the audience it addresses. Every other person mint re-derives
+// the seal from the audience (StartTask, and remint for StartRootSession,
+// ExchangeAudience and RenewWorkContext). Core's Child cannot: a child keeps its
+// parent's seal, so a child for another audience would be a person's capability
+// sealed to an installation that is not its audience's, which a verifier reading
+// the seal as the audience's installation would misplace. (The gateway's
+// bearer-less module arm no longer reads the seal that way: it admits only what
+// AdmitWorkloadOperation, reading the owner, says is a module operation context.)
+//
+// A same-audience child keeps the seal its audience resolves to now, and is
+// minted. A service principal is sealed to its own installation, which the
+// audience does not change, and is not held here. Any other owner kind is
+// refused: the rule is stated for these two, and a kind it does not name is not
+// read as either.
+// TestAPersonsCapabilityIsSealedToItsAudiencesInstallation pins the invariant
+// over every person mint.
+func (s *WorkContextAuthorityServer) requireChildKeepsAudienceSeal(
+	ctx context.Context, parent *basev0.WorkContextV1, audience string,
+) error {
+	switch parent.GetOwnerPrincipalKind() {
+	case business.PrincipalKindHuman:
+	case business.PrincipalKindService:
+		return nil
+	default:
+		return status.Error(codes.PermissionDenied,
+			"a child Work Context is derived only from a person's or a service principal's")
+	}
+	installation, err := s.audienceInstallation(ctx, parent.GetTenantId(), audience)
+	if err != nil {
+		return err
+	}
+	if installation != parent.GetSeal().GetInstallationId() {
+		return status.Error(codes.PermissionDenied,
+			"a child of a person's Work Context keeps its parent's installation, so it may address only an audience sealed to that installation")
+	}
+	return nil
 }
 
 // RenewWorkContext lets the current actor of a delegated context re-issue it

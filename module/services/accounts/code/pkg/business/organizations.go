@@ -302,7 +302,7 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 			return w.Wrapf(err, "cannot check organization membership")
 		}
 		if !exists {
-			if err := quota.RequireAvailable(); err != nil {
+			if err := admitCardinality(ctx, req.OrgId, quota); err != nil {
 				return err
 			}
 		}

@@ -19,6 +19,7 @@ dashboard   composes layout + charts
 chat        composes layout atoms + SDK stream hook
 table/form  composes layout atoms (DataTable takes an injected TanStack table)
 board       composes layout atoms (one collection, in columns by a field)
+playground  composes layout + content (scenario frame and operation evidence)
    ↓
 Page.tsx    full freedom: composes any of the above + solution-specific code
 ```

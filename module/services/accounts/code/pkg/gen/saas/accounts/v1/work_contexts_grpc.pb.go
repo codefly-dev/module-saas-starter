@@ -24,6 +24,7 @@ const (
 	WorkContextService_CheckAuthorizationRevision_FullMethodName = "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision"
 	WorkContextService_AuthorizeEvidenceRead_FullMethodName      = "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead"
 	WorkContextService_ConsumeSingleUse_FullMethodName           = "/saas.accounts.v1.WorkContextService/ConsumeSingleUse"
+	WorkContextService_AdmitWorkloadOperation_FullMethodName     = "/saas.accounts.v1.WorkContextService/AdmitWorkloadOperation"
 	WorkContextService_StartTask_FullMethodName                  = "/saas.accounts.v1.WorkContextService/StartTask"
 	WorkContextService_StartInstallationTask_FullMethodName      = "/saas.accounts.v1.WorkContextService/StartInstallationTask"
 	WorkContextService_StartRootSession_FullMethodName           = "/saas.accounts.v1.WorkContextService/StartRootSession"
@@ -57,6 +58,19 @@ type WorkContextServiceClient interface {
 	// a replay and returns ALREADY_EXISTS. A caller must treat that as the
 	// capability being spent and fail the operation closed, not retry it.
 	ConsumeSingleUse(ctx context.Context, in *ConsumeSingleUseWorkContextRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// AdmitWorkloadOperation answers whether a capability presented with no
+	// bearer at the declared module route /v1/<alias>/* is a module operation
+	// context (StartModuleOperationTask) for that alias, and admits nothing else;
+	// and whether the route's target is installed in the capability's tenant.
+	// The auth-gateway's bearer-less arm is its caller. Unlike the revision
+	// checks above, the signed capability itself crosses this boundary: the
+	// answer depends on its owner, owner kind and chain, which only the issuer
+	// reads. It reads the capability back (core's Authority.ReadBack: signature
+	// under this issuer, window, audience, revision, seal, epochs) and never
+	// verifies it as presented, so nothing is consumed and the callee still
+	// verifies at full strength. Internal-tier: the tenant it answers about is
+	// the one the capability names.
+	AdmitWorkloadOperation(ctx context.Context, in *AdmitWorkloadOperationRequest, opts ...grpc.CallOption) (*AdmitWorkloadOperationResponse, error)
 	StartTask(ctx context.Context, in *StartTaskWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
 	// service credential rather than a bearer: it resolves the installation's owner
@@ -113,6 +127,16 @@ func (c *workContextServiceClient) ConsumeSingleUse(ctx context.Context, in *Con
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, WorkContextService_ConsumeSingleUse_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workContextServiceClient) AdmitWorkloadOperation(ctx context.Context, in *AdmitWorkloadOperationRequest, opts ...grpc.CallOption) (*AdmitWorkloadOperationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdmitWorkloadOperationResponse)
+	err := c.cc.Invoke(ctx, WorkContextService_AdmitWorkloadOperation_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -204,6 +228,19 @@ type WorkContextServiceServer interface {
 	// a replay and returns ALREADY_EXISTS. A caller must treat that as the
 	// capability being spent and fail the operation closed, not retry it.
 	ConsumeSingleUse(context.Context, *ConsumeSingleUseWorkContextRequest) (*emptypb.Empty, error)
+	// AdmitWorkloadOperation answers whether a capability presented with no
+	// bearer at the declared module route /v1/<alias>/* is a module operation
+	// context (StartModuleOperationTask) for that alias, and admits nothing else;
+	// and whether the route's target is installed in the capability's tenant.
+	// The auth-gateway's bearer-less arm is its caller. Unlike the revision
+	// checks above, the signed capability itself crosses this boundary: the
+	// answer depends on its owner, owner kind and chain, which only the issuer
+	// reads. It reads the capability back (core's Authority.ReadBack: signature
+	// under this issuer, window, audience, revision, seal, epochs) and never
+	// verifies it as presented, so nothing is consumed and the callee still
+	// verifies at full strength. Internal-tier: the tenant it answers about is
+	// the one the capability names.
+	AdmitWorkloadOperation(context.Context, *AdmitWorkloadOperationRequest) (*AdmitWorkloadOperationResponse, error)
 	StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error)
 	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
 	// service credential rather than a bearer: it resolves the installation's owner
@@ -244,6 +281,9 @@ func (UnimplementedWorkContextServiceServer) AuthorizeEvidenceRead(context.Conte
 }
 func (UnimplementedWorkContextServiceServer) ConsumeSingleUse(context.Context, *ConsumeSingleUseWorkContextRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ConsumeSingleUse not implemented")
+}
+func (UnimplementedWorkContextServiceServer) AdmitWorkloadOperation(context.Context, *AdmitWorkloadOperationRequest) (*AdmitWorkloadOperationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdmitWorkloadOperation not implemented")
 }
 func (UnimplementedWorkContextServiceServer) StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartTask not implemented")
@@ -334,6 +374,24 @@ func _WorkContextService_ConsumeSingleUse_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WorkContextServiceServer).ConsumeSingleUse(ctx, req.(*ConsumeSingleUseWorkContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkContextService_AdmitWorkloadOperation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdmitWorkloadOperationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkContextServiceServer).AdmitWorkloadOperation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkContextService_AdmitWorkloadOperation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkContextServiceServer).AdmitWorkloadOperation(ctx, req.(*AdmitWorkloadOperationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -464,6 +522,10 @@ var WorkContextService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ConsumeSingleUse",
 			Handler:    _WorkContextService_ConsumeSingleUse_Handler,
+		},
+		{
+			MethodName: "AdmitWorkloadOperation",
+			Handler:    _WorkContextService_AdmitWorkloadOperation_Handler,
 		},
 		{
 			MethodName: "StartTask",

@@ -22,6 +22,28 @@ and API-key creation serialize the authoritative count and insert in one tenant
 transaction. Expired pending invitations and expired or revoked API keys do not
 consume capacity.
 
+## Only a deployment that sells plans enforces them
+
+A plan's limits are what a customer bought, so they hold only on a deployment
+that sells plans. Selling plans is declared once, by the `billing`
+configuration group accounts already reads: `BILLING_PROVIDER=stripe` is a
+deployment that takes payment for plans, and `disabled` (the default) is one
+that sells none. Only a billing provider can move an organization off the
+default plan, so without one the plan rows describe nothing anyone bought.
+
+On a deployment that sells no plans every limit resolves as `-1`
+(unlimited) — seats, API keys, every meter, and every feature the default plan
+disables — and per-organization overrides are not consulted either. Usage is
+still recorded, receipts are still issued, and `GetUsage`, `ListUsageMeters`
+and the entitlement view report the unlimited limit they enforce. The
+`product-features` switches never decide this: they are presentation, and a
+flag never waives a quota.
+
+A refused admission (seat, API key, or a rejected usage receipt) is logged by
+accounts at WARN with the organization id, the feature, and the used and limit
+counts; the caller receives `ResourceExhausted` carrying the quota's own
+sentence, for example `seats quota exhausted: used 5 of 5`.
+
 ## Contract
 
 `saas.accounts.v1.UsageService` is generated from

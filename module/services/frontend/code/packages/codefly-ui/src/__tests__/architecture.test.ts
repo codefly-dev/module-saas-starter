@@ -28,6 +28,7 @@ const TIER_RANK: Record<string, number> = {
 	chat: 3,
 	table: 3,
 	board: 3,
+	playground: 3,
 	form: 3,
 };
 

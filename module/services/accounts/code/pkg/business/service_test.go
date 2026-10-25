@@ -193,7 +193,7 @@ func runBusinessTests(m *testing.M) int {
 	defer auditEmitter.Close()
 	service.SetAuditEmitter(auditEmitter)
 
-	entitlementChecker := business.NewDefaultEntitlementChecker(store)
+	entitlementChecker := business.NewDefaultEntitlementChecker(store, business.PlansSold)
 	service.SetEntitlementChecker(entitlementChecker)
 
 	// The audit_events.event_type foreign key (migration 116) resolves against

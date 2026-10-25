@@ -1,7 +1,6 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { Code, ConnectError } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createColumnHelper,
@@ -11,10 +10,9 @@ import {
 import { Shield, Trash2, UserPlus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-
-import { refusalToast } from "@/features/auth/model/step-up";
 import { RoleGate } from "@/components/auth/role-gate";
 import { UserPicker } from "@/components/user-picker";
+import { refusalMessage, refusalToast } from "@/features/auth/model/step-up";
 import { InvitationForm } from "@/features/invitations/ui/invitation-form";
 import { ManageMemberRolesDialog } from "@/features/roles/ui/manage-member-roles-dialog";
 import { useAuth } from "@/lib/auth";
@@ -60,20 +58,6 @@ const ASSIGNABLE_ROLES: Record<string, string> = {
 	owner: roleLabel("owner"),
 };
 
-// A membership change the server refuses on principle — the organization would
-// be left with no owner or admin — carries a reason the admin can act on. A
-// generic "Failed to remove member" would send them looking for an outage
-// instead of at the rule they hit.
-//
-// Deliberately only FailedPrecondition. Other codes carry wrapped internal
-// messages (a quota rejection reads "AddOrgMember: cannot add member: …"), and
-// a call path is not something to render to a user.
-export function memberErrorMessage(error: unknown, fallback: string): string {
-	if (!(error instanceof ConnectError)) return fallback;
-	if (error.code !== Code.FailedPrecondition) return fallback;
-	return error.rawMessage || fallback;
-}
-
 interface OrgMembersPanelProps {
 	orgId: string;
 	orgName: string;
@@ -114,16 +98,24 @@ export function OrgMembersPanel({
 	// successful read leaves the roster rendered and the message unreachable.
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "this organization's members");
-	const members: OrgMembership[] = (withheld ? [] : (raw?.members ?? [])).map(
-		(m) => ({
-			orgId: m.orgId,
-			userId: m.userId,
-			userEmail: m.userEmail,
-			role: toOrgRole(m.role as unknown as number),
-			joinedAt: m.joinedAt
-				? timestampDate(m.joinedAt).toISOString()
-				: undefined,
-		}),
+	// The table's rows keep their identity until the roster itself changes.
+	// TanStack Table treats a new `data` array as new rows and queues a page
+	// reset, which is a state update on this component; a fresh array on every
+	// render therefore re-renders forever. Started from a click — picking a user
+	// below — that loop runs at the click's synchronous priority in microtasks
+	// and freezes the tab.
+	const members = useMemo<OrgMembership[]>(
+		() =>
+			(withheld ? [] : (raw?.members ?? [])).map((m) => ({
+				orgId: m.orgId,
+				userId: m.userId,
+				userEmail: m.userEmail,
+				role: toOrgRole(m.role as unknown as number),
+				joinedAt: m.joinedAt
+					? timestampDate(m.joinedAt).toISOString()
+					: undefined,
+			})),
+		[withheld, raw],
 	);
 
 	const invalidateRoster = () => {
@@ -141,7 +133,7 @@ export function OrgMembersPanel({
 			setNewUserId("");
 		},
 		onError: (error) =>
-			refusalToast(error, memberErrorMessage(error, "Failed to add member")),
+			refusalToast(error, refusalMessage(error, "Failed to add member")),
 	});
 
 	const roleMutation = useMutation({
@@ -152,7 +144,7 @@ export function OrgMembersPanel({
 			invalidateRoster();
 		},
 		onError: (error) =>
-			refusalToast(error, memberErrorMessage(error, "Failed to change role")),
+			refusalToast(error, refusalMessage(error, "Failed to change role")),
 	});
 
 	const removeMutation = useMutation({
@@ -162,8 +154,14 @@ export function OrgMembersPanel({
 			invalidateRoster();
 		},
 		onError: (error) =>
-			refusalToast(error, memberErrorMessage(error, "Failed to remove member")),
+			refusalToast(error, refusalMessage(error, "Failed to remove member")),
 	});
+
+	// The columns depend on what they call, never on the mutation result objects
+	// themselves: those are new on every render, and a new column definition
+	// remounts every cell — each row's role picker and dialogs — on each render.
+	const { mutate: changeRole, isPending: changingRole } = roleMutation;
+	const { mutate: removeMember } = removeMutation;
 
 	const columns = useMemo(
 		() => [
@@ -180,10 +178,10 @@ export function OrgMembersPanel({
 						<Select
 							items={ASSIGNABLE_ROLES}
 							value={member.role}
-							disabled={roleMutation.isPending}
+							disabled={changingRole}
 							onValueChange={(next) => {
 								if (next && next !== member.role) {
-									roleMutation.mutate({
+									changeRole({
 										userId: member.userId,
 										role: next as OrgRole,
 									});
@@ -267,7 +265,7 @@ export function OrgMembersPanel({
 									<AlertDialogFooter>
 										<AlertDialogCancel>Cancel</AlertDialogCancel>
 										<AlertDialogAction
-											onClick={() => removeMutation.mutate(row.original.userId)}
+											onClick={() => removeMember(row.original.userId)}
 										>
 											Remove
 										</AlertDialogAction>
@@ -279,7 +277,7 @@ export function OrgMembersPanel({
 				},
 			}),
 		],
-		[removeMutation, roleMutation, orgId, orgName],
+		[changeRole, changingRole, removeMember, orgId, orgName],
 	);
 
 	const table = useReactTable({
