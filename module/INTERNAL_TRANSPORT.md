@@ -183,13 +183,13 @@ its own, and it is the internal tier **narrowed**:
   lists it, and `business.ValidateModuleAuthorityProcedures` — which runs in the
   catalog and deployment generators — holds every entry to one of two shapes:
   the module capability surface, which authenticates the calling module from its
-  verified Work Context and authorizes it against the grant its composition
-  declared; or one of two read-only authority oracles
+  verified Work Context (or, for `MintSourceOperationContext`, its workload
+  credential) and authorizes it against the grant its composition declared; or one of two read-only authority oracles
   (`CheckAuthorizationRevision`, `AuthorizeEvidenceRead`), which authorize on
   the perimeter credential alone and answer one bit about a capability the
   consumer already holds. Every other method is refused on this listener,
-  whatever credential it carries: the exchanges the gateway brokers (a module
-  never presents its own secret to accounts), the gateway's registries and
+  whatever credential it carries: a module's own Work Context and operation
+  context mints (the authority interface's Issue serves them), the gateway's registries and
   validators, the generic permission oracles, principal administration, and
   every method that authorizes on the perimeter credential alone **and mutates
   state** — `ConsumeUsage`, `StartInstallationTask`, and `ConsumeSingleUse`,
@@ -200,9 +200,14 @@ its own, and it is the internal tier **narrowed**:
   `AlreadyExists` on its own valid token, or fill the replay table for tenants it
   has no relationship with. Each joins the endpoint once it decides on a
   credential bound to the consuming module.
-- **Every call still carries the internal credential**, exactly as on the
-  private listener, and the capability surface still decides on the verified
-  Work Context and the module's declared grant.
+- **The capability surface asks no perimeter credential.** Each of its
+  methods proves the calling module itself — from its verified Work Context, or
+  for the one workload mint (`MintSourceOperationContext`) from the pod's
+  workload credential, reviewed and bound to its build — and decides on the
+  module's declared grant; a shared token would name no module and add nothing.
+  Its refusal names what the caller did not prove. Only the two read-only
+  oracles, which name no caller, still need the internal credential
+  (`business.ModuleAuthorityAuthenticatesCaller`).
 - **Transport is unchanged**: h2c, resolved rather than configured:
 
 ```go

@@ -3,8 +3,8 @@
 
 `ModuleCapabilitiesService.ExchangeDelegatedReadAudience` is an internal,
 read-only exchange for a module holding a current signed parent but no owner
-bearer. The module authenticates independently with its own module Work Context
-and the internal perimeter credential. Its request contains only `binding_id`
+bearer. The module authenticates independently with its own module Work Context;
+no perimeter credential is asked. Its request contains only `binding_id`
 and `parent_work_context_token`. No owner, actor, target audience or scope is
 caller selectable. The parent must address the authenticated module's installed
 prefix and tenant; the canonical current-revision and every-hop revocation

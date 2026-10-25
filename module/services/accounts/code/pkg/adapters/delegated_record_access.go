@@ -23,9 +23,6 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalCredential(ctx); err != nil {
-		return nil, err
-	}
 	authority := WorkContextSingleton()
 	if !authority.configured() {
 		return nil, status.Error(codes.Unavailable, "Work Context authority is not configured")

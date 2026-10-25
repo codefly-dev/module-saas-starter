@@ -85,13 +85,23 @@ func TestModuleAuthorityValidationRefusesACallerUnboundProcedure(t *testing.T) {
 	}
 
 	// A Mint* method is on the capability surface, so the service-prefix rule
-	// alone would admit it; it authenticates with the module pod's projected token
-	// rather than a Work Context and the gateway brokers it.
+	// alone would admit it; a module's own capability is the authority
+	// interface's Issue, so only a declared workload mint is served here.
 	moduleAuthorityProcedures = append(append([]string(nil), restore...),
 		"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext")
 	err := ValidateModuleAuthorityProcedures()
-	if err == nil || !strings.Contains(err.Error(), "projected ServiceAccount token") {
+	if err == nil || !strings.Contains(err.Error(), "authority interface's Issue") {
 		t.Errorf("a Mint* capability method must be refused by name, got %v", err)
+	}
+}
+
+// The source-delegation mint is served on the endpoint, where a module asks
+// for it with its workload credential: datasources are this host's, never the
+// authority interface's.
+func TestModuleAuthorityServesTheSourceDelegationMint(t *testing.T) {
+	const mint = "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext"
+	if !IsModuleAuthorityProcedure(mint) || !ModuleAuthorityAuthenticatesCaller(mint) {
+		t.Fatalf("%s must be served on the %q endpoint, authenticating its caller", mint, ModuleAuthorityEndpoint)
 	}
 }
 

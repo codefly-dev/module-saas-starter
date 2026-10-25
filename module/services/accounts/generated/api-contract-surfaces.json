@@ -23,6 +23,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
+        "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
         "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",

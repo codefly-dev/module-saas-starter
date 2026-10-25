@@ -346,8 +346,14 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 		if policy.Tier != business.RPCPolicyInternal || !business.IsModuleAuthorityProcedure(fullMethod) {
 			return ctx, status.Error(codes.PermissionDenied, "RPC is not exposed on the module authority endpoint")
 		}
+		// The module capability surface proves the calling module itself, from
+		// its Work Context or its workload credential, and refuses by name what
+		// the caller did not prove; no shared perimeter credential is asked.
+		if business.ModuleAuthorityAuthenticatesCaller(fullMethod) {
+			return ctx, nil
+		}
 		if !validInternalToken(firstMetadataValue(md, "x-codefly-internal-token")) {
-			return ctx, status.Error(codes.PermissionDenied, "internal service credential required")
+			return ctx, status.Error(codes.PermissionDenied, "internal service credential required: this read-only oracle names no calling module")
 		}
 		return ctx, nil
 	}
