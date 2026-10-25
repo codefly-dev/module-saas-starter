@@ -3,6 +3,9 @@ package business
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	"github.com/codefly-dev/core/wool"
 )
 
 // ModulePrefixOfWorkload names the one composed module a workload credential
@@ -10,7 +13,16 @@ import (
 // workload-owned issue, where no caller types a module name. The credential is
 // reviewed by the execution reviewer like every other presented token, and the
 // workload it authenticates must be declared by exactly one principal.
-func (s *Service) ModulePrefixOfWorkload(ctx context.Context, credential string) (string, error) {
+func (s *Service) ModulePrefixOfWorkload(ctx context.Context, credential string) (prefix string, err error) {
+	defer func() {
+		if err != nil {
+			reason := err.Error()
+			if credential != "" {
+				reason = strings.ReplaceAll(reason, credential, "[redacted workload credential]")
+			}
+			wool.Get(ctx).In("ModulePrefixOfWorkload").Warn("workload credential refused", wool.Field("reason", reason))
+		}
+	}()
 	if s.executionReviewer == nil {
 		return "", fmt.Errorf("%w: this host has no execution reviewer wired", ErrExecutionUnbound)
 	}
@@ -20,6 +32,9 @@ func (s *Service) ModulePrefixOfWorkload(ctx context.Context, credential string)
 	reviewed, err := s.executionReviewer.ReviewToken(ctx, credential, executionTokenAudience)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrExecutionTokenRejected, err)
+	}
+	if reviewed == nil {
+		return "", fmt.Errorf("%w: execution reviewer returned no workload identity", ErrExecutionUnbound)
 	}
 	modules := s.moduleRegistrySnapshot().registry
 	owners := principalsDeclaringWorkload(modules, reviewed.Namespace, reviewed.ServiceAccount)

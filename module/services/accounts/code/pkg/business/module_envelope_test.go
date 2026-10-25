@@ -288,19 +288,24 @@ func TestAManifestAskingForNoOperationGrantsNoConsumedOperations(t *testing.T) {
 	require.Empty(t, omitted, "a dimension the envelope does not allow is logged, never a refusal of the pass")
 }
 
-// A manifest that asks for nothing on any axis published no contract — the
-// shape of a module whose operations the composition prepares for it. For it
-// the envelope, the owner's written consent, stands whole.
-func TestAContractlessManifestHoldsTheEnvelopeWhole(t *testing.T) {
+// An empty signed authority declaration grants nothing, even when an existing
+// administrative envelope permits more. The manifest remains the ceiling.
+func TestAContractlessManifestCannotInheritEnvelopeAuthority(t *testing.T) {
 	envelope := parseTestEnvelope(t)
 	manifest := testManifest(t, map[string][]string{"invoke": {"profiles:read"}})
 	manifest.Authority = &solutionhost.Authority{Principal: testModulePrefix}
-	grant, omitted, err := deriveModulePrincipalGrant(testModulePrefix, envelope.Principals[testModulePrefix], manifest, []ModuleWorkload{testWorkload})
+	entry := envelope.Principals[testModulePrefix]
+	entry.Grant.CrossTenant = true
+	grant, omitted, err := deriveModulePrincipalGrant(testModulePrefix, entry, manifest, []ModuleWorkload{testWorkload})
 	require.NoError(t, err)
 	require.Empty(t, omitted)
-	ceiling := envelope.Principals[testModulePrefix].Grant
-	require.Equal(t, ceiling.Queues, grant.Queues)
-	require.Equal(t, ceiling.Namespaces, grant.Namespaces)
-	require.Equal(t, ceiling.Resources, grant.Resources)
-	require.Equal(t, ceiling.OperationAudiences, grant.OperationAudiences)
+	require.Empty(t, grant.Queues)
+	require.Empty(t, grant.Namespaces)
+	require.Empty(t, grant.Resources)
+	require.Empty(t, grant.OperationAudiences)
+	require.Empty(t, grant.ReadAudiences)
+	require.Empty(t, grant.ArtifactPolicies)
+	require.False(t, grant.CrossTenant)
+	require.Equal(t, testEnvelopeTenant, grant.Tenant)
+	require.Equal(t, []ModuleWorkload{testWorkload}, grant.Workloads)
 }

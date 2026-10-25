@@ -822,3 +822,17 @@ bindings. All targeted StartTask and module-actor tests, including action/resour
 pair preservation, pass. The default empty-store signed-delivery regression
 also passes with the updated Core dependency. New required fixture cases
 listed above remain unverified; no skipped or missing fixture is counted green.
+
+## Empty declarations and workload diagnostics
+
+A manifest declaring a principal but no authority no longer inherits an
+administrative envelope's grants. It retains its workload identity and any
+existing tenant restriction, but no content, queues, audit namespaces, operation
+bindings, artifact policies or cross-tenant permission. The signed manifest is
+the ceiling even when an older envelope permits more. Missing content in that
+manifest must be declared by its producer, not synthesized by Accounts.
+
+`ModulePrefixOfWorkload` logs every refusal's underlying reason, including
+reviewer failures and ambiguous or undeclared workloads. The presented credential
+is never a log field and is redacted if a reviewer echoes it in its error.
+The authority libraries are pinned to merged revision `c9cef7470d20`.

@@ -7,8 +7,8 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261025212731-aa487dff75ed
-	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261025010902-dc41de4126ae
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261025214748-c9cef7470d20
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261025214748-c9cef7470d20
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
 	github.com/codefly-dev/core v0.19.7-0.20261025185759-e501458995d0
 	github.com/codefly-dev/interface-cache/go/cache v0.4.1
@@ -61,7 +61,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cheggaaa/pb/v3 v3.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261023203940-e720ad2851c7 // indirect
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261025214748-c9cef7470d20 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
