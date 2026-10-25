@@ -37,6 +37,8 @@ type HostAuthorityServer struct {
 	authorityv1.UnimplementedAuthorityServiceServer
 	workContexts *WorkContextAuthorityServer
 	modules      *ModuleCapabilitiesServer
+	// roles answers solution roles; nil reads the service.
+	roles solutionRoleReader
 }
 
 // NewHostAuthorityServer adapts the Work Context authority.
@@ -125,6 +127,15 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		_ = as
 		if err := requireOrgMember(ctx, identity.EffectiveSubject.String(), identity.OrgID.String()); err != nil {
 			return nil, err
+		}
+		// A solution that declares roles decides what the person holds there.
+		authority, held, rerr := s.solutionRoles().PersonSolutionRoles(ctx, identity.OrgID.String(), identity.EffectiveSubject.String(), req.GetAudience())
+		if rerr != nil {
+			return nil, interfaceStatus(rerr)
+		}
+		if authority != nil {
+			issued, err = s.solutionPersonIssue(ctx, identity.OrgID.String(), req.GetAudience(), authority, held, scopes, ttl)
+			break
 		}
 		if len(scopes) == 0 {
 			// An empty ask is everything the person holds at the audience.

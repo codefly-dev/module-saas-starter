@@ -303,7 +303,7 @@ func SeedWithInstallations(ctx context.Context, service *business.Service, name 
 			orgOwnerIDs[organization.Name] = ownerID
 		}
 	}
-	seedTeams(ctx, w, service, f.Teams, orgIDs, userIDs)
+	teamIDs := seedTeams(ctx, w, service, f.Teams, orgIDs, userIDs)
 	agentIDs, err := seedAgents(ctx, w, service, f.Agents, orgIDs, userIDs)
 	if err != nil {
 		return nil, err
@@ -320,7 +320,7 @@ func SeedWithInstallations(ctx context.Context, service *business.Service, name 
 		return nil, err
 	}
 
-	installations, err := newInstallations(service, f.Installations, orgIDs, userIDs)
+	installations, err := newInstallations(service, f.Installations, orgIDs, userIDs, teamIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -816,8 +816,10 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 	return orgIDs, nil
 }
 
-// seedTeams creates teams from the fixture, idempotently.
-func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, teams []fixtureTeam, orgIDs, userIDs map[string]string) {
+// seedTeams creates teams from the fixture, idempotently, and answers each
+// seeded team's id by fixtureScopedKey(org, name).
+func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, teams []fixtureTeam, orgIDs, userIDs map[string]string) map[string]string {
+	ids := map[string]string{}
 	for _, team := range teams {
 		orgID, ok := orgIDs[team.Org]
 		if !ok {
@@ -850,6 +852,7 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 			teamID = teamResp.GetTeam().GetId()
 			w.Info("seeded team", wool.Field("name", team.Name))
 		}
+		ids[fixtureScopedKey(team.Org, team.Name)] = teamID
 
 		for _, email := range team.Members {
 			memberID, ok := userIDs[email]
@@ -868,6 +871,7 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 			}
 		}
 	}
+	return ids
 }
 
 func fixtureScopedKey(org, value string) string {

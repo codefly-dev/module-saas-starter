@@ -20,7 +20,8 @@ var ErrInstallTargetNotPresent = errors.New("no installable target answers to th
 // role, with ownerID as the accountable person (actorID when empty). It is the
 // resolver the host interface's Install names its arguments by: the target by
 // the name the composition gives it (the presence's route alias) and the role
-// by its name in the organisation's catalogue.
+// by its name: one of the solution's own roles when its delivery declares
+// them, the organisation catalogue's otherwise.
 //
 // It resolves and nothing more: the catalogue is the one ListAvailableSolutions
 // serves, so nothing is installable here that an administrator could not pick,
@@ -38,7 +39,18 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		existing, err := s.heldTargetInstallation(ctx, orgID, available.TargetID)
 		return existing, false, err
 	}
-	roleID, err := s.organizationRoleNamed(ctx, orgID, role)
+	// A solution that declares roles is installed holding one of its own: the
+	// role is the solution's word, never the organisation's catalogue's.
+	authority, err := s.deliveredTargetAuthority(ctx, available)
+	if err != nil {
+		return nil, false, err
+	}
+	var roleID string
+	if authority != nil {
+		roleID, err = s.solutionRoleID(ctx, orgID, available, authority, role)
+	} else {
+		roleID, err = s.organizationRoleNamed(ctx, orgID, role)
+	}
 	if err != nil {
 		return nil, false, err
 	}

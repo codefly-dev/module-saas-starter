@@ -68,12 +68,25 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 	// The owner's authority is re-read as the owner: the parent token is what
 	// proves the owner here.
 	ctx = accountsauth.WithVerifiedDatabaseIdentity(ctx, owner, tenant)
-	if err := s.workContexts.requireParentStands(ctx, claims); err != nil {
-		return nil, err
-	}
-	held, err := s.workContexts.ownerHoldsThrough(ctx, tenant, owner, req.GetAudience(), through)
+	decided, err := s.solutionParentStands(ctx, claims)
 	if err != nil {
 		return nil, err
+	}
+	if !decided {
+		if err := s.workContexts.requireParentStands(ctx, claims); err != nil {
+			return nil, err
+		}
+	}
+	// A solution's roles decide what the owner holds through it; otherwise
+	// the organisation's roles, by the check every mint makes.
+	held, decided, err := s.solutionHoldsThrough(ctx, claims, prefix, req.GetAudience(), through)
+	if err != nil {
+		return nil, err
+	}
+	if !decided {
+		if held, err = s.workContexts.ownerHoldsThrough(ctx, tenant, owner, req.GetAudience(), through); err != nil {
+			return nil, err
+		}
 	}
 	if len(held) == 0 {
 		return nil, status.Errorf(codes.PermissionDenied, "%s holds nothing at %s through operation binding %q", owner, req.GetAudience(), bindingID)

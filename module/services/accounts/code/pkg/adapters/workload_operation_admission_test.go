@@ -36,6 +36,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	"accounts/pkg/business/moduleregistrytest"
+	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -231,6 +232,16 @@ func workloadOperationRows() []admissionRow {
 				out, err := f.hop(parent, f.tool, "records", "documents")
 				require.NoError(t, err)
 				return f.issuer, "documents", out.GetToken()
+			}},
+		// A person's issue at a solution whose roles decide what they hold.
+		{"host interface solution role issue", "", human, person,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				issuer, server, _ := hostChildFixture(t)
+				server.roles = fixedSolutionRoles{"documents": {kinds: []string{"documents"}, held: []*basev0.WorkScopeV1{hopScope("documents", []string{"read"})}}}
+				out, err := server.Issue(stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, auth.Assurance{}),
+					&authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "documents"})
+				require.NoError(t, err)
+				return issuer, "documents", out.GetToken()
 			}},
 		// Person-owned unattended work: sealed elsewhere by design, still a person's.
 		{"source-operation context", "ModuleCapabilitiesService/MintSourceOperationContext", human, person,
@@ -456,6 +467,7 @@ var mintEntrypointRows = map[string][]string{
 	"(*WorkContextAuthorityServer).StartModuleTask":          {"module identity", "installer token route"},
 	"(*WorkContextAuthorityServer).StartModuleOperationTask": {"module operation context", "module operation context for its own module"},
 	"(*WorkContextAuthorityServer).mintBindingHop":           {"host interface binding hop"},
+	"(*WorkContextAuthorityServer).startRoleTask":            {"host interface solution role issue"},
 }
 
 // isSigningMethod reports the methods a signing function references: every method

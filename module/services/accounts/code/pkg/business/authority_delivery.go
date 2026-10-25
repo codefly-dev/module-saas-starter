@@ -130,53 +130,73 @@ func (s *Service) verifyAuthorityDocument(signed *compositionv1.SignedManifestV1
 // CheckDeliveredMethod reads the exact applied generation, re-verifying both
 // signatures with current pins. A pending generation cannot change live policy.
 func (s *Service) CheckDeliveredMethod(ctx context.Context, audience, method string, held []*basev0.WorkScopeV1) error {
-	if s.deliveryStore == nil || s.deliveryVerifier == nil {
+	doc, _, err := s.appliedAuthorityDocument(ctx, audience)
+	if err != nil {
+		return err
+	}
+	if doc == nil {
 		return fmt.Errorf("%s's delivery declares no method policy, so %s is refused", audience, method)
+	}
+	return checkMethodPolicy(doc, audience, method, held)
+}
+
+// appliedAuthorityDocument is the signed authority document delivered with the
+// applied generation of audience's manifest, both signatures re-verified with
+// current pins, beside that manifest. A principal with no applied delivery, or
+// one delivered without an authority document, answers nil and no error.
+func (s *Service) appliedAuthorityDocument(ctx context.Context, audience string) (*compositionv1.AuthorityManifestV1, *solutionhost.ModuleManifest, error) {
+	return s.appliedAuthorityDocumentOf(ctx, audience, func(_ string, manifest *solutionhost.ModuleManifest) bool {
+		return manifest.Authority.Principal == audience
+	})
+}
+
+// appliedAuthorityDocumentOf is appliedAuthorityDocument for the first applied
+// binding is chooses; audience names it in a refusal.
+func (s *Service) appliedAuthorityDocumentOf(ctx context.Context, audience string, is func(binding string, manifest *solutionhost.ModuleManifest) bool) (*compositionv1.AuthorityManifestV1, *solutionhost.ModuleManifest, error) {
+	if s.deliveryStore == nil || s.deliveryVerifier == nil {
+		return nil, nil, nil
 	}
 	records, err := s.ListSolutionHostBindings(ctx)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	for _, row := range records {
 		manifest, err := row.AppliedManifest()
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
-		if manifest == nil || manifest.Removed || manifest.Authority == nil || manifest.Authority.Principal != audience {
+		if manifest == nil || manifest.Removed || manifest.Authority == nil || !is(row.BindingID, manifest) {
 			continue
 		}
 		var record *SolutionDeliveryRecord
-		if s.deliveryStore == nil || s.deliveryVerifier == nil {
-			break
-		}
 		err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 			var e error
 			record, e = s.deliveryStore.ReadDeliveredDocument(ctx, row.BindingID, manifest.Generation)
 			return e
 		})
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		if record == nil {
-			break
+			return nil, nil, nil
 		}
 		core, err := solutionhost.VerifyDelivered(ctx, carrierOf(record), s.deliveryVerifier)
 		if err != nil {
-			return fmt.Errorf("%s delivery does not verify: %w", audience, err)
+			return nil, nil, fmt.Errorf("%s delivery does not verify: %w", audience, err)
 		}
 		if delivery.Digest(core.Payload()) != row.Applied.Digest {
-			return fmt.Errorf("%s applied delivery digest differs from its inbox", audience)
+			return nil, nil, fmt.Errorf("%s applied delivery digest differs from its inbox", audience)
 		}
 		if record.AuthorityDocument == nil {
-			break
+			return nil, nil, nil
 		}
 		doc, err := s.verifyAuthorityDocument(&compositionv1.SignedManifestV1{Document: record.AuthorityDocument, Envelope: record.AuthorityEnvelope}, core)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
-		return checkMethodPolicy(doc, audience, method, held)
+		return doc, manifest, nil
 	}
-	return fmt.Errorf("%s's delivery declares no method policy, so %s is refused", audience, method)
+	return nil, nil, nil
 }
 
 func checkMethodPolicy(doc *compositionv1.AuthorityManifestV1, audience, method string, held []*basev0.WorkScopeV1) error {

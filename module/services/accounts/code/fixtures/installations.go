@@ -14,12 +14,14 @@ import (
 // fixtureInstallation is one installation a fixture declares: the organisation
 // installing, the target by the name the composition gives it, the role it
 // holds, and the administrator who installs it and is its owner of record. It
-// is the host interface's Install by name, performed by a fixture person.
+// is the host interface's Install by name, performed by a fixture person, then
+// its GrantToTeam for each team named: the teams whose members hold its role.
 type fixtureInstallation struct {
-	Org    string `yaml:"org"`
-	Target string `yaml:"target"`
-	Role   string `yaml:"role"`
-	Owner  string `yaml:"owner"`
+	Org    string   `yaml:"org"`
+	Target string   `yaml:"target"`
+	Role   string   `yaml:"role"`
+	Owner  string   `yaml:"owner"`
+	Teams  []string `yaml:"teams,omitempty"`
 }
 
 func (i fixtureInstallation) describe() string {
@@ -77,12 +79,14 @@ type pendingInstallation struct {
 	declared fixtureInstallation
 	orgID    string
 	ownerID  string
+	// teamIDs are the declared teams not exposed yet.
+	teamIDs []string
 	// waiting is set once the first pass found the target undelivered, so the
 	// wait is said once rather than at every pass.
 	waiting bool
 }
 
-func newInstallations(service *business.Service, declared []fixtureInstallation, orgIDs, userIDs map[string]string) (*Installations, error) {
+func newInstallations(service *business.Service, declared []fixtureInstallation, orgIDs, userIDs, teamIDs map[string]string) (*Installations, error) {
 	if len(declared) == 0 {
 		return nil, nil
 	}
@@ -96,7 +100,15 @@ func newInstallations(service *business.Service, declared []fixtureInstallation,
 		if !ok {
 			return nil, fmt.Errorf("installation %s references unknown owner %q", installation.describe(), installation.Owner)
 		}
-		installations.pending = append(installations.pending, pendingInstallation{declared: installation, orgID: orgID, ownerID: ownerID})
+		row := pendingInstallation{declared: installation, orgID: orgID, ownerID: ownerID}
+		for _, team := range installation.Teams {
+			teamID, ok := teamIDs[fixtureScopedKey(installation.Org, team)]
+			if !ok {
+				return nil, fmt.Errorf("installation %s references team %q, which the fixture does not seed in %q", installation.describe(), team, installation.Org)
+			}
+			row.teamIDs = append(row.teamIDs, teamID)
+		}
+		installations.pending = append(installations.pending, row)
 	}
 	return installations, nil
 }
@@ -127,10 +139,23 @@ func (i *Installations) Converge(ctx context.Context) error {
 		case err != nil:
 			failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
 			remaining = append(remaining, row)
-		case installed:
-			w.Info("fixture installation installed", wool.Field("installation", row.declared.describe()), wool.Field("installation_id", installation.GetId()))
 		default:
-			w.Info("fixture installation already held, reusing", wool.Field("installation", row.declared.describe()), wool.Field("installation_id", installation.GetId()))
+			if installed {
+				w.Info("fixture installation installed", wool.Field("installation", row.declared.describe()), wool.Field("installation_id", installation.GetId()))
+			}
+			// Each declared team is exposed once the installation admits it (an
+			// installation still pending its install step does not); one not
+			// exposed yet keeps the row for the next pass.
+			unexposed := row.teamIDs[:0]
+			for _, teamID := range row.teamIDs {
+				if _, err := i.service.ExposeHostInstallation(ctx, row.ownerID, row.orgID, installation.GetId(), teamID); err != nil {
+					failures = append(failures, fmt.Errorf("fixture installation %s: expose to team %s: %w", row.declared.describe(), teamID, err))
+					unexposed = append(unexposed, teamID)
+				}
+			}
+			if row.teamIDs = unexposed; len(row.teamIDs) > 0 {
+				remaining = append(remaining, row)
+			}
 		}
 	}
 	i.pending = remaining

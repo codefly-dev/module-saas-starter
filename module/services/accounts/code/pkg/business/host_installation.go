@@ -35,6 +35,7 @@ func (s *Service) ReadHostInstallation(ctx context.Context, orgID, id string) (*
 		if err != nil {
 			return err
 		}
+		out.Role = SolutionRoleOf(out.Role)
 		exposure, err := s.installationStore().ListInstallationExposure(ctx, orgID, []string{id})
 		if err != nil {
 			return err
