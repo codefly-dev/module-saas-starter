@@ -20,9 +20,14 @@ serves on a laptop is served here on a cell, and the authority interface reposit
 - `code/pkg/adapters/host_interface.go`: the adapters. `Keys` and `Check` are the
   Work Context authority's issuer, key and `verifyFor`. `Issue` maps by owner
   shape: a person → `StartTask` for the bearer's own session; an installation →
-  `StartInstallationTask`; a parent token → `StartChildSession` with an actor,
-  `ExchangeAudience` without. `List` → `ListInstallations`. `SignIn` → fixture
-  `Authenticate`, returning the access token's session id.
+  `StartInstallationTask`; a workload → the headless operation-context mint
+  through a binding it declares, or its own module context
+  (`host_interface_workload.go`); a parent token with an actor → the hop
+  through the actor's binding, without one → `ExchangeAudience` at another
+  audience, or a renewal at the parent's own (`RenewWorkContext` for a
+  delegated parent, `StartRootSession` for an owner's own); a delegation →
+  Unimplemented, naming the delegation gap. `List` → `ListInstallations`.
+  `SignIn` → fixture `Authenticate`, returning the access token's session id.
 - `code/pkg/adapters/connect_handlers_host_interface.go` + `connect_bindings.yaml`:
   the Connect handlers and their bindings, in the shape every other service uses.
 
@@ -30,10 +35,11 @@ serves on a laptop is served here on a cell, and the authority interface reposit
 
 1. **Closed.** The service catalog carries one `api_package` (the service's own) and the `interface_packages` it implements beside it (`catalog.proto` field 9; `service_catalog.go`); the frontend catalog, the gateway route aliases and the mesh gates read the API package only. Four tests that hard-coded one package now read the served set.
 2. **Closed.** `cmd/connect-registration` resolves a binding by full service name first and short name otherwise, and imports each implemented package's generated Go and Connect packages under derived aliases; `connect_bindings.yaml` keys the four interface services by full name. The authorization matrix counts services by full name.
-3. **Workload-owned Issue** is minted on the gateway's workload endpoint
-   (`/modules/_operation-context`) from a pod token and an installed binding, not
-   on an accounts RPC. Moving the broker's attestation behind `Issue` is the fix;
-   the adapter returns Unimplemented naming it.
+3. **Closed.** Workload-owned `Issue` is served: the credential names the
+   module (`ModulePrefixOfWorkload`), and the issue is the headless
+   operation-context mint through a declared binding, narrowed to the asked
+   scopes, operation and lifetime, or the module's own context (see "Review r12
+   repairs" below).
 4. **Method-policy delivery closed (2026-10-25).** `ApplyManifest` accepts the
    signed core carrier and its optional signed `AuthorityManifestV1` through
    the tenant listener. The existing delivery owner authenticates the carrier,
@@ -641,6 +647,52 @@ refuses, and the newer suite's case (authority `3925878` onwards) needs a
 pin move and a harness installation of a solution with its workload. Unit
 tests in `pkg/adapters` cover issuance, roles and `ListResources`; no composed
 run was made.
+
+## Review r12 repairs (2026-10-25)
+
+Review r12 of #1217 found one blocker and four majors in the interface
+adapters; each is fixed where the behaviour lives, with a test that fails
+without it.
+
+- **`Check` holds a method to the actor, not the owner.** A named method is held
+  to the call's effective scopes (the last hop's grant, the set `ListResources`
+  already used), so an actor delegated `read` by an owner holding `read` and
+  `write` no longer passes a method requiring `write`
+  (`TestCheckHoldsAMethodToWhatTheActorWasDelegated`).
+- **A workload's issue is what it asked for, within its binding.** The ceiling is
+  the installed binding's headless grant, or for `lookup` the binding's lookup
+  scopes within it. An empty ask is the whole ceiling; a scope outside it,
+  `invoke`, an undeclared lookup, an audience other than the binding's and a
+  negative lifetime are refused by name; a lifetime only shortens (60 s ceiling
+  for an operation context, 15 min for the module's own). The narrowed scopes
+  are what the issuance audit records, and they stay within the headless grant
+  the revision check confirms.
+- **Exchange and renewal through `Issue`.** The organisation is forwarded (the
+  request's, or the parent's own); an empty exchange ask is the parent's
+  effective scopes; at the parent's own audience the issue is a renewal.
+- **A workload's own context is reachable.** Every shape is authenticated first
+  (bearer, workload or actor credential), and only then is its audience held to
+  the composition, so `module-capabilities` is reached and an uncomposed
+  audience is still NotFound by name, while a bearer-less caller learns nothing
+  of which modules are composed.
+- **Minor repairs.** A hop from a parent narrowed to nothing of a kind is refused
+  (core signs no such parent today; the rule is held at the unit). A refused
+  workload or actor credential names its classified cause. The hop runs the
+  audience guards every mint runs, and no binding may be addressed to
+  `module-capabilities`. A resource question no longer reports a registered
+  scope node of another kind as an id of the asked kind
+  (`TestScopedResourceIDsNameOnlyResourcesOfTheAskedKind`); scoped assignments
+  are still read as exact ids, as the mint reads them, not expanded as subtrees.
+  An applied authority document is verified once per binding generation
+  (`TestAnAppliedAuthorityDocumentIsVerifiedOncePerGeneration`), and an
+  unparsable applied row no longer fails every other binding's answer.
+
+The shared suite, run as "Current suite baseline" states, gives **15 passed, 3
+failed, 3 skipped** of 21 cases, the same as the branch before these repairs:
+the installation case (its fixture names no installed solution audience), the
+child hop (the person holds nothing under the `documents` binding in this
+harness) and install/grant (the installation is still pending) fail before
+reaching anything changed here.
 
 ## Combined integration on 2026-10-25
 
