@@ -48,8 +48,12 @@ import (
 	"accounts/pkg/infra"
 )
 
-// fixtureOrganization is Acme Corp in the dev-admin fixture.
-const fixtureOrganization = "00000000-0000-7000-8000-0000000000c1"
+// fixtureOrganization is Acme Corp in the harness's fixture, and
+// conformanceAlex one of its administrators.
+const (
+	fixtureOrganization = "00000000-0000-7000-8000-0000000000c1"
+	conformanceAlex     = "00000000-0000-7000-8000-0000000000b3"
+)
 
 func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	if os.Getenv("HOST_INTERFACE_CONFORMANCE") == "" {
@@ -108,13 +112,17 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
 	}))
 
-	// The people: the dev-admin fixture, signed in through the fixture provider.
-	fixturePath, err := fixtures.FixturePath("dev-admin")
+	// The people: the harness's fixture (the dev-admin people, with the roles,
+	// assignments and installations the suite needs), signed in through the
+	// fixture provider and seeded through the fixture path production runs.
+	t.Setenv("DEV_FIXTURE_PATH", conformanceFixturePath(t))
+	fixturePath, err := fixtures.FixturePath(conformanceFixtureName)
 	require.NoError(t, err)
 	validator, err := Package.New(fixturePath)
 	require.NoError(t, err)
 	svc.SetDevelopmentTokenValidator(validator)
-	require.NoError(t, fixtures.Seed(ctx, svc, "dev-admin"))
+	installations, err := fixtures.SeedWithInstallations(ctx, svc, conformanceFixtureName)
+	require.NoError(t, err)
 
 	// The composition: two module principals the host knows, as the module
 	// registry would hold them after delivery.
@@ -125,9 +133,16 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 	// a pod of org-directory's workload would present.
 	// documents and model also run as workloads, each with a binding to the
 	// other, so a delegate chain crosses from one to the other and back.
+	// conformance-agent is a module whose tools binding reaches an installed
+	// solution; conformance-idle is a declared workload with no active
+	// installation anywhere; model also binds to itself across both its kinds
+	// (a self binding admits itself headless, as a module's own trigger does).
 	reads := []business.ModuleOperationScope{{ResourceKind: "example-records", Actions: []string{"invoke", "read"}}}
 	lookups := []business.ModuleOperationScope{{ResourceKind: "example-records", Actions: []string{"read"}}}
-	invokes := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke"}}}
+	invokes := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}}}
+	modelSelf := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}}, {ResourceKind: "modelservice.datasets", Actions: []string{"read"}}}
+	tools := []business.ModuleOperationScope{{ResourceKind: "conformance-proposals.item", Actions: []string{"read"}}}
+	idle := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"read"}}}
 	registry := business.ModulePrincipalRegistry{
 		business.ModulePrincipalID("documents"): {
 			Prefix: "documents", Resources: []string{"example-records"}, Tenant: fixtureOrganization,
@@ -144,10 +159,25 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 			},
 		},
 		business.ModulePrincipalID("model"): {
-			Prefix: "model", Resources: []string{"modelservice.profiles"}, Tenant: fixtureOrganization,
+			Prefix: "model", Resources: []string{"modelservice.profiles", "modelservice.datasets"}, Tenant: fixtureOrganization,
 			Workloads: []business.ModuleWorkload{{Namespace: "model", ServiceAccount: "model", Container: "app"}},
 			OperationAudiences: map[string]business.ModuleOperationAudience{
 				"records": {Audience: "documents", InvokeScopes: reads, LookupScopes: lookups},
+				"self":    {Audience: "model", InvokeScopes: modelSelf, HeadlessScopes: modelSelf},
+			},
+		},
+		business.ModulePrincipalID("conformance-agent"): {
+			Prefix: "conformance-agent", Resources: []string{"conformance-agent.conversation"},
+			Workloads: []business.ModuleWorkload{{Namespace: "conformance-agent", ServiceAccount: "conformance-agent", Container: "app"}},
+			OperationAudiences: map[string]business.ModuleOperationAudience{
+				"tools": {Audience: "conformance-proposals", InvokeScopes: tools},
+			},
+		},
+		business.ModulePrincipalID("conformance-idle"): {
+			Prefix: "conformance-idle", Resources: []string{"conformance-idle.task"},
+			Workloads: []business.ModuleWorkload{{Namespace: "conformance-idle", ServiceAccount: "conformance-idle", Container: "app"}},
+			OperationAudiences: map[string]business.ModuleOperationAudience{
+				"model": {Audience: "model", InvokeScopes: idle, HeadlessScopes: idle},
 			},
 		},
 	}
@@ -156,12 +186,23 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 	workloadCredential := cluster.Run(executiontest.Workload{Namespace: "org-directory", ServiceAccount: "org-directory", Container: "app"})
 	documentsCredential := cluster.Run(executiontest.Workload{Namespace: "documents", ServiceAccount: "documents", Container: "app"})
 	modelCredential := cluster.Run(executiontest.Workload{Namespace: "model", ServiceAccount: "model", Container: "app"})
-	svc.SetModuleCapabilities(store, nil, nil)
+	credential := func(name string) string {
+		return cluster.Run(executiontest.Workload{Namespace: name, ServiceAccount: name, Container: "app"})
+	}
+	// The install steps are queued on the host's own job store, which the
+	// harness claims and finishes as a gateway replica does.
+	jobPool, err := infra.NewJobWorkerPool(ctx)
+	require.NoError(t, err)
+	t.Cleanup(jobPool.Close)
+	svc.SetModuleCapabilities(store, infra.NewPostgresJobStore(jobPool), nil)
+	// Uninstalling narrows authority, which the host does only once the policy
+	// log witnesses it; the log is external, so it stands in at its seam.
+	svc.SetPolicyLog(&memoryPolicyLog{}, store)
 
 	// Composition installs a module at every organisation (contract decision of
 	// 2026-10-22): the live module authority answers for every declared principal.
 	composed := compositiontest.NewComposedModuleInstallations(svc, store)
-	svc.SetModuleAuthorityReads(composed, nil)
+	svc.SetModuleAuthorityReads(withdrawnModuleInstallations{ComposedModuleInstallations: composed, withdrawn: "conformance-idle"}, nil)
 	svc.SetWorkContextSealStore(composed)
 
 	// Signed delivery uses the production inbox, verifier and reconciler. The
@@ -250,6 +291,71 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 	}, 20*time.Second, 100*time.Millisecond, "the Connect listener did not come up")
 
 	if fullSuite {
+		// The solutions, delivered as the CLI delivers them, then installed by
+		// the fixture's declared installations: each is pending until its
+		// install step is acknowledged, and exposed to its teams after.
+		// conformance-pages carries the roles, routes and binding the suite's
+		// solution-role cases deliver at the next generation.
+		pagesViewer := []*authorityv1.WorkScopeV1{wireScope("conformance-pages.page", "read"), wireScope("example-records", "write")}
+		for _, solution := range []conformanceSolution{{
+			alias: "conformance-pages", generation: 1,
+			ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-pages.page", "read", "write", "publish")},
+			roles: map[string][]*authorityv1.WorkScopeV1{
+				"installer": {wireScope("conformance-pages.page", "read", "write", "publish"), wireScope("example-records", "write")},
+				"editor":    {wireScope("conformance-pages.page", "read", "write")},
+				"viewer":    pagesViewer,
+			},
+			methods: []*compositionv1.MethodPolicyV1{
+				{Method: "GET /items/{id}", Requires: pagesViewer[:1]},
+				{Method: "POST /items/{id}", Requires: []*authorityv1.WorkScopeV1{wireScope("conformance-pages.page", "write")}},
+				{Method: "GET /open/{path=**}", AnyCheckedCaller: true},
+			},
+			bindings: []solutionhost.AuthorityBinding{{ID: "documents", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:write"}}}},
+		}, {
+			// What a module's tools binding reaches: finance is entitled, engineering is not.
+			alias: "conformance-proposals", generation: 1,
+			ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-proposals.item", "read", "write")},
+			roles: map[string][]*authorityv1.WorkScopeV1{
+				"installer": {wireScope("conformance-proposals.item", "read", "write")},
+				"viewer":    {wireScope("conformance-proposals.item", "read")},
+			},
+			methods: []*compositionv1.MethodPolicyV1{{Method: "/tools.Solution/Read", Requires: []*authorityv1.WorkScopeV1{wireScope("conformance-proposals.item", "read")}}},
+		}, {
+			// An installation that acts for itself down a chain of three modules.
+			alias: "conformance-assistant", generation: 1,
+			ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-assistant.page", "read")},
+			roles: map[string][]*authorityv1.WorkScopeV1{
+				"installer": {wireScope("conformance-assistant.page", "read")},
+				"viewer": {wireScope("conformance-assistant.page", "read"), wireScope("directory.entry", "read"),
+					wireScope("example-records", "read"), wireScope("modelservice.profiles", "invoke", "read")},
+			},
+			bindings: []solutionhost.AuthorityBinding{
+				{ID: "directory", Audience: "org-directory", Operations: map[string][]string{"invoke": {"directory.entry:read"}}},
+				{ID: "documents", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:read"}}},
+				{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read"}}},
+			},
+		}} {
+			deliverSolution(t, ctx, conn, signer, solution)
+		}
+		// The first pass installs; a team is not exposed to a pending
+		// installation, so its exposures wait for the second pass, which must
+		// then converge every declared installation.
+		if err := installations.Converge(ctx); err != nil {
+			t.Logf("installations before their install steps are acknowledged: %v", err)
+		}
+		require.NoError(t, acknowledgeInstallSteps(ctx, svc))
+		require.NoError(t, installations.Converge(ctx), "acknowledged installations are exposed to their teams")
+		pages := installationOf(t, ctx, conn, "fixture-alex", "conformance-pages")
+		assistant := installationOf(t, ctx, conn, "fixture-alex", "conformance-assistant")
+		pagesCredential, assistantCredential := credential("conformance-pages"), credential("conformance-assistant")
+
+		// A delegate chain (gap 14): an administrator issued at documents;
+		// documents hops to model through its binding for what the first token
+		// never carried, then model hops back to documents through its own.
+		chain := conformance.Chain{Token: "fixture-alex", Start: "documents", Hops: []conformance.Hop{
+			{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
+			{Credential: modelCredential, Binding: "records", Audience: "documents", AskKind: "example-records", AskAction: "read"},
+		}}
 		conformance.Run(t, conn, registeredDescriptors(t), conformance.Fixture{
 			Organization:   fixtureOrganization,
 			HostCoordinate: "conformance-host", HostDomain: "acme",
@@ -260,20 +366,66 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 			Audience: "documents", ReadKind: "example-records",
 			// The credential a pod of org-directory's declared workload presents.
 			WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
-			// GAP (HOST_INTERFACE.md 4, fixture): the fixture installs no solution;
-			// the lines this makes red are the gap list.
-			InstalledSolution: "",
+			// The installed pages solution and its own workload.
+			InstalledSolution: pages, InstalledAudience: "conformance-pages", InstalledCredential: pagesCredential,
+			// An Acme owner who is not an administrator; a member with no role and no team.
+			OwnerToken: "fixture-owner", UnentitledToken: "fixture-no-roles",
+			// Maya, on finance, views the pages; Nora holds no role there. The
+			// viewer role writes example records at documents through the
+			// solution's binding, never on its own.
+			SolutionRoles: &conformance.SolutionRoleCase{
+				Solution: "conformance-pages", Credential: pagesCredential, Token: "fixture-maya", Outsider: "fixture-no-roles",
+				OwnKind: "conformance-pages.page", OwnActions: []string{"read", "write", "publish"},
+				Binding: "documents", Audience: "documents", ConsumedKind: "example-records", ConsumedAction: "write", ForbiddenAction: "ingest", Generation: 2,
+			},
+			// Both Maya and Remi use the agent; only Maya's team holds the proposals.
+			SolutionTools: &conformance.SolutionToolsCase{Token: "fixture-maya", Outsider: "fixture-remi", Module: "conformance-agent", Credential: credential("conformance-agent"),
+				Binding: "tools", Audience: "conformance-proposals", Kind: "conformance-proposals.item", Action: "read", Method: "/tools.Solution/Read"},
+			// org-directory is installed at both organisations; conformance-idle at none.
+			WorkloadOrganizations: &conformance.WorkloadOrganizationsCase{
+				Ambiguous: conformance.WorkloadOrganizationCase{Credential: workloadCredential, Module: "org-directory", Binding: "documents", Audience: "documents"},
+				None:      conformance.WorkloadOrganizationCase{Credential: credential("conformance-idle"), Module: "conformance-idle", Binding: "model", Audience: "model"},
+			},
+			// Maya reads one example record by grant, not the kind.
+			Resources: &conformance.ResourceCase{Token: "fixture-maya", Audience: "documents", Kind: "example-records", Action: "read",
+				Covered: []string{"conformance-record-a"}, Uncovered: []string{"conformance-record-b"}, Unheld: "write"},
+			// Alex lets the directory page invoke example records for him; Bob, a
+			// reader, cannot delegate what he does not hold.
+			Delegation: &conformance.DelegationCase{Token: "fixture-alex", Outsider: "dev-bob", Module: "org-directory", Credential: workloadCredential,
+				Binding: "documents", Audience: "documents", Kind: "example-records", Action: "invoke"},
+			// Alex's chain below, projected through each target binding.
+			ChildScopes: &conformance.ChildScopesCase{Chain: chain, FirstActions: []string{"invoke", "read"}, NextActions: []string{"invoke", "read"},
+				OutsideKind: "example-records", OutsideAction: "read", ResourceID: "a", OtherResourceID: "b", DroppedAction: "invoke"},
+			// Alex at model, out to documents and back, keeps what the root narrowed.
+			ParentLimits: &conformance.ParentLimitsCase{Token: "fixture-alex", Root: "model", Credential: modelCredential, SelfBinding: "self",
+				Kind: "modelservice.profiles", DroppedKind: "modelservice.datasets", Action: "read", DroppedAction: "invoke", ResourceID: "a", OtherResourceID: "b",
+				Out:  conformance.Hop{Credential: modelCredential, Audience: "documents", Binding: "records"},
+				Back: conformance.Hop{Credential: documentsCredential, Audience: "model", Binding: "model"}},
+			// The assistant's installation, acting for itself through three modules.
+			InstallationChain: &conformance.InstallationChainCase{Installation: assistant, Source: "conformance-assistant", Credential: assistantCredential,
+				Hops: []conformance.Hop{
+					{Credential: assistantCredential, Binding: "directory", Audience: "org-directory", AskKind: "directory.entry", AskAction: "read"},
+					{Credential: workloadCredential, Binding: "documents", Audience: "documents", AskKind: "example-records", AskAction: "read"},
+					{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
+				}},
+			// The suite delivers conformance-lifecycle and installs it; its step
+			// waits until the harness acknowledges it, and uninstalling revokes it.
+			Lifecycle: &conformance.InstallationLifecycleCase{
+				Target: "conformance-lifecycle", Credential: credential("conformance-lifecycle"), Kind: "conformance-lifecycle.page",
+				Team: teamNamed(t, ctx, svc, fixtureOrganization, "Finance"),
+				PauseInstall: func() func() {
+					var once sync.Once
+					return func() { once.Do(func() { require.NoError(t, acknowledgeInstallSteps(ctx, svc)) }) }
+				},
+				Revoke: func(ctx context.Context, id string) error {
+					return svc.UninstallSolution(ctx, conformanceAlex, fixtureOrganization, id)
+				},
+			},
 			// The permission matrix over the composed audiences, as the dev-admin
 			// fixture states it: a collection reader, Acme administrators (one of
 			// them a person of the authority's fixture), a member who holds no
 			// role, and a Globex member who holds nothing at Acme's content.
-			// A delegate chain (gap 14): an administrator issued at documents;
-			// documents hops to model through its binding for what the first token
-			// never carried, then model hops back to documents through its own.
-			Chain: &conformance.Chain{Token: "fixture-alex", Start: "documents", Hops: []conformance.Hop{
-				{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
-				{Credential: modelCredential, Binding: "records", Audience: "documents", AskKind: "example-records", AskAction: "read"},
-			}},
+			Chain: &chain,
 			// The same binding read as a lookup carries its lookup scopes alone.
 			Lookup: &conformance.LookupCase{Token: "fixture-alex", Start: "model", Credential: modelCredential, Binding: "records",
 				Audience: "documents", Kind: "example-records", Invoke: "invoke", Lookup: "read"},
