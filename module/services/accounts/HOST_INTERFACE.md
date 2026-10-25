@@ -836,3 +836,21 @@ manifest must be declared by its producer, not synthesized by Accounts.
 reviewer failures and ambiguous or undeclared workloads. The presented credential
 is never a log field and is redacted if a reviewer echoes it in its error.
 The authority libraries are pinned to merged revision `c9cef7470d20`.
+
+## The harness supplies every fixture the suite asks for (2026-10-25)
+
+Against the suite at authority `aa487dff` (now the pinned dependency), the
+harness seeds its own fixture, `code/pkg/adapters/testdata/host-interface-conformance.yaml`
+(the dev-admin people plus an owner who is not an administrator, a member with
+no role, a resource-limited record grant and the module roles), delivers three
+solutions through `ApplyManifest`, installs them through the fixture's declared
+installations, acknowledges each install step through the host's own claim and
+finish, and exposes them to their teams. Only external sources stand in: the
+cluster, the composition's module authority (one module withdrawn for the
+absent-organization case) and the policy log the uninstall path requires.
+
+Before: 13 of 45 direct cases passed, 32 failed, most of them for a missing
+fixture. After: 21 pass, 24 fail, and none fails for a missing fixture; each
+remaining red line is host behaviour, listed with its refusal and location in
+the coordination worklist. Production wires no policy log, so the lifecycle's
+revocation proves the uninstall path, not a deployed host's ability to revoke.
