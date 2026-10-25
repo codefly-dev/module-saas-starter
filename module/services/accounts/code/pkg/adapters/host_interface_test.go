@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -175,5 +176,14 @@ func TestAnIssueWithNoAudienceIsAWorkloadThroughABinding(t *testing.T) {
 		if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "names its audience") {
 			t.Errorf("%s: %v, want the audience refused by name", name, err)
 		}
+	}
+}
+
+// An envelope write refused for want of the policy log's witness tells the
+// writer why, as FailedPrecondition, instead of an internal error.
+func TestAnUnwitnessedEnvelopeNarrowingIsRefusedByName(t *testing.T) {
+	err := moduleEnvelopeError(fmt.Errorf("cannot write the module envelope: %w", business.ErrPolicyLogUnreachable), "cannot write the module envelope")
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "policy log") {
+		t.Fatalf("got %v, want FailedPrecondition naming the policy log", err)
 	}
 }
