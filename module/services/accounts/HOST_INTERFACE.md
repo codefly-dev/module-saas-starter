@@ -116,8 +116,9 @@ What it took, each a fix at the place that owns the behaviour:
   is the host's operation context when a binding is named, the module's own
   context otherwise; an undeclared binding is NotFound by name.
 - *An operation context names its binding*: the seal source resolves
-  `module-operation/<principal>/<binding>` from the installed grant and the
-  operation-task mint seals it. Until now the token carried no binding, which is
+  `<organisation>/<module>/<binding>` (the spelling the interface states; it
+  was `module-operation/<principal>/<binding>` until 2026-10-25) from the
+  installed grant and the operation-task mint seals it. Until now the token carried no binding, which is
   what left runtime hops "stale" at the revision check.
 - *A child hop by the parent token and the actor's credential*: `childHop`
   verifies the parent as issued, names the actor from its credential, re-reads
@@ -363,7 +364,7 @@ is held"). The owner's decision (child issuance **A**) is implemented in
   derives from delivery, as installed in the organisation
   (`Service.ModuleOperationAudience`, the binding the delegated exchange
   redeems). No second store. The child is sealed to the installation that binding
-  is granted within (the live answer for `module-operation/<module>/<binding>`),
+  is granted within (the live answer for `<organisation>/<module>/<binding>`),
   so core's binding-within-installation rule holds by construction.
 - **The child:** the owner's *current* grants at the binding's audience
   (`personHolds`, the check every mint makes, per action of the binding's invoke
@@ -398,10 +399,33 @@ nineteen suite cases at the same pin (`06d0d3b`), plus the harness's own line:
 | --- | --- | --- |
 | pass (new) | a delegate chain inherits the owner's authority at each audience | gap 14 |
 | pass (new) | a lookup through a binding carries only the binding's lookup scopes | gap 14 |
-| fail | a child hop names its actor and binding | first step: the person's token naming its module's binding is #1219 ("the person holds nothing at org-directory"). Past it, the suite expects the binding id `<org>/<module>/<binding>`; this host seals `module-operation/<principal>/<binding>`, so the case stays red until the spelling is agreed |
+| fail | a child hop names its actor and binding | first step: the person's token naming its module's binding is #1219 ("the person holds nothing at org-directory"); the binding id the case checks past it is the one this host now seals (below) |
 | fail | an installation acts for itself | the fixture installs no solution (gap 4) |
 | fail | a manifest moves only forward; install pending, then exposed | ApplyManifest is internal (gaps 4, 5) |
 | skip | callee refuses what does not verify; method policy; resources; delegation | unchanged |
+
+### One spelling, one hop rule (2026-10-25)
+
+- **The sealed binding id is the interface's:** `<organisation>/<module>/<binding>`
+  (`ModuleOperationBindingID`), for a workload's operation context and for a
+  hop's child alike. The `module-operation/<principal>/<binding>` spelling is
+  deleted, not accepted beside it: the seal source, the operation-context shape
+  check and `ConfirmModuleHopBinding` read only the new one, and an id naming
+  another organisation confirms nothing. The organisation is a canonical UUID,
+  which is what tells this id apart from a source delegation's and an installed
+  binding's. A revision check naming the binding by its bare key is unchanged.
+- **A hop names its binding:** a child naming no binding is refused
+  (`PermissionDenied`, "a module's hop names the binding it exercises"), before
+  the parent is verified. The interface's old shrink-from-parent child is
+  deleted; a module hop has one rule, the one above.
+- **`ExchangeDelegatedOperationAudience` stays, for now.** It is the other
+  cross-module rule (strict attenuation of a parent through an installed
+  binding, plus the source-delegation reference arm). Composed modules still
+  call it, on their authority branches and their main branches alike, through
+  the Go SDK's module-authority client (`ExchangeOperation`). Deleting it waits
+  on those callers moving to the interface's hop.
+
+The suite is unchanged by these at **11 passed, 4 failed, 4 skipped**.
 
 ### What was not verified
 

@@ -13,7 +13,7 @@ package adapters
 // delivered contract, the module principal registry, as installed in this
 // organisation (Service.ModuleOperationAudience, the binding the delegated
 // exchange redeems). The child is sealed to the installation that binding is
-// granted within (the live answer for module-operation/<module>/<binding>), so
+// granted within (the live answer for <organisation>/<module>/<binding>), so
 // core's rule that a sealed binding belongs to the capability's installation
 // holds by construction rather than by the owner's seal.
 //
@@ -99,7 +99,7 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 		}
 		scopes = asked
 	}
-	return s.workContexts.mintBindingHop(ctx, claims, actor, bindingID, req.GetAudience(), scopes, narrowed.outside(scopes), workContextTTL(int32(req.GetTtlSeconds())))
+	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, narrowed.outside(scopes), workContextTTL(int32(req.GetTtlSeconds())))
 }
 
 // requireDeclaredHopBinding refuses, before the parent is verified (and so
@@ -159,11 +159,12 @@ func (s *WorkContextAuthorityServer) requireParentStands(ctx context.Context, pa
 // acting module's hop exercising the binding, granted scopes. It never
 // outlives its parent and descends from the parent's session.
 func (s *WorkContextAuthorityServer) mintBindingHop(
-	ctx context.Context, parent *basev0.WorkContextV1, actor, bindingID, audience string,
+	ctx context.Context, parent *basev0.WorkContextV1, prefix, bindingID, audience string,
 	scopes, carried []*basev0.WorkScopeV1, ttl time.Duration,
 ) (*gen.IssuedWorkContext, error) {
 	tenant := parent.GetTenantId()
-	sealed := business.ModuleOperationBindingID(actor, bindingID)
+	actor := business.ModulePrincipalID(prefix)
+	sealed := business.ModuleOperationBindingID(tenant, prefix, bindingID)
 	binding, err := s.seals.WorkContextOperationBinding(ctx, tenant, sealed)
 	switch {
 	case errors.Is(err, business.ErrNoOperationBinding):

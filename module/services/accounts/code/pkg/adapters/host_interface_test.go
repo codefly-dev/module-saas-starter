@@ -41,53 +41,24 @@ func hostChildFixture(t *testing.T) (*WorkContextAuthorityServer, *HostAuthority
 	return issuer, NewHostAuthorityServer(issuer, nil), credential
 }
 
-// hostChildHop mints a person's single-use capability addressed to tool.test
-// and has tool.test hop on it to documents through the interface.
-func hostChildHop(t *testing.T, issuer *WorkContextAuthorityServer, server *HostAuthorityServer, credential string) (*authorityv1.IssueResponse, error) {
-	t.Helper()
+// A module hop names the binding it exercises; one naming none is refused by
+// name, before the parent is verified, so a single-use parent is not spent.
+func TestAHopNamingNoBindingIsRefusedUnspent(t *testing.T) {
+	issuer, server, credential := hostChildFixture(t)
 	parent, _ := mintTestCapability(t, issuer, testCapability{
 		Audience: "tool.test", Tenant: renewOrgID, Owner: renewActorID, Replay: workcontext.ReplaySingleUse,
 		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
 	})
-	return server.Issue(context.Background(), &authorityv1.IssueRequest{
+	out, err := server.Issue(context.Background(), &authorityv1.IssueRequest{
 		As:    &authorityv1.IssueRequest_ParentToken{ParentToken: parent},
 		Actor: &authorityv1.WorkloadCredential{Credential: credential}, Audience: "documents",
 		Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
 	})
-}
-
-func TestHostChildIssueBindsParentToAuthenticatedActor(t *testing.T) {
-	issuer, server, credential := hostChildFixture(t)
-	for _, audience := range []string{"tool.test", "documents"} {
-		t.Run(audience, func(t *testing.T) {
-			parent, _ := mintTestCapability(t, issuer, testCapability{
-				Audience: audience, Tenant: renewOrgID, Owner: renewActorID,
-				Replay: workcontext.ReplaySingleUse,
-				Scopes: []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
-			})
-			out, err := server.Issue(context.Background(), &authorityv1.IssueRequest{
-				As:    &authorityv1.IssueRequest_ParentToken{ParentToken: parent},
-				Actor: &authorityv1.WorkloadCredential{Credential: credential}, Audience: "documents",
-				Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
-			})
-			if audience == "tool.test" {
-				require.NoError(t, err)
-				require.Equal(t, renewActorID, out.GetContext().GetOwnerPrincipalId())
-				require.Equal(t, "documents", out.GetContext().GetAudience())
-				require.Len(t, out.GetContext().GetActorChain(), 1)
-				require.Equal(t, business.ModulePrincipalID("tool.test"), out.GetContext().GetActorChain()[0].GetPrincipalId())
-				return
-			}
-			require.True(t, out == nil, "an unrelated actor must receive no issued capability")
-			// Refused by name, as the interface states it: a module hops only on
-			// a token addressed to it.
-			require.Equal(t, codes.PermissionDenied, status.Code(err))
-			require.Contains(t, status.Convert(err).Message(), "hops only on a token addressed to it")
-			// An unrelated actor must not consume another audience's single-use parent.
-			_, err = issuer.verifyFor(context.Background(), parent, audience)
-			require.NoError(t, err)
-		})
-	}
+	require.Nil(t, out)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "names the binding it exercises")
+	_, err = issuer.verifyFor(context.Background(), parent, "tool.test")
+	require.NoError(t, err)
 }
 
 // A check naming a method holds it to the audience's delivered method policy.

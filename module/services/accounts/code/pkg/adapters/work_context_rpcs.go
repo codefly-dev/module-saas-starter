@@ -1181,7 +1181,10 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 	if authority.BindingID != "" {
 		// The context names the binding it exercises, so a verifier resolves
 		// exactly that binding instead of fitting the scopes to one.
-		start.OperationBindingID = business.ModuleOperationBindingID(authority.PrincipalID, authority.BindingID)
+		if authority.ModulePrefix == "" || business.ModulePrincipalID(authority.ModulePrefix) != authority.PrincipalID {
+			return "", nil, fmt.Errorf("%w: operation context binding names no module", workcontext.ErrInvalid)
+		}
+		start.OperationBindingID = business.ModuleOperationBindingID(authority.Tenant, authority.ModulePrefix, authority.BindingID)
 	}
 	return s.mint(ctx, mintRequest{
 		Start:  start,

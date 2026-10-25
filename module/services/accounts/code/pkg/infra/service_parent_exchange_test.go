@@ -78,7 +78,7 @@ func TestADelegatedExchangeRefusesAModuleOperationContextAsItsParent(t *testing.
 
 	parent, _, err := issuer.StartModuleOperationTask(testCtx, business.ModuleOperationContextAuthority{
 		ModuleWorkContextAuthority: business.ModuleWorkContextAuthority{PrincipalID: s.principalID(), Tenant: s.tenant, InstallationID: originInstall.Id},
-		BindingID:                  "publish", Audience: target.solutionID, Scopes: read, Revision: 1,
+		BindingID:                  "publish", ModulePrefix: s.prefix, Audience: target.solutionID, Scopes: read, Revision: 1,
 	})
 	require.NoError(t, err)
 	moduleToken, _, err := issuer.StartModuleTask(testCtx, business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID(target.solutionID), Tenant: s.tenant, InstallationID: targetInstall.Id})

@@ -509,11 +509,12 @@ func interfaceStatus(err error) error {
 }
 
 // childHop derives a module's hop on a context addressed to it behind the
-// interface: the parent token is the authentication and the actor's credential
-// names the module. A hop naming the binding it exercises is bindingHop (the
-// owner's current grants through that binding); one naming none attenuates its
-// parent. The host's own child session is authorized by the owner's bearer,
-// which the module acting does not hold.
+// interface: the parent token is the authentication, the actor's credential
+// names the module, and the hop names the binding it exercises (bindingHop:
+// the owner's current grants through that binding). There is one rule for a
+// module hop: a hop naming no binding is refused, as is a parent addressed to
+// another module, both before the parent is verified, so a refused hop spends
+// no single-use parent.
 func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, req *authorityv1.IssueRequest) (*gen.IssuedWorkContext, error) {
 	prefix, err := service.ModulePrefixOfWorkload(ctx, req.GetActor().GetCredential())
 	if err != nil {
@@ -522,53 +523,19 @@ func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, 
 		}
 		return nil, status.Error(codes.PermissionDenied, "actor credential refused")
 	}
-	// Resolve the actor before verifying: a module may derive only from a
-	// parent addressed to it, and cannot spend another module's single-use token.
-	// A parent addressed elsewhere is refused by name before it is verified; its
-	// claims are only read to say so, and nothing is issued on them.
+	if req.GetOperationBindingId() == "" {
+		return nil, status.Errorf(codes.PermissionDenied, "a module's hop names the binding it exercises; %s named none", prefix)
+	}
+	// The parent's claims are only read to refuse it; nothing is issued on them.
 	if decoded, derr := workcontext.Decode(parentToken); derr == nil && decoded.Context().GetAudience() != prefix {
 		return nil, status.Errorf(codes.PermissionDenied, "%s hops only on a token addressed to it; this one is addressed to %s", prefix, decoded.Context().GetAudience())
 	}
-	if req.GetOperationBindingId() != "" {
-		if err := requireDeclaredHopBinding(prefix, req); err != nil {
-			return nil, err
-		}
+	if err := requireDeclaredHopBinding(prefix, req); err != nil {
+		return nil, err
 	}
 	parent, err := s.workContexts.verifyFor(ctx, parentToken, prefix)
 	if err != nil {
 		return nil, interfaceStatus(err)
 	}
-	if req.GetOperationBindingId() != "" {
-		return s.bindingHop(ctx, prefix, parent, req)
-	}
-	claims := parent.Context()
-	// The owner's authority is re-read as the owner, as the module-caller
-	// exchange does: the parent token is what proves the owner here.
-	ctx = accountsauth.WithVerifiedDatabaseIdentity(ctx, claims.GetOwnerPrincipalId(), claims.GetTenantId())
-	if _, err := s.workContexts.requireCurrentAuthority(ctx, claims.GetTenantId(), claims); err != nil {
-		return nil, err
-	}
-	_, scopes, err := workContextScopes(scopesToHost(req.GetScopes()), mintContentReads(req.GetAudience()))
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	if !workcontext.ScopesAttenuate(scopes, parent.EffectiveScopes()) {
-		return nil, status.Error(codes.PermissionDenied, "a child hop widens authority beyond its parent")
-	}
-	ttl := workContextTTL(int32(req.GetTtlSeconds()))
-	if ttl == 0 {
-		ttl = workContextDefaultTTL
-	}
-	token, signed, err := s.workContexts.coreAuthority(claims.GetTenantId(), claims.GetOwnerPrincipalId()).Child(ctx, parent, workcontext.ChildInput{
-		PrincipalID: business.ModulePrincipalID(prefix), PrincipalKind: business.PrincipalKindService,
-		DelegationID: uuid.NewString(), GrantedScopes: scopes, Audience: req.GetAudience(),
-		ReplayPolicy: workcontext.ReplayIdempotent, TTL: ttl,
-	})
-	if err != nil {
-		return nil, mapWorkContextError(ctx, err)
-	}
-	if err := s.workContexts.journalActorHop(ctx, signed); err != nil {
-		return nil, err
-	}
-	return issuedWorkContext(token, signed), nil
+	return s.bindingHop(ctx, prefix, parent, req)
 }

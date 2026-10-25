@@ -142,6 +142,7 @@ func moduleOperationFixture(t *testing.T) (business.ModuleOperationContextAuthor
 	return business.ModuleOperationContextAuthority{
 		ModuleWorkContextAuthority: business.ModuleWorkContextAuthority{PrincipalID: principal, Tenant: moduleWorkContextTenant, InstallationID: installation},
 		BindingID:                  "model",
+		ModulePrefix:               "documents",
 		Audience:                   "modelservice",
 		Scopes:                     []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}}},
 		Revision:                   1,
@@ -221,14 +222,6 @@ func workloadOperationRows() []admissionRow {
 					&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: "ingest-write", ParentWorkContextToken: parent.GetToken()})
 				require.NoError(t, err)
 				return workContextSingleton, "reports", issued.GetToken()
-			}},
-		// A module's hop on a person's capability through the host interface.
-		{"host interface child hop", "", human, person,
-			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
-				issuer, server, credential := hostChildFixture(t)
-				out, err := hostChildHop(t, issuer, server, credential)
-				require.NoError(t, err)
-				return issuer, "documents", out.GetToken()
 			}},
 		// A module's hop through its binding on a person's capability (gap 14).
 		{"host interface binding hop", "", human, person,
@@ -462,7 +455,6 @@ var mintEntrypointRows = map[string][]string{
 	"(*WorkContextAuthorityServer).mintInstallationTask":     {"installation task", "installation step"},
 	"(*WorkContextAuthorityServer).StartModuleTask":          {"module identity", "installer token route"},
 	"(*WorkContextAuthorityServer).StartModuleOperationTask": {"module operation context", "module operation context for its own module"},
-	"(*HostAuthorityServer).childHop":                        {"host interface child hop"},
 	"(*WorkContextAuthorityServer).mintBindingHop":           {"host interface binding hop"},
 }
 
@@ -1020,11 +1012,13 @@ func TestOperationContextShapeAdmitsOnlyTheOwnersOwnBinding(t *testing.T) {
 	require.NoError(t, err)
 	claims := proto.Clone(decoded.Context()).(*basev0.WorkContextV1)
 	owner := claims.GetOwnerPrincipalId()
-	require.Equal(t, business.ModuleOperationBindingID(owner, "model"), claims.GetOperationBinding().GetBindingId())
+	require.Equal(t, moduleWorkContextTenant+"/documents/model", claims.GetOperationBinding().GetBindingId())
 	require.True(t, isModuleOperationContextShape(claims))
 
-	claims.OperationBinding.BindingId = business.ModuleOperationBindingID(business.ModulePrincipalID("reports"), "model")
+	claims.OperationBinding.BindingId = business.ModuleOperationBindingID(moduleWorkContextTenant, "reports", "model")
 	require.False(t, isModuleOperationContextShape(claims), "another module's binding")
+	claims.OperationBinding.BindingId = business.ModuleOperationBindingID("66666666-6666-4666-8666-666666666666", "documents", "model")
+	require.False(t, isModuleOperationContextShape(claims), "its binding in another organisation")
 	claims.OperationBinding.BindingId = "installed-binding/" + owner
 	require.False(t, isModuleOperationContextShape(claims), "a binding that is not a module operation binding")
 	claims.OperationBinding = nil

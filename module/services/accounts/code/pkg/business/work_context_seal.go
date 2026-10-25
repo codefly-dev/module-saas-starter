@@ -275,7 +275,7 @@ func (s *Service) WorkContextOperationBinding(ctx context.Context, orgID, bindin
 	if NamesInstalledBinding(bindingID) {
 		return s.resolveInstalledBinding(ctx, orgID, bindingID)
 	}
-	if _, _, isModule := parseModuleOperationBindingID(bindingID); isModule {
+	if _, _, _, isModule := parseModuleOperationBindingID(bindingID); isModule {
 		return s.moduleOperationBinding(ctx, orgID, bindingID)
 	}
 	delegationID, usedBy, ok := parseSourceDelegationBindingID(bindingID)

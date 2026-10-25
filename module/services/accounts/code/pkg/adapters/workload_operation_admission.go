@@ -166,7 +166,7 @@ func isModuleOperationContextShape(claims *basev0.WorkContextV1) bool {
 	return len(claims.GetActorChain()) == 0 &&
 		claims.GrantHop == nil &&
 		(claims.OperationBinding == nil ||
-			business.IsModuleOperationBindingOf(claims.GetOperationBinding().GetBindingId(), claims.GetOwnerPrincipalId())) &&
+			business.IsModuleOperationBindingOf(claims.GetOperationBinding().GetBindingId(), claims.GetTenantId(), claims.GetOwnerPrincipalId())) &&
 		claims.OwnerAgentId == nil &&
 		claims.ParentSessionId == nil &&
 		claims.WorkspaceId == nil &&
