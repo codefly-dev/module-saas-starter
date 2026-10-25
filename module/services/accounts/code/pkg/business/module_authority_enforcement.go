@@ -20,8 +20,9 @@ import (
 // manifest asks and what the envelope allows, and a binding, kind or principal
 // the envelope withholds is withheld (ModuleBindingOmission, ErrModuleIdentityDenied).
 //
-// Under `warn` the host grants what the manifest asks and SAYS what it would
-// have withheld, on every pass, in its log: an operator keeps the envelope's
+// Under `warn` the host grants the kinds and actions the manifest asks — at
+// the resource ids the envelope names, since a manifest names none — and SAYS
+// what it would have withheld, on every pass, in its log: an operator keeps the envelope's
 // authorship while a module's contract moves, instead of every module caller
 // hearing a refusal until the envelope is rewritten. It is a deployment's
 // choice for a cell under validation, never a production default: a platform
@@ -141,8 +142,9 @@ func sharedTenant(envelope *ModuleEnvelope) (string, bool) {
 // with the tenancy given. Warn never grants less than the envelope does: a
 // binding only the envelope names — a runtime's installation bindings, which
 // no manifest can express — stays granted, and a binding both name is granted
-// as the manifest asks. What the request cannot express — artifact policies
-// and read audiences — is likewise kept from the held entry.
+// as the manifest asks. What the request cannot express — artifact policies,
+// read audiences, a binding's delegation mode and the resource ids its scopes
+// name (withEnvelopeResources) — is likewise kept from the held entry.
 func requestedCeiling(request *solutionhost.Authority, held ModuleEnvelopePrincipal, tenant string, crossTenant bool) ModuleEnvelopePrincipal {
 	grant := ModulePrincipalGrant{
 		ArtifactPolicies: held.Grant.ArtifactPolicies,
@@ -179,13 +181,18 @@ func requestedCeiling(request *solutionhost.Authority, held ModuleEnvelopePrinci
 		if binding.ID == "" || binding.Audience == "" {
 			continue
 		}
-		invoke := scopesOf(binding.Operations[modulecontract.OperationInvoke])
+		allowed := held.Grant.OperationAudiences[binding.ID]
+		if allowed.Audience != binding.Audience {
+			// Another audience is another binding: its resources are not this one's.
+			allowed = ModuleOperationAudience{DelegationMode: allowed.DelegationMode}
+		}
+		invoke := withEnvelopeResources(scopesOf(binding.Operations[modulecontract.OperationInvoke]), allowed.InvokeScopes)
 		audience := ModuleOperationAudience{
 			Audience:       binding.Audience,
-			DelegationMode: held.Grant.OperationAudiences[binding.ID].DelegationMode,
+			DelegationMode: allowed.DelegationMode,
 			InvokeScopes:   invoke,
-			LookupScopes:   scopesOf(binding.Operations[modulecontract.OperationLookup]),
-			HeadlessScopes: nilIfEmpty(scopesOf(binding.Operations[modulecontract.OperationHeadless])),
+			LookupScopes:   withEnvelopeResources(scopesOf(binding.Operations[modulecontract.OperationLookup]), allowed.LookupScopes),
+			HeadlessScopes: nilIfEmpty(withEnvelopeResources(scopesOf(binding.Operations[modulecontract.OperationHeadless]), allowed.HeadlessScopes)),
 		}
 		if binding.ID == delegating && audience.DelegationMode == "" {
 			audience.SourceDelegationScopes = nilIfEmpty(invoke)
@@ -227,6 +234,30 @@ func scopesOf(units []string) []ModuleOperationScope {
 		scopes = append(scopes, ModuleOperationScope{ResourceKind: kind, Actions: actions})
 	}
 	return scopes
+}
+
+// withEnvelopeResources gives each asked scope the resource ids the envelope
+// names for its kind in the same binding. A manifest names kinds, never
+// instances, so the envelope is the only place a resource narrowing can be
+// stated: warn widens kinds and actions to what the manifest asks and keeps
+// that narrowing, as enforce does. A kind the envelope does not name, or names
+// once without ids, stays kind-wide.
+func withEnvelopeResources(asked, allowed []ModuleOperationScope) []ModuleOperationScope {
+	named := map[string][]string{}
+	wide := map[string]bool{}
+	for _, scope := range allowed {
+		if len(scope.ResourceIDs) == 0 {
+			wide[scope.ResourceKind] = true
+			continue
+		}
+		named[scope.ResourceKind] = sortedUnion(named[scope.ResourceKind], scope.ResourceIDs)
+	}
+	for i, scope := range asked {
+		if ids, ok := named[scope.ResourceKind]; ok && !wide[scope.ResourceKind] {
+			asked[i].ResourceIDs = ids
+		}
+	}
+	return asked
 }
 
 // sortedUnion is every distinct value of both lists, sorted; nil when both
