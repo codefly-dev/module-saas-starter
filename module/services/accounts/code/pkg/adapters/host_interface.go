@@ -62,11 +62,31 @@ func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckR
 	if err != nil {
 		return nil, interfaceStatus(err)
 	}
+	// The capability is sound. A named method is then held to what the
+	// audience module's delivery declares for it; advisory reports that
+	// decision beside the capability instead of refusing.
+	refusal := ""
+	if method := req.GetMethod(); method != "" {
+		refusal = methodPolicyRefusal(req.GetAudience(), method)
+		if refusal != "" && !req.GetAdvisory() {
+			return nil, status.Error(codes.PermissionDenied, refusal)
+		}
+	}
 	wire, err := workContextToWire(verified.Context())
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &authorityv1.CheckResponse{Context: wire, AuthorizationRevision: verified.Context().GetAuthorizationRevision()}, nil
+	return &authorityv1.CheckResponse{Context: wire, AuthorizationRevision: verified.Context().GetAuthorizationRevision(), Refusal: refusal}, nil
+}
+
+// methodPolicyRefusal is what the audience module's delivered method policy
+// refuses for method. GAP (HOST_INTERFACE.md 4): this host receives no
+// AuthorityManifestV1, so no module has a delivered method policy, and the
+// interface's rule for that case applies: every check naming a method is
+// refused, by name. A hop running permissive (hop/ENFORCEMENT=warn) receives it
+// as the advisory refusal and lets the call through.
+func methodPolicyRefusal(audience, method string) string {
+	return fmt.Sprintf("%s's delivery declares no method policy, so %s is refused", audience, method)
 }
 
 // Issue maps each owner shape onto the mint that already exists for it.
@@ -95,6 +115,12 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		_ = as
 		if err := requireOrgMember(ctx, identity.EffectiveSubject.String(), identity.OrgID.String()); err != nil {
 			return nil, err
+		}
+		if len(scopes) == 0 {
+			// An empty ask is everything the person holds at the audience.
+			if scopes, err = s.workContexts.personHoldings(ctx, identity.OrgID.String(), req.GetAudience()); err != nil {
+				return nil, interfaceStatus(err)
+			}
 		}
 		// A fresh task per issue: the interface names no task, the host requires
 		// one as the identity tuple's third element.
@@ -168,6 +194,33 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	}
 	return &authorityv1.IssueResponse{Token: issued.GetToken(), ExpiresAtUnix: issued.GetExpiresAt().GetSeconds(), Context: wire}, nil
 }
+
+// ListResources: GAP. The host answers resource coverage through its own
+// per-collection reads (CheckWorkContextRecordAccess,
+// ListReadableSourceCollections); a grant-shaped answer behind the interface is
+// not built yet.
+func (s *HostAuthorityServer) ListResources(context.Context, *authorityv1.ListResourcesRequest) (*authorityv1.ListResourcesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "list resources: accounts answers coverage per collection today; the grant-shaped answer is not yet behind the interface")
+}
+
+// Delegate, RevokeDelegation, GetDelegation: GAP. The host's standing grants
+// are source delegations (DelegationService) bound to a source; a person's
+// grant to a module by scopes is not yet behind the interface.
+func (s *HostAuthorityServer) Delegate(context.Context, *authorityv1.DelegateRequest) (*authorityv1.Delegation, error) {
+	return nil, status.Error(codes.Unimplemented, delegationGap)
+}
+
+// RevokeDelegation: GAP, see Delegate.
+func (s *HostAuthorityServer) RevokeDelegation(context.Context, *authorityv1.RevokeDelegationRequest) (*authorityv1.RevokeDelegationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, delegationGap)
+}
+
+// GetDelegation: GAP, see Delegate.
+func (s *HostAuthorityServer) GetDelegation(context.Context, *authorityv1.GetDelegationRequest) (*authorityv1.Delegation, error) {
+	return nil, status.Error(codes.Unimplemented, delegationGap)
+}
+
+const delegationGap = "delegation to a module: accounts holds source delegations bound to a source; a grant by scopes is not yet behind the interface"
 
 // HostCompositionServer serves codefly.dev/composition.
 type HostCompositionServer struct {
@@ -276,6 +329,57 @@ func (s *HostSessionServer) SignIn(ctx context.Context, req *sessionv1.SignInReq
 		SessionId: claims.SessionID, PersonId: out.GetUser().GetUuid(), OrganizationId: claims.OrgID,
 		Roles: []string{claims.OrgRole}, Bearer: out.GetAccessToken(),
 	}, nil
+}
+
+// Current answers the session the caller's bearer belongs to, as the perimeter
+// verified it (signature, window and revocation): the person the request is
+// for, their organisation, their role and teams there. The bearer is not
+// handed back. A credential that names no session (an API key, a Work
+// Context) is not a session.
+func (s *HostSessionServer) Current(ctx context.Context, _ *sessionv1.CurrentRequest) (*sessionv1.Session, error) {
+	identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
+	if !ok || identity.SessionID == uuid.Nil || identity.EffectiveSubject == uuid.Nil {
+		return nil, status.Error(codes.Unauthenticated, "the call carries no session bearer")
+	}
+	session := &sessionv1.Session{SessionId: identity.SessionID.String(), PersonId: identity.EffectiveSubjectID()}
+	if identity.OrgID == uuid.Nil {
+		return session, nil
+	}
+	session.OrganizationId = identity.OrgID.String()
+	role, err := lookupMembership(ctx, session.OrganizationId, session.PersonId)
+	if err != nil {
+		return nil, membershipLookupStatus("cannot read the session's membership", err)
+	}
+	if role != "" {
+		// The role as SignIn and the fixture listing state it.
+		session.Roles = []string{business.OrgRoleName(gen.OrgRole(gen.OrgRole_value[role]))}
+	}
+	teams, err := s.service.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: session.OrganizationId, MemberId: session.PersonId})
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	for _, team := range teams.GetTeams() {
+		session.TeamIds = append(session.TeamIds, team.GetId())
+	}
+	return session, nil
+}
+
+// ListFixturePeople answers who fixture sign-in admits, in the fixture's order;
+// none where fixture sign-in is not enabled, which is every deployment that
+// signs real people in.
+func (s *HostSessionServer) ListFixturePeople(ctx context.Context, _ *sessionv1.ListFixturePeopleRequest) (*sessionv1.ListFixturePeopleResponse, error) {
+	people, err := s.service.ListFixturePeople(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	out := &sessionv1.ListFixturePeopleResponse{}
+	for _, p := range people {
+		out.People = append(out.People, &sessionv1.FixturePerson{
+			PersonId: p.PersonID, Email: p.Email, OrganizationId: p.OrganizationID,
+			Roles: p.Roles, TeamIds: p.TeamIDs, FixtureToken: p.FixtureToken,
+		})
+	}
+	return out, nil
 }
 
 // --- conversions ---------------------------------------------------------------

@@ -38,13 +38,19 @@ type ApplyManifestRequest struct {
 	// envelope over it. An implementation verifies the envelope against the release
 	// keys it pins and reads the manifest from the verified document, never from
 	// the request, so what composes a module is the same signed document on the
-	// mini gateway and on the host.
+	// authority gateway and on the host.
 	Carrier *SignedManifestV1 `protobuf:"bytes,2,opt,name=carrier,proto3" json:"carrier,omitempty"`
 	// The credential of the workload delivering the manifest, as that
-	// implementation attests workloads: the launcher's on the mini gateway, the
+	// implementation attests workloads: the launcher's on the authority gateway, the
 	// delivery service account's on the host. A manifest is delivered by its own
 	// module's delivery workload and by nothing else.
-	Credential    string `protobuf:"bytes,3,opt,name=credential,proto3" json:"credential,omitempty"`
+	Credential string `protobuf:"bytes,3,opt,name=credential,proto3" json:"credential,omitempty"`
+	// The authority's own document for this delivery, an AuthorityManifestV1:
+	// what the module declares that the authority enforces and core's manifest
+	// does not carry. Signed in the same envelope format by the same key as
+	// carrier, and naming carrier's digest. Absent means the module declares no
+	// method policy, and every Check that names one of its methods is refused.
+	Authority     *SignedManifestV1 `protobuf:"bytes,4,opt,name=authority,proto3" json:"authority,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -100,6 +106,179 @@ func (x *ApplyManifestRequest) GetCredential() string {
 	return ""
 }
 
+func (x *ApplyManifestRequest) GetAuthority() *SignedManifestV1 {
+	if x != nil {
+		return x.Authority
+	}
+	return nil
+}
+
+// AuthorityManifestV1 is the authority's document for one delivery.
+type AuthorityManifestV1 struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The module, as the core manifest it travels with names it.
+	Module string `protobuf:"bytes,1,opt,name=module,proto3" json:"module,omitempty"`
+	// The generation, equal to that core manifest's.
+	Generation uint64 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	// "sha256:<hex>" of the core manifest document delivered with it.
+	CoreManifestDigest string `protobuf:"bytes,3,opt,name=core_manifest_digest,json=coreManifestDigest,proto3" json:"core_manifest_digest,omitempty"`
+	// Every method the module's published contracts serve, with what each
+	// declares. A method that declares nothing is listed with neither field set.
+	Methods []*MethodPolicyV1 `protobuf:"bytes,4,rep,name=methods,proto3" json:"methods,omitempty"`
+	// The module's own resource kinds with the actions its contract declares on
+	// each (its scope ceilings). Core's manifest names the kinds alone, so without
+	// these a kind serves any action and a person's ask for everything they hold
+	// there cannot be enumerated. Each names a kind core's manifest declares.
+	ScopeCeilings []*v1.WorkScopeV1 `protobuf:"bytes,5,rep,name=scope_ceilings,json=scopeCeilings,proto3" json:"scope_ceilings,omitempty"`
+	// The roles a solution declares a person may hold on an installation of it,
+	// as ModuleManifestV1.roles declares them through the sketch: each within
+	// the solution's own kinds (its scope ceilings), one of them installer.
+	// Core's manifest carries no roles, so they travel here until it does. A
+	// module declares none; a module's delivery listing any is refused.
+	Roles         []*RoleV1 `protobuf:"bytes,6,rep,name=roles,proto3" json:"roles,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthorityManifestV1) Reset() {
+	*x = AuthorityManifestV1{}
+	mi := &file_host_composition_v1_composition_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthorityManifestV1) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthorityManifestV1) ProtoMessage() {}
+
+func (x *AuthorityManifestV1) ProtoReflect() protoreflect.Message {
+	mi := &file_host_composition_v1_composition_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthorityManifestV1.ProtoReflect.Descriptor instead.
+func (*AuthorityManifestV1) Descriptor() ([]byte, []int) {
+	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AuthorityManifestV1) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
+}
+
+func (x *AuthorityManifestV1) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *AuthorityManifestV1) GetCoreManifestDigest() string {
+	if x != nil {
+		return x.CoreManifestDigest
+	}
+	return ""
+}
+
+func (x *AuthorityManifestV1) GetMethods() []*MethodPolicyV1 {
+	if x != nil {
+		return x.Methods
+	}
+	return nil
+}
+
+func (x *AuthorityManifestV1) GetScopeCeilings() []*v1.WorkScopeV1 {
+	if x != nil {
+		return x.ScopeCeilings
+	}
+	return nil
+}
+
+func (x *AuthorityManifestV1) GetRoles() []*RoleV1 {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+// MethodPolicyV1 is what a call to one method must hold, as the module's
+// contract declares it with the authority.hop.v1.policy option.
+type MethodPolicyV1 struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The method: "/package.Service/Method" for a gRPC method, or an HTTP route
+	// "<VERB> <template>" (GET /v1/model/profiles/{ref}), each "{name}" standing
+	// for one path segment's text.
+	Method string `protobuf:"bytes,1,opt,name=method,proto3" json:"method,omitempty"`
+	// Each action on each kind the call must hold.
+	Requires []*v1.WorkScopeV1 `protobuf:"bytes,2,rep,name=requires,proto3" json:"requires,omitempty"`
+	// The method asks nothing beyond a Work Context the authority checked.
+	AnyCheckedCaller bool `protobuf:"varint,3,opt,name=any_checked_caller,json=anyCheckedCaller,proto3" json:"any_checked_caller,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *MethodPolicyV1) Reset() {
+	*x = MethodPolicyV1{}
+	mi := &file_host_composition_v1_composition_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MethodPolicyV1) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MethodPolicyV1) ProtoMessage() {}
+
+func (x *MethodPolicyV1) ProtoReflect() protoreflect.Message {
+	mi := &file_host_composition_v1_composition_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MethodPolicyV1.ProtoReflect.Descriptor instead.
+func (*MethodPolicyV1) Descriptor() ([]byte, []int) {
+	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *MethodPolicyV1) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+func (x *MethodPolicyV1) GetRequires() []*v1.WorkScopeV1 {
+	if x != nil {
+		return x.Requires
+	}
+	return nil
+}
+
+func (x *MethodPolicyV1) GetAnyCheckedCaller() bool {
+	if x != nil {
+		return x.AnyCheckedCaller
+	}
+	return false
+}
+
 // SignedManifestV1 is core's signed carrier: the manifest document (JSON) and
 // the DSSE envelope whose payload is that document.
 type SignedManifestV1 struct {
@@ -112,7 +291,7 @@ type SignedManifestV1 struct {
 
 func (x *SignedManifestV1) Reset() {
 	*x = SignedManifestV1{}
-	mi := &file_host_composition_v1_composition_proto_msgTypes[1]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -124,7 +303,7 @@ func (x *SignedManifestV1) String() string {
 func (*SignedManifestV1) ProtoMessage() {}
 
 func (x *SignedManifestV1) ProtoReflect() protoreflect.Message {
-	mi := &file_host_composition_v1_composition_proto_msgTypes[1]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -137,7 +316,7 @@ func (x *SignedManifestV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignedManifestV1.ProtoReflect.Descriptor instead.
 func (*SignedManifestV1) Descriptor() ([]byte, []int) {
-	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{1}
+	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SignedManifestV1) GetDocument() []byte {
@@ -169,7 +348,7 @@ type ApplyManifestResponse struct {
 
 func (x *ApplyManifestResponse) Reset() {
 	*x = ApplyManifestResponse{}
-	mi := &file_host_composition_v1_composition_proto_msgTypes[2]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -181,7 +360,7 @@ func (x *ApplyManifestResponse) String() string {
 func (*ApplyManifestResponse) ProtoMessage() {}
 
 func (x *ApplyManifestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_host_composition_v1_composition_proto_msgTypes[2]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -194,7 +373,7 @@ func (x *ApplyManifestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyManifestResponse.ProtoReflect.Descriptor instead.
 func (*ApplyManifestResponse) Descriptor() ([]byte, []int) {
-	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{2}
+	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ApplyManifestResponse) GetPrincipal() string {
@@ -245,7 +424,7 @@ type ModuleManifestV1 struct {
 
 func (x *ModuleManifestV1) Reset() {
 	*x = ModuleManifestV1{}
-	mi := &file_host_composition_v1_composition_proto_msgTypes[3]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -257,7 +436,7 @@ func (x *ModuleManifestV1) String() string {
 func (*ModuleManifestV1) ProtoMessage() {}
 
 func (x *ModuleManifestV1) ProtoReflect() protoreflect.Message {
-	mi := &file_host_composition_v1_composition_proto_msgTypes[3]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -270,7 +449,7 @@ func (x *ModuleManifestV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleManifestV1.ProtoReflect.Descriptor instead.
 func (*ModuleManifestV1) Descriptor() ([]byte, []int) {
-	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{3}
+	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ModuleManifestV1) GetModule() string {
@@ -340,7 +519,7 @@ type RoleV1 struct {
 
 func (x *RoleV1) Reset() {
 	*x = RoleV1{}
-	mi := &file_host_composition_v1_composition_proto_msgTypes[4]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -352,7 +531,7 @@ func (x *RoleV1) String() string {
 func (*RoleV1) ProtoMessage() {}
 
 func (x *RoleV1) ProtoReflect() protoreflect.Message {
-	mi := &file_host_composition_v1_composition_proto_msgTypes[4]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -365,7 +544,7 @@ func (x *RoleV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoleV1.ProtoReflect.Descriptor instead.
 func (*RoleV1) Descriptor() ([]byte, []int) {
-	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{4}
+	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RoleV1) GetName() string {
@@ -391,15 +570,20 @@ type BindingV1 struct {
 	Audience string `protobuf:"bytes,2,opt,name=audience,proto3" json:"audience,omitempty"`
 	// What the binding may do for a person.
 	InvokeScopes []*v1.WorkScopeV1 `protobuf:"bytes,3,rep,name=invoke_scopes,json=invokeScopes,proto3" json:"invoke_scopes,omitempty"`
-	// What the binding may do for the module itself; a subset of invoke_scopes.
+	// What the binding may do for the module itself: within invoke_scopes when the
+	// binding declares any, and standing alone for a binding that exists only for
+	// the module's own work.
 	HeadlessScopes []*v1.WorkScopeV1 `protobuf:"bytes,4,rep,name=headless_scopes,json=headlessScopes,proto3" json:"headless_scopes,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// What a receipt lookup through the binding may read; within invoke_scopes
+	// when the binding declares any, else within headless_scopes.
+	LookupScopes  []*v1.WorkScopeV1 `protobuf:"bytes,5,rep,name=lookup_scopes,json=lookupScopes,proto3" json:"lookup_scopes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BindingV1) Reset() {
 	*x = BindingV1{}
-	mi := &file_host_composition_v1_composition_proto_msgTypes[5]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -411,7 +595,7 @@ func (x *BindingV1) String() string {
 func (*BindingV1) ProtoMessage() {}
 
 func (x *BindingV1) ProtoReflect() protoreflect.Message {
-	mi := &file_host_composition_v1_composition_proto_msgTypes[5]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -424,7 +608,7 @@ func (x *BindingV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BindingV1.ProtoReflect.Descriptor instead.
 func (*BindingV1) Descriptor() ([]byte, []int) {
-	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{5}
+	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *BindingV1) GetId() string {
@@ -455,6 +639,13 @@ func (x *BindingV1) GetHeadlessScopes() []*v1.WorkScopeV1 {
 	return nil
 }
 
+func (x *BindingV1) GetLookupScopes() []*v1.WorkScopeV1 {
+	if x != nil {
+		return x.LookupScopes
+	}
+	return nil
+}
+
 // ResourceKindV1 is one kind the module governs and the actions on it.
 type ResourceKindV1 struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -468,7 +659,7 @@ type ResourceKindV1 struct {
 
 func (x *ResourceKindV1) Reset() {
 	*x = ResourceKindV1{}
-	mi := &file_host_composition_v1_composition_proto_msgTypes[6]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -480,7 +671,7 @@ func (x *ResourceKindV1) String() string {
 func (*ResourceKindV1) ProtoMessage() {}
 
 func (x *ResourceKindV1) ProtoReflect() protoreflect.Message {
-	mi := &file_host_composition_v1_composition_proto_msgTypes[6]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -493,7 +684,7 @@ func (x *ResourceKindV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceKindV1.ProtoReflect.Descriptor instead.
 func (*ResourceKindV1) Descriptor() ([]byte, []int) {
-	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{6}
+	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ResourceKindV1) GetKind() string {
@@ -523,7 +714,7 @@ type PageV1 struct {
 
 func (x *PageV1) Reset() {
 	*x = PageV1{}
-	mi := &file_host_composition_v1_composition_proto_msgTypes[7]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -535,7 +726,7 @@ func (x *PageV1) String() string {
 func (*PageV1) ProtoMessage() {}
 
 func (x *PageV1) ProtoReflect() protoreflect.Message {
-	mi := &file_host_composition_v1_composition_proto_msgTypes[7]
+	mi := &file_host_composition_v1_composition_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -548,7 +739,7 @@ func (x *PageV1) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PageV1.ProtoReflect.Descriptor instead.
 func (*PageV1) Descriptor() ([]byte, []int) {
-	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{7}
+	return file_host_composition_v1_composition_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PageV1) GetTitle() string {
@@ -569,13 +760,27 @@ var File_host_composition_v1_composition_proto protoreflect.FileDescriptor
 
 const file_host_composition_v1_composition_proto_rawDesc = "" +
 	"\n" +
-	"%host/composition/v1/composition.proto\x12\x13host.composition.v1\x1a$host/authority/v1/work_context.proto\"\xba\x01\n" +
+	"%host/composition/v1/composition.proto\x12\x13host.composition.v1\x1a$host/authority/v1/work_context.proto\"\xff\x01\n" +
 	"\x14ApplyManifestRequest\x12A\n" +
 	"\bmanifest\x18\x01 \x01(\v2%.host.composition.v1.ModuleManifestV1R\bmanifest\x12?\n" +
 	"\acarrier\x18\x02 \x01(\v2%.host.composition.v1.SignedManifestV1R\acarrier\x12\x1e\n" +
 	"\n" +
 	"credential\x18\x03 \x01(\tR\n" +
-	"credential\"J\n" +
+	"credential\x12C\n" +
+	"\tauthority\x18\x04 \x01(\v2%.host.composition.v1.SignedManifestV1R\tauthority\"\xb8\x02\n" +
+	"\x13AuthorityManifestV1\x12\x16\n" +
+	"\x06module\x18\x01 \x01(\tR\x06module\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\x120\n" +
+	"\x14core_manifest_digest\x18\x03 \x01(\tR\x12coreManifestDigest\x12=\n" +
+	"\amethods\x18\x04 \x03(\v2#.host.composition.v1.MethodPolicyV1R\amethods\x12E\n" +
+	"\x0escope_ceilings\x18\x05 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\rscopeCeilings\x121\n" +
+	"\x05roles\x18\x06 \x03(\v2\x1b.host.composition.v1.RoleV1R\x05roles\"\x92\x01\n" +
+	"\x0eMethodPolicyV1\x12\x16\n" +
+	"\x06method\x18\x01 \x01(\tR\x06method\x12:\n" +
+	"\brequires\x18\x02 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\brequires\x12,\n" +
+	"\x12any_checked_caller\x18\x03 \x01(\bR\x10anyCheckedCaller\"J\n" +
 	"\x10SignedManifestV1\x12\x1a\n" +
 	"\bdocument\x18\x01 \x01(\fR\bdocument\x12\x1a\n" +
 	"\benvelope\x18\x02 \x01(\fR\benvelope\"\x80\x01\n" +
@@ -598,12 +803,13 @@ const file_host_composition_v1_composition_proto_rawDesc = "" +
 	"\x05roles\x18\b \x03(\v2\x1b.host.composition.v1.RoleV1R\x05roles\"T\n" +
 	"\x06RoleV1\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x126\n" +
-	"\x06scopes\x18\x02 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\x06scopes\"\xc5\x01\n" +
+	"\x06scopes\x18\x02 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\x06scopes\"\x8a\x02\n" +
 	"\tBindingV1\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\baudience\x18\x02 \x01(\tR\baudience\x12C\n" +
 	"\rinvoke_scopes\x18\x03 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\finvokeScopes\x12G\n" +
-	"\x0fheadless_scopes\x18\x04 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\x0eheadlessScopes\">\n" +
+	"\x0fheadless_scopes\x18\x04 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\x0eheadlessScopes\x12C\n" +
+	"\rlookup_scopes\x18\x05 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\flookupScopes\">\n" +
 	"\x0eResourceKindV1\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
 	"\aactions\x18\x02 \x03(\tR\aactions\"4\n" +
@@ -626,35 +832,43 @@ func file_host_composition_v1_composition_proto_rawDescGZIP() []byte {
 	return file_host_composition_v1_composition_proto_rawDescData
 }
 
-var file_host_composition_v1_composition_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_host_composition_v1_composition_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_host_composition_v1_composition_proto_goTypes = []any{
 	(*ApplyManifestRequest)(nil),  // 0: host.composition.v1.ApplyManifestRequest
-	(*SignedManifestV1)(nil),      // 1: host.composition.v1.SignedManifestV1
-	(*ApplyManifestResponse)(nil), // 2: host.composition.v1.ApplyManifestResponse
-	(*ModuleManifestV1)(nil),      // 3: host.composition.v1.ModuleManifestV1
-	(*RoleV1)(nil),                // 4: host.composition.v1.RoleV1
-	(*BindingV1)(nil),             // 5: host.composition.v1.BindingV1
-	(*ResourceKindV1)(nil),        // 6: host.composition.v1.ResourceKindV1
-	(*PageV1)(nil),                // 7: host.composition.v1.PageV1
-	(*v1.WorkScopeV1)(nil),        // 8: host.authority.v1.WorkScopeV1
+	(*AuthorityManifestV1)(nil),   // 1: host.composition.v1.AuthorityManifestV1
+	(*MethodPolicyV1)(nil),        // 2: host.composition.v1.MethodPolicyV1
+	(*SignedManifestV1)(nil),      // 3: host.composition.v1.SignedManifestV1
+	(*ApplyManifestResponse)(nil), // 4: host.composition.v1.ApplyManifestResponse
+	(*ModuleManifestV1)(nil),      // 5: host.composition.v1.ModuleManifestV1
+	(*RoleV1)(nil),                // 6: host.composition.v1.RoleV1
+	(*BindingV1)(nil),             // 7: host.composition.v1.BindingV1
+	(*ResourceKindV1)(nil),        // 8: host.composition.v1.ResourceKindV1
+	(*PageV1)(nil),                // 9: host.composition.v1.PageV1
+	(*v1.WorkScopeV1)(nil),        // 10: host.authority.v1.WorkScopeV1
 }
 var file_host_composition_v1_composition_proto_depIdxs = []int32{
-	3,  // 0: host.composition.v1.ApplyManifestRequest.manifest:type_name -> host.composition.v1.ModuleManifestV1
-	1,  // 1: host.composition.v1.ApplyManifestRequest.carrier:type_name -> host.composition.v1.SignedManifestV1
-	5,  // 2: host.composition.v1.ModuleManifestV1.bindings:type_name -> host.composition.v1.BindingV1
-	6,  // 3: host.composition.v1.ModuleManifestV1.resource_kinds:type_name -> host.composition.v1.ResourceKindV1
-	7,  // 4: host.composition.v1.ModuleManifestV1.page:type_name -> host.composition.v1.PageV1
-	4,  // 5: host.composition.v1.ModuleManifestV1.roles:type_name -> host.composition.v1.RoleV1
-	8,  // 6: host.composition.v1.RoleV1.scopes:type_name -> host.authority.v1.WorkScopeV1
-	8,  // 7: host.composition.v1.BindingV1.invoke_scopes:type_name -> host.authority.v1.WorkScopeV1
-	8,  // 8: host.composition.v1.BindingV1.headless_scopes:type_name -> host.authority.v1.WorkScopeV1
-	0,  // 9: host.composition.v1.CompositionService.ApplyManifest:input_type -> host.composition.v1.ApplyManifestRequest
-	2,  // 10: host.composition.v1.CompositionService.ApplyManifest:output_type -> host.composition.v1.ApplyManifestResponse
-	10, // [10:11] is the sub-list for method output_type
-	9,  // [9:10] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	5,  // 0: host.composition.v1.ApplyManifestRequest.manifest:type_name -> host.composition.v1.ModuleManifestV1
+	3,  // 1: host.composition.v1.ApplyManifestRequest.carrier:type_name -> host.composition.v1.SignedManifestV1
+	3,  // 2: host.composition.v1.ApplyManifestRequest.authority:type_name -> host.composition.v1.SignedManifestV1
+	2,  // 3: host.composition.v1.AuthorityManifestV1.methods:type_name -> host.composition.v1.MethodPolicyV1
+	10, // 4: host.composition.v1.AuthorityManifestV1.scope_ceilings:type_name -> host.authority.v1.WorkScopeV1
+	6,  // 5: host.composition.v1.AuthorityManifestV1.roles:type_name -> host.composition.v1.RoleV1
+	10, // 6: host.composition.v1.MethodPolicyV1.requires:type_name -> host.authority.v1.WorkScopeV1
+	7,  // 7: host.composition.v1.ModuleManifestV1.bindings:type_name -> host.composition.v1.BindingV1
+	8,  // 8: host.composition.v1.ModuleManifestV1.resource_kinds:type_name -> host.composition.v1.ResourceKindV1
+	9,  // 9: host.composition.v1.ModuleManifestV1.page:type_name -> host.composition.v1.PageV1
+	6,  // 10: host.composition.v1.ModuleManifestV1.roles:type_name -> host.composition.v1.RoleV1
+	10, // 11: host.composition.v1.RoleV1.scopes:type_name -> host.authority.v1.WorkScopeV1
+	10, // 12: host.composition.v1.BindingV1.invoke_scopes:type_name -> host.authority.v1.WorkScopeV1
+	10, // 13: host.composition.v1.BindingV1.headless_scopes:type_name -> host.authority.v1.WorkScopeV1
+	10, // 14: host.composition.v1.BindingV1.lookup_scopes:type_name -> host.authority.v1.WorkScopeV1
+	0,  // 15: host.composition.v1.CompositionService.ApplyManifest:input_type -> host.composition.v1.ApplyManifestRequest
+	4,  // 16: host.composition.v1.CompositionService.ApplyManifest:output_type -> host.composition.v1.ApplyManifestResponse
+	16, // [16:17] is the sub-list for method output_type
+	15, // [15:16] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_host_composition_v1_composition_proto_init() }
@@ -668,7 +882,7 @@ func file_host_composition_v1_composition_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_host_composition_v1_composition_proto_rawDesc), len(file_host_composition_v1_composition_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

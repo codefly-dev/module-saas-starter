@@ -4,9 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
+	sessionv1 "accounts/pkg/gen/host/session/v1"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
@@ -80,4 +83,68 @@ func TestHostChildIssueBindsParentToAuthenticatedActor(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// A check naming a method holds it to the audience's delivered method policy.
+// No module has one on this host yet (gap 4), so the interface's rule for that
+// case applies: refused by name, or reported beside the verified capability
+// when advisory. A capability that does not verify is refused either way.
+func TestHostCheckAppliesTheMethodPolicyOrAdvisesIt(t *testing.T) {
+	issuer, server, _ := hostChildFixture(t)
+	token, _ := mintTestCapability(t, issuer, testCapability{
+		Audience: "documents", Tenant: renewOrgID, Owner: renewActorID,
+		Scopes: []*basev0.WorkScopeV1{{ResourceKind: "evidence", Actions: []string{"read"}}},
+	})
+	ctx := context.Background()
+
+	out, err := server.Check(ctx, &authorityv1.CheckRequest{Token: token, Audience: "documents"})
+	require.NoError(t, err)
+	require.Empty(t, out.GetRefusal())
+
+	const method = "/example.v1.RecordService/GetRecord"
+	_, err = server.Check(ctx, &authorityv1.CheckRequest{Token: token, Audience: "documents", Method: method})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), method)
+
+	out, err = server.Check(ctx, &authorityv1.CheckRequest{Token: token, Audience: "documents", Method: method, Advisory: true})
+	require.NoError(t, err)
+	require.Contains(t, out.GetRefusal(), method)
+	require.Equal(t, renewActorID, out.GetContext().GetOwnerPrincipalId(), "advisory answers the verified capability")
+
+	_, err = server.Check(ctx, &authorityv1.CheckRequest{Token: token, Audience: "model", Method: method, Advisory: true})
+	require.Equal(t, codes.Unauthenticated, status.Code(err), "advisory never passes a capability addressed elsewhere")
+}
+
+// Current answers only a session: a call with no verified identity, or one
+// whose credential names no session (an API key, a Work Context), is not one.
+func TestHostCurrentRefusesWhatIsNotASession(t *testing.T) {
+	server := NewHostSessionServer(nil)
+	_, err := server.Current(context.Background(), &sessionv1.CurrentRequest{})
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+	sessionless := stampVerifiedIdentity(context.Background(), readOwner, readOrg, auth.Assurance{})
+	_, err = server.Current(sessionless, &sessionv1.CurrentRequest{})
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+// The candidates of an empty ask are every action this host names on the kind
+// at the audience, from the organisation's roles and the composition's
+// bindings to that audience; wildcards and other audiences' bindings add none.
+func TestEmptyAskCandidatesAreTheActionsTheHostNames(t *testing.T) {
+	previous := service
+	svc, err := business.NewService(renewMembershipStore{})
+	require.NoError(t, err)
+	service = svc
+	t.Cleanup(func() { service = previous })
+	svc.SetModulePrincipals(business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("reader"): {Prefix: "reader", OperationAudiences: map[string]business.ModuleOperationAudience{
+			"records":   {Audience: "records", InvokeScopes: []business.ModuleOperationScope{{ResourceKind: "example-records", Actions: []string{"invoke", "read"}}}},
+			"elsewhere": {Audience: "model", InvokeScopes: []business.ModuleOperationScope{{ResourceKind: "example-records", Actions: []string{"train"}}}},
+		}},
+	})
+	roles := []*gen.Role{
+		{Permissions: []*gen.Permission{{Resource: "example-records", Action: "write"}, {Resource: "example-records", Action: "*"}, {Resource: "*", Action: "delete"}}},
+		{Permissions: []*gen.Permission{{Resource: "other", Action: "export"}}},
+	}
+	require.Equal(t, []string{"invoke", "read", "write"}, candidateActions("example-records", "records", roles))
+	require.Empty(t, candidateActions("unnamed", "records", roles))
 }

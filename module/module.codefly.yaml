@@ -14,17 +14,20 @@ interface:
         - service: accounts
           endpoint: authority
           visibility: internal
-          # The published host authority interfaces: the same contract
-          # the mini gateway implements for a local run. A consumer depends on
-          # the interface, never on this service.
+        - service: accounts
+          endpoint: connect
+          visibility: internal
+          # The published host authority interfaces, served where their
+          # services are mounted: the Connect listener, which serves every
+          # interface method under its own policy (the authority endpoint
+          # admits only the internal module-authority procedures). The same
+          # contract the authority gateway implements for a local run. A
+          # consumer depends on the interface, never on this service.
           implements:
               - codefly.dev/authority@0.1.0
               - codefly.dev/composition@0.1.0
               - codefly.dev/installation@0.1.0
               - codefly.dev/session@0.1.0
-        - service: accounts
-          endpoint: connect
-          visibility: internal
         - service: auth-gateway
           endpoint: grpc
           visibility: internal

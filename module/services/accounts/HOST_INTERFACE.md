@@ -10,7 +10,7 @@ serves on a laptop is served here on a cell, and the authority interface reposit
 
 - `proto/host/**`: the interface protos, copied unchanged from the authority interface repository;
   `proto/buf.gen.yaml` generates them beside `saas` (`code/pkg/gen/host/**`).
-- `module.codefly.yaml`: the `authority` endpoint declares `implements` for the four.
+- `module.codefly.yaml`: the `connect` endpoint declares `implements` for the four (moved from `authority` on 2026-10-25; see below).
 - `code/pkg/business/interface_policies.go`: the host's method policies for the
   interface procedures. The interface protos carry no `saas.policy` option on
   purpose (policy is one implementation's guard, not the caller's promise), so the
@@ -258,3 +258,102 @@ yet integrated into Codefly's generation lifecycle; see
 gap, not authorization to edit generated catalogs or run a substitute pipeline.
 No composed browser journey, external identity provider or complete session
 conformance is qualified by these tests.
+
+## Milestone 2: the edge and the hop against accounts (2026-10-25)
+
+What the authority's edge and hop call is now served on the declared endpoint:
+`SessionService/SignIn`, `Current`, `ListFixturePeople`; `AuthorityService/Issue`
+(a person's empty ask included), `Check` (with `method` and `advisory`);
+`InstallationService/List`. The branch was merged with main first (no rebase).
+
+- **Protos at authority `06d0d3b`.** `proto/host/**` re-copied unchanged for the
+  four declared interfaces (`DIGESTS.sha256` re-recorded) and regenerated with
+  `codefly generate proto` and the repository's catalog step
+  ([REST regeneration](../../REST_SURFACE.md#regeneration)). `host/artifact/v1`
+  is not copied: no `interface.codefly.yaml` declares it. The interface's
+  `google.api.http` mappings are not on this host's REST surface: interface
+  procedures get Connect routes only, and the public OpenAPI drops their
+  operations (the gateway route compiler already did; the public OpenAPI
+  renderer now agrees instead of refusing).
+- **`implements` is on `accounts/connect`.** The `authority` endpoint admits only
+  the internal module-authority procedures behind the internal credential
+  (`grpc_auth_interceptor.go`), so every interface method was refused there.
+  The Connect listener mounts all four services under their own policies.
+  `TestImplementedInterfacesAreDeclaredOnTheEndpointThatServesThem` holds the
+  declaration to the endpoint whose contract surface carries every method (it
+  fails with the declaration back on `authority`).
+- **Gap 11 closed: an empty ask.** A person's `Issue` with no scopes is
+  everything they hold at the audience (`host_interface_holdings.go`). The
+  candidates are the kinds the audience module declares as content, each with
+  every action this host names on it (the composed permission vocabulary, the
+  organisation's roles, the composition's bindings to that audience). Each is
+  kept only if the person holds it by the check every mint makes
+  (`resolveAuthority` with the audience's content reads, the same check
+  `heldBindingScope` in #1219 makes for a named binding), and `StartTask`
+  decides the ask again. A person holding nothing is refused by name.
+  Reconciliation with #1219 (`start-task-operation-bindings`, open): a person's
+  ask that names an `operation_binding_id` is that PR's `operation_bindings`;
+  once it lands, the adapter forwards the binding to it, and `personHolds`
+  and `heldBindingScope` are one check that one of them should call.
+- **`Current` and `ListFixturePeople`.** `Current` is an authenticated read of
+  the identity the perimeter verified (signature, window, the configured
+  revoker): session id, the effective subject, organisation, role (as `SignIn`
+  states it) and teams; no bearer back; a credential naming no session is
+  `Unauthenticated`. `ListFixturePeople` is
+  `business.Service.ListFixturePeople`: the development validator's ordered
+  allowlist (`FixtureTokens`), each projected through the resolver's read-only
+  `LookupIdentity` and the person's teams; empty, not refused, with no
+  development validator wired (every deployment that signs real people in), as
+  the interface states. A token whose person is not seeded is omitted.
+- **Fixture people.** `dev-admin` now carries the authority fixture's people with
+  its tokens (maya, remi, alex, dev at Acme Corp; zoe, omar at a new Globex) and
+  teams. Their roles at composed modules are roles over those modules'
+  permissions, which this host cannot name (the boundary gate refuses them):
+  the composing workspace's own `fixtures/` adds them and assigns them by
+  email, which fixture `assignments` now accept beside `agent_identifier`.
+- **`Check` applies a named method.** No module has a delivered method policy on
+  this host (gap 4: no `AuthorityManifestV1` arrives), so the interface's rule
+  for that case applies: a check naming a method is refused by name
+  (PermissionDenied), and an advisory check answers the verified capability with
+  that refusal in `CheckResponse.refusal`. A hop must run
+  `hop/ENFORCEMENT=warn` against accounts until method-policy delivery lands;
+  that delivery (ApplyManifest carrying the authority document, on the internal
+  listener) is the next step.
+- **Unserved, by name.** `ListResources`, `Delegate`, `RevokeDelegation`,
+  `GetDelegation` are classified and answer `Unimplemented` naming the gap.
+- **The composition's modules.** `Issue`'s "not composed" check and every mint
+  read the registry the host derives from delivery (`IsDeclaredModulePrincipal`,
+  `ModulePrincipals`), the same one every module capability reads; nothing new
+  was added for it. A person's module installation is the production seal store
+  in a real run; the harness alone wires `ComposedModuleInstallations`.
+
+### The suite at `06d0d3b` against accounts
+
+`HOST_INTERFACE_CONFORMANCE=1 GOWORK=off go test -json ./pkg/adapters/ -run '^TestAccountsPassesTheHostInterfaceConformanceSuite$' -count=1`,
+with the harness now stating a permission matrix and an in-memory revocation
+list at the minter's revoker seam (production's is the cache's). **9 passed, 4
+failed, 6 skipped** of the nineteen suite cases, and the harness's own line
+(an ended session is no longer current) passes.
+
+| Outcome | Case | Why |
+| --- | --- | --- |
+| pass | keys; fixture sign-in; every listed fixture person signs in; Current; person issued/checked/refused elsewhere; empty ask; permission matrix; refusals by reason; workload binding | |
+| fail | an installation acts for itself | the fixture installs no solution (follows gap 4) |
+| fail | a child hop names its actor and binding | the person's token naming a binding is #1219; the hop naming its binding waits on core (gap 14) |
+| fail | a manifest moves only forward | ApplyManifest is internal and the harness dials the tenant listener (gap 4) |
+| fail | install pending, then exposed | blocked by the same delivery refusal (gaps 4, 5) |
+| skip | callee refuses what does not verify | needs an installation whose grant can move |
+| skip | delegate chain; method policy; resources; lookup; delegation | the harness states no case: each needs a host capability above (gap 4, ListResources, delegation) |
+
+### What was not verified
+
+No composed run: platform-obin, a playground and the edge/hop against a live
+accounts were not started. The fixture people's sign-in and teams were proven
+through the seeded harness store, not a `codefly run`. `codefly generate
+contracts saas-starter --check` fails on this branch, before and after this
+change: the CLI refuses a contract endpoint whose proto declares services in
+more than one package (`cli cmd/generate/contracts.go:518`), so the exported
+contracts do not yet carry the `host.*` services; that is a CLI gap. The
+frontend fixture schema change was checked against the fixture with zod
+directly, not through the frontend's vitest suite (no installed dependencies).
+

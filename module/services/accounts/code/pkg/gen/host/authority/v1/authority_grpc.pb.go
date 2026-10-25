@@ -6,7 +6,7 @@
 
 // The authority interface: what a module or solution calls on its host to be
 // issued a Work Context, to have one checked, and to learn the keys it was
-// signed with. Three operations. Every former spelling (start task, start
+// signed with, and to ask which resources of a kind it covers. Every former spelling (start task, start
 // installation task, exchange audience, start child, renew, the module broker's
 // mints) is Issue with a different `as`.
 
@@ -26,25 +26,47 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuthorityService_Issue_FullMethodName = "/host.authority.v1.AuthorityService/Issue"
-	AuthorityService_Check_FullMethodName = "/host.authority.v1.AuthorityService/Check"
-	AuthorityService_Keys_FullMethodName  = "/host.authority.v1.AuthorityService/Keys"
+	AuthorityService_Issue_FullMethodName            = "/host.authority.v1.AuthorityService/Issue"
+	AuthorityService_Check_FullMethodName            = "/host.authority.v1.AuthorityService/Check"
+	AuthorityService_Keys_FullMethodName             = "/host.authority.v1.AuthorityService/Keys"
+	AuthorityService_ListResources_FullMethodName    = "/host.authority.v1.AuthorityService/ListResources"
+	AuthorityService_Delegate_FullMethodName         = "/host.authority.v1.AuthorityService/Delegate"
+	AuthorityService_RevokeDelegation_FullMethodName = "/host.authority.v1.AuthorityService/RevokeDelegation"
+	AuthorityService_GetDelegation_FullMethodName    = "/host.authority.v1.AuthorityService/GetDelegation"
 )
 
 // AuthorityServiceClient is the client API for AuthorityService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// AuthorityService is implemented by the host (accounts) and by the mini gateway.
+// AuthorityService is implemented by the host (accounts) and by the authority gateway.
 type AuthorityServiceClient interface {
 	// Issue signs a Work Context for one owner shape, one audience and the scopes
 	// asked for, bounded by what the owner holds and what the audience declared.
+	// Served over REST too (POST /v1/authority:issue), for a module with no
+	// generated client of its own, as a Python service: the same request and
+	// answer, in JSON.
 	Issue(ctx context.Context, in *IssueRequest, opts ...grpc.CallOption) (*IssueResponse, error)
 	// Check verifies a presented Work Context for the audience the caller is,
 	// re-checking the authorization revision and the seal live.
 	Check(ctx context.Context, in *CheckRequest, opts ...grpc.CallOption) (*CheckResponse, error)
 	// Keys returns the issuer and the public keys a verifier pins.
 	Keys(ctx context.Context, in *KeysRequest, opts ...grpc.CallOption) (*KeysResponse, error)
+	// ListResources answers which resources of one kind a checked capability may
+	// act on with one action, decided by the authority at the time of the call
+	// rather than carried in the capability. A module maps the answer onto its
+	// own resources; the authority knows them only by id.
+	ListResources(ctx context.Context, in *ListResourcesRequest, opts ...grpc.CallOption) (*ListResourcesResponse, error)
+	// Delegate records a signed-in person's grant to a module (the caller's
+	// bearer is the person); Issue with a delegation acts on it.
+	Delegate(ctx context.Context, in *DelegateRequest, opts ...grpc.CallOption) (*Delegation, error)
+	// RevokeDelegation ends a delegation; the next Issue from it is refused.
+	RevokeDelegation(ctx context.Context, in *RevokeDelegationRequest, opts ...grpc.CallOption) (*RevokeDelegationResponse, error)
+	// GetDelegation reads one delegation for the module it is granted to (by its
+	// workload credential) or for its grantor (by the caller's bearer): whether it
+	// still stands. Work that outlives the capability that started it asks this
+	// between issues, so a revoke stops it even when it calls no other module.
+	GetDelegation(ctx context.Context, in *GetDelegationRequest, opts ...grpc.CallOption) (*Delegation, error)
 }
 
 type authorityServiceClient struct {
@@ -85,20 +107,78 @@ func (c *authorityServiceClient) Keys(ctx context.Context, in *KeysRequest, opts
 	return out, nil
 }
 
+func (c *authorityServiceClient) ListResources(ctx context.Context, in *ListResourcesRequest, opts ...grpc.CallOption) (*ListResourcesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListResourcesResponse)
+	err := c.cc.Invoke(ctx, AuthorityService_ListResources_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authorityServiceClient) Delegate(ctx context.Context, in *DelegateRequest, opts ...grpc.CallOption) (*Delegation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Delegation)
+	err := c.cc.Invoke(ctx, AuthorityService_Delegate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authorityServiceClient) RevokeDelegation(ctx context.Context, in *RevokeDelegationRequest, opts ...grpc.CallOption) (*RevokeDelegationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeDelegationResponse)
+	err := c.cc.Invoke(ctx, AuthorityService_RevokeDelegation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authorityServiceClient) GetDelegation(ctx context.Context, in *GetDelegationRequest, opts ...grpc.CallOption) (*Delegation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Delegation)
+	err := c.cc.Invoke(ctx, AuthorityService_GetDelegation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthorityServiceServer is the server API for AuthorityService service.
 // All implementations must embed UnimplementedAuthorityServiceServer
 // for forward compatibility.
 //
-// AuthorityService is implemented by the host (accounts) and by the mini gateway.
+// AuthorityService is implemented by the host (accounts) and by the authority gateway.
 type AuthorityServiceServer interface {
 	// Issue signs a Work Context for one owner shape, one audience and the scopes
 	// asked for, bounded by what the owner holds and what the audience declared.
+	// Served over REST too (POST /v1/authority:issue), for a module with no
+	// generated client of its own, as a Python service: the same request and
+	// answer, in JSON.
 	Issue(context.Context, *IssueRequest) (*IssueResponse, error)
 	// Check verifies a presented Work Context for the audience the caller is,
 	// re-checking the authorization revision and the seal live.
 	Check(context.Context, *CheckRequest) (*CheckResponse, error)
 	// Keys returns the issuer and the public keys a verifier pins.
 	Keys(context.Context, *KeysRequest) (*KeysResponse, error)
+	// ListResources answers which resources of one kind a checked capability may
+	// act on with one action, decided by the authority at the time of the call
+	// rather than carried in the capability. A module maps the answer onto its
+	// own resources; the authority knows them only by id.
+	ListResources(context.Context, *ListResourcesRequest) (*ListResourcesResponse, error)
+	// Delegate records a signed-in person's grant to a module (the caller's
+	// bearer is the person); Issue with a delegation acts on it.
+	Delegate(context.Context, *DelegateRequest) (*Delegation, error)
+	// RevokeDelegation ends a delegation; the next Issue from it is refused.
+	RevokeDelegation(context.Context, *RevokeDelegationRequest) (*RevokeDelegationResponse, error)
+	// GetDelegation reads one delegation for the module it is granted to (by its
+	// workload credential) or for its grantor (by the caller's bearer): whether it
+	// still stands. Work that outlives the capability that started it asks this
+	// between issues, so a revoke stops it even when it calls no other module.
+	GetDelegation(context.Context, *GetDelegationRequest) (*Delegation, error)
 	mustEmbedUnimplementedAuthorityServiceServer()
 }
 
@@ -117,6 +197,18 @@ func (UnimplementedAuthorityServiceServer) Check(context.Context, *CheckRequest)
 }
 func (UnimplementedAuthorityServiceServer) Keys(context.Context, *KeysRequest) (*KeysResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Keys not implemented")
+}
+func (UnimplementedAuthorityServiceServer) ListResources(context.Context, *ListResourcesRequest) (*ListResourcesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListResources not implemented")
+}
+func (UnimplementedAuthorityServiceServer) Delegate(context.Context, *DelegateRequest) (*Delegation, error) {
+	return nil, status.Error(codes.Unimplemented, "method Delegate not implemented")
+}
+func (UnimplementedAuthorityServiceServer) RevokeDelegation(context.Context, *RevokeDelegationRequest) (*RevokeDelegationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeDelegation not implemented")
+}
+func (UnimplementedAuthorityServiceServer) GetDelegation(context.Context, *GetDelegationRequest) (*Delegation, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDelegation not implemented")
 }
 func (UnimplementedAuthorityServiceServer) mustEmbedUnimplementedAuthorityServiceServer() {}
 func (UnimplementedAuthorityServiceServer) testEmbeddedByValue()                          {}
@@ -193,6 +285,78 @@ func _AuthorityService_Keys_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthorityService_ListResources_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListResourcesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthorityServiceServer).ListResources(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthorityService_ListResources_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthorityServiceServer).ListResources(ctx, req.(*ListResourcesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthorityService_Delegate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DelegateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthorityServiceServer).Delegate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthorityService_Delegate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthorityServiceServer).Delegate(ctx, req.(*DelegateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthorityService_RevokeDelegation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeDelegationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthorityServiceServer).RevokeDelegation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthorityService_RevokeDelegation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthorityServiceServer).RevokeDelegation(ctx, req.(*RevokeDelegationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthorityService_GetDelegation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDelegationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthorityServiceServer).GetDelegation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthorityService_GetDelegation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthorityServiceServer).GetDelegation(ctx, req.(*GetDelegationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AuthorityService_ServiceDesc is the grpc.ServiceDesc for AuthorityService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -211,6 +375,22 @@ var AuthorityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Keys",
 			Handler:    _AuthorityService_Keys_Handler,
+		},
+		{
+			MethodName: "ListResources",
+			Handler:    _AuthorityService_ListResources_Handler,
+		},
+		{
+			MethodName: "Delegate",
+			Handler:    _AuthorityService_Delegate_Handler,
+		},
+		{
+			MethodName: "RevokeDelegation",
+			Handler:    _AuthorityService_RevokeDelegation_Handler,
+		},
+		{
+			MethodName: "GetDelegation",
+			Handler:    _AuthorityService_GetDelegation_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

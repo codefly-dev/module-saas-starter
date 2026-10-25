@@ -794,7 +794,7 @@ func TestDeploymentTopologyRequiresTheModuleAuthorityEndpoint(t *testing.T) {
 	documents := readDeploymentDocuments(t)
 
 	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
-		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: internal\n          # The published host authority interfaces: the same contract\n          # the mini gateway implements for a local run. A consumer depends on\n          # the interface, never on this service.\n          implements:\n              - codefly.dev/authority@0.1.0\n              - codefly.dev/composition@0.1.0\n              - codefly.dev/installation@0.1.0\n              - codefly.dev/session@0.1.0\n", ""))
+		withModule(t, documents, "        - service: accounts\n          endpoint: authority\n          visibility: internal\n", ""))
 	require.ErrorContains(t, err, "module interface must export accounts/authority")
 
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,

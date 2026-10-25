@@ -2,19 +2,128 @@
 // @generated from file host/session/v1/session.proto (package host.session.v1, syntax proto3)
 /* eslint-disable */
 
-// The session interface, at the browser edge only: a person signs in and the
-// host opens a session. The mini gateway signs in fixture people; the host signs
-// in real ones. A module never calls this.
+// The session interface, at the browser edge: a person signs in and the host
+// opens a session, and a page's runtime asks who the bearer a request carries is.
+// The authority gateway signs in fixture people; the host signs in real ones. A
+// module never calls this: it is called through the hop.
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file host/session/v1/session.proto.
  */
 export const file_host_session_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("Ch1ob3N0L3Nlc3Npb24vdjEvc2Vzc2lvbi5wcm90bxIPaG9zdC5zZXNzaW9uLnYxIiYKDVNpZ25JblJlcXVlc3QSFQoNZml4dHVyZV90b2tlbhgBIAEoCSJ6CgdTZXNzaW9uEhIKCnNlc3Npb25faWQYASABKAkSEQoJcGVyc29uX2lkGAIgASgJEhcKD29yZ2FuaXphdGlvbl9pZBgDIAEoCRINCgVyb2xlcxgEIAMoCRIQCgh0ZWFtX2lkcxgFIAMoCRIOCgZiZWFyZXIYBiABKAkyVAoOU2Vzc2lvblNlcnZpY2USQgoGU2lnbkluEh4uaG9zdC5zZXNzaW9uLnYxLlNpZ25JblJlcXVlc3QaGC5ob3N0LnNlc3Npb24udjEuU2Vzc2lvbkKtAQoTY29tLmhvc3Quc2Vzc2lvbi52MUIMU2Vzc2lvblByb3RvUAFaKmFjY291bnRzL3BrZy9nZW4vaG9zdC9zZXNzaW9uL3YxO3Nlc3Npb252MaICA0hTWKoCD0hvc3QuU2Vzc2lvbi5WMcoCD0hvc3RcU2Vzc2lvblxWMeICG0hvc3RcU2Vzc2lvblxWMVxHUEJNZXRhZGF0YeoCEUhvc3Q6OlNlc3Npb246OlYxYgZwcm90bzM");
+  fileDesc("Ch1ob3N0L3Nlc3Npb24vdjEvc2Vzc2lvbi5wcm90bxIPaG9zdC5zZXNzaW9uLnYxIhoKGExpc3RGaXh0dXJlUGVvcGxlUmVxdWVzdCJLChlMaXN0Rml4dHVyZVBlb3BsZVJlc3BvbnNlEi4KBnBlb3BsZRgBIAMoCzIeLmhvc3Quc2Vzc2lvbi52MS5GaXh0dXJlUGVyc29uIoIBCg1GaXh0dXJlUGVyc29uEhEKCXBlcnNvbl9pZBgBIAEoCRINCgVlbWFpbBgCIAEoCRIXCg9vcmdhbml6YXRpb25faWQYAyABKAkSDQoFcm9sZXMYBCADKAkSEAoIdGVhbV9pZHMYBSADKAkSFQoNZml4dHVyZV90b2tlbhgGIAEoCSIQCg5DdXJyZW50UmVxdWVzdCImCg1TaWduSW5SZXF1ZXN0EhUKDWZpeHR1cmVfdG9rZW4YASABKAkiegoHU2Vzc2lvbhISCgpzZXNzaW9uX2lkGAEgASgJEhEKCXBlcnNvbl9pZBgCIAEoCRIXCg9vcmdhbml6YXRpb25faWQYAyABKAkSDQoFcm9sZXMYBCADKAkSEAoIdGVhbV9pZHMYBSADKAkSDgoGYmVhcmVyGAYgASgJMuACCg5TZXNzaW9uU2VydmljZRJiCgZTaWduSW4SHi5ob3N0LnNlc3Npb24udjEuU2lnbkluUmVxdWVzdBoYLmhvc3Quc2Vzc2lvbi52MS5TZXNzaW9uIh6C0+STAhg6ASoiEy92MS9zZXNzaW9uOnNpZ24taW4SWQoHQ3VycmVudBIfLmhvc3Quc2Vzc2lvbi52MS5DdXJyZW50UmVxdWVzdBoYLmhvc3Quc2Vzc2lvbi52MS5TZXNzaW9uIhOC0+STAg0SCy92MS9zZXNzaW9uEo4BChFMaXN0Rml4dHVyZVBlb3BsZRIpLmhvc3Quc2Vzc2lvbi52MS5MaXN0Rml4dHVyZVBlb3BsZVJlcXVlc3QaKi5ob3N0LnNlc3Npb24udjEuTGlzdEZpeHR1cmVQZW9wbGVSZXNwb25zZSIigtPkkwIcEhovdjEvc2Vzc2lvbi9maXh0dXJlLXBlb3BsZUKtAQoTY29tLmhvc3Quc2Vzc2lvbi52MUIMU2Vzc2lvblByb3RvUAFaKmFjY291bnRzL3BrZy9nZW4vaG9zdC9zZXNzaW9uL3YxO3Nlc3Npb252MaICA0hTWKoCD0hvc3QuU2Vzc2lvbi5WMcoCD0hvc3RcU2Vzc2lvblxWMeICG0hvc3RcU2Vzc2lvblxWMVxHUEJNZXRhZGF0YeoCEUhvc3Q6OlNlc3Npb246OlYxYgZwcm90bzM", [file_google_api_annotations]);
+
+/**
+ * ListFixturePeopleRequest asks for every fixture person.
+ *
+ * @generated from message host.session.v1.ListFixturePeopleRequest
+ */
+export type ListFixturePeopleRequest = Message<"host.session.v1.ListFixturePeopleRequest"> & {
+};
+
+/**
+ * Describes the message host.session.v1.ListFixturePeopleRequest.
+ * Use `create(ListFixturePeopleRequestSchema)` to create a new message.
+ */
+export const ListFixturePeopleRequestSchema: GenMessage<ListFixturePeopleRequest> = /*@__PURE__*/
+  messageDesc(file_host_session_v1_session, 0);
+
+/**
+ * ListFixturePeopleResponse is every fixture person, in the fixture's order.
+ *
+ * @generated from message host.session.v1.ListFixturePeopleResponse
+ */
+export type ListFixturePeopleResponse = Message<"host.session.v1.ListFixturePeopleResponse"> & {
+  /**
+   * The people.
+   *
+   * @generated from field: repeated host.session.v1.FixturePerson people = 1;
+   */
+  people: FixturePerson[];
+};
+
+/**
+ * Describes the message host.session.v1.ListFixturePeopleResponse.
+ * Use `create(ListFixturePeopleResponseSchema)` to create a new message.
+ */
+export const ListFixturePeopleResponseSchema: GenMessage<ListFixturePeopleResponse> = /*@__PURE__*/
+  messageDesc(file_host_session_v1_session, 1);
+
+/**
+ * FixturePerson is one person a fixture run signs in.
+ *
+ * @generated from message host.session.v1.FixturePerson
+ */
+export type FixturePerson = Message<"host.session.v1.FixturePerson"> & {
+  /**
+   * The person.
+   *
+   * @generated from field: string person_id = 1;
+   */
+  personId: string;
+
+  /**
+   * Their email.
+   *
+   * @generated from field: string email = 2;
+   */
+  email: string;
+
+  /**
+   * The organisation they sign into.
+   *
+   * @generated from field: string organization_id = 3;
+   */
+  organizationId: string;
+
+  /**
+   * The roles they hold in it.
+   *
+   * @generated from field: repeated string roles = 4;
+   */
+  roles: string[];
+
+  /**
+   * The teams they belong to.
+   *
+   * @generated from field: repeated string team_ids = 5;
+   */
+  teamIds: string[];
+
+  /**
+   * The token SignIn takes for them.
+   *
+   * @generated from field: string fixture_token = 6;
+   */
+  fixtureToken: string;
+};
+
+/**
+ * Describes the message host.session.v1.FixturePerson.
+ * Use `create(FixturePersonSchema)` to create a new message.
+ */
+export const FixturePersonSchema: GenMessage<FixturePerson> = /*@__PURE__*/
+  messageDesc(file_host_session_v1_session, 2);
+
+/**
+ * CurrentRequest asks for the caller's own session; the bearer is the call's.
+ *
+ * @generated from message host.session.v1.CurrentRequest
+ */
+export type CurrentRequest = Message<"host.session.v1.CurrentRequest"> & {
+};
+
+/**
+ * Describes the message host.session.v1.CurrentRequest.
+ * Use `create(CurrentRequestSchema)` to create a new message.
+ */
+export const CurrentRequestSchema: GenMessage<CurrentRequest> = /*@__PURE__*/
+  messageDesc(file_host_session_v1_session, 3);
 
 /**
  * SignInRequest presents a fixture token.
@@ -35,7 +144,7 @@ export type SignInRequest = Message<"host.session.v1.SignInRequest"> & {
  * Use `create(SignInRequestSchema)` to create a new message.
  */
 export const SignInRequestSchema: GenMessage<SignInRequest> = /*@__PURE__*/
-  messageDesc(file_host_session_v1_session, 0);
+  messageDesc(file_host_session_v1_session, 4);
 
 /**
  * Session is an open session.
@@ -93,7 +202,7 @@ export type Session = Message<"host.session.v1.Session"> & {
  * Use `create(SessionSchema)` to create a new message.
  */
 export const SessionSchema: GenMessage<Session> = /*@__PURE__*/
-  messageDesc(file_host_session_v1_session, 1);
+  messageDesc(file_host_session_v1_session, 5);
 
 /**
  * SessionService opens sessions.
@@ -110,6 +219,32 @@ export const SessionService: GenService<{
     methodKind: "unary";
     input: typeof SignInRequestSchema;
     output: typeof SessionSchema;
+  },
+  /**
+   * Current answers the session the caller's bearer (`authorization: Bearer
+   * <bearer>`) belongs to: who a page's request is for, decided by the host,
+   * never read from a header the request wrote. The bearer itself is not
+   * handed back. An unknown or ended session is unauthenticated.
+   *
+   * @generated from rpc host.session.v1.SessionService.Current
+   */
+  current: {
+    methodKind: "unary";
+    input: typeof CurrentRequestSchema;
+    output: typeof SessionSchema;
+  },
+  /**
+   * ListFixturePeople answers who this authority signs in by fixture token, for
+   * the browser edge's sign-in page: the people are defined once, in the
+   * authority's fixture. A host that signs real people in through its identity
+   * provider has no fixture people and answers none.
+   *
+   * @generated from rpc host.session.v1.SessionService.ListFixturePeople
+   */
+  listFixturePeople: {
+    methodKind: "unary";
+    input: typeof ListFixturePeopleRequestSchema;
+    output: typeof ListFixturePeopleResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_host_session_v1_session, 0);

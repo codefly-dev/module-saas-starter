@@ -282,6 +282,15 @@
       },
       "type": "object"
     },
+    "SourceOperationEffect": {
+      "default": "EFFECT_UNSPECIFIED",
+      "enum": [
+        "EFFECT_UNSPECIFIED",
+        "EFFECT_READ_ONLY",
+        "EFFECT_MUTATION"
+      ],
+      "type": "string"
+    },
     "TeamServiceCreateTeamBody": {
       "properties": {
         "description": {
@@ -5203,7 +5212,7 @@
           "type": "string"
         },
         "effect": {
-          "$ref": "#/definitions/v1SourceOperationEffect"
+          "$ref": "#/definitions/SourceOperationEffect"
         },
         "inputSchema": {
           "type": "object"
@@ -5232,15 +5241,6 @@
         }
       },
       "type": "object"
-    },
-    "v1SourceOperationEffect": {
-      "default": "EFFECT_UNSPECIFIED",
-      "enum": [
-        "EFFECT_UNSPECIFIED",
-        "EFFECT_READ_ONLY",
-        "EFFECT_MUTATION"
-      ],
-      "type": "string"
     },
     "v1SourceOperationReceipt": {
       "description": "SourceOperationReceipt contains only the committed result and safe metadata.",
@@ -6141,7 +6141,8 @@
     }
   },
   "info": {
-    "title": "codefly/base/v0/agent.proto",
+    "description": "Moved from codefly-dev/core proto/codefly/base/v0/work_context.proto on 2026-10-21.\nEvery message, field name and field number is unchanged, so the deterministic\nbytes a verifier reads are identical; only the package and the Go import path\ndiffer. The conformance fixtures prove it. A change in meaning is a V2 message\nbeside the V1, never a field reinterpreted.",
+    "title": "host/authority/v1/work_context.proto",
     "version": "version not set"
   },
   "paths": {

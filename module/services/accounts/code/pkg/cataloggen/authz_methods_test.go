@@ -50,8 +50,8 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	// for the composition interface's ApplyManifest. Picking either side's
 	// number would be silently wrong, so this is read off the regenerated
 	// generated/authz-methods.json.
-	require.Equal(t, 56, internalCount) // includes the internal retained-frontend read
-	require.Equal(t, 18, failClosedCount) // +1: the authority interface's Issue is rate-limited as sensitive and fails closed
+	require.Equal(t, 56, internalCount)   // includes the internal retained-frontend read
+	require.Equal(t, 19, failClosedCount) // +2: the session interface's SignIn and ListFixturePeople are rate-limited as authentication and fail closed
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(
 		t,
@@ -171,5 +171,5 @@ func TestImpersonationRestrictionsMatchTheDescriptorsTheInterceptorReads(t *test
 	}
 
 	require.Equal(t, catalogued, enforced)
-	require.Len(t, enforced, 61) // 57 of the API package + Issue, Install, GrantToTeam, List of the implemented interfaces; Check is public, authenticated by the token it checks
+	require.Len(t, enforced, 65) // 57 of the API package + Issue, Delegate, RevokeDelegation, GetDelegation, Install, GrantToTeam, List, Current of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
 }

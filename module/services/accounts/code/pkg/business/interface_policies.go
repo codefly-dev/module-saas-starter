@@ -57,6 +57,11 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 			Impersonation:       impersonationFor(exposure),
 		}
 	}
+	sessionMint := func(event string) *policyv1.MethodPolicy {
+		p := authenticatedMint(event)
+		p.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE
+		return p
+	}
 	adminWrite := func(event string) *policyv1.MethodPolicy {
 		p := authenticatedMint(event)
 		p.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN
@@ -70,6 +75,14 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		// and the answer says nothing the token does not already carry but its standing.
 		"/host.authority.v1.AuthorityService/Check": read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.authority.v1.AuthorityService/Keys":  read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_PUBLIC),
+		// Served as Unimplemented by name until the host answers them (HOST_INTERFACE.md);
+		// classified so the refusal names the gap rather than an unclassified method.
+		"/host.authority.v1.AuthorityService/ListResources": read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		// A delegation names no organisation: it is the bearer's, so the floor is
+		// the authenticated caller and the organisation is the session's.
+		"/host.authority.v1.AuthorityService/Delegate":         sessionMint("saas.work_context.task_started"),
+		"/host.authority.v1.AuthorityService/RevokeDelegation": sessionMint("saas.work_context.task_started"),
+		"/host.authority.v1.AuthorityService/GetDelegation":    read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.composition.v1.CompositionService/ApplyManifest": {
 			Exposure: policyv1.Exposure_EXPOSURE_INTERNAL, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
 			Mfa: policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
@@ -84,6 +97,21 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		"/host.installation.v1.InstallationService/Install":     adminWrite("saas.installation.created"),
 		"/host.installation.v1.InstallationService/GrantToTeam": adminWrite("saas.installation.created"),                                                                                                                /* GAP: no exposure event is registered; narrowed is the nearest */
 		"/host.installation.v1.InstallationService/List":        read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's view is the entitlement listing
+		// Current is the caller's own session: authenticated by the bearer it
+		// describes, organisation-less like the session itself may be.
+		"/host.session.v1.SessionService/Current": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		// The sign-in page reads it before anyone signs in; it answers none
+		// unless fixture sign-in is enabled, and then the tokens SignIn takes.
+		"/host.session.v1.SessionService/ListFixturePeople": {
+			Exposure: policyv1.Exposure_EXPOSURE_PUBLIC, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
+			Mfa:                 policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
+			Audit:               &policyv1.AuditPolicy{Emission: policyv1.AuditEmission_AUDIT_EMISSION_NONE},
+			Idempotency:         policyv1.IdempotencyRequirement_IDEMPOTENCY_REQUIREMENT_OPTIONAL,
+			RateLimit:           policyv1.RateLimitClass_RATE_LIMIT_CLASS_AUTHENTICATION,
+			RequestSensitivity:  policyv1.Sensitivity_SENSITIVITY_PUBLIC,
+			ResponseSensitivity: policyv1.Sensitivity_SENSITIVITY_SECRET,
+			PlatformRole:        policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
+		},
 		"/host.session.v1.SessionService/SignIn": {
 			Exposure: policyv1.Exposure_EXPOSURE_PUBLIC, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
 			Mfa:                 policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
@@ -130,14 +158,20 @@ func interfacePackage(name string) bool {
 // interfaceDescriptions are the one-line descriptions the catalog requires for
 // every served procedure, keyed as rpcDescriptions is: "Service/Method".
 var interfaceDescriptions = map[string]string{
-	"AuthorityService/Issue":           "Issue a Work Context for one owner shape, one audience and the scopes asked for, bounded by what the owner holds.",
-	"AuthorityService/Check":           "Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live.",
-	"AuthorityService/Keys":            "Return the issuer and the public keys a verifier pins.",
-	"CompositionService/ApplyManifest": "Deliver one module instance's manifest at one generation; the ceiling is the manifest.",
-	"InstallationService/Install":      "Install one target at one organisation under the least role it needs; pending until its install step is acknowledged.",
-	"InstallationService/GrantToTeam":  "Expose an installation to a team under the installation's role.",
-	"InstallationService/List":         "List what one organisation has installed.",
-	"SessionService/SignIn":            "Open a session for a fixture person by their fixture token.",
+	"AuthorityService/Issue":            "Issue a Work Context for one owner shape, one audience and the scopes asked for, bounded by what the owner holds.",
+	"AuthorityService/Check":            "Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live.",
+	"AuthorityService/Keys":             "Return the issuer and the public keys a verifier pins.",
+	"CompositionService/ApplyManifest":  "Deliver one module instance's manifest at one generation; the ceiling is the manifest.",
+	"InstallationService/Install":       "Install one target at one organisation under the least role it needs; pending until its install step is acknowledged.",
+	"InstallationService/GrantToTeam":   "Expose an installation to a team under the installation's role.",
+	"InstallationService/List":          "List what one organisation has installed.",
+	"AuthorityService/ListResources":    "Answer which resources of one kind a checked capability covers for one action (not yet served here).",
+	"AuthorityService/Delegate":         "Record a signed-in person's grant to a module (not yet served here).",
+	"AuthorityService/RevokeDelegation": "End a delegation (not yet served here).",
+	"AuthorityService/GetDelegation":    "Read whether one delegation still stands (not yet served here).",
+	"SessionService/SignIn":             "Open a session for a fixture person by their fixture token.",
+	"SessionService/Current":            "Answer the session the caller's bearer belongs to, without the bearer.",
+	"SessionService/ListFixturePeople":  "List the people fixture sign-in admits, in the fixture's order; none where it is not enabled.",
 }
 
 func init() {

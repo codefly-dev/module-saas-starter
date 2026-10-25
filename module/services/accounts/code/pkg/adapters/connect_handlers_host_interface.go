@@ -34,6 +34,18 @@ func (h *hostAuthorityConnectHandler) Issue(ctx context.Context, req *connect.Re
 func (h *hostAuthorityConnectHandler) Check(ctx context.Context, req *connect.Request[authorityv1.CheckRequest]) (*connect.Response[authorityv1.CheckResponse], error) {
 	return unary(ctx, req, h.inner.Check)
 }
+func (h *hostAuthorityConnectHandler) ListResources(ctx context.Context, req *connect.Request[authorityv1.ListResourcesRequest]) (*connect.Response[authorityv1.ListResourcesResponse], error) {
+	return unary(ctx, req, h.inner.ListResources)
+}
+func (h *hostAuthorityConnectHandler) Delegate(ctx context.Context, req *connect.Request[authorityv1.DelegateRequest]) (*connect.Response[authorityv1.Delegation], error) {
+	return unary(ctx, req, h.inner.Delegate)
+}
+func (h *hostAuthorityConnectHandler) RevokeDelegation(ctx context.Context, req *connect.Request[authorityv1.RevokeDelegationRequest]) (*connect.Response[authorityv1.RevokeDelegationResponse], error) {
+	return unary(ctx, req, h.inner.RevokeDelegation)
+}
+func (h *hostAuthorityConnectHandler) GetDelegation(ctx context.Context, req *connect.Request[authorityv1.GetDelegationRequest]) (*connect.Response[authorityv1.Delegation], error) {
+	return unary(ctx, req, h.inner.GetDelegation)
+}
 func (h *hostAuthorityConnectHandler) Keys(ctx context.Context, req *connect.Request[authorityv1.KeysRequest]) (*connect.Response[authorityv1.KeysResponse], error) {
 	return unary(ctx, req, h.inner.Keys)
 }
@@ -63,4 +75,10 @@ type hostSessionConnectHandler struct{ svc *business.Service }
 
 func (h *hostSessionConnectHandler) SignIn(ctx context.Context, req *connect.Request[sessionv1.SignInRequest]) (*connect.Response[sessionv1.Session], error) {
 	return unary(ctx, req, NewHostSessionServer(h.svc).SignIn)
+}
+func (h *hostSessionConnectHandler) Current(ctx context.Context, req *connect.Request[sessionv1.CurrentRequest]) (*connect.Response[sessionv1.Session], error) {
+	return unary(ctx, req, NewHostSessionServer(h.svc).Current)
+}
+func (h *hostSessionConnectHandler) ListFixturePeople(ctx context.Context, req *connect.Request[sessionv1.ListFixturePeopleRequest]) (*connect.Response[sessionv1.ListFixturePeopleResponse], error) {
+	return unary(ctx, req, NewHostSessionServer(h.svc).ListFixturePeople)
 }

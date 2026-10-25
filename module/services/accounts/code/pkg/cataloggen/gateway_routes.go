@@ -87,7 +87,11 @@ func BuildGatewayRouteCatalog(serviceDocument, bindingDocument []byte, documents
 			routes.Routes = append(routes.Routes, canonical)
 			if !strings.HasPrefix(method.GetProcedure(), "/"+serviceCatalog.GetApiPackage()+".") {
 				// An implemented interface's procedure is served under its own
-				// package and has no compatibility alias in the API package.
+				// package, over Connect and gRPC only: it has no compatibility
+				// alias in the API package and no REST route on this host's
+				// public surface. Its google.api.http mapping is the interface's,
+				// for an implementation that serves one; RenderPublicOpenAPI
+				// drops it for the same reason.
 				continue
 			}
 			for _, alias := range bindings.CompatibilityAliases {

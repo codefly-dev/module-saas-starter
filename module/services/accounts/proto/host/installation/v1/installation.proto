@@ -6,7 +6,7 @@ package host.installation.v1;
 
 option go_package = "gateway/pkg/gen/host/installation/v1;installationv1";
 
-// InstallationService is implemented by the host and by the mini gateway.
+// InstallationService is implemented by the host and by the authority gateway.
 service InstallationService {
   // Install composes an installation: its agent principal, its root scope and
   // the row, pending until the target acknowledges its install step.
@@ -80,6 +80,11 @@ message Installation {
   repeated string team_ids = 7;
   // The principal the installation acts as for itself.
   string agent_principal_id = 8;
+  // The namespace the installation's own authored content belongs to (an
+  // agent's source): the host names it, so a module never chooses which source
+  // an installation may run. A module installed by composition is
+  // "<organization>.<target>".
+  string namespace = 9;
 
   // Status is the installation's lifecycle.
   enum Status {

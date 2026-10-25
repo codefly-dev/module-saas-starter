@@ -6,7 +6,7 @@
 
 // The authority interface: what a module or solution calls on its host to be
 // issued a Work Context, to have one checked, and to learn the keys it was
-// signed with. Three operations. Every former spelling (start task, start
+// signed with, and to ask which resources of a kind it covers. Every former spelling (start task, start
 // installation task, exchange audience, start child, renew, the module broker's
 // mints) is Issue with a different `as`.
 
@@ -17,6 +17,7 @@ import (
 	sync "sync"
 	unsafe "unsafe"
 
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
@@ -39,6 +40,7 @@ type IssueRequest struct {
 	//	*IssueRequest_Workload
 	//	*IssueRequest_Installation
 	//	*IssueRequest_ParentToken
+	//	*IssueRequest_Delegation
 	As isIssueRequest_As `protobuf_oneof:"as"`
 	// The module principal that may consume the capability.
 	Audience string `protobuf:"bytes,5,opt,name=audience,proto3" json:"audience,omitempty"`
@@ -51,8 +53,14 @@ type IssueRequest struct {
 	OperationBindingId string `protobuf:"bytes,8,opt,name=operation_binding_id,json=operationBindingId,proto3" json:"operation_binding_id,omitempty"`
 	// The organisation the work runs in, for an owner shape that does not carry one.
 	OrganizationId string `protobuf:"bytes,9,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
-	// The actor a child hop delegates to, as a workload credential; required with parent_token.
-	Actor         *WorkloadCredential `protobuf:"bytes,10,opt,name=actor,proto3" json:"actor,omitempty"`
+	// The actor a child hop delegates to, as a workload credential; required with
+	// parent_token and with delegation.
+	Actor *WorkloadCredential `protobuf:"bytes,10,opt,name=actor,proto3" json:"actor,omitempty"`
+	// Which of the binding's operations the capability is for: "invoke" (the
+	// default for a person, a child or a delegation), "headless" (the default for
+	// a workload) or "lookup": the binding's lookup scopes alone, to read a
+	// receipt without the authority to repeat the effect.
+	Operation     string `protobuf:"bytes,12,opt,name=operation,proto3" json:"operation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -130,6 +138,15 @@ func (x *IssueRequest) GetParentToken() string {
 	return ""
 }
 
+func (x *IssueRequest) GetDelegation() *DelegationRef {
+	if x != nil {
+		if x, ok := x.As.(*IssueRequest_Delegation); ok {
+			return x.Delegation
+		}
+	}
+	return nil
+}
+
 func (x *IssueRequest) GetAudience() string {
 	if x != nil {
 		return x.Audience
@@ -172,6 +189,13 @@ func (x *IssueRequest) GetActor() *WorkloadCredential {
 	return nil
 }
 
+func (x *IssueRequest) GetOperation() string {
+	if x != nil {
+		return x.Operation
+	}
+	return ""
+}
+
 type isIssueRequest_As interface {
 	isIssueRequest_As()
 }
@@ -197,6 +221,15 @@ type IssueRequest_ParentToken struct {
 	ParentToken string `protobuf:"bytes,4,opt,name=parent_token,json=parentToken,proto3,oneof"`
 }
 
+type IssueRequest_Delegation struct {
+	// A delegation a person granted the module acting (actor): the capability
+	// is owned by that person and carries the delegation on the module's hop.
+	// No live capability is presented: the authority re-checks the delegation
+	// and what its grantor holds now, so a revoked delegation or a lost role
+	// stops the next issue, and renewing is issuing again.
+	Delegation *DelegationRef `protobuf:"bytes,11,opt,name=delegation,proto3,oneof"`
+}
+
 func (*IssueRequest_Person) isIssueRequest_As() {}
 
 func (*IssueRequest_Workload) isIssueRequest_As() {}
@@ -204,6 +237,360 @@ func (*IssueRequest_Workload) isIssueRequest_As() {}
 func (*IssueRequest_Installation) isIssueRequest_As() {}
 
 func (*IssueRequest_ParentToken) isIssueRequest_As() {}
+
+func (*IssueRequest_Delegation) isIssueRequest_As() {}
+
+// DelegationRef names one delegation.
+type DelegationRef struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The delegation's id, as Delegate answered it.
+	DelegationId  string `protobuf:"bytes,1,opt,name=delegation_id,json=delegationId,proto3" json:"delegation_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DelegationRef) Reset() {
+	*x = DelegationRef{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DelegationRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DelegationRef) ProtoMessage() {}
+
+func (x *DelegationRef) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DelegationRef.ProtoReflect.Descriptor instead.
+func (*DelegationRef) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *DelegationRef) GetDelegationId() string {
+	if x != nil {
+		return x.DelegationId
+	}
+	return ""
+}
+
+// DelegateRequest is a signed-in person granting a module the right to act for
+// them beyond any session: on scopes they hold, through the module's bindings.
+type DelegateRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The module granted, by principal.
+	Module string `protobuf:"bytes,1,opt,name=module,proto3" json:"module,omitempty"`
+	// What the module may do for the person; within what the person holds.
+	Scopes []*WorkScopeV1 `protobuf:"bytes,2,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	// Why, as the person was told (a connected source, a scheduled job).
+	Purpose       string `protobuf:"bytes,3,opt,name=purpose,proto3" json:"purpose,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DelegateRequest) Reset() {
+	*x = DelegateRequest{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DelegateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DelegateRequest) ProtoMessage() {}
+
+func (x *DelegateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DelegateRequest.ProtoReflect.Descriptor instead.
+func (*DelegateRequest) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *DelegateRequest) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
+}
+
+func (x *DelegateRequest) GetScopes() []*WorkScopeV1 {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+func (x *DelegateRequest) GetPurpose() string {
+	if x != nil {
+		return x.Purpose
+	}
+	return ""
+}
+
+// Delegation is one grant from a person to a module.
+type Delegation struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	DelegationId   string                 `protobuf:"bytes,1,opt,name=delegation_id,json=delegationId,proto3" json:"delegation_id,omitempty"`
+	OrganizationId string                 `protobuf:"bytes,2,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	// The person who granted it, and whom every capability issued from it is for.
+	Grantor string `protobuf:"bytes,3,opt,name=grantor,proto3" json:"grantor,omitempty"`
+	// The module granted.
+	Module  string         `protobuf:"bytes,4,opt,name=module,proto3" json:"module,omitempty"`
+	Scopes  []*WorkScopeV1 `protobuf:"bytes,5,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	Purpose string         `protobuf:"bytes,6,opt,name=purpose,proto3" json:"purpose,omitempty"`
+	// False once revoked; a revoked delegation issues nothing.
+	Active        bool `protobuf:"varint,7,opt,name=active,proto3" json:"active,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Delegation) Reset() {
+	*x = Delegation{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Delegation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Delegation) ProtoMessage() {}
+
+func (x *Delegation) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Delegation.ProtoReflect.Descriptor instead.
+func (*Delegation) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Delegation) GetDelegationId() string {
+	if x != nil {
+		return x.DelegationId
+	}
+	return ""
+}
+
+func (x *Delegation) GetOrganizationId() string {
+	if x != nil {
+		return x.OrganizationId
+	}
+	return ""
+}
+
+func (x *Delegation) GetGrantor() string {
+	if x != nil {
+		return x.Grantor
+	}
+	return ""
+}
+
+func (x *Delegation) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
+}
+
+func (x *Delegation) GetScopes() []*WorkScopeV1 {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+func (x *Delegation) GetPurpose() string {
+	if x != nil {
+		return x.Purpose
+	}
+	return ""
+}
+
+func (x *Delegation) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+// GetDelegationRequest names the delegation read; anyone but its module or its
+// grantor is told it does not exist.
+type GetDelegationRequest struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	DelegationId string                 `protobuf:"bytes,1,opt,name=delegation_id,json=delegationId,proto3" json:"delegation_id,omitempty"`
+	// The module asking, proving which module it is; absent when the grantor asks.
+	Actor         *WorkloadCredential `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetDelegationRequest) Reset() {
+	*x = GetDelegationRequest{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDelegationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDelegationRequest) ProtoMessage() {}
+
+func (x *GetDelegationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDelegationRequest.ProtoReflect.Descriptor instead.
+func (*GetDelegationRequest) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetDelegationRequest) GetDelegationId() string {
+	if x != nil {
+		return x.DelegationId
+	}
+	return ""
+}
+
+func (x *GetDelegationRequest) GetActor() *WorkloadCredential {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+// RevokeDelegationRequest ends a delegation; only its grantor may.
+type RevokeDelegationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DelegationId  string                 `protobuf:"bytes,1,opt,name=delegation_id,json=delegationId,proto3" json:"delegation_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeDelegationRequest) Reset() {
+	*x = RevokeDelegationRequest{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeDelegationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeDelegationRequest) ProtoMessage() {}
+
+func (x *RevokeDelegationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeDelegationRequest.ProtoReflect.Descriptor instead.
+func (*RevokeDelegationRequest) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *RevokeDelegationRequest) GetDelegationId() string {
+	if x != nil {
+		return x.DelegationId
+	}
+	return ""
+}
+
+// RevokeDelegationResponse is the delegation as it now stands.
+type RevokeDelegationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Delegation    *Delegation            `protobuf:"bytes,1,opt,name=delegation,proto3" json:"delegation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeDelegationResponse) Reset() {
+	*x = RevokeDelegationResponse{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeDelegationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeDelegationResponse) ProtoMessage() {}
+
+func (x *RevokeDelegationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeDelegationResponse.ProtoReflect.Descriptor instead.
+func (*RevokeDelegationResponse) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *RevokeDelegationResponse) GetDelegation() *Delegation {
+	if x != nil {
+		return x.Delegation
+	}
+	return nil
+}
 
 // PersonSession names the caller's own session. It carries no field: the person
 // is whoever the bearer on the call authenticates as, so a caller cannot ask for
@@ -216,7 +603,7 @@ type PersonSession struct {
 
 func (x *PersonSession) Reset() {
 	*x = PersonSession{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[1]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -228,7 +615,7 @@ func (x *PersonSession) String() string {
 func (*PersonSession) ProtoMessage() {}
 
 func (x *PersonSession) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[1]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -241,7 +628,7 @@ func (x *PersonSession) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PersonSession.ProtoReflect.Descriptor instead.
 func (*PersonSession) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{1}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{7}
 }
 
 // WorkloadCredential proves which module a running process is: the native
@@ -257,7 +644,7 @@ type WorkloadCredential struct {
 
 func (x *WorkloadCredential) Reset() {
 	*x = WorkloadCredential{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[2]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -269,7 +656,7 @@ func (x *WorkloadCredential) String() string {
 func (*WorkloadCredential) ProtoMessage() {}
 
 func (x *WorkloadCredential) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[2]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -282,7 +669,7 @@ func (x *WorkloadCredential) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadCredential.ProtoReflect.Descriptor instead.
 func (*WorkloadCredential) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{2}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *WorkloadCredential) GetCredential() string {
@@ -303,7 +690,7 @@ type InstallationRef struct {
 
 func (x *InstallationRef) Reset() {
 	*x = InstallationRef{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[3]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -315,7 +702,7 @@ func (x *InstallationRef) String() string {
 func (*InstallationRef) ProtoMessage() {}
 
 func (x *InstallationRef) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[3]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -328,7 +715,7 @@ func (x *InstallationRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallationRef.ProtoReflect.Descriptor instead.
 func (*InstallationRef) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{3}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *InstallationRef) GetInstallationId() string {
@@ -353,7 +740,7 @@ type IssueResponse struct {
 
 func (x *IssueResponse) Reset() {
 	*x = IssueResponse{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[4]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -365,7 +752,7 @@ func (x *IssueResponse) String() string {
 func (*IssueResponse) ProtoMessage() {}
 
 func (x *IssueResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[4]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -378,7 +765,7 @@ func (x *IssueResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssueResponse.ProtoReflect.Descriptor instead.
 func (*IssueResponse) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{4}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *IssueResponse) GetToken() string {
@@ -408,14 +795,27 @@ type CheckRequest struct {
 	// The capability presented.
 	Token string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
 	// The audience the caller is; a capability addressed elsewhere is refused.
-	Audience      string `protobuf:"bytes,2,opt,name=audience,proto3" json:"audience,omitempty"`
+	Audience string `protobuf:"bytes,2,opt,name=audience,proto3" json:"audience,omitempty"`
+	// The method the capability is presented to: "/package.Service/Method" for a
+	// gRPC call, "<VERB> <path>" for an HTTP request (GET /v1/model/profiles),
+	// matched against the routes the module declares. When set, the check also
+	// applies what the audience module's delivery declares for that method, and
+	// refuses by name a call that does not hold it, a method that declares
+	// nothing, and a method the module does not serve.
+	Method string `protobuf:"bytes,3,opt,name=method,proto3" json:"method,omitempty"`
+	// Advisory asks for the policy decision without its refusal: the capability
+	// is still verified and refused when it is not sound, but what the method
+	// declares is only reported, in CheckResponse.refusal, and the verified
+	// capability is answered. A hop in a composition that runs permissive
+	// (hop/ENFORCEMENT=warn) asks this way and logs the refusal it did not make.
+	Advisory      bool `protobuf:"varint,4,opt,name=advisory,proto3" json:"advisory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CheckRequest) Reset() {
 	*x = CheckRequest{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[5]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -427,7 +827,7 @@ func (x *CheckRequest) String() string {
 func (*CheckRequest) ProtoMessage() {}
 
 func (x *CheckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[5]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -440,7 +840,7 @@ func (x *CheckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckRequest.ProtoReflect.Descriptor instead.
 func (*CheckRequest) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{5}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CheckRequest) GetToken() string {
@@ -457,6 +857,20 @@ func (x *CheckRequest) GetAudience() string {
 	return ""
 }
 
+func (x *CheckRequest) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+func (x *CheckRequest) GetAdvisory() bool {
+	if x != nil {
+		return x.Advisory
+	}
+	return false
+}
+
 // CheckResponse is the verified capability.
 type CheckResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -464,13 +878,16 @@ type CheckResponse struct {
 	Context *WorkContextV1 `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
 	// The owner's authorization revision as of this check.
 	AuthorizationRevision uint64 `protobuf:"varint,2,opt,name=authorization_revision,json=authorizationRevision,proto3" json:"authorization_revision,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// Refusal is what the method's policy would have refused, verbatim, when the
+	// check was advisory and the policy did not hold; empty when it held.
+	Refusal       string `protobuf:"bytes,3,opt,name=refusal,proto3" json:"refusal,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CheckResponse) Reset() {
 	*x = CheckResponse{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[6]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -482,7 +899,7 @@ func (x *CheckResponse) String() string {
 func (*CheckResponse) ProtoMessage() {}
 
 func (x *CheckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[6]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -495,7 +912,7 @@ func (x *CheckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckResponse.ProtoReflect.Descriptor instead.
 func (*CheckResponse) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{6}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CheckResponse) GetContext() *WorkContextV1 {
@@ -512,6 +929,13 @@ func (x *CheckResponse) GetAuthorizationRevision() uint64 {
 	return 0
 }
 
+func (x *CheckResponse) GetRefusal() string {
+	if x != nil {
+		return x.Refusal
+	}
+	return ""
+}
+
 // KeysRequest asks for the verification keys.
 type KeysRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -521,7 +945,7 @@ type KeysRequest struct {
 
 func (x *KeysRequest) Reset() {
 	*x = KeysRequest{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[7]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -533,7 +957,7 @@ func (x *KeysRequest) String() string {
 func (*KeysRequest) ProtoMessage() {}
 
 func (x *KeysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[7]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -546,7 +970,7 @@ func (x *KeysRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeysRequest.ProtoReflect.Descriptor instead.
 func (*KeysRequest) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{7}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{13}
 }
 
 // KeysResponse is the issuer and its keys.
@@ -562,7 +986,7 @@ type KeysResponse struct {
 
 func (x *KeysResponse) Reset() {
 	*x = KeysResponse{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[8]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -574,7 +998,7 @@ func (x *KeysResponse) String() string {
 func (*KeysResponse) ProtoMessage() {}
 
 func (x *KeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[8]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -587,7 +1011,7 @@ func (x *KeysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeysResponse.ProtoReflect.Descriptor instead.
 func (*KeysResponse) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{8}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *KeysResponse) GetIssuer() string {
@@ -619,7 +1043,7 @@ type PublicKey struct {
 
 func (x *PublicKey) Reset() {
 	*x = PublicKey{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[9]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -631,7 +1055,7 @@ func (x *PublicKey) String() string {
 func (*PublicKey) ProtoMessage() {}
 
 func (x *PublicKey) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[9]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -644,7 +1068,7 @@ func (x *PublicKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicKey.ProtoReflect.Descriptor instead.
 func (*PublicKey) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{9}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *PublicKey) GetKeyId() string {
@@ -668,16 +1092,259 @@ func (x *PublicKey) GetPublicKey() []byte {
 	return nil
 }
 
+// ListResourcesRequest asks about one kind and one action.
+type ListResourcesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The capability presented.
+	Token string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	// The audience the caller is; a capability addressed elsewhere is refused.
+	Audience string `protobuf:"bytes,2,opt,name=audience,proto3" json:"audience,omitempty"`
+	// The resource kind, as the audience module serves it.
+	ResourceKind string `protobuf:"bytes,3,opt,name=resource_kind,json=resourceKind,proto3" json:"resource_kind,omitempty"`
+	// The action, in the kind's own vocabulary.
+	Action        string `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListResourcesRequest) Reset() {
+	*x = ListResourcesRequest{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListResourcesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListResourcesRequest) ProtoMessage() {}
+
+func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListResourcesRequest.ProtoReflect.Descriptor instead.
+func (*ListResourcesRequest) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListResourcesRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ListResourcesRequest) GetAudience() string {
+	if x != nil {
+		return x.Audience
+	}
+	return ""
+}
+
+func (x *ListResourcesRequest) GetResourceKind() string {
+	if x != nil {
+		return x.ResourceKind
+	}
+	return ""
+}
+
+func (x *ListResourcesRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+// ListResourcesResponse is every grant the capability holds on the kind for the
+// action. A resource is covered when any grant matches its id; no grant means
+// none. A capability that does not hold the action at all is refused instead.
+type ListResourcesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Grants        []*ResourceGrant       `protobuf:"bytes,1,rep,name=grants,proto3" json:"grants,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListResourcesResponse) Reset() {
+	*x = ListResourcesResponse{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListResourcesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListResourcesResponse) ProtoMessage() {}
+
+func (x *ListResourcesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListResourcesResponse.ProtoReflect.Descriptor instead.
+func (*ListResourcesResponse) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListResourcesResponse) GetGrants() []*ResourceGrant {
+	if x != nil {
+		return x.Grants
+	}
+	return nil
+}
+
+// ResourceGrant is one way of naming covered resources. Exactly one is set.
+type ResourceGrant struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Match:
+	//
+	//	*ResourceGrant_All
+	//	*ResourceGrant_Id
+	//	*ResourceGrant_Prefix
+	//	*ResourceGrant_Pattern
+	Match         isResourceGrant_Match `protobuf_oneof:"match"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceGrant) Reset() {
+	*x = ResourceGrant{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceGrant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceGrant) ProtoMessage() {}
+
+func (x *ResourceGrant) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceGrant.ProtoReflect.Descriptor instead.
+func (*ResourceGrant) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ResourceGrant) GetMatch() isResourceGrant_Match {
+	if x != nil {
+		return x.Match
+	}
+	return nil
+}
+
+func (x *ResourceGrant) GetAll() bool {
+	if x != nil {
+		if x, ok := x.Match.(*ResourceGrant_All); ok {
+			return x.All
+		}
+	}
+	return false
+}
+
+func (x *ResourceGrant) GetId() string {
+	if x != nil {
+		if x, ok := x.Match.(*ResourceGrant_Id); ok {
+			return x.Id
+		}
+	}
+	return ""
+}
+
+func (x *ResourceGrant) GetPrefix() string {
+	if x != nil {
+		if x, ok := x.Match.(*ResourceGrant_Prefix); ok {
+			return x.Prefix
+		}
+	}
+	return ""
+}
+
+func (x *ResourceGrant) GetPattern() string {
+	if x != nil {
+		if x, ok := x.Match.(*ResourceGrant_Pattern); ok {
+			return x.Pattern
+		}
+	}
+	return ""
+}
+
+type isResourceGrant_Match interface {
+	isResourceGrant_Match()
+}
+
+type ResourceGrant_All struct {
+	// Every resource of the kind.
+	All bool `protobuf:"varint,1,opt,name=all,proto3,oneof"`
+}
+
+type ResourceGrant_Id struct {
+	// Exactly this resource id.
+	Id string `protobuf:"bytes,2,opt,name=id,proto3,oneof"`
+}
+
+type ResourceGrant_Prefix struct {
+	// Every resource whose id starts with this.
+	Prefix string `protobuf:"bytes,3,opt,name=prefix,proto3,oneof"`
+}
+
+type ResourceGrant_Pattern struct {
+	// Every resource whose whole id matches this RE2 expression, at most 256
+	// bytes; it is matched against the entire id, as if anchored.
+	Pattern string `protobuf:"bytes,4,opt,name=pattern,proto3,oneof"`
+}
+
+func (*ResourceGrant_All) isResourceGrant_Match() {}
+
+func (*ResourceGrant_Id) isResourceGrant_Match() {}
+
+func (*ResourceGrant_Prefix) isResourceGrant_Match() {}
+
+func (*ResourceGrant_Pattern) isResourceGrant_Match() {}
+
 var File_host_authority_v1_authority_proto protoreflect.FileDescriptor
 
 const file_host_authority_v1_authority_proto_rawDesc = "" +
 	"\n" +
-	"!host/authority/v1/authority.proto\x12\x11host.authority.v1\x1a$host/authority/v1/work_context.proto\"\x91\x04\n" +
+	"!host/authority/v1/authority.proto\x12\x11host.authority.v1\x1a\x1cgoogle/api/annotations.proto\x1a$host/authority/v1/work_context.proto\"\xf3\x04\n" +
 	"\fIssueRequest\x12:\n" +
 	"\x06person\x18\x01 \x01(\v2 .host.authority.v1.PersonSessionH\x00R\x06person\x12C\n" +
 	"\bworkload\x18\x02 \x01(\v2%.host.authority.v1.WorkloadCredentialH\x00R\bworkload\x12H\n" +
 	"\finstallation\x18\x03 \x01(\v2\".host.authority.v1.InstallationRefH\x00R\finstallation\x12#\n" +
-	"\fparent_token\x18\x04 \x01(\tH\x00R\vparentToken\x12\x1a\n" +
+	"\fparent_token\x18\x04 \x01(\tH\x00R\vparentToken\x12B\n" +
+	"\n" +
+	"delegation\x18\v \x01(\v2 .host.authority.v1.DelegationRefH\x00R\n" +
+	"delegation\x12\x1a\n" +
 	"\baudience\x18\x05 \x01(\tR\baudience\x126\n" +
 	"\x06scopes\x18\x06 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\x06scopes\x12\x1f\n" +
 	"\vttl_seconds\x18\a \x01(\x03R\n" +
@@ -685,8 +1352,33 @@ const file_host_authority_v1_authority_proto_rawDesc = "" +
 	"\x14operation_binding_id\x18\b \x01(\tR\x12operationBindingId\x12'\n" +
 	"\x0forganization_id\x18\t \x01(\tR\x0eorganizationId\x12;\n" +
 	"\x05actor\x18\n" +
-	" \x01(\v2%.host.authority.v1.WorkloadCredentialR\x05actorB\x04\n" +
-	"\x02as\"!\n" +
+	" \x01(\v2%.host.authority.v1.WorkloadCredentialR\x05actor\x12\x1c\n" +
+	"\toperation\x18\f \x01(\tR\toperationB\x04\n" +
+	"\x02as\"4\n" +
+	"\rDelegationRef\x12#\n" +
+	"\rdelegation_id\x18\x01 \x01(\tR\fdelegationId\"{\n" +
+	"\x0fDelegateRequest\x12\x16\n" +
+	"\x06module\x18\x01 \x01(\tR\x06module\x126\n" +
+	"\x06scopes\x18\x02 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\x06scopes\x12\x18\n" +
+	"\apurpose\x18\x03 \x01(\tR\apurpose\"\xf6\x01\n" +
+	"\n" +
+	"Delegation\x12#\n" +
+	"\rdelegation_id\x18\x01 \x01(\tR\fdelegationId\x12'\n" +
+	"\x0forganization_id\x18\x02 \x01(\tR\x0eorganizationId\x12\x18\n" +
+	"\agrantor\x18\x03 \x01(\tR\agrantor\x12\x16\n" +
+	"\x06module\x18\x04 \x01(\tR\x06module\x126\n" +
+	"\x06scopes\x18\x05 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\x06scopes\x12\x18\n" +
+	"\apurpose\x18\x06 \x01(\tR\apurpose\x12\x16\n" +
+	"\x06active\x18\a \x01(\bR\x06active\"x\n" +
+	"\x14GetDelegationRequest\x12#\n" +
+	"\rdelegation_id\x18\x01 \x01(\tR\fdelegationId\x12;\n" +
+	"\x05actor\x18\x02 \x01(\v2%.host.authority.v1.WorkloadCredentialR\x05actor\">\n" +
+	"\x17RevokeDelegationRequest\x12#\n" +
+	"\rdelegation_id\x18\x01 \x01(\tR\fdelegationId\"Y\n" +
+	"\x18RevokeDelegationResponse\x12=\n" +
+	"\n" +
+	"delegation\x18\x01 \x01(\v2\x1d.host.authority.v1.DelegationR\n" +
+	"delegation\"!\n" +
 	"\rPersonSessionJ\x04\b\x01\x10\x02R\n" +
 	"session_id\"4\n" +
 	"\x12WorkloadCredential\x12\x1e\n" +
@@ -698,13 +1390,16 @@ const file_host_authority_v1_authority_proto_rawDesc = "" +
 	"\rIssueResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12&\n" +
 	"\x0fexpires_at_unix\x18\x02 \x01(\x03R\rexpiresAtUnix\x12:\n" +
-	"\acontext\x18\x03 \x01(\v2 .host.authority.v1.WorkContextV1R\acontext\"@\n" +
+	"\acontext\x18\x03 \x01(\v2 .host.authority.v1.WorkContextV1R\acontext\"t\n" +
 	"\fCheckRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1a\n" +
-	"\baudience\x18\x02 \x01(\tR\baudience\"\x82\x01\n" +
+	"\baudience\x18\x02 \x01(\tR\baudience\x12\x16\n" +
+	"\x06method\x18\x03 \x01(\tR\x06method\x12\x1a\n" +
+	"\badvisory\x18\x04 \x01(\bR\badvisory\"\x9c\x01\n" +
 	"\rCheckResponse\x12:\n" +
 	"\acontext\x18\x01 \x01(\v2 .host.authority.v1.WorkContextV1R\acontext\x125\n" +
-	"\x16authorization_revision\x18\x02 \x01(\x04R\x15authorizationRevision\"\r\n" +
+	"\x16authorization_revision\x18\x02 \x01(\x04R\x15authorizationRevision\x12\x18\n" +
+	"\arefusal\x18\x03 \x01(\tR\arefusal\"\r\n" +
 	"\vKeysRequest\"X\n" +
 	"\fKeysResponse\x12\x16\n" +
 	"\x06issuer\x18\x01 \x01(\tR\x06issuer\x120\n" +
@@ -713,11 +1408,28 @@ const file_host_authority_v1_authority_proto_rawDesc = "" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x1c\n" +
 	"\talgorithm\x18\x02 \x01(\tR\talgorithm\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\x03 \x01(\fR\tpublicKey2\xf3\x01\n" +
-	"\x10AuthorityService\x12J\n" +
-	"\x05Issue\x12\x1f.host.authority.v1.IssueRequest\x1a .host.authority.v1.IssueResponse\x12J\n" +
-	"\x05Check\x12\x1f.host.authority.v1.CheckRequest\x1a .host.authority.v1.CheckResponse\x12G\n" +
-	"\x04Keys\x12\x1e.host.authority.v1.KeysRequest\x1a\x1f.host.authority.v1.KeysResponseB\xbd\x01\n" +
+	"public_key\x18\x03 \x01(\fR\tpublicKey\"\x85\x01\n" +
+	"\x14ListResourcesRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1a\n" +
+	"\baudience\x18\x02 \x01(\tR\baudience\x12#\n" +
+	"\rresource_kind\x18\x03 \x01(\tR\fresourceKind\x12\x16\n" +
+	"\x06action\x18\x04 \x01(\tR\x06action\"Q\n" +
+	"\x15ListResourcesResponse\x128\n" +
+	"\x06grants\x18\x01 \x03(\v2 .host.authority.v1.ResourceGrantR\x06grants\"t\n" +
+	"\rResourceGrant\x12\x12\n" +
+	"\x03all\x18\x01 \x01(\bH\x00R\x03all\x12\x10\n" +
+	"\x02id\x18\x02 \x01(\tH\x00R\x02id\x12\x18\n" +
+	"\x06prefix\x18\x03 \x01(\tH\x00R\x06prefix\x12\x1a\n" +
+	"\apattern\x18\x04 \x01(\tH\x00R\apatternB\a\n" +
+	"\x05match2\xac\x05\n" +
+	"\x10AuthorityService\x12j\n" +
+	"\x05Issue\x12\x1f.host.authority.v1.IssueRequest\x1a .host.authority.v1.IssueResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/authority:issue\x12j\n" +
+	"\x05Check\x12\x1f.host.authority.v1.CheckRequest\x1a .host.authority.v1.CheckResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/authority:check\x12G\n" +
+	"\x04Keys\x12\x1e.host.authority.v1.KeysRequest\x1a\x1f.host.authority.v1.KeysResponse\x12b\n" +
+	"\rListResources\x12'.host.authority.v1.ListResourcesRequest\x1a(.host.authority.v1.ListResourcesResponse\x12M\n" +
+	"\bDelegate\x12\".host.authority.v1.DelegateRequest\x1a\x1d.host.authority.v1.Delegation\x12k\n" +
+	"\x10RevokeDelegation\x12*.host.authority.v1.RevokeDelegationRequest\x1a+.host.authority.v1.RevokeDelegationResponse\x12W\n" +
+	"\rGetDelegation\x12'.host.authority.v1.GetDelegationRequest\x1a\x1d.host.authority.v1.DelegationB\xbd\x01\n" +
 	"\x15com.host.authority.v1B\x0eAuthorityProtoP\x01Z.accounts/pkg/gen/host/authority/v1;authorityv1\xa2\x02\x03HAX\xaa\x02\x11Host.Authority.V1\xca\x02\x11Host\\Authority\\V1\xe2\x02\x1dHost\\Authority\\V1\\GPBMetadata\xea\x02\x13Host::Authority::V1b\x06proto3"
 
 var (
@@ -732,41 +1444,64 @@ func file_host_authority_v1_authority_proto_rawDescGZIP() []byte {
 	return file_host_authority_v1_authority_proto_rawDescData
 }
 
-var file_host_authority_v1_authority_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_host_authority_v1_authority_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_host_authority_v1_authority_proto_goTypes = []any{
-	(*IssueRequest)(nil),       // 0: host.authority.v1.IssueRequest
-	(*PersonSession)(nil),      // 1: host.authority.v1.PersonSession
-	(*WorkloadCredential)(nil), // 2: host.authority.v1.WorkloadCredential
-	(*InstallationRef)(nil),    // 3: host.authority.v1.InstallationRef
-	(*IssueResponse)(nil),      // 4: host.authority.v1.IssueResponse
-	(*CheckRequest)(nil),       // 5: host.authority.v1.CheckRequest
-	(*CheckResponse)(nil),      // 6: host.authority.v1.CheckResponse
-	(*KeysRequest)(nil),        // 7: host.authority.v1.KeysRequest
-	(*KeysResponse)(nil),       // 8: host.authority.v1.KeysResponse
-	(*PublicKey)(nil),          // 9: host.authority.v1.PublicKey
-	(*WorkScopeV1)(nil),        // 10: host.authority.v1.WorkScopeV1
-	(*WorkContextV1)(nil),      // 11: host.authority.v1.WorkContextV1
+	(*IssueRequest)(nil),             // 0: host.authority.v1.IssueRequest
+	(*DelegationRef)(nil),            // 1: host.authority.v1.DelegationRef
+	(*DelegateRequest)(nil),          // 2: host.authority.v1.DelegateRequest
+	(*Delegation)(nil),               // 3: host.authority.v1.Delegation
+	(*GetDelegationRequest)(nil),     // 4: host.authority.v1.GetDelegationRequest
+	(*RevokeDelegationRequest)(nil),  // 5: host.authority.v1.RevokeDelegationRequest
+	(*RevokeDelegationResponse)(nil), // 6: host.authority.v1.RevokeDelegationResponse
+	(*PersonSession)(nil),            // 7: host.authority.v1.PersonSession
+	(*WorkloadCredential)(nil),       // 8: host.authority.v1.WorkloadCredential
+	(*InstallationRef)(nil),          // 9: host.authority.v1.InstallationRef
+	(*IssueResponse)(nil),            // 10: host.authority.v1.IssueResponse
+	(*CheckRequest)(nil),             // 11: host.authority.v1.CheckRequest
+	(*CheckResponse)(nil),            // 12: host.authority.v1.CheckResponse
+	(*KeysRequest)(nil),              // 13: host.authority.v1.KeysRequest
+	(*KeysResponse)(nil),             // 14: host.authority.v1.KeysResponse
+	(*PublicKey)(nil),                // 15: host.authority.v1.PublicKey
+	(*ListResourcesRequest)(nil),     // 16: host.authority.v1.ListResourcesRequest
+	(*ListResourcesResponse)(nil),    // 17: host.authority.v1.ListResourcesResponse
+	(*ResourceGrant)(nil),            // 18: host.authority.v1.ResourceGrant
+	(*WorkScopeV1)(nil),              // 19: host.authority.v1.WorkScopeV1
+	(*WorkContextV1)(nil),            // 20: host.authority.v1.WorkContextV1
 }
 var file_host_authority_v1_authority_proto_depIdxs = []int32{
-	1,  // 0: host.authority.v1.IssueRequest.person:type_name -> host.authority.v1.PersonSession
-	2,  // 1: host.authority.v1.IssueRequest.workload:type_name -> host.authority.v1.WorkloadCredential
-	3,  // 2: host.authority.v1.IssueRequest.installation:type_name -> host.authority.v1.InstallationRef
-	10, // 3: host.authority.v1.IssueRequest.scopes:type_name -> host.authority.v1.WorkScopeV1
-	2,  // 4: host.authority.v1.IssueRequest.actor:type_name -> host.authority.v1.WorkloadCredential
-	11, // 5: host.authority.v1.IssueResponse.context:type_name -> host.authority.v1.WorkContextV1
-	11, // 6: host.authority.v1.CheckResponse.context:type_name -> host.authority.v1.WorkContextV1
-	9,  // 7: host.authority.v1.KeysResponse.keys:type_name -> host.authority.v1.PublicKey
-	0,  // 8: host.authority.v1.AuthorityService.Issue:input_type -> host.authority.v1.IssueRequest
-	5,  // 9: host.authority.v1.AuthorityService.Check:input_type -> host.authority.v1.CheckRequest
-	7,  // 10: host.authority.v1.AuthorityService.Keys:input_type -> host.authority.v1.KeysRequest
-	4,  // 11: host.authority.v1.AuthorityService.Issue:output_type -> host.authority.v1.IssueResponse
-	6,  // 12: host.authority.v1.AuthorityService.Check:output_type -> host.authority.v1.CheckResponse
-	8,  // 13: host.authority.v1.AuthorityService.Keys:output_type -> host.authority.v1.KeysResponse
-	11, // [11:14] is the sub-list for method output_type
-	8,  // [8:11] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	7,  // 0: host.authority.v1.IssueRequest.person:type_name -> host.authority.v1.PersonSession
+	8,  // 1: host.authority.v1.IssueRequest.workload:type_name -> host.authority.v1.WorkloadCredential
+	9,  // 2: host.authority.v1.IssueRequest.installation:type_name -> host.authority.v1.InstallationRef
+	1,  // 3: host.authority.v1.IssueRequest.delegation:type_name -> host.authority.v1.DelegationRef
+	19, // 4: host.authority.v1.IssueRequest.scopes:type_name -> host.authority.v1.WorkScopeV1
+	8,  // 5: host.authority.v1.IssueRequest.actor:type_name -> host.authority.v1.WorkloadCredential
+	19, // 6: host.authority.v1.DelegateRequest.scopes:type_name -> host.authority.v1.WorkScopeV1
+	19, // 7: host.authority.v1.Delegation.scopes:type_name -> host.authority.v1.WorkScopeV1
+	8,  // 8: host.authority.v1.GetDelegationRequest.actor:type_name -> host.authority.v1.WorkloadCredential
+	3,  // 9: host.authority.v1.RevokeDelegationResponse.delegation:type_name -> host.authority.v1.Delegation
+	20, // 10: host.authority.v1.IssueResponse.context:type_name -> host.authority.v1.WorkContextV1
+	20, // 11: host.authority.v1.CheckResponse.context:type_name -> host.authority.v1.WorkContextV1
+	15, // 12: host.authority.v1.KeysResponse.keys:type_name -> host.authority.v1.PublicKey
+	18, // 13: host.authority.v1.ListResourcesResponse.grants:type_name -> host.authority.v1.ResourceGrant
+	0,  // 14: host.authority.v1.AuthorityService.Issue:input_type -> host.authority.v1.IssueRequest
+	11, // 15: host.authority.v1.AuthorityService.Check:input_type -> host.authority.v1.CheckRequest
+	13, // 16: host.authority.v1.AuthorityService.Keys:input_type -> host.authority.v1.KeysRequest
+	16, // 17: host.authority.v1.AuthorityService.ListResources:input_type -> host.authority.v1.ListResourcesRequest
+	2,  // 18: host.authority.v1.AuthorityService.Delegate:input_type -> host.authority.v1.DelegateRequest
+	5,  // 19: host.authority.v1.AuthorityService.RevokeDelegation:input_type -> host.authority.v1.RevokeDelegationRequest
+	4,  // 20: host.authority.v1.AuthorityService.GetDelegation:input_type -> host.authority.v1.GetDelegationRequest
+	10, // 21: host.authority.v1.AuthorityService.Issue:output_type -> host.authority.v1.IssueResponse
+	12, // 22: host.authority.v1.AuthorityService.Check:output_type -> host.authority.v1.CheckResponse
+	14, // 23: host.authority.v1.AuthorityService.Keys:output_type -> host.authority.v1.KeysResponse
+	17, // 24: host.authority.v1.AuthorityService.ListResources:output_type -> host.authority.v1.ListResourcesResponse
+	3,  // 25: host.authority.v1.AuthorityService.Delegate:output_type -> host.authority.v1.Delegation
+	6,  // 26: host.authority.v1.AuthorityService.RevokeDelegation:output_type -> host.authority.v1.RevokeDelegationResponse
+	3,  // 27: host.authority.v1.AuthorityService.GetDelegation:output_type -> host.authority.v1.Delegation
+	21, // [21:28] is the sub-list for method output_type
+	14, // [14:21] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_host_authority_v1_authority_proto_init() }
@@ -780,6 +1515,13 @@ func file_host_authority_v1_authority_proto_init() {
 		(*IssueRequest_Workload)(nil),
 		(*IssueRequest_Installation)(nil),
 		(*IssueRequest_ParentToken)(nil),
+		(*IssueRequest_Delegation)(nil),
+	}
+	file_host_authority_v1_authority_proto_msgTypes[18].OneofWrappers = []any{
+		(*ResourceGrant_All)(nil),
+		(*ResourceGrant_Id)(nil),
+		(*ResourceGrant_Prefix)(nil),
+		(*ResourceGrant_Pattern)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -787,7 +1529,7 @@ func file_host_authority_v1_authority_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_host_authority_v1_authority_proto_rawDesc), len(file_host_authority_v1_authority_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file host/composition/v1/composition.proto.
  */
 export const file_host_composition_v1_composition: GenFile = /*@__PURE__*/
-  fileDesc("CiVob3N0L2NvbXBvc2l0aW9uL3YxL2NvbXBvc2l0aW9uLnByb3RvEhNob3N0LmNvbXBvc2l0aW9uLnYxIpsBChRBcHBseU1hbmlmZXN0UmVxdWVzdBI3CghtYW5pZmVzdBgBIAEoCzIlLmhvc3QuY29tcG9zaXRpb24udjEuTW9kdWxlTWFuaWZlc3RWMRI2CgdjYXJyaWVyGAIgASgLMiUuaG9zdC5jb21wb3NpdGlvbi52MS5TaWduZWRNYW5pZmVzdFYxEhIKCmNyZWRlbnRpYWwYAyABKAkiNgoQU2lnbmVkTWFuaWZlc3RWMRIQCghkb2N1bWVudBgBIAEoDBIQCghlbnZlbG9wZRgCIAEoDCJYChVBcHBseU1hbmlmZXN0UmVzcG9uc2USEQoJcHJpbmNpcGFsGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSGAoQaW5zdGFsbGF0aW9uX2lkcxgDIAMoCSKdAgoQTW9kdWxlTWFuaWZlc3RWMRIOCgZtb2R1bGUYASABKAkSEQoJcHJpbmNpcGFsGAIgASgJEgwKBGtpbmQYAyABKAkSEgoKZ2VuZXJhdGlvbhgEIAEoBBIwCghiaW5kaW5ncxgFIAMoCzIeLmhvc3QuY29tcG9zaXRpb24udjEuQmluZGluZ1YxEjsKDnJlc291cmNlX2tpbmRzGAYgAygLMiMuaG9zdC5jb21wb3NpdGlvbi52MS5SZXNvdXJjZUtpbmRWMRIpCgRwYWdlGAcgASgLMhsuaG9zdC5jb21wb3NpdGlvbi52MS5QYWdlVjESKgoFcm9sZXMYCCADKAsyGy5ob3N0LmNvbXBvc2l0aW9uLnYxLlJvbGVWMSJGCgZSb2xlVjESDAoEbmFtZRgBIAEoCRIuCgZzY29wZXMYAiADKAsyHi5ob3N0LmF1dGhvcml0eS52MS5Xb3JrU2NvcGVWMSKZAQoJQmluZGluZ1YxEgoKAmlkGAEgASgJEhAKCGF1ZGllbmNlGAIgASgJEjUKDWludm9rZV9zY29wZXMYAyADKAsyHi5ob3N0LmF1dGhvcml0eS52MS5Xb3JrU2NvcGVWMRI3Cg9oZWFkbGVzc19zY29wZXMYBCADKAsyHi5ob3N0LmF1dGhvcml0eS52MS5Xb3JrU2NvcGVWMSIvCg5SZXNvdXJjZUtpbmRWMRIMCgRraW5kGAEgASgJEg8KB2FjdGlvbnMYAiADKAkiJgoGUGFnZVYxEg0KBXRpdGxlGAEgASgJEg0KBW9yZGVyGAIgASgFMnwKEkNvbXBvc2l0aW9uU2VydmljZRJmCg1BcHBseU1hbmlmZXN0EikuaG9zdC5jb21wb3NpdGlvbi52MS5BcHBseU1hbmlmZXN0UmVxdWVzdBoqLmhvc3QuY29tcG9zaXRpb24udjEuQXBwbHlNYW5pZmVzdFJlc3BvbnNlQs0BChdjb20uaG9zdC5jb21wb3NpdGlvbi52MUIQQ29tcG9zaXRpb25Qcm90b1ABWjJhY2NvdW50cy9wa2cvZ2VuL2hvc3QvY29tcG9zaXRpb24vdjE7Y29tcG9zaXRpb252MaICA0hDWKoCE0hvc3QuQ29tcG9zaXRpb24uVjHKAhNIb3N0XENvbXBvc2l0aW9uXFYx4gIfSG9zdFxDb21wb3NpdGlvblxWMVxHUEJNZXRhZGF0YeoCFUhvc3Q6OkNvbXBvc2l0aW9uOjpWMWIGcHJvdG8z", [file_host_authority_v1_work_context]);
+  fileDesc("CiVob3N0L2NvbXBvc2l0aW9uL3YxL2NvbXBvc2l0aW9uLnByb3RvEhNob3N0LmNvbXBvc2l0aW9uLnYxItUBChRBcHBseU1hbmlmZXN0UmVxdWVzdBI3CghtYW5pZmVzdBgBIAEoCzIlLmhvc3QuY29tcG9zaXRpb24udjEuTW9kdWxlTWFuaWZlc3RWMRI2CgdjYXJyaWVyGAIgASgLMiUuaG9zdC5jb21wb3NpdGlvbi52MS5TaWduZWRNYW5pZmVzdFYxEhIKCmNyZWRlbnRpYWwYAyABKAkSOAoJYXV0aG9yaXR5GAQgASgLMiUuaG9zdC5jb21wb3NpdGlvbi52MS5TaWduZWRNYW5pZmVzdFYxIvEBChNBdXRob3JpdHlNYW5pZmVzdFYxEg4KBm1vZHVsZRgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEEhwKFGNvcmVfbWFuaWZlc3RfZGlnZXN0GAMgASgJEjQKB21ldGhvZHMYBCADKAsyIy5ob3N0LmNvbXBvc2l0aW9uLnYxLk1ldGhvZFBvbGljeVYxEjYKDnNjb3BlX2NlaWxpbmdzGAUgAygLMh4uaG9zdC5hdXRob3JpdHkudjEuV29ya1Njb3BlVjESKgoFcm9sZXMYBiADKAsyGy5ob3N0LmNvbXBvc2l0aW9uLnYxLlJvbGVWMSJuCg5NZXRob2RQb2xpY3lWMRIOCgZtZXRob2QYASABKAkSMAoIcmVxdWlyZXMYAiADKAsyHi5ob3N0LmF1dGhvcml0eS52MS5Xb3JrU2NvcGVWMRIaChJhbnlfY2hlY2tlZF9jYWxsZXIYAyABKAgiNgoQU2lnbmVkTWFuaWZlc3RWMRIQCghkb2N1bWVudBgBIAEoDBIQCghlbnZlbG9wZRgCIAEoDCJYChVBcHBseU1hbmlmZXN0UmVzcG9uc2USEQoJcHJpbmNpcGFsGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSGAoQaW5zdGFsbGF0aW9uX2lkcxgDIAMoCSKdAgoQTW9kdWxlTWFuaWZlc3RWMRIOCgZtb2R1bGUYASABKAkSEQoJcHJpbmNpcGFsGAIgASgJEgwKBGtpbmQYAyABKAkSEgoKZ2VuZXJhdGlvbhgEIAEoBBIwCghiaW5kaW5ncxgFIAMoCzIeLmhvc3QuY29tcG9zaXRpb24udjEuQmluZGluZ1YxEjsKDnJlc291cmNlX2tpbmRzGAYgAygLMiMuaG9zdC5jb21wb3NpdGlvbi52MS5SZXNvdXJjZUtpbmRWMRIpCgRwYWdlGAcgASgLMhsuaG9zdC5jb21wb3NpdGlvbi52MS5QYWdlVjESKgoFcm9sZXMYCCADKAsyGy5ob3N0LmNvbXBvc2l0aW9uLnYxLlJvbGVWMSJGCgZSb2xlVjESDAoEbmFtZRgBIAEoCRIuCgZzY29wZXMYAiADKAsyHi5ob3N0LmF1dGhvcml0eS52MS5Xb3JrU2NvcGVWMSLQAQoJQmluZGluZ1YxEgoKAmlkGAEgASgJEhAKCGF1ZGllbmNlGAIgASgJEjUKDWludm9rZV9zY29wZXMYAyADKAsyHi5ob3N0LmF1dGhvcml0eS52MS5Xb3JrU2NvcGVWMRI3Cg9oZWFkbGVzc19zY29wZXMYBCADKAsyHi5ob3N0LmF1dGhvcml0eS52MS5Xb3JrU2NvcGVWMRI1Cg1sb29rdXBfc2NvcGVzGAUgAygLMh4uaG9zdC5hdXRob3JpdHkudjEuV29ya1Njb3BlVjEiLwoOUmVzb3VyY2VLaW5kVjESDAoEa2luZBgBIAEoCRIPCgdhY3Rpb25zGAIgAygJIiYKBlBhZ2VWMRINCgV0aXRsZRgBIAEoCRINCgVvcmRlchgCIAEoBTJ8ChJDb21wb3NpdGlvblNlcnZpY2USZgoNQXBwbHlNYW5pZmVzdBIpLmhvc3QuY29tcG9zaXRpb24udjEuQXBwbHlNYW5pZmVzdFJlcXVlc3QaKi5ob3N0LmNvbXBvc2l0aW9uLnYxLkFwcGx5TWFuaWZlc3RSZXNwb25zZULNAQoXY29tLmhvc3QuY29tcG9zaXRpb24udjFCEENvbXBvc2l0aW9uUHJvdG9QAVoyYWNjb3VudHMvcGtnL2dlbi9ob3N0L2NvbXBvc2l0aW9uL3YxO2NvbXBvc2l0aW9udjGiAgNIQ1iqAhNIb3N0LkNvbXBvc2l0aW9uLlYxygITSG9zdFxDb21wb3NpdGlvblxWMeICH0hvc3RcQ29tcG9zaXRpb25cVjFcR1BCTWV0YWRhdGHqAhVIb3N0OjpDb21wb3NpdGlvbjo6VjFiBnByb3RvMw", [file_host_authority_v1_work_context]);
 
 /**
  * ApplyManifestRequest carries the manifest.
@@ -38,7 +38,7 @@ export type ApplyManifestRequest = Message<"host.composition.v1.ApplyManifestReq
    * envelope over it. An implementation verifies the envelope against the release
    * keys it pins and reads the manifest from the verified document, never from
    * the request, so what composes a module is the same signed document on the
-   * mini gateway and on the host.
+   * authority gateway and on the host.
    *
    * @generated from field: host.composition.v1.SignedManifestV1 carrier = 2;
    */
@@ -46,13 +46,24 @@ export type ApplyManifestRequest = Message<"host.composition.v1.ApplyManifestReq
 
   /**
    * The credential of the workload delivering the manifest, as that
-   * implementation attests workloads: the launcher's on the mini gateway, the
+   * implementation attests workloads: the launcher's on the authority gateway, the
    * delivery service account's on the host. A manifest is delivered by its own
    * module's delivery workload and by nothing else.
    *
    * @generated from field: string credential = 3;
    */
   credential: string;
+
+  /**
+   * The authority's own document for this delivery, an AuthorityManifestV1:
+   * what the module declares that the authority enforces and core's manifest
+   * does not carry. Signed in the same envelope format by the same key as
+   * carrier, and naming carrier's digest. Absent means the module declares no
+   * method policy, and every Check that names one of its methods is refused.
+   *
+   * @generated from field: host.composition.v1.SignedManifestV1 authority = 4;
+   */
+  authority?: SignedManifestV1;
 };
 
 /**
@@ -61,6 +72,108 @@ export type ApplyManifestRequest = Message<"host.composition.v1.ApplyManifestReq
  */
 export const ApplyManifestRequestSchema: GenMessage<ApplyManifestRequest> = /*@__PURE__*/
   messageDesc(file_host_composition_v1_composition, 0);
+
+/**
+ * AuthorityManifestV1 is the authority's document for one delivery.
+ *
+ * @generated from message host.composition.v1.AuthorityManifestV1
+ */
+export type AuthorityManifestV1 = Message<"host.composition.v1.AuthorityManifestV1"> & {
+  /**
+   * The module, as the core manifest it travels with names it.
+   *
+   * @generated from field: string module = 1;
+   */
+  module: string;
+
+  /**
+   * The generation, equal to that core manifest's.
+   *
+   * @generated from field: uint64 generation = 2;
+   */
+  generation: bigint;
+
+  /**
+   * "sha256:<hex>" of the core manifest document delivered with it.
+   *
+   * @generated from field: string core_manifest_digest = 3;
+   */
+  coreManifestDigest: string;
+
+  /**
+   * Every method the module's published contracts serve, with what each
+   * declares. A method that declares nothing is listed with neither field set.
+   *
+   * @generated from field: repeated host.composition.v1.MethodPolicyV1 methods = 4;
+   */
+  methods: MethodPolicyV1[];
+
+  /**
+   * The module's own resource kinds with the actions its contract declares on
+   * each (its scope ceilings). Core's manifest names the kinds alone, so without
+   * these a kind serves any action and a person's ask for everything they hold
+   * there cannot be enumerated. Each names a kind core's manifest declares.
+   *
+   * @generated from field: repeated host.authority.v1.WorkScopeV1 scope_ceilings = 5;
+   */
+  scopeCeilings: WorkScopeV1[];
+
+  /**
+   * The roles a solution declares a person may hold on an installation of it,
+   * as ModuleManifestV1.roles declares them through the sketch: each within
+   * the solution's own kinds (its scope ceilings), one of them installer.
+   * Core's manifest carries no roles, so they travel here until it does. A
+   * module declares none; a module's delivery listing any is refused.
+   *
+   * @generated from field: repeated host.composition.v1.RoleV1 roles = 6;
+   */
+  roles: RoleV1[];
+};
+
+/**
+ * Describes the message host.composition.v1.AuthorityManifestV1.
+ * Use `create(AuthorityManifestV1Schema)` to create a new message.
+ */
+export const AuthorityManifestV1Schema: GenMessage<AuthorityManifestV1> = /*@__PURE__*/
+  messageDesc(file_host_composition_v1_composition, 1);
+
+/**
+ * MethodPolicyV1 is what a call to one method must hold, as the module's
+ * contract declares it with the authority.hop.v1.policy option.
+ *
+ * @generated from message host.composition.v1.MethodPolicyV1
+ */
+export type MethodPolicyV1 = Message<"host.composition.v1.MethodPolicyV1"> & {
+  /**
+   * The method: "/package.Service/Method" for a gRPC method, or an HTTP route
+   * "<VERB> <template>" (GET /v1/model/profiles/{ref}), each "{name}" standing
+   * for one path segment's text.
+   *
+   * @generated from field: string method = 1;
+   */
+  method: string;
+
+  /**
+   * Each action on each kind the call must hold.
+   *
+   * @generated from field: repeated host.authority.v1.WorkScopeV1 requires = 2;
+   */
+  requires: WorkScopeV1[];
+
+  /**
+   * The method asks nothing beyond a Work Context the authority checked.
+   *
+   * @generated from field: bool any_checked_caller = 3;
+   */
+  anyCheckedCaller: boolean;
+};
+
+/**
+ * Describes the message host.composition.v1.MethodPolicyV1.
+ * Use `create(MethodPolicyV1Schema)` to create a new message.
+ */
+export const MethodPolicyV1Schema: GenMessage<MethodPolicyV1> = /*@__PURE__*/
+  messageDesc(file_host_composition_v1_composition, 2);
 
 /**
  * SignedManifestV1 is core's signed carrier: the manifest document (JSON) and
@@ -85,7 +198,7 @@ export type SignedManifestV1 = Message<"host.composition.v1.SignedManifestV1"> &
  * Use `create(SignedManifestV1Schema)` to create a new message.
  */
 export const SignedManifestV1Schema: GenMessage<SignedManifestV1> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 1);
+  messageDesc(file_host_composition_v1_composition, 3);
 
 /**
  * ApplyManifestResponse says what the host derived.
@@ -120,7 +233,7 @@ export type ApplyManifestResponse = Message<"host.composition.v1.ApplyManifestRe
  * Use `create(ApplyManifestResponseSchema)` to create a new message.
  */
 export const ApplyManifestResponseSchema: GenMessage<ApplyManifestResponse> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 2);
+  messageDesc(file_host_composition_v1_composition, 4);
 
 /**
  * ModuleManifestV1 is one module instance at one generation.
@@ -192,7 +305,7 @@ export type ModuleManifestV1 = Message<"host.composition.v1.ModuleManifestV1"> &
  * Use `create(ModuleManifestV1Schema)` to create a new message.
  */
 export const ModuleManifestV1Schema: GenMessage<ModuleManifestV1> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 3);
+  messageDesc(file_host_composition_v1_composition, 5);
 
 /**
  * RoleV1 is one role a solution declares.
@@ -216,7 +329,7 @@ export type RoleV1 = Message<"host.composition.v1.RoleV1"> & {
  * Use `create(RoleV1Schema)` to create a new message.
  */
 export const RoleV1Schema: GenMessage<RoleV1> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 4);
+  messageDesc(file_host_composition_v1_composition, 6);
 
 /**
  * BindingV1 is one declared call towards another module.
@@ -246,11 +359,21 @@ export type BindingV1 = Message<"host.composition.v1.BindingV1"> & {
   invokeScopes: WorkScopeV1[];
 
   /**
-   * What the binding may do for the module itself; a subset of invoke_scopes.
+   * What the binding may do for the module itself: within invoke_scopes when the
+   * binding declares any, and standing alone for a binding that exists only for
+   * the module's own work.
    *
    * @generated from field: repeated host.authority.v1.WorkScopeV1 headless_scopes = 4;
    */
   headlessScopes: WorkScopeV1[];
+
+  /**
+   * What a receipt lookup through the binding may read; within invoke_scopes
+   * when the binding declares any, else within headless_scopes.
+   *
+   * @generated from field: repeated host.authority.v1.WorkScopeV1 lookup_scopes = 5;
+   */
+  lookupScopes: WorkScopeV1[];
 };
 
 /**
@@ -258,7 +381,7 @@ export type BindingV1 = Message<"host.composition.v1.BindingV1"> & {
  * Use `create(BindingV1Schema)` to create a new message.
  */
 export const BindingV1Schema: GenMessage<BindingV1> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 5);
+  messageDesc(file_host_composition_v1_composition, 7);
 
 /**
  * ResourceKindV1 is one kind the module governs and the actions on it.
@@ -286,7 +409,7 @@ export type ResourceKindV1 = Message<"host.composition.v1.ResourceKindV1"> & {
  * Use `create(ResourceKindV1Schema)` to create a new message.
  */
 export const ResourceKindV1Schema: GenMessage<ResourceKindV1> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 6);
+  messageDesc(file_host_composition_v1_composition, 8);
 
 /**
  * PageV1 is a module's frontend contribution.
@@ -314,10 +437,10 @@ export type PageV1 = Message<"host.composition.v1.PageV1"> & {
  * Use `create(PageV1Schema)` to create a new message.
  */
 export const PageV1Schema: GenMessage<PageV1> = /*@__PURE__*/
-  messageDesc(file_host_composition_v1_composition, 7);
+  messageDesc(file_host_composition_v1_composition, 9);
 
 /**
- * CompositionService is implemented by the host and by the mini gateway.
+ * CompositionService is implemented by the host and by the authority gateway.
  *
  * @generated from service host.composition.v1.CompositionService
  */

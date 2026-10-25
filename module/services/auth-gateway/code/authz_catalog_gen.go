@@ -12,12 +12,18 @@ type generatedAuthorizationMetadata struct {
 
 var generatedAuthorizationByProcedure = map[string]generatedAuthorizationMetadata{
 	"/host.authority.v1.AuthorityService/Check":                                      {exposure: edgeExposurePublic, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "095caeb90e18271e84ac9c463cf7fe9f88d6a52b66818c16ccc48b156468cb58"},
+	"/host.authority.v1.AuthorityService/Delegate":                                   {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassSensitive, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "c7a7d82a0492e9402ec5280ecb6e0ad259c6a41892b7b3ff3d583e09e2303a2a"},
+	"/host.authority.v1.AuthorityService/GetDelegation":                              {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "79921072468c5f99274839371a7ac834d857df6e5f0708942165c4b31084de26"},
 	"/host.authority.v1.AuthorityService/Issue":                                      {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassSensitive, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "e434a6f8983ad37edb91c8557f9303e74805913e5709e860b2c0645f283e1c3e"},
 	"/host.authority.v1.AuthorityService/Keys":                                       {exposure: edgeExposurePublic, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "7a256fcd03f73b9cb7495e12372e9d421cf3f81d480b111a4ebd64720623d8c3"},
+	"/host.authority.v1.AuthorityService/ListResources":                              {exposure: edgeExposurePublic, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "095caeb90e18271e84ac9c463cf7fe9f88d6a52b66818c16ccc48b156468cb58"},
+	"/host.authority.v1.AuthorityService/RevokeDelegation":                           {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassSensitive, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "c7a7d82a0492e9402ec5280ecb6e0ad259c6a41892b7b3ff3d583e09e2303a2a"},
 	"/host.composition.v1.CompositionService/ApplyManifest":                          {exposure: edgeExposureInternal, rateLimitClass: edgeRateLimitClassInternal, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "21769738674c352d8e593fbc1243fc7b42fd53493f59de9c11b349dbde550700"},
 	"/host.installation.v1.InstallationService/GrantToTeam":                          {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardWrite, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "1bcc0da1738d725ece80382fc7c3ab4b571c0dbfdf4858377ccf3cb355c3640a"},
 	"/host.installation.v1.InstallationService/Install":                              {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardWrite, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "1bcc0da1738d725ece80382fc7c3ab4b571c0dbfdf4858377ccf3cb355c3640a"},
 	"/host.installation.v1.InstallationService/List":                                 {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "b387739192840b24f771349cb2cded72d5f7eabd9d56c433b5b5937e6f4e58f0"},
+	"/host.session.v1.SessionService/Current":                                        {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "79921072468c5f99274839371a7ac834d857df6e5f0708942165c4b31084de26"},
+	"/host.session.v1.SessionService/ListFixturePeople":                              {exposure: edgeExposurePublic, rateLimitClass: edgeRateLimitClassAuthentication, rateLimitBackendFailClosed: true, authenticationFactorAttempt: false, policySHA256: "176449621c45228e8492ecaba6548d9d45b16dd416d645abe7898e2ca7ad4697"},
 	"/host.session.v1.SessionService/SignIn":                                         {exposure: edgeExposurePublic, rateLimitClass: edgeRateLimitClassAuthentication, rateLimitBackendFailClosed: true, authenticationFactorAttempt: false, policySHA256: "99c6b88deef67aac00d037bac65ddca87cd92721d0061203183604bcd8ffef48"},
 	"/saas.accounts.v1.APIKeyService/CreateAPIKey":                                   {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardWrite, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "b3df2a4866dce11045d5802b2ffb2777b5c3d1de86184c06381c8445232faa88"},
 	"/saas.accounts.v1.APIKeyService/ListAPIKeys":                                    {exposure: edgeExposureAuthenticated, rateLimitClass: edgeRateLimitClassStandardRead, rateLimitBackendFailClosed: false, authenticationFactorAttempt: false, policySHA256: "c6c87c1ff7ffb6ff5f0733913bb6bead4d9d0a66c9fb8664f4c92a97ea988e95"},
@@ -293,6 +299,11 @@ var generatedAuthorizationByProcedure = map[string]generatedAuthorizationMetadat
 }
 
 var generatedRESTProcedureByRoute = map[string]string{
+	"POST /v1/authority:check":            "/host.authority.v1.AuthorityService/Check",
+	"POST /v1/authority:issue":            "/host.authority.v1.AuthorityService/Issue",
+	"GET /v1/session":                     "/host.session.v1.SessionService/Current",
+	"GET /v1/session/fixture-people":      "/host.session.v1.SessionService/ListFixturePeople",
+	"POST /v1/session:sign-in":            "/host.session.v1.SessionService/SignIn",
 	"POST /v1/api-keys":                   "/saas.accounts.v1.APIKeyService/CreateAPIKey",
 	"GET /v1/api-keys":                    "/saas.accounts.v1.APIKeyService/ListAPIKeys",
 	"DELETE /v1/api-keys/{id}":            "/saas.accounts.v1.APIKeyService/RevokeAPIKey",

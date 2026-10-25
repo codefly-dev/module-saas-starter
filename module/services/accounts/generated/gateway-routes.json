@@ -3476,6 +3476,38 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/host.authority.v1.AuthorityService/Delegate",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.authority.v1.AuthorityService/Delegate",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/host.authority.v1.AuthorityService/GetDelegation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.authority.v1.AuthorityService/GetDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/host.authority.v1.AuthorityService/Issue",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/host.authority.v1.AuthorityService/Issue",
@@ -3501,6 +3533,38 @@
       },
       "upstream_endpoint": "connect",
       "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/host.authority.v1.AuthorityService/ListResources",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.authority.v1.AuthorityService/ListResources",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/host.authority.v1.AuthorityService/RevokeDelegation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.authority.v1.AuthorityService/RevokeDelegation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
       "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
       "rewrite_path": "",
       "remove_after": ""
@@ -3549,6 +3613,38 @@
       },
       "upstream_endpoint": "connect",
       "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/host.session.v1.SessionService/Current",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.session.v1.SessionService/Current",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/host.session.v1.SessionService/ListFixturePeople",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.session.v1.SessionService/ListFixturePeople",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
       "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
       "rewrite_path": "",
       "remove_after": ""

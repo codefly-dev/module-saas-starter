@@ -101,11 +101,22 @@ type fixtureRole struct {
 	Permissions []fixturePermission `yaml:"permissions"`
 }
 
+// fixtureRoleAssignment assigns an organisation role to exactly one subject:
+// a registered agent (agent_identifier) or a person (email).
 type fixtureRoleAssignment struct {
 	Org             string `yaml:"org"`
 	Role            string `yaml:"role"`
 	AgentIdentifier string `yaml:"agent_identifier"`
+	Email           string `yaml:"email"`
 	Scope           string `yaml:"scope"`
+}
+
+// subject names the assignee for messages.
+func (a fixtureRoleAssignment) subject() string {
+	if a.Email != "" {
+		return a.Email
+	}
+	return a.AgentIdentifier
 }
 
 var fixtureNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
@@ -279,7 +290,7 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 	if err != nil {
 		return err
 	}
-	if err := seedRoleAssignments(ctx, w, service, f.Assignments, orgIDs, agentIDs, roleIDs); err != nil {
+	if err := seedRoleAssignments(ctx, w, service, f.Assignments, orgIDs, agentIDs, userIDs, roleIDs); err != nil {
 		return err
 	}
 
@@ -429,10 +440,11 @@ func validateFixture(f *fixtureFile) error {
 		}
 	}
 	for i, assignment := range f.Assignments {
-		if strings.TrimSpace(assignment.Org) == "" ||
-			strings.TrimSpace(assignment.Role) == "" ||
-			strings.TrimSpace(assignment.AgentIdentifier) == "" {
-			return fmt.Errorf("assignment[%d]: org, role, and agent_identifier are required", i)
+		if strings.TrimSpace(assignment.Org) == "" || strings.TrimSpace(assignment.Role) == "" {
+			return fmt.Errorf("assignment[%d]: org and role are required", i)
+		}
+		if (strings.TrimSpace(assignment.AgentIdentifier) == "") == (strings.TrimSpace(assignment.Email) == "") {
+			return fmt.Errorf("assignment[%d]: exactly one of agent_identifier and email is required", i)
 		}
 	}
 	return nil
@@ -965,16 +977,19 @@ func seedRoleAssignments(
 	w *wool.Wool,
 	service *business.Service,
 	assignments []fixtureRoleAssignment,
-	orgIDs, agentIDs, roleIDs map[string]string,
+	orgIDs, agentIDs, userIDs, roleIDs map[string]string,
 ) error {
 	for _, assignment := range assignments {
 		orgID, ok := orgIDs[assignment.Org]
 		if !ok {
 			return fmt.Errorf("assignment references unknown organization %q", assignment.Org)
 		}
-		agentID, ok := agentIDs[fixtureScopedKey(assignment.Org, assignment.AgentIdentifier)]
+		subjectID, ok := agentIDs[fixtureScopedKey(assignment.Org, assignment.AgentIdentifier)]
+		if assignment.Email != "" {
+			subjectID, ok = userIDs[assignment.Email]
+		}
 		if !ok {
-			return fmt.Errorf("assignment references unknown agent %q in %q", assignment.AgentIdentifier, assignment.Org)
+			return fmt.Errorf("assignment references unknown subject %q in %q", assignment.subject(), assignment.Org)
 		}
 		roleID, ok := roleIDs[fixtureScopedKey(assignment.Org, assignment.Role)]
 		if !ok {
@@ -987,7 +1002,7 @@ func seedRoleAssignments(
 			existing, listErr = service.Store().ListRoleAssignments(
 				ctx,
 				orgID,
-				agentID,
+				subjectID,
 				gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 			)
 			return listErr
@@ -1004,12 +1019,12 @@ func seedRoleAssignments(
 		if found {
 			w.Info("role assignment already exists, reusing",
 				wool.Field("org", assignment.Org),
-				wool.Field("agent_identifier", assignment.AgentIdentifier),
+				wool.Field("subject", assignment.subject()),
 				wool.Field("role", assignment.Role))
 			continue
 		}
 		if _, err := service.AssignRole(ctx, &gen.AssignRoleRequest{
-			SubjectId:   agentID,
+			SubjectId:   subjectID,
 			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 			RoleId:      roleID,
 			OrgId:       orgID,
@@ -1019,7 +1034,7 @@ func seedRoleAssignments(
 		}
 		w.Info("seeded role assignment",
 			wool.Field("org", assignment.Org),
-			wool.Field("agent_identifier", assignment.AgentIdentifier),
+			wool.Field("subject", assignment.subject()),
 			wool.Field("role", assignment.Role))
 	}
 	return nil

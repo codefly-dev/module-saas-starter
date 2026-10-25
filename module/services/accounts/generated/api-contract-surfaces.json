@@ -51,8 +51,12 @@
       "fullName": "host.authority.v1.AuthorityService",
       "procedures": [
         "/host.authority.v1.AuthorityService/Check",
+        "/host.authority.v1.AuthorityService/Delegate",
+        "/host.authority.v1.AuthorityService/GetDelegation",
         "/host.authority.v1.AuthorityService/Issue",
-        "/host.authority.v1.AuthorityService/Keys"
+        "/host.authority.v1.AuthorityService/Keys",
+        "/host.authority.v1.AuthorityService/ListResources",
+        "/host.authority.v1.AuthorityService/RevokeDelegation"
       ]
     },
     {
@@ -75,6 +79,8 @@
       "name": "SessionService",
       "fullName": "host.session.v1.SessionService",
       "procedures": [
+        "/host.session.v1.SessionService/Current",
+        "/host.session.v1.SessionService/ListFixturePeople",
         "/host.session.v1.SessionService/SignIn"
       ]
     },

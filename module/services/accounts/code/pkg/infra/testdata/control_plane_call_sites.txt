@@ -49,6 +49,7 @@ pkg/business/datasource_github_installation.go: (*Service).applyGitHubInstallati
 pkg/business/datasource_reconcile_operation.go: (*Service).ReconcileDatasourceSource: WithControlPlane
 pkg/business/events_materialize.go: (*Service).MaterializeSubscriptionsFromCatalog: WithControlPlane
 pkg/business/executable_artifacts.go: (*Service).requireConsentedBinding: WithControlPlane
+pkg/business/fixture_people.go: (*Service).fixtureTeamIDs: WithControlPlane
 pkg/business/follow_fanout.go: (*Service).MaterializeFollowSubscriptions: WithControlPlane
 pkg/business/follow_fanout.go: (*Service).fanOutFollowNotifications: WithControlPlane
 pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: WithControlPlane

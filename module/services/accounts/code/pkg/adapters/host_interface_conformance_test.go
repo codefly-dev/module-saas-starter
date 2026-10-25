@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,7 +21,10 @@ import (
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -33,6 +37,7 @@ import (
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
+	sessionv1 "accounts/pkg/gen/host/session/v1"
 	"accounts/pkg/infra"
 )
 
@@ -49,7 +54,7 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	// service cancellation so Destroy can stop the dependencies through the CLI.
 	dependencyCtx, stopDependencies := context.WithCancel(context.WithoutCancel(ctx))
 	t.Cleanup(stopDependencies)
-	deps, err := sdk.WithDependencies(dependencyCtx, sdk.WithExcludedDependencies("cache", "telemetry"), sdk.WithNamingScope("host-interface-conformance"), sdk.WithTimeout(10*time.Minute), sdk.WithSilence("store"))
+	deps, err := sdk.WithDependencies(dependencyCtx, sdk.WithExcludedDependencies("cache"), sdk.WithNamingScope("host-interface-conformance"), sdk.WithTimeout(10*time.Minute), sdk.WithSilence("store"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
@@ -72,7 +77,12 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	svc.SetIdentityResolver(pgauth.NewResolver(store))
 	_, minterKey, err := ed25519minter.GenerateKey()
 	require.NoError(t, err)
-	svc.SetJWTMinter(ed25519minter.New(ed25519minter.Config{Issuer: "accounts-conformance", Audience: "accounts-conformance"}, minterKey, sessionStore))
+	minter := ed25519minter.New(ed25519minter.Config{Issuer: "accounts-conformance", Audience: "accounts-conformance"}, minterKey, sessionStore)
+	// Production revokes through the cache (redisstate.TokenRevoker), which this
+	// harness does not boot; an in-memory list stands in at the same seam, so a
+	// sign-out is refused by the perimeter exactly as it is there.
+	minter.SetRevoker(&memoryRevoker{})
+	svc.SetJWTMinter(minter)
 	auditEmitter, err := business.NewDurableAuditEmitter(store, store)
 	require.NoError(t, err)
 	t.Cleanup(auditEmitter.Close)
@@ -175,6 +185,41 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 		// GAP (HOST_INTERFACE.md 4, fixture): the fixture installs no solution;
 		// the lines this makes red are the gap list.
 		InstalledSolution: "",
+		// The permission matrix over the composed audiences, as the dev-admin
+		// fixture states it: a collection reader, Acme administrators (one of
+		// them a person of the authority's fixture), a member who holds no
+		// role, and a Globex member who holds nothing at Acme's content.
+		Matrix: []conformance.Expectation{
+			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "read", Allowed: true},
+			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "write", Allowed: false},
+			{Token: "dev-alice", Audience: "documents", Kind: "example-records", Action: "write", Allowed: true},
+			{Token: "fixture-alex", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: true},
+			{Token: "fixture-maya", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: false},
+			{Token: "fixture-omar", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
+		},
+	})
+
+	// Beyond the suite: the session a page reads is the live one. A fixture
+	// person of the authority's fixture is current with their organisation, role
+	// and team, the bearer is not handed back, and once the session's access is
+	// revoked (a sign-out) the same bearer is no longer a session.
+	t.Run("an ended session is no longer current", func(t *testing.T) {
+		client := sessionv1.NewSessionServiceClient(conn)
+		sess, err := client.SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-maya"})
+		require.NoError(t, err)
+		bearer := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())
+		current, err := client.Current(bearer, &sessionv1.CurrentRequest{})
+		require.NoError(t, err)
+		require.Equal(t, sess.GetSessionId(), current.GetSessionId())
+		require.Equal(t, "00000000-0000-7000-8000-0000000000b1", current.GetPersonId())
+		require.Equal(t, fixtureOrganization, current.GetOrganizationId())
+		require.Equal(t, []string{"member"}, current.GetRoles())
+		require.Len(t, current.GetTeamIds(), 1)
+		require.Empty(t, current.GetBearer())
+
+		require.NoError(t, minter.RevokeSessionAccess(ctx, sess.GetSessionId()))
+		_, err = client.Current(bearer, &sessionv1.CurrentRequest{})
+		require.Equal(t, codes.Unauthenticated, status.Code(err), "an ended session: %v", err)
 	})
 }
 
@@ -191,4 +236,24 @@ func registeredDescriptors(t *testing.T) []byte {
 	raw, err := proto.Marshal(set)
 	require.NoError(t, err)
 	return raw
+}
+
+// memoryRevoker is an in-memory access revocation list behind auth.TokenRevoker.
+type memoryRevoker struct{ tokens, sessions sync.Map }
+
+func (r *memoryRevoker) Revoke(_ context.Context, jti string, _ time.Duration) error {
+	r.tokens.Store(jti, true)
+	return nil
+}
+func (r *memoryRevoker) IsRevoked(_ context.Context, jti string) (bool, error) {
+	_, revoked := r.tokens.Load(jti)
+	return revoked, nil
+}
+func (r *memoryRevoker) RevokeSession(_ context.Context, sessionID string, _ time.Duration) error {
+	r.sessions.Store(sessionID, true)
+	return nil
+}
+func (r *memoryRevoker) IsSessionRevoked(_ context.Context, sessionID string) (bool, error) {
+	_, revoked := r.sessions.Load(sessionID)
+	return revoked, nil
 }

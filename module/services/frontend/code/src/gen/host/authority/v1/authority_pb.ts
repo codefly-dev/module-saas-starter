@@ -4,12 +4,13 @@
 
 // The authority interface: what a module or solution calls on its host to be
 // issued a Work Context, to have one checked, and to learn the keys it was
-// signed with. Three operations. Every former spelling (start task, start
+// signed with, and to ask which resources of a kind it covers. Every former spelling (start task, start
 // installation task, exchange audience, start child, renew, the module broker's
 // mints) is Issue with a different `as`.
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import type { WorkContextV1, WorkScopeV1 } from "./work_context_pb";
 import { file_host_authority_v1_work_context } from "./work_context_pb";
 import type { Message } from "@bufbuild/protobuf";
@@ -18,7 +19,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file host/authority/v1/authority.proto.
  */
 export const file_host_authority_v1_authority: GenFile = /*@__PURE__*/
-  fileDesc("CiFob3N0L2F1dGhvcml0eS92MS9hdXRob3JpdHkucHJvdG8SEWhvc3QuYXV0aG9yaXR5LnYxIpsDCgxJc3N1ZVJlcXVlc3QSMgoGcGVyc29uGAEgASgLMiAuaG9zdC5hdXRob3JpdHkudjEuUGVyc29uU2Vzc2lvbkgAEjkKCHdvcmtsb2FkGAIgASgLMiUuaG9zdC5hdXRob3JpdHkudjEuV29ya2xvYWRDcmVkZW50aWFsSAASOgoMaW5zdGFsbGF0aW9uGAMgASgLMiIuaG9zdC5hdXRob3JpdHkudjEuSW5zdGFsbGF0aW9uUmVmSAASFgoMcGFyZW50X3Rva2VuGAQgASgJSAASEAoIYXVkaWVuY2UYBSABKAkSLgoGc2NvcGVzGAYgAygLMh4uaG9zdC5hdXRob3JpdHkudjEuV29ya1Njb3BlVjESEwoLdHRsX3NlY29uZHMYByABKAMSHAoUb3BlcmF0aW9uX2JpbmRpbmdfaWQYCCABKAkSFwoPb3JnYW5pemF0aW9uX2lkGAkgASgJEjQKBWFjdG9yGAogASgLMiUuaG9zdC5hdXRob3JpdHkudjEuV29ya2xvYWRDcmVkZW50aWFsQgQKAmFzIiEKDVBlcnNvblNlc3Npb25KBAgBEAJSCnNlc3Npb25faWQiKAoSV29ya2xvYWRDcmVkZW50aWFsEhIKCmNyZWRlbnRpYWwYASABKAkiKgoPSW5zdGFsbGF0aW9uUmVmEhcKD2luc3RhbGxhdGlvbl9pZBgBIAEoCSJqCg1Jc3N1ZVJlc3BvbnNlEg0KBXRva2VuGAEgASgJEhcKD2V4cGlyZXNfYXRfdW5peBgCIAEoAxIxCgdjb250ZXh0GAMgASgLMiAuaG9zdC5hdXRob3JpdHkudjEuV29ya0NvbnRleHRWMSIvCgxDaGVja1JlcXVlc3QSDQoFdG9rZW4YASABKAkSEAoIYXVkaWVuY2UYAiABKAkiYgoNQ2hlY2tSZXNwb25zZRIxCgdjb250ZXh0GAEgASgLMiAuaG9zdC5hdXRob3JpdHkudjEuV29ya0NvbnRleHRWMRIeChZhdXRob3JpemF0aW9uX3JldmlzaW9uGAIgASgEIg0KC0tleXNSZXF1ZXN0IkoKDEtleXNSZXNwb25zZRIOCgZpc3N1ZXIYASABKAkSKgoEa2V5cxgCIAMoCzIcLmhvc3QuYXV0aG9yaXR5LnYxLlB1YmxpY0tleSJCCglQdWJsaWNLZXkSDgoGa2V5X2lkGAEgASgJEhEKCWFsZ29yaXRobRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgMMvMBChBBdXRob3JpdHlTZXJ2aWNlEkoKBUlzc3VlEh8uaG9zdC5hdXRob3JpdHkudjEuSXNzdWVSZXF1ZXN0GiAuaG9zdC5hdXRob3JpdHkudjEuSXNzdWVSZXNwb25zZRJKCgVDaGVjaxIfLmhvc3QuYXV0aG9yaXR5LnYxLkNoZWNrUmVxdWVzdBogLmhvc3QuYXV0aG9yaXR5LnYxLkNoZWNrUmVzcG9uc2USRwoES2V5cxIeLmhvc3QuYXV0aG9yaXR5LnYxLktleXNSZXF1ZXN0Gh8uaG9zdC5hdXRob3JpdHkudjEuS2V5c1Jlc3BvbnNlQr0BChVjb20uaG9zdC5hdXRob3JpdHkudjFCDkF1dGhvcml0eVByb3RvUAFaLmFjY291bnRzL3BrZy9nZW4vaG9zdC9hdXRob3JpdHkvdjE7YXV0aG9yaXR5djGiAgNIQViqAhFIb3N0LkF1dGhvcml0eS5WMcoCEUhvc3RcQXV0aG9yaXR5XFYx4gIdSG9zdFxBdXRob3JpdHlcVjFcR1BCTWV0YWRhdGHqAhNIb3N0OjpBdXRob3JpdHk6OlYxYgZwcm90bzM", [file_host_authority_v1_work_context]);
+  fileDesc("CiFob3N0L2F1dGhvcml0eS92MS9hdXRob3JpdHkucHJvdG8SEWhvc3QuYXV0aG9yaXR5LnYxIuYDCgxJc3N1ZVJlcXVlc3QSMgoGcGVyc29uGAEgASgLMiAuaG9zdC5hdXRob3JpdHkudjEuUGVyc29uU2Vzc2lvbkgAEjkKCHdvcmtsb2FkGAIgASgLMiUuaG9zdC5hdXRob3JpdHkudjEuV29ya2xvYWRDcmVkZW50aWFsSAASOgoMaW5zdGFsbGF0aW9uGAMgASgLMiIuaG9zdC5hdXRob3JpdHkudjEuSW5zdGFsbGF0aW9uUmVmSAASFgoMcGFyZW50X3Rva2VuGAQgASgJSAASNgoKZGVsZWdhdGlvbhgLIAEoCzIgLmhvc3QuYXV0aG9yaXR5LnYxLkRlbGVnYXRpb25SZWZIABIQCghhdWRpZW5jZRgFIAEoCRIuCgZzY29wZXMYBiADKAsyHi5ob3N0LmF1dGhvcml0eS52MS5Xb3JrU2NvcGVWMRITCgt0dGxfc2Vjb25kcxgHIAEoAxIcChRvcGVyYXRpb25fYmluZGluZ19pZBgIIAEoCRIXCg9vcmdhbml6YXRpb25faWQYCSABKAkSNAoFYWN0b3IYCiABKAsyJS5ob3N0LmF1dGhvcml0eS52MS5Xb3JrbG9hZENyZWRlbnRpYWwSEQoJb3BlcmF0aW9uGAwgASgJQgQKAmFzIiYKDURlbGVnYXRpb25SZWYSFQoNZGVsZWdhdGlvbl9pZBgBIAEoCSJiCg9EZWxlZ2F0ZVJlcXVlc3QSDgoGbW9kdWxlGAEgASgJEi4KBnNjb3BlcxgCIAMoCzIeLmhvc3QuYXV0aG9yaXR5LnYxLldvcmtTY29wZVYxEg8KB3B1cnBvc2UYAyABKAkirgEKCkRlbGVnYXRpb24SFQoNZGVsZWdhdGlvbl9pZBgBIAEoCRIXCg9vcmdhbml6YXRpb25faWQYAiABKAkSDwoHZ3JhbnRvchgDIAEoCRIOCgZtb2R1bGUYBCABKAkSLgoGc2NvcGVzGAUgAygLMh4uaG9zdC5hdXRob3JpdHkudjEuV29ya1Njb3BlVjESDwoHcHVycG9zZRgGIAEoCRIOCgZhY3RpdmUYByABKAgiYwoUR2V0RGVsZWdhdGlvblJlcXVlc3QSFQoNZGVsZWdhdGlvbl9pZBgBIAEoCRI0CgVhY3RvchgCIAEoCzIlLmhvc3QuYXV0aG9yaXR5LnYxLldvcmtsb2FkQ3JlZGVudGlhbCIwChdSZXZva2VEZWxlZ2F0aW9uUmVxdWVzdBIVCg1kZWxlZ2F0aW9uX2lkGAEgASgJIk0KGFJldm9rZURlbGVnYXRpb25SZXNwb25zZRIxCgpkZWxlZ2F0aW9uGAEgASgLMh0uaG9zdC5hdXRob3JpdHkudjEuRGVsZWdhdGlvbiIhCg1QZXJzb25TZXNzaW9uSgQIARACUgpzZXNzaW9uX2lkIigKEldvcmtsb2FkQ3JlZGVudGlhbBISCgpjcmVkZW50aWFsGAEgASgJIioKD0luc3RhbGxhdGlvblJlZhIXCg9pbnN0YWxsYXRpb25faWQYASABKAkiagoNSXNzdWVSZXNwb25zZRINCgV0b2tlbhgBIAEoCRIXCg9leHBpcmVzX2F0X3VuaXgYAiABKAMSMQoHY29udGV4dBgDIAEoCzIgLmhvc3QuYXV0aG9yaXR5LnYxLldvcmtDb250ZXh0VjEiUQoMQ2hlY2tSZXF1ZXN0Eg0KBXRva2VuGAEgASgJEhAKCGF1ZGllbmNlGAIgASgJEg4KBm1ldGhvZBgDIAEoCRIQCghhZHZpc29yeRgEIAEoCCJzCg1DaGVja1Jlc3BvbnNlEjEKB2NvbnRleHQYASABKAsyIC5ob3N0LmF1dGhvcml0eS52MS5Xb3JrQ29udGV4dFYxEh4KFmF1dGhvcml6YXRpb25fcmV2aXNpb24YAiABKAQSDwoHcmVmdXNhbBgDIAEoCSINCgtLZXlzUmVxdWVzdCJKCgxLZXlzUmVzcG9uc2USDgoGaXNzdWVyGAEgASgJEioKBGtleXMYAiADKAsyHC5ob3N0LmF1dGhvcml0eS52MS5QdWJsaWNLZXkiQgoJUHVibGljS2V5Eg4KBmtleV9pZBgBIAEoCRIRCglhbGdvcml0aG0YAiABKAkSEgoKcHVibGljX2tleRgDIAEoDCJeChRMaXN0UmVzb3VyY2VzUmVxdWVzdBINCgV0b2tlbhgBIAEoCRIQCghhdWRpZW5jZRgCIAEoCRIVCg1yZXNvdXJjZV9raW5kGAMgASgJEg4KBmFjdGlvbhgEIAEoCSJJChVMaXN0UmVzb3VyY2VzUmVzcG9uc2USMAoGZ3JhbnRzGAEgAygLMiAuaG9zdC5hdXRob3JpdHkudjEuUmVzb3VyY2VHcmFudCJaCg1SZXNvdXJjZUdyYW50Eg0KA2FsbBgBIAEoCEgAEgwKAmlkGAIgASgJSAASEAoGcHJlZml4GAMgASgJSAASEQoHcGF0dGVybhgEIAEoCUgAQgcKBW1hdGNoMqwFChBBdXRob3JpdHlTZXJ2aWNlEmoKBUlzc3VlEh8uaG9zdC5hdXRob3JpdHkudjEuSXNzdWVSZXF1ZXN0GiAuaG9zdC5hdXRob3JpdHkudjEuSXNzdWVSZXNwb25zZSIegtPkkwIYOgEqIhMvdjEvYXV0aG9yaXR5Omlzc3VlEmoKBUNoZWNrEh8uaG9zdC5hdXRob3JpdHkudjEuQ2hlY2tSZXF1ZXN0GiAuaG9zdC5hdXRob3JpdHkudjEuQ2hlY2tSZXNwb25zZSIegtPkkwIYOgEqIhMvdjEvYXV0aG9yaXR5OmNoZWNrEkcKBEtleXMSHi5ob3N0LmF1dGhvcml0eS52MS5LZXlzUmVxdWVzdBofLmhvc3QuYXV0aG9yaXR5LnYxLktleXNSZXNwb25zZRJiCg1MaXN0UmVzb3VyY2VzEicuaG9zdC5hdXRob3JpdHkudjEuTGlzdFJlc291cmNlc1JlcXVlc3QaKC5ob3N0LmF1dGhvcml0eS52MS5MaXN0UmVzb3VyY2VzUmVzcG9uc2USTQoIRGVsZWdhdGUSIi5ob3N0LmF1dGhvcml0eS52MS5EZWxlZ2F0ZVJlcXVlc3QaHS5ob3N0LmF1dGhvcml0eS52MS5EZWxlZ2F0aW9uEmsKEFJldm9rZURlbGVnYXRpb24SKi5ob3N0LmF1dGhvcml0eS52MS5SZXZva2VEZWxlZ2F0aW9uUmVxdWVzdBorLmhvc3QuYXV0aG9yaXR5LnYxLlJldm9rZURlbGVnYXRpb25SZXNwb25zZRJXCg1HZXREZWxlZ2F0aW9uEicuaG9zdC5hdXRob3JpdHkudjEuR2V0RGVsZWdhdGlvblJlcXVlc3QaHS5ob3N0LmF1dGhvcml0eS52MS5EZWxlZ2F0aW9uQr0BChVjb20uaG9zdC5hdXRob3JpdHkudjFCDkF1dGhvcml0eVByb3RvUAFaLmFjY291bnRzL3BrZy9nZW4vaG9zdC9hdXRob3JpdHkvdjE7YXV0aG9yaXR5djGiAgNIQViqAhFIb3N0LkF1dGhvcml0eS5WMcoCEUhvc3RcQXV0aG9yaXR5XFYx4gIdSG9zdFxBdXRob3JpdHlcVjFcR1BCTWV0YWRhdGHqAhNIb3N0OjpBdXRob3JpdHk6OlYxYgZwcm90bzM", [file_google_api_annotations, file_host_authority_v1_work_context]);
 
 /**
  * IssueRequest names on whose behalf the capability is issued.
@@ -64,6 +65,18 @@ export type IssueRequest = Message<"host.authority.v1.IssueRequest"> & {
      */
     value: string;
     case: "parentToken";
+  } | {
+    /**
+     * A delegation a person granted the module acting (actor): the capability
+     * is owned by that person and carries the delegation on the module's hop.
+     * No live capability is presented: the authority re-checks the delegation
+     * and what its grantor holds now, so a revoked delegation or a lost role
+     * stops the next issue, and renewing is issuing again.
+     *
+     * @generated from field: host.authority.v1.DelegationRef delegation = 11;
+     */
+    value: DelegationRef;
+    case: "delegation";
   } | { case: undefined; value?: undefined };
 
   /**
@@ -103,11 +116,22 @@ export type IssueRequest = Message<"host.authority.v1.IssueRequest"> & {
   organizationId: string;
 
   /**
-   * The actor a child hop delegates to, as a workload credential; required with parent_token.
+   * The actor a child hop delegates to, as a workload credential; required with
+   * parent_token and with delegation.
    *
    * @generated from field: host.authority.v1.WorkloadCredential actor = 10;
    */
   actor?: WorkloadCredential;
+
+  /**
+   * Which of the binding's operations the capability is for: "invoke" (the
+   * default for a person, a child or a delegation), "headless" (the default for
+   * a workload) or "lookup": the binding's lookup scopes alone, to read a
+   * receipt without the authority to repeat the effect.
+   *
+   * @generated from field: string operation = 12;
+   */
+  operation: string;
 };
 
 /**
@@ -116,6 +140,183 @@ export type IssueRequest = Message<"host.authority.v1.IssueRequest"> & {
  */
 export const IssueRequestSchema: GenMessage<IssueRequest> = /*@__PURE__*/
   messageDesc(file_host_authority_v1_authority, 0);
+
+/**
+ * DelegationRef names one delegation.
+ *
+ * @generated from message host.authority.v1.DelegationRef
+ */
+export type DelegationRef = Message<"host.authority.v1.DelegationRef"> & {
+  /**
+   * The delegation's id, as Delegate answered it.
+   *
+   * @generated from field: string delegation_id = 1;
+   */
+  delegationId: string;
+};
+
+/**
+ * Describes the message host.authority.v1.DelegationRef.
+ * Use `create(DelegationRefSchema)` to create a new message.
+ */
+export const DelegationRefSchema: GenMessage<DelegationRef> = /*@__PURE__*/
+  messageDesc(file_host_authority_v1_authority, 1);
+
+/**
+ * DelegateRequest is a signed-in person granting a module the right to act for
+ * them beyond any session: on scopes they hold, through the module's bindings.
+ *
+ * @generated from message host.authority.v1.DelegateRequest
+ */
+export type DelegateRequest = Message<"host.authority.v1.DelegateRequest"> & {
+  /**
+   * The module granted, by principal.
+   *
+   * @generated from field: string module = 1;
+   */
+  module: string;
+
+  /**
+   * What the module may do for the person; within what the person holds.
+   *
+   * @generated from field: repeated host.authority.v1.WorkScopeV1 scopes = 2;
+   */
+  scopes: WorkScopeV1[];
+
+  /**
+   * Why, as the person was told (a connected source, a scheduled job).
+   *
+   * @generated from field: string purpose = 3;
+   */
+  purpose: string;
+};
+
+/**
+ * Describes the message host.authority.v1.DelegateRequest.
+ * Use `create(DelegateRequestSchema)` to create a new message.
+ */
+export const DelegateRequestSchema: GenMessage<DelegateRequest> = /*@__PURE__*/
+  messageDesc(file_host_authority_v1_authority, 2);
+
+/**
+ * Delegation is one grant from a person to a module.
+ *
+ * @generated from message host.authority.v1.Delegation
+ */
+export type Delegation = Message<"host.authority.v1.Delegation"> & {
+  /**
+   * @generated from field: string delegation_id = 1;
+   */
+  delegationId: string;
+
+  /**
+   * @generated from field: string organization_id = 2;
+   */
+  organizationId: string;
+
+  /**
+   * The person who granted it, and whom every capability issued from it is for.
+   *
+   * @generated from field: string grantor = 3;
+   */
+  grantor: string;
+
+  /**
+   * The module granted.
+   *
+   * @generated from field: string module = 4;
+   */
+  module: string;
+
+  /**
+   * @generated from field: repeated host.authority.v1.WorkScopeV1 scopes = 5;
+   */
+  scopes: WorkScopeV1[];
+
+  /**
+   * @generated from field: string purpose = 6;
+   */
+  purpose: string;
+
+  /**
+   * False once revoked; a revoked delegation issues nothing.
+   *
+   * @generated from field: bool active = 7;
+   */
+  active: boolean;
+};
+
+/**
+ * Describes the message host.authority.v1.Delegation.
+ * Use `create(DelegationSchema)` to create a new message.
+ */
+export const DelegationSchema: GenMessage<Delegation> = /*@__PURE__*/
+  messageDesc(file_host_authority_v1_authority, 3);
+
+/**
+ * GetDelegationRequest names the delegation read; anyone but its module or its
+ * grantor is told it does not exist.
+ *
+ * @generated from message host.authority.v1.GetDelegationRequest
+ */
+export type GetDelegationRequest = Message<"host.authority.v1.GetDelegationRequest"> & {
+  /**
+   * @generated from field: string delegation_id = 1;
+   */
+  delegationId: string;
+
+  /**
+   * The module asking, proving which module it is; absent when the grantor asks.
+   *
+   * @generated from field: host.authority.v1.WorkloadCredential actor = 2;
+   */
+  actor?: WorkloadCredential;
+};
+
+/**
+ * Describes the message host.authority.v1.GetDelegationRequest.
+ * Use `create(GetDelegationRequestSchema)` to create a new message.
+ */
+export const GetDelegationRequestSchema: GenMessage<GetDelegationRequest> = /*@__PURE__*/
+  messageDesc(file_host_authority_v1_authority, 4);
+
+/**
+ * RevokeDelegationRequest ends a delegation; only its grantor may.
+ *
+ * @generated from message host.authority.v1.RevokeDelegationRequest
+ */
+export type RevokeDelegationRequest = Message<"host.authority.v1.RevokeDelegationRequest"> & {
+  /**
+   * @generated from field: string delegation_id = 1;
+   */
+  delegationId: string;
+};
+
+/**
+ * Describes the message host.authority.v1.RevokeDelegationRequest.
+ * Use `create(RevokeDelegationRequestSchema)` to create a new message.
+ */
+export const RevokeDelegationRequestSchema: GenMessage<RevokeDelegationRequest> = /*@__PURE__*/
+  messageDesc(file_host_authority_v1_authority, 5);
+
+/**
+ * RevokeDelegationResponse is the delegation as it now stands.
+ *
+ * @generated from message host.authority.v1.RevokeDelegationResponse
+ */
+export type RevokeDelegationResponse = Message<"host.authority.v1.RevokeDelegationResponse"> & {
+  /**
+   * @generated from field: host.authority.v1.Delegation delegation = 1;
+   */
+  delegation?: Delegation;
+};
+
+/**
+ * Describes the message host.authority.v1.RevokeDelegationResponse.
+ * Use `create(RevokeDelegationResponseSchema)` to create a new message.
+ */
+export const RevokeDelegationResponseSchema: GenMessage<RevokeDelegationResponse> = /*@__PURE__*/
+  messageDesc(file_host_authority_v1_authority, 6);
 
 /**
  * PersonSession names the caller's own session. It carries no field: the person
@@ -132,7 +333,7 @@ export type PersonSession = Message<"host.authority.v1.PersonSession"> & {
  * Use `create(PersonSessionSchema)` to create a new message.
  */
 export const PersonSessionSchema: GenMessage<PersonSession> = /*@__PURE__*/
-  messageDesc(file_host_authority_v1_authority, 1);
+  messageDesc(file_host_authority_v1_authority, 7);
 
 /**
  * WorkloadCredential proves which module a running process is: the native
@@ -155,7 +356,7 @@ export type WorkloadCredential = Message<"host.authority.v1.WorkloadCredential">
  * Use `create(WorkloadCredentialSchema)` to create a new message.
  */
 export const WorkloadCredentialSchema: GenMessage<WorkloadCredential> = /*@__PURE__*/
-  messageDesc(file_host_authority_v1_authority, 2);
+  messageDesc(file_host_authority_v1_authority, 8);
 
 /**
  * InstallationRef names an installation acting for itself.
@@ -176,7 +377,7 @@ export type InstallationRef = Message<"host.authority.v1.InstallationRef"> & {
  * Use `create(InstallationRefSchema)` to create a new message.
  */
 export const InstallationRefSchema: GenMessage<InstallationRef> = /*@__PURE__*/
-  messageDesc(file_host_authority_v1_authority, 3);
+  messageDesc(file_host_authority_v1_authority, 9);
 
 /**
  * IssueResponse carries the signed capability and its decoded form.
@@ -211,7 +412,7 @@ export type IssueResponse = Message<"host.authority.v1.IssueResponse"> & {
  * Use `create(IssueResponseSchema)` to create a new message.
  */
 export const IssueResponseSchema: GenMessage<IssueResponse> = /*@__PURE__*/
-  messageDesc(file_host_authority_v1_authority, 4);
+  messageDesc(file_host_authority_v1_authority, 10);
 
 /**
  * CheckRequest presents a capability for verification.
@@ -232,6 +433,29 @@ export type CheckRequest = Message<"host.authority.v1.CheckRequest"> & {
    * @generated from field: string audience = 2;
    */
   audience: string;
+
+  /**
+   * The method the capability is presented to: "/package.Service/Method" for a
+   * gRPC call, "<VERB> <path>" for an HTTP request (GET /v1/model/profiles),
+   * matched against the routes the module declares. When set, the check also
+   * applies what the audience module's delivery declares for that method, and
+   * refuses by name a call that does not hold it, a method that declares
+   * nothing, and a method the module does not serve.
+   *
+   * @generated from field: string method = 3;
+   */
+  method: string;
+
+  /**
+   * Advisory asks for the policy decision without its refusal: the capability
+   * is still verified and refused when it is not sound, but what the method
+   * declares is only reported, in CheckResponse.refusal, and the verified
+   * capability is answered. A hop in a composition that runs permissive
+   * (hop/ENFORCEMENT=warn) asks this way and logs the refusal it did not make.
+   *
+   * @generated from field: bool advisory = 4;
+   */
+  advisory: boolean;
 };
 
 /**
@@ -239,7 +463,7 @@ export type CheckRequest = Message<"host.authority.v1.CheckRequest"> & {
  * Use `create(CheckRequestSchema)` to create a new message.
  */
 export const CheckRequestSchema: GenMessage<CheckRequest> = /*@__PURE__*/
-  messageDesc(file_host_authority_v1_authority, 5);
+  messageDesc(file_host_authority_v1_authority, 11);
 
 /**
  * CheckResponse is the verified capability.
@@ -260,6 +484,14 @@ export type CheckResponse = Message<"host.authority.v1.CheckResponse"> & {
    * @generated from field: uint64 authorization_revision = 2;
    */
   authorizationRevision: bigint;
+
+  /**
+   * Refusal is what the method's policy would have refused, verbatim, when the
+   * check was advisory and the policy did not hold; empty when it held.
+   *
+   * @generated from field: string refusal = 3;
+   */
+  refusal: string;
 };
 
 /**
@@ -267,7 +499,7 @@ export type CheckResponse = Message<"host.authority.v1.CheckResponse"> & {
  * Use `create(CheckResponseSchema)` to create a new message.
  */
 export const CheckResponseSchema: GenMessage<CheckResponse> = /*@__PURE__*/
-  messageDesc(file_host_authority_v1_authority, 6);
+  messageDesc(file_host_authority_v1_authority, 12);
 
 /**
  * KeysRequest asks for the verification keys.
@@ -282,7 +514,7 @@ export type KeysRequest = Message<"host.authority.v1.KeysRequest"> & {
  * Use `create(KeysRequestSchema)` to create a new message.
  */
 export const KeysRequestSchema: GenMessage<KeysRequest> = /*@__PURE__*/
-  messageDesc(file_host_authority_v1_authority, 7);
+  messageDesc(file_host_authority_v1_authority, 13);
 
 /**
  * KeysResponse is the issuer and its keys.
@@ -310,7 +542,7 @@ export type KeysResponse = Message<"host.authority.v1.KeysResponse"> & {
  * Use `create(KeysResponseSchema)` to create a new message.
  */
 export const KeysResponseSchema: GenMessage<KeysResponse> = /*@__PURE__*/
-  messageDesc(file_host_authority_v1_authority, 8);
+  messageDesc(file_host_authority_v1_authority, 14);
 
 /**
  * PublicKey is one verification key.
@@ -345,10 +577,125 @@ export type PublicKey = Message<"host.authority.v1.PublicKey"> & {
  * Use `create(PublicKeySchema)` to create a new message.
  */
 export const PublicKeySchema: GenMessage<PublicKey> = /*@__PURE__*/
-  messageDesc(file_host_authority_v1_authority, 9);
+  messageDesc(file_host_authority_v1_authority, 15);
 
 /**
- * AuthorityService is implemented by the host (accounts) and by the mini gateway.
+ * ListResourcesRequest asks about one kind and one action.
+ *
+ * @generated from message host.authority.v1.ListResourcesRequest
+ */
+export type ListResourcesRequest = Message<"host.authority.v1.ListResourcesRequest"> & {
+  /**
+   * The capability presented.
+   *
+   * @generated from field: string token = 1;
+   */
+  token: string;
+
+  /**
+   * The audience the caller is; a capability addressed elsewhere is refused.
+   *
+   * @generated from field: string audience = 2;
+   */
+  audience: string;
+
+  /**
+   * The resource kind, as the audience module serves it.
+   *
+   * @generated from field: string resource_kind = 3;
+   */
+  resourceKind: string;
+
+  /**
+   * The action, in the kind's own vocabulary.
+   *
+   * @generated from field: string action = 4;
+   */
+  action: string;
+};
+
+/**
+ * Describes the message host.authority.v1.ListResourcesRequest.
+ * Use `create(ListResourcesRequestSchema)` to create a new message.
+ */
+export const ListResourcesRequestSchema: GenMessage<ListResourcesRequest> = /*@__PURE__*/
+  messageDesc(file_host_authority_v1_authority, 16);
+
+/**
+ * ListResourcesResponse is every grant the capability holds on the kind for the
+ * action. A resource is covered when any grant matches its id; no grant means
+ * none. A capability that does not hold the action at all is refused instead.
+ *
+ * @generated from message host.authority.v1.ListResourcesResponse
+ */
+export type ListResourcesResponse = Message<"host.authority.v1.ListResourcesResponse"> & {
+  /**
+   * @generated from field: repeated host.authority.v1.ResourceGrant grants = 1;
+   */
+  grants: ResourceGrant[];
+};
+
+/**
+ * Describes the message host.authority.v1.ListResourcesResponse.
+ * Use `create(ListResourcesResponseSchema)` to create a new message.
+ */
+export const ListResourcesResponseSchema: GenMessage<ListResourcesResponse> = /*@__PURE__*/
+  messageDesc(file_host_authority_v1_authority, 17);
+
+/**
+ * ResourceGrant is one way of naming covered resources. Exactly one is set.
+ *
+ * @generated from message host.authority.v1.ResourceGrant
+ */
+export type ResourceGrant = Message<"host.authority.v1.ResourceGrant"> & {
+  /**
+   * @generated from oneof host.authority.v1.ResourceGrant.match
+   */
+  match: {
+    /**
+     * Every resource of the kind.
+     *
+     * @generated from field: bool all = 1;
+     */
+    value: boolean;
+    case: "all";
+  } | {
+    /**
+     * Exactly this resource id.
+     *
+     * @generated from field: string id = 2;
+     */
+    value: string;
+    case: "id";
+  } | {
+    /**
+     * Every resource whose id starts with this.
+     *
+     * @generated from field: string prefix = 3;
+     */
+    value: string;
+    case: "prefix";
+  } | {
+    /**
+     * Every resource whose whole id matches this RE2 expression, at most 256
+     * bytes; it is matched against the entire id, as if anchored.
+     *
+     * @generated from field: string pattern = 4;
+     */
+    value: string;
+    case: "pattern";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message host.authority.v1.ResourceGrant.
+ * Use `create(ResourceGrantSchema)` to create a new message.
+ */
+export const ResourceGrantSchema: GenMessage<ResourceGrant> = /*@__PURE__*/
+  messageDesc(file_host_authority_v1_authority, 18);
+
+/**
+ * AuthorityService is implemented by the host (accounts) and by the authority gateway.
  *
  * @generated from service host.authority.v1.AuthorityService
  */
@@ -356,6 +703,9 @@ export const AuthorityService: GenService<{
   /**
    * Issue signs a Work Context for one owner shape, one audience and the scopes
    * asked for, bounded by what the owner holds and what the audience declared.
+   * Served over REST too (POST /v1/authority:issue), for a module with no
+   * generated client of its own, as a Python service: the same request and
+   * answer, in JSON.
    *
    * @generated from rpc host.authority.v1.AuthorityService.Issue
    */
@@ -384,6 +734,53 @@ export const AuthorityService: GenService<{
     methodKind: "unary";
     input: typeof KeysRequestSchema;
     output: typeof KeysResponseSchema;
+  },
+  /**
+   * ListResources answers which resources of one kind a checked capability may
+   * act on with one action, decided by the authority at the time of the call
+   * rather than carried in the capability. A module maps the answer onto its
+   * own resources; the authority knows them only by id.
+   *
+   * @generated from rpc host.authority.v1.AuthorityService.ListResources
+   */
+  listResources: {
+    methodKind: "unary";
+    input: typeof ListResourcesRequestSchema;
+    output: typeof ListResourcesResponseSchema;
+  },
+  /**
+   * Delegate records a signed-in person's grant to a module (the caller's
+   * bearer is the person); Issue with a delegation acts on it.
+   *
+   * @generated from rpc host.authority.v1.AuthorityService.Delegate
+   */
+  delegate: {
+    methodKind: "unary";
+    input: typeof DelegateRequestSchema;
+    output: typeof DelegationSchema;
+  },
+  /**
+   * RevokeDelegation ends a delegation; the next Issue from it is refused.
+   *
+   * @generated from rpc host.authority.v1.AuthorityService.RevokeDelegation
+   */
+  revokeDelegation: {
+    methodKind: "unary";
+    input: typeof RevokeDelegationRequestSchema;
+    output: typeof RevokeDelegationResponseSchema;
+  },
+  /**
+   * GetDelegation reads one delegation for the module it is granted to (by its
+   * workload credential) or for its grantor (by the caller's bearer): whether it
+   * still stands. Work that outlives the capability that started it asks this
+   * between issues, so a revoke stops it even when it calls no other module.
+   *
+   * @generated from rpc host.authority.v1.AuthorityService.GetDelegation
+   */
+  getDelegation: {
+    methodKind: "unary";
+    input: typeof GetDelegationRequestSchema;
+    output: typeof DelegationSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_host_authority_v1_authority, 0);
