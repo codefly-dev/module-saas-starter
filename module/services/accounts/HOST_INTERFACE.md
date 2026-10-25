@@ -224,3 +224,37 @@ the shared child-hop case expects `PermissionDenied`; that case is still blocked
 earlier by its empty-scope/binding setup. Invalid tokens must not all be remapped
 to permission errors to silence this mismatch. Full delegated exchange reuse,
 named binding support and current interface generation remain open.
+
+## Session discovery preparation (2026-10-25)
+
+The authentication owners now provide the reads needed by the session adapter:
+`devvalidator.Validator.FixtureTokens` returns a defensive, ordered copy of the
+configured allowlist. Duplicate tokens retain the validator's existing last-wins
+identity and appear only at the winning declaration's position.
+`pgauth.Resolver.LookupIdentity` uses the same active-person lookup and organization
+selection as login, within the existing database-enforced read-only transaction.
+It does not create sessions, provision people, bootstrap an administrator or touch
+login timestamps. It returns person/org/org-role/display facts only; it is not a
+minting identity.
+
+Real PostgreSQL tests compare discovery with login for ambiguous memberships,
+a persisted default newer than the oldest membership, and provider organization
+precedence. They verify no session/bootstrap/membership/recency changes, and
+refusal of missing or suspended people. Validator tests verify order, duplicate
+credential semantics and defensive copies.
+
+These are preparatory owner capabilities, not completed SessionService endpoints.
+`Current` and `ListFixturePeople` are still absent from the vendored descriptor;
+the conformance baseline above remains 5 pass / 7 fail / 7 skip. Integration must
+use only the enabled development validator, preserve real-provider and orgless
+sessions, resolve teams through the existing member-filtered store, and prove
+ended-session refusal through the actual authentication perimeter. The existing
+MFA-challenge response must be handled explicitly, never bypassed.
+
+The proto-generation baseline is reproducible through Codefly after the template
+selection fix, with its complete output retained. The catalog compilers are not
+yet integrated into Codefly's generation lifecycle; see
+[REST regeneration](../../REST_SURFACE.md#regeneration). That is an owner tooling
+gap, not authorization to edit generated catalogs or run a substitute pipeline.
+No composed browser journey, external identity provider or complete session
+conformance is qualified by these tests.

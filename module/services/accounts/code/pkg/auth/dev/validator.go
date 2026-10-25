@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -48,6 +49,7 @@ type fixtureUser struct {
 type Validator struct {
 	mu          sync.RWMutex
 	seeds       map[string]*auth.Claims // keyed by fixture_token (provider_id fallback)
+	tokens      []string                // winning declarations in fixture order
 	mfaVerified map[string]bool         // explicit development-only AAL2 attestations
 }
 
@@ -74,6 +76,7 @@ func New(path string) (*Validator, error) {
 		seeds:       make(map[string]*auth.Claims, len(f.Users)),
 		mfaVerified: make(map[string]bool, len(f.Users)),
 	}
+	last := make(map[string]int, len(f.Users))
 	for i := range f.Users {
 		u := f.Users[i]
 		if u.ProviderID == "" || u.Email == "" {
@@ -98,11 +101,32 @@ func New(path string) (*Validator, error) {
 			ExpiresAt:     time.Now().Add(24 * time.Hour),
 		}
 		v.mfaVerified[token] = u.MFAVerified
+		last[token] = len(v.tokens)
+		v.tokens = append(v.tokens, token)
 	}
+	// Validation has always used the last declaration of a duplicate token.
+	// List only that declaration, at its position in the fixture, so discovery
+	// cannot advertise an identity different from the one the token signs in.
+	ordered := make([]string, 0, len(v.seeds))
+	for i, token := range v.tokens {
+		if last[token] == i {
+			ordered = append(ordered, token)
+		}
+	}
+	v.tokens = ordered
 	if len(v.seeds) == 0 {
 		return nil, fmt.Errorf("devvalidator: fixture %q contained no usable users", path)
 	}
 	return v, nil
+}
+
+// FixtureTokens returns the enabled allowlist in fixture order. Claims remain
+// owned by Validate; enumerating credentials never authenticates a person or
+// opens a session. The returned slice cannot mutate the validator's state.
+func (v *Validator) FixtureTokens() []string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return slices.Clone(v.tokens)
 }
 
 // FixtureMFAWasVerified reports whether the allowlisted development identity
