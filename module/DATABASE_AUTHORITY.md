@@ -588,6 +588,41 @@ attached or detached, now needs a `BYPASSRLS` role to read every row, which the
 partition offload planned in
 [ADR 0006](./docs/adr/0006-audit-sink-and-retention-tiers.md) has to provision.
 
+## A retention sweep's predicate must match a usable index, and its cascade children must carry one
+
+`RunRetention`'s row deletes (`DeleteOldSessions`, `DeleteOldNotifications`,
+`DeleteOldWebhookDeliveries`, `DeleteExpiredAuthenticationCeremonies`,
+`pkg/infra/postgres_retention.go`) are bulk `DELETE ... WHERE <column> < $1`
+statements over tables sized by production traffic, run on every tick. Two
+unindexed-by-construction gaps make a sweep like this quadratic rather than a
+missing index being merely slow, and migration
+`48_retention_index_gaps` (#1253) is the one-time catch-up; a new sweep or a new
+cascade from a bulk-deleted table has to carry its own index from the start:
+
+- **The sweep's `WHERE` must name a column a usable index leads with.** A
+  partial index's own predicate does not count unless the sweep repeats it: an
+  index `(expires_at) WHERE consumed_at IS NULL` serves "find live rows," the
+  opposite set from "find rows old enough to delete," so the planner falls back
+  to a sequential scan regardless of how selective the sweep's own predicate is.
+  `sessions`, `notifications` and `webhook_deliveries` each had this gap on
+  `created_at` before #1253: measured at 300k seeded rows, `DELETE FROM sessions
+  WHERE created_at < $1` (1,001 rows) ran 15,697ms with no index on `created_at`
+  at all, 38ms after adding one (418x).
+- **Every `ON DELETE CASCADE` child column a bulk-deleted parent can reach needs
+  its own index.** The cascade trigger fires once per deleted parent row and,
+  with no index on the child's FK column, sequentially scans the child table
+  each time: cost is `rows_deleted x child_table_size`, so it is invisible at
+  seed scale and degrades on its own as the child grows. Measured:
+  `DELETE FROM mfa_login_transactions WHERE expires_at < $1` (1,001 rows)
+  cascading into the unindexed `webauthn_ceremonies.mfa_login_transaction_id`
+  ran 20,199ms, 56ms after adding the index (359x) — the trigger still fired
+  1,001 times either way, it just stopped sequentially scanning to do it.
+
+A migration above the frontier that adds either shape — a new retention
+predicate or a new `ON DELETE CASCADE` reachable from a table a retention sweep
+or an admin bulk-delete (e.g. role deletion) targets — adds the matching index
+in the same migration, not as a follow-up once it is measured slow.
+
 ## Audit retention drops a partition by its recorded range, under lock
 
 Audit retention is a partition drop, and a dropped partition cannot be
