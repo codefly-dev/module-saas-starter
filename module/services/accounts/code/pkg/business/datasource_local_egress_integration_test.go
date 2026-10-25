@@ -93,12 +93,12 @@ func TestClientCredentialsSourceReachesALocalStubThroughTheEgressAllowance(t *te
 	const effect, input = "local-egress", `{"id":"a"}`
 	request := &gen.InvokeSourceOperationRequest{OrgId: org, SourceId: source.ID, Operation: declaration.Name, InputJson: input, EffectId: effect}
 	ctx := business.WithSourceOperationRecheck(requestCtx, func(ctx context.Context) error {
-		_, _, err := svc.SourceOperationAuthority(ctx, actor, org, source.ID, declaration.Name, effect, false)
+		_, _, err := svc.SourceOperationAuthority(ctx, actor, org, source.ID, declaration.Name, effect, "", false)
 		return err
 	})
 	response, err := guard.Handle(ctx, business.SourceOperationMethod, effect, request, func(ctx context.Context) (proto.Message, error) {
 		var response *gen.InvokeSourceOperationResponse
-		_, err := svc.InvokeSourceOperation(ctx, actor, org, source.ID, declaration.Name, []byte(input), func(ctx context.Context, result *business.SourceOperationResult) error {
+		_, err := svc.InvokeSourceOperation(ctx, actor, org, source.ID, declaration.Name, "", []byte(input), func(ctx context.Context, result *business.SourceOperationResult) error {
 			response = &gen.InvokeSourceOperationResponse{OutputJson: string(result.Output), Receipt: &gen.SourceOperationReceipt{EffectId: effect, CommittedAt: result.CommittedAt.UTC().Format(time.RFC3339Nano), Status: "committed", ProviderStatus: uint32(result.ProviderStatus), OutputJson: string(result.Output)}}
 			return svc.RecordSourceOperationReceipt(ctx, response)
 		})

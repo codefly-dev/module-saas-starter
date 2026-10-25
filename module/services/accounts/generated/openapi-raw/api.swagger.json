@@ -6644,6 +6644,10 @@
         },
         "effectId": {
           "type": "string"
+        },
+        "expectedDeclarationDigest": {
+          "type": "string",
+          "description": "Optional for legacy callers. A caller that admitted a declaration supplies\nits canonical digest; a replacement is refused before provider dispatch.\nThis precondition participates in the receipt request fingerprint."
         }
       },
       "description": "InvokeSourceOperationRequest carries exactly one JSON object in input_json.\neffect_id must match x-codefly-effect-id; either location may supply it."

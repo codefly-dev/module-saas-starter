@@ -29,9 +29,18 @@ The result includes each declaration's schemas, effect, bound and canonical dige
 it grants no invocation authority and is not itself a model-facing tool projection.
 Consumers must freeze the admitted declaration and separately authorize execution.
 
-Invoke takes `org_id`, `source_id`, `operation`, `input_json`, and `effect_id`.
+Invoke takes `org_id`, `source_id`, `operation`, `input_json`, `effect_id`, and
+optional `expected_declaration_digest`. A consumer admitting a frozen operation
+supplies its canonical `sha256:` declaration digest. A different live declaration
+is refused with `SOURCE_DECLARATION_CHANGED` before creating an attempt or
+calling the provider, including after waiting for receipt serialization.
+Omitting the precondition retains the existing current-declaration behavior.
+The precondition is part of the SDK request fingerprint; adding, removing or
+changing it under an existing effect cannot replay a different request.
+Lookup still takes only the original effect ID and recovers retained evidence
+under current source-read authority after declaration replacement or removal.
 `input_json` is a string containing exactly one JSON object. The complete
-protojson request (proto field names, unpopulated fields included) is limited to
+protojson request (proto field names, unpopulated non-optional fields included) is limited to
 65,536 bytes. Declarations require a closed input-object schema; named template
 parameters become escaped path components, listed query fields become query
 parameters, and the remaining object becomes the body. GET and DELETE refuse a
@@ -365,10 +374,11 @@ in-memory and httptest fixtures qualify HTTP and host decisions; real business
 tests require Postgres and Vault booted by Codefly. Test results and any boot or
 Core/CLI delivery blocker are recorded in the PR; a compiled test is not a passed
 integration test. The callable-sources handbook decision is accepted (proposal
-#269, merged in handbook PR #271). All host Go modules that depend on Core pin released v0.18.0, which carries
-#755; host suites run with `GOWORK=off`. Generation and CI pin released CLI
-v0.1.185 (`3558defb95c8316cd2ad078327b10c721cf187d5`), carrying #943/#947.
-No development CLI or local Core override is required. The CLI preserves scope
+#269, merged in handbook PR #271). Host suites run with `GOWORK=off`. Generation and CI select the exact
+CLI source candidate documented in `AGENTS.md`, which exports the owned API
+and implemented host interfaces together. The root and tools Core pins validate
+that multi-package contract; service pins remain independent. This candidate
+is not release qualification. The CLI preserves scope
 slots in operation documents and resolves composition selections during
 preparation, checking that the called endpoint serves both Invoke and Lookup.
 A passing generation drift check alone does not qualify the delivery path.

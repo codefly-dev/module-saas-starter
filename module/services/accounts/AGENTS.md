@@ -9,10 +9,10 @@ scope and RLS posture is in
 registration and module-identity records that only accounts may write.
 
 **Regenerating after a proto change** is one command from this directory,
-`codefly generate proto --proto ./proto --path saas --output .. --template
+`codefly generate proto --proto ./proto --output .. --template
 accounts/proto/buf.gen.yaml` (Docker, Codefly CLI ≥ 0.1.160), then the
 `go generate` steps. `codefly sync service accounts` also runs the agent-owned
-regeneration; `buf.gen.yaml` limits its input to the owned `saas` tree so the
+regeneration; `buf.gen.yaml` limits its input to the owned `saas` and `host` trees so the
 vendored Core options never become duplicate Go descriptors. The `--output . --local --template buf.gen.local.yaml`
 spelling that older docs and the `generated-pins-gate` message still show no
 longer works. The full procedure and why are in
