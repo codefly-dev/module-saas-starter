@@ -97,7 +97,7 @@ person line; every refusal with a reason; the workload line; the child hop.
 What it took, each a fix at the place that owns the behaviour:
 
 - *Composition installs a module at every organisation* (contract decision):
-  `business.ComposedModuleInstallations` answers the live module authority and
+  `compositiontest.ComposedModuleInstallations` (a harness stand-in, imported by tests alone) answers the live module authority and
   the seal store for a composed module's installation, held by every member, with
   the declared grant as its scope (the manifest is the ceiling); a control-plane
   membership read, `WorkContextOrgMember`, sits beside the other seal reads.
@@ -329,7 +329,7 @@ What the authority's edge and hop call is now served on the declared endpoint:
   read the registry the host derives from delivery (`IsDeclaredModulePrincipal`,
   `ModulePrincipals`), the same one every module capability reads; nothing new
   was added for it. A person's module installation is the production seal store
-  in a real run; the harness alone wires `ComposedModuleInstallations`.
+  in a real run; the harness alone wires `compositiontest.ComposedModuleInstallations`.
 
 ### The suite at `06d0d3b` against accounts
 

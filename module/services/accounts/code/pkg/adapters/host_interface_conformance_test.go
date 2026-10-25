@@ -36,6 +36,7 @@ import (
 	ed25519minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
+	"accounts/pkg/business/compositiontest"
 	"accounts/pkg/business/executiontest"
 	sessionv1 "accounts/pkg/gen/host/session/v1"
 	"accounts/pkg/infra"
@@ -131,7 +132,7 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 
 	// Composition installs a module at every organisation (contract decision of
 	// 2026-10-22): the live module authority answers for every declared principal.
-	composed := business.NewComposedModuleInstallations(svc, store)
+	composed := compositiontest.NewComposedModuleInstallations(svc, store)
 	svc.SetModuleAuthorityReads(composed, nil)
 	svc.SetWorkContextSealStore(composed)
 
