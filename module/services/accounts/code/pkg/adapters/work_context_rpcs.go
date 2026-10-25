@@ -558,9 +558,14 @@ func (s *WorkContextAuthorityServer) StartTask(
 		// Inside the authority span, so the installation the bindings resolve
 		// against is the one this capability is signed under.
 		if names := req.GetOperationBindings(); len(names) > 0 {
-			if authorityScopes, err = s.withOperationBindingScopes(ctx, req.GetOrgId(), req.GetAudience(), authorityScopes, names); err != nil {
+			projection, err := s.withOperationBindingScopes(ctx, req.GetOrgId(), req.GetAudience(), authorityScopes, names)
+			if err != nil {
 				return nil, err
 			}
+			authorityScopes = projection.scopes
+			standing = append(standing, projection.identities...)
+			direct := eligible
+			eligible = func(kind string) bool { return direct(kind) || slices.Contains(projection.readKinds, kind) }
 		}
 		var kinds []string
 		for _, scope := range authorityScopes {
@@ -572,7 +577,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 		if err != nil {
 			return nil, err
 		}
-		standing = identities
+		standing = append(standing, identities...)
 		direct := eligible
 		eligible = func(kind string) bool { return direct(kind) || slices.Contains(foreign, kind) }
 	}

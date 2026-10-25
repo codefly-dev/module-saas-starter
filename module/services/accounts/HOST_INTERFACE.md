@@ -804,3 +804,21 @@ a named parent binding discarding partially held scopes, a synthetic module
 installation being used for a solution, and missing session display names.
 Method admission now accepts resource-limited grants without changing them;
 unit tests retain wrong-kind, wrong-action and missing-policy refusals.
+
+## Parent bindings preserve the person's holdings
+
+A person's named operation binding now projects each action independently at
+the binding's target audience. A read-only person no longer loses their read
+because the binding also permits invoke. Actions with different resource sets
+stay separate; no cross-product of grants is minted. Content-read eligibility
+comes only from retained whole-kind reads at that target, and the exact
+installed binding identities are checked again before the signed parent leaves.
+This reuses the installed binding resolver and existing person authority checks.
+
+The full shared suite now reports **18 passed / 27 failed / 0 skipped**, plus
+**2 passing local cases**. Five child cases are newly green: the attenuating
+hop and the named refusals for absent, undeclared, wrong-audience and widening
+bindings. All targeted StartTask and module-actor tests, including action/resource
+pair preservation, pass. The default empty-store signed-delivery regression
+also passes with the updated Core dependency. New required fixture cases
+listed above remain unverified; no skipped or missing fixture is counted green.

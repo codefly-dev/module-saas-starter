@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"testing"
 
@@ -102,4 +103,52 @@ func TestStartTaskOperationBindingRefusals(t *testing.T) {
 		})
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
+}
+
+// A binding is a ceiling: each action/resource pair still needs the person's
+// own grant. Different resource sets must never be multiplied together.
+type bindingProjectionAuthority struct {
+	business.WorkContextAuthorityStore
+	contentOnly bool
+}
+
+func (a bindingProjectionAuthority) ResolveWorkContextAuthority(ctx context.Context, org, owner, actor string, permissions []business.WorkContextPermission) (*business.WorkContextAuthorityFacts, error) {
+	for _, permission := range permissions {
+		if permission.ResourceKind == "profiles" {
+			allowed := permission.Action == "read" && permission.ResourceID == "one" || permission.Action == "invoke" && permission.ResourceID == "two"
+			if a.contentOnly {
+				allowed = permission.Action == "read" && permission.ContentRead
+			}
+			if !allowed {
+				return nil, business.NewStoreError(fmt.Errorf("%s:%s is not held on %q", permission.ResourceKind, permission.Action, permission.ResourceID), business.ErrTypePermission)
+			}
+		}
+	}
+	return a.WorkContextAuthorityStore.ResolveWorkContextAuthority(ctx, org, owner, actor, permissions)
+}
+
+func TestBindingProjectionPreservesActionResourcePairs(t *testing.T) {
+	c := moduleActorFixture(t, moduleActorScopes)
+	c.server.authority = bindingProjectionAuthority{WorkContextAuthorityStore: c.f}
+	scope := business.ModuleOperationScope{ResourceKind: "profiles", Actions: []string{"invoke", "read"}, ResourceIDs: []string{"one", "two", "three"}}
+	got, err := c.server.heldBindingScope(context.Background(), readOrg, readOwner, "compute", scope)
+	require.NoError(t, err)
+	require.Equal(t, []*gen.WorkContextScope{
+		{ResourceKind: "profiles", Actions: []string{"invoke"}, ResourceIds: []string{"two"}},
+		{ResourceKind: "profiles", Actions: []string{"read"}, ResourceIds: []string{"one"}},
+	}, got)
+	require.Equal(t, []string{"one", "two", "three"}, scope.ResourceIDs)
+}
+
+func TestStartTaskProjectsOnlyHeldActionsAtBindingTarget(t *testing.T) {
+	c := moduleActorFixture(t, moduleActorScopes)
+	c.server.authority = bindingProjectionAuthority{WorkContextAuthorityStore: c.f, contentOnly: true}
+	parent, err := c.startTaskNaming("act")
+	require.NoError(t, err)
+	decoded, err := corework.Decode(parent.Token)
+	require.NoError(t, err)
+	require.Equal(t, []*gen.WorkContextScope{
+		{ResourceKind: "runs", Actions: []string{"execute"}},
+		{ResourceKind: "profiles", Actions: []string{"read"}},
+	}, wireScopes(decoded.Context().AuthorityScopes))
 }
