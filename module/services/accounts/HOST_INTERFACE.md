@@ -723,3 +723,16 @@ adapter, signed-envelope delivery, installation scope and revocation, retained
 bindings and registry revision fences still use that surface. Where one exists,
 its strict restrictions remain; this change does not retire that separate
 administrative contract or migrate its installed delegation modes.
+
+## Composition responses belong to one binding
+
+`ApplyManifest` waits for the reconciliation pass, then answers from its own
+binding's committed generation and digest. A failure applying another binding
+or converging fixture installations is logged for the operator and cannot turn
+an applied caller manifest into an Unavailable response. A caller whose manifest
+has not applied receives its own pending reason; missing or unreadable applied
+state remains a named refusal. Aggregate errors never enter this response.
+
+`TestApplyCompositionAnswersOnlyItsOwnManifestOutcome` covers unrelated binding
+and fixture failures, the caller's own pending refusal, absent state, generation
+and digest mismatches, and an unreadable result without another solution's reason.

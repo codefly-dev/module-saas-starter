@@ -11,6 +11,7 @@ import (
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 	"google.golang.org/protobuf/proto"
 )
@@ -45,18 +46,25 @@ func (s *Service) ApplyComposition(ctx context.Context, req *compositionv1.Apply
 		return nil, err
 	}
 	if err := s.compositionReconcile(ctx); err != nil {
-		return nil, fmt.Errorf("%w: apply composition: %w", ErrSolutionDeliveryHostState, err)
+		// A pass also reconciles other bindings and fixture installations. Its
+		// aggregate error is operator evidence, never this carrier's outcome.
+		wool.Get(ctx).In("business.ApplyComposition").Warn("composition reconcile pass failed", wool.ErrField(err))
 	}
 	records, err := s.ListSolutionHostBindings(ctx)
 	if err != nil {
-		return nil, err
+		wool.Get(ctx).In("business.ApplyComposition").Warn("composition applied state could not be read", wool.ErrField(err))
+		return nil, fmt.Errorf("%w: binding %s generation %d: applied state could not be read", ErrSolutionDeliveryHostState, record.Binding, record.Generation)
 	}
 	for _, row := range records {
 		if row.BindingID != record.Binding {
 			continue
 		}
 		if row.Applied == nil || row.Applied.Generation != record.Generation || row.Applied.Digest != record.ContentHash {
-			return nil, fmt.Errorf("%w: binding %s generation %d is not applied: %s", ErrSolutionDeliveryConflict, record.Binding, record.Generation, row.PendingReason)
+			reason := row.PendingReason
+			if reason == "" {
+				reason = "no matching applied generation and digest were recorded"
+			}
+			return nil, fmt.Errorf("%w: binding %s generation %d is not applied: %s", ErrSolutionDeliveryConflict, record.Binding, record.Generation, reason)
 		}
 		manifest, err := row.AppliedManifest()
 		if err != nil {
