@@ -47,7 +47,7 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 	}
 	var roleID string
 	if authority != nil {
-		roleID, err = s.solutionRoleID(ctx, orgID, available, authority, role)
+		roleID, err = s.solutionRoleID(ctx, orgID, available.TargetID, available.RouteAlias, authority, role)
 	} else {
 		roleID, err = s.organizationRoleNamed(ctx, orgID, role)
 	}

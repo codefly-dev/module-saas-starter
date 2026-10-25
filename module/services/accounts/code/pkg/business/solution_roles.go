@@ -220,13 +220,16 @@ func SolutionRoleOf(name string) string {
 	return role
 }
 
-// solutionRoleID is the id of the standing role an installation of target
-// holds for the solution's role named role, written if absent.
-func (s *Service) solutionRoleID(ctx context.Context, orgID string, target *AvailableSolutionTarget, authority *SolutionAuthority, role string) (string, error) {
+// solutionRoleID is the id of the role an installation of targetID holds, and
+// its exposed teams hold, for the solution's role named role: written if
+// absent, its permissions reconciled to the declaration if present.
+func (s *Service) solutionRoleID(ctx context.Context, orgID, targetID, alias string, authority *SolutionAuthority, role string) (string, error) {
 	if _, declared := authority.Roles[role]; !declared {
-		return "", NewStoreError(fmt.Errorf("%s declares no role %q; its roles are %s", target.RouteAlias, role, strings.Join(authority.RoleNames(), ", ")), ErrTypeNotFound)
+		return "", NewStoreError(fmt.Errorf("%s declares no role %q; its roles are %s", alias, role, strings.Join(authority.RoleNames(), ", ")), ErrTypeNotFound)
 	}
-	var permissions []*gen.Permission
+	// Holding any of a solution's roles is using the solution: the permission
+	// exposure and the solution's entitlement listing read.
+	permissions := []*gen.Permission{{Resource: ResourceTypeSolution, Action: ActionUseSolution}}
 	for _, scope := range authority.Grants(role) {
 		if len(scope.GetResourceIds()) > 0 {
 			continue
@@ -235,13 +238,13 @@ func (s *Service) solutionRoleID(ctx context.Context, orgID string, target *Avai
 			permissions = append(permissions, &gen.Permission{Resource: scope.GetResourceKind(), Action: action})
 		}
 	}
-	provenance := solutionRoleProvenance(orgID, target.TargetID, role)
+	provenance := solutionRoleProvenance(orgID, targetID, role)
 	var id string
 	err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var e error
 		id, e = s.installationStore().EnsureDerivedRole(ctx, DerivedRole{
 			OrgID: orgID, DerivedFrom: provenance, Name: solutionRoleNamePrefix + provenance,
-			Description: fmt.Sprintf("the %s role of %s", role, target.RouteAlias), Permissions: permissions,
+			Description: fmt.Sprintf("the %s role of %s", role, alias), Permissions: permissions,
 		})
 		return e
 	})
