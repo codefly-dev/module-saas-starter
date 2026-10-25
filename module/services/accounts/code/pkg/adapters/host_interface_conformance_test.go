@@ -6,14 +6,11 @@ package adapters
 // list in HOST_INTERFACE.md; the suite is never loosened to make a line green.
 
 import (
-	"accounts/internal/deliverytest"
 	"context"
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
-	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
-	"github.com/codefly-dev/core/solutionhost"
 	"net"
 	"os"
 	"sync"
@@ -21,7 +18,9 @@ import (
 	"time"
 
 	conformance "github.com/codefly-dev/authority/libraries/conformance/go"
+	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	"github.com/codefly-dev/core/sdk"
+	"github.com/codefly-dev/core/solutionhost"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -36,6 +35,7 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 
 	"accounts/fixtures"
+	"accounts/internal/deliverytest"
 	Package "accounts/pkg/auth/dev"
 	ed25519minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
