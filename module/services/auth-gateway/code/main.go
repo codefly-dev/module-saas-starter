@@ -255,6 +255,10 @@ func main() {
 		// connection. It is not a cache: the answer is per viewer and must not
 		// outlive a revoke, so every request asks.
 		gateway.solutionEntitlements = &accountsSolutionEntitlements{conn: internalAPIConn, internalToken: authz.internalToken}
+		// The issuer's answer to what a bearer-less capability is, over the
+		// same connection, asked per request.
+		gateway.workloadAdmission = &accountsWorkloadAdmission{conn: internalAPIConn, internalToken: authz.internalToken}
+		gateway.requireWorkloadPresenter = !codefly.IsLocal()
 		go gateway.solutions.reconcile(ctx)
 		go gateway.clients.reconcile(ctx)
 		if apiHTTPURL != "" {
