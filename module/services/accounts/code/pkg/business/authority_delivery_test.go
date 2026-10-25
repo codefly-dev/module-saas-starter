@@ -69,7 +69,7 @@ func TestAuthorityDocumentMustBeTheSignedPair(t *testing.T) {
 	}
 }
 
-func TestMethodPolicyRequiresWholeKindAuthority(t *testing.T) {
+func TestMethodPolicyAdmitsResourceLimitedAuthorityUnchanged(t *testing.T) {
 	doc := &compositionv1.AuthorityManifestV1{Methods: []*compositionv1.MethodPolicyV1{
 		{Method: "/example.Service/Read", Requires: []*authorityv1.WorkScopeV1{{ResourceKind: "example", Actions: []string{"read"}}}},
 		{Method: "GET /records/{id}", AnyCheckedCaller: true}, {Method: "/example.Service/Unmarked"},
@@ -81,7 +81,22 @@ func TestMethodPolicyRequiresWholeKindAuthority(t *testing.T) {
 	require.ErrorIs(t, checkMethodPolicy(doc, "example", "/example.Service/Missing", held), ErrDeliveredMethodUnknown)
 	require.ErrorContains(t, checkMethodPolicy(doc, "example", "/example.Service/Unmarked", held), "Unmarked")
 	held[0].ResourceIds = []string{"one"}
+	before := proto.Clone(held[0])
+	require.NoError(t, checkMethodPolicy(doc, "example", "/example.Service/Read", held))
+	require.True(t, proto.Equal(before, held[0]), "method admission must preserve resource limits")
+	require.ErrorContains(t, checkMethodPolicy(doc, "example", "/example.Service/Read", nil), "does not hold")
+	for _, scope := range []*basev0.WorkScopeV1{
+		{ResourceKind: "other", Actions: []string{"read"}, ResourceIds: []string{"one"}},
+		{ResourceKind: "example", Actions: []string{"write"}, ResourceIds: []string{"one"}},
+	} {
+		require.ErrorContains(t, checkMethodPolicy(doc, "example", "/example.Service/Read", []*basev0.WorkScopeV1{scope}), "does not hold")
+	}
+	doc.Methods[0].Requires[0].Actions = []string{"read", "write"}
 	require.ErrorContains(t, checkMethodPolicy(doc, "example", "/example.Service/Read", held), "does not hold")
+	held = append(held, &basev0.WorkScopeV1{ResourceKind: "example", Actions: []string{"write"}, ResourceIds: []string{"two"}})
+	require.NoError(t, checkMethodPolicy(doc, "example", "/example.Service/Read", held))
+	require.True(t, proto.Equal(before, held[0]))
+	require.Equal(t, []string{"two"}, held[1].ResourceIds)
 	doc.Methods = append(doc.Methods, &compositionv1.MethodPolicyV1{Method: "GET /records/{another}", AnyCheckedCaller: true})
 	require.ErrorContains(t, checkMethodPolicy(doc, "example", "GET /records/one", held), "more than one")
 }

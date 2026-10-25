@@ -275,9 +275,16 @@ func checkMethodPolicy(doc *compositionv1.AuthorityManifestV1, audience, method 
 	if selected.GetAnyCheckedCaller() {
 		return nil
 	}
+	// Method admission checks kind and action eligibility. The module checks
+	// exact resources against the original scopes returned by Check; admitting
+	// the method must neither require nor grant whole-kind resource authority.
+	eligibility := make([]*basev0.WorkScopeV1, 0, len(held))
+	for _, scope := range held {
+		eligibility = append(eligibility, &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions()})
+	}
 	for _, scope := range selected.GetRequires() {
 		required := &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions()}
-		if !workcontext.ScopeContained(required, held) {
+		if !workcontext.ScopeContained(required, eligibility) {
 			return fmt.Errorf("%s requires %s:%s for %s, which the call does not hold", audience, scope.GetResourceKind(), strings.Join(scope.GetActions(), ","), method)
 		}
 	}

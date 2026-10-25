@@ -60,6 +60,8 @@ github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261023182549-
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261023182549-2e2bcf256f33/go.mod h1:An9tvgBpA1NMnhUdFeZvtRitMOkM+pZONVkJjrIT1Eo=
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261025034102-06d0d3b85674 h1:h1SS98JwETgC99JlPVPld2EClltkYYj1StfAzN+hZr4=
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261025034102-06d0d3b85674/go.mod h1:SiTayJ6Mi+vyWr4CUT3LW/Nv4znEyN/bnS16Vnxgouk=
+github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261025212731-aa487dff75ed h1:LrLwqKXriHh2Bf5WP7qm/H7kyZq09634G4DlRdtOnJM=
+github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261025212731-aa487dff75ed/go.mod h1:h7TY0cFZR5BMGYLOthfg5j2fOgNN648nwHRApphF06M=
 github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261025010902-dc41de4126ae h1:GURYozeJoFfzwsW0iyjdyQ7w7+qpa/6vwWw4SxTqOxg=
 github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261025010902-dc41de4126ae/go.mod h1:XsOFnO2MQdr37vM3ULa0Uwi8ZWptyVx7hRSUyIdaZ1Q=
 github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261023203940-e720ad2851c7 h1:7vdTj6aLQVyFf0MWWgUnR/otX1v9xN6AbFKC2cHrQjE=
@@ -68,6 +70,8 @@ github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc/go.mod h1:VWPYY3FH4te7SzdN2xl9odNpWidJ1Grl/Hjs1SNoEF8=
 github.com/codefly-dev/core v0.19.6-0.20261018171306-0a8d16c5e32d h1:vL8Beqd5fsK1t3G8COMIvbGD33aYLQzox3GFl8l7/aI=
 github.com/codefly-dev/core v0.19.6-0.20261018171306-0a8d16c5e32d/go.mod h1:0uX/7lTBVaGV0RI2Mb3mpEr/PPdx/jZqXHym/U8FVDI=
+github.com/codefly-dev/core v0.19.7-0.20261025185759-e501458995d0 h1:YEFvkyokBsUWbHoaoKOi6iJtMrqNNR7HsWdUQGN50TA=
+github.com/codefly-dev/core v0.19.7-0.20261025185759-e501458995d0/go.mod h1:1ina3kP+YSAL4tlZvnEYd4P8bFGnJECfkP86ojeeF1A=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/codefly-dev/interface-cache/go/cache v0.4.1 h1:S7a20cVs3ilW8/HSpzmsyfJx/GJHgJ1xW9Dm9MYXYPI=

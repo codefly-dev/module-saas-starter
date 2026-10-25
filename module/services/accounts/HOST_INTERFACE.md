@@ -489,8 +489,9 @@ and scoped-grant transaction. No second registry, issuer or grant table.
   generation the existing reconciler actually applied.
 - `Check` re-verifies the applied pair with current pins. Unknown methods are
   `NotFound`; absent policies, missing required scopes and ambiguous HTTP
-  templates are named refusals. Whole-kind requirements cannot be satisfied by
-  scopes limited to selected resources. Connect POSTs use the gRPC method policy;
+  templates are named refusals. Method requirements check kind and action
+  eligibility; resource-limited grants pass unchanged, and the module enforces
+  their exact resource limits. Connect POSTs use the gRPC method policy;
   HTTP templates support the interface's segment placeholders, literal custom
   verbs and final `{path=**}` catch-alls. Advisory
   checks return the same reason beside the verified capability.
@@ -632,10 +633,9 @@ installation mint and the rule-A hop. No second registry, role table or issuer.
   solution's pinned tenant, and the installation must be that solution's own
   active installation there; each refusal is named before any mint.
 
-Not saas's: method admission refusing resource-limited scopes for a whole-kind
-requirement, and the hop's stamp dropping them, are the interface's policy
-grammar and the hop library (`codefly-dev/authority`). Modules are meant to ask
-`ListResources`, which this host now answers.
+The shared contract now admits resource-limited scopes by kind and action.
+Accounts preserves those limits in Check; modules enforce exact resources and
+can ask `ListResources` for the owner's current grant intersection.
 
 The shared suite at its pin (`06d0d3b`) stays at **13 passed, 3 failed,
 3 skipped**, plus the 2 local cases. Install with the solution's own role
@@ -788,3 +788,19 @@ state remains a named refusal. Aggregate errors never enter this response.
 `TestApplyCompositionAnswersOnlyItsOwnManifestOutcome` covers unrelated binding
 and fixture failures, the caller's own pending refusal, absent state, generation
 and digest mismatches, and an unreadable result without another solution's reason.
+
+## Expanded shared suite (2026-10-25)
+
+The shared suite at `aa487dff75ed` runs 45 cases. Against the reviewed adapters
+at `a2a9b92f3`, it reports **13 passed / 32 failed / 0 skipped**, plus **2 passing
+local cases**. The default fresh-store signed-delivery regression also passes.
+This supersedes the external 5/40 result against an older host revision.
+
+Many new cases refuse because the harness has not supplied their required
+fixtures: solution roles, installation credentials and lifecycle, resource
+grants, child scopes, workload organizations, parent limits and durable
+delegation. These are unverified, not passes. Observed runtime failures include
+a named parent binding discarding partially held scopes, a synthetic module
+installation being used for a solution, and missing session display names.
+Method admission now accepts resource-limited grants without changing them;
+unit tests retain wrong-kind, wrong-action and missing-policy refusals.
