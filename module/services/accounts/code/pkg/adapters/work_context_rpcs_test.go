@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,15 @@ type workContextAuthorityFake struct {
 	err              error
 	installationFcts *business.InstallationAuthorityFacts
 	installationErr  error
+	// installations answers whose each solution installation is, by id.
+	installations map[string]business.InstallationIdentity
+}
+
+func (f *workContextAuthorityFake) WorkContextInstallationIdentity(_ context.Context, id string) (business.InstallationIdentity, error) {
+	if found, ok := f.installations[id]; ok {
+		return found, nil
+	}
+	return business.InstallationIdentity{}, business.NewStoreError(fmt.Errorf("installation %q does not exist", id), business.ErrTypeNotFound)
 }
 
 // ResolveWorkContextAuthority answers the configured facts, except for an owner

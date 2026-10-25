@@ -77,6 +77,17 @@ type WorkContextAuthorityStore interface {
 		installationID string,
 		permissions []WorkContextPermission,
 	) (*InstallationAuthorityFacts, error)
+	// WorkContextInstallationIdentity answers whose the solution installation
+	// installationID is: its organization, the delivered principal installed
+	// and its status; ErrTypeNotFound when there is no such installation. It
+	// grants nothing: an issuer holds the acting workload to that principal and
+	// requires the installation active.
+	WorkContextInstallationIdentity(ctx context.Context, installationID string) (InstallationIdentity, error)
+}
+
+// InstallationIdentity is whose one solution installation is.
+type InstallationIdentity struct {
+	OrgID, PrincipalID, Status string
 }
 
 // InstallationAuthorityFacts is the headless-mint authority snapshot: the owner

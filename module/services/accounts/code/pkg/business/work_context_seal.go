@@ -186,6 +186,25 @@ func (s *Service) WorkContextAudienceInstallation(ctx context.Context, orgID, au
 		}
 		return store.WorkContextSolutionInstallation(ctx, orgID, binding)
 	}
+	// A delivered solution named by its alias is installed explicitly, never by
+	// composition: its installation is the organization's installation of its
+	// solution binding, exactly as for the solution-prefixed audience.
+	grant := s.ModulePrincipals()[ModulePrincipalID(audience)]
+	if grant.PresenceBinding != "" {
+		bindings, err := s.liveDeclaredBindings(ctx)
+		if err != nil {
+			return "", err
+		}
+		for _, binding := range bindings {
+			if binding.BindingID == grant.PresenceBinding && binding.Kind == SolutionDeclaredKindSolution {
+				store, err := s.sealStore()
+				if err != nil {
+					return "", err
+				}
+				return store.WorkContextSolutionInstallation(ctx, orgID, binding.BindingID)
+			}
+		}
+	}
 	live, err := s.liveModuleAuthority(ctx, ModulePrincipalID(audience), orgID, "")
 	if errors.Is(err, ErrModuleInstallationInactive) {
 		return "", fmt.Errorf("%w: %s", ErrWorkContextNoAudienceInstallation, audience)

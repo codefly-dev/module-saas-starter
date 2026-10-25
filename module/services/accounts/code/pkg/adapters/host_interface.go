@@ -126,7 +126,9 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	if _, ok := req.GetAs().(*authorityv1.IssueRequest_Delegation); ok {
 		return nil, status.Error(codes.Unimplemented, "an issue from a delegation: "+delegationGap)
 	}
-	if req.GetAudience() == "" {
+	// An installation proves its solution's workload before anything it asks
+	// is read, so its audience is required there, once the caller is proven.
+	if _, installation := req.GetAs().(*authorityv1.IssueRequest_Installation); req.GetAudience() == "" && !installation {
 		derived, err := bindingAudience(ctx, req)
 		if err != nil {
 			return nil, err
@@ -212,6 +214,13 @@ func (s *HostAuthorityServer) personIssue(ctx context.Context, identity accounts
 	if err := requireOrgMember(ctx, identity.EffectiveSubject.String(), identity.OrgID.String()); err != nil {
 		return nil, err
 	}
+	// An audience the organisation never installed has no installation to seal
+	// a capability to, whatever would decide what the person holds there: that
+	// is the failed precondition, named, before a solution's roles read an
+	// installation that is not there and answer that the person holds nothing.
+	if _, err := s.workContexts.audienceInstallation(ctx, identity.OrgID.String(), req.GetAudience()); err != nil {
+		return nil, err
+	}
 	// A solution that declares roles decides what the person holds there.
 	authority, held, err := s.solutionRoles().PersonSolutionRoles(ctx, identity.OrgID.String(), identity.EffectiveSubject.String(), req.GetAudience())
 	if err != nil {
@@ -219,7 +228,10 @@ func (s *HostAuthorityServer) personIssue(ctx context.Context, identity accounts
 	}
 	if authority != nil {
 		if binding := req.GetOperationBindingId(); binding != "" {
-			return nil, status.Errorf(codes.Unimplemented, "person-owned operation binding %q at solution %s requires solution-role binding projection", binding, req.GetAudience())
+			if operation := req.GetOperation(); operation != "" && operation != "invoke" {
+				return nil, status.Errorf(codes.InvalidArgument, "a person-owned issue carries invoke scopes for operation binding %q; operation %q is refused", binding, operation)
+			}
+			return s.solutionBindingIssue(ctx, identity.OrgID.String(), req.GetAudience(), binding, authority, held, scopes, ttl)
 		}
 		return s.solutionPersonIssue(ctx, identity.OrgID.String(), req.GetAudience(), authority, held, scopes, ttl)
 	}
@@ -441,7 +453,7 @@ func (s *HostInstallationServer) Install(ctx context.Context, req *installationv
 	case err != nil:
 		return nil, mapInstallationError(err)
 	case !installed:
-		return nil, status.Errorf(codes.PermissionDenied, "organization %s already holds installation %s of %q", req.GetOrganizationId(), installation.GetId(), req.GetTarget())
+		return nil, status.Errorf(codes.PermissionDenied, "%q is already installed in organization %s, as installation %s", req.GetTarget(), req.GetOrganizationId(), installation.GetId())
 	}
 	details, err := s.service.ReadHostInstallation(ctx, req.GetOrganizationId(), installation.GetId())
 	if err != nil {
@@ -461,11 +473,33 @@ func (s *HostInstallationServer) GrantToTeam(ctx context.Context, req *installat
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
+	// Only an active installation is exposed: one still pending its
+	// acknowledgement, or revoked, is refused naming which it is.
+	current, err := s.service.ReadHostInstallation(ctx, req.GetOrganizationId(), req.GetInstallationId())
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	if st := current.Installation.GetStatus(); st != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+		return nil, status.Errorf(codes.PermissionDenied, "installation %s is %s; only an active installation can be exposed", req.GetInstallationId(), installationStatusWord(st))
+	}
 	details, err := s.service.ExposeHostInstallation(ctx, actorID, req.GetOrganizationId(), req.GetInstallationId(), req.GetTeamId())
 	if err != nil {
 		return nil, mapInstallationError(err)
 	}
 	return hostInstallationToWire(details), nil
+}
+
+// installationStatusWord is an installation's status as a refusal names it.
+func installationStatusWord(st gen.InstallationStatus) string {
+	switch st {
+	case gen.InstallationStatus_INSTALLATION_STATUS_PENDING:
+		return "pending"
+	case gen.InstallationStatus_INSTALLATION_STATUS_REVOKED:
+		return "revoked"
+	case gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE:
+		return "active"
+	}
+	return "not active"
 }
 
 // HostSessionServer serves codefly.dev/session over fixture authentication.
@@ -496,10 +530,32 @@ func (s *HostSessionServer) SignIn(ctx context.Context, req *sessionv1.SignInReq
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	// The bearer a person presents on every call is this host's access token.
-	return &sessionv1.Session{
+	session := &sessionv1.Session{
 		SessionId: claims.SessionID, PersonId: out.GetUser().GetUuid(), OrganizationId: claims.OrgID,
 		Roles: []string{claims.OrgRole}, Bearer: out.GetAccessToken(),
-	}, nil
+	}
+	// The person signed into the organization the claims name, if any.
+	if err := s.nameForDisplay(ctx, session, claims.OrgID != ""); err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+// nameForDisplay fills the session's display names from the person's own
+// record and, for a member of the organization the session names, the
+// organization's; a session in no organization, or whose person left it,
+// names none.
+func (s *HostSessionServer) nameForDisplay(ctx context.Context, session *sessionv1.Session, member bool) error {
+	org := session.GetOrganizationId()
+	if !member {
+		org = ""
+	}
+	person, organization, err := s.service.SessionDisplayNames(ctx, session.GetPersonId(), org)
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "cannot read the session's display names: %v", err)
+	}
+	session.PersonDisplayName, session.OrganizationDisplayName = person, organization
+	return nil
 }
 
 // Current answers the session the caller's bearer belongs to, as the perimeter
@@ -514,6 +570,9 @@ func (s *HostSessionServer) Current(ctx context.Context, _ *sessionv1.CurrentReq
 	}
 	session := &sessionv1.Session{SessionId: identity.SessionID.String(), PersonId: identity.EffectiveSubjectID()}
 	if identity.OrgID == uuid.Nil {
+		if err := s.nameForDisplay(ctx, session, false); err != nil {
+			return nil, err
+		}
 		return session, nil
 	}
 	session.OrganizationId = identity.OrgID.String()
@@ -524,6 +583,11 @@ func (s *HostSessionServer) Current(ctx context.Context, _ *sessionv1.CurrentReq
 	if role != "" {
 		// The role as SignIn and the fixture listing state it.
 		session.Roles = []string{business.OrgRoleName(gen.OrgRole(gen.OrgRole_value[role]))}
+	}
+	// The organization is named for display to a member only: a session whose
+	// person left it does not name it to them.
+	if err := s.nameForDisplay(ctx, session, role != ""); err != nil {
+		return nil, err
 	}
 	teams, err := s.service.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: session.OrganizationId, MemberId: session.PersonId})
 	if err != nil {

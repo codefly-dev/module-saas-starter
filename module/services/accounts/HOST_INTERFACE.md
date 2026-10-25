@@ -869,3 +869,55 @@ The default fresh-store regression also passes. The same merged local authority
 passes **45/45** shared cases. Composed ENFORCE remains unqualified: the merged
 hop requires authority 0.2.0, while this host advertises 0.1.0, so Codefly refuses
 the binding before either policy surface can be redelivered.
+
+## Interface 0.2.0 and the host behaviour the suite reaches (2026-10-25)
+
+The interface protos are re-copied at authority `aa487dff` (authority and
+session 0.2.0; composition and installation comments only), `DIGESTS.sha256`
+re-recorded, and regenerated through `codefly generate proto`, the catalog
+`go generate` steps, `codefly generate contracts`/`runnables` and the SDK's
+`generate.mjs`, with the CI's CLI source pin. `module.codefly.yaml` advertises
+`codefly.dev/authority@0.2.0` and `codefly.dev/session@0.2.0`.
+
+- **Session display names.** `SignIn` and `Current` fill
+  `person_display_name` (the profile name, else the primary email) and
+  `organization_display_name` (the organisation's name), each read under its
+  own row-level binding (`Service.SessionDisplayNames`). A session in no
+  organisation, or whose person left it, names no organisation.
+- **An uninstalled audience** is refused before solution roles are read:
+  `FailedPrecondition`, `audience "…" is not installed in this organization,
+  so there is no installation to seal the capability to`.
+- **A delivered solution named by its alias** resolves to the organisation's
+  installation of its solution binding, never to a composed module's
+  installation (`WorkContextAudienceInstallation`).
+- **An installation's issue** proves its actor first, then reads the named
+  installation for whose it is (`WorkContextInstallationIdentity`: organisation,
+  delivered principal, status). Unknown is `NotFound`; another solution's
+  workload, another organisation, or a pending or revoked installation is
+  `PermissionDenied` naming why. The organisation is the installation's own.
+  An empty ask also considers the actions the solution's roles name.
+- **A person at a solution through its binding** carries what the solution's
+  roles grant within that binding as installed; beyond it is refused
+  (`beyond`), nothing through it is refused (`holds nothing`).
+- **An empty ask** carries a kind the person holds only on named resources, on
+  exactly those resources.
+- **GrantToTeam** refuses a non-active installation as `PermissionDenied`
+  naming `pending` or `revoked`.
+- Refusal texts now name the interface's reasons (`the owner holds nothing at
+  this audience`, `beyond what the owner holds`, `must name the organization
+  of the work item`, `already installed`).
+- The harness's HTTP-route subtest installs its solution before issuing there:
+  it passed only because an uninstalled solution resolved to a synthetic
+  installation.
+
+The shared suite at `aa487dff` now reports **37 of 45 shared cases passing, 8
+failing** (39/47 with the two harness cases). Still red, and why:
+
+| Case | Why | Owner |
+| --- | --- | --- |
+| a callee refuses what does not verify | the suite grants to team `callee-probe-<n>`, not a team the host knows | suite / fixture |
+| a delegation issues as its grantor | `Delegate`/`GetDelegation`/`RevokeDelegation` are not implemented here | accounts (feature) |
+| a module tool binding carries the person's role; child target projection | a hop's actor is the module's registry principal id, the suite expects the module name | contract question |
+| an installation acts for itself; an installation owner survives | the headless mint's owner is the installation's owner of record with the agent acting; the suite expects the agent as owner | contract question |
+| parent per-kind limits | a kind the root did not ask stays dropped only with a zero-action denial scope, which this host's mint does not sign | contract question |
+| resources by grant (narrowed ask) | an ask naming an id the person does not hold is refused here; the suite expects it issued and answered by grant | contract question |

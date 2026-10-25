@@ -57,6 +57,43 @@ func (s *HostAuthorityServer) solutionPersonIssue(ctx context.Context, orgID, au
 	return s.workContexts.startRoleTask(ctx, orgID, audience, scopes, ttl)
 }
 
+// solutionBindingIssue issues a person's capability at a solution whose roles
+// decide it, naming one of the solution's bindings: beside the roles' grants on
+// the solution's own kinds it carries what those roles grant within the
+// binding, as installed in the organisation, so the solution's hop through it
+// is held to the person. An empty ask is all of that; an ask beyond it is
+// refused by name, and a person whose roles grant nothing through the binding
+// is refused for that.
+func (s *HostAuthorityServer) solutionBindingIssue(ctx context.Context, orgID, audience, bindingID string, authority *business.SolutionAuthority, held []*basev0.WorkScopeV1, asked []*gen.WorkContextScope, ttl int32) (*gen.IssuedWorkContext, error) {
+	installed, err := service.ModuleOperationAudience(ctx, business.ModuleCaller{PrincipalID: business.ModulePrincipalID(audience), BoundOrg: orgID}, orgID, audience, bindingID)
+	if err != nil {
+		return nil, interfaceStatus(err)
+	}
+	invokes, err := hopOperationScopes(installed, bindingID, "invoke", installed.Audience)
+	if err != nil {
+		return nil, err
+	}
+	through := business.IntersectWorkScopes(held, invokes)
+	if len(through) == 0 {
+		return nil, status.Errorf(codes.PermissionDenied, "the person holds nothing at %s through operation binding %q: no role of %s grants them what it carries", installed.Audience, bindingID, audience)
+	}
+	ceiling := append(authority.Own(held), through...)
+	scopes := ceiling
+	if len(asked) > 0 {
+		_, wanted, err := workContextScopes(asked, mintContentReads(audience))
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		for _, scope := range wanted {
+			if !workcontext.ScopeContained(scope, ceiling) {
+				return nil, status.Errorf(codes.PermissionDenied, "asked beyond what the person's roles at %s grant through operation binding %q: %s", audience, bindingID, scopeString(scope))
+			}
+		}
+		scopes = wanted
+	}
+	return s.workContexts.startRoleTask(ctx, orgID, audience, scopes, ttl)
+}
+
 // startRoleTask mints a person's capability whose scopes their solution roles
 // were held to: the membership, revision and team attribution are the owner's
 // own, read as every mint reads them, and the capability is sealed to the

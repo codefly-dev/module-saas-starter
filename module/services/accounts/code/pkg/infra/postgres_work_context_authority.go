@@ -163,7 +163,7 @@ func resolveWorkContextAuthority(
 		if !ownerAllowed {
 			return nil, business.NewStoreError(
 				fmt.Errorf(
-					"owner is not allowed %s:%s at requested scope",
+					"requested scope is beyond what the owner holds: owner is not allowed %s:%s at requested scope",
 					permission.ResourceKind,
 					permission.Action,
 				),

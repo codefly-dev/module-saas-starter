@@ -92,6 +92,24 @@ func (s *Service) solutionAuthorityOf(doc *compositionv1.AuthorityManifestV1, ma
 	return out
 }
 
+// RoleActions is every action any of the solution's roles grants on kind; none
+// for a nil authority, which is no solution whose roles decide.
+func (a *SolutionAuthority) RoleActions(kind string) []string {
+	if a == nil {
+		return nil
+	}
+	var out []string
+	for _, grants := range a.Roles {
+		for _, grant := range grants {
+			if grant.GetResourceKind() == kind {
+				out = append(out, grant.GetActions()...)
+			}
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
 // RoleNames are the roles the solution declares, sorted.
 func (a *SolutionAuthority) RoleNames() []string {
 	names := make([]string, 0, len(a.Roles))

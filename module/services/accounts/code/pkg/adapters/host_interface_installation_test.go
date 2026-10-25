@@ -17,8 +17,9 @@ import (
 // installationIssueFixture is a host composing one solution, notes.test, pinned
 // to the test organisation and installed there (the seal fake answers
 // notesInstallation), beside the module tool.test. It returns the
-// interface, the solution's workload credential and the module's.
-func installationIssueFixture(t *testing.T) (*HostAuthorityServer, *sealAnswersFake, string, string) {
+// interface, the store answering whose each installation is, the solution's
+// workload credential and the module's.
+func installationIssueFixture(t *testing.T) (*HostAuthorityServer, *workContextAuthorityFake, string, string) {
 	t.Helper()
 	previous := service
 	svc, err := business.NewService(renewMembershipStore{})
@@ -39,8 +40,12 @@ func installationIssueFixture(t *testing.T) (*HostAuthorityServer, *sealAnswersF
 	seals.installations["tool.test"] = toolInstallation
 	facts := healthyInstallationFacts()
 	facts.Actor.AllowedAudiences, facts.Actor.AllowedScopes = nil, nil
-	issuer := newCoreTestServer(t, &workContextAuthorityFake{installationFcts: facts}, seals)
-	return NewHostAuthorityServer(issuer, nil), seals,
+	authority := &workContextAuthorityFake{installationFcts: facts, installations: map[string]business.InstallationIdentity{
+		notesInstallation: {OrgID: renewOrgID, PrincipalID: business.ModulePrincipalID("notes.test"), Status: "active"},
+		toolInstallation:  {OrgID: renewOrgID, PrincipalID: business.ModulePrincipalID("tool.test"), Status: "active"},
+	}}
+	issuer := newCoreTestServer(t, authority, seals)
+	return NewHostAuthorityServer(issuer, nil), authority,
 		cluster.Run(executiontest.Workload{Namespace: solution.Namespace, ServiceAccount: solution.ServiceAccount, Container: solution.Container}),
 		cluster.Run(executiontest.Workload{Namespace: module.Namespace, ServiceAccount: module.ServiceAccount, Container: module.Container})
 }
@@ -75,26 +80,61 @@ func TestAnInstallationActsForItselfThroughItsSolutionsWorkload(t *testing.T) {
 // name, before any mint, unless its actor is that installation's own solution
 // and the installation is that solution's active one in the organisation.
 func TestAnInstallationIssueIsRefusedUnlessTheCallerIsItsOwnSolution(t *testing.T) {
-	server, seals, solution, module := installationIssueFixture(t)
-	seals.uninstalled["uninstalled.test"] = true
+	server, store, solution, module := installationIssueFixture(t)
+	for name, tc := range map[string]struct {
+		req    *authorityv1.IssueRequest
+		status string
+		code   codes.Code
+		says   string
+	}{
+		"no actor":                  {req: installationIssue(notesInstallation, "", ""), code: codes.Unauthenticated, says: "carries no actor credential"},
+		"a forged actor":            {req: installationIssue(notesInstallation, "forged", ""), code: codes.PermissionDenied, says: "credential refused"},
+		"another module's workload": {req: installationIssue(notesInstallation, module, ""), code: codes.PermissionDenied, says: "tool.test is not the installed solution"},
+		"another installation":      {req: installationIssue(toolInstallation, solution, ""), code: codes.PermissionDenied, says: "notes.test is not the installed solution"},
+		"an unknown installation":   {req: installationIssue("conformance-missing-installation", solution, ""), code: codes.NotFound, says: `installation "conformance-missing-installation" does not exist`},
+		"another organisation":      {req: installationIssue(notesInstallation, solution, "0199a000-0000-7000-8000-0000000000ff"), code: codes.PermissionDenied, says: "belongs to organization " + renewOrgID},
+		"a pending installation":    {req: installationIssue(notesInstallation, solution, ""), status: "pending", code: codes.PermissionDenied, says: "is pending"},
+		"a revoked installation":    {req: installationIssue(notesInstallation, solution, ""), status: "revoked", code: codes.PermissionDenied, says: "is revoked"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if tc.status != "" {
+				active := store.installations[notesInstallation]
+				moved := active
+				moved.Status = tc.status
+				store.installations[notesInstallation] = moved
+				t.Cleanup(func() { store.installations[notesInstallation] = active })
+			}
+			out, err := server.Issue(context.Background(), tc.req)
+			require.Nil(t, out)
+			require.Equal(t, tc.code, status.Code(err), "%v", err)
+			require.Contains(t, status.Convert(err).Message(), tc.says)
+		})
+	}
+}
+
+// An installation's caller is proven before anything it asks is read: one
+// proving nothing is refused for that, even when it names no installation and
+// no audience, so it learns nothing of how its ask would have been judged. A
+// proven caller is then told what its ask lacks, by name.
+func TestAnInstallationIssueProvesItsCallerBeforeReadingTheAsk(t *testing.T) {
+	server, _, solution, _ := installationIssueFixture(t)
+	bare := func(installation, credential, audience string) *authorityv1.IssueRequest {
+		req := installationIssue(installation, credential, "")
+		req.Audience = audience
+		return req
+	}
 	for name, tc := range map[string]struct {
 		req  *authorityv1.IssueRequest
 		code codes.Code
 		says string
 	}{
-		"no actor":                   {installationIssue(notesInstallation, "", ""), codes.Unauthenticated, "carries no actor credential"},
-		"a forged actor":             {installationIssue(notesInstallation, "forged", ""), codes.PermissionDenied, "credential refused"},
-		"another module's workload":  {installationIssue(notesInstallation, module, ""), codes.PermissionDenied, "is not tool.test's active installation"},
-		"another installation":       {installationIssue(toolInstallation, solution, ""), codes.PermissionDenied, "is not notes.test's active installation"},
-		"an unknown installation":    {installationIssue("0199a000-0000-7000-8000-000000000000", solution, ""), codes.PermissionDenied, "acts only for itself"},
-		"another organisation":       {installationIssue(notesInstallation, solution, "0199a000-0000-7000-8000-0000000000ff"), codes.PermissionDenied, "acts in organization " + renewOrgID},
-		"no installation of its own": {installationIssue(notesInstallation, solution, ""), codes.PermissionDenied, "has no active installation"},
+		"no actor, nothing named":        {bare("", "", ""), codes.Unauthenticated, "carries no actor credential"},
+		"a forged actor, nothing named":  {bare("", "forged", ""), codes.PermissionDenied, "credential refused"},
+		"proven, no installation":        {bare("", solution, "notes.test"), codes.InvalidArgument, "names the installation acting"},
+		"proven, no audience":            {bare(notesInstallation, solution, ""), codes.InvalidArgument, "names its audience"},
+		"proven, an uncomposed audience": {bare(notesInstallation, solution, "nowhere.test"), codes.NotFound, "is not composed"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if name == "no installation of its own" {
-				seals.uninstalled["notes.test"] = true
-				t.Cleanup(func() { delete(seals.uninstalled, "notes.test") })
-			}
 			out, err := server.Issue(context.Background(), tc.req)
 			require.Nil(t, out)
 			require.Equal(t, tc.code, status.Code(err), "%v", err)

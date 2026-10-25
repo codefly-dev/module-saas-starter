@@ -42,10 +42,13 @@ func TestHostPersonIssueCarriesItsNamedBinding(t *testing.T) {
 	require.Contains(t, status.Convert(err).Message(), "act-source")
 	require.Contains(t, status.Convert(err).Message(), "lookup")
 
+	// At a solution whose roles decide, the binding carries what those roles
+	// grant within it; roles that grant nothing are refused naming the binding.
 	request.Operation = ""
 	server.roles = fixedSolutionRoles{"reader": {}}
 	_, err = server.Issue(caller, request)
-	require.Equal(t, codes.Unimplemented, status.Code(err))
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), `holds nothing at`)
 	require.Contains(t, status.Convert(err).Message(), "act-source")
 	server.roles = nil
 

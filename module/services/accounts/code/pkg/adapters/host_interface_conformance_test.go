@@ -479,6 +479,13 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "generation")
+		// A person's capability at a solution is sealed to the organisation's
+		// installation of it, so the solution is installed, through the host's
+		// own install path and acknowledged, before anyone is issued there.
+		_, installed, err := svc.InstallTargetByName(ctx, conformanceAlex, fixtureOrganization, audience, "Collection reader", conformanceAlex)
+		require.NoError(t, err)
+		require.True(t, installed)
+		require.NoError(t, acknowledgeInstallSteps(ctx, svc))
 		sess, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "dev-bob"})
 		require.NoError(t, err)
 		bearer := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())

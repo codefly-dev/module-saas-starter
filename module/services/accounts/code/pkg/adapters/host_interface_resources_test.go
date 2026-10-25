@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 
+	"accounts/pkg/auth"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 )
 
@@ -88,4 +89,23 @@ func TestListResourcesAnswersASolutionRolesGrants(t *testing.T) {
 	grants, err := f.resources(t, token, "example-records", "read")
 	require.NoError(t, err)
 	require.Equal(t, []string{"x"}, grantIDs(grants))
+}
+
+// An empty ask carries a kind the person holds only on named resources, on
+// exactly those resources; a person holding nothing there is refused by name.
+func TestAnEmptyAskCarriesResourceLimitedGrantsOnTheirResources(t *testing.T) {
+	f := resourceFixture(t, map[string][]string{"example-records:read": {"a", "b"}})
+	withHopMember(t)
+	caller := stampVerifiedIdentity(context.Background(), hopOwner, moduleWorkContextTenant, auth.Assurance{})
+	held, err := f.issuer.personHoldings(caller, moduleWorkContextTenant, "documents")
+	require.NoError(t, err)
+	require.Len(t, held, 1)
+	require.Equal(t, "example-records", held[0].GetResourceKind())
+	require.Equal(t, []string{"read"}, held[0].GetActions())
+	require.Equal(t, []string{"a", "b"}, held[0].GetResourceIds())
+
+	none := resourceFixture(t, nil)
+	withHopMember(t)
+	_, err = none.issuer.personHoldings(caller, moduleWorkContextTenant, "documents")
+	requireRefused(t, err, codes.PermissionDenied, "the owner holds nothing at this audience")
 }

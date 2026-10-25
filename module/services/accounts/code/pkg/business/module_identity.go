@@ -300,7 +300,7 @@ func moduleMintOrganization(grant ModulePrincipalGrant, requested []string) (str
 		return grant.Tenant, nil
 	}
 	if org == "" || (!grant.CrossTenant && grant.PresenceGeneration == 0) {
-		return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "shared mint requires an organization and a delivered principal or cross_tenant grant")
+		return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "a shared workload must name the organization of the work item and have a delivered principal or cross_tenant grant")
 	}
 	return org, nil
 }

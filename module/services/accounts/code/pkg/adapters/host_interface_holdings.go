@@ -20,8 +20,10 @@ import (
 // content, each with the actions the composed permission vocabulary, the
 // organisation's roles and the composition's bindings to the audience name on
 // it. Each candidate is kept only if the person holds it by the check every mint
-// makes (personHolds), and StartTask then decides the ask again as it decides
-// any other. A person who holds nothing there is refused by name.
+// makes (personHolds); one the person holds only on named resources is kept on
+// exactly those resources, as their resource-limited grants list them. StartTask
+// then decides the ask again as it decides any other. A person who holds
+// nothing there is refused by name.
 func (s *WorkContextAuthorityServer) personHoldings(ctx context.Context, orgID, audience string) ([]*gen.WorkContextScope, error) {
 	ownerID, err := s.authorizeOwner(ctx, orgID)
 	if err != nil {
@@ -45,6 +47,14 @@ func (s *WorkContextAuthorityServer) personHoldings(ctx context.Context, orgID, 
 			}
 			if holds {
 				actions = append(actions, action)
+			} else if _, ok := s.authority.(scopedResourceReader); ok {
+				_, ids, err := s.ownerResourceGrants(ctx, orgID, ownerID, kind, action)
+				if err != nil {
+					return nil, err
+				}
+				if len(ids) > 0 {
+					held = append(held, &gen.WorkContextScope{ResourceKind: kind, Actions: []string{action}, ResourceIds: ids})
+				}
 			}
 		}
 		if len(actions) > 0 {
@@ -52,7 +62,7 @@ func (s *WorkContextAuthorityServer) personHoldings(ctx context.Context, orgID, 
 		}
 	}
 	if len(held) == 0 {
-		return nil, status.Errorf(codes.PermissionDenied, "the person holds nothing at %s", audience)
+		return nil, status.Errorf(codes.PermissionDenied, "the owner holds nothing at this audience: %s", audience)
 	}
 	return held, nil
 }

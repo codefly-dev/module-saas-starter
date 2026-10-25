@@ -162,3 +162,17 @@ func TestAnUnwitnessedEnvelopeNarrowingIsRefusedByName(t *testing.T) {
 		t.Fatalf("got %v, want FailedPrecondition naming the policy log", err)
 	}
 }
+
+// A refusal to expose an installation names the status that stops it.
+func TestAnInstallationStatusIsNamedInItsRefusal(t *testing.T) {
+	for st, want := range map[gen.InstallationStatus]string{
+		gen.InstallationStatus_INSTALLATION_STATUS_PENDING:     "pending",
+		gen.InstallationStatus_INSTALLATION_STATUS_REVOKED:     "revoked",
+		gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE:      "active",
+		gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED: "not active",
+	} {
+		if got := installationStatusWord(st); got != want {
+			t.Errorf("%v names %q, want %q", st, got, want)
+		}
+	}
+}
