@@ -9,8 +9,11 @@
 -- WHERE expires_at < $1 (1,001 rows) ran 20,199ms with a cascade into
 -- webauthn_ceremonies via its unindexed mfa_login_transaction_id column, 56ms
 -- after the index below (359x); DELETE FROM sessions WHERE created_at < $1
--- (1,001 rows) ran 15,697ms with no usable index on created_at at all, 38ms
--- after the index below (418x).
+-- (1,001 rows) ran 15,697ms with a cascade into client_authorization_codes via
+-- its unindexed session_id column, 38ms after the index below (418x). Both
+-- factors are the cascade index alone: each was measured with the parent's own
+-- sweep predicate still unindexed, so the parent was still being sequentially
+-- scanned in the fast run.
 
 -- ---------------------------------------------------------------------------
 -- 1. CASCADE targets of bulk retention deletes
@@ -24,11 +27,18 @@
 CREATE INDEX idx_webauthn_ceremonies_mfa_tx
     ON public.webauthn_ceremonies (mfa_login_transaction_id);
 
--- DeleteExpiredAuthenticationCeremonies: client_authorization_codes cascades
--- from both sessions (session_id) and users (user_id). 418x-class gain; the
--- session_id side is the one measured as sessions is the bulk-deleted parent.
+-- DeleteOldSessions: DELETE FROM sessions WHERE created_at < $1 cascades into
+-- client_authorization_codes.session_id (NOT NULL, so every row participates).
+-- This index alone is what recovered the 418x above -- the sweep's own scan of
+-- sessions was not the dominant cost.
 CREATE INDEX idx_client_authorization_codes_session
     ON public.client_authorization_codes (session_id);
+
+-- users.id is the other CASCADE parent of client_authorization_codes. No
+-- production statement bulk-deletes users -- the only one is ClearAll, which
+-- its own comment calls test cleanup -- so this gap is latent and unmeasured:
+-- indexed here because an admin-facing user deletion would hit it, not because
+-- a sweep was measured against it.
 CREATE INDEX idx_client_authorization_codes_user
     ON public.client_authorization_codes (user_id);
 
@@ -36,11 +46,15 @@ CREATE INDEX idx_client_authorization_codes_user
 -- 2. Retention sweep predicates with no usable leading key
 --    Each sweep deletes WHERE created_at < $1 but the existing indexes on
 --    these tables lead with a different column (or have none on created_at
---    at all), so the planner has no choice but a full sequential scan.
+--    at all), so the planner has no choice but a full sequential scan of the
+--    parent. All three are structural and unmeasured on their own: the two
+--    factors quoted above were both recovered by the cascade indexes in
+--    section 1, with the parent's sequential scan still in place.
 -- ---------------------------------------------------------------------------
 
--- DeleteOldSessions: DELETE FROM sessions WHERE created_at < $1. 418x above.
--- Existing sessions indexes are all on expires_at / user_id / family_id.
+-- DeleteOldSessions: DELETE FROM sessions WHERE created_at < $1. Existing
+-- sessions indexes are all on expires_at / user_id / family_id, so the sweep
+-- sequentially scans sessions to find its rows. Not separately measured.
 CREATE INDEX idx_sessions_created_at
     ON public.sessions (created_at);
 
