@@ -35,9 +35,12 @@ import (
 // which workloads a principal runs as is the applied module manifest's, and
 // "only approved images run" is deploy-time admission, outside this host.
 //
-// WHAT IT IS NOT. It is not the registry. The registry is DERIVED each
-// reconcile pass from the applied module manifests and this ceiling
-// (module_principal_reconcile.go): a principal is in it only while both say so —
+// WHAT IT IS NOT. It is not the registry, and it is not required. The
+// registry is DERIVED each reconcile pass from the applied module manifests
+// (module_principal_reconcile.go), and the ceiling is the manifest: a host no
+// envelope was written to grants each signed manifest what it asks for, so a
+// composition runs with no hand-written authority. Where an envelope IS
+// written it narrows: a principal is in the registry only while both say so —
 // a signed manifest asks for it AND this envelope allows it — and it holds the
 // intersection of the two, never more than either.
 
@@ -535,6 +538,12 @@ func (s *Service) moduleRegistrySnapshot() *installedModuleRegistry {
 // Where no envelope store is wired (a registry stated directly by a test)
 // there is no committed revision to compare with.
 func (s *Service) fenceModuleRegistrySnapshot(ctx context.Context, snapshot *installedModuleRegistry) error {
+	if snapshot.manifestDerived {
+		if err := s.fenceManifestGenerations(ctx, snapshot); err != nil {
+			return err
+		}
+	}
+
 	if s.moduleEnvelopes == nil {
 		return nil
 	}
@@ -702,8 +711,10 @@ func installationTenancyAllowed(envelope *ModuleEnvelope, principalID, orgID str
 // installation against the new ceiling (errModuleEnvelopeNarrowsAfterAll)
 // rather than trusting this classification alone.
 //
-// A host with no envelope has granted nothing, so its first envelope narrows
-// nothing an envelope granted; installations are still checked.
+// A host with no envelope has granted each applied manifest what it asks for
+// (the ceiling is the manifest), so a first envelope over any manifest that
+// asks for authority is a narrowing; over none, it narrows nothing and only
+// the installations are checked.
 func (s *Service) moduleEnvelopeNarrows(ctx context.Context, next *ModuleEnvelope, nextDocument []byte) (bool, error) {
 	narrows := false
 	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -714,6 +725,16 @@ func (s *Service) moduleEnvelopeNarrows(ctx context.Context, next *ModuleEnvelop
 		if current != nil && !moduleEnvelopeOnlyAdds(current.Document, nextDocument) {
 			narrows = true
 			return nil
+		}
+		if current == nil {
+			applied, err := s.store.ListSolutionHostBindings(ctx)
+			if err != nil {
+				return err
+			}
+			if len(AppliedAuthorityRequests(applied)) > 0 {
+				narrows = true
+				return nil
+			}
 		}
 		// Inside the control plane, like the apply's own read: outside it a
 		// row policy hides every installation, and the answer is "none lose

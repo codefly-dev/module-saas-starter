@@ -11,7 +11,6 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	"github.com/codefly-dev/core/solutionhost"
@@ -56,6 +55,15 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	if os.Getenv("HOST_INTERFACE_CONFORMANCE") == "" {
 		t.Skip("set HOST_INTERFACE_CONFORMANCE=1: boots the test store and seeds the dev-admin fixture (rung 1 harness)")
 	}
+	runHostInterfaceFixture(t, true)
+}
+
+func TestFreshStoreDerivesManifestAuthorityAndIssuesAPerson(t *testing.T) {
+	runHostInterfaceFixture(t, false)
+}
+
+func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	// The SDK starts its CLI with this context. Its lifetime must extend past
@@ -148,11 +156,7 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	workloadCredential := cluster.Run(executiontest.Workload{Namespace: "org-directory", ServiceAccount: "org-directory", Container: "app"})
 	documentsCredential := cluster.Run(executiontest.Workload{Namespace: "documents", ServiceAccount: "documents", Container: "app"})
 	modelCredential := cluster.Run(executiontest.Workload{Namespace: "model", ServiceAccount: "model", Container: "app"})
-	svc.SetModuleCapabilities(store, nil, registry)
-
-	// The declared registry is what delivery derives; the ceiling is the manifest,
-	// so the derived registry is the manifest's own, at revision 1.
-	svc.InstallDerivedModulePrincipals(registry, 1, nil)
+	svc.SetModuleCapabilities(store, nil, nil)
 
 	// Composition installs a module at every organisation (contract decision of
 	// 2026-10-22): the live module authority answers for every declared principal.
@@ -169,25 +173,15 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	svc.SetAuthorityDocumentVerifier(func(doc, envelope []byte) (string, error) {
 		return delivery.Verify(doc, envelope, map[string]crypto.PublicKey{signer.KeyID(): signer.Public()})
 	})
-	ceilings := business.ModuleEnvelope{Revision: 1, Principals: map[string]business.ModuleEnvelopePrincipal{}}
-	for _, grant := range registry {
-		ceilings.Principals[grant.Prefix] = business.ModuleEnvelopePrincipal{Grant: grant}
-	}
-	for name, kinds := range map[string][]string{"conformance-methods": {"example-records"}, "conformance-probe": {"probe"}, "conformance-solution": {"conformance.page"}, "conformance-routes": {"example-records"}} {
-		ceilings.Principals[name] = business.ModuleEnvelopePrincipal{Grant: business.ModulePrincipalGrant{Tenant: fixtureOrganization, Resources: kinds}}
-	}
-	// The database install fence reads the same approval revision as the registry.
-	principals := map[string]any{}
-	for prefix, entry := range ceilings.Principals {
-		principals[prefix] = map[string]any{"grant": map[string]any{"tenant": entry.Grant.Tenant, "resources": entry.Grant.Resources, "operation_audiences": entry.Grant.OperationAudiences}}
-	}
-	envelope, err := json.Marshal(map[string]any{"revision": 1, "principals": principals})
-	require.NoError(t, err)
 	svc.SetModuleEnvelopeStore(store)
-	_, err = svc.PutModuleEnvelope(ctx, "00000000-0000-7000-8000-0000000000a1", 0, envelope)
-	require.NoError(t, err)
+	require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+		record, err := store.LatestModuleEnvelopeRecord(ctx)
+		require.Nil(t, record, "the fresh host has no administrative envelope")
+		return err
+	}))
+	require.Empty(t, svc.ModulePrincipals())
 	reconciler, err := business.NewSolutionHostBindingReconciler(svc, business.SolutionHostBindingReconcilerConfig{
-		Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host", Envelopes: svc,
+		Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host",
 	})
 	require.NoError(t, err)
 	svc.SetCompositionReconcile(reconciler.RunOnce)
@@ -212,6 +206,7 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, reconciler.RunOnce(ctx))
+	require.Len(t, svc.ModulePrincipals(), len(registry), "signed manifests derive every principal without an envelope")
 
 	previous := service
 	service = svc
@@ -254,42 +249,45 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 		return true
 	}, 20*time.Second, 100*time.Millisecond, "the Connect listener did not come up")
 
-	conformance.Run(t, conn, registeredDescriptors(t), conformance.Fixture{
-		Organization:   fixtureOrganization,
-		HostCoordinate: "conformance-host", HostDomain: "acme",
-		SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
-		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
-		DeliveryCredential: func(module string) string { return "delivery:" + module },
-		ViewerToken:        "dev-bob", AdminToken: "dev-alice",
-		Audience: "documents", ReadKind: "example-records",
-		// The credential a pod of org-directory's declared workload presents.
-		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
-		// GAP (HOST_INTERFACE.md 4, fixture): the fixture installs no solution;
-		// the lines this makes red are the gap list.
-		InstalledSolution: "",
-		// The permission matrix over the composed audiences, as the dev-admin
-		// fixture states it: a collection reader, Acme administrators (one of
-		// them a person of the authority's fixture), a member who holds no
-		// role, and a Globex member who holds nothing at Acme's content.
-		// A delegate chain (gap 14): an administrator issued at documents;
-		// documents hops to model through its binding for what the first token
-		// never carried, then model hops back to documents through its own.
-		Chain: &conformance.Chain{Token: "fixture-alex", Start: "documents", Hops: []conformance.Hop{
-			{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
-			{Credential: modelCredential, Binding: "records", Audience: "documents", AskKind: "example-records", AskAction: "read"},
-		}},
-		// The same binding read as a lookup carries its lookup scopes alone.
-		Lookup: &conformance.LookupCase{Token: "fixture-alex", Start: "model", Credential: modelCredential, Binding: "records",
-			Audience: "documents", Kind: "example-records", Invoke: "invoke", Lookup: "read"},
-		Matrix: []conformance.Expectation{
-			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "read", Allowed: true},
-			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "write", Allowed: false},
-			{Token: "dev-alice", Audience: "documents", Kind: "example-records", Action: "write", Allowed: true},
-			{Token: "fixture-alex", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: true},
-			{Token: "fixture-maya", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: false},
-			{Token: "fixture-omar", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
-		},
-	})
+	if fullSuite {
+		conformance.Run(t, conn, registeredDescriptors(t), conformance.Fixture{
+			Organization:   fixtureOrganization,
+			HostCoordinate: "conformance-host", HostDomain: "acme",
+			SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
+			SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
+			DeliveryCredential: func(module string) string { return "delivery:" + module },
+			ViewerToken:        "dev-bob", AdminToken: "dev-alice",
+			Audience: "documents", ReadKind: "example-records",
+			// The credential a pod of org-directory's declared workload presents.
+			WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
+			// GAP (HOST_INTERFACE.md 4, fixture): the fixture installs no solution;
+			// the lines this makes red are the gap list.
+			InstalledSolution: "",
+			// The permission matrix over the composed audiences, as the dev-admin
+			// fixture states it: a collection reader, Acme administrators (one of
+			// them a person of the authority's fixture), a member who holds no
+			// role, and a Globex member who holds nothing at Acme's content.
+			// A delegate chain (gap 14): an administrator issued at documents;
+			// documents hops to model through its binding for what the first token
+			// never carried, then model hops back to documents through its own.
+			Chain: &conformance.Chain{Token: "fixture-alex", Start: "documents", Hops: []conformance.Hop{
+				{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
+				{Credential: modelCredential, Binding: "records", Audience: "documents", AskKind: "example-records", AskAction: "read"},
+			}},
+			// The same binding read as a lookup carries its lookup scopes alone.
+			Lookup: &conformance.LookupCase{Token: "fixture-alex", Start: "model", Credential: modelCredential, Binding: "records",
+				Audience: "documents", Kind: "example-records", Invoke: "invoke", Lookup: "read"},
+			Matrix: []conformance.Expectation{
+				{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "read", Allowed: true},
+				{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "write", Allowed: false},
+				{Token: "dev-alice", Audience: "documents", Kind: "example-records", Action: "write", Allowed: true},
+				{Token: "fixture-alex", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: true},
+				{Token: "fixture-maya", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: false},
+				{Token: "fixture-omar", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
+			},
+		})
+
+	}
 
 	t.Run("a signed solution delivery governs its HTTP routes", func(t *testing.T) {
 		const audience = "conformance-routes"
@@ -314,6 +312,21 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 			Authority: &compositionv1.SignedManifestV1{Document: doc, Envelope: envelope}, Credential: "delivery:" + audience,
 		})
 		require.NoError(t, err)
+		// An altered authority document at the same generation cannot narrow or
+		// widen the committed declaration, even when the replacement is signed.
+		changed := &compositionv1.AuthorityManifestV1{}
+		require.NoError(t, proto.Unmarshal(doc, changed))
+		changed.Methods[0].Requires[0].Actions = []string{"write"}
+		altered, err := proto.Marshal(changed)
+		require.NoError(t, err)
+		alteredSignature, err := delivery.Sign(altered, signer.KeyID(), signer.Sign)
+		require.NoError(t, err)
+		_, err = compositionv1.NewCompositionServiceClient(conn).ApplyManifest(ctx, &compositionv1.ApplyManifestRequest{
+			Carrier:   &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())},
+			Authority: &compositionv1.SignedManifestV1{Document: altered, Envelope: alteredSignature}, Credential: "delivery:" + audience,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "generation")
 		sess, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "dev-bob"})
 		require.NoError(t, err)
 		bearer := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())

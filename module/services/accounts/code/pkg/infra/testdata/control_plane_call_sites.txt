@@ -91,6 +91,7 @@ pkg/business/module_envelope_delivery.go: (*Service).ReceiveModuleEnvelopeDelive
 pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithControlPlane
 pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane
 pkg/business/module_installations.go: (*Service).ReconcileModuleInstallation: WithControlPlane
+pkg/business/module_manifest_grant.go: (*Service).fenceManifestGenerations: WithControlPlaneReadSnapshot
 pkg/business/module_operation_context.go: (*Service).RecordModuleOperationContextMint: WithControlPlane
 pkg/business/module_principal_reconcile.go: (*ModulePrincipalReconciler).appliedManifestsVerified: WithControlPlane
 pkg/business/module_principal_reconcile.go: (*ModulePrincipalReconciler).readInputs: WithControlPlaneReadSnapshot

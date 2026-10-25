@@ -114,11 +114,10 @@ authority below.
 
 The module registry every capability check reads is **derived** each pass
 (`business.ModulePrincipalReconciler`) from the applied, live manifests whose
-stored carrier still verifies and the module envelope a platform super_admin
-writes: the manifest's `authority` is the request, the envelope's per-principal
-`grant` the ceiling, the entry their intersection, and its workloads the
-manifest's `(service, container)` spelled by the namespace rule. The envelope
-names no workload and approves no build.
+stored carrier still verifies. The signed manifest is the ceiling; no module
+envelope is needed on a fresh store. An existing administrative envelope narrows
+that ceiling. Workloads are the manifest's `(service, container)` spelled by the
+namespace rule; no administrative policy approves a build.
 
 ## Composition interface delivery
 
@@ -344,10 +343,10 @@ configuration declares. The module principal reconciler derives the whole
 registry on every reconcile pass (and on a delivery or an envelope write,
 without waiting for the tick) and installs it tagged with the envelope revision
 it was derived from — the only production writer — so installing, narrowing or
-withdrawing a module takes effect with no restart. An entry exists only while
-two inputs agree:
+withdrawing a module takes effect with no restart. Applied manifest generations
+are fenced on each authority decision. Its inputs are:
 
-- **the module envelope** — the authority ceiling a platform super_admin writes
+- **an optional module envelope** — an administrative restriction a platform super_admin writes
   through `PlatformAdminService/PutModuleEnvelope` (`requirePlatformRole`, so
   never through an impersonated session; audited as
   `saas.platform.module_envelope_written`; append-only and revisioned in
@@ -367,7 +366,10 @@ two inputs agree:
   workload (namespace and service account) maps to exactly one principal, and
   two manifests asking for one principal are both omitted.
 
-The entry is the envelope's grant bounded by the manifest: queues, namespaces
+Without an envelope, the entry grants the manifest's queues, namespaces, resource
+kinds and operation scopes. It invents no tenant pin, cross-tenant grant, resource
+instance rights or installed delegation mode. With an envelope, the entry is
+its grant bounded by the manifest: queues, namespaces
 and resource kinds the manifest also asks for, and each operation binding only
 when the manifest asks for it on the envelope's audience with an `invoke`
 operation, every operation's scopes intersected with what the manifest asks.
@@ -388,15 +390,10 @@ nothing there is indistinguishable from the legitimate "no composed module
 accepts a delegation here" and the person is otherwise told, by the next sync,
 to reconnect what they just reconnected.
 
-**No envelope is said by name, every pass.** A pass that finds no envelope
-(none written, or no envelope store) publishes an empty registry and, while any
-applied manifest asks for authority, returns `ErrModuleEnvelopeMissing` naming
-each principal, binding and generation — logged by the reconcile loop as
-`solution host binding reconcile pass failed`, beside the omitted-principal
-reasons. The mint's refusal of a prefix the registry does not hold logs
-`module identity refused` with the prefix and why (the registry is empty and
-derived from no envelope, empty, or holds no entry for it), as a refused
-execution does; the caller still hears only the denial.
+**No envelope is required.** A fresh store derives its registry directly from
+applied signed manifests. An unreadable existing envelope never widens authority.
+Every omitted principal or binding still has a named refusal. The removed
+runtime enforcement switch cannot turn a refusal into a grant.
 
 **The administrator writes it at `/admin/platform/module-authority`.**
 `GetModuleEnvelope` answers, beside the current revision (`revision`,
@@ -415,7 +412,9 @@ the passkey, and lands back on the same page to write again
 (`features/auth/model/step-up.ts` — every sensitive screen turns `mfa_required`
 into that, never into a bare error).
 
-**The registry is fenced by the committed envelope revision.** Every module
+**The registry is fenced by applied manifest generations and, when present, the
+committed envelope revision.** A changed or withdrawn generation refuses an
+older registry snapshot with Unavailable and requests reconciliation. Every module
 authority decision — `AuthorizeModuleCapability`, the work-context and
 headless operation-context mints, the source-delegation mint, and the
 revision confirmations behind `CheckAuthorizationRevision` — takes its grant
@@ -451,9 +450,8 @@ credentials sealed for the old one at the next check. The grant ceiling's keys:
 | `tenant` | the org it is bound to |
 | `cross_tenant` | an inbox worker serving every tenant |
 
-**No envelope written, or no delivered authority inside it, means no module may
-call the surface** — accounts starts with an empty registry and serves no module
-until its first pass.
+**No verified delivered authority means no module may call the surface** —
+accounts starts with an empty registry and serves no module until its first pass.
 
 ### A non-member person is not a refusal of the module
 
@@ -639,8 +637,9 @@ was bound to — namespace, ServiceAccount, pod, pod UID, container. The respons
   (`configuredSolutionHostBindingReconciler`), so **a host with no delivery mints
   for no module**, and a module run outside Kubernetes has no token to present.
 - A tenant-pinned module keeps the envelope's `tenant`; requesting a different
-  organization is refused. A shared module must name `organization_id` and have
-  `cross_tenant` in the envelope. Execution proves the principal first; the
+  organization is refused. A delivered shared module must name `organization_id`;
+  its current installation consent authorizes that organization. A directly
+  configured grant still requires `cross_tenant`. Execution proves the principal first; the
   organization's live installation then authorizes the mint. A selector grants
   nothing by itself.
 - **Every module credential is sealed.** Accounts mints and verifies Work

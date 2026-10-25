@@ -32,7 +32,14 @@ type envelopeTx struct{}
 
 type envelopeTxStore struct {
 	Store
-	next int
+	next    int
+	applied []*SolutionHostBindingRecord
+}
+
+// ListSolutionHostBindings is the applied manifests a first envelope is
+// classified against.
+func (s *envelopeTxStore) ListSolutionHostBindings(context.Context) ([]*SolutionHostBindingRecord, error) {
+	return s.applied, nil
 }
 
 func (s *envelopeTxStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
@@ -385,6 +392,34 @@ func TestADeliveredNarrowingIsWitnessedLikeAnInteractiveOne(t *testing.T) {
 	require.Equal(t, moduleEnvelopeDeliveryActor, log.appends[0].Actor)
 	require.Equal(t, uint64(2), log.appends[0].EnvelopeRevision)
 	require.True(t, bytes.Contains(h.store.records[1].Document, []byte(`"revision":2`)))
+}
+
+// With no envelope the manifests are the ceiling, so a first envelope over an
+// applied manifest that asks for authority takes authority away: it is
+// witnessed like any narrowing, never written as a pure grant.
+func TestAFirstEnvelopeOverGrantedManifestsIsWitnessed(t *testing.T) {
+	h := newEnvelopeDeliveryHarness(t, fixtureSigner(t))
+	manifest := testManifest(t, map[string][]string{"invoke": {"profiles:read"}})
+	document, err := solutionhost.Marshal(manifest)
+	require.NoError(t, err)
+	h.service.store.(*envelopeTxStore).applied = []*SolutionHostBindingRecord{{
+		BindingID: manifest.Binding,
+		Applied: &SolutionHostBindingApplied{SolutionHostBindingGeneration: SolutionHostBindingGeneration{
+			Generation: manifest.Generation, Document: string(document),
+		}},
+	}}
+	first := signedEnvelope(t, testDeliveredEnvelope(t, 1, testDeliveryDomain, deliveredGrant(t, nil)), testDeliveryKey)
+	_, err = h.deliver(t, first)
+	require.ErrorIs(t, err, ErrPolicyLogUnreachable)
+	require.Empty(t, h.store.records, "an unwitnessed narrowing writes nothing")
+
+	log := newFakePolicyLog()
+	h.service.SetPolicyLog(log, newFakePolicyLogStore())
+	_, err = h.deliver(t, first)
+	require.NoError(t, err)
+	require.Len(t, h.store.records, 1)
+	require.Len(t, log.appends, 1)
+	require.Equal(t, uint64(1), log.appends[0].EnvelopeRevision)
 }
 
 // UNPINNING THE KEY WITHDRAWS THE CEILING IT STATED.

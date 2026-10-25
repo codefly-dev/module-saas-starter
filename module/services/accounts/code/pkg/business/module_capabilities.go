@@ -391,6 +391,10 @@ func validateModulePrincipalCeiling(prefix string, grant ModulePrincipalGrant) e
 // and saying so here names the entry instead of leaving every one of its calls
 // refused as "denied".
 func ValidateModulePrincipalGrant(prefix string, grant ModulePrincipalGrant) error {
+	if slices.Contains(grant.Queues, InstallationStepQueue) {
+		return fmt.Errorf("principal %q asks for host-only queue %q", prefix, InstallationStepQueue)
+	}
+
 	if grant.Prefix != prefix {
 		return fmt.Errorf("module principal %q carries prefix %q", prefix, grant.Prefix)
 	}

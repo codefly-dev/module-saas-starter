@@ -536,14 +536,10 @@ Accounts. Existing envelope and installation-consent ceilings still govern
 issuance; storing authority scope ceilings and solution roles does not replace
 those existing owners or project new roles into the organization catalogue.
 
-A fresh-run integration remains open: CLI PR #1128's composition-interface route
-explicitly skips module-envelope delivery (`cmd/run/launcher.go`, `newDeliverer`).
-Accounts still requires the approved envelope to derive its registry. This test
-persists that approval; it does not prove a clean CLI composition can supply it.
-Removing that approval is a separate authorization-model change, and this patch
-does not silently substitute delivery for administrator consent. The CLI/host
-contract must settle or preserve the approval path before claiming a fresh
-composed ENFORCE run.
+The fresh-store blocker recorded here is resolved by the manifest-ceiling change
+below: CLI composition delivery needs no administrative envelope. Installation
+consent still governs organization access. A live composed ENFORCE run remains
+unverified.
 
 Validation: Accounts adapters, business, infra and cataloggen suites pass;
 `go vet ./...`, the naming gate and the boundary gate pass. At that checkpoint, `module/tools`
@@ -703,3 +699,27 @@ catalog test. Accounts/tools vet and the SDK's 107 tests and build pass. The
 boundary gate caught consumer-specific names in a newly integrated role test;
 those authored fixture names are generic now, and the boundary gate passes.
 No live composed ENFORCE run or release is qualified by these checks.
+
+## Fresh-store manifest ceiling (2026-10-25)
+
+The composition path now derives module principals from applied signed manifests
+without requiring an administrative envelope. Existing signature, workload-owner,
+immutable generation and installation-consent checks remain in force. Changing
+an authority document at the same generation is refused. Every authority decision
+also fences the registry against current applied generations, so a replica cannot
+use a grant from before a narrowing or withdrawal.
+
+`TestFreshStoreDerivesManifestAuthorityAndIssuesAPerson` boots an empty store,
+delivers signed module and solution policies through the production owners,
+asserts the derived registry and answers a person's Issue and HTTP Check. It
+also refuses a changed authority document at the same generation. It runs by
+default, independently of the opt-in shared conformance suite.
+
+Reader inventory before deletion: `MODULE_PRINCIPALS` has no runtime reader and
+was already removed. `MODULE_AUTHORITY_ENFORCEMENT` was read by `work.go` and
+consumed by registry derivation; both the switch and its warn implementation are
+removed. `PutModuleEnvelope` remains because the administration UI, its RPC
+adapter, signed-envelope delivery, installation scope and revocation, retained
+bindings and registry revision fences still use that surface. Where one exists,
+its strict restrictions remain; this change does not retire that separate
+administrative contract or migrate its installed delegation modes.

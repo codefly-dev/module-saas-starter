@@ -152,8 +152,8 @@ Design records: [SOLUTION_REGISTRATION.md](./SOLUTION_REGISTRATION.md),
 consumer workspace — `legal`, `identity`, `internal-auth`, `federation`, and
 the rest. A consumer overrides a group only by declaring one of the same name.
 No group declares module authority: the module principal registry is derived
-from delivered authority inside the module envelope a platform super_admin
-writes ([services/accounts/AGENTS.md](./services/accounts/AGENTS.md#the-composed-module-service-principal)).
+from applied signed manifests; an existing administrative envelope can narrow
+them ([services/accounts/AGENTS.md](./services/accounts/AGENTS.md#the-composed-module-service-principal)).
 
 **A credential's blast radius is the set of services that DECLARE its group**, not
 the set that reads it: a declared group is injected whether anything reads it or

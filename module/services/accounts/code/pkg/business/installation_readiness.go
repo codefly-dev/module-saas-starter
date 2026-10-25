@@ -68,9 +68,9 @@ type ReachedModule struct {
 	InstallationID string
 	RouteAlias     string
 	// InvokeScopes is what the solution declares it consumes there, as the
-	// DERIVED registry holds it — the manifest's ask narrowed by the module
-	// envelope, which is what the solution can actually do. A scope the envelope
-	// withheld is not consumption, and readiness reports it as an omitted binding
+	// DERIVED registry holds it — the manifest's ask, narrowed by the module
+	// envelope where one is written — which is what the solution can actually
+	// do. A scope the registry withheld is not consumption, and readiness reports it as an omitted binding
 	// rather than letting it travel here. This is the set a grant of the solution
 	// CARRIES (derived_module_access.go).
 	InvokeScopes []ModuleOperationScope
@@ -211,7 +211,7 @@ func (f *readinessFacts) readinessFor(
 			Kind:    gen.ReadinessConditionKind_READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED,
 			Subject: prefix,
 			Detail: fmt.Sprintf("The module registry holds no principal %q, so every Work Context it asks for is denied. "+
-				"A principal is in the registry only while an applied manifest asks for it and the module envelope allows it.", prefix),
+				"A principal is in the registry only while an applied, verified manifest asks for it and, where a platform administrator has written a module envelope, that envelope allows it.", prefix),
 			ClearedBy: gen.ReadinessClearedBy_READINESS_CLEARED_BY_PLATFORM_OPERATOR,
 			Action:    gen.ReadinessAction_READINESS_ACTION_NONE_AT_THIS_SURFACE,
 		})
@@ -246,7 +246,7 @@ func (f *readinessFacts) readinessFor(
 			Kind:    gen.ReadinessConditionKind_READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED,
 			Subject: binding.ID,
 			Detail: fmt.Sprintf("The applied manifest of %q asks for operation binding %q on audience %q and the host derived nothing for it: "+
-				"the module envelope allows no such binding, or allows nothing of it. Until the envelope names it, every exchange under it is refused.",
+				"the binding is not valid as declared, or a module envelope a platform administrator wrote allows no such binding or nothing of it. Until that changes, every exchange under it is refused.",
 				prefix, binding.ID, binding.Audience),
 			ClearedBy: gen.ReadinessClearedBy_READINESS_CLEARED_BY_PLATFORM_OPERATOR,
 			Action:    gen.ReadinessAction_READINESS_ACTION_NONE_AT_THIS_SURFACE,

@@ -295,8 +295,8 @@ func moduleMintOrganization(grant ModulePrincipalGrant, requested []string) (str
 		}
 		return grant.Tenant, nil
 	}
-	if !grant.CrossTenant || org == "" {
-		return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "shared mint requires cross_tenant and an organization")
+	if org == "" || (!grant.CrossTenant && grant.PresenceGeneration == 0) {
+		return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "shared mint requires an organization and a delivered principal or cross_tenant grant")
 	}
 	return org, nil
 }

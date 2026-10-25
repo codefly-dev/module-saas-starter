@@ -936,11 +936,6 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, fmt.Errorf("application: %w", err)
 	}
 	service.SetOrganizationCreationPolicy(orgCreationPolicy)
-	enforcement, err := business.ParseModuleAuthorityEnforcement(applicationEnv("MODULE_AUTHORITY_ENFORCEMENT"))
-	if err != nil {
-		return nil, fmt.Errorf("application: %w", err)
-	}
-	service.SetModuleAuthorityEnforcement(enforcement)
 
 	emailConfig, err := configuredEmail(ctx, codefly.IsLocal())
 	if err != nil {
@@ -2040,10 +2035,12 @@ func configuredSolutionHostBindingReconciler(
 	// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
 	adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
 
-	// The AUTHORITY CEILING is the module envelope a platform super_admin
-	// writes at runtime, read by every pass from the store — never a file read
-	// once here, and never out of a delivered manifest, because a manifest
-	// requests authority and never approves its own.
+	// The AUTHORITY CEILING is the applied, signed module manifest: what the
+	// composition delivers, verified against the pinned release keys, is what
+	// a module holds, so a composition runs with no hand-written authority.
+	// Where a platform super_admin has written a module envelope it narrows
+	// that ceiling; every pass reads it from the store — never a file read once
+	// here.
 	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
 		Source:     business.NewDeliveredSolutionHostBindings(service),
 		Verifier:   keyVerifier,

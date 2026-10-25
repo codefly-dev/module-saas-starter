@@ -522,9 +522,9 @@ host with no verifier at all still reads it.
 
 A platform super_admin reads and writes it at `/admin/platform/module-authority`:
 the current revision, who wrote it and when, and every principal the applied
-manifests ask for that it does not allow. With no envelope every module is
-denied, and each reconcile pass says so by name in the accounts log
-(`ErrModuleEnvelopeMissing`).
+manifests ask for that it does not allow. With no envelope, applied signed
+manifests supply the ceiling directly. An existing envelope narrows that ceiling;
+a failed read never removes its restrictions.
 
 ### Configuration
 

@@ -42,6 +42,7 @@ func (legacyCarrier) AuthorizeCarrier(_ context.Context, credential, namespace s
 // composed host runs, for the length of one test.
 func wireSignedDelivery(t *testing.T) *solutionhost.InMemorySigner {
 	t.Helper()
+	isolateBindingFixture(t)
 	signer := deliverytest.Signer(t, legacyDeliverySigner)
 	verifier := deliverytest.Verifier(t, map[string][]string{signer.KeyID(): {"acme"}})
 	testService.SetSolutionDelivery(verifier, testStore, legacyCarrier{})
@@ -82,16 +83,7 @@ func deliverSolution(t *testing.T, signer *solutionhost.InMemorySigner, alias st
 	}
 	_, err = testService.ApplyComposition(testCtx, req)
 	require.NoError(t, err)
-	// The registry entry the envelope would grant it, stated as
-	// declarePresenceAt states one: this harness approves no envelope.
-	previous := testService.ModulePrincipals()
-	registry := business.ModulePrincipalRegistry{}
-	for id, grant := range previous {
-		registry[id] = grant
-	}
-	registry[business.ModulePrincipalID(alias)] = business.ModulePrincipalGrant{Prefix: alias, PresenceBinding: alias, CrossTenant: true, Resources: []string{"doc"}}
-	testService.SetModulePrincipals(registry)
-	t.Cleanup(func() { testService.SetModulePrincipals(previous) })
+
 }
 
 // The live case: an installation made before the solution's roles were read

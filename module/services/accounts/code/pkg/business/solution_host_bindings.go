@@ -271,9 +271,8 @@ type SolutionHostBindingReconcilerConfig struct {
 	// requested authority is intersected with — is read from on every pass,
 	// so a narrowing takes effect at the next pass with no restart.
 	//
-	// Optional, and its absence is not a weaker ceiling: no source, or no
-	// revision written, means the module registry is empty. It is never read
-	// out of a delivered manifest: a manifest requests, it never approves.
+	// Optional administrative narrowing for the existing installation surface.
+	// With no revision written, the applied signed manifest is the ceiling.
 	Envelopes ModuleEnvelopeSource
 }
 
