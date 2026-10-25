@@ -588,6 +588,61 @@ Two other live refusals are separate from policy storage:
   does **not** prove which failure caused those 21 replies. Runtime credential
   expiry or rotation has not been established as the cause.
 
+## Solution roles, ListResources and installation issuance (2026-10-25)
+
+Classification: fixes at the issuance, installation and store owners. Reused:
+the applied signed authority document (the reader `CheckDeliveredMethod`
+already used, now `appliedAuthorityDocument`), the installation read
+(`ReadHostInstallation`), team membership, the derived-role seam, the headless
+installation mint and the rule-A hop. No second registry, role table or issuer.
+
+- **Solution roles decide what a person holds through a solution.**
+  `business.PersonSolutionRoles` reads the delivered roles: installer at the
+  installation the person owns, and the installation's standing role through
+  each team it is exposed to that they belong to, bounded by the delivered
+  scope ceilings on the solution's own kinds and by its bindings' invoke and
+  lookup scopes on the kinds it consumes. A person's `Issue` at such a
+  solution is that grant on its own kinds. A hop with a solution on its path
+  carries those roles within the binding (with a solution audience's own grant
+  met in), and a parent issued at a solution stands while its roles still grant
+  what it carries. Organisation roles answer only where no solution on the
+  path declares roles; owner, admin and member keep administering the
+  organisation.
+- **Install takes the solution's role names.** The installation's standing
+  role is a host-derived role per organisation, solution and role, outside the
+  catalogue; `GrantScope` admits it only at a solution's authority-root node in
+  its organisation, and `List` reads the solution's role name back. A fixture
+  installation names its `teams:`, granted through `GrantToTeam` once the
+  installation admits it. A built-in role whose name equals a solution role
+  (an installation made before this change with `viewer`) reads as that role.
+- **ListResources is served.** It reads the capability back without spending
+  it, requires the action on the kind, and answers from the owner's grants now:
+  solution roles where a solution on the path declares them; otherwise every
+  resource for an organisation-wide grant, or the ids of grants limited to one
+  resource (`WorkContextScopedResourceIDs`). Ids the capability names are cut to
+  those. Content-read standing is not enumerated; the per-collection reads that
+  own it still answer it.
+- **Installation issuance verifies the installation.** The actor's workload
+  credential must name the installed solution, the organisation is held to the
+  solution's pinned tenant, and the installation must be that solution's own
+  active installation there; each refusal is named before any mint.
+
+Not saas's: method admission refusing resource-limited scopes for a whole-kind
+requirement, and the hop's stamp dropping them, are the interface's policy
+grammar and the hop library (`codefly-dev/authority`). Modules are meant to ask
+`ListResources`, which this host now answers.
+
+The shared suite at its pin (`06d0d3b`) stays at **13 passed, 3 failed,
+3 skipped**, plus the 2 local cases. Install with the solution's own role
+`viewer` now succeeds (it failed on the standing grant before `GrantScope`
+admitted solution roles); the case still fails later on the unacknowledged
+pending installation. The installation-issuance cases are not exercised here:
+the pinned case issues with no actor credential, which the interface now
+refuses, and the newer suite's case (authority `3925878` onwards) needs a
+pin move and a harness installation of a solution with its workload. Unit
+tests in `pkg/adapters` cover issuance, roles and `ListResources`; no composed
+run was made.
+
 ## Combined integration on 2026-10-25
 
 The installation REST registration (#1185), source-operation declaration fence

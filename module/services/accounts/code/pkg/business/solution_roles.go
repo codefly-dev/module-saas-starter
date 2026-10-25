@@ -188,12 +188,25 @@ func (s *Service) PersonSolutionRoles(ctx context.Context, orgID, personID, prin
 // standing role: a role this host derives and owns per organisation, solution
 // and role name, whose permissions are the role's whole-kind grants (a role
 // row has no resource column, so a grant limited to named resources is not
-// carried). Its name is its provenance, so it never needs rewriting, and the
+// carried). Like every derived role it is outside the catalogue and is never
+// assigned organisation-wide or shared; it is granted only at a solution's
+// authority-root node in its own organisation (GrantScope). Its name is its provenance, so it never needs rewriting, and the
 // solution's role name is read back from it.
 const solutionRoleNamePrefix = "solution role · "
 
 func solutionRoleProvenance(orgID, targetID, role string) string {
 	return fmt.Sprintf("org=%s;solution=%s;role=%s", orgID, targetID, role)
+}
+
+// SolutionRoleOrganization is the organisation a solution role's provenance
+// names, and whether the provenance is a solution role's at all.
+func SolutionRoleOrganization(provenance string) (string, bool) {
+	rest, ok := strings.CutPrefix(provenance, "org=")
+	if !ok || !strings.Contains(rest, ";solution=") || !strings.Contains(rest, ";role=") {
+		return "", false
+	}
+	org, _, _ := strings.Cut(rest, ";")
+	return org, true
 }
 
 // SolutionRoleOf is the solution's role name a standing role carries, or the

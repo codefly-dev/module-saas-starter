@@ -168,7 +168,7 @@ var interfaceDescriptions = map[string]string{
 	"InstallationService/Install":       "Install one target at one organisation under the least role it needs; pending until its install step is acknowledged.",
 	"InstallationService/GrantToTeam":   "Expose an installation to a team under the installation's role.",
 	"InstallationService/List":          "List what one organisation has installed.",
-	"AuthorityService/ListResources":    "Answer which resources of one kind a checked capability covers for one action (not yet served here).",
+	"AuthorityService/ListResources":    "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",
 	"AuthorityService/Delegate":         "Record a signed-in person's grant to a module (not yet served here).",
 	"AuthorityService/RevokeDelegation": "End a delegation (not yet served here).",
 	"AuthorityService/GetDelegation":    "Read whether one delegation still stands (not yet served here).",

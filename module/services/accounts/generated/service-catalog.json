@@ -806,7 +806,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
-      "description": "Answer which resources of one kind a checked capability covers for one action (not yet served here).",
+      "description": "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
@@ -514,6 +515,35 @@ func requireNotDerivedRole(ctx context.Context, executor QueryExecutor, roleID s
 	return nil
 }
 
+// requireNotDerivedRoleOrSolutionRoot is requireNotDerivedRole, except for a
+// solution's role (business.SolutionRoleOrganization): an installation of the
+// solution holds it as its standing role, and the teams the installation is
+// exposed to hold it there, so it is granted at a solution's authority-root
+// node in the organisation it was derived for, and nowhere else.
+func requireNotDerivedRoleOrSolutionRoot(ctx context.Context, executor QueryExecutor, grant *gen.ScopeGrant) error {
+	provenance, err := derivedRoleProvenance(ctx, executor, grant.RoleId)
+	if err != nil || provenance == "" {
+		return requireNotDerivedRole(ctx, executor, grant.RoleId)
+	}
+	org, isSolutionRole := business.SolutionRoleOrganization(provenance)
+	if !isSolutionRole {
+		return requireNotDerivedRole(ctx, executor, grant.RoleId)
+	}
+	var solutionRoot bool
+	if err := executor.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM scope_nodes WHERE org_id = $1::uuid AND scope_path = $2::ltree AND kind = 'solution')`,
+		grant.OrgId, grant.ScopePath,
+	).Scan(&solutionRoot); err != nil {
+		return err
+	}
+	if org != grant.OrgId || !solutionRoot {
+		return status.Errorf(codes.FailedPrecondition,
+			"role %q is a solution's role derived by this host from %s: it is granted only at that solution's authority root in its own organization",
+			grant.RoleId, provenance)
+	}
+	return nil
+}
+
 // RegisterScopeNode inserts a node into the org's scope tree, or places a
 // product record at a node when ResourceType/ResourceId are set. node.Id and
 // node.OrgId are set by the caller.
@@ -586,7 +616,7 @@ func (s *PostgresStore) GrantScope(ctx context.Context, grant *gen.ScopeGrant) e
 	// itself — so the guard sits here rather than at one caller: a hand-written
 	// grant of a derived role, by any path, is refused.
 	if grant.DerivedFromGrantId == "" {
-		if err := requireNotDerivedRole(ctx, executor, grant.RoleId); err != nil {
+		if err := requireNotDerivedRoleOrSolutionRoot(ctx, executor, grant); err != nil {
 			return w.Wrapf(err, "failed to validate role")
 		}
 	}
