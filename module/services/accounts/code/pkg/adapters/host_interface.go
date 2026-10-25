@@ -243,14 +243,6 @@ func bindingAudience(ctx context.Context, req *authorityv1.IssueRequest) (string
 	return declared.Audience, nil
 }
 
-// ListResources: GAP. The host answers resource coverage through its own
-// per-collection reads (CheckWorkContextRecordAccess,
-// ListReadableSourceCollections); a grant-shaped answer behind the interface is
-// not built yet.
-func (s *HostAuthorityServer) ListResources(context.Context, *authorityv1.ListResourcesRequest) (*authorityv1.ListResourcesResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "list resources: accounts answers coverage per collection today; the grant-shaped answer is not yet behind the interface")
-}
-
 // Delegate, RevokeDelegation, GetDelegation: GAP. The host's standing grants
 // are source delegations (DelegationService) bound to a source; a person's
 // grant to a module by scopes is not yet behind the interface.

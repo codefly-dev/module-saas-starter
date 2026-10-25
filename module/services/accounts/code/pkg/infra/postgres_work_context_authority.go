@@ -506,3 +506,33 @@ func workContextPermissionAllowed(
 
 var _ business.WorkContextAuthorityStore = (*PostgresStore)(nil)
 var _ business.WorkContextConsumerAuthorityStore = (*PostgresStore)(nil)
+
+// WorkContextScopedResourceIDs lists the resource ids principalID holds
+// (kind, action) on through role assignments limited to one resource, its own
+// or a team's it belongs to: the answer a resource question needs when the
+// principal holds no organisation-wide grant of the kind. Content-read
+// standing is not listed: it is authorized node by node by the reads that
+// own it.
+func (s *PostgresStore) WorkContextScopedResourceIDs(ctx context.Context, orgID, principalID, kind, action string) ([]string, error) {
+	var ids []string
+	err := s.readAs(ctx, orgID, principalID, func(ctx context.Context, reader ReadQueryExecutor) error {
+		return reader.QueryRow(ctx, `
+			SELECT COALESCE(array_agg(DISTINCT assignment.scope ORDER BY assignment.scope), ARRAY[]::text[])
+			FROM role_assignments AS assignment
+			JOIN role_permissions AS granted ON granted.role_id = assignment.role_id
+			WHERE assignment.org_id = $1
+			  AND assignment.scope IS NOT NULL
+			  AND (
+			      (assignment.subject_kind = 'principal' AND assignment.subject_id = $2)
+			      OR (assignment.subject_kind = 'team' AND assignment.subject_id IN (SELECT team_id FROM team_members WHERE user_id = $2))
+			  )
+			  AND (granted.resource = '*' OR granted.resource = $3)
+			  AND (granted.action = '*' OR granted.action = $4)`,
+			orgID, principalID, kind, action,
+		).Scan(&ids)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list scoped work-context resources: %w", err)
+	}
+	return ids, nil
+}
