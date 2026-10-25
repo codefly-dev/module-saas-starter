@@ -71,3 +71,42 @@ func TestUnreadableWorkspaceGrantsAreRefused(t *testing.T) {
 		t.Fatalf("a role with no permission was accepted: %v", err)
 	}
 }
+
+// A composing workspace states the installations its organisations hold of
+// what it composes; an owner the fixture does not make an administrator of the
+// organisation, or a field left out, is refused at seed, by name.
+func TestWorkspaceInstallationsJoinTheFixture(t *testing.T) {
+	f := baseFixture()
+	f.Users = append(f.Users, fixtureUser{Email: "omar@acme.test", Provider: "email", ProviderID: "fixture-omar"})
+	f.Organizations[0].Members = []fixtureOrgMember{{Email: "omar@acme.test", Role: "member"}}
+
+	grants, err := readWorkspaceGrants(grantsReader(`installations:
+  - {org: Acme Corp, target: notes, role: viewer, owner: remi@acme.test}
+`, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := withWorkspaceGrants(f, grants); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Installations) != 1 || f.Installations[0].Target != "notes" || f.Installations[0].Owner != "remi@acme.test" {
+		t.Fatalf("installations did not join the fixture: %+v", f.Installations)
+	}
+
+	for document, want := range map[string]string{
+		`installations: [{org: Acme Corp, target: notes, role: viewer, owner: omar@acme.test}]`: "only an administrator installs",
+		`installations: [{org: Globex, target: notes, role: viewer, owner: remi@acme.test}]`:    "only an administrator installs",
+		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test}]`:               "org, target, role and owner are required",
+	} {
+		grants, err := readWorkspaceGrants(grantsReader(document, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := baseFixture()
+		f.Users = append(f.Users, fixtureUser{Email: "omar@acme.test", Provider: "email", ProviderID: "fixture-omar"})
+		f.Organizations[0].Members = []fixtureOrgMember{{Email: "omar@acme.test", Role: "member"}}
+		if err := withWorkspaceGrants(f, grants); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s: want a refusal naming %q, got %v", document, want, err)
+		}
+	}
+}

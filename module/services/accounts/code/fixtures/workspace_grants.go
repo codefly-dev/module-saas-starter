@@ -13,17 +13,21 @@ import (
 
 // WorkspaceGrantsDocument is the workspace configuration document a composing
 // workspace adds to the selected fixture: the roles its people hold at the
-// modules it composes, and who holds them. This module cannot name those
-// roles (a module's permissions are the module's words, not this host's), so
-// the workspace that composes both states them, as it states every other value
-// it composes: configurations/<profile>/fixture-grants.yaml, read by the SDK.
+// modules it composes, who holds them, and which of the composed solutions and
+// modules each organisation has installed. This module cannot name those roles
+// or targets (a module's permissions and a composition's names are not this
+// host's words), so the workspace that composes both states them, as it states
+// every other value it composes: configurations/<profile>/fixture-grants.yaml,
+// read by the SDK.
 const WorkspaceGrantsDocument = "fixture-grants"
 
 // workspaceGrants is the part of a fixture a composing workspace may add: roles
-// and their assignments, over the people and organisations the fixture seeds.
+// and their assignments, over the people and organisations the fixture seeds,
+// and the installations of what it composes that those organisations hold.
 type workspaceGrants struct {
-	Roles       []fixtureRole           `yaml:"roles"`
-	Assignments []fixtureRoleAssignment `yaml:"assignments"`
+	Roles         []fixtureRole           `yaml:"roles"`
+	Assignments   []fixtureRoleAssignment `yaml:"assignments"`
+	Installations []fixtureInstallation   `yaml:"installations"`
 }
 
 // readWorkspaceGrants returns the composing workspace's grants, nil when it
@@ -55,6 +59,7 @@ func withWorkspaceGrants(f *fixtureFile, grants *workspaceGrants) error {
 	}
 	f.Roles = append(f.Roles, grants.Roles...)
 	f.Assignments = append(f.Assignments, grants.Assignments...)
+	f.Installations = append(f.Installations, grants.Installations...)
 	if err := validateFixture(f); err != nil {
 		return fmt.Errorf("the workspace's %s document: %w", WorkspaceGrantsDocument, err)
 	}

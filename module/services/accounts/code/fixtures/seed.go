@@ -41,6 +41,7 @@ type fixtureFile struct {
 	Roles         []fixtureRole           `yaml:"roles"`
 	Collections   []fixtureCollection     `yaml:"collections"`
 	Assignments   []fixtureRoleAssignment `yaml:"assignments"`
+	Installations []fixtureInstallation   `yaml:"installations"`
 }
 
 type fixtureCollection struct {
@@ -238,23 +239,35 @@ func FixturePath(name string) (string, error) {
 // Seed loads and converges any explicitly selected module fixture. Product
 // consumers can add fixtures/<name>.yaml without modifying Starter-owned Go
 // code; the same name is also consumed by the development auth validator.
+//
+// Seed does not perform the fixture's declared installations, which wait on
+// delivery: SeedWithInstallations returns them to be converged after each
+// delivery pass.
 func Seed(ctx context.Context, service *business.Service, name string) error {
+	_, err := SeedWithInstallations(ctx, service, name)
+	return err
+}
+
+// SeedWithInstallations is Seed, returning the fixture's declared
+// installations (nil when it declares none) for the caller to converge once
+// their targets are delivered (Installations.Converge).
+func SeedWithInstallations(ctx context.Context, service *business.Service, name string) (*Installations, error) {
 	path, err := FixturePath(name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	w := wool.Get(ctx).In("fixtures.Seed")
 	f, err := loadFixtureFile(path)
 	if err != nil {
-		return w.Wrapf(err, "cannot load %s fixture", name)
+		return nil, w.Wrapf(err, "cannot load %s fixture", name)
 	}
 	grants, err := readWorkspaceGrants(codefly.For(ctx).WorkspaceConfigurationDocument)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := withWorkspaceGrants(f, grants); err != nil {
-		return err
+		return nil, err
 	}
 
 	w.Info("Applying fixtures",
@@ -264,7 +277,8 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 		wool.Field("teams", len(f.Teams)),
 		wool.Field("agents", len(f.Agents)),
 		wool.Field("roles", len(f.Roles)),
-		wool.Field("assignments", len(f.Assignments)))
+		wool.Field("assignments", len(f.Assignments)),
+		wool.Field("installations", len(f.Installations)))
 
 	// Every condition that can make this seed refuse is checked before the
 	// first write. seedUsers commits each user in its own transaction and
@@ -272,16 +286,16 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 	// once organizations are being seeded — would leave fixture users
 	// belonging to no organization at all. Decide first, then write.
 	if err := validateOrganizationPreconditions(ctx, service, f.Organizations); err != nil {
-		return err
+		return nil, err
 	}
 
 	userIDs, err := seedUsers(ctx, w, service, f.Users)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	orgIDs, err := seedOrganizations(ctx, w, service, f.Organizations, userIDs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	orgOwnerIDs := make(map[string]string, len(f.Organizations))
 	for _, organization := range f.Organizations {
@@ -292,22 +306,27 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 	seedTeams(ctx, w, service, f.Teams, orgIDs, userIDs)
 	agentIDs, err := seedAgents(ctx, w, service, f.Agents, orgIDs, userIDs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	roleIDs, err := seedRoles(ctx, w, service, f.Roles, orgIDs, orgOwnerIDs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := seedRoleAssignments(ctx, w, service, f.Assignments, orgIDs, agentIDs, userIDs, roleIDs); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := seedCollections(ctx, service, f.Collections, orgIDs, orgOwnerIDs, userIDs, roleIDs); err != nil {
-		return err
+		return nil, err
+	}
+
+	installations, err := newInstallations(service, f.Installations, orgIDs, userIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	w.Info("fixtures applied", wool.Field("fixture", name))
-	return nil
+	return installations, nil
 }
 
 func loadFixtureFile(path string) (*fixtureFile, error) {
@@ -455,7 +474,7 @@ func validateFixture(f *fixtureFile) error {
 			return fmt.Errorf("assignment[%d]: exactly one of agent_identifier and email is required", i)
 		}
 	}
-	return nil
+	return validateInstallations(f)
 }
 
 func orgRoleFromString(s string, w *wool.Wool) gen.OrgRole {

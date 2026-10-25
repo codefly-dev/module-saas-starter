@@ -38,9 +38,12 @@ serves on a laptop is served here on a cell, and the authority interface reposit
    `/platform/_delivery/manifest`; the interface's `ModuleManifestV1` is the proto
    form of that document. The delivery path must accept it, with the ceiling read
    from the manifest and not from the envelope. Unimplemented, named.
-5. **Install and GrantToTeam** name the target and the role; accounts installs by
-   target id, agent identifier and role id. A resolver from the applied presence
-   and the role catalogue is needed. Unimplemented, named.
+5. **Install is served; GrantToTeam is not.** Both name the target and the role;
+   accounts installs by target id, agent identifier and role id.
+   `business.Service.InstallTargetByName` resolves the target from the
+   organisation's catalogue (`ListAvailableSolutions`) and the role from its role
+   catalogue, then calls `InstallSolution`; `Install` uses it (2026-10-25).
+   `GrantToTeam` still answers Unimplemented, named.
 6. **No exposure audit event** exists; `GrantToTeam`'s policy borrows
    `saas.installation.created` until one is registered.
 7. **Closed 2026-10-22.** The interfaces carry the host's names (publisher `codefly.dev`, packages `host.*.v1`), so this repository carries no consumer name; the naming gate is at its main baseline.
@@ -412,3 +415,18 @@ contracts do not yet carry the `host.*` services; that is a CLI gap. The
 frontend fixture schema change was checked against the fixture with zod
 directly, not through the frontend's vitest suite (no installed dependencies).
 
+## Fixture installations (2026-10-25)
+
+A fresh local run used to come up with nothing installed: each organisation's
+administrator installed the wiki and each module by hand through the install
+API. A fixture now declares its installations (`installations:` with `org`,
+`target`, `role`, `owner`), in the fixture file or in the composing workspace's
+`fixture-grants.yaml`, since a target's name and a module's role are the
+composition's words. The seed holds each owner to being an owner or admin of
+the organisation in the fixture. Targets arrive by delivery after the seed, so
+the declared installations are performed after every delivery pass
+(`SolutionHostBindingReconciler.AfterEachPass`), as their owner, through
+`InstallTargetByName`: an undelivered target waits, a held one (any status but
+revoked) is reused, and any other refusal is reported with the pass, naming the
+installation. A host with no delivery surface says it installs nothing.
+Team grants are not declared yet (GrantToTeam, gap 5).

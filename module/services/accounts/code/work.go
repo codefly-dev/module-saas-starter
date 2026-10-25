@@ -1300,10 +1300,20 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	}()
 
 	if selectedFixture != "" {
-		err = fixtures.Seed(ctx, service, selectedFixture)
+		installations, err := fixtures.SeedWithInstallations(ctx, service, selectedFixture)
 		if err != nil {
 			retentionCancel()
 			return nil, err
+		}
+		// A declared installation names a target the composition delivers
+		// after this boot, so it is performed after each delivery pass. A host
+		// with no delivery surface offers no target to install.
+		switch {
+		case installations == nil:
+		case solutionHostBindingReconciler != nil:
+			solutionHostBindingReconciler.AfterEachPass(installations.Converge)
+		default:
+			w.Warn("the fixture declares installations and this host has no delivery surface (no SOLUTION_HOST_COORDINATE), so no target is offered and none is installed")
 		}
 	}
 	if stripeWebhookWorker != nil {

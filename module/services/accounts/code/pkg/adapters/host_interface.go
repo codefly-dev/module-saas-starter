@@ -306,10 +306,10 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 	return resp, nil
 }
 
-// Install: GAP (rung 1). The host installs by immutable target id, agent
-// identifier and role id; the interface names the target and the role by name.
-// Serving it here needs a resolver from the applied presence (alias → target id,
-// agent identifier) and from the role catalogue (name → id).
+// Install names the target and the role by name; the host's resolver
+// (InstallTargetByName) reads them from the organisation's catalogue and role
+// catalogue and installs through the host's own install path. A target the
+// organisation already holds is refused naming the installation it holds.
 func (s *HostInstallationServer) Install(ctx context.Context, req *installationv1.InstallRequest) (*installationv1.Installation, error) {
 	actorID, err := requireAuth(ctx)
 	if err != nil {
@@ -318,7 +318,16 @@ func (s *HostInstallationServer) Install(ctx context.Context, req *installationv
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
-	return nil, status.Error(codes.Unimplemented, "install by target name and role name: accounts installs by target id, agent identifier and role id; the resolver is not yet behind the interface")
+	installation, installed, err := s.service.InstallTargetByName(ctx, actorID, req.GetOrganizationId(), req.GetTarget(), req.GetRole(), req.GetOwnerPersonId())
+	switch {
+	case errors.Is(err, business.ErrInstallTargetNotPresent):
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	case err != nil:
+		return nil, mapInstallationError(err)
+	case !installed:
+		return nil, status.Errorf(codes.AlreadyExists, "organization %s already holds installation %s of %q", req.GetOrganizationId(), installation.GetId(), req.GetTarget())
+	}
+	return installationToWire(installation, req.GetTarget()), nil
 }
 
 // GrantToTeam: GAP (rung 1), same resolver: the host grants a role id at the

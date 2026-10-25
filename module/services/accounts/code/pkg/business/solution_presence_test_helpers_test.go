@@ -51,6 +51,12 @@ func fixtureDigest(seed string) string {
 func declarePresence(t *testing.T, label string) (string, string) {
 	t.Helper()
 	alias := uniqueAlias(label)
+	return declarePresenceAt(t, alias), alias
+}
+
+// declarePresenceAt is declarePresence for an alias the test chose first.
+func declarePresenceAt(t *testing.T, alias string) string {
+	t.Helper()
 	bindingID := "acme.test." + alias
 	targetID := declareCapabilityPresence(t, bindingID, alias)
 	previous := testService.ModulePrincipals()
@@ -61,7 +67,7 @@ func declarePresence(t *testing.T, label string) (string, string) {
 	registry[business.ModulePrincipalID(alias)] = business.ModulePrincipalGrant{Prefix: alias, PresenceBinding: bindingID, CrossTenant: true}
 	testService.SetModulePrincipals(registry)
 	t.Cleanup(func() { testService.SetModulePrincipals(previous) })
-	return targetID, alias
+	return targetID
 }
 
 func declareCapabilityPresence(t *testing.T, bindingID, alias string) string {
