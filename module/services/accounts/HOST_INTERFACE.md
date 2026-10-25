@@ -46,7 +46,10 @@ serves on a laptop is served here on a cell, and the authority interface reposit
    acknowledged. The shared suite still needs fixture hooks for that acknowledgement
    and the host-generated team id.
 6. **Exposure audit reused.** The existing scope-grant transaction emits the
-   audit event; the interface adds no duplicate installation-created event.
+   `saas.scope.granted` audit event; the interface policy declares that success
+   emission and adds no duplicate installation-created event. The interface
+   documentation groups authority and installation under authorization, session
+   under identity, and composition under platform administration.
 7. **Closed 2026-10-22.** The interfaces carry the host's names (publisher `codefly.dev`, packages `host.*.v1`), so this repository carries no consumer name; the naming gate is at its main baseline.
 8. **The conformance harness** needs accounts booted with its store (the test
    Postgres each package persists) and the fixture people; the suite takes a

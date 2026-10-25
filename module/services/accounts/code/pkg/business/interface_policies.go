@@ -69,8 +69,9 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		p.ResponseSensitivity = policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL
 		return p
 	}
-	exposureGrant := adminWrite("")
-	exposureGrant.Audit = &policyv1.AuditPolicy{Emission: policyv1.AuditEmission_AUDIT_EMISSION_NONE} // the scope-grant owner emits it
+	// The policy describes the grant owner's transactional emission; it does
+	// not emit a second event at the interface adapter.
+	exposureGrant := adminWrite("saas.scope.granted")
 	return map[string]*policyv1.MethodPolicy{
 		"/host.authority.v1.AuthorityService/Issue": authenticatedMint("saas.work_context.task_started"),
 		// Check is authenticated by the token it checks: the caller is whoever holds it,

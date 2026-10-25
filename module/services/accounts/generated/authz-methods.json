@@ -323,8 +323,10 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.scope.granted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
@@ -341,7 +343,7 @@
         "service": "accounts"
       },
       "source_proto": "host/installation/v1/installation.proto",
-      "policy_sha256": "4f7b9dcf6153d167ed0a86850cc6208082079a327f0d542f81891dc0105b481d",
+      "policy_sha256": "6913e7f4514f63a3c59e03d2fbc07da1176734ab2cfced6f488740e06497927f",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
