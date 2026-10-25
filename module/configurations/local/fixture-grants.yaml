@@ -1,0 +1,6 @@
+# The roles a composing workspace's people hold at the modules it composes,
+# added to the selected fixture: the fixture's own `roles` and `assignments`
+# shape. This module cannot name a composed module's permissions, so its
+# default grants nothing; a composing workspace overrides this document.
+roles: []
+assignments: []

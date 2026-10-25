@@ -16,7 +16,7 @@ import (
 // modules it composes, and who holds them. This module cannot name those
 // roles (a module's permissions are the module's words, not this host's), so
 // the workspace that composes both states them, as it states every other value
-// it composes: configurations/<profile>/fixture-grants.json, read by the SDK.
+// it composes: configurations/<profile>/fixture-grants.yaml, read by the SDK.
 const WorkspaceGrantsDocument = "fixture-grants"
 
 // workspaceGrants is the part of a fixture a composing workspace may add: roles

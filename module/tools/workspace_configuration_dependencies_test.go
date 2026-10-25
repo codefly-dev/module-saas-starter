@@ -238,8 +238,8 @@ func TestEveryDeclaredWorkspaceGroupShipsADefault(t *testing.T) {
 			plain := filepath.Join(moduleDir, "configurations", "local", group+".env")
 			secret := filepath.Join(moduleDir, "configurations", "local", group+".secret.env")
 			// A document group (read with WorkspaceConfigurationDocument) ships
-			// its default as a JSON document.
-			document := filepath.Join(moduleDir, "configurations", "local", group+".json")
+			// its default as a YAML document.
+			document := filepath.Join(moduleDir, "configurations", "local", group+".yaml")
 			if _, err := os.Stat(plain); err == nil {
 				continue
 			}
@@ -249,7 +249,7 @@ func TestEveryDeclaredWorkspaceGroupShipsADefault(t *testing.T) {
 			if _, err := os.Stat(secret); err == nil {
 				continue
 			}
-			t.Errorf("service %s declares workspace configuration group %q but configurations/local ships none of %s.env, %s.secret.env or %s.json; "+
+			t.Errorf("service %s declares workspace configuration group %q but configurations/local ships none of %s.env, %s.secret.env or %s.yaml; "+
 				"a composing workspace then meets the group for the first time as a runtime failure",
 				service, group, group, group, group)
 		}

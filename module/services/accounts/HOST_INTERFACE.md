@@ -309,7 +309,7 @@ What the authority's edge and hop call is now served on the declared endpoint:
   its tokens (maya, remi, alex, dev at Acme Corp; zoe, omar at a new Globex) and
   teams. Their roles at composed modules are roles over those modules'
   permissions, which this host cannot name (the boundary gate refuses them):
-  the composing workspace states them in its `fixture-grants.json` document
+  the composing workspace states them in its `fixture-grants.yaml` document
   (roles and `assignments` in the fixture's own shape, by email beside
   `agent_identifier`), which the seed adds to the selected fixture.
 - **`List` names its target.** An installation's `target` is the presence's
@@ -351,8 +351,8 @@ failed, 6 skipped** of the nineteen suite cases, and the harness's own line
 
 ### What was not verified
 
-No composed run: platform-obin, a playground and the edge/hop against a live
-accounts were not started. The fixture people's sign-in and teams were proven
+No composed run: a composition that runs saas as the authority host, a
+playground and the edge/hop against a live accounts were not started. The fixture people's sign-in and teams were proven
 through the seeded harness store, not a `codefly run`. `codefly generate
 contracts saas-starter --check` fails on this branch, before and after this
 change: the CLI refuses a contract endpoint whose proto declares services in
