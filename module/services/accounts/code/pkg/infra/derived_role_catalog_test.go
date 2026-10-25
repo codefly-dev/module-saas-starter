@@ -183,3 +183,43 @@ func TestListRolesListsARoleWithNoDescription(t *testing.T) {
 }
 
 var _ = context.Background
+
+// A solution's role is granted only at a solution's authority-root node in the
+// organisation it was derived for: the installation's standing grant and the
+// teams it is exposed to. Any other node, like any carried-access role with no
+// cause, refuses it.
+func TestASolutionRoleIsGrantedOnlyAtASolutionRoot(t *testing.T) {
+	userID := seedUser(t)
+	orgID := seedOrg(t, userID)
+	provenance := "org=" + orgID + ";solution=11111111-1111-1111-1111-111111111111;role=viewer"
+	var roleID string
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		var err error
+		roleID, err = testStore.EnsureDerivedRole(ctx, business.DerivedRole{
+			OrgID: orgID, DerivedFrom: provenance, Name: "solution role · " + provenance,
+			Permissions: []*gen.Permission{{Resource: "evidence", Action: "read"}},
+		})
+		if err != nil {
+			return err
+		}
+		for _, node := range []*gen.ScopeNode{
+			{Id: business.NewIDString(), OrgId: orgID, ScopePath: "notes", Kind: "solution", Label: "notes"},
+			{Id: business.NewIDString(), OrgId: orgID, ScopePath: "plain", Kind: "team", Label: "plain"},
+		} {
+			if err := testStore.RegisterScopeNode(ctx, node); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	grant := func(path string) error {
+		return testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: orgID, SubjectId: userID,
+				SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: path, RoleId: roleID})
+		})
+	}
+	require.NoError(t, grant("notes"))
+	err := grant("plain")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "granted only at that solution's authority root")
+}
