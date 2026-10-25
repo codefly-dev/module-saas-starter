@@ -19,7 +19,7 @@ import (
 // that solution's own active installation in the organisation the work runs
 // in. Every refusal comes before the mint and names its reason; the authority
 // is then the installation's own, through the host's headless mint.
-func (s *HostAuthorityServer) forInstallation(ctx context.Context, installationID string, req *authorityv1.IssueRequest, scopes []*gen.WorkContextScope) (*gen.IssuedWorkContext, error) {
+func (s *HostAuthorityServer) forInstallation(ctx context.Context, installationID string, req *authorityv1.IssueRequest, scopes []*gen.WorkContextScope, ttl int32) (*gen.IssuedWorkContext, error) {
 	if installationID == "" {
 		return nil, status.Error(codes.InvalidArgument, "an installation's issue names the installation acting")
 	}
@@ -29,10 +29,10 @@ func (s *HostAuthorityServer) forInstallation(ctx context.Context, installationI
 	}
 	prefix, err := service.ModulePrefixOfWorkload(ctx, credential)
 	if err != nil {
-		if mapped := moduleIdentityError(err, codes.PermissionDenied, "actor credential refused"); mapped != nil {
-			return nil, mapped
-		}
-		return nil, status.Error(codes.PermissionDenied, "actor credential refused")
+		return nil, credentialRefusal(err, "actor")
+	}
+	if err := requireComposed(req.GetAudience()); err != nil {
+		return nil, err
 	}
 	org, err := installationOrganization(prefix, req.GetOrganizationId())
 	if err != nil {
@@ -52,7 +52,7 @@ func (s *HostAuthorityServer) forInstallation(ctx context.Context, installationI
 	}
 	mint := &gen.StartInstallationTaskRequest{
 		OrgId: org, InstallationId: installationID, TaskId: uuid.NewString(),
-		Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: int32(req.GetTtlSeconds()),
+		Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
 	}
 	if len(scopes) == 0 {
 		// An empty ask is everything the installation holds at the audience.

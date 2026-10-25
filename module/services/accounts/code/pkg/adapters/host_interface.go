@@ -16,7 +16,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -39,6 +41,24 @@ type HostAuthorityServer struct {
 	modules      *ModuleCapabilitiesServer
 	// roles answers solution roles; nil reads the service.
 	roles solutionRoleReader
+	// methods holds a call to a delivered method policy; nil reads the service.
+	methods methodPolicyChecker
+}
+
+// methodPolicyChecker holds a call's scopes to what the audience module's
+// applied delivery declares for one method.
+type methodPolicyChecker interface {
+	CheckDeliveredMethod(ctx context.Context, audience, method string, held []*basev0.WorkScopeV1) error
+}
+
+func (s *HostAuthorityServer) methodPolicies() methodPolicyChecker {
+	if s.methods != nil {
+		return s.methods
+	}
+	if service == nil {
+		return nil
+	}
+	return service
 }
 
 // NewHostAuthorityServer adapts the Work Context authority.
@@ -67,14 +87,16 @@ func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckR
 		return nil, interfaceStatus(err)
 	}
 	// The capability is sound. A named method is then held to what the
-	// audience module's delivery declares for it; advisory reports that
-	// decision beside the capability instead of refusing.
+	// audience module's delivery declares for it, against what the call's
+	// current actor holds (the last hop's grant on a delegated capability, never
+	// the owner's authority above it); advisory reports that decision beside
+	// the capability instead of refusing.
 	refusal := ""
 	refusalCode := codes.PermissionDenied
 	if method := req.GetMethod(); method != "" {
-		if service == nil {
+		if policies := s.methodPolicies(); policies == nil {
 			refusal = methodPolicyRefusal(req.GetAudience(), method)
-		} else if err := service.CheckDeliveredMethod(ctx, req.GetAudience(), method, verified.Context().GetAuthorityScopes()); err != nil {
+		} else if err := policies.CheckDeliveredMethod(ctx, req.GetAudience(), method, effectiveScopes(verified.Context())); err != nil {
 			refusal = err.Error()
 			if errors.Is(err, business.ErrDeliveredMethodUnknown) {
 				refusalCode = codes.NotFound
@@ -96,8 +118,14 @@ func methodPolicyRefusal(audience, method string) string {
 	return fmt.Sprintf("%s's delivery declares no method policy, so %s is refused", audience, method)
 }
 
-// Issue maps each owner shape onto the mint that already exists for it.
+// Issue maps each owner shape onto the mint that already exists for it. Each
+// shape is authenticated first (the bearer, the workload credential, the actor
+// credential), and only then is its audience held to the composition, so a
+// caller proving nothing learns nothing of which modules are composed.
 func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueRequest) (*authorityv1.IssueResponse, error) {
+	if _, ok := req.GetAs().(*authorityv1.IssueRequest_Delegation); ok {
+		return nil, status.Error(codes.Unimplemented, "an issue from a delegation: "+delegationGap)
+	}
 	if req.GetAudience() == "" {
 		derived, err := bindingAudience(ctx, req)
 		if err != nil {
@@ -106,16 +134,12 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		req = proto.CloneOf(req)
 		req.Audience = derived
 	}
-	// An audience that is not composed does not exist, by the contract: refused
-	// NotFound by name before any mint, rather than as the host's own
-	// "not one this host serves" denial.
-	if service == nil || !service.IsDeclaredModulePrincipal(business.ModulePrincipalID(req.GetAudience())) {
-		return nil, status.Errorf(codes.NotFound, "audience %q is not composed", req.GetAudience())
+	ttl, err := issueTTL(req)
+	if err != nil {
+		return nil, err
 	}
 	scopes := scopesToHost(req.GetScopes())
-	ttl := int32(req.GetTtlSeconds())
 	var issued *gen.IssuedWorkContext
-	var err error
 	switch as := req.GetAs().(type) {
 	case *authorityv1.IssueRequest_Person:
 		// The person is whoever the perimeter verified from the bearer on this
@@ -124,90 +148,25 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		if !ok {
 			return nil, status.Error(codes.Unauthenticated, "a person-owned issue is made by the signed-in person")
 		}
-		_ = as
-		if err := requireOrgMember(ctx, identity.EffectiveSubject.String(), identity.OrgID.String()); err != nil {
+		if err := requireComposed(req.GetAudience()); err != nil {
 			return nil, err
 		}
-		// A solution that declares roles decides what the person holds there.
-		authority, held, rerr := s.solutionRoles().PersonSolutionRoles(ctx, identity.OrgID.String(), identity.EffectiveSubject.String(), req.GetAudience())
-		if rerr != nil {
-			return nil, interfaceStatus(rerr)
+		issued, err = s.personIssue(ctx, identity, req, scopes, ttl)
+		if err != nil {
+			return nil, interfaceStatus(err)
 		}
-		if authority != nil {
-			if binding := req.GetOperationBindingId(); binding != "" {
-				return nil, status.Errorf(codes.Unimplemented, "person-owned operation binding %q at solution %s requires solution-role binding projection", binding, req.GetAudience())
-			}
-			issued, err = s.solutionPersonIssue(ctx, identity.OrgID.String(), req.GetAudience(), authority, held, scopes, ttl)
-			break
-		}
-		var bindings []string
-		if binding := req.GetOperationBindingId(); binding != "" {
-			if operation := req.GetOperation(); operation != "" && operation != "invoke" {
-				return nil, status.Errorf(codes.InvalidArgument, "a person-owned issue carries invoke scopes for operation binding %q; operation %q is refused", binding, operation)
-			}
-			bindings = []string{binding}
-		}
-		if len(scopes) == 0 && len(bindings) == 0 {
-			// An empty ask is everything the person holds at the audience.
-			if scopes, err = s.workContexts.personHoldings(ctx, identity.OrgID.String(), req.GetAudience()); err != nil {
-				return nil, interfaceStatus(err)
-			}
-		}
-		// A fresh task per issue: the interface names no task, the host requires
-		// one as the identity tuple's third element.
-		issued, err = s.workContexts.StartTask(ctx, &gen.StartTaskWorkContextRequest{
-			OrgId: identity.OrgID.String(), TaskId: uuid.NewString(), Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
-			OperationBindings: bindings,
-		})
 	case *authorityv1.IssueRequest_Installation:
-		issued, err = s.forInstallation(ctx, as.Installation.GetInstallationId(), req, scopes)
+		issued, err = s.forInstallation(ctx, as.Installation.GetInstallationId(), req, scopes, ttl)
 	case *authorityv1.IssueRequest_ParentToken:
 		if req.GetActor() == nil {
-			// An audience exchange keeps the chain: the owner's bearer authorizes it.
-			issued, err = s.workContexts.ExchangeAudience(ctx, &gen.ExchangeWorkContextAudienceRequest{
-				ParentWorkContextToken: as.ParentToken, Audience: req.GetAudience(), AttenuatedScopes: scopes, TtlSeconds: ttl,
-			})
+			issued, err = s.exchangeOrRenew(ctx, as.ParentToken, req, scopes, ttl)
 			break
 		}
 		issued, err = s.childHop(ctx, as.ParentToken, req)
 	case *authorityv1.IssueRequest_Workload:
-		// The credential names the module: reviewed by the execution reviewer,
-		// matched to the one principal declaring that workload. With a binding
-		// named, the issue is the host's operation context to that installed
-		// audience; without one, the module's own context to this surface.
-		prefix, perr := service.ModulePrefixOfWorkload(ctx, as.Workload.GetCredential())
-		if perr != nil {
-			if mapped := moduleIdentityError(perr, codes.PermissionDenied, "workload credential refused"); mapped != nil {
-				return nil, mapped
-			}
-			return nil, status.Error(codes.PermissionDenied, "workload credential refused")
-		}
-		if binding := req.GetOperationBindingId(); binding != "" {
-			grant := service.ModulePrincipals()[business.ModulePrincipalID(prefix)]
-			if _, declared := grant.OperationAudiences[binding]; !declared {
-				return nil, status.Errorf(codes.NotFound, "operation binding %q is not declared by %s", binding, prefix)
-			}
-			out, merr := s.modules.MintModuleOperationContext(ctx, &gen.ModuleMintOperationContextRequest{
-				Prefix: prefix, ServiceAccountToken: as.Workload.GetCredential(), Binding: binding, OrganizationId: req.GetOrganizationId(),
-			})
-			if merr != nil {
-				return nil, interfaceStatus(merr)
-			}
-			issued = &gen.IssuedWorkContext{Token: out.GetToken(), ExpiresAt: out.GetExpiresAt()}
-		} else {
-			if req.GetAudience() != ModuleWorkContextAudience {
-				return nil, status.Errorf(codes.InvalidArgument, "a module's own context is addressed to %q, not %q", ModuleWorkContextAudience, req.GetAudience())
-			}
-			out, merr := s.modules.MintModuleWorkContext(ctx, &gen.ModuleMintWorkContextRequest{
-				Prefix: prefix, ServiceAccountToken: as.Workload.GetCredential(), OrganizationId: req.GetOrganizationId(),
-			})
-			if merr != nil {
-				return nil, interfaceStatus(merr)
-			}
-			issued = &gen.IssuedWorkContext{Token: out.GetToken(), ExpiresAt: out.GetExpiresAt()}
-		}
+		issued, err = s.workloadIssue(ctx, as.Workload.GetCredential(), req, ttl)
 	default:
-		return nil, status.Error(codes.InvalidArgument, "an issue names whom it is for")
+		return nil, status.Error(codes.InvalidArgument, "an issue names whom it is for: a person, a workload, an installation, a parent token or a delegation")
 	}
 	if err != nil {
 		return nil, interfaceStatus(err)
@@ -221,6 +180,135 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &authorityv1.IssueResponse{Token: issued.GetToken(), ExpiresAtUnix: issued.GetExpiresAt().GetSeconds(), Context: wire}, nil
+}
+
+// requireComposed refuses, NotFound by name, an audience the composition does
+// not declare: by the contract it does not exist, which is not the host's own
+// "not one this host serves" denial. It runs only once the caller's shape is
+// authenticated.
+func requireComposed(audience string) error {
+	if service == nil || !service.IsDeclaredModulePrincipal(business.ModulePrincipalID(audience)) {
+		return status.Errorf(codes.NotFound, "audience %q is not composed", audience)
+	}
+	return nil
+}
+
+// issueTTL is the lifetime an issue asks for, clamped to the issuer's ceiling
+// as the interface states; zero leaves it to the mint.
+func issueTTL(req *authorityv1.IssueRequest) (int32, error) {
+	ceiling := int64(workcontext.DefaultMaxTTL / time.Second)
+	switch seconds := req.GetTtlSeconds(); {
+	case seconds < 0:
+		return 0, status.Errorf(codes.InvalidArgument, "a lifetime is not negative: %d seconds", seconds)
+	case seconds > ceiling:
+		return int32(ceiling), nil
+	default:
+		return int32(seconds), nil
+	}
+}
+
+// personIssue is a signed-in person's own capability at the audience.
+func (s *HostAuthorityServer) personIssue(ctx context.Context, identity accountsauth.RequestIdentity, req *authorityv1.IssueRequest, scopes []*gen.WorkContextScope, ttl int32) (*gen.IssuedWorkContext, error) {
+	if err := requireOrgMember(ctx, identity.EffectiveSubject.String(), identity.OrgID.String()); err != nil {
+		return nil, err
+	}
+	// A solution that declares roles decides what the person holds there.
+	authority, held, err := s.solutionRoles().PersonSolutionRoles(ctx, identity.OrgID.String(), identity.EffectiveSubject.String(), req.GetAudience())
+	if err != nil {
+		return nil, interfaceStatus(err)
+	}
+	if authority != nil {
+		if binding := req.GetOperationBindingId(); binding != "" {
+			return nil, status.Errorf(codes.Unimplemented, "person-owned operation binding %q at solution %s requires solution-role binding projection", binding, req.GetAudience())
+		}
+		return s.solutionPersonIssue(ctx, identity.OrgID.String(), req.GetAudience(), authority, held, scopes, ttl)
+	}
+	var bindings []string
+	if binding := req.GetOperationBindingId(); binding != "" {
+		if operation := req.GetOperation(); operation != "" && operation != "invoke" {
+			return nil, status.Errorf(codes.InvalidArgument, "a person-owned issue carries invoke scopes for operation binding %q; operation %q is refused", binding, operation)
+		}
+		bindings = []string{binding}
+	}
+	if len(scopes) == 0 && len(bindings) == 0 {
+		// An empty ask is everything the person holds at the audience.
+		if scopes, err = s.workContexts.personHoldings(ctx, identity.OrgID.String(), req.GetAudience()); err != nil {
+			return nil, interfaceStatus(err)
+		}
+	}
+	// A fresh task per issue: the interface names no task, the host requires
+	// one as the identity tuple's third element.
+	return s.workContexts.StartTask(ctx, &gen.StartTaskWorkContextRequest{
+		OrgId: identity.OrgID.String(), TaskId: uuid.NewString(), Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
+		OperationBindings: bindings,
+	})
+}
+
+// exchangeOrRenew is one more issue from a capability, with no actor: the
+// bearer of whoever holds it authorizes it. At another audience it is the
+// host's audience exchange. At the parent's own audience it is a renewal, a
+// fresh window on the same task: a delegated capability's current actor renews
+// it (RenewWorkContext, which may narrow it), and an owner's own capability is
+// re-issued as another root session of its task (StartRootSession), which
+// keeps its authority as it stands and so takes no scopes. The organisation is
+// the request's, or the parent's own when it names none. An empty ask is the
+// parent's own authority: what its current actor holds. The parent's claims are
+// only read to route the issue; each path verifies it.
+func (s *HostAuthorityServer) exchangeOrRenew(ctx context.Context, parentToken string, req *authorityv1.IssueRequest, scopes []*gen.WorkContextScope, ttl int32) (*gen.IssuedWorkContext, error) {
+	if _, ok := accountsauth.VerifiedRequestIdentity(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "an exchange or a renewal is made by the capability's owner, signed in; the call carries no bearer")
+	}
+	if err := requireComposed(req.GetAudience()); err != nil {
+		return nil, err
+	}
+	decoded, err := workcontext.Decode(parentToken)
+	if err != nil {
+		return nil, interfaceStatus(err)
+	}
+	parent := decoded.Context()
+	org := cmp.Or(req.GetOrganizationId(), parent.GetTenantId())
+	if req.GetAudience() == parent.GetAudience() {
+		if len(parent.GetActorChain()) > 0 {
+			return s.workContexts.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
+				OrgId: org, ParentWorkContextToken: parentToken, AttenuatedScopes: scopes, TtlSeconds: ttl,
+			})
+		}
+		if len(scopes) > 0 {
+			return nil, status.Errorf(codes.InvalidArgument, "a renewal of an owner's own capability at %s keeps its authority as it stands and names no scopes; an exchange narrows it", req.GetAudience())
+		}
+		// The request's session id is validated and never read: the issuer
+		// assigns the new session (StartRootSession).
+		return s.workContexts.StartRootSession(ctx, &gen.StartRootSessionWorkContextRequest{
+			OrgId: org, ParentWorkContextToken: parentToken, SessionId: uuid.NewString(), Audience: req.GetAudience(), TtlSeconds: ttl,
+		})
+	}
+	if len(scopes) == 0 {
+		scopes = hostScopesOf(effectiveScopes(parent))
+	}
+	return s.workContexts.ExchangeAudience(ctx, &gen.ExchangeWorkContextAudienceRequest{
+		OrgId: org, ParentWorkContextToken: parentToken, Audience: req.GetAudience(), AttenuatedScopes: scopes, TtlSeconds: ttl,
+	})
+}
+
+// credentialRefusal names why a workload credential did not prove a module:
+// the host could not establish what the caller runs (Unavailable: nothing was
+// decided), no credential, the token review refused it, or the workload it
+// names is not declared by exactly one principal.
+func credentialRefusal(err error, which string) error {
+	switch {
+	case errors.Is(err, business.ErrExecutionUnbound):
+		return status.Errorf(codes.Unavailable, "%s credential: %v", which, err)
+	case errors.Is(err, business.ErrExecutionNotBoundToken):
+		return status.Errorf(codes.Unauthenticated, "%s credential refused: %v", which, err)
+	case errors.Is(err, business.ErrExecutionTokenRejected):
+		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, business.ErrExecutionTokenRejected)
+	case errors.Is(err, business.ErrExecutionWorkloadAmbiguous):
+		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err)
+	}
+	if mapped := moduleIdentityError(err, codes.PermissionDenied, which+" credential refused"); mapped != nil {
+		return mapped
+	}
+	return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err)
 }
 
 // bindingAudience is the audience of an issue that names none: an issue
@@ -242,10 +330,7 @@ func bindingAudience(ctx context.Context, req *authorityv1.IssueRequest) (string
 	}
 	prefix, err := service.ModulePrefixOfWorkload(ctx, credential)
 	if err != nil {
-		if mapped := moduleIdentityError(err, codes.PermissionDenied, "workload credential refused"); mapped != nil {
-			return "", mapped
-		}
-		return "", status.Error(codes.PermissionDenied, "workload credential refused")
+		return "", credentialRefusal(err, "workload")
 	}
 	declared, ok := service.ModulePrincipals()[business.ModulePrincipalID(prefix)].OperationAudiences[binding]
 	if !ok || declared.Audience == "" {
@@ -492,6 +577,15 @@ func accessClaimsOf(token string) (accessClaims, error) {
 	return claims, json.Unmarshal(raw, &claims)
 }
 
+// hostScopesOf is core scopes in the host's own request shape.
+func hostScopesOf(in []*basev0.WorkScopeV1) []*gen.WorkContextScope {
+	out := make([]*gen.WorkContextScope, 0, len(in))
+	for _, sc := range in {
+		out = append(out, &gen.WorkContextScope{ResourceKind: sc.GetResourceKind(), Actions: sc.GetActions(), ResourceIds: sc.GetResourceIds()})
+	}
+	return out
+}
+
 func scopesToHost(in []*authorityv1.WorkScopeV1) []*gen.WorkContextScope {
 	out := make([]*gen.WorkContextScope, 0, len(in))
 	for _, sc := range in {
@@ -558,10 +652,10 @@ func interfaceStatus(err error) error {
 func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, req *authorityv1.IssueRequest) (*gen.IssuedWorkContext, error) {
 	prefix, err := service.ModulePrefixOfWorkload(ctx, req.GetActor().GetCredential())
 	if err != nil {
-		if mapped := moduleIdentityError(err, codes.PermissionDenied, "actor credential refused"); mapped != nil {
-			return nil, mapped
-		}
-		return nil, status.Error(codes.PermissionDenied, "actor credential refused")
+		return nil, credentialRefusal(err, "actor")
+	}
+	if err := requireComposed(req.GetAudience()); err != nil {
+		return nil, err
 	}
 	if req.GetOperationBindingId() == "" {
 		return nil, status.Errorf(codes.PermissionDenied, "a module's hop names the binding it exercises; %s named none", prefix)
@@ -571,6 +665,10 @@ func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, 
 		return nil, status.Errorf(codes.PermissionDenied, "%s hops only on a token addressed to it; this one is addressed to %s", prefix, decoded.Context().GetAudience())
 	}
 	if err := requireDeclaredHopBinding(prefix, req); err != nil {
+		return nil, err
+	}
+	// The audience guards every mint runs, before the parent is spent.
+	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
 	}
 	parent, err := s.workContexts.verifyFor(ctx, parentToken, prefix)

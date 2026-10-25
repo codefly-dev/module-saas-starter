@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
@@ -63,6 +64,9 @@ type ModuleWorkContextAuthority struct {
 	// its ServiceAccount, the image it is running and the approved build's
 	// incarnation. Every mint carries one; there is no unbound module identity.
 	Execution ExecutionIdentity
+	// TTL, when set, is the lifetime the caller asked for: it shortens the
+	// mint's window and never lengthens it past the mint's own ceiling.
+	TTL time.Duration
 
 	// The immutable registry used for the entire mint, including its release fence.
 	snapshot *installedModuleRegistry

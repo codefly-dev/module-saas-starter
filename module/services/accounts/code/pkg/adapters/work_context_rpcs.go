@@ -1155,8 +1155,17 @@ func (s *WorkContextAuthorityServer) StartModuleTask(
 			InstallationID:     authority.InstallationID,
 		},
 		Replay: workcontext.ReplayIdempotent,
-		TTL:    moduleWorkContextTTL,
+		TTL:    askedTTL(authority.TTL, moduleWorkContextTTL),
 	})
+}
+
+// askedTTL is the lifetime a mint signs: the one asked for when it is shorter
+// than the mint's ceiling, the ceiling otherwise.
+func askedTTL(asked, ceiling time.Duration) time.Duration {
+	if asked > 0 && asked < ceiling {
+		return asked
+	}
+	return ceiling
 }
 
 // StartModuleOperationTask mints the capability a composed module presents, with
@@ -1210,7 +1219,7 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 	return s.mint(ctx, mintRequest{
 		Start:  start,
 		Replay: workcontext.ReplayIdempotent,
-		TTL:    business.ModuleOperationContextTTL,
+		TTL:    askedTTL(authority.TTL, business.ModuleOperationContextTTL),
 	})
 }
 

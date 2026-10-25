@@ -92,6 +92,12 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 		return nil, status.Errorf(codes.PermissionDenied, "%s holds nothing at %s through operation binding %q", owner, req.GetAudience(), bindingID)
 	}
 	narrowed := parentNarrowings(claims)
+	// A kind the parent was narrowed to nothing of cannot be carried: a scope
+	// with no action is not one core signs, and a child that dropped the kind
+	// would hand the next hop the owner's whole grant on it back. Refused.
+	if gone := narrowed.toNothing(); len(gone) > 0 {
+		return nil, status.Errorf(codes.PermissionDenied, "the parent was narrowed to nothing of %s, which a child cannot carry; no hop is issued from it", strings.Join(gone, ", "))
+	}
 	ceiling := narrowed.keep(held)
 	if len(ceiling) == 0 {
 		return nil, status.Errorf(codes.PermissionDenied, "the parent was narrowed away from everything %s holds at %s through operation binding %q", owner, req.GetAudience(), bindingID)
@@ -112,7 +118,11 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 		}
 		scopes = asked
 	}
-	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, narrowed.outside(scopes), workContextTTL(int32(req.GetTtlSeconds())))
+	ttl, err := issueTTL(req)
+	if err != nil {
+		return nil, err
+	}
+	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, narrowed.outside(scopes), workContextTTL(ttl))
 }
 
 // requireDeclaredHopBinding refuses, before the parent is verified (and so
@@ -175,6 +185,11 @@ func (s *WorkContextAuthorityServer) mintBindingHop(
 	ctx context.Context, parent *basev0.WorkContextV1, prefix, bindingID, audience string,
 	scopes, carried []*basev0.WorkScopeV1, ttl time.Duration,
 ) (*gen.IssuedWorkContext, error) {
+	// The structural audience rule every mint runs: none empty, and never the
+	// module capability surface's own.
+	if err := requireMintableAudience(audience); err != nil {
+		return nil, err
+	}
 	tenant := parent.GetTenantId()
 	actor := business.ModulePrincipalID(prefix)
 	sealed := business.ModuleOperationBindingID(tenant, prefix, bindingID)
@@ -256,6 +271,18 @@ func parentNarrowings(parent *basev0.WorkContextV1) narrowings {
 			}
 		}
 	}
+	return out
+}
+
+// toNothing is every kind the parent was narrowed to nothing of, sorted.
+func (n narrowings) toNothing() []string {
+	var out []string
+	for kind, bound := range n {
+		if bound == nil {
+			out = append(out, kind)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

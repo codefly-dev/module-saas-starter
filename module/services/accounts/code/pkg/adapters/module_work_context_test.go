@@ -44,6 +44,13 @@ type recordingModuleStore struct {
 // declared tenant's existence check, then the issuance record. controlPlaneErr
 // targets the record — the case the tests using it are about — so it is
 // applied only once the tenant check has run.
+// LiveDeclaredBindings declares no solution binding: the host audience set is
+// then the module capability audience and the declared module prefixes, which
+// every mint's audience guard reads.
+func (s *recordingModuleStore) LiveDeclaredBindings(context.Context) ([]business.LiveDeclaredBinding, error) {
+	return nil, nil
+}
+
 func (s *recordingModuleStore) WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error {
 	s.controlPlaneCalls++
 	if s.controlPlaneErr != nil && s.tenantChecks > 0 {
