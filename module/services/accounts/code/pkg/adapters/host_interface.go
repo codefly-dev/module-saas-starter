@@ -8,6 +8,7 @@ package adapters
 // the suite both must pass.
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -264,7 +265,7 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 	}
 	resp := &installationv1.ListResponse{}
 	for _, row := range out.GetInstallations() {
-		resp.Installations = append(resp.Installations, installationToWire(row.GetInstallation()))
+		resp.Installations = append(resp.Installations, installationToWire(row.GetInstallation(), row.GetTarget().GetRouteAlias()))
 	}
 	return resp, nil
 }
@@ -423,7 +424,11 @@ func workContextToWire(in proto.Message) (*authorityv1.WorkContextV1, error) {
 	return out, proto.Unmarshal(raw, out)
 }
 
-func installationToWire(in *gen.Installation) *installationv1.Installation {
+// installationToWire is an installation as the interface states it. Its target
+// is the name the composition gives what is installed (the presence's route
+// alias, "notes"), the name Install takes and a frontend binds to, never this
+// host's row id for the presence; a row whose presence is gone keeps the id.
+func installationToWire(in *gen.Installation, target string) *installationv1.Installation {
 	st := installationv1.Installation_STATUS_UNSPECIFIED
 	switch in.GetStatus() {
 	case gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE:
@@ -434,7 +439,7 @@ func installationToWire(in *gen.Installation) *installationv1.Installation {
 		st = installationv1.Installation_STATUS_REVOKED
 	}
 	return &installationv1.Installation{
-		Id: in.GetId(), OrganizationId: in.GetOrgId(), Target: in.GetTargetId(), Status: st,
+		Id: in.GetId(), OrganizationId: in.GetOrgId(), Target: cmp.Or(target, in.GetTargetId()), Status: st,
 		AgentPrincipalId: in.GetAgentPrincipalId(),
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/codefly-dev/core/wool"
+	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/codefly-dev/sdk-go/fixture"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
@@ -247,6 +248,13 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 	f, err := loadFixtureFile(path)
 	if err != nil {
 		return w.Wrapf(err, "cannot load %s fixture", name)
+	}
+	grants, err := readWorkspaceGrants(codefly.For(ctx).WorkspaceConfigurationDocument)
+	if err != nil {
+		return err
+	}
+	if err := withWorkspaceGrants(f, grants); err != nil {
+		return err
 	}
 
 	w.Info("Applying fixtures",

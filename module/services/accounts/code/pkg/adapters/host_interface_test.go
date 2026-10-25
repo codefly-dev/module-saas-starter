@@ -148,3 +148,16 @@ func TestEmptyAskCandidatesAreTheActionsTheHostNames(t *testing.T) {
 	require.Equal(t, []string{"invoke", "read", "write"}, candidateActions("example-records", "records", roles))
 	require.Empty(t, candidateActions("unnamed", "records", roles))
 }
+
+// The interface's installation names its target as the composition does — the
+// route alias a frontend binds to ("notes") — never this host's presence row id;
+// a row whose presence is gone keeps the id rather than an empty target.
+func TestInstallationWireNamesItsTargetByName(t *testing.T) {
+	row := &gen.Installation{Id: "i", OrgId: "o", TargetId: "76f50dc4-6209-4a04-ae77-27eff13c110e", Status: gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE}
+	if got := installationToWire(row, "notes").GetTarget(); got != "notes" {
+		t.Fatalf("target = %q, want the route alias", got)
+	}
+	if got := installationToWire(row, "").GetTarget(); got != row.TargetId {
+		t.Fatalf("target = %q, want the presence id when no alias is known", got)
+	}
+}

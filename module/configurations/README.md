@@ -3,6 +3,10 @@
 Each environment declares values in `<group>.env` and secrets in
 `<group>.secret.env`. Codefly delivers these to services declaring the group;
 consuming workspaces override a group rather than editing module-owned files.
+A document group is one JSON document, `<group>.json`: `fixture-grants.json`
+holds the roles a composing workspace's people hold at the modules it composes,
+added to the selected fixture (`services/accounts/code/fixtures/workspace_grants.go`);
+the default grants nothing.
 
 ## A key a group does not declare is inert
 

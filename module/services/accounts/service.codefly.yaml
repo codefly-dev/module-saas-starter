@@ -34,6 +34,10 @@ workspace-configuration-dependencies:
     - datasource-oauth
     - email
     - federation
+    # The roles a composing workspace's people hold at the modules it composes,
+    # added to the selected fixture (fixtures/workspace_grants.go): a document,
+    # fixture-grants.json, that a workspace states only when it has any.
+    - fixture-grants
     - gateway-trust
     - github-app
     - identity

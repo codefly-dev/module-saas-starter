@@ -309,8 +309,12 @@ What the authority's edge and hop call is now served on the declared endpoint:
   its tokens (maya, remi, alex, dev at Acme Corp; zoe, omar at a new Globex) and
   teams. Their roles at composed modules are roles over those modules'
   permissions, which this host cannot name (the boundary gate refuses them):
-  the composing workspace's own `fixtures/` adds them and assigns them by
-  email, which fixture `assignments` now accept beside `agent_identifier`.
+  the composing workspace states them in its `fixture-grants.json` document
+  (roles and `assignments` in the fixture's own shape, by email beside
+  `agent_identifier`), which the seed adds to the selected fixture.
+- **`List` names its target.** An installation's `target` is the presence's
+  route alias (`notes`), the name `Install` takes and a frontend binds to, not
+  this host's presence row id.
 - **`Check` applies a named method.** No module has a delivered method policy on
   this host (gap 4: no `AuthorityManifestV1` arrives), so the interface's rule
   for that case applies: a check naming a method is refused by name
