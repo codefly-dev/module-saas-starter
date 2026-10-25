@@ -360,11 +360,6 @@ func interfaceStatus(err error) error {
 // the owner's bearer, which the module acting does not hold. The hop names no
 // binding (authority README, "Open decisions"), as the host's module hops do today.
 func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, req *authorityv1.IssueRequest) (*gen.IssuedWorkContext, error) {
-	parent, err := s.workContexts.verifyIssued(ctx, parentToken)
-	if err != nil {
-		return nil, interfaceStatus(err)
-	}
-	claims := parent.Context()
 	prefix, err := service.ModulePrefixOfWorkload(ctx, req.GetActor().GetCredential())
 	if err != nil {
 		if mapped := moduleIdentityError(err, codes.PermissionDenied, "actor credential refused"); mapped != nil {
@@ -372,6 +367,13 @@ func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, 
 		}
 		return nil, status.Error(codes.PermissionDenied, "actor credential refused")
 	}
+	// Resolve the actor before verifying: a module may derive only from a
+	// parent addressed to it, and cannot spend another module's single-use token.
+	parent, err := s.workContexts.verifyFor(ctx, parentToken, prefix)
+	if err != nil {
+		return nil, interfaceStatus(err)
+	}
+	claims := parent.Context()
 	if req.GetOperationBindingId() != "" {
 		return nil, status.Error(codes.Unimplemented, "a hop naming its binding waits on core deciding where a cross-module binding is held")
 	}

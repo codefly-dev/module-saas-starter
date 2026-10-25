@@ -160,3 +160,67 @@ refused because the adapter sends no scopes for that shape; the host's
 person's holdings rather than installation ids. The hop itself must then require
 the parent addressed to the acting module and re-derive from the owner, as the
 host's audience exchange already re-mints, so a chain crosses audiences.
+
+
+## Current suite baseline (2026-10-25)
+
+On branch `authority-interface` at `61835c789`, updating only the shared
+conformance dependency to `06d0d3b8567448b991e4a7ab591ccc8ab1c32681` gives
+**5 passed, 7 failed, 7 skipped** across nineteen cases. The command is:
+
+```sh
+HOST_INTERFACE_CONFORMANCE=1 GOPRIVATE=github.com/codefly-dev/* GOWORK=off go test -json ./pkg/adapters/ -run '^TestAccountsPassesTheHostInterfaceConformanceSuite$' -count=1
+```
+
+Run from this service's `code` directory. It starts Accounts with its isolated
+PostgreSQL test dependency, and makes no model-provider calls.
+
+| Outcome | Cases |
+| --- | --- |
+| Passed (5) | Keys; fixture sign-in; explicit person scopes and wrong-audience refusal; named refusal reasons; workload binding |
+| Failed (7) | ListFixturePeople missing from copied descriptors; Current missing; empty scope ask; no installed-solution fixture; child-hop initial binding mint has empty scopes; ApplyManifest called on tenant listener; install/grant setup blocked by that delivery refusal |
+| Skipped (7) | Permission matrix; stale-installation verification; delegate chain; method policy; resource grants; lookup scopes; durable delegation |
+
+A skip is not qualification. The stale-installation case performs preliminary
+verification checks but skips before completing its revocation proof. The
+existing thirteen-case result above remains historical evidence only.
+
+The harness directly supplies a composed module registry and synthetic
+installations. It does not exercise production signed delivery, persisted
+installation consent or concurrent revocation fences. Passing this harness
+would not alone establish production equivalence. The manifest-as-ceiling
+model remains part of the open host-interface proposal, not proof that the
+production envelope contract has changed.
+
+The shared installation-issuance case currently presents a public installation
+ID without authenticating the installation caller. That test and the reference
+issuer need an authenticated caller contract; Accounts must preserve its existing
+trusted installation-mint perimeter. The adapter also still needs to map the
+requested installation and organization into that owner operation.
+
+The signed-carrier commit `e154aec500b8206848c825d2812629b4eb72a8c9` is already an
+ancestor of this branch; no sibling cherry-pick is needed.
+
+
+### Repairs following the current baseline
+
+Child issuance now resolves the actor from its workload credential before
+verifying the parent through the existing `verifyFor` owner seam against that
+actor's audience. A regression through `Issue` proves that a correctly addressed
+parent issues, a parent addressed elsewhere does not, and the refused attempt
+does not consume that parent's single-use capability. Restoring the previous
+`verifyIssued` call reproduced the erroneous issuance.
+
+The SDK dependency process now has a lifetime separate from the service's
+bounded context. Cleanup calls `Destroy` with a fresh bounded context before
+canceling that lifetime and reports destruction errors. Previously the function's
+deferred cancellation killed the SDK context before test cleanup, producing a
+canceled destruction warning. The repeated real-store run no longer emits that
+warning even though the service context is canceled before cleanup.
+
+These repairs do not close the other seven failures or seven skips. In
+particular, Core reports the wrong-audience parent as `Unauthenticated`, while
+the shared child-hop case expects `PermissionDenied`; that case is still blocked
+earlier by its empty-scope/binding setup. Invalid tokens must not all be remapped
+to permission errors to silence this mismatch. Full delegated exchange reuse,
+named binding support and current interface generation remain open.

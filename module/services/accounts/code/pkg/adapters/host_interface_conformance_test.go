@@ -45,9 +45,19 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	deps, err := sdk.WithDependencies(ctx, sdk.WithExcludedDependencies("cache", "telemetry"), sdk.WithNamingScope("host-interface-conformance"), sdk.WithTimeout(10*time.Minute), sdk.WithSilence("store"))
+	// The SDK starts its CLI with this context. Its lifetime must extend past
+	// service cancellation so Destroy can stop the dependencies through the CLI.
+	dependencyCtx, stopDependencies := context.WithCancel(context.WithoutCancel(ctx))
+	t.Cleanup(stopDependencies)
+	deps, err := sdk.WithDependencies(dependencyCtx, sdk.WithExcludedDependencies("cache", "telemetry"), sdk.WithNamingScope("host-interface-conformance"), sdk.WithTimeout(10*time.Minute), sdk.WithSilence("store"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = deps.Destroy(ctx) })
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cleanupCancel()
+		if err := deps.Destroy(cleanupCtx); err != nil {
+			t.Errorf("destroy the conformance dependencies: %v", err)
+		}
+	})
 	_, err = codefly.Init(ctx)
 	require.NoError(t, err)
 	store, err := infra.NewPostgresStore(ctx)
