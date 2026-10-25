@@ -1324,7 +1324,7 @@ keeps what is per-source state:
   what the consuming module receives, so it is its own change.
 - **The retained listing is the cursor.** The connector versions a source by
   the digest of its scoped listing under its binding. The host keeps those
-  listings in `datasource_object_manifests` (migration 46), tenant-owned — the
+  listings in `datasource_object_manifests` (migration 49), tenant-owned — the
   control plane has no grant — and pruned to the newest four per source by
   `PutDatasourceObjectManifest`; a pruned or rebound version resyncs. Clause by
   clause, in [CONFORMANCE.md](./code/pkg/datasource/connector/CONFORMANCE.md).
@@ -1363,7 +1363,7 @@ keeps what is per-source state:
   tombstones every entry mirrored from the source, and a service that wrongly
   answers "empty" (a rewritten scope, a discarded truncation) has happened.
   So a listing that comes back empty for a source whose last closing snapshot
-  named objects — `datasource_sources.last_snapshot_items`, migration 47,
+  named objects — `datasource_sources.last_snapshot_items`, migration 50,
   written only when a snapshot is sent; unknown on a source synced before it,
   which counts as having files — is refused with
   `ErrUploadEmptyListingRefused` (job code
