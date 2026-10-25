@@ -2,9 +2,13 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.197}"
+version="${CODEFLY_VERSION:-source-8de0f6674550fb040f03bc6cb2530116878c8c6b}"
 source_revision=""
 case "${version}" in
+  source-8de0f6674550fb040f03bc6cb2530116878c8c6b)
+    # Host-interface candidate: exports every explicitly served proto package.
+    source_revision="${version#source-}"
+    ;;
   source-5234ce248b092edf1138a16ec4140dfbc8745522)
     # Lifecycle candidate: recognises CLI-owned artifact-cache in every CI
     # phase. Qualify exact owner source without requiring a release first.

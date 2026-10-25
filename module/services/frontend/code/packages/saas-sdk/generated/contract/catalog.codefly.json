@@ -8,10 +8,48 @@
       "endpoint": "connect",
       "api": "connect",
       "kind": "protobuf",
-      "package": "saas.accounts.v1",
+      "package": "",
       "path": "contract.binpb",
-      "digest": "sha256:c2af68c66470556658bef9c7d6f36b577057067ba51446698c9c60356109a898",
+      "digest": "sha256:19666bb5fd2000c512f3f4b954a91e472e8537b06160cc000d1e8e07d938311a",
       "services": [
+        {
+          "name": "AuthorityService",
+          "fullName": "host.authority.v1.AuthorityService",
+          "procedures": [
+            "/host.authority.v1.AuthorityService/Check",
+            "/host.authority.v1.AuthorityService/Delegate",
+            "/host.authority.v1.AuthorityService/GetDelegation",
+            "/host.authority.v1.AuthorityService/Issue",
+            "/host.authority.v1.AuthorityService/Keys",
+            "/host.authority.v1.AuthorityService/ListResources",
+            "/host.authority.v1.AuthorityService/RevokeDelegation"
+          ]
+        },
+        {
+          "name": "CompositionService",
+          "fullName": "host.composition.v1.CompositionService",
+          "procedures": [
+            "/host.composition.v1.CompositionService/ApplyManifest"
+          ]
+        },
+        {
+          "name": "InstallationService",
+          "fullName": "host.installation.v1.InstallationService",
+          "procedures": [
+            "/host.installation.v1.InstallationService/GrantToTeam",
+            "/host.installation.v1.InstallationService/Install",
+            "/host.installation.v1.InstallationService/List"
+          ]
+        },
+        {
+          "name": "SessionService",
+          "fullName": "host.session.v1.SessionService",
+          "procedures": [
+            "/host.session.v1.SessionService/Current",
+            "/host.session.v1.SessionService/ListFixturePeople",
+            "/host.session.v1.SessionService/SignIn"
+          ]
+        },
         {
           "name": "APIKeyService",
           "fullName": "saas.accounts.v1.APIKeyService",
