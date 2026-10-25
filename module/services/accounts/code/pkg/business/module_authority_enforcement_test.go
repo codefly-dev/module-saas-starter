@@ -1,6 +1,7 @@
 package business
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/codefly-dev/core/solutionhost"
@@ -140,4 +141,46 @@ func TestWarnKeepsWhatOnlyTheEnvelopeGrants(t *testing.T) {
 	require.NotContains(t, grant.OperationAudiences, "plan-sync-pages")
 	require.Contains(t, grant.OperationAudiences, "runtime-admission")
 	require.Equal(t, []string{"documents", "documents.collection", "documents.ingest"}, grant.Resources)
+}
+
+// A manifest names kinds and actions, never resources, so the resource ids a
+// binding's scopes name exist only in the envelope. Warn widens kinds and
+// actions to the manifest and keeps those ids: a binding that acts as a person
+// toward named sources stays usable, instead of turning kind-wide, which the
+// person-delegated source path refuses.
+func TestWarnKeepsTheResourcesTheEnvelopeNames(t *testing.T) {
+	held := enforcementStaleEntry()
+	held.Grant.OperationAudiences["source-calls"] = ModuleOperationAudience{Audience: SourceOperationAudience, DelegationMode: DelegationModeModuleActor,
+		InvokeScopes: []ModuleOperationScope{{ResourceKind: SourceOperationResourceKind, Actions: []string{"invoke", "read"}, ResourceIDs: []string{"source-a"}}},
+		LookupScopes: []ModuleOperationScope{{ResourceKind: SourceOperationResourceKind, Actions: []string{"read"}, ResourceIDs: []string{"source-a"}}}}
+	manifest := enforcementManifest()
+	manifest.Authority.Bindings = append(manifest.Authority.Bindings, solutionhost.AuthorityBinding{
+		ID: "source-calls", Audience: SourceOperationAudience, Operations: map[string][]string{
+			"invoke": {SourceOperationResourceKind + ":invoke", SourceOperationResourceKind + ":read"},
+			"lookup": {SourceOperationResourceKind + ":read"}}})
+
+	enforced, _, err := deriveUnderEnforcement(ModuleAuthorityEnforce, "documents", held, true, manifest, []ModuleWorkload{testWorkload}, nil)
+	require.NoError(t, err)
+	require.Equal(t, held.Grant.OperationAudiences["source-calls"], enforced.OperationAudiences["source-calls"], "enforce grants the envelope's narrowing")
+
+	grant, omitted, err := deriveUnderEnforcement(ModuleAuthorityWarn, "documents", held, true, manifest, []ModuleWorkload{testWorkload}, nil)
+	require.NoError(t, err)
+	require.Empty(t, omitted)
+	calls := grant.OperationAudiences["source-calls"]
+	require.Equal(t, DelegationModeModuleActor, calls.DelegationMode)
+	require.Equal(t, enforced.OperationAudiences["source-calls"], calls, "warn keeps the envelope's source, as enforce does")
+	for _, scope := range append(slices.Clone(calls.InvokeScopes), calls.LookupScopes...) {
+		require.True(t, sourceOperationActorScope(scope), "the person-delegated source path accepts the warn grant")
+	}
+
+	// A kind the envelope names without ids, or not at all, stays kind-wide.
+	require.Equal(t, []ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}}}, grant.OperationAudiences["model"].InvokeScopes)
+	require.Nil(t, grant.OperationAudiences["runtime-admission"].InvokeScopes[0].ResourceIDs)
+
+	// The same binding id under another audience is another binding: it takes
+	// none of the envelope's resources.
+	manifest.Authority.Bindings[len(manifest.Authority.Bindings)-1].Audience = "elsewhere"
+	grant, _, err = deriveUnderEnforcement(ModuleAuthorityWarn, "documents", held, true, manifest, []ModuleWorkload{testWorkload}, nil)
+	require.NoError(t, err)
+	require.Nil(t, grant.OperationAudiences["source-calls"].InvokeScopes[0].ResourceIDs)
 }
