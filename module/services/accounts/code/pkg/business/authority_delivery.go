@@ -134,7 +134,49 @@ func (s *Service) verifyAuthorityDocument(signed *compositionv1.SignedManifestV1
 	if manifest.Kind == solutionhost.KindModule && len(doc.GetRoles()) > 0 {
 		return nil, fmt.Errorf("%w: module %s declares solution roles", ErrSolutionDeliveryMalformed, manifest.Alias)
 	}
+	if err := validateAuthorityRoles(manifest, doc); err != nil {
+		return nil, err
+	}
 	return doc, nil
+}
+
+// validateAuthorityRoles keeps signed person roles within served authority and
+// explicit invoke/lookup bindings. Headless authority cannot become a role.
+func validateAuthorityRoles(manifest *solutionhost.ModuleManifest, doc *compositionv1.AuthorityManifestV1) error {
+	var allowed []*basev0.WorkScopeV1
+	ceiled := map[string]bool{}
+	for _, scope := range doc.GetScopeCeilings() {
+		ceiled[scope.GetResourceKind()] = true
+		allowed = append(allowed, &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions()})
+	}
+	var served []string
+	if manifest.Authority != nil {
+		served = manifest.Authority.ResourceKinds
+		for _, binding := range manifest.Authority.Bindings {
+			for _, operation := range []string{"invoke", "lookup"} {
+				for _, scope := range scopesOf(binding.Operations[operation]) {
+					allowed = append(allowed, &basev0.WorkScopeV1{ResourceKind: scope.ResourceKind, Actions: scope.Actions})
+				}
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for _, role := range doc.GetRoles() {
+		if role.GetName() == "" || seen[role.GetName()] || len(role.GetScopes()) == 0 {
+			return fmt.Errorf("%w: role %q is unnamed, duplicated or grants nothing", ErrSolutionDeliveryRefused, role.GetName())
+		}
+		seen[role.GetName()] = true
+		for _, scope := range role.GetScopes() {
+			// A served kind with no signed action ceiling permits the role's
+			// actions; an explicit ceiling and all consumed kinds are bounded.
+			unbounded := slices.Contains(served, scope.GetResourceKind()) && !ceiled[scope.GetResourceKind()]
+			asked := &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: scope.GetActions(), ResourceIds: scope.GetResourceIds()}
+			if len(asked.Actions) == 0 || (!unbounded && !workcontext.ScopeContained(asked, allowed)) {
+				return fmt.Errorf("%w: role %q of %s grants beyond its served or invoke/lookup authority", ErrSolutionDeliveryRefused, role.GetName(), manifest.Alias)
+			}
+		}
+	}
+	return nil
 }
 
 // CheckDeliveredMethod reads the exact applied generation, re-verifying both
