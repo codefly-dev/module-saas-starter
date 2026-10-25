@@ -79,6 +79,12 @@ unknown field, missing/extra service, unsupported binding kind, duplicate
 plugin, unsafe template, route collision, internal exposure, or ownership drift
 fails generation.
 
+The plugin registers the generated `InstallationService` transcoder as well as
+the principal, delegation and Work Context transcoders. Its transport regression
+test exercises every installation REST route through gRPC and preserves the
+selected RPC's permission refusal; catalog presence alone does not prove a
+handler is mounted.
+
 ## Runtime boundary
 
 Accounts registers only catalog-selected services and wraps grpc-gateway in a
