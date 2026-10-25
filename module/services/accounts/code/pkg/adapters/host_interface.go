@@ -138,11 +138,7 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 			OrgId: identity.OrgID.String(), TaskId: uuid.NewString(), Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
 		})
 	case *authorityv1.IssueRequest_Installation:
-		// The installation is the one the caller's service credential names; the
-		// host resolves it from the credential, so the id is checked after the mint.
-		issued, err = s.workContexts.StartInstallationTask(ctx, &gen.StartInstallationTaskRequest{
-			Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
-		})
+		issued, err = s.forInstallation(ctx, as.Installation.GetInstallationId(), req, scopes)
 	case *authorityv1.IssueRequest_ParentToken:
 		if req.GetActor() == nil {
 			// An audience exchange keeps the chain: the owner's bearer authorizes it.

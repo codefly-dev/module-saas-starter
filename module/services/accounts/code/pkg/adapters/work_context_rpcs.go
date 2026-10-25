@@ -879,6 +879,16 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
+	return s.startInstallationTask(ctx, req)
+}
+
+// startInstallationTask is the headless mint once its caller is authenticated:
+// the internal credential on StartInstallationTask, the installed solution's
+// own workload behind the host interface (HostAuthorityServer.forInstallation).
+func (s *WorkContextAuthorityServer) startInstallationTask(
+	ctx context.Context,
+	req *gen.StartInstallationTaskRequest,
+) (*gen.IssuedWorkContext, error) {
 	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
 	}
