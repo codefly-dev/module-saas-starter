@@ -163,9 +163,12 @@ type Service struct {
 	// that mounted the endpoint without a verifier must not accept documents.
 	deliveryVerifier          *solutionhost.Verifier
 	authorityDocumentVerifier func([]byte, []byte) (string, error)
-	compositionReconcile      func(context.Context) error
-	deliveryStore             SolutionDeliveryStore
-	deliveryCarrier           SolutionDeliveryCarrierAuthorizer
+	// authorityDocuments is each binding's applied authority document, verified
+	// once per generation.
+	authorityDocuments   verifiedAuthorityDocuments
+	compositionReconcile func(context.Context) error
+	deliveryStore        SolutionDeliveryStore
+	deliveryCarrier      SolutionDeliveryCarrierAuthorizer
 	// deliveryCoordinate is this host's coordinate, which every admission is
 	// decided under.
 	deliveryCoordinate string

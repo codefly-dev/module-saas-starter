@@ -1,6 +1,7 @@
 package business
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -170,6 +171,13 @@ var errNoAuthorityDocument = errors.New("no applied authority document")
 // appliedAuthorityDocumentOf is appliedAuthorityDocument for the first applied
 // binding is chooses; audience names it in a refusal. Finding no document is
 // errNoAuthorityDocument, naming why.
+//
+// A generation's document is verified once: the outcome is kept per binding
+// for the applied generation and digest it was verified at, so a check reads
+// the applied rows and nothing else until a pass applies another generation.
+// A row whose applied manifest does not parse is passed over rather than
+// failing every other binding's answer; when no row is chosen, that failure is
+// the answer, since the unreadable row may have been the one asked about.
 func (s *Service) appliedAuthorityDocumentOf(ctx context.Context, audience string, is func(binding string, manifest *solutionhost.ModuleManifest) bool) (*compositionv1.AuthorityManifestV1, *solutionhost.ModuleManifest, error) {
 	if s.deliveryStore == nil || s.deliveryVerifier == nil {
 		return nil, nil, fmt.Errorf("%w: this host has no signed delivery wired", errNoAuthorityDocument)
@@ -178,43 +186,65 @@ func (s *Service) appliedAuthorityDocumentOf(ctx context.Context, audience strin
 	if err != nil {
 		return nil, nil, err
 	}
+	var unreadable error
 	for _, row := range records {
 		manifest, err := row.AppliedManifest()
 		if err != nil {
-			return nil, nil, err
+			unreadable = cmp.Or(unreadable, fmt.Errorf("binding %s's applied manifest does not parse: %w", row.BindingID, err))
+			continue
 		}
 		if manifest == nil || manifest.Removed || manifest.Authority == nil || !is(row.BindingID, manifest) {
 			continue
 		}
-		var record *SolutionDeliveryRecord
-		err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			var e error
-			record, e = s.deliveryStore.ReadDeliveredDocument(ctx, row.BindingID, manifest.Generation)
-			return e
-		})
-		if err != nil {
-			return nil, nil, err
+		verified, ok := s.authorityDocuments.get(row.BindingID, row.Applied)
+		if !ok {
+			if verified, err = s.verifyAppliedAuthorityDocument(ctx, audience, row, manifest); err != nil {
+				return nil, nil, err
+			}
+			s.authorityDocuments.put(row.BindingID, verified)
 		}
-		if record == nil {
-			return nil, nil, fmt.Errorf("%w: %s's applied generation %d has no inbox record", errNoAuthorityDocument, audience, manifest.Generation)
-		}
-		core, err := solutionhost.VerifyDelivered(ctx, carrierOf(record), s.deliveryVerifier)
-		if err != nil {
-			return nil, nil, fmt.Errorf("%s delivery does not verify: %w", audience, err)
-		}
-		if delivery.Digest(core.Payload()) != row.Applied.Digest {
-			return nil, nil, fmt.Errorf("%s applied delivery digest differs from its inbox", audience)
-		}
-		if record.AuthorityDocument == nil {
+		if verified.doc == nil {
 			return nil, nil, fmt.Errorf("%w: %s's applied generation %d was delivered without its authority document", errNoAuthorityDocument, audience, manifest.Generation)
 		}
-		doc, err := s.verifyAuthorityDocument(&compositionv1.SignedManifestV1{Document: record.AuthorityDocument, Envelope: record.AuthorityEnvelope}, core)
-		if err != nil {
-			return nil, nil, err
-		}
-		return doc, manifest, nil
+		return verified.doc, manifest, nil
+	}
+	if unreadable != nil {
+		return nil, nil, unreadable
 	}
 	return nil, nil, fmt.Errorf("%w: no applied delivery of %s declares its authority", errNoAuthorityDocument, audience)
+}
+
+// verifyAppliedAuthorityDocument reads row's applied generation from the
+// inbox and verifies both signatures with the pinned keys: the outcome kept
+// for that generation, with no document when it was delivered without one.
+func (s *Service) verifyAppliedAuthorityDocument(ctx context.Context, audience string, row *SolutionHostBindingRecord, manifest *solutionhost.ModuleManifest) (verifiedAuthorityDocument, error) {
+	var record *SolutionDeliveryRecord
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var e error
+		record, e = s.deliveryStore.ReadDeliveredDocument(ctx, row.BindingID, manifest.Generation)
+		return e
+	})
+	if err != nil {
+		return verifiedAuthorityDocument{}, err
+	}
+	if record == nil {
+		return verifiedAuthorityDocument{}, fmt.Errorf("%w: %s's applied generation %d has no inbox record", errNoAuthorityDocument, audience, manifest.Generation)
+	}
+	core, err := solutionhost.VerifyDelivered(ctx, carrierOf(record), s.deliveryVerifier)
+	if err != nil {
+		return verifiedAuthorityDocument{}, fmt.Errorf("%s delivery does not verify: %w", audience, err)
+	}
+	if delivery.Digest(core.Payload()) != row.Applied.Digest {
+		return verifiedAuthorityDocument{}, fmt.Errorf("%s applied delivery digest differs from its inbox", audience)
+	}
+	verified := verifiedAuthorityDocument{generation: row.Applied.Generation, digest: row.Applied.Digest}
+	if record.AuthorityDocument == nil {
+		return verified, nil
+	}
+	if verified.doc, err = s.verifyAuthorityDocument(&compositionv1.SignedManifestV1{Document: record.AuthorityDocument, Envelope: record.AuthorityEnvelope}, core); err != nil {
+		return verifiedAuthorityDocument{}, err
+	}
+	return verified, nil
 }
 
 func checkMethodPolicy(doc *compositionv1.AuthorityManifestV1, audience, method string, held []*basev0.WorkScopeV1) error {
