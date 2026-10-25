@@ -4,7 +4,7 @@ package adapters
 // adapters over what it already does. Nothing here decides authority: every
 // operation maps onto an existing path, and where no path exists the refusal
 // names the gap instead of inventing one. The same four interfaces are served by
-// the mini gateway for a local run, and the authority interface repository's pkg/conformance is
+// the local authority for a local run, and the authority interface repository's pkg/conformance is
 // the suite both must pass.
 
 import (
@@ -499,11 +499,12 @@ func interfaceStatus(err error) error {
 	return status.Error(codes.Internal, fmt.Sprintf("%v", err))
 }
 
-// childHop derives a module's hop on a person's context behind the interface:
-// the parent token is the authentication, the actor's credential names the
-// module, and the hop attenuates. The host's own child session is authorized by
-// the owner's bearer, which the module acting does not hold. The hop names no
-// binding (authority README, "Open decisions"), as the host's module hops do today.
+// childHop derives a module's hop on a context addressed to it behind the
+// interface: the parent token is the authentication and the actor's credential
+// names the module. A hop naming the binding it exercises is bindingHop (the
+// owner's current grants through that binding); one naming none attenuates its
+// parent. The host's own child session is authorized by the owner's bearer,
+// which the module acting does not hold.
 func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, req *authorityv1.IssueRequest) (*gen.IssuedWorkContext, error) {
 	prefix, err := service.ModulePrefixOfWorkload(ctx, req.GetActor().GetCredential())
 	if err != nil {
@@ -514,14 +515,24 @@ func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, 
 	}
 	// Resolve the actor before verifying: a module may derive only from a
 	// parent addressed to it, and cannot spend another module's single-use token.
+	// A parent addressed elsewhere is refused by name before it is verified; its
+	// claims are only read to say so, and nothing is issued on them.
+	if decoded, derr := workcontext.Decode(parentToken); derr == nil && decoded.Context().GetAudience() != prefix {
+		return nil, status.Errorf(codes.PermissionDenied, "%s hops only on a token addressed to it; this one is addressed to %s", prefix, decoded.Context().GetAudience())
+	}
+	if req.GetOperationBindingId() != "" {
+		if err := requireDeclaredHopBinding(prefix, req); err != nil {
+			return nil, err
+		}
+	}
 	parent, err := s.workContexts.verifyFor(ctx, parentToken, prefix)
 	if err != nil {
 		return nil, interfaceStatus(err)
 	}
-	claims := parent.Context()
 	if req.GetOperationBindingId() != "" {
-		return nil, status.Error(codes.Unimplemented, "a hop naming its binding waits on core deciding where a cross-module binding is held")
+		return s.bindingHop(ctx, prefix, parent, req)
 	}
+	claims := parent.Context()
 	// The owner's authority is re-read as the owner, as the module-caller
 	// exchange does: the parent token is what proves the owner here.
 	ctx = accountsauth.WithVerifiedDatabaseIdentity(ctx, claims.GetOwnerPrincipalId(), claims.GetTenantId())

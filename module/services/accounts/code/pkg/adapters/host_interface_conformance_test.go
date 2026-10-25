@@ -108,10 +108,19 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 	// viewer through its one binding; model is an audience the viewer's context
 	// at documents is not addressed to. The fake cluster projects the credential
 	// a pod of org-directory's workload would present.
+	// documents and model also run as workloads, each with a binding to the
+	// other, so a delegate chain crosses from one to the other and back.
 	reads := []business.ModuleOperationScope{{ResourceKind: "example-records", Actions: []string{"invoke", "read"}}}
 	lookups := []business.ModuleOperationScope{{ResourceKind: "example-records", Actions: []string{"read"}}}
+	invokes := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke"}}}
 	registry := business.ModulePrincipalRegistry{
-		business.ModulePrincipalID("documents"): {Prefix: "documents", Resources: []string{"example-records"}, Tenant: fixtureOrganization},
+		business.ModulePrincipalID("documents"): {
+			Prefix: "documents", Resources: []string{"example-records"}, Tenant: fixtureOrganization,
+			Workloads: []business.ModuleWorkload{{Namespace: "acme", ServiceAccount: "documents", Container: "app"}},
+			OperationAudiences: map[string]business.ModuleOperationAudience{
+				"model": {Audience: "model", InvokeScopes: invokes},
+			},
+		},
 		business.ModulePrincipalID("org-directory"): {
 			Prefix: "org-directory", Resources: []string{"directory.entry"}, Tenant: fixtureOrganization,
 			Workloads: []business.ModuleWorkload{{Namespace: "acme", ServiceAccount: "org-directory", Container: "app"}},
@@ -119,11 +128,19 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 				"documents": {Audience: "documents", InvokeScopes: reads, LookupScopes: lookups, HeadlessScopes: reads},
 			},
 		},
-		business.ModulePrincipalID("model"): {Prefix: "model", Resources: []string{"modelservice.profiles"}, Tenant: fixtureOrganization},
+		business.ModulePrincipalID("model"): {
+			Prefix: "model", Resources: []string{"modelservice.profiles"}, Tenant: fixtureOrganization,
+			Workloads: []business.ModuleWorkload{{Namespace: "acme", ServiceAccount: "model", Container: "app"}},
+			OperationAudiences: map[string]business.ModuleOperationAudience{
+				"records": {Audience: "documents", InvokeScopes: reads, LookupScopes: lookups},
+			},
+		},
 	}
 	cluster := executiontest.New()
 	svc.SetExecutionBinding(cluster)
 	workloadCredential := cluster.Run(executiontest.Workload{Namespace: "acme", ServiceAccount: "org-directory", Container: "app"})
+	documentsCredential := cluster.Run(executiontest.Workload{Namespace: "acme", ServiceAccount: "documents", Container: "app"})
+	modelCredential := cluster.Run(executiontest.Workload{Namespace: "acme", ServiceAccount: "model", Container: "app"})
 	svc.SetModuleCapabilities(store, nil, registry)
 
 	// The declared registry is what delivery derives; the ceiling is the manifest,
@@ -190,6 +207,16 @@ func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
 		// fixture states it: a collection reader, Acme administrators (one of
 		// them a person of the authority's fixture), a member who holds no
 		// role, and a Globex member who holds nothing at Acme's content.
+		// A delegate chain (gap 14): an administrator issued at documents;
+		// documents hops to model through its binding for what the first token
+		// never carried, then model hops back to documents through its own.
+		Chain: &conformance.Chain{Token: "fixture-alex", Start: "documents", Hops: []conformance.Hop{
+			{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
+			{Credential: modelCredential, Binding: "records", Audience: "documents", AskKind: "example-records", AskAction: "read"},
+		}},
+		// The same binding read as a lookup carries its lookup scopes alone.
+		Lookup: &conformance.LookupCase{Token: "fixture-alex", Start: "model", Credential: modelCredential, Binding: "records",
+			Audience: "documents", Kind: "example-records", Invoke: "invoke", Lookup: "read"},
 		Matrix: []conformance.Expectation{
 			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "read", Allowed: true},
 			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "write", Allowed: false},

@@ -2,7 +2,7 @@
 
 **What we are doing.** accounts implements the four host interfaces declared in
 the authority interface repository (`codefly.dev/authority`, `composition`, `installation`, `session`)
-as adapters over what it already does, so the same contract the mini gateway
+as adapters over what it already does, so the same contract the local authority
 serves on a laptop is served here on a cell, and the authority interface repository's
 `pkg/conformance` can prove the two agree. Rung 1 of the validation ladder.
 
@@ -132,12 +132,11 @@ What it took, each a fix at the place that owns the behaviour:
 | ApplyManifest: `internal RPC is not exposed on the tenant listener` | 4 | the delivery path behind the composition interface, on the internal listener; the harness dials it there |
 | Install, GrantToTeam | 5 | name-to-id resolvers; not reached until the manifest applies |
 
-**Open decision on core (gap 14):** a hop keeps the owner's seal installation
-and core requires a binding named on it to be granted within that installation;
-a module's binding is granted within the module's own installation. So a
-cross-module hop cannot name the binding it exercises today; the host carries it
-out of band in the revision check's request. The suite does not ask the hop to
-name one until core decides (authority README, "Open decisions").
+**Gap 14 (closed 2026-10-25, see "Gap 14: a hop through its binding" below):** a hop
+kept the owner's seal installation and core requires a binding named on it to be
+granted within that installation; a module's binding is granted within the
+module's own installation. The child is now sealed to the installation its
+binding is granted within.
 
 Suite changes today, each stating the contract more precisely and none passing a
 red line: an authenticated caller for the audience probe; explicit scopes in base
@@ -343,11 +342,63 @@ failed, 6 skipped** of the nineteen suite cases, and the harness's own line
 | --- | --- | --- |
 | pass | keys; fixture sign-in; every listed fixture person signs in; Current; person issued/checked/refused elsewhere; empty ask; permission matrix; refusals by reason; workload binding | |
 | fail | an installation acts for itself | the fixture installs no solution (follows gap 4) |
-| fail | a child hop names its actor and binding | the person's token naming a binding is #1219; the hop naming its binding waits on core (gap 14) |
+| fail | a child hop names its actor and binding | the person's token naming a binding is #1219; the hop naming its binding is closed below (gap 14) |
 | fail | a manifest moves only forward | ApplyManifest is internal and the harness dials the tenant listener (gap 4) |
 | fail | install pending, then exposed | blocked by the same delivery refusal (gaps 4, 5) |
 | skip | callee refuses what does not verify | needs an installation whose grant can move |
 | skip | delegate chain; method policy; resources; lookup; delegation | the harness states no case: each needs a host capability above (gap 4, ListResources, delegation) |
+
+### Gap 14: a hop through its binding (2026-10-25)
+
+A module calling a module on its owner's behalf: `Issue` with a parent token,
+the acting module's workload as `actor` and the binding it exercises. It was
+refused (`Unimplemented`, "waits on core deciding where a cross-module binding
+is held"). The owner's decision (child issuance **A**) is implemented in
+`code/pkg/adapters/host_interface_hop.go`:
+
+- **Where the binding is held:** the module principal registry this host already
+  derives from delivery, as installed in the organisation
+  (`Service.ModuleOperationAudience`, the binding the delegated exchange
+  redeems). No second store. The child is sealed to the installation that binding
+  is granted within (the live answer for `module-operation/<module>/<binding>`),
+  so core's binding-within-installation rule holds by construction.
+- **The child:** the owner's *current* grants at the binding's audience
+  (`personHolds`, the check every mint makes, per action of the binding's invoke
+  scopes, or its lookup scopes for `operation: lookup`), with the parent's
+  actor chain replayed and the acting module as the last hop naming the binding.
+  It descends from the parent's session (`parent_session_id`) and never outlives
+  the parent. An ask must sit inside that.
+- **A narrowed parent stays narrowed:** for every kind the parent carries, in its
+  authority scopes or any hop's grant, the child is held to the least of them
+  (actions dropped and resources named stay so). The child carries those
+  narrowings in its own authority scopes, so a hop further down is held to them
+  too. A kind the parent never carried is no narrowing: that is how a chain
+  crosses into another audience.
+- **Refused by name:** a binding the acting module does not declare (`NotFound`,
+  before the parent is verified, so a single-use parent is not spent); an
+  audience that is not the binding's; a parent addressed to another module
+  (`PermissionDenied`, "hops only on a token addressed to it", also before
+  verification); an owner holding none of the binding's scopes; an ask beyond
+  what the owner holds; an ask beyond what the parent narrowed to; a headless
+  operation; a context not owned by a person (this host reads current grants for
+  a person only).
+- **Revision check:** `ConfirmModuleHopBinding` accepts the spelling this host
+  seals. The hop exercising it is confirmed against its binding; a module hop
+  replayed ahead of it carries the owner's authority through that binding and
+  stands while its module is installed.
+
+The harness now states a delegate chain (documents to model and back, for an
+administrator) and a lookup case. **11 passed, 4 failed, 4 skipped** of the
+nineteen suite cases at the same pin (`06d0d3b`), plus the harness's own line:
+
+| Outcome | Case | Why |
+| --- | --- | --- |
+| pass (new) | a delegate chain inherits the owner's authority at each audience | gap 14 |
+| pass (new) | a lookup through a binding carries only the binding's lookup scopes | gap 14 |
+| fail | a child hop names its actor and binding | first step: the person's token naming its module's binding is #1219 ("the person holds nothing at org-directory"). Past it, the suite expects the binding id `<org>/<module>/<binding>`; this host seals `module-operation/<principal>/<binding>`, so the case stays red until the spelling is agreed |
+| fail | an installation acts for itself | the fixture installs no solution (gap 4) |
+| fail | a manifest moves only forward; install pending, then exposed | ApplyManifest is internal (gaps 4, 5) |
+| skip | callee refuses what does not verify; method policy; resources; delegation | unchanged |
 
 ### What was not verified
 

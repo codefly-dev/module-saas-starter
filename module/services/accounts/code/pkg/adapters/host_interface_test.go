@@ -79,7 +79,10 @@ func TestHostChildIssueBindsParentToAuthenticatedActor(t *testing.T) {
 				return
 			}
 			require.True(t, out == nil, "an unrelated actor must receive no issued capability")
-			require.Equal(t, codes.Unauthenticated, status.Code(err))
+			// Refused by name, as the interface states it: a module hops only on
+			// a token addressed to it.
+			require.Equal(t, codes.PermissionDenied, status.Code(err))
+			require.Contains(t, status.Convert(err).Message(), "hops only on a token addressed to it")
 			// An unrelated actor must not consume another audience's single-use parent.
 			_, err = issuer.verifyFor(context.Background(), parent, audience)
 			require.NoError(t, err)

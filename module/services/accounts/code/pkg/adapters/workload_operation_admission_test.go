@@ -230,6 +230,15 @@ func workloadOperationRows() []admissionRow {
 				require.NoError(t, err)
 				return issuer, "documents", out.GetToken()
 			}},
+		// A module's hop through its binding on a person's capability (gap 14).
+		{"host interface binding hop", "", human, person,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				f := newHopFixture(t, "tool.items:read", "example-records:read")
+				parent, _ := f.parent(t, "tools", hopScope("tool.items", []string{"read"}))
+				out, err := f.hop(parent, f.tool, "records", "documents")
+				require.NoError(t, err)
+				return f.issuer, "documents", out.GetToken()
+			}},
 		// Person-owned unattended work: sealed elsewhere by design, still a person's.
 		{"source-operation context", "ModuleCapabilitiesService/MintSourceOperationContext", human, person,
 			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
@@ -454,6 +463,7 @@ var mintEntrypointRows = map[string][]string{
 	"(*WorkContextAuthorityServer).StartModuleTask":          {"module identity", "installer token route"},
 	"(*WorkContextAuthorityServer).StartModuleOperationTask": {"module operation context", "module operation context for its own module"},
 	"(*HostAuthorityServer).childHop":                        {"host interface child hop"},
+	"(*WorkContextAuthorityServer).mintBindingHop":           {"host interface binding hop"},
 }
 
 // isSigningMethod reports the methods a signing function references: every method

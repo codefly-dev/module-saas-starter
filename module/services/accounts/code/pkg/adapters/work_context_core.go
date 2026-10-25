@@ -318,8 +318,14 @@ type mintRequest struct {
 	// Never a caller-named value — see core's ChildInput.SessionID for why a
 	// pairing on the session holds only while that is true.
 	Session string
-	Replay  string
-	TTL     time.Duration
+	// DerivedFrom is the session of a verified capability this chain is
+	// re-derived from (a child re-built from its parent's owner). The
+	// capability the last hop is derived from carries it, so the one returned
+	// descends from that parent (its parent_session_id), as a caller holding the
+	// parent checks. Like Session, only ever the issuer's own value.
+	DerivedFrom string
+	Replay      string
+	TTL         time.Duration
 }
 
 // mint issues a capability through core's Authority.
@@ -347,6 +353,9 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 		return authority.Start(ctx, start)
 	}
 	start.SessionID = ""
+	if len(request.Hops) == 1 {
+		start.SessionID = request.DerivedFrom
+	}
 	start.ReplayPolicy = workcontext.ReplayIdempotent
 	start.TTL = ttl
 	token, _, err := authority.Start(ctx, start)
@@ -371,6 +380,9 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 			// A hop naming none carries its parent's, which for the owner's
 			// session is none.
 			OperationBindingID: hop.OperationBindingID,
+		}
+		if i == len(request.Hops)-2 {
+			child.SessionID = request.DerivedFrom
 		}
 		if i == len(request.Hops)-1 {
 			child.SessionID = request.Session

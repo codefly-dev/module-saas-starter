@@ -61,6 +61,16 @@ func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalI
 	if bindingID == "" {
 		return ErrModuleHopStale
 	}
+	// The spelling this host seals on a module's hop through a binding
+	// (module-operation/<module>/<binding>, a child issued behind the host
+	// interface). The hop exercising it is confirmed against that binding as
+	// below. A module hop replayed ahead of it carries the owner's authority
+	// through the last hop's binding and nothing of its own: it stands while
+	// its module is installed here.
+	replayed := false
+	if holder, key, sealed := parseModuleOperationBindingID(bindingID); sealed {
+		bindingID, replayed = key, holder != principalID
+	}
 	snapshot := s.moduleRegistrySnapshot()
 	if snapshot == nil {
 		return ErrModuleHopStale
@@ -75,6 +85,9 @@ func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalI
 	}
 	if !moduleAvailableToOrganization(installed.Grant, orgID) {
 		return ErrModuleHopStale
+	}
+	if replayed {
+		return nil
 	}
 	binding, declared := installed.Grant.OperationAudiences[bindingID]
 	if !declared {

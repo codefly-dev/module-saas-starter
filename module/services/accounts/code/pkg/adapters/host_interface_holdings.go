@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -103,4 +104,30 @@ func (s *WorkContextAuthorityServer) personHolds(ctx context.Context, orgID, own
 		return false, nil
 	}
 	return false, err
+}
+
+// ownerHoldsThrough is what the owner holds at audience now, within through
+// (a binding's declared scopes): each of its actions kept only if the owner
+// holds it there by personHolds, the check every mint makes. The caller has
+// installed the owner's identity on ctx.
+func (s *WorkContextAuthorityServer) ownerHoldsThrough(ctx context.Context, orgID, ownerID, audience string, through []*basev0.WorkScopeV1) ([]*basev0.WorkScopeV1, error) {
+	var held []*basev0.WorkScopeV1
+	for _, scope := range through {
+		var actions []string
+		for _, action := range scope.GetActions() {
+			holds, err := s.personHolds(ctx, orgID, ownerID, audience, &gen.WorkContextScope{
+				ResourceKind: scope.GetResourceKind(), Actions: []string{action}, ResourceIds: scope.GetResourceIds(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			if holds {
+				actions = append(actions, action)
+			}
+		}
+		if len(actions) > 0 {
+			held = append(held, &basev0.WorkScopeV1{ResourceKind: scope.GetResourceKind(), Actions: actions, ResourceIds: scope.GetResourceIds()})
+		}
+	}
+	return held, nil
 }
