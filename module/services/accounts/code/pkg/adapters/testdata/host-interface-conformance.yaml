@@ -41,6 +41,9 @@ organizations:
 teams:
   - {name: Engineering, org: Acme Corp, members: [alice@acme.com, bob@acme.com, remi@acme.test, alex@acme.test, dev@acme.test]}
   - {name: Finance, org: Acme Corp, members: [maya@acme.test, alex@acme.test]}
+  # No member: the staleness probe exposes the pages solution to it, which
+  # moves the organisation's authority and grants nobody anything.
+  - {name: Unexposed, org: Acme Corp, members: []}
   - {name: Ops, org: Globex, members: [zoe@globex.test, omar@globex.test]}
 
 roles:

@@ -368,6 +368,7 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 			WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
 			// The installed pages solution and its own workload.
 			InstalledSolution: pages, InstalledAudience: "conformance-pages", InstalledCredential: pagesCredential,
+			UnexposedTeam: teamNamed(t, ctx, svc, fixtureOrganization, "Unexposed"),
 			// An Acme owner who is not an administrator; a member with no role and no team.
 			OwnerToken: "fixture-owner", UnentitledToken: "fixture-no-roles",
 			// Maya, on finance, views the pages; Nora holds no role there. The
