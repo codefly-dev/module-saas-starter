@@ -398,6 +398,9 @@ func TestSourceOperationForeignTenantNeverAudits(t *testing.T) {
 			_, err = (&datasourceConnectHandler{svc: svc}).InvokeSourceOperation(ctx, connect.NewRequest(&gen.InvokeSourceOperationRequest{OrgId: foreign, SourceId: source, Operation: "read_item", InputJson: "{}", EffectId: "chosen audit text"}))
 			require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 			require.Empty(t, audit.events, "a foreign tenant must receive no audit row")
+			_, err = (&datasourceConnectHandler{svc: svc}).PruneSourceOperationReceipts(ctx, connect.NewRequest(&gen.PruneSourceOperationReceiptsRequest{OrgId: foreign, SourceId: source, EffectId: "chosen audit text"}))
+			require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+			require.Empty(t, audit.events, "foreign-tenant prune must receive no audit row either")
 		})
 	}
 }
