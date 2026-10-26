@@ -624,7 +624,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
-      "description": "Record a signed-in person's grant to a module (not yet served here).",
+      "description": "Record a signed-in person's grant to a module, within what they hold.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -667,7 +667,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
-      "description": "Read whether one delegation still stands (not yet served here).",
+      "description": "Read whether one delegation still stands, for its module or its grantor.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -851,7 +851,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
-      "description": "End a delegation (not yet served here).",
+      "description": "End a delegation; every capability issued from it is refused from then on.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

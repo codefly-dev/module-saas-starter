@@ -27,6 +27,7 @@ package adapters
 // (installationHeldThrough), and the child stays the agent's.
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -51,12 +52,21 @@ import (
 // (requireDeclaredHopBinding has held both to the declaration).
 func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, parent *workcontext.Verified, req *authorityv1.IssueRequest) (*gen.IssuedWorkContext, error) {
 	claims := parent.Context()
-	tenant, owner := claims.GetTenantId(), claims.GetOwnerPrincipalId()
-	registered := business.ModulePrincipalID(prefix)
-	bindingID := req.GetOperationBindingId()
 	if kind := claims.GetOwnerPrincipalKind(); kind != business.PrincipalKindHuman && kind != business.PrincipalKindAgent {
 		return nil, status.Errorf(codes.PermissionDenied, "a hop through a binding inherits its owner's current grants, which this host reads for a person or an installation's agent; this context is owned by a %s", kind)
 	}
+	return s.hopFrom(ctx, prefix, claims, req, nil)
+}
+
+// hopFrom issues the hop of the module prefix names through its binding, for
+// the person who owns claims: a verified parent's, or, when issuing names the
+// delegation the hop acts under, the grantor's standing that delegation was
+// read from (delegationHop). Either way the owner's current grants through the
+// binding decide it, cut to every stored delegation the chain acts under.
+func (s *HostAuthorityServer) hopFrom(ctx context.Context, prefix string, claims *basev0.WorkContextV1, req *authorityv1.IssueRequest, issuing *business.ModuleDelegation) (*gen.IssuedWorkContext, error) {
+	tenant, owner := claims.GetTenantId(), claims.GetOwnerPrincipalId()
+	registered := business.ModulePrincipalID(prefix)
+	bindingID := req.GetOperationBindingId()
 	// The binding as installed in this organisation: an installation narrows
 	// its declaration, and a headless-only binding does nothing as a person.
 	installed, err := service.ModuleOperationAudience(ctx, business.ModuleCaller{PrincipalID: registered, BoundOrg: tenant}, tenant, prefix, bindingID)
@@ -68,18 +78,30 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 		return nil, err
 	}
 	// Rule A for either owner: a person's current grants, or the standing
-	// grants of the installation whose agent owns the parent.
+	// grants of the installation whose agent owns the parent. A delegation's
+	// hop is a person's, from the grantor's standing.
 	var held []*basev0.WorkScopeV1
 	if claims.GetOwnerPrincipalKind() == business.PrincipalKindAgent {
 		held, err = s.workContexts.installationHeldThrough(ctx, claims, req.GetAudience(), through)
 	} else {
-		held, err = s.personHeldThrough(ctx, claims, prefix, req.GetAudience(), through)
+		held, err = s.personHeldThrough(ctx, claims, prefix, req.GetAudience(), through, issuing)
 	}
 	if err != nil {
 		return nil, err
 	}
 	if len(held) == 0 {
 		return nil, status.Errorf(codes.PermissionDenied, "%s holds nothing at %s through operation binding %q", owner, req.GetAudience(), bindingID)
+	}
+	// A delegation is a ceiling for as long as the chain acts under it: every
+	// stored one a hop names, and the one this hop is issued from.
+	delegations, err := s.chainDelegations(ctx, claims, issuing)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range delegations {
+		if held = intersectScopes(held, delegatedScopes(d)); len(held) == 0 {
+			return nil, status.Errorf(codes.PermissionDenied, "delegation %s grants nothing %s still holds at %s through operation binding %q", d.ID, owner, req.GetAudience(), bindingID)
+		}
 	}
 	narrowed := parentNarrowings(claims)
 	ceiling := narrowed.keep(held)
@@ -94,6 +116,9 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 		}
 		for _, scope := range asked {
 			if !workcontext.ScopeContained(scope, held) {
+				if len(delegations) > 0 {
+					return nil, status.Errorf(codes.PermissionDenied, "a hop widens what its owner holds and delegated through operation binding %q: %s", bindingID, scopeString(scope))
+				}
 				return nil, status.Errorf(codes.PermissionDenied, "a child widens what its owner holds through operation binding %q: %s", bindingID, scopeString(scope))
 			}
 			if !workcontext.ScopeContained(scope, ceiling) {
@@ -111,24 +136,36 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 	// owner holds through the binding that the child was not granted, so that
 	// kind stays dropped down the chain (rule A: a narrowing is never recovered).
 	carried := narrowed.deny(held, scopes).outside(scopes)
-	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, carried, workContextTTL(ttl))
+	hopID := ""
+	if issuing != nil {
+		hopID = issuing.ID
+	}
+	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, carried, workContextTTL(ttl), hopID)
 }
 
 // personHeldThrough is what a person who owns parent holds at audience within
 // through: a solution's roles decide it where they apply, the organisation's
 // roles otherwise, once the parent is shown to still stand.
-func (s *HostAuthorityServer) personHeldThrough(ctx context.Context, parent *basev0.WorkContextV1, prefix, audience string, through []*basev0.WorkScopeV1) ([]*basev0.WorkScopeV1, error) {
+func (s *HostAuthorityServer) personHeldThrough(ctx context.Context, parent *basev0.WorkContextV1, prefix, audience string, through []*basev0.WorkScopeV1, issuing *business.ModuleDelegation) ([]*basev0.WorkScopeV1, error) {
 	tenant, owner := parent.GetTenantId(), parent.GetOwnerPrincipalId()
 	// The owner's authority is re-read as the owner: the parent token is what
-	// proves the owner here.
+	// proves the owner here, or the delegation its grantor recorded.
 	ctx = accountsauth.WithVerifiedDatabaseIdentity(ctx, owner, tenant)
-	decided, err := s.solutionParentStands(ctx, parent)
-	if err != nil {
-		return nil, err
-	}
-	if !decided {
-		if err := s.workContexts.requireParentStands(ctx, parent); err != nil {
+	if issuing != nil {
+		// No parent stands behind a delegation's hop: its grantor must still
+		// be a member, and the delegation is re-read by the caller.
+		if err := requireOrgMember(ctx, owner, tenant); err != nil {
+			return nil, status.Errorf(codes.PermissionDenied, "delegation %s: its grantor %s is no longer a member of this organization", issuing.ID, owner)
+		}
+	} else {
+		decided, err := s.solutionParentStands(ctx, parent)
+		if err != nil {
 			return nil, err
+		}
+		if !decided {
+			if err := s.workContexts.requireParentStands(ctx, parent); err != nil {
+				return nil, err
+			}
 		}
 	}
 	held, decided, err := s.solutionHoldsThrough(ctx, parent, prefix, audience, through)
@@ -192,8 +229,10 @@ func (s *WorkContextAuthorityServer) requireParentStands(ctx context.Context, pa
 // mintBindingHop mints the child: the owner's session sealed to the
 // installation the binding is granted within, carrying scopes and the
 // narrowings of every other kind; the parent's actors replayed; then the
-// acting module's hop exercising the binding, granted scopes. It never
-// outlives its parent and descends from the parent's session.
+// acting module's hop exercising the binding, granted scopes, under
+// delegationID when the hop acts under a stored delegation (a fresh id
+// otherwise). It never outlives its parent and descends from the parent's
+// session.
 //
 // The acting module is named by its NAME, as the interface states an actor
 // and as the binding it exercises is granted (<organisation>/<module>/<binding>
@@ -202,7 +241,7 @@ func (s *WorkContextAuthorityServer) requireParentStands(ctx context.Context, pa
 // module from exercising another's binding.
 func (s *WorkContextAuthorityServer) mintBindingHop(
 	ctx context.Context, parent *basev0.WorkContextV1, prefix, bindingID, audience string,
-	scopes, carried []*basev0.WorkScopeV1, ttl time.Duration,
+	scopes, carried []*basev0.WorkScopeV1, ttl time.Duration, delegationID string,
 ) (*gen.IssuedWorkContext, error) {
 	// The structural audience rule every mint runs: none empty, and never the
 	// module capability surface's own.
@@ -245,7 +284,7 @@ func (s *WorkContextAuthorityServer) mintBindingHop(
 		})
 	}
 	hops = append(hops, delegationHop{
-		PrincipalID: actor, PrincipalKind: business.PrincipalKindService, DelegationID: uuid.NewString(),
+		PrincipalID: actor, PrincipalKind: business.PrincipalKindService, DelegationID: cmp.Or(delegationID, uuid.NewString()),
 		GrantedScopes: cloneWorkScopes(scopes), OperationBindingID: sealed,
 	})
 	token, signed, err := s.mint(ctx, mintRequest{

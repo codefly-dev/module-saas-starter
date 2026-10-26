@@ -193,12 +193,12 @@ func TestAnIssueAuthenticatesBeforeItAnswersForTheComposition(t *testing.T) {
 	}
 }
 
-// An issue from a delegation names the gap, not a missing owner.
-func TestAnIssueFromADelegationNamesTheGap(t *testing.T) {
+// An issue from a delegation names the module acting before anything is read.
+func TestAnIssueFromADelegationNamesItsActor(t *testing.T) {
 	_, err := (&HostAuthorityServer{}).Issue(context.Background(), &authorityv1.IssueRequest{
 		As: &authorityv1.IssueRequest_Delegation{Delegation: &authorityv1.DelegationRef{DelegationId: "d"}}, Audience: "documents",
 	})
-	requireRefused(t, err, codes.Unimplemented, "an issue from a delegation")
+	requireRefused(t, err, codes.Unauthenticated, "names the module acting")
 }
 
 // exchangeFixture is the owner of a capability addressed to tool.test, signed
@@ -314,7 +314,7 @@ func TestAHopMintRefusesTheModuleCapabilitySurface(t *testing.T) {
 	f := newHopFixture(t, "tool.items:read", "example-records:read")
 	_, parent := f.parent(t, "tools", hopScope("tool.items", []string{"read"}))
 	_, err := f.issuer.mintBindingHop(context.Background(), parent, "tools", "records", ModuleWorkContextAudience,
-		[]*basev0.WorkScopeV1{hopScope("example-records", []string{"read"})}, nil, time.Minute)
+		[]*basev0.WorkScopeV1{hopScope("example-records", []string{"read"})}, nil, time.Minute, "")
 	requireRefused(t, err, codes.PermissionDenied, "module capability surface")
 }
 

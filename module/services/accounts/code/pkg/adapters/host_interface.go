@@ -131,9 +131,6 @@ func methodPolicyRefusal(audience, method string) string {
 // credential), and only then is its audience held to the composition, so a
 // caller proving nothing learns nothing of which modules are composed.
 func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueRequest) (*authorityv1.IssueResponse, error) {
-	if _, ok := req.GetAs().(*authorityv1.IssueRequest_Delegation); ok {
-		return nil, status.Error(codes.Unimplemented, "an issue from a delegation: "+delegationGap)
-	}
 	// An installation proves its solution's workload before anything it asks
 	// is read, so its audience is required there, once the caller is proven.
 	if _, installation := req.GetAs().(*authorityv1.IssueRequest_Installation); req.GetAudience() == "" && !installation {
@@ -175,6 +172,8 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		issued, err = s.childHop(ctx, as.ParentToken, req)
 	case *authorityv1.IssueRequest_Workload:
 		issued, err = s.workloadIssue(ctx, as.Workload.GetCredential(), req, ttl)
+	case *authorityv1.IssueRequest_Delegation:
+		issued, err = s.delegationHop(ctx, as.Delegation.GetDelegationId(), req)
 	default:
 		return nil, status.Error(codes.InvalidArgument, "an issue names whom it is for: a person, a workload, an installation, a parent token or a delegation")
 	}
@@ -350,7 +349,7 @@ func bindingAudience(ctx context.Context, req *authorityv1.IssueRequest) (string
 	switch as := req.GetAs().(type) {
 	case *authorityv1.IssueRequest_Workload:
 		credential = as.Workload.GetCredential()
-	case *authorityv1.IssueRequest_ParentToken:
+	case *authorityv1.IssueRequest_ParentToken, *authorityv1.IssueRequest_Delegation:
 		credential = req.GetActor().GetCredential()
 	}
 	binding := req.GetOperationBindingId()
@@ -367,25 +366,6 @@ func bindingAudience(ctx context.Context, req *authorityv1.IssueRequest) (string
 	}
 	return declared.Audience, nil
 }
-
-// Delegate, RevokeDelegation, GetDelegation: GAP. The host's standing grants
-// are source delegations (DelegationService) bound to a source; a person's
-// grant to a module by scopes is not yet behind the interface.
-func (s *HostAuthorityServer) Delegate(context.Context, *authorityv1.DelegateRequest) (*authorityv1.Delegation, error) {
-	return nil, status.Error(codes.Unimplemented, delegationGap)
-}
-
-// RevokeDelegation: GAP, see Delegate.
-func (s *HostAuthorityServer) RevokeDelegation(context.Context, *authorityv1.RevokeDelegationRequest) (*authorityv1.RevokeDelegationResponse, error) {
-	return nil, status.Error(codes.Unimplemented, delegationGap)
-}
-
-// GetDelegation: GAP, see Delegate.
-func (s *HostAuthorityServer) GetDelegation(context.Context, *authorityv1.GetDelegationRequest) (*authorityv1.Delegation, error) {
-	return nil, status.Error(codes.Unimplemented, delegationGap)
-}
-
-const delegationGap = "delegation to a module: accounts holds source delegations bound to a source; a grant by scopes is not yet behind the interface"
 
 // HostCompositionServer serves codefly.dev/composition.
 type HostCompositionServer struct {

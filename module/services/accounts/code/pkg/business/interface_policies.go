@@ -21,13 +21,24 @@ import (
 // implementation, keyed by full method, and RPCPolicies reads it when the
 // descriptor carries no option. A method of these packages that is missing here
 // is a policy error like a missing option, and the interceptor refuses it.
-// HostIssueMethod is the interface's issue: the one method whose authentication
-// is carried by the request's shape rather than by a bearer alone. A person is the
-// signed-in bearer; a workload is the credential in the request; a child hop is
-// the parent token and the actor's credential. The interceptor lets a bearer-less
-// call reach the adapter, which authenticates the shape and refuses a bearer-less
-// person by name; a bearer, when present, is verified as on every other method.
+// HostIssueMethod is the interface's issue, one of the two methods whose
+// authentication is carried by the request's shape rather than by a bearer
+// alone. A person is the signed-in bearer; a workload is the credential in the
+// request; a child hop, or an issue from a delegation, is the actor's credential
+// (with the parent token). The interceptor lets a bearer-less call reach the
+// adapter, which authenticates the shape and refuses a bearer-less person by
+// name; a bearer, when present, is verified as on every other method.
 const HostIssueMethod = "/host.authority.v1.AuthorityService/Issue"
+
+// HostGetDelegationMethod is the other: a delegation is read by its grantor's
+// bearer or by its module's workload credential in the request.
+const HostGetDelegationMethod = "/host.authority.v1.AuthorityService/GetDelegation"
+
+// ShapeAuthenticated reports whether a bearer-less call to method reaches its
+// adapter, which authenticates the request's shape itself.
+func ShapeAuthenticated(method string) bool {
+	return method == HostIssueMethod || method == HostGetDelegationMethod
+}
 
 func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 	authenticatedMint := func(event string) *policyv1.MethodPolicy {
@@ -170,9 +181,9 @@ var interfaceDescriptions = map[string]string{
 	"InstallationService/GrantToTeam":   "Expose an installation to a team under the installation's role.",
 	"InstallationService/List":          "List what one organisation has installed.",
 	"AuthorityService/ListResources":    "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",
-	"AuthorityService/Delegate":         "Record a signed-in person's grant to a module (not yet served here).",
-	"AuthorityService/RevokeDelegation": "End a delegation (not yet served here).",
-	"AuthorityService/GetDelegation":    "Read whether one delegation still stands (not yet served here).",
+	"AuthorityService/Delegate":         "Record a signed-in person's grant to a module, within what they hold.",
+	"AuthorityService/RevokeDelegation": "End a delegation; every capability issued from it is refused from then on.",
+	"AuthorityService/GetDelegation":    "Read whether one delegation still stands, for its module or its grantor.",
 	"SessionService/SignIn":             "Open a session for a fixture person by their fixture token.",
 	"SessionService/Current":            "Answer the session the caller's bearer belongs to, without the bearer.",
 	"SessionService/ListFixturePeople":  "List the people fixture sign-in admits, in the fixture's order; none where it is not enabled.",
