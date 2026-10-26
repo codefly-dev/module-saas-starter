@@ -54,12 +54,7 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 	params.RegistryBindingID, params.RegistryPrincipalID = target.BindingID, principal
 	params.RouteAlias, params.Kind = target.RouteAlias, target.Kind
 	if params.Scope == nil {
-		// A module's installation follows its grant until a person narrows it
-		// (intersectInstallationScope); a solution's keeps the consented snapshot.
-		recorded := FullInstallationScope(grant)
-		if params.Kind == "module" {
-			recorded = InstallationScope{Capabilities: true, Follows: true}
-		}
+		recorded := consentedInstallationScope(params.Kind, grant, snapshot.envelopeRevision)
 		params.Scope = &recorded
 	}
 	if err := validateInstallationScope(*params.Scope, grant); err != nil {
@@ -67,6 +62,27 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 	}
 	params.EnvelopeRevision = snapshot.envelopeRevision
 	return snapshot, nil
+}
+
+// consentedInstallationScope is what an installation records when its
+// administrator installs with no explicit scope: what the organisation
+// consented to.
+//
+// It is the snapshot of the ceiling it was installed under, which a later
+// ceiling can only narrow (intersectInstallationScope). A module's installation
+// follows its grant instead only where an administrative envelope sets that
+// grant (envelopeRevision > 0) — a ceiling a platform administrator, or the
+// composition's own signed envelope, approved for every organisation. With no
+// envelope the ceiling is the module's signed manifest alone, and a later
+// generation that widens it must not reach an organisation no person approved
+// it for: the installation keeps its snapshot, and taking the wider generation
+// is an explicit lifecycle action by that organisation's administrator
+// (installing again answers a conflict that names it).
+func consentedInstallationScope(kind string, grant ModulePrincipalGrant, envelopeRevision uint64) InstallationScope {
+	if kind == "module" && envelopeRevision > 0 {
+		return InstallationScope{Capabilities: true, Follows: true}
+	}
+	return FullInstallationScope(grant)
 }
 
 // NarrowInstallationScope is a human administration act. Authorization belongs

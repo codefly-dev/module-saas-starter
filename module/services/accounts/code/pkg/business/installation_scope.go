@@ -16,9 +16,10 @@ type InstallationScope struct {
 	Capabilities bool `json:"capabilities"`
 	// Follows marks a scope that narrows nothing: the installation holds its
 	// module's grant (envelope ∩ manifest) as it moves. A module install records
-	// it; a person who narrows writes the axes out and clears it. It replaced
-	// the snapshot of the whole grant an install used to freeze here, which lost
-	// every operation a later generation declared until a person rewrote the row.
+	// it only while an administrative envelope sets that grant; a person who
+	// narrows writes the axes out and clears it. With no envelope an install
+	// records the consented snapshot, so a later manifest generation that widens
+	// the ceiling reaches no organisation until its administrator takes it.
 	Follows            bool                                `json:"follows,omitempty"`
 	Queues             []string                            `json:"queues,omitempty"`
 	Namespaces         []string                            `json:"namespaces,omitempty"`

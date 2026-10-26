@@ -767,6 +767,16 @@ asserts the derived registry and answers a person's Issue and HTTP Check. It
 also refuses a changed authority document at the same generation. It runs by
 default, independently of the opt-in shared conformance suite.
 
+**A widening needs the organisation's consent.** With no envelope a module
+installation records the consented snapshot of the ceiling it was installed
+under (`consentedInstallationScope`), not `Follows`, so a later generation that
+widens the manifest reaches no organisation that installed an earlier one until
+its administrator installs again; a narrowing still reaches it.
+`TestAManifestWideningWithNoEnvelopeDoesNotReachExistingInstallations` derives
+generations 1 and 2 through the real pass and holds an existing installation to
+generation 1's read. Where an envelope is written, a module installation keeps
+following it.
+
 Reader inventory before deletion: `MODULE_PRINCIPALS` has no runtime reader and
 was already removed. `MODULE_AUTHORITY_ENFORCEMENT` was read by `work.go` and
 consumed by registry derivation; both the switch and its warn implementation are
