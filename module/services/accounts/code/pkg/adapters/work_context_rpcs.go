@@ -139,7 +139,7 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := s.requireCallingModule(ctx); err != nil {
+	if err := s.requireCallingModule(ctx, req.GetOrgId()); err != nil {
 		return nil, err
 	}
 	if len(req.GetSubjects()) == 0 ||
@@ -323,7 +323,7 @@ func (s *WorkContextAuthorityServer) AuthorizeEvidenceRead(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := s.requireCallingModule(ctx); err != nil {
+	if err := s.requireCallingModule(ctx, req.GetOrgId()); err != nil {
 		return nil, err
 	}
 	if s == nil || s.consumer == nil {
@@ -1692,7 +1692,38 @@ func (s *WorkContextAuthorityServer) journalActorHop(
 	ctx context.Context,
 	signed *basev0.WorkContextV1,
 ) error {
-	return s.journalHopThrough(ctx, signed, business.ActorChainHopBinding{})
+	return s.journalHopThrough(ctx, signed, business.ActorChainHopBinding{}, "")
+}
+
+// journalRowID is the journal row a hop of a capability in taskID is recorded
+// under. A hop's own delegation id, as the token carries it, except for the
+// hop issued from a stored delegation: the interface states that hop's
+// delegation_id as the delegation's own (under), and every issue from one
+// delegation carries it, so the row is that delegation's within the task the
+// issue opened (a delegation's issue starts a fresh task, and every child of
+// it keeps that task). One row per issue, never one per delegation.
+func journalRowID(delegationID, taskID, under string) string {
+	if under != "" && delegationID == under {
+		return delegatedHopRowID(delegationID, taskID)
+	}
+	return delegationID
+}
+
+func delegatedHopRowID(delegationID, taskID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/delegated-hop/"+delegationID+"/"+taskID)).String()
+}
+
+// journalKeys is every row id a capability's hops may be recorded under: each
+// hop's own id, and the per-issue row a delegation's hop is recorded under. A
+// reader asks for both rather than deciding which hop acts under a delegation.
+func journalKeys(taskID string, chain []*basev0.WorkActorV1) []string {
+	keys := make([]string, 0, 2*len(chain))
+	for _, hop := range chain {
+		if id := hop.GetDelegationId(); id != "" {
+			keys = append(keys, id, delegatedHopRowID(id, taskID))
+		}
+	}
+	return keys
 }
 
 // journalHopThrough is journalActorHop for a module's hop through one of its
@@ -1703,6 +1734,7 @@ func (s *WorkContextAuthorityServer) journalHopThrough(
 	ctx context.Context,
 	signed *basev0.WorkContextV1,
 	through business.ActorChainHopBinding,
+	under string,
 ) error {
 	if s.journal == nil {
 		return nil
@@ -1715,14 +1747,14 @@ func (s *WorkContextAuthorityServer) journalHopThrough(
 	actor := chain[index]
 	parentDelegationID := ""
 	if index > 0 {
-		parentDelegationID = chain[index-1].GetDelegationId()
+		parentDelegationID = journalRowID(chain[index-1].GetDelegationId(), signed.GetTaskId(), under)
 	}
 	actorID := actor.GetPrincipalId()
 	if actor.GetPrincipalKind() == business.PrincipalKindService {
 		actorID = storedPrincipal(actorID)
 	}
 	_, err := s.journal.AppendActorChainHop(ctx, business.ActorChainHopInput{
-		ID:                    actor.GetDelegationId(),
+		ID:                    journalRowID(actor.GetDelegationId(), signed.GetTaskId(), under),
 		OrgID:                 signed.GetTenantId(),
 		TaskID:                signed.GetTaskId(),
 		SessionID:             signed.GetSessionId(),
@@ -1737,6 +1769,8 @@ func (s *WorkContextAuthorityServer) journalHopThrough(
 		Operation:             through.Operation,
 	})
 	if err != nil {
+		wool.Get(ctx).In("journalActorHop").Warn("the actor chain hop could not be persisted, so the capability is withheld",
+			wool.Field("org", signed.GetTenantId()), wool.Field("hop", actor.GetDelegationId()), wool.ErrField(err))
 		return status.Error(codes.Internal, "cannot persist actor chain hop")
 	}
 	return nil
@@ -1753,23 +1787,19 @@ func (s *WorkContextAuthorityServer) journalHopThrough(
 // hops predate the journal and cannot have been revoked (revocation needs a row).
 func (s *WorkContextAuthorityServer) requireChainNotRevoked(
 	ctx context.Context,
-	orgID string,
+	orgID, taskID string,
 	actors []*basev0.WorkActorV1,
 ) error {
 	if s.journal == nil {
 		return nil
 	}
-	delegationIDs := make([]string, 0, len(actors))
-	for _, actor := range actors {
-		if id := actor.GetDelegationId(); id != "" {
-			delegationIDs = append(delegationIDs, id)
-		}
-	}
-	if len(delegationIDs) == 0 {
+	keys := journalKeys(taskID, actors)
+	if len(keys) == 0 {
 		return nil
 	}
-	revoked, err := s.journal.AnyActorChainHopRevoked(ctx, orgID, delegationIDs)
+	revoked, err := s.journal.AnyActorChainHopRevoked(ctx, orgID, keys)
 	if err != nil {
+		wool.Get(ctx).In("requireChainNotRevoked").Warn("the actor chain's revocation could not be read", wool.Field("org", orgID), wool.ErrField(err))
 		return status.Error(codes.Internal, "cannot check actor chain revocation")
 	}
 	if revoked {
@@ -1919,7 +1949,7 @@ func (s *WorkContextAuthorityServer) requireCurrentAuthority(
 		}
 		return nil, nil
 	}
-	if err := s.requireChainNotRevoked(ctx, orgID, parent.GetActorChain()); err != nil {
+	if err := s.requireChainNotRevoked(ctx, orgID, parent.GetTaskId(), parent.GetActorChain()); err != nil {
 		return nil, err
 	}
 	var outermostActor *business.Principal

@@ -36,6 +36,7 @@ import (
 	"time"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -259,22 +260,24 @@ func (s *WorkContextAuthorityServer) requireModuleChainStands(ctx context.Contex
 	}
 	recorded := map[string]business.ActorChainHopBinding{}
 	if reader, ok := s.journal.(business.ActorChainHopBindingReader); ok && reader != nil {
-		ids := make([]string, 0, len(chain))
-		for _, hop := range chain {
-			if id := hop.GetDelegationId(); id != "" {
-				ids = append(ids, id)
-			}
-		}
 		var err error
-		if recorded, err = reader.ActorChainHopBindings(ctx, wc.GetTenantId(), ids); err != nil {
+		if recorded, err = reader.ActorChainHopBindings(ctx, wc.GetTenantId(), journalKeys(wc.GetTaskId(), chain)); err != nil {
+			wool.Get(ctx).In("requireModuleChainStands").Warn("the bindings this chain went through could not be read",
+				wool.Field("org", wc.GetTenantId()), wool.ErrField(err))
 			return status.Error(codes.Unavailable, "cannot read the bindings this chain went through")
 		}
 	}
 	hops := make([]business.ModuleChainHop, 0, len(chain))
 	for _, hop := range chain {
+		// The per-issue row of a delegation's hop is the one that issue wrote;
+		// the hop's own id is every other hop's.
+		through, issued := recorded[delegatedHopRowID(hop.GetDelegationId(), wc.GetTaskId())]
+		if !issued {
+			through = recorded[hop.GetDelegationId()]
+		}
 		hops = append(hops, business.ModuleChainHop{
 			Principal: hop.GetPrincipalId(), Scopes: operationScopesFromCore(hop.GetGrantedScopes()),
-			Through: recorded[hop.GetDelegationId()],
+			Through: through,
 		})
 	}
 	if err := service.ConfirmModuleChain(ctx, wc.GetTenantId(), wc.GetAudience(), hops); err != nil {
@@ -296,7 +299,7 @@ func (s *WorkContextAuthorityServer) requireParentStands(ctx context.Context, pa
 		_, err := s.requireCurrentAuthority(ctx, parent.GetTenantId(), parent)
 		return err
 	}
-	return s.requireChainNotRevoked(ctx, parent.GetTenantId(), parent.GetActorChain())
+	return s.requireChainNotRevoked(ctx, parent.GetTenantId(), parent.GetTaskId(), parent.GetActorChain())
 }
 
 // mintBindingHop mints the child: the owner's session sealed to the
@@ -375,7 +378,7 @@ func (s *WorkContextAuthorityServer) mintBindingHop(
 	if err != nil {
 		return nil, mapWorkContextError(ctx, err)
 	}
-	if err := s.journalHopThrough(ctx, signed, business.ActorChainHopBinding{BindingID: sealed, Operation: operation}); err != nil {
+	if err := s.journalHopThrough(ctx, signed, business.ActorChainHopBinding{BindingID: sealed, Operation: operation}, delegated.Under); err != nil {
 		return nil, err
 	}
 	return issuedWorkContext(token, signed), nil

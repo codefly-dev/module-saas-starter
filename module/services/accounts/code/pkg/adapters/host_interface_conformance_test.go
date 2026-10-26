@@ -12,7 +12,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -56,18 +55,19 @@ const (
 	conformanceAlex     = "00000000-0000-7000-8000-0000000000b3"
 )
 
+// TestAccountsPassesTheHostInterfaceConformanceSuite boots accounts over a
+// fresh test store, seeds the harness's fixture and runs the shared host
+// interface conformance suite against it, then the cases beyond the suite.
+// It runs wherever the package's tests run with their dependencies, as every
+// other store-backed test does: a switch to turn it on was a switch nothing in
+// CI turned, so the suite was skipped there. It includes everything the
+// fresh-store test it replaces asserted (manifest authority derived from an
+// empty store, a person issued).
 func TestAccountsPassesTheHostInterfaceConformanceSuite(t *testing.T) {
-	if os.Getenv("HOST_INTERFACE_CONFORMANCE") == "" {
-		t.Skip("set HOST_INTERFACE_CONFORMANCE=1: boots the test store and seeds the dev-admin fixture (rung 1 harness)")
-	}
-	runHostInterfaceFixture(t, true)
+	runHostInterfaceFixture(t)
 }
 
-func TestFreshStoreDerivesManifestAuthorityAndIssuesAPerson(t *testing.T) {
-	runHostInterfaceFixture(t, false)
-}
-
-func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
+func runHostInterfaceFixture(t *testing.T) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -271,28 +271,12 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 	// The Connect listener is the catalog-complete one (business-backed services
 	// are Connect-only) and speaks the gRPC protocol over h2c, so the suite dials
 	// it with a plain gRPC client on an ephemeral port.
-	probe, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	port := uint16(probe.Addr().(*net.TCPAddr).Port)
-	require.NoError(t, probe.Close())
-	connectServer, err := NewConnectServer(&Configuration{EndpointConnectPort: &port}, grpcServer)
-	require.NoError(t, err)
-	serveCtx, stopServing := context.WithCancel(ctx)
-	t.Cleanup(stopServing)
-	go func() { _ = connectServer.Run(serveCtx) }()
+	port := serveConnect(t, ctx, grpcServer)
 	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
-	require.Eventually(t, func() bool {
-		c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 200*time.Millisecond)
-		if err != nil {
-			return false
-		}
-		_ = c.Close()
-		return true
-	}, 20*time.Second, 100*time.Millisecond, "the Connect listener did not come up")
 
-	if fullSuite {
+	{
 		// The solutions, delivered as the CLI delivers them, then installed by
 		// the fixture's declared installations: each is pending until its
 		// install step is acknowledged, and exposed to its teams after.
@@ -540,8 +524,13 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 			require.Contains(t, status.Convert(err).Message(), reason)
 		}
 
+		// A module installed nowhere in the grantor's organisation is never
+		// delegated to: no issue could spend the row.
+		_, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "conformance-idle", Scopes: records("read"), Purpose: "uninstalled"})
+		requireCode(err, codes.FailedPrecondition, `module "conformance-idle" is not installed in organization`)
+
 		// Bob reads example records and writes none: he cannot delegate a write.
-		_, err := client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("write"), Purpose: "beyond"})
+		_, err = client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("write"), Purpose: "beyond"})
 		requireCode(err, codes.PermissionDenied, "delegates what they do not hold")
 
 		// Alex holds invoke and read; he delegates read alone. The binding
@@ -622,6 +611,46 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 		svc.SetPolicyLog(policyLog, store)
 	})
 
+	// Beyond the suite: every issue from one delegation is its own hop. The
+	// interface names a delegated hop by the delegation's id, so the journal
+	// records each issue under its own row (the delegation within the task the
+	// issue opened), and each capability is held to the scope set it was issued
+	// under, whichever order the issues come in. Real Postgres keeps the first
+	// row on a conflict, which is what an id shared by every issue would hit.
+	t.Run("every issue from one delegation is held to its own scope set", func(t *testing.T) {
+		client := authorityv1.NewAuthorityServiceClient(conn)
+		sess, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-alex"})
+		require.NoError(t, err)
+		alex := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())
+		type issue struct{ delegation, operation, task string }
+		var issues []issue
+		for _, order := range [][]string{{"invoke", "lookup"}, {"lookup", "invoke"}} {
+			d, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Purpose: "two issues, " + strings.Join(order, " then "),
+				Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: []string{"invoke", "read"}}}})
+			require.NoError(t, err)
+			for _, operation := range order {
+				issued, err := client.Issue(ctx, &authorityv1.IssueRequest{
+					As:    &authorityv1.IssueRequest_Delegation{Delegation: &authorityv1.DelegationRef{DelegationId: d.GetDelegationId()}},
+					Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}, OperationBindingId: "documents", Operation: operation, Audience: "documents",
+				})
+				require.NoError(t, err, "%v: issue under %s", order, operation)
+				wc := issued.GetContext()
+				require.Equal(t, d.GetDelegationId(), wc.GetActorChain()[0].GetDelegationId())
+				issues = append(issues, issue{d.GetDelegationId(), operation, wc.GetTaskId()})
+				_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "documents"})
+				require.NoError(t, err, "%v: the %s issue checks against its own scope set", order, operation)
+			}
+		}
+		for _, i := range issues {
+			recorded, err := store.ActorChainHopBindings(ctx, fixtureOrganization, []string{delegatedHopRowID(i.delegation, i.task)})
+			require.NoError(t, err)
+			require.Len(t, recorded, 1, "the %s issue has its own row", i.operation)
+			for _, row := range recorded {
+				require.Equal(t, i.operation, row.Operation, "the %s issue's own row", i.operation)
+			}
+		}
+	})
+
 	// Beyond the suite: the session a page reads is the live one. A fixture
 	// person of the authority's fixture is current with their organisation, role
 	// and team, the bearer is not handed back, and once the session's access is
@@ -649,6 +678,50 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 // registeredDescriptors is the descriptor set of every proto file this binary
 // links, which is what codefly generate contracts would export for the served
 // interfaces; the suite drives the interfaces from it with dynamic messages.
+// serveConnect starts the Connect server on a free port and returns it once it
+// accepts connections. The generated server binds the port itself, so a port
+// probed free can be taken by another process before it binds (the flake under
+// a full -race run, where the bind error was discarded and the wait timed out):
+// Run's error is read, and a port lost that way is retried on a fresh one.
+func serveConnect(t *testing.T, ctx context.Context, grpcServer *GrpcServer) uint16 {
+	t.Helper()
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		probe, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		port := uint16(probe.Addr().(*net.TCPAddr).Port)
+		require.NoError(t, probe.Close())
+		connectServer, err := NewConnectServer(&Configuration{EndpointConnectPort: &port}, grpcServer)
+		require.NoError(t, err)
+		serveCtx, stopServing := context.WithCancel(ctx)
+		ran := make(chan error, 1)
+		go func() { ran <- connectServer.Run(serveCtx) }()
+		deadline := time.Now().Add(20 * time.Second)
+		for time.Now().Before(deadline) {
+			select {
+			case err := <-ran:
+				lastErr = fmt.Errorf("the Connect server on port %d stopped before serving: %w", port, err)
+				deadline = time.Time{}
+				continue
+			default:
+			}
+			if c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 200*time.Millisecond); err == nil {
+				_ = c.Close()
+				t.Cleanup(stopServing)
+				return port
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		stopServing()
+		if lastErr == nil {
+			lastErr = fmt.Errorf("the Connect listener on port %d did not come up within 20s", port)
+		}
+		t.Logf("attempt %d: %v", attempt+1, lastErr)
+	}
+	t.Fatalf("the Connect listener did not come up: %v", lastErr)
+	return 0
+}
+
 func registeredDescriptors(t *testing.T) []byte {
 	t.Helper()
 	set := &descriptorpb.FileDescriptorSet{}

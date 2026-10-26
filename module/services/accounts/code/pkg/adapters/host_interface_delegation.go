@@ -63,6 +63,15 @@ func (s *HostAuthorityServer) Delegate(ctx context.Context, req *authorityv1.Del
 	if err := requireOrgMember(ctx, person, org); err != nil {
 		return nil, err
 	}
+	// A delegation is used only through the module's installation in the
+	// grantor's organisation, so one to a module installed nowhere there is a
+	// row no issue could ever spend: refused, by name, before it is recorded.
+	if _, err := service.AuthorizeModuleCapability(ctx, business.ModuleCaller{PrincipalID: business.ModulePrincipalID(module), BoundOrg: org}); err != nil {
+		if status.Code(err) == codes.Unavailable {
+			return nil, err
+		}
+		return nil, status.Errorf(codes.FailedPrecondition, "module %q is not installed in organization %s, so a delegation to it could never be used", module, org)
+	}
 	_, scopes, err := workContextScopes(scopesToHost(req.GetScopes()), mintContentReads(module))
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())

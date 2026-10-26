@@ -234,7 +234,7 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	require.NoError(t, err)
 	require.True(t, out.Msg.Allowed)
 	require.Equal(t, []string{readOwner, "actor-1", "actor-2"}, store.subjects, "the parent's hops are intersected, not inherited from the owner the exchange acted for")
-	require.Equal(t, []string{"hop-1", "hop-2"}, journal.ids)
+	require.Subset(t, journal.ids, []string{"hop-1", "hop-2"}, "every hop's own journal row is asked about")
 
 	// The binding seals record-a while the parent is kind-wide, so the exchanged
 	// context must be refused for record-b before any grant is read. Presenting the
@@ -307,7 +307,7 @@ func TestExactRecordOracleChecksSignedActorChainRevocation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, out.Msg.Allowed)
 	require.Equal(t, []string{readOwner, "actor-1", "actor-2"}, store.subjects)
-	require.Equal(t, []string{"hop-1", "hop-2"}, journal.ids)
+	require.Subset(t, journal.ids, []string{"hop-1", "hop-2"}, "every hop's own journal row is asked about")
 	store.deny = "actor-1"
 	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token, "record-a"))
 	require.NoError(t, err)

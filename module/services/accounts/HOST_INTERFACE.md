@@ -1158,3 +1158,53 @@ recorded before migration 52, or on a host with no journal), and
 `CheckAuthorizationRevision`, whose request names no hop, so it cannot read
 which set each was issued under; a callee that verifies through this host's
 binding answer gets the exact check.
+
+## Review r136 repairs (2026-10-26)
+
+- **B1, one journal row per delegated issue.** The interface names a hop
+  issued from a delegation by the delegation's own id, so every issue from
+  one delegation carried the same hop id, and the journal (keyed by it, first
+  row wins) recorded only the first issue's binding and scope set. Later
+  issues were held to it: invoke then lookup left the lookup hop held to
+  invoke; lookup then invoke refused a fresh invoke token. A delegated hop is
+  now recorded under its own row, the delegation within the task its issue
+  opened (a delegation's issue starts a fresh task and every child keeps it),
+  and the readers ask for both a hop's own id and that row. The token still
+  carries the delegation's id, as the suite requires. Proven against real
+  Postgres in the harness ("every issue from one delegation is held to its own
+  scope set": both orders, each issue checked and its own row read back); with
+  the shared id restored the lookup-then-invoke issue is refused, as reported.
+  The unit-test journal now keeps the first row on a conflict, as Postgres does.
+- **M2, the shared suite runs in CI, at authority main.** The conformance test
+  no longer waits for an environment switch nothing set: it runs wherever the
+  package's store-backed tests run (it replaces the fresh-store test, whose
+  assertions it contains). The library is pinned at authority main
+  (`d091cc7a`, which contains `f688c549`); this moved `codefly-dev/core` to
+  `8af4b787`, the version the library requires. Result: every case accounts is
+  offered passes, including the forwarded-context cases ("a module
+  authenticates the forwarded context against the published keys": expired,
+  forged, unsigned, wrong audience). The solution-principal cases are not
+  offered: the suite runs them only against a host whose
+  `host.installation.v1.Installation` carries `principal_id`, and accounts
+  serves the 0.2.0 installation interface, which does not. Passing them needs
+  the solution-principal contract (an installation's own principal owning its
+  data, owner-aware checking, role grants on the installation) re-vendored and
+  built; that is a feature, not a repair, and is not done here.
+- **M3, the read oracles answer only about organisations the caller is
+  installed in.** `CheckAuthorizationRevision` and `AuthorizeEvidenceRead`
+  refuse, before reading anything, an organisation where the calling module
+  has no installation, with the same refusal as an organisation that does not
+  exist (`PermissionDenied`, "the calling module is not installed in
+  organization …").
+- **Minors.** Journal and chain-read refusals log the store error. A module
+  refused as itself on the host interface (`ErrModuleIdentityDenied`, an
+  unbound token) is `Unauthenticated` with the reason; a token the review
+  refused outright stays `PermissionDenied`, the code the shared suite holds a
+  forged workload credential to. `Delegate` refuses a module not installed in
+  the grantor's organisation (`FailedPrecondition`, by name). The store's
+  migration runner records every applied migration's name on its version table
+  and refuses a database whose recorded names this ledger contradicts (a
+  database recorded before names were cannot be checked, and is recorded on
+  its next run). The harness reads the Connect server's error and retries a
+  port taken between its probe and the bind, the cause of the fresh-store
+  flake.
