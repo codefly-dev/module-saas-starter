@@ -9,6 +9,8 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	corework "github.com/codefly-dev/core/workcontext"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -133,4 +135,32 @@ func TestWorkContextReadOraclesAuthenticateTheCallingModule(t *testing.T) {
 			require.Contains(t, status.Convert(err).Message(), errOracleCallerUnavailable, name)
 		}
 	})
+}
+
+// callingModuleTokenFor is the module Work Context of the module a viewer
+// capability is addressed to — its audience is that module's prefix — minted
+// by the shared issuer in the viewer's tenant. It is how a module asks about a
+// viewer it serves: its own identity in the header, the viewer in the body.
+func callingModuleTokenFor(viewer string) string {
+	decoded, err := corework.Decode(viewer)
+	if err != nil {
+		// A viewer that does not decode names no module; the call is then made
+		// with no module identity and must be refused for that.
+		return ""
+	}
+	claims := decoded.Context()
+	principal := business.ModulePrincipalID(claims.GetAudience())
+	installation := "installation-" + principal
+	if service != nil {
+		if live, _, err := service.WorkContextSeal(context.Background(), claims.GetTenantId(), principal, ""); err == nil {
+			installation = live
+		}
+	}
+	token, _, err := WorkContextSingleton().StartModuleTask(context.Background(), business.ModuleWorkContextAuthority{
+		PrincipalID: principal, Tenant: claims.GetTenantId(), InstallationID: installation,
+	})
+	if err != nil {
+		panic("minting the calling module's identity: " + err.Error())
+	}
+	return token
 }

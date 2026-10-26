@@ -19,8 +19,8 @@ const ModuleAuthorityEndpoint = "authority"
 
 // moduleAuthorityCapabilityService is the one accounts service whose every
 // admissible method authenticates the CALLING MODULE itself before it decides
-// anything: from a signed capability — its module Work Context, or a viewer
-// Work Context whose audience names it — or, for the one workload mint named in
+// anything: from its module Work Context (a viewer it asks about travels in the
+// request body and must be addressed to it) — or, for the one workload mint named in
 // moduleAuthorityWorkloadMints, from the module pod's projected ServiceAccount
 // token, reviewed and bound to its running build. Because the caller is proven
 // by the call itself, no perimeter credential is asked of these methods on the
@@ -166,6 +166,20 @@ func IsModuleAuthorityProcedure(fullMethod string) bool {
 	}
 	_, ok := moduleAuthorityIndex[fullMethod]
 	return ok
+}
+
+// ModuleAuthorityAuthenticatesInRequest reports whether fullMethod, served on
+// ModuleAuthorityEndpoint, is on the explicit allowlist of methods that prove
+// the calling module from the workload credential the request itself carries
+// (moduleAuthorityWorkloadMints), and so are admitted before a module Work
+// Context exists. Every other procedure on the endpoint is refused unless the
+// call presents the calling module's own Work Context.
+func ModuleAuthorityAuthenticatesInRequest(fullMethod string) bool {
+	if !strings.HasPrefix(fullMethod, "/") {
+		fullMethod = "/" + fullMethod
+	}
+	_, mint := moduleAuthorityWorkloadMints[fullMethod]
+	return mint
 }
 
 // ValidateModuleAuthorityProcedures holds the module surface to the internal

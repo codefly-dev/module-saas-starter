@@ -23,20 +23,11 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority := WorkContextSingleton()
-	if !authority.configured() {
-		return nil, status.Error(codes.Unavailable, "Work Context authority is not configured")
-	}
-	md, _ := metadata.FromIncomingContext(ctx)
-	values := md.Get(workContextHeader)
-	if len(values) != 1 {
-		return nil, status.Error(codes.Unauthenticated, "one viewer Work Context is required")
-	}
-	verified, err := authority.readBack(ctx, values[0])
+	claims, err := authenticateModuleViewer(ctx, req.GetViewerWorkContextToken())
 	if err != nil {
-		return nil, refusedReadBack(ctx, err, status.Error(codes.Unauthenticated, "invalid viewer Work Context"))
+		return nil, err
 	}
-	claims := verified.Context()
+	authority := WorkContextSingleton()
 	declared, err := service.ModuleContentResources(claims.GetAudience())
 	if err != nil || !slices.Contains(declared, req.ResourceType) {
 		return nil, status.Error(codes.PermissionDenied, "declared resource scope required")

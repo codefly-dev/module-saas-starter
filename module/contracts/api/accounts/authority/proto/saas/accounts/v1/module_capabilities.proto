@@ -840,10 +840,14 @@ message CollectionSyncProvenance {
   google.protobuf.Timestamp requested_at = 6;
   string requested_by_label = 7;
 }
-// Tenant and viewer come exclusively from the verified Work Context.
+// The calling module authenticates with its own module Work Context in the
+// x-codefly-work-context header; the viewer it reads for travels here, and
+// must be addressed to that module. Tenant and viewer come exclusively from
+// the verified viewer Work Context.
 message ListReadableSourceCollectionsRequest {
   int32 page_size = 1 [(buf.validate.field).int32 = {gte: 0, lte: 1000}];
   string page_token = 2 [(buf.validate.field).string.max_len = 2048];
+  string viewer_work_context_token = 3 [(buf.validate.field).string = {min_len: 1, max_len: 32768}];
 }
 message ListReadableSourceCollectionsResponse {
   repeated ReadableSourceCollection collections = 1;
@@ -898,12 +902,16 @@ message ModulePlaceRecordResponse {
   string node_id = 1 [(buf.validate.field).string.uuid = true];
 }
 
-// Exact-record delegated oracle. Tenant and subjects come only from the signed
-// forwarded Work Context; a caller cannot provide a scope path or principal.
+// Exact-record delegated oracle. The calling module authenticates with its
+// own module Work Context in the x-codefly-work-context header; the viewer it
+// asks for travels here, and must be addressed to that module. Tenant and
+// subjects come only from the signed viewer Work Context; a caller cannot
+// provide a scope path or principal.
 message CheckWorkContextRecordAccessRequest {
   string resource_type = 1 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
   string resource_id = 2 [(buf.validate.field).string = {min_len: 1, max_len: 512}];
   string action = 3 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
+  string viewer_work_context_token = 4 [(buf.validate.field).string = {min_len: 1, max_len: 32768}];
 }
 message CheckWorkContextRecordAccessResponse {
   // False also covers an unplaced or inaccessible record; no scope is disclosed.

@@ -12,12 +12,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ListReadableSourceCollections verifies the exact forwarded viewer capability;
-// this operation does not use the installation's module capability identity.
-// The audience no longer separates those two — a module prefix and the
-// module-capability audience are both legal audience strings — so what excludes a
-// module's own identity token is the scope requirement below: that mint seals no
-// authority scopes, and an empty scope set grants nothing.
+// ListReadableSourceCollections answers for the viewer the calling module
+// serves: the module authenticates with its own module Work Context and
+// presents the viewer's in the request (authenticateModuleViewer). What
+// excludes a module's own identity token as the viewer is the scope
+// requirement below: that mint seals no authority scopes, and an empty scope
+// set grants nothing.
 func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Context, req *gen.ListReadableSourceCollectionsRequest) (*gen.ListReadableSourceCollectionsResponse, error) {
 	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
 	if fenceErr != nil {
@@ -28,24 +28,15 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	authority := WorkContextSingleton()
-	if !authority.configured() {
-		return nil, status.Error(codes.Unavailable, "Work Context authority is not configured")
-	}
-	md, _ := metadata.FromIncomingContext(ctx)
-	values := md.Get(workContextHeader)
-	if len(values) != 1 {
-		return nil, status.Error(codes.Unauthenticated, "one viewer Work Context is required")
-	}
 	// The audience is not compared against a literal: it names the composed
-	// module the capability was minted for, and that module's own declaration
-	// says which permission resource types its content is governed by. A host
-	// that spelled one here would answer "no access" for every other consumer.
-	verified, err := authority.readBack(ctx, values[0])
+	// module the capability was minted for — the calling module itself — and
+	// that module's own declaration says which permission resource types its
+	// content is governed by.
+	claims, err := authenticateModuleViewer(ctx, req.GetViewerWorkContextToken())
 	if err != nil {
-		return nil, refusedReadBack(ctx, err, status.Error(codes.Unauthenticated, "invalid viewer Work Context"))
+		return nil, err
 	}
-	claims := verified.Context()
+	authority := WorkContextSingleton()
 	// Both refusals answer identically. Telling "that audience declares no content"
 	// apart from "your capability does not grant read on it" would report which
 	// modules a composition declared, which the registration surface takes

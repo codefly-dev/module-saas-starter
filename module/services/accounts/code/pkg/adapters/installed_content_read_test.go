@@ -261,12 +261,16 @@ func TestInstalledContentReadCollectionReader(t *testing.T) {
 	child, err := exchange()
 	require.NoError(t, err)
 	require.Equal(t, business.ModulePrincipalID("reader"), child.CurrentActorPrincipalId)
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "installed-read-test", workContextHeader, child.Token))
+	// The child is addressed to the documents module, which is the one that
+	// asks: with its own identity in the header and the child in the request.
+	documentsToken, _, err := server.StartModuleTask(context.Background(), business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("documents"), Tenant: readOrg, InstallationID: f.live[business.ModulePrincipalID("documents")].InstallationID})
+	require.NoError(t, err)
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(workContextHeader, documentsToken))
 	oracle := &ModuleCapabilitiesServer{}
-	page, err := oracle.ListReadableSourceCollections(ctx, &gen.ListReadableSourceCollectionsRequest{PageSize: 10})
+	page, err := oracle.ListReadableSourceCollections(ctx, &gen.ListReadableSourceCollectionsRequest{PageSize: 10, ViewerWorkContextToken: child.Token})
 	require.NoError(t, err)
 	require.Len(t, page.Collections, 2)
-	record := &gen.CheckWorkContextRecordAccessRequest{ResourceType: "documents", ResourceId: "boundary-a", Action: "read"}
+	record := &gen.CheckWorkContextRecordAccessRequest{ResourceType: "documents", ResourceId: "boundary-a", Action: "read", ViewerWorkContextToken: child.Token}
 	exact, err := oracle.CheckWorkContextRecordAccess(ctx, record)
 	require.NoError(t, err)
 	require.True(t, exact.Allowed)
@@ -275,7 +279,7 @@ func TestInstalledContentReadCollectionReader(t *testing.T) {
 	exact, err = oracle.CheckWorkContextRecordAccess(ctx, record)
 	require.NoError(t, err)
 	require.False(t, exact.Allowed)
-	page, err = oracle.ListReadableSourceCollections(ctx, &gen.ListReadableSourceCollectionsRequest{PageSize: 10})
+	page, err = oracle.ListReadableSourceCollections(ctx, &gen.ListReadableSourceCollectionsRequest{PageSize: 10, ViewerWorkContextToken: child.Token})
 	require.NoError(t, err)
 	require.Len(t, page.Collections, 1)
 	// Owner transformation cannot discard installed provenance.
