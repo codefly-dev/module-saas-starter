@@ -37,6 +37,7 @@ type installedReadStore struct {
 	live       map[string]*business.LiveModuleAuthority
 	broad      bool
 	liveErr    error
+	directory  *directoryContextStore
 }
 
 func (f *installedReadStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
@@ -118,7 +119,7 @@ func (s installedReadSeals) WorkContextAudienceInstallation(_ context.Context, _
 	return s.fixture.live[business.ModulePrincipalID(audience)].InstallationID, nil
 }
 
-func installedReadFixture(t *testing.T) (*installedReadStore, *WorkContextAuthorityServer) {
+func installedReadFixture(t *testing.T, bindings ...func(string, *solutionhost.Authority, map[string]any)) (*installedReadStore, *WorkContextAuthorityServer) {
 	t.Helper()
 	previous, previousAuthority := service, workContextSingleton
 	t.Cleanup(func() { service, workContextSingleton = previous, previousAuthority; SetInternalToken("") })
@@ -143,6 +144,9 @@ func installedReadFixture(t *testing.T) (*installedReadStore, *WorkContextAuthor
 			grant["operation_audiences"] = map[string]any{"evidence": map[string]any{"audience": "documents", "delegation_mode": "content_read", "lookup_scopes": []any{map[string]any{"resource_kind": "documents", "actions": []string{"read"}, "resource_ids": []string{"boundary-a"}}}, "invoke_scopes": []any{map[string]any{"resource_kind": "documents", "actions": []string{"read"}}}}, "execution": map[string]any{"audience": "compute", "invoke_scopes": []any{map[string]any{"resource_kind": "profiles", "actions": []string{"invoke", "read"}}}, "lookup_scopes": []any{map[string]any{"resource_kind": "profiles", "actions": []string{"read"}}}}}
 		}
 		addModuleActorBindings(prefix, authority, grant)
+		for _, add := range bindings {
+			add(prefix, authority, grant)
+		}
 		manifest := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: "acme.test." + prefix, Alias: prefix, Kind: solutionhost.KindModule, Generation: 1, Host: solutionhost.HostTarget{Coordinate: "host.test", Domain: "acme"}, Release: solutionhost.Release{Publisher: "acme", Name: prefix, Version: "1.0.0"}, Workloads: []solutionhost.Workload{{Service: "api", Container: "api"}}, Authority: authority}
 		payload, err := solutionhost.SignedPayload(manifest)
 		require.NoError(t, err)

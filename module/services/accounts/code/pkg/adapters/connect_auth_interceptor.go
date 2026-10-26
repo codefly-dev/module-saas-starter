@@ -283,6 +283,9 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	if sourceOperationProcedure(procedure) && len(headers.Values(workContextHeader)) != 0 {
 		return authenticateSourceOperationContext(ctx, headers)
 	}
+	if directoryProcedure(procedure) && len(headers.Values(workContextHeader)) != 0 {
+		return authenticateOwnerWorkContext(ctx, headers, business.DirectoryAudience, "directory")
+	}
 	if business.ShapeAuthenticated(procedure) && headers.Get("Authorization") == "" && !trustedForwarded {
 		// A call carrying no credential at all: the request's shape
 		// authenticates (business.ShapeAuthenticated). A forwarded identity or a

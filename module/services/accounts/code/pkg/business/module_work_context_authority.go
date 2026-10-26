@@ -122,7 +122,7 @@ func (s *Service) declaredModuleAlias(ctx context.Context, presenceBinding strin
 			continue
 		}
 		alias := strings.TrimSpace(binding.Alias)
-		if alias == "" || alias == ModuleCapabilitiesAudience || alias == SourceOperationAudience ||
+		if alias == "" || alias == ModuleCapabilitiesAudience || alias == SourceOperationAudience || alias == DirectoryAudience ||
 			strings.HasPrefix(alias, SolutionAudiencePrefix) {
 			return "", nil
 		}

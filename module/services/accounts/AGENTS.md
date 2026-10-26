@@ -25,6 +25,28 @@ Context exchanges below; no secret does.
 The principal directory lists stored identities only. Declared module authority
 is read by the capability checks and does not create synthetic directory rows.
 
+## Forwarded Work Contexts on the organization directory
+
+`DirectoryService` on the Connect endpoint accepts a person-owned Work Context
+addressed to `saas-directory` in `x-codefly-work-context`. A consuming module uses
+its existing `ExchangeDelegatedOperationAudience` binding in `module_actor` mode
+to obtain that context from the person's admitted parent. The binding declares
+`audience: saas-directory`; its scopes stay within the parent's effective scopes.
+Like a source-operation binding, it retains the calling module's installation
+seal: the host directory has no installation of its own.
+
+Admission shares the source-operation owner verifier: signature, intended
+audience, validity window, live seal/revision and current delegation authority.
+It stamps only the verified owner and tenant. The existing `requireAuth` and
+organization-membership gates still run, including for a team's resolved
+organization; membership in another organization never widens the context's
+tenant. A supplied invalid context is refused even beside a valid bearer.
+Without the Work Context header, bearer admission is unchanged.
+
+The module's own `module-capabilities` identity and a parent addressed to the
+module are not directory credentials. The three directory reads remain SaaS
+operations; no directory fact or RPC is added to the authority interface.
+
 ## The one diagnostic the binary answers
 
 `./app diagnose token-exchange` (`diagnose.go`, dispatched first thing in
