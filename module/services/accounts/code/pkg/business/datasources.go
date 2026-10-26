@@ -2063,7 +2063,7 @@ var ErrUploadEmptyListingRefused = errors.New("upload listing is empty for a sou
 
 // uploadSourceMayHoldFiles reports whether an object-storage source's mirrored
 // entries may be non-empty: its last closing snapshot named objects, or it
-// synced before that count was recorded (migration 56), which is unknown and
+// synced before that count was recorded (migration 57), which is unknown and
 // so treated as having files. A source that never synced holds nothing.
 func (s *Service) uploadSourceMayHoldFiles(ctx context.Context, source *DatasourceSource) (bool, error) {
 	var items int
