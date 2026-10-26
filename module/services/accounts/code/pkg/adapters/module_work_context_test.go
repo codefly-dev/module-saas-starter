@@ -69,6 +69,17 @@ func (s *recordingModuleStore) GetSourceDelegation(context.Context, string, stri
 	return nil, nil
 }
 
+// WithOrgTx and ModuleDelegations answer that this organization records no
+// delegation to a module, which is what a hop asks of every delegation id its
+// chain names: none of them is a stored delegation here.
+func (s *recordingModuleStore) WithOrgTx(ctx context.Context, _ string, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s *recordingModuleStore) ModuleDelegations(context.Context, string, []string) ([]*business.ModuleDelegation, error) {
+	return nil, nil
+}
+
 func (s *recordingModuleStore) OrganizationIDExists(_ context.Context, id string) (bool, error) {
 	s.tenantChecks++
 	s.tenantCheckedID = id

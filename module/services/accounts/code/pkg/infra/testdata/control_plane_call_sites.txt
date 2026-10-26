@@ -81,6 +81,7 @@ pkg/business/module_capabilities.go: (*Service).ModuleSubscribe: WithControlPlan
 pkg/business/module_capabilities.go: (*Service).ModuleUnsubscribe: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).moduleAuditSubjectIsMemberOf: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).requireTenantMember: WithControlPlane
+pkg/business/module_delegation.go: (*Service).ModuleDelegation: WithControlPlane
 pkg/business/module_envelope.go: (*Service).CurrentModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).GetModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).committedModuleEnvelopeRevision: WithControlPlane
