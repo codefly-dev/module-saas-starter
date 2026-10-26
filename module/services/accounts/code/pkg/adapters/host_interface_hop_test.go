@@ -276,7 +276,7 @@ func TestAHopFromAnInstallationOwnedParentInheritsTheInstallationsStandingGrants
 	require.Equal(t, parentClaims.GetTaskId(), wc.GetTaskId())
 	require.Equal(t, parentClaims.GetSessionId(), wc.GetParentSessionId())
 	require.Len(t, wc.GetActorChain(), 1)
-	require.Equal(t, business.ModulePrincipalID("tools"), wc.GetActorChain()[0].GetPrincipalId())
+	require.Equal(t, "tools", wc.GetActorChain()[0].GetPrincipalId())
 	requireScopes(t, []*basev0.WorkScopeV1{hopScope("example-records", []string{"read"})}, wc.GetActorChain()[0].GetGrantedScopes())
 	_, err = f.server.Check(context.Background(), &authorityv1.CheckRequest{Token: out.GetToken(), Audience: "documents"})
 	require.NoError(t, err)
