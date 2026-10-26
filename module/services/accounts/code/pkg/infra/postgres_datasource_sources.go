@@ -639,7 +639,7 @@ func (s *PostgresStore) SetDatasourceSourceSynced(ctx context.Context, orgID, id
 
 // RecordDatasourceSnapshotSent stamps a sync that sent its closing snapshot:
 // the sync time and the number of objects the snapshot named, which is the
-// host's record of whether the source has files (migration 50).
+// host's record of whether the source has files (migration 56).
 func (s *PostgresStore) RecordDatasourceSnapshotSent(ctx context.Context, orgID, id string, syncedAt time.Time, items int) error {
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		UPDATE datasource_sources
