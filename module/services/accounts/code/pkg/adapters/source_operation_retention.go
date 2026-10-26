@@ -27,7 +27,7 @@ func (h *datasourceConnectHandler) requireReceiptRetention(ctx context.Context, 
 	if lookup {
 		action = "read"
 	}
-	if err := requireSourceOperationScope(ctx, org, source, action); err != nil {
+	if err := h.requireAuditedSourceOperationScope(ctx, actor, org, source, action, effect); err != nil {
 		return err
 	}
 	return translateGRPCError(h.svc.SourceReceiptRetentionAuthority(ctx, actor, org, source, effect, lookup))
