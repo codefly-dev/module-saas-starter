@@ -345,9 +345,9 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 		}
 		require.NoError(t, acknowledgeInstallSteps(ctx, svc))
 		require.NoError(t, installations.Converge(ctx), "acknowledged installations are exposed to their teams")
-		pages := installationOf(t, ctx, conn, "fixture-alex", "conformance-pages")
+		proposals := installationOf(t, ctx, conn, "fixture-alex", "conformance-proposals")
 		assistant := installationOf(t, ctx, conn, "fixture-alex", "conformance-assistant")
-		pagesCredential, assistantCredential := credential("conformance-pages"), credential("conformance-assistant")
+		proposalsCredential, assistantCredential := credential("conformance-proposals"), credential("conformance-assistant")
 
 		// A delegate chain (gap 14): an administrator issued at documents;
 		// documents hops to model through its binding for what the first token
@@ -366,8 +366,11 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 			Audience: "documents", ReadKind: "example-records",
 			// The credential a pod of org-directory's declared workload presents.
 			WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
-			// The installed pages solution and its own workload.
-			InstalledSolution: pages, InstalledAudience: "conformance-pages", InstalledCredential: pagesCredential,
+			// The installed proposals solution and its own workload. Its roles
+			// name its own kind alone, so documents (Audience) is unrelated to
+			// it, as the suite requires of the installation it refuses there;
+			// pages would not do, since its viewer role grants example-records.
+			InstalledSolution: proposals, InstalledAudience: "conformance-proposals", InstalledCredential: proposalsCredential,
 			UnexposedTeam: teamNamed(t, ctx, svc, fixtureOrganization, "Unexposed"),
 			// An Acme owner who is not an administrator; a member with no role and no team.
 			OwnerToken: "fixture-owner", UnentitledToken: "fixture-no-roles",
@@ -375,7 +378,7 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 			// viewer role writes example records at documents through the
 			// solution's binding, never on its own.
 			SolutionRoles: &conformance.SolutionRoleCase{
-				Solution: "conformance-pages", Credential: pagesCredential, Token: "fixture-maya", Outsider: "fixture-no-roles",
+				Solution: "conformance-pages", Credential: credential("conformance-pages"), Token: "fixture-maya", Outsider: "fixture-no-roles",
 				OwnKind: "conformance-pages.page", OwnActions: []string{"read", "write", "publish"},
 				Binding: "documents", Audience: "documents", ConsumedKind: "example-records", ConsumedAction: "write", ForbiddenAction: "ingest", Generation: 2,
 			},
