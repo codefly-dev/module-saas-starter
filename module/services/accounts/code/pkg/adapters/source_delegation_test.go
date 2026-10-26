@@ -441,6 +441,8 @@ func TestDelegatedOperationExchangeWithoutADelegationHopKeepsTheTenantCheck(t *t
 		_, err := client.ExchangeDelegatedOperationAudience(context.Background(), req)
 		return err
 	}
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(exchange(false)))
+	// The module's context is bound to a tenant its grant no longer names: its
+	// own credential is not valid here, so it is told to mint again.
+	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(exchange(false)))
 	require.NoError(t, exchange(true))
 }

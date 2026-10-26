@@ -486,7 +486,15 @@ one, under domain `saas.accounts.v1`:
 | `TENANT_MEMBERSHIP_MISSING` (`business.ModuleTenantMembershipMissingReason`) | the person named is not a member of the tenant | nobody's — final for that person |
 | `NOTIFICATION_IDEMPOTENCY_CONFLICT` (`business.ModuleNotificationIdempotencyConflictReason`) | the idempotency key was used for different content | the calling module's; a retry never clears it |
 | `SUBJECT_VISIBILITY_SET_TOO_LARGE` (`business.ModuleSubjectVisibilitySetTooLargeReason`) | the viewer's set exceeds `ModuleSubjectVisibilityMaxSet` | an administrator's, by changing the hierarchy |
-| `LIVE_AUTHORITY_UNAVAILABLE` (`business.ModuleLiveAuthorityUnavailableReason`) | this host cannot re-read live module authority, so it exercises no capability at all — refused by `AuthorizeModuleCapability` before any membership read | the operator's; **retain** the work and retry once repaired |
+| `LIVE_AUTHORITY_UNAVAILABLE` (`business.ModuleLiveAuthorityUnavailableReason`) | this host cannot re-read live module authority, so it exercises no capability at all — refused `UNAVAILABLE` (not `FAILED_PRECONDITION`) by `AuthorizeModuleCapability` before any membership read | the operator's; **retain** the work and retry once repaired |
+
+A module context `AuthorizeModuleCapability` does not admit — a principal no
+composition registers, installed nowhere for the bound organization, a tenant
+its grant no longer names, an installation of another registry binding — is the
+calling module's own credential failing, never a revocation of anyone it acts
+for. It answers `UNAUTHENTICATED`, naming the reason, so the module drops its
+context and mints again. `PERMISSION_DENIED` stays for a module this host admits
+asking for what its grant does not hold.
 
 Only `TENANT_MEMBERSHIP_MISSING` is final. **An absent or unrecognised reason is
 retainable, never final:** the table is what the surface answers today, not a

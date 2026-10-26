@@ -23,10 +23,11 @@ const (
 // so the caller must be a module that exists and is installed now; a static
 // token every workload holds names no module and is not accepted in its place.
 //
-// Unauthenticated when no single module Work Context is presented or the one
-// presented does not verify; PermissionDenied when it names a module that is
-// not registered or not installed; Unavailable when this host cannot
-// authenticate modules at all.
+// Unauthenticated when no single module Work Context is presented, when the
+// one presented does not verify, or when it names a module this host does not
+// admit (not registered, installed nowhere, tenant moved): the module drops its
+// context and mints again. Unavailable when this host cannot authenticate
+// modules at all.
 func (s *WorkContextAuthorityServer) requireCallingModule(ctx context.Context) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 	values := md.Get(workContextHeader)

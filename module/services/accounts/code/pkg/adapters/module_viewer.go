@@ -19,9 +19,9 @@ const errViewerNotAddressedToCaller = "the viewer Work Context is not addressed 
 // module — its audience is the module's prefix — so a viewer capability held by
 // any other workload is a bearer that proves nothing here.
 //
-// Unauthenticated when the module or the viewer does not verify;
-// PermissionDenied when the module is not current or the viewer is another
-// module's.
+// Unauthenticated when the module or the viewer does not verify, or the host
+// does not admit the module's context; PermissionDenied when the viewer is
+// another module's.
 func authenticateModuleViewer(ctx context.Context, encodedViewer string) (*basev0.WorkContextV1, error) {
 	authority := WorkContextSingleton()
 	if service == nil || !authority.configured() {

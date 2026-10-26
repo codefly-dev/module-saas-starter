@@ -36,9 +36,11 @@ without dropping it for a module the host does not admit as a principal.
 also answer `FAILED_PRECONDITION` with reason
 `NOTIFICATION_IDEMPOTENCY_CONFLICT` when an idempotency key was already used
 for different content, which is the sender's own bug and must not be dropped as
-a departed recipient; and with `LIVE_AUTHORITY_UNAVAILABLE` when the host cannot
-re-read live module authority, which is an operator's to repair and whose work a
-sender must retain. An absent or unrecognised reason is retainable too — only
+a departed recipient. A host that cannot re-read live module authority answers
+`UNAVAILABLE` with reason `LIVE_AUTHORITY_UNAVAILABLE`: an operator's to repair,
+and work a sender must retain. A module context this host does not admit (not
+registered, installed nowhere, tenant moved, another registry binding) answers
+`UNAUTHENTICATED`: the module drops its context and mints again. An absent or unrecognised reason is retainable too — only
 `TENANT_MEMBERSHIP_MISSING` is final.
 
 **The consuming side of this distinction is not done, and this host cannot

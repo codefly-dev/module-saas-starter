@@ -108,7 +108,7 @@ func TestWorkContextReadOraclesAuthenticateTheCallingModule(t *testing.T) {
 		}, codes.Unauthenticated, "module work context is not a valid capability"},
 		{"a module the host does not declare", func(t *testing.T) context.Context {
 			return callingModuleContext(t, server, business.ModulePrincipalID("intruder"), moduleWorkContextTenant)
-		}, codes.PermissionDenied, "is not a registered module principal"},
+		}, codes.Unauthenticated, "is not a registered module principal"},
 	}
 	for name, ask := range oracles {
 		for _, refusal := range refusals {
