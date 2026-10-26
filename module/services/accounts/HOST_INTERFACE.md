@@ -1114,3 +1114,26 @@ scoped, forced RLS, revoked once and never deleted, its grant immutable).
   there, as the journal already was. The remaining registry-id comparisons are
   on capabilities that still carry the registry id (source delegations,
   installed-content reads, the module's own identity and headless contexts).
+
+### Each hop is held to the scope set it was issued under (2026-10-26)
+
+The chain re-read compared a hop with the union of its binding's invoke,
+lookup and headless sets. Lookup and headless lie within invoke by
+declaration, so that union was invoke: a lookup hop upstream in a chain kept
+standing after the binding's lookup was withdrawn, for as long as invoke
+granted the action. The journal now records, for a module's hop through a
+binding, the binding it went through and the set it was issued under
+(migration 49: `operation_binding_id`, `operation`, both or neither, part of
+the hop's content address when present). `ConfirmModuleChain` holds a recorded
+hop to exactly that set: narrowing it, or withdrawing it, ends the hop even
+while another set of the same binding still grants the action
+(`TestAHopIsHeldToTheScopeSetItWasIssuedUnder`). The last hop's own binding is
+also re-read by core, whose binding revision moves with any change to it. The
+remote binding answer a callee's verifier asks for runs the same re-read and
+answers a stale chain as revoked.
+
+Still held by audience and union: a hop the journal holds no binding for (one
+recorded before migration 49, or on a host with no journal), and
+`CheckAuthorizationRevision`, whose request names no hop, so it cannot read
+which set each was issued under; a callee that verifies through this host's
+binding answer gets the exact check.
