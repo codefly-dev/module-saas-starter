@@ -500,6 +500,10 @@ const (
 	EventSourceDelegationUsed    EventType = "saas.datasource.delegation.used"
 	EventSourceDelegationRevoked EventType = "saas.datasource.delegation.revoked"
 	EventFeatureFlagUpdated      EventType = "saas.feature_flag.updated"
+	// A person's delegation to a composed module (module_delegation.go): a
+	// standing grant the module issues from for them, and its end.
+	EventModuleDelegationGranted EventType = "saas.module_delegation.granted"
+	EventModuleDelegationRevoked EventType = "saas.module_delegation.revoked"
 
 	// Domain-event pub/sub (issue #493). A subscription is a standing grant of
 	// delivery, so its create and revoke are audited on the tenant spine; a
@@ -815,6 +819,10 @@ var auditEventCatalog = []AuditEventDefinition{
 		append(append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"), boolean("lookup")), optionalFields(mintExecutionFields())...)...), 3),
 	mutation(EventSourceDelegationRevoked, CategoryAccess, "A source delegation was revoked.",
 		append(slices.Clone(sourceDelegationFields), enum("reason", SourceDelegationRevocationReasons...))...),
+	mutation(EventModuleDelegationGranted, CategoryAccess, "A person delegated to a composed module the right to act for them, within what they hold.",
+		moduleDelegationFields...),
+	mutation(EventModuleDelegationRevoked, CategoryAccess, "A delegation to a composed module was revoked, by its grantor or an administrator.",
+		append(slices.Clone(moduleDelegationFields), uid("revoked_by"))...),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
 	revised(mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.",
 		str("repo"), enum("credential_kind", "pat", "app", "public")), 2),
@@ -1037,6 +1045,8 @@ var webhookAdminFields = []PayloadField{
 // e.g. a webhook delivery id) make a solution-owned write attributable (#473).
 // sourceDelegationFields is what every source delegation event names: which
 // delegation, of which source, by which person, to which module binding.
+var moduleDelegationFields = []PayloadField{uid("delegation_id"), uid("grantor_id"), str("module"), strs("scopes")}
+
 var sourceDelegationFields = []PayloadField{uid("delegation_id"), uid("source_id"), uid("principal_id"), str("module"), str("binding_id")}
 
 var sourceSyncFields = []PayloadField{str("solution"), str("job_id"), str("repo"), str("commit"), PayloadField{Name: "processed", Kind: FieldInt}, PayloadField{Name: "new_versions", Kind: FieldInt}, PayloadField{Name: "deleted", Kind: FieldInt}, PayloadField{Name: "failed", Kind: FieldInt}, str("reason"), str("code"), str("trigger"), PayloadField{Name: "attempt", Kind: FieldInt}, PayloadField{Name: "retryable", Kind: FieldBool}}

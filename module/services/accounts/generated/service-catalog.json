@@ -610,7 +610,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "saas.work_context.task_started"
+            "saas.module_delegation.granted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -837,7 +837,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "saas.work_context.task_started"
+            "saas.module_delegation.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },

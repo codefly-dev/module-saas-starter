@@ -89,13 +89,12 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		// and the answer says nothing the token does not already carry but its standing.
 		"/host.authority.v1.AuthorityService/Check": read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.authority.v1.AuthorityService/Keys":  read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_PUBLIC),
-		// Served as Unimplemented by name until the host answers them (HOST_INTERFACE.md);
-		// classified so the refusal names the gap rather than an unclassified method.
+		// ListResources is authenticated by the capability it is asked about, like Check.
 		"/host.authority.v1.AuthorityService/ListResources": read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// A delegation names no organisation: it is the bearer's, so the floor is
 		// the authenticated caller and the organisation is the session's.
-		"/host.authority.v1.AuthorityService/Delegate":         sessionMint("saas.work_context.task_started"),
-		"/host.authority.v1.AuthorityService/RevokeDelegation": sessionMint("saas.work_context.task_started"),
+		"/host.authority.v1.AuthorityService/Delegate":         sessionMint(string(EventModuleDelegationGranted)),
+		"/host.authority.v1.AuthorityService/RevokeDelegation": sessionMint(string(EventModuleDelegationRevoked)),
 		"/host.authority.v1.AuthorityService/GetDelegation":    read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// Authentication belongs to signed delivery and its workload credential.
 		"/host.composition.v1.CompositionService/ApplyManifest": {
