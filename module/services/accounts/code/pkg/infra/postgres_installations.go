@@ -113,7 +113,7 @@ func firstEligibleOwner(ctx context.Context, executor QueryExecutor, orgID strin
 // InstallSolution composes the agent principal, solution scope node, standing
 // grant, pending installation and durable step inside the caller's WithOrgTx.
 // Only acknowledged consent is usable. An active identical install is idempotent;
-// pending/failed consent requires its existing lifecycle, never a second install.
+// Fresh approval can supersede pending consent; failed work uses retry.
 // Composed modules retain their installation path; the callback is solution-owned.
 func (s *PostgresStore) installSolution(ctx context.Context, params *business.InstallSolutionParams) (*gen.Installation, error) {
 	w := wool.Get(ctx).In("InstallSolution",
@@ -163,7 +163,8 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 		 WHERE org_id = $1 AND target_id = $2::uuid AND status <> 'revoked'`,
 		params.OrgID, params.TargetID))
 	if err == nil {
-		if existing.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+		if existing.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE &&
+			!(existing.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING && params.Approval != nil) {
 			return nil, installerConflict("installation already exists; retry a failed installation or uninstall it")
 		}
 		if e := reconcileExistingInstallation(ctx, executor, existing, params); e != nil {
@@ -216,8 +217,9 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 	installation, err := scanInstallation(executor.QueryRow(ctx, `
 		INSERT INTO installations
 			(id, org_id, agent_principal_id, target_id, owner_principal_id,
-			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id, kind, registry_binding_id, registry_principal_id, scope)
-		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, CASE WHEN $8='module' THEN 'active' ELSE 'pending' END, NULLIF($7, '')::uuid, COALESCE(NULLIF($8,''),'solution'), NULLIF($9,''), NULLIF($10, '')::uuid, $11::jsonb)
+			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id, kind, registry_binding_id, registry_principal_id, scope, revision)
+		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, CASE WHEN $8='module' THEN 'active' ELSE 'pending' END, NULLIF($7, '')::uuid, COALESCE(NULLIF($8,''),'solution'), NULLIF($9,''), NULLIF($10, '')::uuid, $11::jsonb,
+ (SELECT COALESCE(max(revision),0)+1 FROM public.installations WHERE org_id=$1 AND target_id=$3::uuid))
 		RETURNING `+installationColumns,
 		params.OrgID, agentID, params.TargetID, params.OwnerPrincipalID,
 		stringArray(params.CoOwnerPrincipalIDs), nodeID, params.InstallerPrincipalID,
@@ -236,7 +238,7 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 		}
 		return nil, w.Wrapf(err, "failed to insert installation")
 	}
-	if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING {
+	if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING && params.Approval == nil {
 		if err := s.EnqueueInstallationStep(ctx, params.OrgID, installation.Id, "initial"); err != nil {
 			return nil, err
 		}

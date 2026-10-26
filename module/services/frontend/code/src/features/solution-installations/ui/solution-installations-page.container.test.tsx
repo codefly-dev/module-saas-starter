@@ -421,6 +421,49 @@ describe("SolutionInstallationsPage admin container", () => {
 		expect(toast.success).toHaveBeenCalledWith("ledger installation pending");
 	});
 
+	it("reinstalls after revoke using the revision reported by the installation listing", async () => {
+		serve();
+		let sent: Record<string, unknown> | undefined;
+		server.use(
+			http.post(
+				rpc("InstallationService", "ListOrganizationInstallations"),
+				() =>
+					HttpResponse.json({
+						installations: [
+							{
+								installation: {
+									id: "revoked-ledger",
+									orgId: "org-1",
+									targetId: LEDGER_TARGET,
+									status: "INSTALLATION_STATUS_REVOKED",
+									revision: "17",
+								},
+							},
+						],
+					}),
+			),
+			http.post(
+				rpc("InstallationService", "InstallSolution"),
+				async ({ request }) => {
+					sent = (await request.json()) as Record<string, unknown>;
+					return HttpResponse.json({});
+				},
+			),
+		);
+		renderInApp(<Page />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Install ledger" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		await choose(dialog, "Agent role", "Expense reader — expenses:read");
+		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
+		await waitFor(() => expect(sent).toBeDefined());
+		expect(sent?.approval).toEqual({
+			...LEDGER_APPROVAL,
+			expectedRevision: "17",
+		});
+	});
+
 	it("does not install without a role for the solution's agent", async () => {
 		let called = false;
 		serve();

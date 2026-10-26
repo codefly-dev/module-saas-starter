@@ -17,18 +17,20 @@ export function useInstallSolution(orgId: string) {
 		mutationFn: ({
 			targetId,
 			generation,
+			expectedRevision,
 			operationId,
 			values,
 		}: {
 			targetId: string;
 			generation: bigint;
+			expectedRevision: bigint;
 			operationId: string;
 			values: InstallSolutionValues;
 		}) =>
 			service.installSolution({
 				orgId,
 				targetId,
-				approval: { targetId, generation, expectedRevision: BigInt(0), operationId },
+				approval: { targetId, generation, expectedRevision, operationId },
 				agentIdentifier: values.agentIdentifier.trim(),
 				displayName: values.displayName.trim(),
 				rootScopeLabel: values.rootScopeLabel.trim(),

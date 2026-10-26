@@ -154,10 +154,10 @@ type ModuleChainHop struct {
 // a token addressed to it, so hop i went through one of its module's bindings
 // addressed to the next hop's module (and the last hop through one addressed
 // to audience). That binding must still be installed here, and every scope the
-// hop carries of a kind the binding governs must still be within it: a kind
+// hop carries of a kind its original journaled grant governed must still be within it: a kind
 // the chain carried down from that hop is held to the binding as it is now,
 // so a narrowing upstream takes effect below it (rule A: never recovered).
-// Kinds the binding does not govern are the owner's and other hops', checked
+// Kinds this hop did not grant are the owner's and other hops', checked
 // where they are held.
 //
 // audience is the context's own audience; empty leaves the last hop to the
@@ -195,13 +195,7 @@ func (s *Service) ConfirmModuleChain(ctx context.Context, orgID, audience string
 		if !moduleAvailableToOrganization(installed.Grant, orgID) {
 			return ErrModuleHopStale
 		}
-		if hop.Through.BindingID != "" {
-			if !hopWithinItsSet(snapshot.registry, installed.Grant, orgID, id, target, hop) {
-				return ErrModuleHopStale
-			}
-			continue
-		}
-		if !hopWithinBindingsTo(installed.Grant, target, hop.Scopes) {
+		if !hopWithinItsSet(snapshot.registry, installed.Grant, orgID, id, target, hop) {
 			return ErrModuleHopStale
 		}
 	}
@@ -211,7 +205,7 @@ func (s *Service) ConfirmModuleChain(ctx context.Context, orgID, audience string
 // hopWithinItsSet holds a hop whose binding is on record to exactly the scope
 // set of that binding it was issued under: the binding must still be its
 // module's own, installed here and addressed to target, and every scope the
-// hop carries of a kind the binding names (in any of its sets) must lie within
+// hop carries of a kind originally granted by this hop must lie within
 // that one set. A set narrowed, or a kind it dropped, ends the hop even while
 // another set of the same binding still grants it: a hop issued under invoke
 // never stands on lookup. A denial row (a kind and no action) widens nothing
@@ -239,55 +233,20 @@ func hopWithinItsSet(registry ModulePrincipalRegistry, grant ModulePrincipalGran
 	default:
 		return false
 	}
+	// Descendant tokens carry other hops' kinds too. The immutable journal,
+	// not today's declaration, identifies which kinds this hop granted.
+	if len(hop.Through.GrantedScopes) == 0 {
+		return false
+	}
 	governed := map[string]bool{}
-	for _, list := range [][]ModuleOperationScope{binding.InvokeScopes, binding.LookupScopes, binding.HeadlessScopes} {
-		for _, scope := range list {
-			governed[scope.ResourceKind] = true
-		}
+	for _, scope := range hop.Through.GrantedScopes {
+		governed[scope.ResourceKind] = true
 	}
 	for _, scope := range hop.Scopes {
 		if !governed[scope.ResourceKind] || len(scope.Actions) == 0 {
 			continue
 		}
 		if !operationScopesSubset([]ModuleOperationScope{scope}, set) {
-			return false
-		}
-	}
-	return true
-}
-
-// hopWithinBindingsTo reports whether grant still holds a binding addressed to
-// target, and every scope of a kind those bindings govern lies within one of
-// their lists (invoke, lookup or headless, which are what a hop is minted from).
-func hopWithinBindingsTo(grant ModulePrincipalGrant, target string, scopes []ModuleOperationScope) bool {
-	var lists [][]ModuleOperationScope
-	governed := map[string]bool{}
-	for _, binding := range grant.OperationAudiences {
-		if binding.Audience != target {
-			continue
-		}
-		for _, list := range [][]ModuleOperationScope{binding.InvokeScopes, binding.LookupScopes, binding.HeadlessScopes} {
-			lists = append(lists, list)
-			for _, scope := range list {
-				governed[scope.ResourceKind] = true
-			}
-		}
-	}
-	if len(lists) == 0 {
-		return false
-	}
-	for _, scope := range scopes {
-		if !governed[scope.ResourceKind] {
-			continue
-		}
-		within := false
-		for _, list := range lists {
-			if operationScopesSubset([]ModuleOperationScope{scope}, list) {
-				within = true
-				break
-			}
-		}
-		if !within {
 			return false
 		}
 	}

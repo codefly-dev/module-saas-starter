@@ -6,6 +6,7 @@ package adapters
 // list in HOST_INTERFACE.md; the suite is never loosened to make a line green.
 
 import (
+	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"context"
 	"crypto"
 	"crypto/ed25519"
@@ -728,6 +729,68 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.Equal(t, codes.Unauthenticated, status.Code(err), "an ended session: %v", err)
 	})
 
+	t.Run("fresh approval supersedes pending attempt", func(t *testing.T) {
+		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+		composition := compositionv1connect.NewCompositionServiceClient(http.DefaultClient, baseURL)
+		m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: "conformance-pending-approval", Alias: "conformance-pending-approval", Kind: solutionhost.KindSolution, Generation: 1,
+			Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: "conformance-pending-approval", Version: "0.1.0"},
+			Workloads: []solutionhost.Workload{{Service: "conformance-pending-approval", Container: "app"}}, Authority: &solutionhost.Authority{Principal: "conformance-pending-approval", ResourceKinds: []string{"example-records"}}}
+		raw, err := solutionhost.SignedPayload(m)
+		require.NoError(t, err)
+		_, err = composition.ApplyManifest(ctx, connect.NewRequest(&compositionv1.ApplyManifestRequest{
+			Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + m.Alias,
+		}))
+		require.NoError(t, err)
+		sessions := sessionv1connect.NewSessionServiceClient(http.DefaultClient, baseURL)
+		bearer := func(fixture string) string {
+			t.Helper()
+			resp, err := sessions.SignIn(ctx, connect.NewRequest(&sessionv1.SignInRequest{FixtureToken: fixture}))
+			require.NoError(t, err)
+			return resp.Msg.GetBearer()
+		}
+		admin := bearer("fixture-alex")
+		client := installationv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
+		saas := accountsv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
+		catalogue := connect.NewRequest(&gen.ListAvailableSolutionsRequest{OrgId: fixtureOrganization})
+		catalogue.Header().Set("Authorization", "Bearer "+admin)
+		offers, err := saas.ListAvailableSolutions(ctx, catalogue)
+		require.NoError(t, err)
+		var target string
+		for _, offer := range offers.Msg.GetSolutions() {
+			if offer.GetRouteAlias() == m.Alias {
+				target = offer.GetTargetId()
+			}
+		}
+		require.NotEmpty(t, target)
+		approval := &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, OperationId: uuid.NewString()}
+		install := func(token string) (*connect.Response[installationv1.Installation], error) {
+			req := connect.NewRequest(&installationv1.InstallRequest{OrganizationId: fixtureOrganization, Target: m.Alias, Role: "Collection reader", Approval: approval})
+			req.Header().Set("Authorization", "Bearer "+token)
+			return client.Install(ctx, req)
+		}
+		first, err := install(admin)
+		require.NoError(t, err)
+		require.Equal(t, installationv1.Installation_STATUS_PENDING, first.Msg.GetStatus())
+		original := approval
+		job, err := svc.ClaimInstallationStep(ctx, "superseded-approval")
+		require.NoError(t, err)
+		require.NotNil(t, job)
+		approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: first.Msg.GetRevision(), OperationId: uuid.NewString()}
+		fresh, err := install(admin)
+		require.NoError(t, err, "fresh reviewed consent supersedes an unfinished attempt")
+		require.Equal(t, first.Msg.GetId(), fresh.Msg.GetId())
+		require.Greater(t, fresh.Msg.GetRevision(), first.Msg.GetRevision())
+		retry, err := install(admin)
+		require.NoError(t, err)
+		require.Equal(t, fresh.Msg, retry.Msg)
+		approval = original
+		_, err = install(admin)
+		require.ErrorContains(t, err, "INSTALLATION_APPROVAL_REVISION_CHANGED")
+		lease := &jobsv1.JobLeaseReference{JobId: job.GetId(), WorkerId: job.GetLease().GetOwner(), LeaseToken: job.GetLease().GetToken()}
+		require.Error(t, svc.FinishInstallationStep(ctx, lease, job.GetAttemptCount(), 204, ""), "superseded attempt cannot acknowledge")
+		require.NoError(t, acknowledgeInstallSteps(ctx, svc))
+	})
+
 	t.Run("admin re-install through Connect is explicit consent", func(t *testing.T) {
 		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 		composition := compositionv1connect.NewCompositionServiceClient(http.DefaultClient, baseURL)
@@ -873,6 +936,109 @@ func runHostInterfaceFixture(t *testing.T) {
 		_, err = composition.ApplyManifest(ctx, connect.NewRequest(&compositionv1.ApplyManifestRequest{Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + m.Alias}))
 		require.NoError(t, err)
 		require.ErrorContains(t, installSaaS(), "INSTALLATION_APPROVAL_GENERATION_CHANGED")
+
+		t.Run("list crosses a page of revoked history", func(t *testing.T) {
+			require.NoError(t, store.WithOrgTx(ctx, fixtureOrganization, func(ctx context.Context) error {
+				_, err := storetx.Tx(ctx).Exec(ctx, `INSERT INTO public.installations SELECT (jsonb_populate_record(NULL::public.installations, to_jsonb(i) || jsonb_build_object('id', '00000000-0000-0000-0000-' || lpad(n::text, 12, '0'), 'status', 'revoked', 'revoked_at', now(), 'consent_receipt', '{}'::jsonb))).* FROM public.installations i CROSS JOIN generate_series(1,201) n WHERE i.id=$1`, first.Msg.GetId())
+				return err
+			}))
+			req := connect.NewRequest(&installationv1.ListRequest{OrganizationId: fixtureOrganization})
+			req.Header().Set("Authorization", "Bearer "+admin)
+			listed, err := client.List(ctx, req)
+			require.NoError(t, err)
+			found := false
+			for _, row := range listed.Msg.GetInstallations() {
+				if row.GetId() == first.Msg.GetId() {
+					found = true
+				}
+			}
+			require.True(t, found, "host List lost the active installation behind revoked history")
+		})
+
+		t.Run("older receipt cannot recreate authority after revoke", func(t *testing.T) {
+			approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: readRevision(), OperationId: uuid.NewString()}
+			a := approval
+			acceptedA, err := install(admin)
+			require.NoError(t, err)
+			approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: acceptedA.Msg.GetRevision(), OperationId: uuid.NewString()}
+			acceptedB, err := install(admin)
+			require.NoError(t, err)
+			require.Greater(t, acceptedB.Msg.GetRevision(), acceptedA.Msg.GetRevision(), "every fresh receipt advances revision, even unchanged consent")
+			uninstall := connect.NewRequest(&gen.UninstallSolutionRequest{OrgId: fixtureOrganization, InstallationId: first.Msg.GetId()})
+			uninstall.Header().Set("Authorization", "Bearer "+admin)
+			_, err = saas.UninstallSolution(ctx, uninstall)
+			require.NoError(t, err)
+			approval = a
+			_, err = install(admin)
+			require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+			require.ErrorContains(t, err, "INSTALLATION_APPROVAL_REVISION_CHANGED")
+			revokedRevision := readRevision()
+			require.Greater(t, revokedRevision, acceptedB.Msg.GetRevision())
+			approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: revokedRevision, OperationId: uuid.NewString()}
+			reinstalled, err := install(admin)
+			require.NoError(t, err, "fresh approval of listed revoked revision reinstalls")
+			require.NotEqual(t, first.Msg.GetId(), reinstalled.Msg.GetId())
+			require.Greater(t, reinstalled.Msg.GetRevision(), revokedRevision)
+			retried, err := install(admin)
+			require.NoError(t, err)
+			require.Equal(t, reinstalled.Msg, retried.Msg)
+			approval = a
+			_, err = install(admin)
+			require.ErrorContains(t, err, "INSTALLATION_APPROVAL_REVISION_CHANGED")
+			first = reinstalled
+		})
+
+		t.Run("list returns more than two hundred active installations", func(t *testing.T) {
+			// Seed valid independent targets; the test exercises the production
+			// listing through its generated Connect client, not 201 deliveries.
+			var targetIDs, bindingIDs []string
+			require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+				_, err := storetx.Tx(ctx).Exec(ctx, `INSERT INTO public.solution_host_bindings(binding_id,host_coordinate)
+				SELECT 'pagination-' || n, 'conformance-host' FROM generate_series(1,201) n`)
+				if err != nil {
+					return err
+				}
+				_, err = storetx.Tx(ctx).Exec(ctx, `INSERT INTO public.solution_targets(binding_id,solution_id,opened_generation)
+				SELECT 'pagination-' || n, 'pagination-' || n, 1 FROM generate_series(1,201) n`)
+				if err != nil {
+					return err
+				}
+				rows, err := storetx.Tx(ctx).Query(ctx, `SELECT id::text, binding_id FROM public.solution_targets WHERE binding_id LIKE 'pagination-%'`)
+				if err != nil {
+					return err
+				}
+				defer rows.Close()
+				for rows.Next() {
+					var id, binding string
+					if err := rows.Scan(&id, &binding); err != nil {
+						return err
+					}
+					targetIDs, bindingIDs = append(targetIDs, id), append(bindingIDs, binding)
+				}
+				return rows.Err()
+			}))
+			require.NoError(t, store.WithOrgTx(ctx, fixtureOrganization, func(ctx context.Context) error {
+				_, err := storetx.Tx(ctx).Exec(ctx, `INSERT INTO public.installations
+				SELECT (jsonb_populate_record(NULL::public.installations, to_jsonb(i) || jsonb_build_object(
+				'id',gen_random_uuid(), 'target_id',t.id, 'registry_binding_id',t.binding_id, 'registry_principal_id',NULL, 'consent_receipt','{}'::jsonb))).*
+				FROM public.installations i CROSS JOIN unnest($2::uuid[], $3::text[]) AS t(id,binding_id) WHERE i.id=$1`, first.Msg.GetId(), targetIDs, bindingIDs)
+				return err
+			}))
+			req := connect.NewRequest(&installationv1.ListRequest{OrganizationId: fixtureOrganization})
+			req.Header().Set("Authorization", "Bearer "+admin)
+			listed, err := client.List(ctx, req)
+			require.NoError(t, err)
+			active := 0
+			seen := map[string]bool{}
+			for _, row := range listed.Msg.GetInstallations() {
+				require.False(t, seen[row.GetId()], "listing must not repeat an installation")
+				seen[row.GetId()] = true
+				if row.GetStatus() == installationv1.Installation_STATUS_ACTIVE {
+					active++
+				}
+			}
+			require.GreaterOrEqual(t, active, 202)
+		})
 
 	})
 

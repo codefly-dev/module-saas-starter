@@ -74,6 +74,7 @@ func newHopFixture(t *testing.T, held ...string) hopFixture {
 		holding.held[h] = true
 	}
 	issuer := newCoreTestServer(t, holding, moduleSealAnswers(12))
+	issuer.journal = &bindingJournal{hops: map[string]business.ActorChainHopInput{}}
 	return hopFixture{server: NewHostAuthorityServer(issuer, nil), issuer: issuer, tool: moduleToken(t, "tools"), docs: moduleToken(t, "documents"), holding: holding}
 }
 

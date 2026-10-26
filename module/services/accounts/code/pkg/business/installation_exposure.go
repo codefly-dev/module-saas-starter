@@ -32,8 +32,8 @@ type InstallationExposure struct {
 	InheritedTeams []*gen.CollectionReadGrant
 }
 
-// OrganizationInstallation is one nonrevoked installation as its organization's
-// administrator manages it.
+// OrganizationInstallation is one installation as its administrator manages it,
+// including the revoked revision a fresh reinstall approval must name.
 type OrganizationInstallation struct {
 	Summary  *gen.InstallationSummary
 	Exposure *InstallationExposure
@@ -164,13 +164,15 @@ func (s *Service) ListOrganizationInstallations(
 	out := make([]*OrganizationInstallation, 0, len(summaries))
 	for _, summary := range summaries {
 		installation := summary.GetInstallation()
-		if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_REVOKED {
-			continue
-		}
 		row := &OrganizationInstallation{
 			Summary:  summary,
 			Exposure: exposure[installation.GetId()],
 			Target:   targets[installation.GetTargetId()],
+		}
+		if installation.GetStatus() == gen.InstallationStatus_INSTALLATION_STATUS_REVOKED {
+			// Its former root may now be reused by a new installation. Those
+			// grants belong to the new consent, never to this review history.
+			row.Exposure = &InstallationExposure{}
 		}
 		row.Readiness, row.ReachedModules = facts.readinessFor(
 			installation, summary.GetHealth(), row.Target, installedByPrincipal)

@@ -68,12 +68,21 @@ func (s *Service) InstallFixtureTarget(ctx context.Context, actorID, orgID, targ
 		return existing, false, err
 	}
 	approval := &InstallationApproval{TargetID: available.TargetID, Generation: available.AppliedGeneration, OperationID: uuid.NewString()}
-	if available.Installed {
-		existing, err := s.heldTargetInstallation(ctx, orgID, available.TargetID)
+	for token := ""; ; {
+		rows, next, err := s.ListOrganizationInstallations(ctx, orgID, token, listInstallationsMaxPageSize)
 		if err != nil {
 			return nil, false, err
 		}
-		approval.ExpectedRevision = existing.GetRevision()
+		for _, row := range rows {
+			i := row.Summary.GetInstallation()
+			if i.GetTargetId() == available.TargetID {
+				approval.ExpectedRevision = max(approval.ExpectedRevision, i.GetRevision())
+			}
+		}
+		if next == "" {
+			break
+		}
+		token = next
 	}
 	return s.InstallTargetByName(ctx, actorID, orgID, target, role, ownerID, approval)
 }

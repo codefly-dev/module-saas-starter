@@ -245,8 +245,8 @@ func storedPrincipal(principal string) string {
 // or withdrawn upstream would otherwise go unnoticed until the child expired.
 //
 // Each hop is held to the exact scope set it was issued under (invoke, lookup
-// or headless), which the journal recorded beside its binding; a hop the
-// journal holds no binding for is held to its binding by audience.
+// or headless), and the original granted kinds recorded beside its binding.
+// Missing journal provenance refuses the chain.
 func (s *WorkContextAuthorityServer) requireModuleChainStands(ctx context.Context, wc *basev0.WorkContextV1) error {
 	chain := wc.GetActorChain()
 	// A chain of hops through bindings seals its last hop's module binding; a

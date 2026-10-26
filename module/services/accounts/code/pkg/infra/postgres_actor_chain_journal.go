@@ -159,7 +159,7 @@ func (s *PostgresStore) ActorChainHopBindings(
 	}
 	err := s.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		rows, err := s.getQueryExecutor(ctx).Query(ctx, `
-			SELECT id::text, operation_binding_id, operation
+			SELECT id::text, operation_binding_id, operation, granted_scopes
 			  FROM actor_chain_journal
 			 WHERE id = ANY($1) AND org_id = $2 AND operation_binding_id IS NOT NULL`,
 			hopIDs, orgID,
@@ -171,7 +171,11 @@ func (s *PostgresStore) ActorChainHopBindings(
 		for rows.Next() {
 			var id string
 			var binding business.ActorChainHopBinding
-			if err := rows.Scan(&id, &binding.BindingID, &binding.Operation); err != nil {
+			var raw []byte
+			if err := rows.Scan(&id, &binding.BindingID, &binding.Operation, &raw); err != nil {
+				return err
+			}
+			if err := json.Unmarshal(raw, &binding.GrantedScopes); err != nil {
 				return err
 			}
 			out[id] = binding

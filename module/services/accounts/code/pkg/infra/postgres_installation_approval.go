@@ -50,19 +50,12 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, p *business.Install
 	if a.TargetID != p.TargetID || a.Generation != generation {
 		return nil, business.InstallationApprovalRefusal("INSTALLATION_APPROVAL_GENERATION_CHANGED", "the reviewed target or generation is no longer current; review ListAvailableSolutions and approve again")
 	}
-	var revokedReplay bool
-	if err := executor.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM public.installations WHERE org_id=$1 AND target_id=$2 AND status='revoked' AND consent_receipt->>'OperationID'=$3)`, p.OrgID, p.TargetID, a.OperationID).Scan(&revokedReplay); err != nil {
-		return nil, err
-	}
-	if revokedReplay {
-		return nil, business.InstallationApprovalRefusal("INSTALLATION_APPROVAL_REVISION_CHANGED", "this approval's installation was revoked; review and approve a new installation")
-	}
 	// Business binds the complete caller intent before resolving defaults.
 	fingerprint := a.Intent()
 	if fingerprint == "" {
 		return nil, business.InstallationApprovalRefusal("INSTALLATION_APPROVAL_REQUIRED", "approval intent was not bound by the installation service")
 	}
-	existing, err := scanInstallation(executor.QueryRow(ctx, `SELECT `+installationColumns+` FROM public.installations WHERE org_id=$1 AND target_id=$2 AND status <> 'revoked' FOR UPDATE`, p.OrgID, p.TargetID))
+	existing, err := scanInstallation(executor.QueryRow(ctx, `SELECT `+installationColumns+` FROM public.installations WHERE org_id=$1 AND target_id=$2 ORDER BY (status <> 'revoked') DESC, revision DESC, id DESC LIMIT 1 FOR UPDATE`, p.OrgID, p.TargetID))
 	revision := uint64(0)
 	if err == nil {
 		revision = existing.Revision
@@ -78,7 +71,7 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, p *business.Install
 			if receipt.Fingerprint != fingerprint {
 				return nil, business.InstallationApprovalRefusal("INSTALLATION_APPROVAL_OPERATION_CONFLICT", "operation_id was already used for different approval inputs")
 			}
-			if receipt.Revision != revision {
+			if existing.Status == gen.InstallationStatus_INSTALLATION_STATUS_REVOKED || receipt.Revision != revision {
 				return nil, business.InstallationApprovalRefusal("INSTALLATION_APPROVAL_REVISION_CHANGED", "installation changed after this approval; review its current revision and approve again")
 			}
 			p.ApprovalReplayed = true
@@ -94,15 +87,24 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, p *business.Install
 	if err != nil {
 		return nil, err
 	}
-	// The existing lifecycle trigger owns revision changes and revocation. The
-	// receipt itself grants nothing and must not advance that revision on retry.
+	// Every fresh receipt advances the lifecycle revision, even if the scope
+	// did not change. Exact retries returned above never write another receipt.
 	if err := executor.QueryRow(ctx, `SELECT revision FROM public.installations WHERE id=$1`, installed.Id).Scan(&installed.Revision); err != nil {
 		return nil, err
 	}
-	receipt, err := json.Marshal(installationApprovalReceipt{a.OperationID, fingerprint, installed.Revision})
+	receipt, err := json.Marshal(installationApprovalReceipt{a.OperationID, fingerprint, installed.Revision + 1})
 	if err != nil {
 		return nil, err
 	}
-	_, err = executor.Exec(ctx, `UPDATE public.installations SET consent_receipt=$2::jsonb WHERE id=$1`, installed.Id, receipt)
-	return installed, err
+	if err := executor.QueryRow(ctx, `UPDATE public.installations SET consent_receipt=$2::jsonb WHERE id=$1 RETURNING revision`, installed.Id, receipt).Scan(&installed.Revision); err != nil {
+		return nil, err
+	}
+	// The revision trigger cancels a superseded attempt and fences its lease.
+	// Attach the replacement only after its final receipt revision is known.
+	if installed.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING {
+		if err := s.EnqueueInstallationStep(ctx, p.OrgID, installed.Id, a.OperationID); err != nil {
+			return nil, err
+		}
+	}
+	return installed, nil
 }

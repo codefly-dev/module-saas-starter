@@ -102,14 +102,14 @@ type ActorChainJournal interface {
 // ActorChainHopBinding is the module binding one journaled hop went through
 // and the scope set of it the hop was issued under.
 type ActorChainHopBinding struct {
-	BindingID string
-	Operation string
+	BindingID     string
+	Operation     string
+	GrantedScopes []ActorChainScope
 }
 
 // ActorChainHopBindingReader answers, for journaled hops, the binding each went
-// through. It is a separate seam from ActorChainJournal so a journal that
-// predates it still serves; a hop it does not answer is held to its binding by
-// audience (ConfirmModuleChain).
+// through, including the original granted scopes. Missing provenance cannot
+// establish which historical kinds a binding governed and refuses the chain.
 type ActorChainHopBindingReader interface {
 	ActorChainHopBindings(ctx context.Context, orgID string, hopIDs []string) (map[string]ActorChainHopBinding, error)
 }

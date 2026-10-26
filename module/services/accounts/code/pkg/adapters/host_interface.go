@@ -426,17 +426,23 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
-	out, err := s.installations.ListOrganizationInstallations(ctx, &gen.ListOrganizationInstallationsRequest{OrgId: req.GetOrganizationId()})
-	if err != nil {
-		return nil, err
-	}
 	resp := &installationv1.ListResponse{}
-	for _, row := range out.GetInstallations() {
-		details, err := s.service.ReadHostInstallation(ctx, req.GetOrganizationId(), row.GetInstallation().GetId())
+	for token := ""; ; {
+		out, err := s.installations.ListOrganizationInstallations(ctx, &gen.ListOrganizationInstallationsRequest{OrgId: req.GetOrganizationId(), PageToken: token})
 		if err != nil {
-			return nil, mapInstallationError(err)
+			return nil, err
 		}
-		resp.Installations = append(resp.Installations, hostInstallationToWire(details))
+		for _, row := range out.GetInstallations() {
+			details, err := s.service.ReadHostInstallation(ctx, req.GetOrganizationId(), row.GetInstallation().GetId())
+			if err != nil {
+				return nil, mapInstallationError(err)
+			}
+			resp.Installations = append(resp.Installations, hostInstallationToWire(details))
+		}
+		if out.GetNextPageToken() == "" {
+			break
+		}
+		token = out.GetNextPageToken()
 	}
 	return resp, nil
 }

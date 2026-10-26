@@ -55,8 +55,13 @@ serves on a laptop is served here on a cell, and the authority interface reposit
    `INSTALLATION_APPROVAL_REVISION_CHANGED` require a fresh review and approval.
    A receipt returns the unchanged operation's installation while its resulting
    revision is current; changed inputs refuse with
-   `INSTALLATION_APPROVAL_OPERATION_CONFLICT`. An old request cannot reapprove
-   delivered widening, undo narrowing, or recreate its revoked installation.
+   `INSTALLATION_APPROVAL_OPERATION_CONFLICT`. Each fresh receipt advances the revision, including unchanged consent and a
+   pending attempt it supersedes; the superseded job cannot acknowledge. Revoke
+   retains that review state, and reinstall starts above every prior revision
+   for the organization and immutable target. List follows every internal page
+   and includes revoked revisions; revoked rows carry no standing role or team
+   authority. An old request cannot reapprove delivered widening, undo narrowing,
+   or recreate its revoked installation.
    Host-owned fixture setup resolves its own fresh approval through this same
    transaction. No human RPC resolves approval fields for its caller. GrantToTeam resolves the installation's
    standing role under its installation lock and uses `GrantInstallationToTeam`.
@@ -1165,11 +1170,15 @@ also re-read by core, whose binding revision moves with any change to it. The
 remote binding answer a callee's verifier asks for runs the same re-read and
 answers a stale chain as revoked.
 
-Still held by audience and union: a hop the journal holds no binding for (one
-recorded before migration 52, or on a host with no journal), and
-`CheckAuthorizationRevision`, whose request names no hop, so it cannot read
-which set each was issued under; a callee that verifies through this host's
-binding answer gets the exact check.
+The original `granted_scopes` in the same immutable journal identify which
+kinds that hop granted. Removing a kind from every current binding set therefore
+ends descendants carrying it; it cannot disappear from validation. Unrelated
+kinds carried from other hops remain checked at their own origin. Missing
+binding or scope provenance refuses the chain; there is no audience-based
+fallback. The generated Connect regression `TestUpstreamKindRemovalEndsDescendant`
+also checks missing provenance and refuses further issuance from a stale child.
+`CheckAuthorizationRevision` names no hop, so a callee verifies through this
+host's binding answer to obtain the exact chain check.
 
 ## Review r136 repairs (2026-10-26)
 

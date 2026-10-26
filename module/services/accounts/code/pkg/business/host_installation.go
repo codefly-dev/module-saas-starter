@@ -31,6 +31,12 @@ func (s *Service) ReadHostInstallation(ctx context.Context, orgID, id string) (*
 		if err != nil {
 			return err
 		}
+		// Revocation removes standing grants, but its revision remains the
+		// review state a fresh approval must name to reinstall this target.
+		if out.Installation.GetStatus() == gen.InstallationStatus_INSTALLATION_STATUS_REVOKED {
+			out.Revision = out.Installation.GetRevision()
+			return nil
+		}
 		out.RoleID, out.Role, out.Revision, err = reader.InstallationRoleRevision(ctx, orgID, id)
 		if err != nil {
 			return err

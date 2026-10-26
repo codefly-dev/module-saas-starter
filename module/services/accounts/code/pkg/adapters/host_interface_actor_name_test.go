@@ -207,7 +207,9 @@ func TestABindingNarrowedUpstreamEndsTheChildBelowIt(t *testing.T) {
 			wc := claims(t, second)
 			chain := []business.ModuleChainHop{}
 			for _, hop := range wc.GetActorChain() {
-				chain = append(chain, business.ModuleChainHop{Principal: hop.GetPrincipalId(), Scopes: operationScopesFromCore(hop.GetGrantedScopes())})
+				recorded, err := f.issuer.journal.(business.ActorChainHopBindingReader).ActorChainHopBindings(context.Background(), moduleWorkContextTenant, []string{hop.GetDelegationId()})
+				require.NoError(t, err)
+				chain = append(chain, business.ModuleChainHop{Principal: hop.GetPrincipalId(), Scopes: operationScopesFromCore(hop.GetGrantedScopes()), Through: recorded[hop.GetDelegationId()]})
 			}
 			require.NoError(t, service.ConfirmModuleChain(context.Background(), moduleWorkContextTenant, "", chain))
 
@@ -258,7 +260,7 @@ func (j *bindingJournal) ActorChainHopBindings(_ context.Context, _ string, ids 
 	out := map[string]business.ActorChainHopBinding{}
 	for _, id := range ids {
 		if hop, ok := j.hops[id]; ok && hop.OperationBindingID != "" {
-			out[id] = business.ActorChainHopBinding{BindingID: hop.OperationBindingID, Operation: hop.Operation}
+			out[id] = business.ActorChainHopBinding{BindingID: hop.OperationBindingID, Operation: hop.Operation, GrantedScopes: hop.GrantedScopes}
 		}
 	}
 	return out, nil

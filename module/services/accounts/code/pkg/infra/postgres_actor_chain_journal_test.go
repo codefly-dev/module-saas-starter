@@ -278,7 +278,7 @@ func TestActorChainJournal_RecordsTheBindingAHopWentThrough(t *testing.T) {
 	bindings, err := testStore.ActorChainHopBindings(testCtx, orgID, []string{plain.ID, through.ID})
 	require.NoError(t, err)
 	require.Equal(t, map[string]business.ActorChainHopBinding{
-		through.ID: {BindingID: orgID + "/tools/records", Operation: "lookup"},
+		through.ID: {BindingID: orgID + "/tools/records", Operation: "lookup", GrantedScopes: through.GrantedScopes},
 	}, bindings)
 
 	half := newRootHopInput(orgID, owner, agent.ID)
