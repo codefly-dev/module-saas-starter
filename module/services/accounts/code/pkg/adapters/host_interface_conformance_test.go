@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -197,7 +198,8 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 	svc.SetModuleCapabilities(store, infra.NewPostgresJobStore(jobPool), nil)
 	// Uninstalling narrows authority, which the host does only once the policy
 	// log witnesses it; the log is external, so it stands in at its seam.
-	svc.SetPolicyLog(&memoryPolicyLog{}, store)
+	policyLog := &memoryPolicyLog{}
+	svc.SetPolicyLog(policyLog, store)
 
 	// Composition installs a module at every organisation (contract decision of
 	// 2026-10-22): the live module authority answers for every declared principal.
@@ -573,6 +575,11 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 		_, err = client.RevokeDelegation(bob, &authorityv1.RevokeDelegationRequest{DelegationId: d.GetDelegationId()})
 		requireCode(err, codes.NotFound, "delegation")
 
+		// A capability of Alex's own, issued under no delegation, outlives it.
+		own, err := client.Issue(alex, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
+			Audience: "documents", Scopes: records("read")})
+		require.NoError(t, err)
+
 		revoked, err := client.RevokeDelegation(alex, &authorityv1.RevokeDelegationRequest{DelegationId: d.GetDelegationId()})
 		require.NoError(t, err)
 		require.False(t, revoked.GetDelegation().GetActive())
@@ -586,6 +593,33 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 		read, err := client.GetDelegation(ctx, &authorityv1.GetDelegationRequest{DelegationId: d.GetDelegationId(), Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}})
 		require.NoError(t, err)
 		require.False(t, read.GetActive())
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: own.GetToken(), Audience: "documents"})
+		require.NoError(t, err, "a revocation ends the delegation's capabilities, not every one its grantor holds")
+
+		// An administrator of the organisation (Alice) may end a member's
+		// delegation; another member (Bob, of Alex's) may not.
+		alice := signIn("dev-alice")
+		bobs, err := client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: "a member's job"})
+		require.NoError(t, err)
+		ended, err := client.RevokeDelegation(alice, &authorityv1.RevokeDelegationRequest{DelegationId: bobs.GetDelegationId()})
+		require.NoError(t, err)
+		require.False(t, ended.GetDelegation().GetActive())
+		alexs, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: "a member's own job"})
+		require.NoError(t, err)
+		_, err = client.RevokeDelegation(bob, &authorityv1.RevokeDelegationRequest{DelegationId: alexs.GetDelegationId()})
+		requireCode(err, codes.NotFound, "delegation")
+
+		// A purpose past its bound is named, never a database error.
+		_, err = client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: strings.Repeat("p", business.ModuleDelegationPurposeLimit+1)})
+		requireCode(err, codes.InvalidArgument, "at most 1024 characters")
+
+		// A host that cannot witness a revocation records no delegation: one
+		// it could never end is refused, by name, before anything is written.
+		svc.SetPolicyLog(nil, nil)
+		t.Cleanup(func() { svc.SetPolicyLog(policyLog, store) })
+		_, err = client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: "unrevocable"})
+		requireCode(err, codes.FailedPrecondition, "cannot witness a revocation")
+		svc.SetPolicyLog(policyLog, store)
 	})
 
 	// Beyond the suite: the session a page reads is the live one. A fixture

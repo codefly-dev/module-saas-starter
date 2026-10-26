@@ -16,6 +16,31 @@ func ModuleOperationBindingID(orgID, prefix, bindingID string) string {
 	return orgID + "/" + prefix + "/" + bindingID
 }
 
+// DelegatedOperationBindingID names a module's installed operation binding as
+// exercised under one stored delegation to a module (module_delegation.go):
+// <organisation>/<module>/<binding>@<delegation>. Every hop of a chain that
+// acts under a delegation is sealed to it, so every verifier, which reads the
+// binding live, reads the delegation with it, and a revoked delegation
+// revokes exactly the capabilities issued under it.
+func DelegatedOperationBindingID(bindingID, delegationID string) string {
+	return bindingID + delegatedBindingSeparator + delegationID
+}
+
+const delegatedBindingSeparator = "@"
+
+// splitDelegatedBinding is a binding id and the delegation it is exercised
+// under, when it names one: a canonical uuid after the separator.
+func splitDelegatedBinding(id string) (binding, delegationID string) {
+	head, tail, found := strings.Cut(id, delegatedBindingSeparator)
+	if !found {
+		return id, ""
+	}
+	if parsed, err := uuid.Parse(tail); err != nil || parsed.String() != tail {
+		return id, ""
+	}
+	return head, tail
+}
+
 // IsModuleOperationBindingOf reports whether id names one of principalID's own
 // installed operation bindings in orgID: the only operation binding a module
 // operation context (StartModuleOperationTask) is sealed to.
@@ -24,11 +49,22 @@ func IsModuleOperationBindingOf(id, orgID, principalID string) bool {
 	return ok && org == orgID && ModulePrincipalID(prefix) == principalID
 }
 
+// NamesModuleOperationBinding reports whether id is a module's installed
+// operation binding (<organisation>/<module>/<binding>), the binding every hop
+// through a binding seals, as opposed to a source delegation's or an installed
+// content read's.
+func NamesModuleOperationBinding(id string) bool {
+	_, _, _, ok := parseModuleOperationBindingID(id)
+	return ok
+}
+
 // parseModuleOperationBindingID reads <organisation>/<module>/<binding>. The
 // organisation is a canonical UUID, which is what tells this id apart from
 // every other binding id this host issues (a source delegation's, an installed
 // binding's), each of which starts with its own word.
 func parseModuleOperationBindingID(id string) (orgID, prefix, bindingID string, ok bool) {
+	// A binding exercised under a delegation is the same binding.
+	id, _ = splitDelegatedBinding(id)
 	parts := strings.Split(id, "/")
 	if len(parts) != 3 || parts[1] == "" || parts[2] == "" {
 		return "", "", "", false
@@ -70,8 +106,19 @@ func (s *Service) moduleOperationBinding(ctx context.Context, orgID, id string) 
 	if _, declared := installed.Grant.OperationAudiences[bindingID]; !declared {
 		return WorkContextOperationBinding{}, ErrNoOperationBinding
 	}
-	return WorkContextOperationBinding{
+	binding := WorkContextOperationBinding{
 		ID: id, PrincipalID: prefix, ModuleRegistryID: principalID, InstallationID: installed.InstallationID,
 		Revision: ModuleOperationContextRevision(installed.Grant), Incarnation: 1,
-	}, nil
+	}
+	// Exercised under a delegation, the binding stands while the delegation
+	// does: one that is revoked, unknown here or another organisation's
+	// revokes the binding for every capability sealed to it.
+	if _, delegationID := splitDelegatedBinding(id); delegationID != "" {
+		delegation, err := s.ModuleDelegation(ctx, "", delegationID)
+		if err != nil {
+			return WorkContextOperationBinding{}, err
+		}
+		binding.Revoked = delegation == nil || delegation.OrgID != orgID || !delegation.Active()
+	}
+	return binding, nil
 }

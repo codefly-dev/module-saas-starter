@@ -43,6 +43,12 @@ type ActorChainHopInput struct {
 	GrantedScopes         []ActorChainScope
 	AuthorizationRevision uint64
 	HopIndex              int
+	// OperationBindingID and Operation name the module binding a hop went
+	// through and the scope set of it the hop was issued under (invoke, lookup
+	// or headless), so the hop is held to exactly that set while it lives.
+	// Both are empty for a hop that exercises no module binding.
+	OperationBindingID string
+	Operation          string
 }
 
 // ActorChainScope is the durable projection of one granted work scope. It mirrors
@@ -93,6 +99,21 @@ type ActorChainJournal interface {
 	RevokeActorChainHop(ctx context.Context, orgID, hopID, revokedByPrincipalID, reason string) error
 }
 
+// ActorChainHopBinding is the module binding one journaled hop went through
+// and the scope set of it the hop was issued under.
+type ActorChainHopBinding struct {
+	BindingID string
+	Operation string
+}
+
+// ActorChainHopBindingReader answers, for journaled hops, the binding each went
+// through. It is a separate seam from ActorChainJournal so a journal that
+// predates it still serves; a hop it does not answer is held to its binding by
+// audience (ConfirmModuleChain).
+type ActorChainHopBindingReader interface {
+	ActorChainHopBindings(ctx context.Context, orgID string, hopIDs []string) (map[string]ActorChainHopBinding, error)
+}
+
 // HopContentHash is the content address of a hop: sha256 over the hop's immutable
 // facts folded with the parent hop's hash. It excludes assigned metadata (the id,
 // the revocation id, the grant link) so the address depends only on what the hop
@@ -118,6 +139,13 @@ func HopContentHash(hop ActorChainHopInput, prevHash string) string {
 	b.WriteByte('\n')
 	b.WriteString(canonicalScopes(hop.GrantedScopes))
 	b.WriteByte('\n')
+	// What a module hop went through is part of what it authorizes. Written
+	// only when present, so a hop recorded before the binding was (and every
+	// hop that exercises none) keeps the address it was stored under.
+	if hop.OperationBindingID != "" || hop.Operation != "" {
+		b.WriteString(strconv.Itoa(len(hop.OperationBindingID)) + ":" + hop.OperationBindingID + ":" + hop.Operation)
+		b.WriteByte('\n')
+	}
 	b.WriteString(prevHash)
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])

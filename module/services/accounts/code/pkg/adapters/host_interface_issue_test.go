@@ -313,8 +313,8 @@ func TestAKindTheChainDroppedStaysDropped(t *testing.T) {
 func TestAHopMintRefusesTheModuleCapabilitySurface(t *testing.T) {
 	f := newHopFixture(t, "tool.items:read", "example-records:read")
 	_, parent := f.parent(t, "tools", hopScope("tool.items", []string{"read"}))
-	_, err := f.issuer.mintBindingHop(context.Background(), parent, "tools", "records", ModuleWorkContextAudience,
-		[]*basev0.WorkScopeV1{hopScope("example-records", []string{"read"})}, nil, time.Minute, "")
+	_, err := f.issuer.mintBindingHop(context.Background(), parent, "tools", "records", "invoke", ModuleWorkContextAudience,
+		[]*basev0.WorkScopeV1{hopScope("example-records", []string{"read"})}, nil, time.Minute, delegatedHop{})
 	requireRefused(t, err, codes.PermissionDenied, "module capability surface")
 }
 

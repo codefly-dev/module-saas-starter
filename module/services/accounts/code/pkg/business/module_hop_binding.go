@@ -139,6 +139,10 @@ func NamesASourceDelegation(bindingID string) bool {
 type ModuleChainHop struct {
 	Principal string
 	Scopes    []ModuleOperationScope
+	// Through is the binding the hop went through and the scope set of it the
+	// hop was issued under, as the actor-chain journal recorded it; zero when
+	// the caller holds no record of it.
+	Through ActorChainHopBinding
 }
 
 // ConfirmModuleChain re-reads EVERY module hop of a chain against the binding
@@ -188,11 +192,68 @@ func (s *Service) ConfirmModuleChain(ctx context.Context, orgID, audience string
 		if err != nil {
 			return err
 		}
-		if !moduleAvailableToOrganization(installed.Grant, orgID) || !hopWithinBindingsTo(installed.Grant, target, hop.Scopes) {
+		if !moduleAvailableToOrganization(installed.Grant, orgID) {
+			return ErrModuleHopStale
+		}
+		if hop.Through.BindingID != "" {
+			if !hopWithinItsSet(snapshot.registry, installed.Grant, orgID, id, target, hop) {
+				return ErrModuleHopStale
+			}
+			continue
+		}
+		if !hopWithinBindingsTo(installed.Grant, target, hop.Scopes) {
 			return ErrModuleHopStale
 		}
 	}
 	return nil
+}
+
+// hopWithinItsSet holds a hop whose binding is on record to exactly the scope
+// set of that binding it was issued under: the binding must still be its
+// module's own, installed here and addressed to target, and every scope the
+// hop carries of a kind the binding names (in any of its sets) must lie within
+// that one set. A set narrowed, or a kind it dropped, ends the hop even while
+// another set of the same binding still grants it: a hop issued under invoke
+// never stands on lookup. A denial row (a kind and no action) widens nothing
+// and is not held.
+func hopWithinItsSet(registry ModulePrincipalRegistry, grant ModulePrincipalGrant, orgID, moduleID, target string, hop ModuleChainHop) bool {
+	org, prefix, key, ok := parseModuleOperationBindingID(hop.Through.BindingID)
+	if !ok || org != orgID {
+		return false
+	}
+	if owner, declared := registry.RegistryIDOf(prefix); !declared || owner != moduleID {
+		return false
+	}
+	binding, declared := grant.OperationAudiences[key]
+	if !declared || (target != "" && binding.Audience != target) {
+		return false
+	}
+	var set []ModuleOperationScope
+	switch hop.Through.Operation {
+	case "invoke":
+		set = binding.InvokeScopes
+	case "lookup":
+		set = binding.LookupScopes
+	case "headless":
+		set = binding.HeadlessScopes
+	default:
+		return false
+	}
+	governed := map[string]bool{}
+	for _, list := range [][]ModuleOperationScope{binding.InvokeScopes, binding.LookupScopes, binding.HeadlessScopes} {
+		for _, scope := range list {
+			governed[scope.ResourceKind] = true
+		}
+	}
+	for _, scope := range hop.Scopes {
+		if !governed[scope.ResourceKind] || len(scope.Actions) == 0 {
+			continue
+		}
+		if !operationScopesSubset([]ModuleOperationScope{scope}, set) {
+			return false
+		}
+	}
+	return true
 }
 
 // hopWithinBindingsTo reports whether grant still holds a binding addressed to

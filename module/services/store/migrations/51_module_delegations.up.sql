@@ -6,11 +6,11 @@
 -- confers more than its grantor still holds.
 --
 -- The grant is immutable once recorded. A row is never deleted by the host:
--- revocation stamps revoked_at and who revoked it, so what was delegated, to
--- which module and why stays readable after it stopped. Revoking advances the
--- grantor's authorization revision in the same statement, so every capability
--- already issued from the delegation fails its next verification: revocation
--- takes effect immediately, not at the capability's expiry.
+-- revocation stamps revoked_at and who revoked it (the grantor, or an
+-- administrator of the organisation), so what was delegated, to which module
+-- and why stays readable after it stopped. Every capability issued under a
+-- delegation is sealed to it, and the seal reads this row live: revocation
+-- takes effect immediately, for this delegation's capabilities alone.
 
 CREATE TABLE public.module_delegations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -54,27 +54,19 @@ CREATE POLICY app_control_plane_explicit_rows ON public.module_delegations
 GRANT SELECT,INSERT,UPDATE ON TABLE public.module_delegations TO app_tenant;
 GRANT SELECT,INSERT,UPDATE ON TABLE public.module_delegations TO app_control_plane;
 
--- Only the revocation stamp may change, and only once; the revocation advances
--- the grantor's authorization revision, which every capability they own is
--- sealed to.
-CREATE FUNCTION public.module_delegation_revocation() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+-- Only the revocation stamp may change, and only once.
+CREATE FUNCTION public.module_delegation_immutable() RETURNS trigger
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
     IF (NEW.id, NEW.org_id, NEW.principal_id, NEW.module_prefix, NEW.scopes, NEW.purpose, NEW.created_at)
        IS DISTINCT FROM (OLD.id, OLD.org_id, OLD.principal_id, OLD.module_prefix, OLD.scopes, OLD.purpose, OLD.created_at)
        OR (OLD.revoked_at IS NOT NULL AND (NEW.revoked_at, NEW.revoked_by) IS DISTINCT FROM (OLD.revoked_at, OLD.revoked_by)) THEN
         RAISE EXCEPTION 'a module delegation is immutable once recorded and is revoked at most once' USING ERRCODE = 'check_violation';
     END IF;
-    IF OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL THEN
-        PERFORM public.bump_principal_authorization_revision(NEW.org_id, NEW.principal_id);
-    END IF;
     RETURN NEW;
 END;
 $$;
-CREATE TRIGGER module_delegation_revocation BEFORE UPDATE ON public.module_delegations
-    FOR EACH ROW EXECUTE FUNCTION public.module_delegation_revocation();
+CREATE TRIGGER module_delegation_immutable BEFORE UPDATE ON public.module_delegations
+    FOR EACH ROW EXECUTE FUNCTION public.module_delegation_immutable();
 
-REVOKE ALL ON FUNCTION public.module_delegation_revocation() FROM PUBLIC;
-GRANT CREATE ON SCHEMA public TO app_control_plane;
-ALTER FUNCTION public.module_delegation_revocation() OWNER TO app_control_plane;
-REVOKE CREATE ON SCHEMA public FROM app_control_plane;
+REVOKE ALL ON FUNCTION public.module_delegation_immutable() FROM PUBLIC;
