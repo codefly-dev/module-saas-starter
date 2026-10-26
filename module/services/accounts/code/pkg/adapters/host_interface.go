@@ -321,23 +321,30 @@ func (s *HostAuthorityServer) exchangeOrRenew(ctx context.Context, parentToken s
 	})
 }
 
-// credentialRefusal names why a workload credential did not prove a module:
-// the host could not establish what the caller runs (Unavailable: nothing was
-// decided), no credential, the token review refused it, or the workload it
-// names is not declared by exactly one principal.
+// credentialRefusal names why a workload credential did not prove a module,
+// always with the reason:
+//
+//   - the host could not establish what the caller runs: Unavailable, nothing
+//     was decided;
+//   - no credential, or the module's identity refused as itself (the pod it
+//     names no longer matches what its principal declares, its tenant moved):
+//     Unauthenticated, so the module drops what it holds and mints again, as
+//     the module tier answers it;
+//   - a token the review refused outright (forged, unknown): PermissionDenied,
+//     the code the shared conformance suite holds a forged workload credential
+//     to;
+//   - a workload declared by more than one principal: PermissionDenied, a
+//     composition fault no re-mint repairs.
 func credentialRefusal(err error, which string) error {
 	switch {
 	case errors.Is(err, business.ErrExecutionUnbound):
 		return status.Errorf(codes.Unavailable, "%s credential: %v", which, err)
-	case errors.Is(err, business.ErrExecutionNotBoundToken):
+	case errors.Is(err, business.ErrExecutionNotBoundToken), errors.Is(err, business.ErrModuleIdentityDenied):
 		return status.Errorf(codes.Unauthenticated, "%s credential refused: %v", which, err)
 	case errors.Is(err, business.ErrExecutionTokenRejected):
 		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, business.ErrExecutionTokenRejected)
 	case errors.Is(err, business.ErrExecutionWorkloadAmbiguous):
 		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err)
-	}
-	if mapped := moduleIdentityError(err, codes.PermissionDenied, which+" credential refused"); mapped != nil {
-		return mapped
 	}
 	return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err)
 }

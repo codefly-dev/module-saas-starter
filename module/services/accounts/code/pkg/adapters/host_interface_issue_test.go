@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,8 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	accountsauth "accounts/pkg/auth"
+	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 )
 
@@ -326,4 +329,30 @@ func TestARootDeniesTheAudienceKindsItsAskLeftOut(t *testing.T) {
 	carried := []*basev0.WorkScopeV1{hopScope("profiles", []string{"read"}, "a")}
 	require.Equal(t, []*basev0.WorkScopeV1{{ResourceKind: "datasets"}}, droppedKindScopes(ctx, carried))
 	require.Empty(t, droppedKindScopes(context.Background(), carried))
+}
+
+// A credential refusal names its reason, and a module refused as itself (its
+// identity no longer the one its principal declares) is Unauthenticated, as the
+// module tier answers it, so it mints again; a token the review refused outright
+// stays PermissionDenied, the code the shared suite holds a forged one to.
+func TestACredentialRefusalNamesItsReasonAndItsCode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		code codes.Code
+	}{
+		"identity refused as itself": {fmt.Errorf("%w: the presented token's pod runs a container the approval does not cover", business.ErrModuleIdentityDenied), codes.Unauthenticated},
+		"not a bound token":          {fmt.Errorf("%w: no audience", business.ErrExecutionNotBoundToken), codes.Unauthenticated},
+		"forged":                     {fmt.Errorf("%w: unknown token", business.ErrExecutionTokenRejected), codes.PermissionDenied},
+		"ambiguous workload":         {fmt.Errorf("%w: declared by 0 principals", business.ErrExecutionWorkloadAmbiguous), codes.PermissionDenied},
+		"host cannot tell":           {fmt.Errorf("%w: no cluster", business.ErrExecutionUnbound), codes.Unavailable},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := credentialRefusal(tc.err, "workload")
+			require.Equal(t, tc.code, status.Code(err), "%v", err)
+			require.Contains(t, status.Convert(err).Message(), "workload credential")
+			if tc.code != codes.PermissionDenied || name == "ambiguous workload" {
+				require.Contains(t, status.Convert(err).Message(), strings.SplitN(tc.err.Error(), ": ", 2)[1])
+			}
+		})
+	}
 }
