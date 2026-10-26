@@ -40,7 +40,7 @@ type ModuleDelegation struct {
 func (d *ModuleDelegation) Active() bool { return d != nil && d.RevokedAt == nil }
 
 // ModuleDelegationPurposeLimit is the longest purpose a delegation records,
-// the bound migration 48 holds the column to.
+// the bound migration 51 holds the column to.
 const ModuleDelegationPurposeLimit = 1024
 
 var (

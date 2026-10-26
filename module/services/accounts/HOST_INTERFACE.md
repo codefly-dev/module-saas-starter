@@ -1123,7 +1123,7 @@ declaration, so that union was invoke: a lookup hop upstream in a chain kept
 standing after the binding's lookup was withdrawn, for as long as invoke
 granted the action. The journal now records, for a module's hop through a
 binding, the binding it went through and the set it was issued under
-(migration 49: `operation_binding_id`, `operation`, both or neither, part of
+(migration 52: `operation_binding_id`, `operation`, both or neither, part of
 the hop's content address when present). `ConfirmModuleChain` holds a recorded
 hop to exactly that set: narrowing it, or withdrawing it, ends the hop even
 while another set of the same binding still grants the action
@@ -1133,7 +1133,7 @@ remote binding answer a callee's verifier asks for runs the same re-read and
 answers a stale chain as revoked.
 
 Still held by audience and union: a hop the journal holds no binding for (one
-recorded before migration 49, or on a host with no journal), and
+recorded before migration 52, or on a host with no journal), and
 `CheckAuthorizationRevision`, whose request names no hop, so it cannot read
 which set each was issued under; a callee that verifies through this host's
 binding answer gets the exact check.
