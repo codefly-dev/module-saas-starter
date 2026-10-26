@@ -236,6 +236,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		return delivery.Verify(doc, envelope, map[string]crypto.PublicKey{signer.KeyID(): signer.Public()})
 	})
 	svc.SetModuleEnvelopeStore(store)
+	svc.SetAdmissionKeyStore(store)
 	require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
 		record, err := store.LatestModuleEnvelopeRecord(ctx)
 		require.Nil(t, record, "the fresh host has no administrative envelope")
@@ -704,6 +705,35 @@ func runHostInterfaceFixture(t *testing.T) {
 				require.Equal(t, i.operation, row.Operation, "the %s issue's own row", i.operation)
 			}
 		}
+	})
+
+	// Beyond the suite, which has no admission-key case yet (authority
+	// 49101ae1): the hop registers its admission key over the listener under
+	// its own workload credential, Keys publishes it apart from the Work
+	// Context keys, and another workload is refused by name.
+	t.Run("the hop's registered admission key is published in Keys", func(t *testing.T) {
+		client := authorityv1.NewAuthorityServiceClient(conn)
+		hop := cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.HopService, Container: "app"})
+		_, public := hopPublicKey(t, "conformance-hop")
+		registered, err := client.RegisterAdmissionKey(ctx, &authorityv1.RegisterAdmissionKeyRequest{
+			Actor: &authorityv1.WorkloadCredential{Credential: hop}, PublicKey: public,
+		})
+		require.NoError(t, err)
+		require.Equal(t, "hop-admission", registered.GetKey().GetPurpose())
+		keys, err := client.Keys(ctx, &authorityv1.KeysRequest{})
+		require.NoError(t, err)
+		require.Len(t, keys.GetAdmissionKeys(), 1)
+		require.Equal(t, registered.GetKey().GetKeyId(), keys.GetAdmissionKeys()[0].GetKeyId())
+		require.Equal(t, public, keys.GetAdmissionKeys()[0].GetPublicKey())
+		for _, key := range keys.GetKeys() {
+			require.Equal(t, "work-context", key.GetPurpose())
+			require.NotEqual(t, registered.GetKey().GetKeyId(), key.GetKeyId())
+		}
+		_, err = client.RegisterAdmissionKey(ctx, &authorityv1.RegisterAdmissionKeyRequest{
+			Actor: &authorityv1.WorkloadCredential{Credential: documentsCredential}, PublicKey: public,
+		})
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+		require.ErrorContains(t, err, "the caller is documents/documents, not the hop (authority/hop)")
 	})
 
 	// Beyond the suite: the session a page reads is the live one. A fixture

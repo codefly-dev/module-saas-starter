@@ -57,6 +57,8 @@ pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: W
 pkg/business/follow_fanout.go: (*Service).revokeUndeclaredFollowSubscriptions: WithControlPlane
 pkg/business/follow_fanout.go: (*Service).undeliveredFollowers: WithControlPlane
 pkg/business/gdpr.go: (*Service).PurgeExpiredPrivacyArtifacts: WithControlPlane
+pkg/business/hop_admission_keys.go: (*Service).PublishedAdmissionKeys: WithControlPlane
+pkg/business/hop_admission_keys.go: (*Service).RegisterAdmissionKey: WithControlPlane
 pkg/business/host_installation.go: (*Service).ReadHostInstallation: WithControlPlane
 pkg/business/installation_exposure.go: (*Service).ListOrganizationInstallations: WithControlPlane
 pkg/business/installation_jobs.go: (*Service).RetryInstallation: WithControlPlane

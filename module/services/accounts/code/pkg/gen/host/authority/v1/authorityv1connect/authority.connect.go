@@ -45,9 +45,21 @@ const (
 	AuthorityServiceCheckProcedure = "/host.authority.v1.AuthorityService/Check"
 	// AuthorityServiceKeysProcedure is the fully-qualified name of the AuthorityService's Keys RPC.
 	AuthorityServiceKeysProcedure = "/host.authority.v1.AuthorityService/Keys"
+	// AuthorityServiceRegisterAdmissionKeyProcedure is the fully-qualified name of the
+	// AuthorityService's RegisterAdmissionKey RPC.
+	AuthorityServiceRegisterAdmissionKeyProcedure = "/host.authority.v1.AuthorityService/RegisterAdmissionKey"
 	// AuthorityServiceListResourcesProcedure is the fully-qualified name of the AuthorityService's
 	// ListResources RPC.
 	AuthorityServiceListResourcesProcedure = "/host.authority.v1.AuthorityService/ListResources"
+	// AuthorityServiceAttachResourceProcedure is the fully-qualified name of the AuthorityService's
+	// AttachResource RPC.
+	AuthorityServiceAttachResourceProcedure = "/host.authority.v1.AuthorityService/AttachResource"
+	// AuthorityServiceDetachResourceProcedure is the fully-qualified name of the AuthorityService's
+	// DetachResource RPC.
+	AuthorityServiceDetachResourceProcedure = "/host.authority.v1.AuthorityService/DetachResource"
+	// AuthorityServiceAuthorizeTransferProcedure is the fully-qualified name of the AuthorityService's
+	// AuthorizeTransfer RPC.
+	AuthorityServiceAuthorizeTransferProcedure = "/host.authority.v1.AuthorityService/AuthorizeTransfer"
 	// AuthorityServiceDelegateProcedure is the fully-qualified name of the AuthorityService's Delegate
 	// RPC.
 	AuthorityServiceDelegateProcedure = "/host.authority.v1.AuthorityService/Delegate"
@@ -70,13 +82,75 @@ type AuthorityServiceClient interface {
 	// Check verifies a presented Work Context for the audience the caller is,
 	// re-checking the authorization revision and the seal live.
 	Check(context.Context, *connect.Request[v1.CheckRequest]) (*connect.Response[v1.CheckResponse], error)
-	// Keys returns the issuer and the public keys a verifier pins.
+	// Keys returns the issuer and the public keys a verifier pins: the Work
+	// Context keys, and the hop admission keys a module behind the hop checks
+	// each call's admission by.
 	Keys(context.Context, *connect.Request[v1.KeysRequest]) (*connect.Response[v1.KeysResponse], error)
+	// RegisterAdmissionKey is how the hop tells the authority the public key it
+	// signs call admissions with, so Keys publishes it in admission_keys. The
+	// caller is the hop, proving it with its workload credential; any other
+	// workload is refused by name. Only the public half travels: the hop's seed
+	// never leaves it. Registering the same key again is idempotent and renews
+	// it, and a registration lapses at expires_at_unix unless renewed, so a hop
+	// renews while it runs (a restarted authority learns the key again at the
+	// next renewal) and a key no running hop signs with any more is withdrawn
+	// without being named. While a rotation overlaps, the retiring and the new
+	// key are both registered, and both published.
+	RegisterAdmissionKey(context.Context, *connect.Request[v1.RegisterAdmissionKeyRequest]) (*connect.Response[v1.RegisterAdmissionKeyResponse], error)
 	// ListResources answers which resources of one kind a checked capability may
 	// act on with one action, decided by the authority at the time of the call
 	// rather than carried in the capability. A module maps the answer onto its
 	// own resources; the authority knows them only by id.
 	ListResources(context.Context, *connect.Request[v1.ListResourcesRequest]) (*connect.Response[v1.ListResourcesResponse], error)
+	// AttachResource records that one resource now belongs to an installation,
+	// so a role scope its solution declares installation-owned
+	// (RoleV1.installation_owned_scopes) covers it. The caller is the kind's one
+	// serving module (a kind two composed modules declare attaches nothing),
+	// proving itself with its workload credential, and presents a capability
+	// addressed to it, at the organisation's current authorization revision,
+	// holding "create" on the whole kind for the newly created resource. An
+	// owner-selected create must select this installation's principal. Admin or
+	// read alone attaches nothing: an existing resource changes owner through
+	// AuthorizeTransfer, never through an unrestricted administrative capability.
+	// A resource has one owner in an organisation: an id
+	// another installation owns is refused. A store whose attach is refused fails
+	// or rolls back the create it made, and detaches what it deletes
+	// (DetachResource). The owning installation is read from the capability's
+	// verified provenance and never named by the caller: the installation itself
+	// when it is the owner, the installed solution when it is the caller, and
+	// each solution in its actor chain; exactly one must result. Ids are opaque
+	// and compared byte for byte; an id is refused when it is empty, carries
+	// surrounding whitespace, a NUL, CR, LF, tab or "*", or exceeds 128 bytes.
+	// Owned ids travel in every capability holding them, so an installation owns
+	// at most 32 of one kind at a time, refused by name past it. Attaching only
+	// widens what an owned scope covers, so it moves no authorization revision;
+	// a reinstalled installation owns nothing.
+	AttachResource(context.Context, *connect.Request[v1.AttachResourceRequest]) (*connect.Response[v1.AttachResourceResponse], error)
+	// DetachResource releases one resource from whichever installation of the
+	// organisation owns it, when the kind's one serving module deletes it, so the
+	// id no longer counts toward the owner's bound and may be attached again.
+	// It narrows the owner's roles, so the organisation's authorization revision
+	// moves. Detaching an id no installation owns answers no installation.
+	DetachResource(context.Context, *connect.Request[v1.DetachResourceRequest]) (*connect.Response[v1.DetachResourceResponse], error)
+	// AuthorizeTransfer decides whether an existing resource may join an
+	// installed solution's principal. The caller is the kind's one serving
+	// module, which attests the resource exists and who owns it now
+	// (from_owner_id), presenting the capability of the person asking: issued
+	// through the target principal's installation and addressed to the caller.
+	// It is allowed when the current owner is the organization or a person of
+	// it (never another solution principal, another organization or an unknown
+	// owner), the person holds admin on that resource from their own
+	// organization grants, and the person's current roles on the principal hold
+	// write on the kind, all read live. An installation acting for itself never
+	// transfers. After authorization succeeds, the authority records the id in
+	// the target installation's owned set in the same write transaction, subject
+	// to the same exclusivity, id and 32-id bounds as AttachResource. Revision,
+	// provenance, serving module and active tenant installation are checked in
+	// that transaction. A refusal records nothing and names its reason. The
+	// store then records the principal as owner; the original creator stays the
+	// author. The store must complete that change or compensate with DetachResource
+	// before exposing the resource. No separate admin attachment path exists.
+	AuthorizeTransfer(context.Context, *connect.Request[v1.AuthorizeTransferRequest]) (*connect.Response[v1.AuthorizeTransferResponse], error)
 	// Delegate records a signed-in person's grant to a module (the caller's
 	// bearer is the person); Issue with a delegation acts on it.
 	Delegate(context.Context, *connect.Request[v1.DelegateRequest]) (*connect.Response[v1.Delegation], error)
@@ -118,10 +192,34 @@ func NewAuthorityServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(authorityServiceMethods.ByName("Keys")),
 			connect.WithClientOptions(opts...),
 		),
+		registerAdmissionKey: connect.NewClient[v1.RegisterAdmissionKeyRequest, v1.RegisterAdmissionKeyResponse](
+			httpClient,
+			baseURL+AuthorityServiceRegisterAdmissionKeyProcedure,
+			connect.WithSchema(authorityServiceMethods.ByName("RegisterAdmissionKey")),
+			connect.WithClientOptions(opts...),
+		),
 		listResources: connect.NewClient[v1.ListResourcesRequest, v1.ListResourcesResponse](
 			httpClient,
 			baseURL+AuthorityServiceListResourcesProcedure,
 			connect.WithSchema(authorityServiceMethods.ByName("ListResources")),
+			connect.WithClientOptions(opts...),
+		),
+		attachResource: connect.NewClient[v1.AttachResourceRequest, v1.AttachResourceResponse](
+			httpClient,
+			baseURL+AuthorityServiceAttachResourceProcedure,
+			connect.WithSchema(authorityServiceMethods.ByName("AttachResource")),
+			connect.WithClientOptions(opts...),
+		),
+		detachResource: connect.NewClient[v1.DetachResourceRequest, v1.DetachResourceResponse](
+			httpClient,
+			baseURL+AuthorityServiceDetachResourceProcedure,
+			connect.WithSchema(authorityServiceMethods.ByName("DetachResource")),
+			connect.WithClientOptions(opts...),
+		),
+		authorizeTransfer: connect.NewClient[v1.AuthorizeTransferRequest, v1.AuthorizeTransferResponse](
+			httpClient,
+			baseURL+AuthorityServiceAuthorizeTransferProcedure,
+			connect.WithSchema(authorityServiceMethods.ByName("AuthorizeTransfer")),
 			connect.WithClientOptions(opts...),
 		),
 		delegate: connect.NewClient[v1.DelegateRequest, v1.Delegation](
@@ -147,13 +245,17 @@ func NewAuthorityServiceClient(httpClient connect.HTTPClient, baseURL string, op
 
 // authorityServiceClient implements AuthorityServiceClient.
 type authorityServiceClient struct {
-	issue            *connect.Client[v1.IssueRequest, v1.IssueResponse]
-	check            *connect.Client[v1.CheckRequest, v1.CheckResponse]
-	keys             *connect.Client[v1.KeysRequest, v1.KeysResponse]
-	listResources    *connect.Client[v1.ListResourcesRequest, v1.ListResourcesResponse]
-	delegate         *connect.Client[v1.DelegateRequest, v1.Delegation]
-	revokeDelegation *connect.Client[v1.RevokeDelegationRequest, v1.RevokeDelegationResponse]
-	getDelegation    *connect.Client[v1.GetDelegationRequest, v1.Delegation]
+	issue                *connect.Client[v1.IssueRequest, v1.IssueResponse]
+	check                *connect.Client[v1.CheckRequest, v1.CheckResponse]
+	keys                 *connect.Client[v1.KeysRequest, v1.KeysResponse]
+	registerAdmissionKey *connect.Client[v1.RegisterAdmissionKeyRequest, v1.RegisterAdmissionKeyResponse]
+	listResources        *connect.Client[v1.ListResourcesRequest, v1.ListResourcesResponse]
+	attachResource       *connect.Client[v1.AttachResourceRequest, v1.AttachResourceResponse]
+	detachResource       *connect.Client[v1.DetachResourceRequest, v1.DetachResourceResponse]
+	authorizeTransfer    *connect.Client[v1.AuthorizeTransferRequest, v1.AuthorizeTransferResponse]
+	delegate             *connect.Client[v1.DelegateRequest, v1.Delegation]
+	revokeDelegation     *connect.Client[v1.RevokeDelegationRequest, v1.RevokeDelegationResponse]
+	getDelegation        *connect.Client[v1.GetDelegationRequest, v1.Delegation]
 }
 
 // Issue calls host.authority.v1.AuthorityService.Issue.
@@ -171,9 +273,29 @@ func (c *authorityServiceClient) Keys(ctx context.Context, req *connect.Request[
 	return c.keys.CallUnary(ctx, req)
 }
 
+// RegisterAdmissionKey calls host.authority.v1.AuthorityService.RegisterAdmissionKey.
+func (c *authorityServiceClient) RegisterAdmissionKey(ctx context.Context, req *connect.Request[v1.RegisterAdmissionKeyRequest]) (*connect.Response[v1.RegisterAdmissionKeyResponse], error) {
+	return c.registerAdmissionKey.CallUnary(ctx, req)
+}
+
 // ListResources calls host.authority.v1.AuthorityService.ListResources.
 func (c *authorityServiceClient) ListResources(ctx context.Context, req *connect.Request[v1.ListResourcesRequest]) (*connect.Response[v1.ListResourcesResponse], error) {
 	return c.listResources.CallUnary(ctx, req)
+}
+
+// AttachResource calls host.authority.v1.AuthorityService.AttachResource.
+func (c *authorityServiceClient) AttachResource(ctx context.Context, req *connect.Request[v1.AttachResourceRequest]) (*connect.Response[v1.AttachResourceResponse], error) {
+	return c.attachResource.CallUnary(ctx, req)
+}
+
+// DetachResource calls host.authority.v1.AuthorityService.DetachResource.
+func (c *authorityServiceClient) DetachResource(ctx context.Context, req *connect.Request[v1.DetachResourceRequest]) (*connect.Response[v1.DetachResourceResponse], error) {
+	return c.detachResource.CallUnary(ctx, req)
+}
+
+// AuthorizeTransfer calls host.authority.v1.AuthorityService.AuthorizeTransfer.
+func (c *authorityServiceClient) AuthorizeTransfer(ctx context.Context, req *connect.Request[v1.AuthorizeTransferRequest]) (*connect.Response[v1.AuthorizeTransferResponse], error) {
+	return c.authorizeTransfer.CallUnary(ctx, req)
 }
 
 // Delegate calls host.authority.v1.AuthorityService.Delegate.
@@ -202,13 +324,75 @@ type AuthorityServiceHandler interface {
 	// Check verifies a presented Work Context for the audience the caller is,
 	// re-checking the authorization revision and the seal live.
 	Check(context.Context, *connect.Request[v1.CheckRequest]) (*connect.Response[v1.CheckResponse], error)
-	// Keys returns the issuer and the public keys a verifier pins.
+	// Keys returns the issuer and the public keys a verifier pins: the Work
+	// Context keys, and the hop admission keys a module behind the hop checks
+	// each call's admission by.
 	Keys(context.Context, *connect.Request[v1.KeysRequest]) (*connect.Response[v1.KeysResponse], error)
+	// RegisterAdmissionKey is how the hop tells the authority the public key it
+	// signs call admissions with, so Keys publishes it in admission_keys. The
+	// caller is the hop, proving it with its workload credential; any other
+	// workload is refused by name. Only the public half travels: the hop's seed
+	// never leaves it. Registering the same key again is idempotent and renews
+	// it, and a registration lapses at expires_at_unix unless renewed, so a hop
+	// renews while it runs (a restarted authority learns the key again at the
+	// next renewal) and a key no running hop signs with any more is withdrawn
+	// without being named. While a rotation overlaps, the retiring and the new
+	// key are both registered, and both published.
+	RegisterAdmissionKey(context.Context, *connect.Request[v1.RegisterAdmissionKeyRequest]) (*connect.Response[v1.RegisterAdmissionKeyResponse], error)
 	// ListResources answers which resources of one kind a checked capability may
 	// act on with one action, decided by the authority at the time of the call
 	// rather than carried in the capability. A module maps the answer onto its
 	// own resources; the authority knows them only by id.
 	ListResources(context.Context, *connect.Request[v1.ListResourcesRequest]) (*connect.Response[v1.ListResourcesResponse], error)
+	// AttachResource records that one resource now belongs to an installation,
+	// so a role scope its solution declares installation-owned
+	// (RoleV1.installation_owned_scopes) covers it. The caller is the kind's one
+	// serving module (a kind two composed modules declare attaches nothing),
+	// proving itself with its workload credential, and presents a capability
+	// addressed to it, at the organisation's current authorization revision,
+	// holding "create" on the whole kind for the newly created resource. An
+	// owner-selected create must select this installation's principal. Admin or
+	// read alone attaches nothing: an existing resource changes owner through
+	// AuthorizeTransfer, never through an unrestricted administrative capability.
+	// A resource has one owner in an organisation: an id
+	// another installation owns is refused. A store whose attach is refused fails
+	// or rolls back the create it made, and detaches what it deletes
+	// (DetachResource). The owning installation is read from the capability's
+	// verified provenance and never named by the caller: the installation itself
+	// when it is the owner, the installed solution when it is the caller, and
+	// each solution in its actor chain; exactly one must result. Ids are opaque
+	// and compared byte for byte; an id is refused when it is empty, carries
+	// surrounding whitespace, a NUL, CR, LF, tab or "*", or exceeds 128 bytes.
+	// Owned ids travel in every capability holding them, so an installation owns
+	// at most 32 of one kind at a time, refused by name past it. Attaching only
+	// widens what an owned scope covers, so it moves no authorization revision;
+	// a reinstalled installation owns nothing.
+	AttachResource(context.Context, *connect.Request[v1.AttachResourceRequest]) (*connect.Response[v1.AttachResourceResponse], error)
+	// DetachResource releases one resource from whichever installation of the
+	// organisation owns it, when the kind's one serving module deletes it, so the
+	// id no longer counts toward the owner's bound and may be attached again.
+	// It narrows the owner's roles, so the organisation's authorization revision
+	// moves. Detaching an id no installation owns answers no installation.
+	DetachResource(context.Context, *connect.Request[v1.DetachResourceRequest]) (*connect.Response[v1.DetachResourceResponse], error)
+	// AuthorizeTransfer decides whether an existing resource may join an
+	// installed solution's principal. The caller is the kind's one serving
+	// module, which attests the resource exists and who owns it now
+	// (from_owner_id), presenting the capability of the person asking: issued
+	// through the target principal's installation and addressed to the caller.
+	// It is allowed when the current owner is the organization or a person of
+	// it (never another solution principal, another organization or an unknown
+	// owner), the person holds admin on that resource from their own
+	// organization grants, and the person's current roles on the principal hold
+	// write on the kind, all read live. An installation acting for itself never
+	// transfers. After authorization succeeds, the authority records the id in
+	// the target installation's owned set in the same write transaction, subject
+	// to the same exclusivity, id and 32-id bounds as AttachResource. Revision,
+	// provenance, serving module and active tenant installation are checked in
+	// that transaction. A refusal records nothing and names its reason. The
+	// store then records the principal as owner; the original creator stays the
+	// author. The store must complete that change or compensate with DetachResource
+	// before exposing the resource. No separate admin attachment path exists.
+	AuthorizeTransfer(context.Context, *connect.Request[v1.AuthorizeTransferRequest]) (*connect.Response[v1.AuthorizeTransferResponse], error)
 	// Delegate records a signed-in person's grant to a module (the caller's
 	// bearer is the person); Issue with a delegation acts on it.
 	Delegate(context.Context, *connect.Request[v1.DelegateRequest]) (*connect.Response[v1.Delegation], error)
@@ -246,10 +430,34 @@ func NewAuthorityServiceHandler(svc AuthorityServiceHandler, opts ...connect.Han
 		connect.WithSchema(authorityServiceMethods.ByName("Keys")),
 		connect.WithHandlerOptions(opts...),
 	)
+	authorityServiceRegisterAdmissionKeyHandler := connect.NewUnaryHandler(
+		AuthorityServiceRegisterAdmissionKeyProcedure,
+		svc.RegisterAdmissionKey,
+		connect.WithSchema(authorityServiceMethods.ByName("RegisterAdmissionKey")),
+		connect.WithHandlerOptions(opts...),
+	)
 	authorityServiceListResourcesHandler := connect.NewUnaryHandler(
 		AuthorityServiceListResourcesProcedure,
 		svc.ListResources,
 		connect.WithSchema(authorityServiceMethods.ByName("ListResources")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authorityServiceAttachResourceHandler := connect.NewUnaryHandler(
+		AuthorityServiceAttachResourceProcedure,
+		svc.AttachResource,
+		connect.WithSchema(authorityServiceMethods.ByName("AttachResource")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authorityServiceDetachResourceHandler := connect.NewUnaryHandler(
+		AuthorityServiceDetachResourceProcedure,
+		svc.DetachResource,
+		connect.WithSchema(authorityServiceMethods.ByName("DetachResource")),
+		connect.WithHandlerOptions(opts...),
+	)
+	authorityServiceAuthorizeTransferHandler := connect.NewUnaryHandler(
+		AuthorityServiceAuthorizeTransferProcedure,
+		svc.AuthorizeTransfer,
+		connect.WithSchema(authorityServiceMethods.ByName("AuthorizeTransfer")),
 		connect.WithHandlerOptions(opts...),
 	)
 	authorityServiceDelegateHandler := connect.NewUnaryHandler(
@@ -278,8 +486,16 @@ func NewAuthorityServiceHandler(svc AuthorityServiceHandler, opts ...connect.Han
 			authorityServiceCheckHandler.ServeHTTP(w, r)
 		case AuthorityServiceKeysProcedure:
 			authorityServiceKeysHandler.ServeHTTP(w, r)
+		case AuthorityServiceRegisterAdmissionKeyProcedure:
+			authorityServiceRegisterAdmissionKeyHandler.ServeHTTP(w, r)
 		case AuthorityServiceListResourcesProcedure:
 			authorityServiceListResourcesHandler.ServeHTTP(w, r)
+		case AuthorityServiceAttachResourceProcedure:
+			authorityServiceAttachResourceHandler.ServeHTTP(w, r)
+		case AuthorityServiceDetachResourceProcedure:
+			authorityServiceDetachResourceHandler.ServeHTTP(w, r)
+		case AuthorityServiceAuthorizeTransferProcedure:
+			authorityServiceAuthorizeTransferHandler.ServeHTTP(w, r)
 		case AuthorityServiceDelegateProcedure:
 			authorityServiceDelegateHandler.ServeHTTP(w, r)
 		case AuthorityServiceRevokeDelegationProcedure:
@@ -307,8 +523,24 @@ func (UnimplementedAuthorityServiceHandler) Keys(context.Context, *connect.Reque
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("host.authority.v1.AuthorityService.Keys is not implemented"))
 }
 
+func (UnimplementedAuthorityServiceHandler) RegisterAdmissionKey(context.Context, *connect.Request[v1.RegisterAdmissionKeyRequest]) (*connect.Response[v1.RegisterAdmissionKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("host.authority.v1.AuthorityService.RegisterAdmissionKey is not implemented"))
+}
+
 func (UnimplementedAuthorityServiceHandler) ListResources(context.Context, *connect.Request[v1.ListResourcesRequest]) (*connect.Response[v1.ListResourcesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("host.authority.v1.AuthorityService.ListResources is not implemented"))
+}
+
+func (UnimplementedAuthorityServiceHandler) AttachResource(context.Context, *connect.Request[v1.AttachResourceRequest]) (*connect.Response[v1.AttachResourceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("host.authority.v1.AuthorityService.AttachResource is not implemented"))
+}
+
+func (UnimplementedAuthorityServiceHandler) DetachResource(context.Context, *connect.Request[v1.DetachResourceRequest]) (*connect.Response[v1.DetachResourceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("host.authority.v1.AuthorityService.DetachResource is not implemented"))
+}
+
+func (UnimplementedAuthorityServiceHandler) AuthorizeTransfer(context.Context, *connect.Request[v1.AuthorizeTransferRequest]) (*connect.Response[v1.AuthorizeTransferResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("host.authority.v1.AuthorityService.AuthorizeTransfer is not implemented"))
 }
 
 func (UnimplementedAuthorityServiceHandler) Delegate(context.Context, *connect.Request[v1.DelegateRequest]) (*connect.Response[v1.Delegation], error) {

@@ -222,6 +222,9 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	// deliveries: a platform super_admin can write the ceiling before the first
 	// document arrives.
 	service.SetModuleEnvelopeStore(store)
+	// The hop's admission keys: registered by whichever replica the hop
+	// reaches, published by every replica from the same rows.
+	service.SetAdmissionKeyStore(store)
 	// Explicit organization delegation is separate from module identity. A
 	// projected policy is refreshed by the delivery system and read per call.
 	installerHandler, err := configuredModuleInstaller(service)

@@ -983,8 +983,17 @@ type KeysResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The issuer every capability names.
 	Issuer string `protobuf:"bytes,1,opt,name=issuer,proto3" json:"issuer,omitempty"`
-	// The public keys by key id.
-	Keys          []*PublicKey `protobuf:"bytes,2,rep,name=keys,proto3" json:"keys,omitempty"`
+	// The public keys by key id: what a Work Context is signed with, and only
+	// that. Each carries purpose "work-context".
+	Keys []*PublicKey `protobuf:"bytes,2,rep,name=keys,proto3" json:"keys,omitempty"`
+	// The keys a hop signs each call's admission with, each with purpose
+	// "hop-admission": a module behind the hop verifies the admission by one of
+	// them. More than one is published while a hop's key is rotated, so the
+	// retiring and the new key overlap. They are never Work Context keys and are
+	// kept out of keys, so no verifier that reads keys alone can trust one to
+	// sign a Work Context. Empty until a hop registers its key
+	// (RegisterAdmissionKey).
+	AdmissionKeys []*PublicKey `protobuf:"bytes,3,rep,name=admission_keys,json=admissionKeys,proto3" json:"admission_keys,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1033,6 +1042,13 @@ func (x *KeysResponse) GetKeys() []*PublicKey {
 	return nil
 }
 
+func (x *KeysResponse) GetAdmissionKeys() []*PublicKey {
+	if x != nil {
+		return x.AdmissionKeys
+	}
+	return nil
+}
+
 // PublicKey is one verification key.
 type PublicKey struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1041,7 +1057,11 @@ type PublicKey struct {
 	// The signature algorithm; Ed25519.
 	Algorithm string `protobuf:"bytes,2,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
 	// The raw public key bytes.
-	PublicKey     []byte `protobuf:"bytes,3,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	PublicKey []byte `protobuf:"bytes,3,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	// What the key verifies: "work-context" (a Work Context) or "hop-admission"
+	// (a hop's signed call admission). A verifier uses a key only for its own
+	// purpose.
+	Purpose       string `protobuf:"bytes,4,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1097,6 +1117,123 @@ func (x *PublicKey) GetPublicKey() []byte {
 	return nil
 }
 
+func (x *PublicKey) GetPurpose() string {
+	if x != nil {
+		return x.Purpose
+	}
+	return ""
+}
+
+// RegisterAdmissionKeyRequest presents one hop admission key.
+type RegisterAdmissionKeyRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The hop's workload credential; any other workload is refused.
+	Actor *WorkloadCredential `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
+	// The raw Ed25519 public key the hop signs admissions with: 32 bytes.
+	PublicKey     []byte `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterAdmissionKeyRequest) Reset() {
+	*x = RegisterAdmissionKeyRequest{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterAdmissionKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterAdmissionKeyRequest) ProtoMessage() {}
+
+func (x *RegisterAdmissionKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterAdmissionKeyRequest.ProtoReflect.Descriptor instead.
+func (*RegisterAdmissionKeyRequest) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RegisterAdmissionKeyRequest) GetActor() *WorkloadCredential {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *RegisterAdmissionKeyRequest) GetPublicKey() []byte {
+	if x != nil {
+		return x.PublicKey
+	}
+	return nil
+}
+
+// RegisterAdmissionKeyResponse is the key as Keys now publishes it.
+type RegisterAdmissionKeyResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The published entry, with its key id and purpose "hop-admission".
+	Key *PublicKey `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// When the registration lapses unless the hop registers the key again.
+	ExpiresAtUnix int64 `protobuf:"varint,2,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterAdmissionKeyResponse) Reset() {
+	*x = RegisterAdmissionKeyResponse{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterAdmissionKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterAdmissionKeyResponse) ProtoMessage() {}
+
+func (x *RegisterAdmissionKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterAdmissionKeyResponse.ProtoReflect.Descriptor instead.
+func (*RegisterAdmissionKeyResponse) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RegisterAdmissionKeyResponse) GetKey() *PublicKey {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *RegisterAdmissionKeyResponse) GetExpiresAtUnix() int64 {
+	if x != nil {
+		return x.ExpiresAtUnix
+	}
+	return 0
+}
+
 // ListResourcesRequest asks about one kind and one action.
 type ListResourcesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1114,7 +1251,7 @@ type ListResourcesRequest struct {
 
 func (x *ListResourcesRequest) Reset() {
 	*x = ListResourcesRequest{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[16]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1126,7 +1263,7 @@ func (x *ListResourcesRequest) String() string {
 func (*ListResourcesRequest) ProtoMessage() {}
 
 func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[16]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1139,7 +1276,7 @@ func (x *ListResourcesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResourcesRequest.ProtoReflect.Descriptor instead.
 func (*ListResourcesRequest) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{16}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListResourcesRequest) GetToken() string {
@@ -1182,7 +1319,7 @@ type ListResourcesResponse struct {
 
 func (x *ListResourcesResponse) Reset() {
 	*x = ListResourcesResponse{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[17]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1194,7 +1331,7 @@ func (x *ListResourcesResponse) String() string {
 func (*ListResourcesResponse) ProtoMessage() {}
 
 func (x *ListResourcesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[17]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1207,7 +1344,7 @@ func (x *ListResourcesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResourcesResponse.ProtoReflect.Descriptor instead.
 func (*ListResourcesResponse) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{17}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListResourcesResponse) GetGrants() []*ResourceGrant {
@@ -1217,7 +1354,393 @@ func (x *ListResourcesResponse) GetGrants() []*ResourceGrant {
 	return nil
 }
 
-// ResourceGrant is one way of naming covered resources. Exactly one is set.
+// AttachResourceRequest names one resource and the capability it was created under.
+type AttachResourceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The capability the creating call carried, addressed to the caller.
+	Token string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	// The module serving resource_kind, proving which module it is.
+	Actor *WorkloadCredential `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	// The resource kind, as the caller serves it.
+	ResourceKind string `protobuf:"bytes,3,opt,name=resource_kind,json=resourceKind,proto3" json:"resource_kind,omitempty"`
+	// The resource id, as the caller knows it.
+	ResourceId    string `protobuf:"bytes,4,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AttachResourceRequest) Reset() {
+	*x = AttachResourceRequest{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AttachResourceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttachResourceRequest) ProtoMessage() {}
+
+func (x *AttachResourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttachResourceRequest.ProtoReflect.Descriptor instead.
+func (*AttachResourceRequest) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *AttachResourceRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *AttachResourceRequest) GetActor() *WorkloadCredential {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *AttachResourceRequest) GetResourceKind() string {
+	if x != nil {
+		return x.ResourceKind
+	}
+	return ""
+}
+
+func (x *AttachResourceRequest) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+// AttachResourceResponse names the installation that now owns the resource.
+type AttachResourceResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The owning installation, read from the capability's provenance.
+	InstallationId string `protobuf:"bytes,1,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AttachResourceResponse) Reset() {
+	*x = AttachResourceResponse{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AttachResourceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttachResourceResponse) ProtoMessage() {}
+
+func (x *AttachResourceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttachResourceResponse.ProtoReflect.Descriptor instead.
+func (*AttachResourceResponse) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *AttachResourceResponse) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
+// DetachResourceRequest names one resource its serving module deleted.
+type DetachResourceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The module serving resource_kind, proving which module it is.
+	Actor *WorkloadCredential `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
+	// The organisation the resource belongs to.
+	OrganizationId string `protobuf:"bytes,2,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	// The resource kind, as the caller serves it.
+	ResourceKind string `protobuf:"bytes,3,opt,name=resource_kind,json=resourceKind,proto3" json:"resource_kind,omitempty"`
+	// The resource id, as the caller knows it.
+	ResourceId    string `protobuf:"bytes,4,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DetachResourceRequest) Reset() {
+	*x = DetachResourceRequest{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DetachResourceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DetachResourceRequest) ProtoMessage() {}
+
+func (x *DetachResourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DetachResourceRequest.ProtoReflect.Descriptor instead.
+func (*DetachResourceRequest) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *DetachResourceRequest) GetActor() *WorkloadCredential {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *DetachResourceRequest) GetOrganizationId() string {
+	if x != nil {
+		return x.OrganizationId
+	}
+	return ""
+}
+
+func (x *DetachResourceRequest) GetResourceKind() string {
+	if x != nil {
+		return x.ResourceKind
+	}
+	return ""
+}
+
+func (x *DetachResourceRequest) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+// DetachResourceResponse names the installation that owned the resource.
+type DetachResourceResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The installation released from it; empty when none owned it.
+	InstallationId string `protobuf:"bytes,1,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DetachResourceResponse) Reset() {
+	*x = DetachResourceResponse{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DetachResourceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DetachResourceResponse) ProtoMessage() {}
+
+func (x *DetachResourceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DetachResourceResponse.ProtoReflect.Descriptor instead.
+func (*DetachResourceResponse) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *DetachResourceResponse) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
+// AuthorizeTransferRequest names one existing resource and where it moves.
+type AuthorizeTransferRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The capability of the person asking, addressed to the caller.
+	Token string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	// The module serving resource_kind, proving which module it is.
+	Actor *WorkloadCredential `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	// The resource kind, as the caller serves it.
+	ResourceKind string `protobuf:"bytes,3,opt,name=resource_kind,json=resourceKind,proto3" json:"resource_kind,omitempty"`
+	// The resource id, as the caller knows it.
+	ResourceId string `protobuf:"bytes,4,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	// The resource's current owner, as the caller records it: the organization
+	// or a person of it.
+	FromOwnerId string `protobuf:"bytes,5,opt,name=from_owner_id,json=fromOwnerId,proto3" json:"from_owner_id,omitempty"`
+	// The solution principal the resource joins.
+	ToPrincipalId string `protobuf:"bytes,6,opt,name=to_principal_id,json=toPrincipalId,proto3" json:"to_principal_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthorizeTransferRequest) Reset() {
+	*x = AuthorizeTransferRequest{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthorizeTransferRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthorizeTransferRequest) ProtoMessage() {}
+
+func (x *AuthorizeTransferRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthorizeTransferRequest.ProtoReflect.Descriptor instead.
+func (*AuthorizeTransferRequest) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *AuthorizeTransferRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *AuthorizeTransferRequest) GetActor() *WorkloadCredential {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *AuthorizeTransferRequest) GetResourceKind() string {
+	if x != nil {
+		return x.ResourceKind
+	}
+	return ""
+}
+
+func (x *AuthorizeTransferRequest) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+func (x *AuthorizeTransferRequest) GetFromOwnerId() string {
+	if x != nil {
+		return x.FromOwnerId
+	}
+	return ""
+}
+
+func (x *AuthorizeTransferRequest) GetToPrincipalId() string {
+	if x != nil {
+		return x.ToPrincipalId
+	}
+	return ""
+}
+
+// AuthorizeTransferResponse is the decision the store records.
+type AuthorizeTransferResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The principal that now owns the resource.
+	PrincipalId string `protobuf:"bytes,1,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
+	// The person who authorized the transfer.
+	AuthorizedBy  string `protobuf:"bytes,2,opt,name=authorized_by,json=authorizedBy,proto3" json:"authorized_by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthorizeTransferResponse) Reset() {
+	*x = AuthorizeTransferResponse{}
+	mi := &file_host_authority_v1_authority_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthorizeTransferResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthorizeTransferResponse) ProtoMessage() {}
+
+func (x *AuthorizeTransferResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_host_authority_v1_authority_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthorizeTransferResponse.ProtoReflect.Descriptor instead.
+func (*AuthorizeTransferResponse) Descriptor() ([]byte, []int) {
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *AuthorizeTransferResponse) GetPrincipalId() string {
+	if x != nil {
+		return x.PrincipalId
+	}
+	return ""
+}
+
+func (x *AuthorizeTransferResponse) GetAuthorizedBy() string {
+	if x != nil {
+		return x.AuthorizedBy
+	}
+	return ""
+}
+
+// ResourceGrant is one way of naming covered resources. Exactly one match is
+// set; resource_owner_id, when set, qualifies it.
 type ResourceGrant struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Match:
@@ -1226,14 +1749,17 @@ type ResourceGrant struct {
 	//	*ResourceGrant_Id
 	//	*ResourceGrant_Prefix
 	//	*ResourceGrant_Pattern
-	Match         isResourceGrant_Match `protobuf_oneof:"match"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Match isResourceGrant_Match `protobuf_oneof:"match"`
+	// The owner the covered resources must have: a resource is covered when
+	// the match covers its id and it is owned by this principal.
+	ResourceOwnerId string `protobuf:"bytes,5,opt,name=resource_owner_id,json=resourceOwnerId,proto3" json:"resource_owner_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ResourceGrant) Reset() {
 	*x = ResourceGrant{}
-	mi := &file_host_authority_v1_authority_proto_msgTypes[18]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1245,7 +1771,7 @@ func (x *ResourceGrant) String() string {
 func (*ResourceGrant) ProtoMessage() {}
 
 func (x *ResourceGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_host_authority_v1_authority_proto_msgTypes[18]
+	mi := &file_host_authority_v1_authority_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1258,7 +1784,7 @@ func (x *ResourceGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceGrant.ProtoReflect.Descriptor instead.
 func (*ResourceGrant) Descriptor() ([]byte, []int) {
-	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{18}
+	return file_host_authority_v1_authority_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ResourceGrant) GetMatch() isResourceGrant_Match {
@@ -1300,6 +1826,13 @@ func (x *ResourceGrant) GetPattern() string {
 		if x, ok := x.Match.(*ResourceGrant_Pattern); ok {
 			return x.Pattern
 		}
+	}
+	return ""
+}
+
+func (x *ResourceGrant) GetResourceOwnerId() string {
+	if x != nil {
+		return x.ResourceOwnerId
 	}
 	return ""
 }
@@ -1405,33 +1938,74 @@ const file_host_authority_v1_authority_proto_rawDesc = "" +
 	"\acontext\x18\x01 \x01(\v2 .host.authority.v1.WorkContextV1R\acontext\x125\n" +
 	"\x16authorization_revision\x18\x02 \x01(\x04R\x15authorizationRevision\x12\x18\n" +
 	"\arefusal\x18\x03 \x01(\tR\arefusal\"\r\n" +
-	"\vKeysRequest\"X\n" +
+	"\vKeysRequest\"\x9d\x01\n" +
 	"\fKeysResponse\x12\x16\n" +
 	"\x06issuer\x18\x01 \x01(\tR\x06issuer\x120\n" +
-	"\x04keys\x18\x02 \x03(\v2\x1c.host.authority.v1.PublicKeyR\x04keys\"_\n" +
+	"\x04keys\x18\x02 \x03(\v2\x1c.host.authority.v1.PublicKeyR\x04keys\x12C\n" +
+	"\x0eadmission_keys\x18\x03 \x03(\v2\x1c.host.authority.v1.PublicKeyR\radmissionKeys\"y\n" +
 	"\tPublicKey\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x1c\n" +
 	"\talgorithm\x18\x02 \x01(\tR\talgorithm\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\x03 \x01(\fR\tpublicKey\"\x85\x01\n" +
+	"public_key\x18\x03 \x01(\fR\tpublicKey\x12\x18\n" +
+	"\apurpose\x18\x04 \x01(\tR\apurpose\"y\n" +
+	"\x1bRegisterAdmissionKeyRequest\x12;\n" +
+	"\x05actor\x18\x01 \x01(\v2%.host.authority.v1.WorkloadCredentialR\x05actor\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\x02 \x01(\fR\tpublicKey\"v\n" +
+	"\x1cRegisterAdmissionKeyResponse\x12.\n" +
+	"\x03key\x18\x01 \x01(\v2\x1c.host.authority.v1.PublicKeyR\x03key\x12&\n" +
+	"\x0fexpires_at_unix\x18\x02 \x01(\x03R\rexpiresAtUnix\"\x85\x01\n" +
 	"\x14ListResourcesRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1a\n" +
 	"\baudience\x18\x02 \x01(\tR\baudience\x12#\n" +
 	"\rresource_kind\x18\x03 \x01(\tR\fresourceKind\x12\x16\n" +
 	"\x06action\x18\x04 \x01(\tR\x06action\"Q\n" +
 	"\x15ListResourcesResponse\x128\n" +
-	"\x06grants\x18\x01 \x03(\v2 .host.authority.v1.ResourceGrantR\x06grants\"t\n" +
+	"\x06grants\x18\x01 \x03(\v2 .host.authority.v1.ResourceGrantR\x06grants\"\xb0\x01\n" +
+	"\x15AttachResourceRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12;\n" +
+	"\x05actor\x18\x02 \x01(\v2%.host.authority.v1.WorkloadCredentialR\x05actor\x12#\n" +
+	"\rresource_kind\x18\x03 \x01(\tR\fresourceKind\x12\x1f\n" +
+	"\vresource_id\x18\x04 \x01(\tR\n" +
+	"resourceId\"A\n" +
+	"\x16AttachResourceResponse\x12'\n" +
+	"\x0finstallation_id\x18\x01 \x01(\tR\x0einstallationId\"\xc3\x01\n" +
+	"\x15DetachResourceRequest\x12;\n" +
+	"\x05actor\x18\x01 \x01(\v2%.host.authority.v1.WorkloadCredentialR\x05actor\x12'\n" +
+	"\x0forganization_id\x18\x02 \x01(\tR\x0eorganizationId\x12#\n" +
+	"\rresource_kind\x18\x03 \x01(\tR\fresourceKind\x12\x1f\n" +
+	"\vresource_id\x18\x04 \x01(\tR\n" +
+	"resourceId\"A\n" +
+	"\x16DetachResourceResponse\x12'\n" +
+	"\x0finstallation_id\x18\x01 \x01(\tR\x0einstallationId\"\xff\x01\n" +
+	"\x18AuthorizeTransferRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12;\n" +
+	"\x05actor\x18\x02 \x01(\v2%.host.authority.v1.WorkloadCredentialR\x05actor\x12#\n" +
+	"\rresource_kind\x18\x03 \x01(\tR\fresourceKind\x12\x1f\n" +
+	"\vresource_id\x18\x04 \x01(\tR\n" +
+	"resourceId\x12\"\n" +
+	"\rfrom_owner_id\x18\x05 \x01(\tR\vfromOwnerId\x12&\n" +
+	"\x0fto_principal_id\x18\x06 \x01(\tR\rtoPrincipalId\"c\n" +
+	"\x19AuthorizeTransferResponse\x12!\n" +
+	"\fprincipal_id\x18\x01 \x01(\tR\vprincipalId\x12#\n" +
+	"\rauthorized_by\x18\x02 \x01(\tR\fauthorizedBy\"\xa0\x01\n" +
 	"\rResourceGrant\x12\x12\n" +
 	"\x03all\x18\x01 \x01(\bH\x00R\x03all\x12\x10\n" +
 	"\x02id\x18\x02 \x01(\tH\x00R\x02id\x12\x18\n" +
 	"\x06prefix\x18\x03 \x01(\tH\x00R\x06prefix\x12\x1a\n" +
-	"\apattern\x18\x04 \x01(\tH\x00R\apatternB\a\n" +
-	"\x05match2\xac\x05\n" +
+	"\apattern\x18\x04 \x01(\tH\x00R\apattern\x12*\n" +
+	"\x11resource_owner_id\x18\x05 \x01(\tR\x0fresourceOwnerIdB\a\n" +
+	"\x05match2\xe3\b\n" +
 	"\x10AuthorityService\x12j\n" +
 	"\x05Issue\x12\x1f.host.authority.v1.IssueRequest\x1a .host.authority.v1.IssueResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/authority:issue\x12j\n" +
 	"\x05Check\x12\x1f.host.authority.v1.CheckRequest\x1a .host.authority.v1.CheckResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/authority:check\x12G\n" +
-	"\x04Keys\x12\x1e.host.authority.v1.KeysRequest\x1a\x1f.host.authority.v1.KeysResponse\x12b\n" +
-	"\rListResources\x12'.host.authority.v1.ListResourcesRequest\x1a(.host.authority.v1.ListResourcesResponse\x12M\n" +
+	"\x04Keys\x12\x1e.host.authority.v1.KeysRequest\x1a\x1f.host.authority.v1.KeysResponse\x12w\n" +
+	"\x14RegisterAdmissionKey\x12..host.authority.v1.RegisterAdmissionKeyRequest\x1a/.host.authority.v1.RegisterAdmissionKeyResponse\x12b\n" +
+	"\rListResources\x12'.host.authority.v1.ListResourcesRequest\x1a(.host.authority.v1.ListResourcesResponse\x12e\n" +
+	"\x0eAttachResource\x12(.host.authority.v1.AttachResourceRequest\x1a).host.authority.v1.AttachResourceResponse\x12e\n" +
+	"\x0eDetachResource\x12(.host.authority.v1.DetachResourceRequest\x1a).host.authority.v1.DetachResourceResponse\x12n\n" +
+	"\x11AuthorizeTransfer\x12+.host.authority.v1.AuthorizeTransferRequest\x1a,.host.authority.v1.AuthorizeTransferResponse\x12M\n" +
 	"\bDelegate\x12\".host.authority.v1.DelegateRequest\x1a\x1d.host.authority.v1.Delegation\x12k\n" +
 	"\x10RevokeDelegation\x12*.host.authority.v1.RevokeDelegationRequest\x1a+.host.authority.v1.RevokeDelegationResponse\x12W\n" +
 	"\rGetDelegation\x12'.host.authority.v1.GetDelegationRequest\x1a\x1d.host.authority.v1.DelegationB\xbd\x01\n" +
@@ -1449,64 +2023,86 @@ func file_host_authority_v1_authority_proto_rawDescGZIP() []byte {
 	return file_host_authority_v1_authority_proto_rawDescData
 }
 
-var file_host_authority_v1_authority_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_host_authority_v1_authority_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_host_authority_v1_authority_proto_goTypes = []any{
-	(*IssueRequest)(nil),             // 0: host.authority.v1.IssueRequest
-	(*DelegationRef)(nil),            // 1: host.authority.v1.DelegationRef
-	(*DelegateRequest)(nil),          // 2: host.authority.v1.DelegateRequest
-	(*Delegation)(nil),               // 3: host.authority.v1.Delegation
-	(*GetDelegationRequest)(nil),     // 4: host.authority.v1.GetDelegationRequest
-	(*RevokeDelegationRequest)(nil),  // 5: host.authority.v1.RevokeDelegationRequest
-	(*RevokeDelegationResponse)(nil), // 6: host.authority.v1.RevokeDelegationResponse
-	(*PersonSession)(nil),            // 7: host.authority.v1.PersonSession
-	(*WorkloadCredential)(nil),       // 8: host.authority.v1.WorkloadCredential
-	(*InstallationRef)(nil),          // 9: host.authority.v1.InstallationRef
-	(*IssueResponse)(nil),            // 10: host.authority.v1.IssueResponse
-	(*CheckRequest)(nil),             // 11: host.authority.v1.CheckRequest
-	(*CheckResponse)(nil),            // 12: host.authority.v1.CheckResponse
-	(*KeysRequest)(nil),              // 13: host.authority.v1.KeysRequest
-	(*KeysResponse)(nil),             // 14: host.authority.v1.KeysResponse
-	(*PublicKey)(nil),                // 15: host.authority.v1.PublicKey
-	(*ListResourcesRequest)(nil),     // 16: host.authority.v1.ListResourcesRequest
-	(*ListResourcesResponse)(nil),    // 17: host.authority.v1.ListResourcesResponse
-	(*ResourceGrant)(nil),            // 18: host.authority.v1.ResourceGrant
-	(*WorkScopeV1)(nil),              // 19: host.authority.v1.WorkScopeV1
-	(*WorkContextV1)(nil),            // 20: host.authority.v1.WorkContextV1
+	(*IssueRequest)(nil),                 // 0: host.authority.v1.IssueRequest
+	(*DelegationRef)(nil),                // 1: host.authority.v1.DelegationRef
+	(*DelegateRequest)(nil),              // 2: host.authority.v1.DelegateRequest
+	(*Delegation)(nil),                   // 3: host.authority.v1.Delegation
+	(*GetDelegationRequest)(nil),         // 4: host.authority.v1.GetDelegationRequest
+	(*RevokeDelegationRequest)(nil),      // 5: host.authority.v1.RevokeDelegationRequest
+	(*RevokeDelegationResponse)(nil),     // 6: host.authority.v1.RevokeDelegationResponse
+	(*PersonSession)(nil),                // 7: host.authority.v1.PersonSession
+	(*WorkloadCredential)(nil),           // 8: host.authority.v1.WorkloadCredential
+	(*InstallationRef)(nil),              // 9: host.authority.v1.InstallationRef
+	(*IssueResponse)(nil),                // 10: host.authority.v1.IssueResponse
+	(*CheckRequest)(nil),                 // 11: host.authority.v1.CheckRequest
+	(*CheckResponse)(nil),                // 12: host.authority.v1.CheckResponse
+	(*KeysRequest)(nil),                  // 13: host.authority.v1.KeysRequest
+	(*KeysResponse)(nil),                 // 14: host.authority.v1.KeysResponse
+	(*PublicKey)(nil),                    // 15: host.authority.v1.PublicKey
+	(*RegisterAdmissionKeyRequest)(nil),  // 16: host.authority.v1.RegisterAdmissionKeyRequest
+	(*RegisterAdmissionKeyResponse)(nil), // 17: host.authority.v1.RegisterAdmissionKeyResponse
+	(*ListResourcesRequest)(nil),         // 18: host.authority.v1.ListResourcesRequest
+	(*ListResourcesResponse)(nil),        // 19: host.authority.v1.ListResourcesResponse
+	(*AttachResourceRequest)(nil),        // 20: host.authority.v1.AttachResourceRequest
+	(*AttachResourceResponse)(nil),       // 21: host.authority.v1.AttachResourceResponse
+	(*DetachResourceRequest)(nil),        // 22: host.authority.v1.DetachResourceRequest
+	(*DetachResourceResponse)(nil),       // 23: host.authority.v1.DetachResourceResponse
+	(*AuthorizeTransferRequest)(nil),     // 24: host.authority.v1.AuthorizeTransferRequest
+	(*AuthorizeTransferResponse)(nil),    // 25: host.authority.v1.AuthorizeTransferResponse
+	(*ResourceGrant)(nil),                // 26: host.authority.v1.ResourceGrant
+	(*WorkScopeV1)(nil),                  // 27: host.authority.v1.WorkScopeV1
+	(*WorkContextV1)(nil),                // 28: host.authority.v1.WorkContextV1
 }
 var file_host_authority_v1_authority_proto_depIdxs = []int32{
 	7,  // 0: host.authority.v1.IssueRequest.person:type_name -> host.authority.v1.PersonSession
 	8,  // 1: host.authority.v1.IssueRequest.workload:type_name -> host.authority.v1.WorkloadCredential
 	9,  // 2: host.authority.v1.IssueRequest.installation:type_name -> host.authority.v1.InstallationRef
 	1,  // 3: host.authority.v1.IssueRequest.delegation:type_name -> host.authority.v1.DelegationRef
-	19, // 4: host.authority.v1.IssueRequest.scopes:type_name -> host.authority.v1.WorkScopeV1
+	27, // 4: host.authority.v1.IssueRequest.scopes:type_name -> host.authority.v1.WorkScopeV1
 	8,  // 5: host.authority.v1.IssueRequest.actor:type_name -> host.authority.v1.WorkloadCredential
-	19, // 6: host.authority.v1.DelegateRequest.scopes:type_name -> host.authority.v1.WorkScopeV1
-	19, // 7: host.authority.v1.Delegation.scopes:type_name -> host.authority.v1.WorkScopeV1
+	27, // 6: host.authority.v1.DelegateRequest.scopes:type_name -> host.authority.v1.WorkScopeV1
+	27, // 7: host.authority.v1.Delegation.scopes:type_name -> host.authority.v1.WorkScopeV1
 	8,  // 8: host.authority.v1.GetDelegationRequest.actor:type_name -> host.authority.v1.WorkloadCredential
 	3,  // 9: host.authority.v1.RevokeDelegationResponse.delegation:type_name -> host.authority.v1.Delegation
-	20, // 10: host.authority.v1.IssueResponse.context:type_name -> host.authority.v1.WorkContextV1
-	20, // 11: host.authority.v1.CheckResponse.context:type_name -> host.authority.v1.WorkContextV1
+	28, // 10: host.authority.v1.IssueResponse.context:type_name -> host.authority.v1.WorkContextV1
+	28, // 11: host.authority.v1.CheckResponse.context:type_name -> host.authority.v1.WorkContextV1
 	15, // 12: host.authority.v1.KeysResponse.keys:type_name -> host.authority.v1.PublicKey
-	18, // 13: host.authority.v1.ListResourcesResponse.grants:type_name -> host.authority.v1.ResourceGrant
-	0,  // 14: host.authority.v1.AuthorityService.Issue:input_type -> host.authority.v1.IssueRequest
-	11, // 15: host.authority.v1.AuthorityService.Check:input_type -> host.authority.v1.CheckRequest
-	13, // 16: host.authority.v1.AuthorityService.Keys:input_type -> host.authority.v1.KeysRequest
-	16, // 17: host.authority.v1.AuthorityService.ListResources:input_type -> host.authority.v1.ListResourcesRequest
-	2,  // 18: host.authority.v1.AuthorityService.Delegate:input_type -> host.authority.v1.DelegateRequest
-	5,  // 19: host.authority.v1.AuthorityService.RevokeDelegation:input_type -> host.authority.v1.RevokeDelegationRequest
-	4,  // 20: host.authority.v1.AuthorityService.GetDelegation:input_type -> host.authority.v1.GetDelegationRequest
-	10, // 21: host.authority.v1.AuthorityService.Issue:output_type -> host.authority.v1.IssueResponse
-	12, // 22: host.authority.v1.AuthorityService.Check:output_type -> host.authority.v1.CheckResponse
-	14, // 23: host.authority.v1.AuthorityService.Keys:output_type -> host.authority.v1.KeysResponse
-	17, // 24: host.authority.v1.AuthorityService.ListResources:output_type -> host.authority.v1.ListResourcesResponse
-	3,  // 25: host.authority.v1.AuthorityService.Delegate:output_type -> host.authority.v1.Delegation
-	6,  // 26: host.authority.v1.AuthorityService.RevokeDelegation:output_type -> host.authority.v1.RevokeDelegationResponse
-	3,  // 27: host.authority.v1.AuthorityService.GetDelegation:output_type -> host.authority.v1.Delegation
-	21, // [21:28] is the sub-list for method output_type
-	14, // [14:21] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	15, // 13: host.authority.v1.KeysResponse.admission_keys:type_name -> host.authority.v1.PublicKey
+	8,  // 14: host.authority.v1.RegisterAdmissionKeyRequest.actor:type_name -> host.authority.v1.WorkloadCredential
+	15, // 15: host.authority.v1.RegisterAdmissionKeyResponse.key:type_name -> host.authority.v1.PublicKey
+	26, // 16: host.authority.v1.ListResourcesResponse.grants:type_name -> host.authority.v1.ResourceGrant
+	8,  // 17: host.authority.v1.AttachResourceRequest.actor:type_name -> host.authority.v1.WorkloadCredential
+	8,  // 18: host.authority.v1.DetachResourceRequest.actor:type_name -> host.authority.v1.WorkloadCredential
+	8,  // 19: host.authority.v1.AuthorizeTransferRequest.actor:type_name -> host.authority.v1.WorkloadCredential
+	0,  // 20: host.authority.v1.AuthorityService.Issue:input_type -> host.authority.v1.IssueRequest
+	11, // 21: host.authority.v1.AuthorityService.Check:input_type -> host.authority.v1.CheckRequest
+	13, // 22: host.authority.v1.AuthorityService.Keys:input_type -> host.authority.v1.KeysRequest
+	16, // 23: host.authority.v1.AuthorityService.RegisterAdmissionKey:input_type -> host.authority.v1.RegisterAdmissionKeyRequest
+	18, // 24: host.authority.v1.AuthorityService.ListResources:input_type -> host.authority.v1.ListResourcesRequest
+	20, // 25: host.authority.v1.AuthorityService.AttachResource:input_type -> host.authority.v1.AttachResourceRequest
+	22, // 26: host.authority.v1.AuthorityService.DetachResource:input_type -> host.authority.v1.DetachResourceRequest
+	24, // 27: host.authority.v1.AuthorityService.AuthorizeTransfer:input_type -> host.authority.v1.AuthorizeTransferRequest
+	2,  // 28: host.authority.v1.AuthorityService.Delegate:input_type -> host.authority.v1.DelegateRequest
+	5,  // 29: host.authority.v1.AuthorityService.RevokeDelegation:input_type -> host.authority.v1.RevokeDelegationRequest
+	4,  // 30: host.authority.v1.AuthorityService.GetDelegation:input_type -> host.authority.v1.GetDelegationRequest
+	10, // 31: host.authority.v1.AuthorityService.Issue:output_type -> host.authority.v1.IssueResponse
+	12, // 32: host.authority.v1.AuthorityService.Check:output_type -> host.authority.v1.CheckResponse
+	14, // 33: host.authority.v1.AuthorityService.Keys:output_type -> host.authority.v1.KeysResponse
+	17, // 34: host.authority.v1.AuthorityService.RegisterAdmissionKey:output_type -> host.authority.v1.RegisterAdmissionKeyResponse
+	19, // 35: host.authority.v1.AuthorityService.ListResources:output_type -> host.authority.v1.ListResourcesResponse
+	21, // 36: host.authority.v1.AuthorityService.AttachResource:output_type -> host.authority.v1.AttachResourceResponse
+	23, // 37: host.authority.v1.AuthorityService.DetachResource:output_type -> host.authority.v1.DetachResourceResponse
+	25, // 38: host.authority.v1.AuthorityService.AuthorizeTransfer:output_type -> host.authority.v1.AuthorizeTransferResponse
+	3,  // 39: host.authority.v1.AuthorityService.Delegate:output_type -> host.authority.v1.Delegation
+	6,  // 40: host.authority.v1.AuthorityService.RevokeDelegation:output_type -> host.authority.v1.RevokeDelegationResponse
+	3,  // 41: host.authority.v1.AuthorityService.GetDelegation:output_type -> host.authority.v1.Delegation
+	31, // [31:42] is the sub-list for method output_type
+	20, // [20:31] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_host_authority_v1_authority_proto_init() }
@@ -1522,7 +2118,7 @@ func file_host_authority_v1_authority_proto_init() {
 		(*IssueRequest_ParentToken)(nil),
 		(*IssueRequest_Delegation)(nil),
 	}
-	file_host_authority_v1_authority_proto_msgTypes[18].OneofWrappers = []any{
+	file_host_authority_v1_authority_proto_msgTypes[26].OneofWrappers = []any{
 		(*ResourceGrant_All)(nil),
 		(*ResourceGrant_Id)(nil),
 		(*ResourceGrant_Prefix)(nil),
@@ -1534,7 +2130,7 @@ func file_host_authority_v1_authority_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_host_authority_v1_authority_proto_rawDesc), len(file_host_authority_v1_authority_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

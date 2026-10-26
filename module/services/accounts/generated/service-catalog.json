@@ -11,12 +11,16 @@
       "name": "AuthorityService",
       "full_name": "host.authority.v1.AuthorityService",
       "procedures": [
+        "/host.authority.v1.AuthorityService/AttachResource",
+        "/host.authority.v1.AuthorityService/AuthorizeTransfer",
         "/host.authority.v1.AuthorityService/Check",
         "/host.authority.v1.AuthorityService/Delegate",
+        "/host.authority.v1.AuthorityService/DetachResource",
         "/host.authority.v1.AuthorityService/GetDelegation",
         "/host.authority.v1.AuthorityService/Issue",
         "/host.authority.v1.AuthorityService/Keys",
         "/host.authority.v1.AuthorityService/ListResources",
+        "/host.authority.v1.AuthorityService/RegisterAdmissionKey",
         "/host.authority.v1.AuthorityService/RevokeDelegation"
       ]
     },
@@ -535,6 +539,92 @@
   ],
   "methods": [
     {
+      "procedure": "/host.authority.v1.AuthorityService/AttachResource",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "AttachResource",
+      "input_type": "host.authority.v1.AttachResourceRequest",
+      "output_type": "host.authority.v1.AttachResourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Record that one resource belongs to an installation; refused by name until this host records installation-owned resources.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/AuthorizeTransfer",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "AuthorizeTransfer",
+      "input_type": "host.authority.v1.AuthorizeTransferRequest",
+      "output_type": "host.authority.v1.AuthorizeTransferResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Decide whether an existing resource may join an installed solution's principal; refused by name until this host records installation-owned resources.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/host.authority.v1.AuthorityService/Check",
       "service": "AuthorityService",
       "full_service": "host.authority.v1.AuthorityService",
@@ -625,6 +715,49 @@
       },
       "policy_tier": "auth",
       "description": "Record a signed-in person's grant to a module, within what they hold.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/DetachResource",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "DetachResource",
+      "input_type": "host.authority.v1.DetachResourceRequest",
+      "output_type": "host.authority.v1.DetachResourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Release one resource from the installation that owns it; refused by name until this host records installation-owned resources.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -763,7 +896,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
-      "description": "Return the issuer and the public keys a verifier pins.",
+      "description": "Return the issuer and the public keys a verifier pins: the Work Context keys and, apart from them, the hop's admission keys.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -807,6 +940,51 @@
       },
       "policy_tier": "public",
       "description": "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/RegisterAdmissionKey",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "RegisterAdmissionKey",
+      "input_type": "host.authority.v1.RegisterAdmissionKeyRequest",
+      "output_type": "host.authority.v1.RegisterAdmissionKeyResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.platform.hop_admission_key_published"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Publish the hop's admission public key in Keys for one lease; only the hop's workload registers one.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

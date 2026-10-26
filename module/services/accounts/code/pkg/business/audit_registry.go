@@ -421,6 +421,12 @@ const (
 	// release key. Its actor is the system: the signer, its ownership domain
 	// and the payload digest name who stated the ceiling.
 	EventModuleEnvelopeDelivered EventType = "saas.platform.module_envelope_delivered"
+	// EventHopAdmissionKeyPublished records that Keys began publishing a hop
+	// admission key, the key every module behind the hop trusts to have
+	// admitted a call. Its actor is the system: the hop proved itself by its
+	// workload credential, which the payload names. A renewal of a published
+	// key is not an event; a key published again after it lapsed is.
+	EventHopAdmissionKeyPublished EventType = "saas.platform.hop_admission_key_published"
 
 	EventBillingCheckoutStarted EventType = "saas.billing.checkout_started"
 	EventBillingPortalOpened    EventType = "saas.billing.portal_opened"
@@ -714,6 +720,10 @@ var auditEventCatalog = []AuditEventDefinition{
 		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "principals", Kind: FieldInt, Required: true}),
+	mutation(EventHopAdmissionKeyPublished, CategorySecurity, "Keys began publishing a hop admission key, registered by the hop's attested workload.",
+		PayloadField{Name: "key_id", Kind: FieldString, Required: true},
+		PayloadField{Name: "workload", Kind: FieldString, Required: true},
+		PayloadField{Name: "expires_at", Kind: FieldString, Required: true}),
 	mutation(EventModuleEnvelopeDelivered, CategorySecurity, "A release-signed revision of the module envelope was delivered.",
 		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},

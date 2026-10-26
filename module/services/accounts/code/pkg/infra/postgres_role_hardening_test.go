@@ -68,6 +68,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"policy_log_commits":            {},
 	"policy_log_cursor":             {},
 	"datasource_credential_budgets": {}, // platform relation; the control plane meters provider credentials
+	"hop_admission_keys":            {}, // platform relation; the hop's public keys, published by the control plane
 	"job_attempts":                  {},
 	"job_messages":                  {},
 	"job_state_transitions":         {},

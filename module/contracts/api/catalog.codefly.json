@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:374859c8c14865992cd5f1ac7ddbed3660ed08d9507185dd2428c97c233954fb",
+      "digest": "sha256:e94f5d662ed4f656c15d99723c6593942afeceaacbc1f258bd7380b242d8efed",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -66,18 +66,22 @@
       "kind": "protobuf",
       "package": "",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:374859c8c14865992cd5f1ac7ddbed3660ed08d9507185dd2428c97c233954fb",
+      "digest": "sha256:e94f5d662ed4f656c15d99723c6593942afeceaacbc1f258bd7380b242d8efed",
       "services": [
         {
           "name": "AuthorityService",
           "fullName": "host.authority.v1.AuthorityService",
           "procedures": [
+            "/host.authority.v1.AuthorityService/AttachResource",
+            "/host.authority.v1.AuthorityService/AuthorizeTransfer",
             "/host.authority.v1.AuthorityService/Check",
             "/host.authority.v1.AuthorityService/Delegate",
+            "/host.authority.v1.AuthorityService/DetachResource",
             "/host.authority.v1.AuthorityService/GetDelegation",
             "/host.authority.v1.AuthorityService/Issue",
             "/host.authority.v1.AuthorityService/Keys",
             "/host.authority.v1.AuthorityService/ListResources",
+            "/host.authority.v1.AuthorityService/RegisterAdmissionKey",
             "/host.authority.v1.AuthorityService/RevokeDelegation"
           ]
         },
