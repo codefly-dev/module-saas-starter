@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Delegations to a module (migration 48): the host authority interface's
+// Delegations to a module (migration 51): the host authority interface's
 // Delegate. A signed-in person grants one composed module the right to act for
 // them beyond any session, on scopes they hold. The module issues from it
 // through a binding it declares; each issue re-reads the delegation and what

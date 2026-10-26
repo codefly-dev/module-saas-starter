@@ -267,7 +267,7 @@ type Store interface {
 	GetDatasourceDomain(ctx context.Context, orgID, id string) (*DatasourceDomain, error)
 	MarkDatasourceDomainVerified(ctx context.Context, orgID, id string, at time.Time) error
 
-	// Module delegations (module_delegation.go, migration 48). Tenant-facing
+	// Module delegations (module_delegation.go, migration 51). Tenant-facing
 	// calls run in the organization's transaction; a module's lookup by id runs
 	// under the control plane with an empty orgID.
 	//

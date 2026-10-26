@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Module delegations (migration 48). The tenant-facing statements run inside
+// Module delegations (migration 51). The tenant-facing statements run inside
 // the organization's transaction, so its policy scopes them; a module's lookup
 // by id runs under the control plane, whose policy does not, and returns the
 // organization for the caller to compare. Every statement names the

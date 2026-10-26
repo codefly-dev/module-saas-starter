@@ -482,7 +482,7 @@ and scoped-grant transaction. No second registry, issuer or grant table.
   library owns DSSE verification and method-policy vocabulary validation.
   Duplicate or contradictory method policies and resource-specific requirements
   are refused before anything is persisted.
-- Migration 46 stores authority document and envelope in the same immutable inbox
+- Migration 49 stores authority document and envelope in the same immutable inbox
   row as the core carrier. Exact replay is allowed. Adding, replacing or dropping
   policy at that same generation is refused. A newer desired receipt cannot
   change the policy of the applied generation. Apply acknowledges only the
@@ -496,7 +496,7 @@ and scoped-grant transaction. No second registry, issuer or grant table.
   verbs and final `{path=**}` catch-alls. Advisory
   checks return the same reason beside the verified capability.
 - Installation responses project the existing role, revision and team grants.
-  Migration 47 routes root-team exposure changes through the installation's
+  Migration 50 routes root-team exposure changes through the installation's
   existing revision owner; unchanged re-grants do not bump it. Grant and uninstall
   serialize under an UPDATE lock, avoiding a SHARE-to-UPDATE upgrade race.
   Existing scope-grant audit is the audit for exposure.
@@ -1018,7 +1018,7 @@ unimplemented).
 ## Delegations to a module (2026-10-26)
 
 `Delegate`, `GetDelegation`, `RevokeDelegation` and Issue from a delegation are
-served. A delegation is a row of `module_delegations` (migration 48: tenant
+served. A delegation is a row of `module_delegations` (migration 51: tenant
 scoped, forced RLS, revoked once and never deleted, its grant immutable).
 
 - **Bounded by the grantor.** `Delegate` holds each delegated action to what
