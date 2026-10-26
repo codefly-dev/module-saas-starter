@@ -910,14 +910,21 @@ re-recorded, and regenerated through `codefly generate proto`, the catalog
   it passed only because an uninstalled solution resolved to a synthetic
   installation.
 
-The shared suite at `aa487dff` now reports **37 of 45 shared cases passing, 8
-failing** (39/47 with the two harness cases). Still red, and why:
+Later the same day, on the coordinator's decisions: a person's ask meets
+their holdings (an unheld id is dropped; an action held on nothing the ask
+names is refused, "asked beyond what the owner holds"), and a kind a chain
+dropped stays dropped (a denial row: the kind and no action, at a person's
+root for each audience kind the ask left out and at a hop for each kind the
+owner holds through the binding that the child was not granted; limits are
+read per kind and per action). The harness names a real team with no member
+for the staleness probe, and the suite is pinned at authority PR #8
+(`3222e991`).
 
-| Case | Why | Owner |
-| --- | --- | --- |
-| a callee refuses what does not verify | the suite grants to team `callee-probe-<n>`, not a team the host knows | suite / fixture |
-| a delegation issues as its grantor | `Delegate`/`GetDelegation`/`RevokeDelegation` are not implemented here | accounts (feature) |
-| a module tool binding carries the person's role; child target projection | a hop's actor is the module's registry principal id, the suite expects the module name | contract question |
-| an installation acts for itself; an installation owner survives | the headless mint's owner is the installation's owner of record with the agent acting; the suite expects the agent as owner | contract question |
-| parent per-kind limits | a kind the root did not ask stays dropped only with a zero-action denial scope, which this host's mint does not sign | contract question |
-| resources by grant (narrowed ask) | an ask naming an id the person does not hold is refused here; the suite expects it issued and answered by grant | contract question |
+The shared suite now reports **40 of 45 shared cases passing, 5 failing**
+(42/47 with the two harness cases). Still red:
+
+| Case | What the host must change |
+| --- | --- |
+| a delegation issues as its grantor | implement `Delegate`, `GetDelegation`, `RevokeDelegation` and Issue from a delegation |
+| a module tool binding carries the person's role; child target projection | a hop's actor is the module's name, not its registry principal id: every reader of a hop principal (seal, epoch and binding answers, the journal, solution-role paths) must resolve the name |
+| an installation acts for itself; an installation owner survives | an installation's capability is owned by its agent, not by its human owner of record, and a hop from it inherits the installation's standing grants |
