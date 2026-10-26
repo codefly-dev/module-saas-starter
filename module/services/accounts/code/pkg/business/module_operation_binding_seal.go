@@ -49,6 +49,15 @@ func IsModuleOperationBindingOf(id, orgID, principalID string) bool {
 	return ok && org == orgID && ModulePrincipalID(prefix) == principalID
 }
 
+// NamesModuleOperationBinding reports whether id is a module's installed
+// operation binding (<organisation>/<module>/<binding>), the binding every hop
+// through a binding seals, as opposed to a source delegation's or an installed
+// content read's.
+func NamesModuleOperationBinding(id string) bool {
+	_, _, _, ok := parseModuleOperationBindingID(id)
+	return ok
+}
+
 // parseModuleOperationBindingID reads <organisation>/<module>/<binding>. The
 // organisation is a canonical UUID, which is what tells this id apart from
 // every other binding id this host issues (a source delegation's, an installed

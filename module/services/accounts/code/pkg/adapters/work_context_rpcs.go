@@ -1692,6 +1692,18 @@ func (s *WorkContextAuthorityServer) journalActorHop(
 	ctx context.Context,
 	signed *basev0.WorkContextV1,
 ) error {
+	return s.journalHopThrough(ctx, signed, business.ActorChainHopBinding{})
+}
+
+// journalHopThrough is journalActorHop for a module's hop through one of its
+// bindings: the row also records the binding and the scope set of it the hop
+// was issued under, which is what the hop is held to while it lives
+// (business.ConfirmModuleChain).
+func (s *WorkContextAuthorityServer) journalHopThrough(
+	ctx context.Context,
+	signed *basev0.WorkContextV1,
+	through business.ActorChainHopBinding,
+) error {
 	if s.journal == nil {
 		return nil
 	}
@@ -1721,6 +1733,8 @@ func (s *WorkContextAuthorityServer) journalActorHop(
 		GrantedScopes:         actorChainScopes(actor.GetGrantedScopes()),
 		AuthorizationRevision: signed.GetAuthorizationRevision(),
 		HopIndex:              index,
+		OperationBindingID:    through.BindingID,
+		Operation:             through.Operation,
 	})
 	if err != nil {
 		return status.Error(codes.Internal, "cannot persist actor chain hop")

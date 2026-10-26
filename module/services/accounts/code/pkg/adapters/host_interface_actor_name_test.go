@@ -232,3 +232,88 @@ func TestAnInstallationIssueNeverLeavesItsSolutionsPin(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, moduleWorkContextTenant, org)
 }
+
+// bindingJournal records hops, and answers the binding each went through, as
+// the actor-chain journal does.
+type bindingJournal struct {
+	business.ActorChainJournal
+	hops map[string]business.ActorChainHopInput
+}
+
+func (j *bindingJournal) AppendActorChainHop(_ context.Context, hop business.ActorChainHopInput) (*business.ActorChainHop, error) {
+	j.hops[hop.ID] = hop
+	return &business.ActorChainHop{}, nil
+}
+
+func (j *bindingJournal) AnyActorChainHopRevoked(context.Context, string, []string) (bool, error) {
+	return false, nil
+}
+
+func (j *bindingJournal) ActorChainHopBindings(_ context.Context, _ string, ids []string) (map[string]business.ActorChainHopBinding, error) {
+	out := map[string]business.ActorChainHopBinding{}
+	for _, id := range ids {
+		if hop, ok := j.hops[id]; ok && hop.OperationBindingID != "" {
+			out[id] = business.ActorChainHopBinding{BindingID: hop.OperationBindingID, Operation: hop.Operation}
+		}
+	}
+	return out, nil
+}
+
+// A hop upstream in a chain is held to the scope set it was issued under, not
+// to the union of its binding's sets (the last hop's own binding is re-read by
+// core, whose revision moves with any change to it). Lookup and headless lie within invoke by declaration, so the
+// union was invoke itself: a lookup hop stood for as long as invoke granted its
+// action, though the binding's lookup had been withdrawn. Now withdrawing
+// lookup ends a lookup hop and leaves an invoke hop standing, and narrowing
+// invoke ends an invoke hop.
+func TestAHopIsHeldToTheScopeSetItWasIssuedUnder(t *testing.T) {
+	withdrawLookup := func(s string) string {
+		return strings.Replace(s, `,"lookup_scopes":[{"resource_kind":"example-records","actions":["read"]}]`, ``, 1)
+	}
+	dropInvokeRead := func(s string) string {
+		return strings.Replace(withdrawLookup(s), `"invoke_scopes":[{"resource_kind":"example-records","actions":["invoke","read"]}]`, `"invoke_scopes":[{"resource_kind":"example-records","actions":["invoke"]}]`, 1)
+	}
+	for name, tc := range map[string]struct {
+		operation string
+		edit      func(string) string
+		stands    bool
+	}{
+		"lookup hop, lookup withdrawn while invoke still grants read": {"lookup", withdrawLookup, false},
+		"invoke hop, lookup withdrawn":                                {"", withdrawLookup, true},
+		"invoke hop, invoke narrowed":                                 {"", dropInvokeRead, false},
+		"lookup hop, invoke narrowed":                                 {"lookup", dropInvokeRead, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newHopFixture(t, "tool.items:read", "example-records:read")
+			journal := &bindingJournal{hops: map[string]business.ActorChainHopInput{}}
+			f.issuer.journal = journal
+			parent, _ := f.parent(t, "tools", hopScope("tool.items", []string{"read"}))
+			out, err := f.server.Issue(context.Background(), &authorityv1.IssueRequest{
+				As: &authorityv1.IssueRequest_ParentToken{ParentToken: parent}, Actor: &authorityv1.WorkloadCredential{Credential: f.tool},
+				OperationBindingId: "records", Operation: tc.operation, Audience: "documents",
+				Scopes: []*authorityv1.WorkScopeV1{ask("example-records", []string{"read"})},
+			})
+			require.NoError(t, err)
+			hop := claims(t, out).GetActorChain()[0]
+			recorded := journal.hops[hop.GetDelegationId()]
+			require.Equal(t, moduleWorkContextTenant+"/tools/records", recorded.OperationBindingID)
+			require.Equal(t, hopOperation(tc.operation), recorded.Operation)
+
+			// The child below it seals documents' binding back to tools, which
+			// does not move: only the re-read of the upstream hop can end it.
+			below, err := f.hop(out.GetToken(), f.docs, "items", "tools")
+			require.NoError(t, err)
+			check := func() error {
+				_, err := f.server.Check(context.Background(), &authorityv1.CheckRequest{Token: below.GetToken(), Audience: "tools"})
+				return err
+			}
+			require.NoError(t, check())
+			recompose(t, tc.edit)
+			if tc.stands {
+				require.NoError(t, check())
+				return
+			}
+			requireRefused(t, check(), codes.PermissionDenied, "no longer grants")
+		})
+	}
+}

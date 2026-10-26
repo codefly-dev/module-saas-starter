@@ -146,7 +146,7 @@ func (s *HostAuthorityServer) hopFrom(ctx context.Context, prefix string, claims
 	for _, d := range delegations {
 		hop.Under = d.ID
 	}
-	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, carried, workContextTTL(ttl), hop)
+	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, hopOperation(req.GetOperation()), req.GetAudience(), scopes, carried, workContextTTL(ttl), hop)
 }
 
 // delegatedHop is how a hop relates to a stored delegation: ID, the id the
@@ -242,17 +242,40 @@ func storedPrincipal(principal string) string {
 // the binding it hopped through (business.ConfirmModuleChain): core re-reads
 // only the binding the capability seals, the last hop's, so a binding narrowed
 // or withdrawn upstream would otherwise go unnoticed until the child expired.
-func requireModuleChainStands(ctx context.Context, wc *basev0.WorkContextV1) error {
+//
+// Each hop is held to the exact scope set it was issued under (invoke, lookup
+// or headless), which the journal recorded beside its binding; a hop the
+// journal holds no binding for is held to its binding by audience.
+func (s *WorkContextAuthorityServer) requireModuleChainStands(ctx context.Context, wc *basev0.WorkContextV1) error {
 	chain := wc.GetActorChain()
-	if len(chain) == 0 {
+	// A chain of hops through bindings seals its last hop's module binding; a
+	// context sealed to a source delegation or an installed read is confirmed
+	// by its own checker.
+	if len(chain) == 0 || !business.NamesModuleOperationBinding(wc.GetOperationBinding().GetBindingId()) {
 		return nil
 	}
 	if service == nil {
 		return status.Error(codes.Unavailable, "no module authority is wired, so a module chain cannot be re-read")
 	}
+	recorded := map[string]business.ActorChainHopBinding{}
+	if reader, ok := s.journal.(business.ActorChainHopBindingReader); ok && reader != nil {
+		ids := make([]string, 0, len(chain))
+		for _, hop := range chain {
+			if id := hop.GetDelegationId(); id != "" {
+				ids = append(ids, id)
+			}
+		}
+		var err error
+		if recorded, err = reader.ActorChainHopBindings(ctx, wc.GetTenantId(), ids); err != nil {
+			return status.Error(codes.Unavailable, "cannot read the bindings this chain went through")
+		}
+	}
 	hops := make([]business.ModuleChainHop, 0, len(chain))
 	for _, hop := range chain {
-		hops = append(hops, business.ModuleChainHop{Principal: hop.GetPrincipalId(), Scopes: operationScopesFromCore(hop.GetGrantedScopes())})
+		hops = append(hops, business.ModuleChainHop{
+			Principal: hop.GetPrincipalId(), Scopes: operationScopesFromCore(hop.GetGrantedScopes()),
+			Through: recorded[hop.GetDelegationId()],
+		})
 	}
 	if err := service.ConfirmModuleChain(ctx, wc.GetTenantId(), wc.GetAudience(), hops); err != nil {
 		if errors.Is(err, business.ErrModuleHopStale) {
@@ -290,7 +313,7 @@ func (s *WorkContextAuthorityServer) requireParentStands(ctx context.Context, pa
 // the binding's, so the name is what makes the hop verify and what keeps one
 // module from exercising another's binding.
 func (s *WorkContextAuthorityServer) mintBindingHop(
-	ctx context.Context, parent *basev0.WorkContextV1, prefix, bindingID, audience string,
+	ctx context.Context, parent *basev0.WorkContextV1, prefix, bindingID, operation, audience string,
 	scopes, carried []*basev0.WorkScopeV1, ttl time.Duration, delegated delegatedHop,
 ) (*gen.IssuedWorkContext, error) {
 	// The structural audience rule every mint runs: none empty, and never the
@@ -352,10 +375,19 @@ func (s *WorkContextAuthorityServer) mintBindingHop(
 	if err != nil {
 		return nil, mapWorkContextError(ctx, err)
 	}
-	if err := s.journalActorHop(ctx, signed); err != nil {
+	if err := s.journalHopThrough(ctx, signed, business.ActorChainHopBinding{BindingID: sealed, Operation: operation}); err != nil {
 		return nil, err
 	}
 	return issuedWorkContext(token, signed), nil
+}
+
+// hopOperation is the scope set a hop is issued under: invoke unless it asked
+// for lookup (hopOperationScopes has refused every other operation).
+func hopOperation(asked string) string {
+	if asked == "" {
+		return "invoke"
+	}
+	return asked
 }
 
 // intersectScope is what both scopes of one kind allow: the actions in both,
