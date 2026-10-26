@@ -43,6 +43,19 @@ func ShapeAuthenticated(method string) bool {
 // HostApplyManifestMethod is the composition interface's delivery.
 const HostApplyManifestMethod = "/host.composition.v1.CompositionService/ApplyManifest"
 
+// HostRegisterAdmissionKeyMethod is the hop registering the public key it
+// signs call admissions with.
+const HostRegisterAdmissionKeyMethod = "/host.authority.v1.AuthorityService/RegisterAdmissionKey"
+
+// The installation-owned resource methods (authority 0.3.0), each called by a
+// kind's serving module with its workload credential. This host refuses them
+// by name until it records installation-owned resources.
+const (
+	HostAttachResourceMethod    = "/host.authority.v1.AuthorityService/AttachResource"
+	HostDetachResourceMethod    = "/host.authority.v1.AuthorityService/DetachResource"
+	HostAuthorizeTransferMethod = "/host.authority.v1.AuthorityService/AuthorizeTransfer"
+)
+
 // servedInClusterOnly are the procedures this module serves on its own
 // listener and never routes at the gateway edge. Each authenticates in the
 // request itself, and its caller is an in-cluster workload that reaches
@@ -53,13 +66,21 @@ const HostApplyManifestMethod = "/host.composition.v1.CompositionService/ApplyMa
 //     the signed carrier, exactly as the HTTP delivery route does, which is
 //     kept off the gateway for the same reason (work.go): delivery is
 //     in-cluster and never the public edge.
+//   - RegisterAdmissionKey takes the hop's workload credential; the hop runs
+//     in the cell and calls accounts directly.
+//   - AttachResource, DetachResource and AuthorizeTransfer take the serving
+//     module's workload credential, from inside the cell.
 //
-// Its exposure stays public on the Connect listener, where the composition's
-// deliverer calls it with its own credential; an internal exposure would refuse
-// it there and leave only the private listener, which asks the shared internal
+// Their exposure stays public on the Connect listener, where each in-cluster
+// caller presents its own credential; an internal exposure would refuse it
+// there and leave only the private listener, which asks the shared internal
 // token.
 var servedInClusterOnly = map[string]struct{}{
-	HostApplyManifestMethod: {},
+	HostApplyManifestMethod:        {},
+	HostRegisterAdmissionKeyMethod: {},
+	HostAttachResourceMethod:       {},
+	HostDetachResourceMethod:       {},
+	HostAuthorizeTransferMethod:    {},
 }
 
 // ServedInClusterOnly reports whether procedure is served on this module's own
@@ -112,12 +133,37 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 	// The policy describes the grant owner's transactional emission; it does
 	// not emit a second event at the interface adapter.
 	exposureGrant := adminWrite("saas.scope.granted")
+	// A workload's call authenticated by the credential in its request, from
+	// inside the cell (ServedInClusterOnly).
+	workloadCall := func(request policyv1.Sensitivity) *policyv1.MethodPolicy {
+		return &policyv1.MethodPolicy{
+			Exposure: policyv1.Exposure_EXPOSURE_PUBLIC, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
+			Mfa:                 policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
+			Audit:               &policyv1.AuditPolicy{Emission: policyv1.AuditEmission_AUDIT_EMISSION_NONE},
+			Idempotency:         policyv1.IdempotencyRequirement_IDEMPOTENCY_REQUIREMENT_OPTIONAL,
+			RateLimit:           policyv1.RateLimitClass_RATE_LIMIT_CLASS_AUTHENTICATION,
+			RequestSensitivity:  request,
+			ResponseSensitivity: policyv1.Sensitivity_SENSITIVITY_INTERNAL,
+			PlatformRole:        policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
+		}
+	}
+	admissionKeyRegistration := workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET)
+	admissionKeyRegistration.Audit = &policyv1.AuditPolicy{
+		Events: []string{string(EventHopAdmissionKeyPublished)}, Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS,
+	}
 	return map[string]*policyv1.MethodPolicy{
 		"/host.authority.v1.AuthorityService/Issue": authenticatedMint("saas.work_context.task_started"),
 		// Check is authenticated by the token it checks: the caller is whoever holds it,
 		// and the answer says nothing the token does not already carry but its standing.
 		"/host.authority.v1.AuthorityService/Check": read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.authority.v1.AuthorityService/Keys":  read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_PUBLIC),
+		// The hop proves itself with its workload credential and only a public
+		// key travels. A key's first publication is audited in the transaction
+		// that publishes it; its renewal every lease is not an event.
+		HostRegisterAdmissionKeyMethod: admissionKeyRegistration,
+		HostAttachResourceMethod:       workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
+		HostDetachResourceMethod:       workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
+		HostAuthorizeTransferMethod:    workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
 		// ListResources is authenticated by the capability it is asked about, like Check.
 		"/host.authority.v1.AuthorityService/ListResources": read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// A delegation names no organisation: it is the bearer's, so the floor is
@@ -202,20 +248,24 @@ func interfacePackage(name string) bool {
 // interfaceDescriptions are the one-line descriptions the catalog requires for
 // every served procedure, keyed as rpcDescriptions is: "Service/Method".
 var interfaceDescriptions = map[string]string{
-	"AuthorityService/Issue":            "Issue a Work Context for one owner shape, one audience and the scopes asked for, bounded by what the owner holds.",
-	"AuthorityService/Check":            "Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live.",
-	"AuthorityService/Keys":             "Return the issuer and the public keys a verifier pins.",
-	"CompositionService/ApplyManifest":  "Deliver one module instance's manifest at one generation; the ceiling is the manifest.",
-	"InstallationService/Install":       "Install one target at one organisation under the least role it needs; pending until its install step is acknowledged.",
-	"InstallationService/GrantToTeam":   "Expose an installation to a team under the installation's role.",
-	"InstallationService/List":          "List what one organisation has installed.",
-	"AuthorityService/ListResources":    "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",
-	"AuthorityService/Delegate":         "Record a signed-in person's grant to a module, within what they hold.",
-	"AuthorityService/RevokeDelegation": "End a delegation; every capability issued from it is refused from then on.",
-	"AuthorityService/GetDelegation":    "Read whether one delegation still stands, for its module or its grantor.",
-	"SessionService/SignIn":             "Open a session for a fixture person by their fixture token.",
-	"SessionService/Current":            "Answer the session the caller's bearer belongs to, without the bearer.",
-	"SessionService/ListFixturePeople":  "List the people fixture sign-in admits, in the fixture's order; none where it is not enabled.",
+	"AuthorityService/Issue":                "Issue a Work Context for one owner shape, one audience and the scopes asked for, bounded by what the owner holds.",
+	"AuthorityService/Check":                "Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live.",
+	"AuthorityService/Keys":                 "Return the issuer and the public keys a verifier pins: the Work Context keys and, apart from them, the hop's admission keys.",
+	"AuthorityService/RegisterAdmissionKey": "Publish the hop's admission public key in Keys for one lease; only the hop's workload registers one.",
+	"AuthorityService/AttachResource":       "Record that one resource belongs to an installation; refused by name until this host records installation-owned resources.",
+	"AuthorityService/DetachResource":       "Release one resource from the installation that owns it; refused by name until this host records installation-owned resources.",
+	"AuthorityService/AuthorizeTransfer":    "Decide whether an existing resource may join an installed solution's principal; refused by name until this host records installation-owned resources.",
+	"CompositionService/ApplyManifest":      "Deliver one module instance's manifest at one generation; the ceiling is the manifest.",
+	"InstallationService/Install":           "Install one target at one organisation under the least role it needs; pending until its install step is acknowledged.",
+	"InstallationService/GrantToTeam":       "Expose an installation to a team under the installation's role.",
+	"InstallationService/List":              "List what one organisation has installed.",
+	"AuthorityService/ListResources":        "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",
+	"AuthorityService/Delegate":             "Record a signed-in person's grant to a module, within what they hold.",
+	"AuthorityService/RevokeDelegation":     "End a delegation; every capability issued from it is refused from then on.",
+	"AuthorityService/GetDelegation":        "Read whether one delegation still stands, for its module or its grantor.",
+	"SessionService/SignIn":                 "Open a session for a fixture person by their fixture token.",
+	"SessionService/Current":                "Answer the session the caller's bearer belongs to, without the bearer.",
+	"SessionService/ListFixturePeople":      "List the people fixture sign-in admits, in the fixture's order; none where it is not enabled.",
 }
 
 func init() {

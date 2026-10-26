@@ -1259,3 +1259,75 @@ The source-read SDK is generated with v0.1.215 and
 unrelated services. The descriptor-closure regression is restored. The
 TypeScript library is regenerated with the same CI pin through its owning
 script; no generated file is hand-edited or selected out of its output.
+
+## Interface 0.3.3: the hop's admission keys (2026-10-26)
+
+`proto/host/authority/**` is re-copied at authority `49101ae1` (interface
+0.3.3, authority PR #28), `DIGESTS.sha256` re-recorded, regenerated through
+`codefly generate proto`, the catalog `go generate` steps, `codefly generate
+contracts`/`runnables`, the SDK's `generate.mjs` and the source-read SDK's
+documented `generate client`, with CLI v0.1.215. `module.codefly.yaml`
+advertises `codefly.dev/authority@0.3.3`; composition, installation and
+session stay where they were.
+
+- **`RegisterAdmissionKey`** (`host_interface_admission.go`,
+  `business/hop_admission_keys.go`). The caller's workload credential is
+  reviewed by the execution reviewer, the same review every workload-owned
+  call takes (`reviewWorkloadCredential`, shared with
+  `ModulePrefixOfWorkload`), and only the hop is admitted: service account
+  `hop` in the namespace the module namespace rule gives the `authority`
+  module. Any other workload is `PermissionDenied`, naming itself and the hop
+  (`the caller is documents/documents, not the hop (authority/hop)`); a
+  credential the review refuses is refused as every workload credential is
+  (`credentialRefusal`); a key that is not 32 bytes is `InvalidArgument`.
+- **Leased rows, not memory.** A registration is a row of
+  `hop_admission_keys` (migration 55, control plane only), published for
+  `AdmissionKeyLease` (2 minutes) from the database's clock; the hop renews at
+  a quarter of what remains (30 s). Re-registering renews the one row, a
+  rotation publishes both keys while both are renewed, and a key no hop renews
+  lapses and is withdrawn. At most `MaxAdmissionKeys` (8) are published; a new
+  key past the bound is `FailedPrecondition` while a registered key still
+  renews. Registrations are serialised by a transaction-scoped advisory lock,
+  so two replicas cannot both take the last slot. Every replica reads the same
+  rows, so every replica publishes the same set
+  (`TestHopAdmissionKeysAreLeasedRowsEveryReplicaPublishes`,
+  `TestTheAdmissionKeyBoundHoldsAcrossReplicas`, against two stores over one
+  database).
+- **Purpose separation.** `Keys` publishes the registered keys in
+  `admission_keys`, each with purpose `hop-admission`, and the Work Context key
+  in `keys` with purpose `work-context`; an admission key is never a Work
+  Context key, and the JSON Web Key Set is the sign-in key set, untouched. A
+  store that cannot be read fails `Keys` (`Unavailable`) rather than
+  publishing no admission key, which a verifier would read as "refuse every
+  admission".
+- **Audit.** A key's first publication emits
+  `saas.platform.hop_admission_key_published` in the transaction that
+  publishes it, naming the key and the workload; a renewal is not an event,
+  and a key published again after it lapsed is.
+- **In-cluster only.** The hop calls accounts directly, so the method is
+  public on the Connect listener with its credential in the request and is
+  never routed at the gateway (`ServedInClusterOnly`), like `ApplyManifest`.
+- **What 0.3.0 added and this host does not do yet.** `AttachResource`,
+  `DetachResource` and `AuthorizeTransfer` are `Unimplemented`, naming the gap,
+  and an `Issue` or `Delegate` scope naming a `resource_owner_id` is refused
+  rather than read as the whole kind.
+
+**The shared suite.** The suite at authority `49101ae1` has no admission-key
+case. Run against this branch with every library at `49101ae1`, it reported
+**41 passed / 13 failed**: `Keys` and the forwarded-context case pass; the 13
+reds are contracts this host does not serve: composition 0.2.0's
+`owner_aware` (the solution-role cases, the uninstalled-audience and lifecycle
+cases), installation 0.2.0's `ListRoleGrants` and review, an absent
+installation answered as `PermissionDenied`, and the installation-owned
+resources case. The harness therefore stays on the suite's 0.2 revision
+(`6870db87`, 52 of 52 locally on this branch) and adds the admission-key case
+over the listener (`the hop's registered admission key is published in Keys`).
+
+**Labelled stopgap.** The authority client stays at `fff5385f`: the suite
+revision the harness pins does not build against the client at `49101ae1`
+(`forwarded.Authenticate` was removed there). So `business.AdmissionKeyID`
+restates `stamp.KeyID` instead of importing it, pinned by a vector
+`stamp.KeyID` produced at `49101ae1` (`TestAdmissionKeyIDIsTheStampDerivation`).
+Delivery and resources move to `49101ae1` (no change in either). Both pins
+move, and the restatement is deleted, when this host serves composition and
+installation 0.2.0 and the harness can take the suite at main.

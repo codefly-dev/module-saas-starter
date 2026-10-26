@@ -221,6 +221,9 @@ type Service struct {
 	// super_admin writes (module_envelope.go). Nil answers no question about
 	// the ceiling: the RPCs refuse and the reconcilers derive nothing.
 	moduleEnvelopes ModuleEnvelopeStore
+	// admissionKeys persists the hop's registered admission keys
+	// (hop_admission_keys.go). Nil publishes none and registers none.
+	admissionKeys AdmissionKeyStore
 	// registryPassTrigger asks the reconciler for a pass now. Set once at boot,
 	// before the service listens; nil leaves the tick as the only pass.
 	registryPassTrigger func()

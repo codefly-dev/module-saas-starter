@@ -46,6 +46,18 @@ func (h *hostAuthorityConnectHandler) RevokeDelegation(ctx context.Context, req 
 func (h *hostAuthorityConnectHandler) GetDelegation(ctx context.Context, req *connect.Request[authorityv1.GetDelegationRequest]) (*connect.Response[authorityv1.Delegation], error) {
 	return unary(ctx, req, h.inner.GetDelegation)
 }
+func (h *hostAuthorityConnectHandler) RegisterAdmissionKey(ctx context.Context, req *connect.Request[authorityv1.RegisterAdmissionKeyRequest]) (*connect.Response[authorityv1.RegisterAdmissionKeyResponse], error) {
+	return unary(ctx, req, h.inner.RegisterAdmissionKey)
+}
+func (h *hostAuthorityConnectHandler) AttachResource(ctx context.Context, req *connect.Request[authorityv1.AttachResourceRequest]) (*connect.Response[authorityv1.AttachResourceResponse], error) {
+	return unary(ctx, req, h.inner.AttachResource)
+}
+func (h *hostAuthorityConnectHandler) DetachResource(ctx context.Context, req *connect.Request[authorityv1.DetachResourceRequest]) (*connect.Response[authorityv1.DetachResourceResponse], error) {
+	return unary(ctx, req, h.inner.DetachResource)
+}
+func (h *hostAuthorityConnectHandler) AuthorizeTransfer(ctx context.Context, req *connect.Request[authorityv1.AuthorizeTransferRequest]) (*connect.Response[authorityv1.AuthorizeTransferResponse], error) {
+	return unary(ctx, req, h.inner.AuthorizeTransfer)
+}
 func (h *hostAuthorityConnectHandler) Keys(ctx context.Context, req *connect.Request[authorityv1.KeysRequest]) (*connect.Response[authorityv1.KeysResponse], error) {
 	return unary(ctx, req, h.inner.Keys)
 }

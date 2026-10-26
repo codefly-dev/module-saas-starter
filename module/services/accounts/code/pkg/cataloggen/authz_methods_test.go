@@ -1,6 +1,7 @@
 package cataloggen_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,7 +52,7 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	// number would be silently wrong, so this is read off the regenerated
 	// generated/authz-methods.json.
 	require.Equal(t, 55, internalCount)   // ApplyManifest now authenticates its signed carrier on the tenant listener
-	require.Equal(t, 20, failClosedCount) // +1: signed composition delivery; +2: the session interface's SignIn and ListFixturePeople are rate-limited as authentication and fail closed
+	require.Equal(t, 24, failClosedCount) // +1: signed composition delivery; +2: the session interface's SignIn and ListFixturePeople are rate-limited as authentication and fail closed; +4: the authority interface's workload-credential calls (RegisterAdmissionKey, AttachResource, DetachResource, AuthorizeTransfer)
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(
 		t,
@@ -121,8 +122,14 @@ func TestAuthorizationCatalogValidationRejectsUnsafeDrift(t *testing.T) {
 	wrongHash.Methods[0].PolicySha256 = strings.Repeat("0", 64)
 	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(wrongHash), "policy hash")
 
+	// Drift on a method whose class fails open: one that already fails
+	// closed would not drift.
 	wrongFailureMode := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
-	wrongFailureMode.Methods[0].RateLimitBackendFailureMode = catalogv1.RateLimitBackendFailureMode_RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED
+	failsOpen := slices.IndexFunc(wrongFailureMode.Methods, func(m *catalogv1.AuthorizationMethod) bool {
+		return m.GetRateLimitBackendFailureMode() != catalogv1.RateLimitBackendFailureMode_RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED
+	})
+	require.GreaterOrEqual(t, failsOpen, 0)
+	wrongFailureMode.Methods[failsOpen].RateLimitBackendFailureMode = catalogv1.RateLimitBackendFailureMode_RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED
 	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(wrongFailureMode), "failure mode")
 
 	invalidFactor := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
