@@ -45,6 +45,9 @@ func (s *HostAuthorityServer) Delegate(ctx context.Context, req *authorityv1.Del
 	if err != nil {
 		return nil, err
 	}
+	if err := refuseOwnerSelected(req.GetScopes()); err != nil {
+		return nil, err
+	}
 	module := req.GetModule()
 	if service == nil || !service.IsDeclaredModulePrincipal(business.ModulePrincipalID(module)) {
 		return nil, status.Errorf(codes.NotFound, "module %q is not composed", module)

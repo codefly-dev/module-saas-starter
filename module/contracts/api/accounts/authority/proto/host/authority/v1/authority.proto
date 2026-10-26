@@ -26,13 +26,75 @@ service AuthorityService {
   rpc Check(CheckRequest) returns (CheckResponse) {
     option (google.api.http) = {post: "/v1/authority:check" body: "*"};
   }
-  // Keys returns the issuer and the public keys a verifier pins.
+  // Keys returns the issuer and the public keys a verifier pins: the Work
+  // Context keys, and the hop admission keys a module behind the hop checks
+  // each call's admission by.
   rpc Keys(KeysRequest) returns (KeysResponse);
+  // RegisterAdmissionKey is how the hop tells the authority the public key it
+  // signs call admissions with, so Keys publishes it in admission_keys. The
+  // caller is the hop, proving it with its workload credential; any other
+  // workload is refused by name. Only the public half travels: the hop's seed
+  // never leaves it. Registering the same key again is idempotent and renews
+  // it, and a registration lapses at expires_at_unix unless renewed, so a hop
+  // renews while it runs (a restarted authority learns the key again at the
+  // next renewal) and a key no running hop signs with any more is withdrawn
+  // without being named. While a rotation overlaps, the retiring and the new
+  // key are both registered, and both published.
+  rpc RegisterAdmissionKey(RegisterAdmissionKeyRequest) returns (RegisterAdmissionKeyResponse);
   // ListResources answers which resources of one kind a checked capability may
   // act on with one action, decided by the authority at the time of the call
   // rather than carried in the capability. A module maps the answer onto its
   // own resources; the authority knows them only by id.
   rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  // AttachResource records that one resource now belongs to an installation,
+  // so a role scope its solution declares installation-owned
+  // (RoleV1.installation_owned_scopes) covers it. The caller is the kind's one
+  // serving module (a kind two composed modules declare attaches nothing),
+  // proving itself with its workload credential, and presents a capability
+  // addressed to it, at the organisation's current authorization revision,
+  // holding "create" on the whole kind for the newly created resource. An
+  // owner-selected create must select this installation's principal. Admin or
+  // read alone attaches nothing: an existing resource changes owner through
+  // AuthorizeTransfer, never through an unrestricted administrative capability.
+  // A resource has one owner in an organisation: an id
+  // another installation owns is refused. A store whose attach is refused fails
+  // or rolls back the create it made, and detaches what it deletes
+  // (DetachResource). The owning installation is read from the capability's
+  // verified provenance and never named by the caller: the installation itself
+  // when it is the owner, the installed solution when it is the caller, and
+  // each solution in its actor chain; exactly one must result. Ids are opaque
+  // and compared byte for byte; an id is refused when it is empty, carries
+  // surrounding whitespace, a NUL, CR, LF, tab or "*", or exceeds 128 bytes.
+  // Owned ids travel in every capability holding them, so an installation owns
+  // at most 32 of one kind at a time, refused by name past it. Attaching only
+  // widens what an owned scope covers, so it moves no authorization revision;
+  // a reinstalled installation owns nothing.
+  rpc AttachResource(AttachResourceRequest) returns (AttachResourceResponse);
+  // DetachResource releases one resource from whichever installation of the
+  // organisation owns it, when the kind's one serving module deletes it, so the
+  // id no longer counts toward the owner's bound and may be attached again.
+  // It narrows the owner's roles, so the organisation's authorization revision
+  // moves. Detaching an id no installation owns answers no installation.
+  rpc DetachResource(DetachResourceRequest) returns (DetachResourceResponse);
+  // AuthorizeTransfer decides whether an existing resource may join an
+  // installed solution's principal. The caller is the kind's one serving
+  // module, which attests the resource exists and who owns it now
+  // (from_owner_id), presenting the capability of the person asking: issued
+  // through the target principal's installation and addressed to the caller.
+  // It is allowed when the current owner is the organization or a person of
+  // it (never another solution principal, another organization or an unknown
+  // owner), the person holds admin on that resource from their own
+  // organization grants, and the person's current roles on the principal hold
+  // write on the kind, all read live. An installation acting for itself never
+  // transfers. After authorization succeeds, the authority records the id in
+  // the target installation's owned set in the same write transaction, subject
+  // to the same exclusivity, id and 32-id bounds as AttachResource. Revision,
+  // provenance, serving module and active tenant installation are checked in
+  // that transaction. A refusal records nothing and names its reason. The
+  // store then records the principal as owner; the original creator stays the
+  // author. The store must complete that change or compensate with DetachResource
+  // before exposing the resource. No separate admin attachment path exists.
+  rpc AuthorizeTransfer(AuthorizeTransferRequest) returns (AuthorizeTransferResponse);
   // Delegate records a signed-in person's grant to a module (the caller's
   // bearer is the person); Issue with a delegation acts on it.
   rpc Delegate(DelegateRequest) returns (Delegation);
@@ -211,8 +273,17 @@ message KeysRequest {}
 message KeysResponse {
   // The issuer every capability names.
   string issuer = 1;
-  // The public keys by key id.
+  // The public keys by key id: what a Work Context is signed with, and only
+  // that. Each carries purpose "work-context".
   repeated PublicKey keys = 2;
+  // The keys a hop signs each call's admission with, each with purpose
+  // "hop-admission": a module behind the hop verifies the admission by one of
+  // them. More than one is published while a hop's key is rotated, so the
+  // retiring and the new key overlap. They are never Work Context keys and are
+  // kept out of keys, so no verifier that reads keys alone can trust one to
+  // sign a Work Context. Empty until a hop registers its key
+  // (RegisterAdmissionKey).
+  repeated PublicKey admission_keys = 3;
 }
 
 // PublicKey is one verification key.
@@ -223,6 +294,26 @@ message PublicKey {
   string algorithm = 2;
   // The raw public key bytes.
   bytes public_key = 3;
+  // What the key verifies: "work-context" (a Work Context) or "hop-admission"
+  // (a hop's signed call admission). A verifier uses a key only for its own
+  // purpose.
+  string purpose = 4;
+}
+
+// RegisterAdmissionKeyRequest presents one hop admission key.
+message RegisterAdmissionKeyRequest {
+  // The hop's workload credential; any other workload is refused.
+  WorkloadCredential actor = 1;
+  // The raw Ed25519 public key the hop signs admissions with: 32 bytes.
+  bytes public_key = 2;
+}
+
+// RegisterAdmissionKeyResponse is the key as Keys now publishes it.
+message RegisterAdmissionKeyResponse {
+  // The published entry, with its key id and purpose "hop-admission".
+  PublicKey key = 1;
+  // When the registration lapses unless the hop registers the key again.
+  int64 expires_at_unix = 2;
 }
 
 // ListResourcesRequest asks about one kind and one action.
@@ -244,7 +335,69 @@ message ListResourcesResponse {
   repeated ResourceGrant grants = 1;
 }
 
-// ResourceGrant is one way of naming covered resources. Exactly one is set.
+// AttachResourceRequest names one resource and the capability it was created under.
+message AttachResourceRequest {
+  // The capability the creating call carried, addressed to the caller.
+  string token = 1;
+  // The module serving resource_kind, proving which module it is.
+  WorkloadCredential actor = 2;
+  // The resource kind, as the caller serves it.
+  string resource_kind = 3;
+  // The resource id, as the caller knows it.
+  string resource_id = 4;
+}
+
+// AttachResourceResponse names the installation that now owns the resource.
+message AttachResourceResponse {
+  // The owning installation, read from the capability's provenance.
+  string installation_id = 1;
+}
+
+// DetachResourceRequest names one resource its serving module deleted.
+message DetachResourceRequest {
+  // The module serving resource_kind, proving which module it is.
+  WorkloadCredential actor = 1;
+  // The organisation the resource belongs to.
+  string organization_id = 2;
+  // The resource kind, as the caller serves it.
+  string resource_kind = 3;
+  // The resource id, as the caller knows it.
+  string resource_id = 4;
+}
+
+// DetachResourceResponse names the installation that owned the resource.
+message DetachResourceResponse {
+  // The installation released from it; empty when none owned it.
+  string installation_id = 1;
+}
+
+// AuthorizeTransferRequest names one existing resource and where it moves.
+message AuthorizeTransferRequest {
+  // The capability of the person asking, addressed to the caller.
+  string token = 1;
+  // The module serving resource_kind, proving which module it is.
+  WorkloadCredential actor = 2;
+  // The resource kind, as the caller serves it.
+  string resource_kind = 3;
+  // The resource id, as the caller knows it.
+  string resource_id = 4;
+  // The resource's current owner, as the caller records it: the organization
+  // or a person of it.
+  string from_owner_id = 5;
+  // The solution principal the resource joins.
+  string to_principal_id = 6;
+}
+
+// AuthorizeTransferResponse is the decision the store records.
+message AuthorizeTransferResponse {
+  // The principal that now owns the resource.
+  string principal_id = 1;
+  // The person who authorized the transfer.
+  string authorized_by = 2;
+}
+
+// ResourceGrant is one way of naming covered resources. Exactly one match is
+// set; resource_owner_id, when set, qualifies it.
 message ResourceGrant {
   oneof match {
     // Every resource of the kind.
@@ -257,4 +410,7 @@ message ResourceGrant {
     // bytes; it is matched against the entire id, as if anchored.
     string pattern = 4;
   }
+  // The owner the covered resources must have: a resource is covered when
+  // the match covers its id and it is owned by this principal.
+  string resource_owner_id = 5;
 }

@@ -26,13 +26,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuthorityService_Issue_FullMethodName            = "/host.authority.v1.AuthorityService/Issue"
-	AuthorityService_Check_FullMethodName            = "/host.authority.v1.AuthorityService/Check"
-	AuthorityService_Keys_FullMethodName             = "/host.authority.v1.AuthorityService/Keys"
-	AuthorityService_ListResources_FullMethodName    = "/host.authority.v1.AuthorityService/ListResources"
-	AuthorityService_Delegate_FullMethodName         = "/host.authority.v1.AuthorityService/Delegate"
-	AuthorityService_RevokeDelegation_FullMethodName = "/host.authority.v1.AuthorityService/RevokeDelegation"
-	AuthorityService_GetDelegation_FullMethodName    = "/host.authority.v1.AuthorityService/GetDelegation"
+	AuthorityService_Issue_FullMethodName                = "/host.authority.v1.AuthorityService/Issue"
+	AuthorityService_Check_FullMethodName                = "/host.authority.v1.AuthorityService/Check"
+	AuthorityService_Keys_FullMethodName                 = "/host.authority.v1.AuthorityService/Keys"
+	AuthorityService_RegisterAdmissionKey_FullMethodName = "/host.authority.v1.AuthorityService/RegisterAdmissionKey"
+	AuthorityService_ListResources_FullMethodName        = "/host.authority.v1.AuthorityService/ListResources"
+	AuthorityService_AttachResource_FullMethodName       = "/host.authority.v1.AuthorityService/AttachResource"
+	AuthorityService_DetachResource_FullMethodName       = "/host.authority.v1.AuthorityService/DetachResource"
+	AuthorityService_AuthorizeTransfer_FullMethodName    = "/host.authority.v1.AuthorityService/AuthorizeTransfer"
+	AuthorityService_Delegate_FullMethodName             = "/host.authority.v1.AuthorityService/Delegate"
+	AuthorityService_RevokeDelegation_FullMethodName     = "/host.authority.v1.AuthorityService/RevokeDelegation"
+	AuthorityService_GetDelegation_FullMethodName        = "/host.authority.v1.AuthorityService/GetDelegation"
 )
 
 // AuthorityServiceClient is the client API for AuthorityService service.
@@ -50,13 +54,75 @@ type AuthorityServiceClient interface {
 	// Check verifies a presented Work Context for the audience the caller is,
 	// re-checking the authorization revision and the seal live.
 	Check(ctx context.Context, in *CheckRequest, opts ...grpc.CallOption) (*CheckResponse, error)
-	// Keys returns the issuer and the public keys a verifier pins.
+	// Keys returns the issuer and the public keys a verifier pins: the Work
+	// Context keys, and the hop admission keys a module behind the hop checks
+	// each call's admission by.
 	Keys(ctx context.Context, in *KeysRequest, opts ...grpc.CallOption) (*KeysResponse, error)
+	// RegisterAdmissionKey is how the hop tells the authority the public key it
+	// signs call admissions with, so Keys publishes it in admission_keys. The
+	// caller is the hop, proving it with its workload credential; any other
+	// workload is refused by name. Only the public half travels: the hop's seed
+	// never leaves it. Registering the same key again is idempotent and renews
+	// it, and a registration lapses at expires_at_unix unless renewed, so a hop
+	// renews while it runs (a restarted authority learns the key again at the
+	// next renewal) and a key no running hop signs with any more is withdrawn
+	// without being named. While a rotation overlaps, the retiring and the new
+	// key are both registered, and both published.
+	RegisterAdmissionKey(ctx context.Context, in *RegisterAdmissionKeyRequest, opts ...grpc.CallOption) (*RegisterAdmissionKeyResponse, error)
 	// ListResources answers which resources of one kind a checked capability may
 	// act on with one action, decided by the authority at the time of the call
 	// rather than carried in the capability. A module maps the answer onto its
 	// own resources; the authority knows them only by id.
 	ListResources(ctx context.Context, in *ListResourcesRequest, opts ...grpc.CallOption) (*ListResourcesResponse, error)
+	// AttachResource records that one resource now belongs to an installation,
+	// so a role scope its solution declares installation-owned
+	// (RoleV1.installation_owned_scopes) covers it. The caller is the kind's one
+	// serving module (a kind two composed modules declare attaches nothing),
+	// proving itself with its workload credential, and presents a capability
+	// addressed to it, at the organisation's current authorization revision,
+	// holding "create" on the whole kind for the newly created resource. An
+	// owner-selected create must select this installation's principal. Admin or
+	// read alone attaches nothing: an existing resource changes owner through
+	// AuthorizeTransfer, never through an unrestricted administrative capability.
+	// A resource has one owner in an organisation: an id
+	// another installation owns is refused. A store whose attach is refused fails
+	// or rolls back the create it made, and detaches what it deletes
+	// (DetachResource). The owning installation is read from the capability's
+	// verified provenance and never named by the caller: the installation itself
+	// when it is the owner, the installed solution when it is the caller, and
+	// each solution in its actor chain; exactly one must result. Ids are opaque
+	// and compared byte for byte; an id is refused when it is empty, carries
+	// surrounding whitespace, a NUL, CR, LF, tab or "*", or exceeds 128 bytes.
+	// Owned ids travel in every capability holding them, so an installation owns
+	// at most 32 of one kind at a time, refused by name past it. Attaching only
+	// widens what an owned scope covers, so it moves no authorization revision;
+	// a reinstalled installation owns nothing.
+	AttachResource(ctx context.Context, in *AttachResourceRequest, opts ...grpc.CallOption) (*AttachResourceResponse, error)
+	// DetachResource releases one resource from whichever installation of the
+	// organisation owns it, when the kind's one serving module deletes it, so the
+	// id no longer counts toward the owner's bound and may be attached again.
+	// It narrows the owner's roles, so the organisation's authorization revision
+	// moves. Detaching an id no installation owns answers no installation.
+	DetachResource(ctx context.Context, in *DetachResourceRequest, opts ...grpc.CallOption) (*DetachResourceResponse, error)
+	// AuthorizeTransfer decides whether an existing resource may join an
+	// installed solution's principal. The caller is the kind's one serving
+	// module, which attests the resource exists and who owns it now
+	// (from_owner_id), presenting the capability of the person asking: issued
+	// through the target principal's installation and addressed to the caller.
+	// It is allowed when the current owner is the organization or a person of
+	// it (never another solution principal, another organization or an unknown
+	// owner), the person holds admin on that resource from their own
+	// organization grants, and the person's current roles on the principal hold
+	// write on the kind, all read live. An installation acting for itself never
+	// transfers. After authorization succeeds, the authority records the id in
+	// the target installation's owned set in the same write transaction, subject
+	// to the same exclusivity, id and 32-id bounds as AttachResource. Revision,
+	// provenance, serving module and active tenant installation are checked in
+	// that transaction. A refusal records nothing and names its reason. The
+	// store then records the principal as owner; the original creator stays the
+	// author. The store must complete that change or compensate with DetachResource
+	// before exposing the resource. No separate admin attachment path exists.
+	AuthorizeTransfer(ctx context.Context, in *AuthorizeTransferRequest, opts ...grpc.CallOption) (*AuthorizeTransferResponse, error)
 	// Delegate records a signed-in person's grant to a module (the caller's
 	// bearer is the person); Issue with a delegation acts on it.
 	Delegate(ctx context.Context, in *DelegateRequest, opts ...grpc.CallOption) (*Delegation, error)
@@ -107,10 +173,50 @@ func (c *authorityServiceClient) Keys(ctx context.Context, in *KeysRequest, opts
 	return out, nil
 }
 
+func (c *authorityServiceClient) RegisterAdmissionKey(ctx context.Context, in *RegisterAdmissionKeyRequest, opts ...grpc.CallOption) (*RegisterAdmissionKeyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegisterAdmissionKeyResponse)
+	err := c.cc.Invoke(ctx, AuthorityService_RegisterAdmissionKey_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *authorityServiceClient) ListResources(ctx context.Context, in *ListResourcesRequest, opts ...grpc.CallOption) (*ListResourcesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListResourcesResponse)
 	err := c.cc.Invoke(ctx, AuthorityService_ListResources_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authorityServiceClient) AttachResource(ctx context.Context, in *AttachResourceRequest, opts ...grpc.CallOption) (*AttachResourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AttachResourceResponse)
+	err := c.cc.Invoke(ctx, AuthorityService_AttachResource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authorityServiceClient) DetachResource(ctx context.Context, in *DetachResourceRequest, opts ...grpc.CallOption) (*DetachResourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DetachResourceResponse)
+	err := c.cc.Invoke(ctx, AuthorityService_DetachResource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *authorityServiceClient) AuthorizeTransfer(ctx context.Context, in *AuthorizeTransferRequest, opts ...grpc.CallOption) (*AuthorizeTransferResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AuthorizeTransferResponse)
+	err := c.cc.Invoke(ctx, AuthorityService_AuthorizeTransfer_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -162,13 +268,75 @@ type AuthorityServiceServer interface {
 	// Check verifies a presented Work Context for the audience the caller is,
 	// re-checking the authorization revision and the seal live.
 	Check(context.Context, *CheckRequest) (*CheckResponse, error)
-	// Keys returns the issuer and the public keys a verifier pins.
+	// Keys returns the issuer and the public keys a verifier pins: the Work
+	// Context keys, and the hop admission keys a module behind the hop checks
+	// each call's admission by.
 	Keys(context.Context, *KeysRequest) (*KeysResponse, error)
+	// RegisterAdmissionKey is how the hop tells the authority the public key it
+	// signs call admissions with, so Keys publishes it in admission_keys. The
+	// caller is the hop, proving it with its workload credential; any other
+	// workload is refused by name. Only the public half travels: the hop's seed
+	// never leaves it. Registering the same key again is idempotent and renews
+	// it, and a registration lapses at expires_at_unix unless renewed, so a hop
+	// renews while it runs (a restarted authority learns the key again at the
+	// next renewal) and a key no running hop signs with any more is withdrawn
+	// without being named. While a rotation overlaps, the retiring and the new
+	// key are both registered, and both published.
+	RegisterAdmissionKey(context.Context, *RegisterAdmissionKeyRequest) (*RegisterAdmissionKeyResponse, error)
 	// ListResources answers which resources of one kind a checked capability may
 	// act on with one action, decided by the authority at the time of the call
 	// rather than carried in the capability. A module maps the answer onto its
 	// own resources; the authority knows them only by id.
 	ListResources(context.Context, *ListResourcesRequest) (*ListResourcesResponse, error)
+	// AttachResource records that one resource now belongs to an installation,
+	// so a role scope its solution declares installation-owned
+	// (RoleV1.installation_owned_scopes) covers it. The caller is the kind's one
+	// serving module (a kind two composed modules declare attaches nothing),
+	// proving itself with its workload credential, and presents a capability
+	// addressed to it, at the organisation's current authorization revision,
+	// holding "create" on the whole kind for the newly created resource. An
+	// owner-selected create must select this installation's principal. Admin or
+	// read alone attaches nothing: an existing resource changes owner through
+	// AuthorizeTransfer, never through an unrestricted administrative capability.
+	// A resource has one owner in an organisation: an id
+	// another installation owns is refused. A store whose attach is refused fails
+	// or rolls back the create it made, and detaches what it deletes
+	// (DetachResource). The owning installation is read from the capability's
+	// verified provenance and never named by the caller: the installation itself
+	// when it is the owner, the installed solution when it is the caller, and
+	// each solution in its actor chain; exactly one must result. Ids are opaque
+	// and compared byte for byte; an id is refused when it is empty, carries
+	// surrounding whitespace, a NUL, CR, LF, tab or "*", or exceeds 128 bytes.
+	// Owned ids travel in every capability holding them, so an installation owns
+	// at most 32 of one kind at a time, refused by name past it. Attaching only
+	// widens what an owned scope covers, so it moves no authorization revision;
+	// a reinstalled installation owns nothing.
+	AttachResource(context.Context, *AttachResourceRequest) (*AttachResourceResponse, error)
+	// DetachResource releases one resource from whichever installation of the
+	// organisation owns it, when the kind's one serving module deletes it, so the
+	// id no longer counts toward the owner's bound and may be attached again.
+	// It narrows the owner's roles, so the organisation's authorization revision
+	// moves. Detaching an id no installation owns answers no installation.
+	DetachResource(context.Context, *DetachResourceRequest) (*DetachResourceResponse, error)
+	// AuthorizeTransfer decides whether an existing resource may join an
+	// installed solution's principal. The caller is the kind's one serving
+	// module, which attests the resource exists and who owns it now
+	// (from_owner_id), presenting the capability of the person asking: issued
+	// through the target principal's installation and addressed to the caller.
+	// It is allowed when the current owner is the organization or a person of
+	// it (never another solution principal, another organization or an unknown
+	// owner), the person holds admin on that resource from their own
+	// organization grants, and the person's current roles on the principal hold
+	// write on the kind, all read live. An installation acting for itself never
+	// transfers. After authorization succeeds, the authority records the id in
+	// the target installation's owned set in the same write transaction, subject
+	// to the same exclusivity, id and 32-id bounds as AttachResource. Revision,
+	// provenance, serving module and active tenant installation are checked in
+	// that transaction. A refusal records nothing and names its reason. The
+	// store then records the principal as owner; the original creator stays the
+	// author. The store must complete that change or compensate with DetachResource
+	// before exposing the resource. No separate admin attachment path exists.
+	AuthorizeTransfer(context.Context, *AuthorizeTransferRequest) (*AuthorizeTransferResponse, error)
 	// Delegate records a signed-in person's grant to a module (the caller's
 	// bearer is the person); Issue with a delegation acts on it.
 	Delegate(context.Context, *DelegateRequest) (*Delegation, error)
@@ -198,8 +366,20 @@ func (UnimplementedAuthorityServiceServer) Check(context.Context, *CheckRequest)
 func (UnimplementedAuthorityServiceServer) Keys(context.Context, *KeysRequest) (*KeysResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Keys not implemented")
 }
+func (UnimplementedAuthorityServiceServer) RegisterAdmissionKey(context.Context, *RegisterAdmissionKeyRequest) (*RegisterAdmissionKeyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegisterAdmissionKey not implemented")
+}
 func (UnimplementedAuthorityServiceServer) ListResources(context.Context, *ListResourcesRequest) (*ListResourcesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListResources not implemented")
+}
+func (UnimplementedAuthorityServiceServer) AttachResource(context.Context, *AttachResourceRequest) (*AttachResourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AttachResource not implemented")
+}
+func (UnimplementedAuthorityServiceServer) DetachResource(context.Context, *DetachResourceRequest) (*DetachResourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DetachResource not implemented")
+}
+func (UnimplementedAuthorityServiceServer) AuthorizeTransfer(context.Context, *AuthorizeTransferRequest) (*AuthorizeTransferResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AuthorizeTransfer not implemented")
 }
 func (UnimplementedAuthorityServiceServer) Delegate(context.Context, *DelegateRequest) (*Delegation, error) {
 	return nil, status.Error(codes.Unimplemented, "method Delegate not implemented")
@@ -285,6 +465,24 @@ func _AuthorityService_Keys_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthorityService_RegisterAdmissionKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterAdmissionKeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthorityServiceServer).RegisterAdmissionKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthorityService_RegisterAdmissionKey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthorityServiceServer).RegisterAdmissionKey(ctx, req.(*RegisterAdmissionKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AuthorityService_ListResources_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListResourcesRequest)
 	if err := dec(in); err != nil {
@@ -299,6 +497,60 @@ func _AuthorityService_ListResources_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AuthorityServiceServer).ListResources(ctx, req.(*ListResourcesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthorityService_AttachResource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AttachResourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthorityServiceServer).AttachResource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthorityService_AttachResource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthorityServiceServer).AttachResource(ctx, req.(*AttachResourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthorityService_DetachResource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DetachResourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthorityServiceServer).DetachResource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthorityService_DetachResource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthorityServiceServer).DetachResource(ctx, req.(*DetachResourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuthorityService_AuthorizeTransfer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AuthorizeTransferRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthorityServiceServer).AuthorizeTransfer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthorityService_AuthorizeTransfer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthorityServiceServer).AuthorizeTransfer(ctx, req.(*AuthorizeTransferRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -377,8 +629,24 @@ var AuthorityService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AuthorityService_Keys_Handler,
 		},
 		{
+			MethodName: "RegisterAdmissionKey",
+			Handler:    _AuthorityService_RegisterAdmissionKey_Handler,
+		},
+		{
 			MethodName: "ListResources",
 			Handler:    _AuthorityService_ListResources_Handler,
+		},
+		{
+			MethodName: "AttachResource",
+			Handler:    _AuthorityService_AttachResource_Handler,
+		},
+		{
+			MethodName: "DetachResource",
+			Handler:    _AuthorityService_DetachResource_Handler,
+		},
+		{
+			MethodName: "AuthorizeTransfer",
+			Handler:    _AuthorityService_AuthorizeTransfer_Handler,
 		},
 		{
 			MethodName: "Delegate",

@@ -113,6 +113,7 @@ var authorities = map[string]Authority{
 	"policy_log_commits":            {Scope: ScopeGlobal},
 	"policy_log_cursor":             {Scope: ScopeGlobal},
 	"datasource_credential_budgets": {Scope: ScopeGlobal},
+	"hop_admission_keys":            {Scope: ScopeGlobal},
 
 	// Tenant-scoped relations.
 	"actor_chain_journal": {

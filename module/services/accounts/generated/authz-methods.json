@@ -6,6 +6,80 @@
   },
   "methods": [
     {
+      "procedure": "/host.authority.v1.AuthorityService/AttachResource",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "AttachResource",
+      "input_type": "host.authority.v1.AttachResourceRequest",
+      "output_type": "host.authority.v1.AttachResourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/authority/v1/authority.proto",
+      "policy_sha256": "90ea62af2032838dca17493b92a392c82e93bbfc2e6a0ee11af81ee203a46333",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/AuthorizeTransfer",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "AuthorizeTransfer",
+      "input_type": "host.authority.v1.AuthorizeTransferRequest",
+      "output_type": "host.authority.v1.AuthorizeTransferResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/authority/v1/authority.proto",
+      "policy_sha256": "90ea62af2032838dca17493b92a392c82e93bbfc2e6a0ee11af81ee203a46333",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
+    },
+    {
       "procedure": "/host.authority.v1.AuthorityService/Check",
       "full_service": "host.authority.v1.AuthorityService",
       "method": "Check",
@@ -80,6 +154,43 @@
       "source_proto": "host/authority/v1/authority.proto",
       "policy_sha256": "27bb7389b96938acc7b63b815da274331ab4c98c2054b2e0f49ef5ac071c1a00",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/DetachResource",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "DetachResource",
+      "input_type": "host.authority.v1.DetachResourceRequest",
+      "output_type": "host.authority.v1.DetachResourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/authority/v1/authority.proto",
+      "policy_sha256": "90ea62af2032838dca17493b92a392c82e93bbfc2e6a0ee11af81ee203a46333",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
       "procedure": "/host.authority.v1.AuthorityService/GetDelegation",
@@ -230,6 +341,45 @@
       "source_proto": "host/authority/v1/authority.proto",
       "policy_sha256": "095caeb90e18271e84ac9c463cf7fe9f88d6a52b66818c16ccc48b156468cb58",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/RegisterAdmissionKey",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "RegisterAdmissionKey",
+      "input_type": "host.authority.v1.RegisterAdmissionKeyRequest",
+      "output_type": "host.authority.v1.RegisterAdmissionKeyResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.platform.hop_admission_key_published"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/authority/v1/authority.proto",
+      "policy_sha256": "f8afe4d676ff7ceaaf75c8394887b84432bc908f77a4faa59001df010232a6c3",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
       "procedure": "/host.authority.v1.AuthorityService/RevokeDelegation",

@@ -43,6 +43,9 @@ type HostAuthorityServer struct {
 	roles solutionRoleReader
 	// methods holds a call to a delivered method policy; nil reads the service.
 	methods methodPolicyChecker
+	// admissions registers and publishes the hop's admission keys; nil reads
+	// the service.
+	admissions admissionKeys
 }
 
 // methodPolicyChecker holds a call's scopes to what the audience module's
@@ -66,14 +69,21 @@ func NewHostAuthorityServer(workContexts *WorkContextAuthorityServer, modules *M
 	return &HostAuthorityServer{workContexts: workContexts, modules: modules}
 }
 
-// Keys is the issuer and the one Work Context signing key.
-func (s *HostAuthorityServer) Keys(context.Context, *authorityv1.KeysRequest) (*authorityv1.KeysResponse, error) {
+// Keys is the issuer and the one Work Context signing key, and apart from it
+// the admission keys the hop registered (RegisterAdmissionKey), never among
+// the Work Context keys.
+func (s *HostAuthorityServer) Keys(ctx context.Context, _ *authorityv1.KeysRequest) (*authorityv1.KeysResponse, error) {
 	if !s.workContexts.configured() {
 		return nil, status.Error(codes.FailedPrecondition, ErrWorkContextAuthorityUnconfigured.Error())
 	}
+	admission, err := s.publishedAdmissionKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &authorityv1.KeysResponse{Issuer: s.workContexts.issuer, Keys: []*authorityv1.PublicKey{{
 		KeyId: s.workContexts.keyID, Algorithm: workcontext.Algorithm, PublicKey: []byte(s.workContexts.publicKey),
-	}}}, nil
+		Purpose: workContextKeyPurpose,
+	}}, AdmissionKeys: admission}, nil
 }
 
 // Check verifies for the audience the caller is: core's full check with the
@@ -134,6 +144,9 @@ func methodPolicyRefusal(audience, method string) string {
 // credential), and only then is its audience held to the composition, so a
 // caller proving nothing learns nothing of which modules are composed.
 func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueRequest) (*authorityv1.IssueResponse, error) {
+	if err := refuseOwnerSelected(req.GetScopes()); err != nil {
+		return nil, err
+	}
 	// An installation proves its solution's workload before anything it asks
 	// is read, so its audience is required there, once the caller is proven.
 	if _, installation := req.GetAs().(*authorityv1.IssueRequest_Installation); req.GetAudience() == "" && !installation {

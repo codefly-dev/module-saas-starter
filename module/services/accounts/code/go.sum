@@ -60,10 +60,10 @@ github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-2026102523
 github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261025234644-fff5385f9203/go.mod h1:Oher/sd93bXgASlhZgR1BAdrbxc7QLuGPCkDXllHvWU=
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261026111022-6870db87da8b h1:pFwwx9P+fL8HF/1eUOXIe4TJU3OtVI1f+rA2ydlhnh4=
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261026111022-6870db87da8b/go.mod h1:x7qJp8jwM5qyu1ZtLo1XigUABHagdjqUEQHs0tgQrqs=
-github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261025214748-c9cef7470d20 h1:mJr9YC9YEkXkqGVwE0ml+RhrmGJqn+aNgKEviDb/sB4=
-github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261025214748-c9cef7470d20/go.mod h1:XsOFnO2MQdr37vM3ULa0Uwi8ZWptyVx7hRSUyIdaZ1Q=
-github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261025214748-c9cef7470d20 h1:BXQzJcsI54o9/2xHURv+wO5R27Jc9ZUwNZIhv9buRwk=
-github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261025214748-c9cef7470d20/go.mod h1:1rmjrVyr0h7zOuwOHS9i+BoeS9dr3XNvtupLZFwY6As=
+github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261026193714-49101ae11a7f h1:R3BlevqYzEFWLL6XYmmaaHlwQ6lFerNMtXscadq8INA=
+github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261026193714-49101ae11a7f/go.mod h1:XsOFnO2MQdr37vM3ULa0Uwi8ZWptyVx7hRSUyIdaZ1Q=
+github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261026193714-49101ae11a7f h1:H4/E8nIQwsz8oaEzfkRmFuySotqFfMK2+e1ODMUUGRQ=
+github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261026193714-49101ae11a7f/go.mod h1:1rmjrVyr0h7zOuwOHS9i+BoeS9dr3XNvtupLZFwY6As=
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc h1:olDnVJ1A1Retn0z9A59YMwDRmDLgkV2y1lbl+HzNrj8=
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc/go.mod h1:VWPYY3FH4te7SzdN2xl9odNpWidJ1Grl/Hjs1SNoEF8=
 github.com/codefly-dev/core v0.19.7-0.20261026022918-8af4b787a435 h1:3M1c4Ver3YRaHj4rk1+mj1uweqTF5bO2QHZ50rI7sNI=

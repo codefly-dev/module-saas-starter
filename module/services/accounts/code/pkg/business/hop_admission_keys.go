@@ -1,0 +1,158 @@
+package business
+
+// The hop's admission keys (codefly.dev/authority@0.3.3, RegisterAdmissionKey).
+//
+// The composition's hop signs each call it admits with a key of its own, and
+// every module behind it verifies that admission by the public half, which it
+// reads from Keys. The hop presents the public half here under its workload
+// credential; this host attests the caller is the hop and publishes the key
+// until its lease lapses. The seed never leaves the hop.
+//
+// accounts runs several replicas behind one Keys read, so a registration is
+// a row in the store, judged by the store's clock: whichever replica the hop
+// reaches registers it, and every replica publishes the same set.
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"time"
+)
+
+// AdmissionKeyLease is how long a registered admission key stays published
+// without being registered again. The hop renews at a quarter of what remains,
+// so a key no running hop signs with is withdrawn once it lapses, and a key
+// survives a missed renewal or two.
+const AdmissionKeyLease = 2 * time.Minute
+
+// MaxAdmissionKeys bounds the keys published at once: a rotation needs two,
+// and a few more absorb rotations closer together than one lease.
+const MaxAdmissionKeys = 8
+
+// AdmissionKeyID is the id a hop signs its admissions under, derived from the
+// public key so the same seed always publishes the same entry: "hop-" and the
+// first eight bytes of the key's SHA-256, in hex.
+//
+// Labelled stopgap: this restates stamp.KeyID (codefly-dev/authority
+// libraries/authority-client/go/stamp at 49101ae1), the one derivation the hop
+// signs with, instead of importing it. That revision of the authority client
+// no longer builds with the conformance suite revision this module's harness
+// pins (6870db87, the suite's 0.2 contract), and the suite at 49101ae1 asserts
+// contracts this host does not serve yet. TestAdmissionKeyIDIsTheStampDerivation
+// pins a vector stamp.KeyID produced; import stamp.KeyID once the harness moves.
+func AdmissionKeyID(public ed25519.PublicKey) string {
+	sum := sha256.Sum256(public)
+	return "hop-" + hex.EncodeToString(sum[:8])
+}
+
+// HopModule and HopService name the one workload whose admission keys this
+// host publishes: the hop service of the composition's authority module, the
+// same pair the local authority admits.
+const (
+	HopModule  = "authority"
+	HopService = "hop"
+)
+
+// admissionKeyActor is the audit actor of a published admission key: the
+// system, since the hop's workload is no person; the payload names it.
+const admissionKeyActor = "system"
+
+// ErrAdmissionKeyNotTheHop refuses a registration by any workload other than
+// the hop.
+var ErrAdmissionKeyNotTheHop = errors.New("only the hop registers an admission key")
+
+// ErrAdmissionKeyMalformed refuses a key that is not a raw Ed25519 public key.
+var ErrAdmissionKeyMalformed = errors.New("an admission key is a raw Ed25519 public key")
+
+// ErrAdmissionKeysFull refuses a new key while MaxAdmissionKeys are published;
+// a registered key still renews.
+var ErrAdmissionKeysFull = errors.New("the published admission keys are at their bound")
+
+// ErrAdmissionKeysUnwired reports a host with no admission key store: it
+// publishes none and registers none, and says so.
+var ErrAdmissionKeysUnwired = errors.New("this host has no admission key store wired")
+
+// AdmissionKey is one published hop admission key.
+type AdmissionKey struct {
+	// ID is AdmissionKeyID of the key: the id the hop signs under.
+	ID        string
+	PublicKey ed25519.PublicKey
+	// ExpiresAt is when the registration lapses unless renewed.
+	ExpiresAt time.Time
+}
+
+// AdmissionKeyStore persists registrations. Both methods judge a lease by the
+// store's clock, so replicas whose clocks differ publish the same set.
+type AdmissionKeyStore interface {
+	// RegisterAdmissionKey publishes key for lease from now, renewing it when
+	// it is already published, and answers when it lapses and whether this
+	// call began publishing it (false for a renewal). It refuses
+	// ErrAdmissionKeysFull when max other keys are published and unlapsed.
+	RegisterAdmissionKey(ctx context.Context, key AdmissionKey, lease time.Duration, max int) (expires time.Time, published bool, err error)
+	// AdmissionKeys are the keys whose lease has not lapsed, by key id.
+	AdmissionKeys(ctx context.Context) ([]AdmissionKey, error)
+}
+
+// SetAdmissionKeyStore wires the registrations' persistence. Boot wiring.
+func (s *Service) SetAdmissionKeyStore(store AdmissionKeyStore) { s.admissionKeys = store }
+
+// RegisterAdmissionKey records the public key the hop signs call admissions
+// with and publishes it until the answered time; registering it again renews
+// it. The caller is attested by its workload credential, and any workload but
+// the hop is refused by name.
+func (s *Service) RegisterAdmissionKey(ctx context.Context, credential string, public []byte) (AdmissionKey, error) {
+	reviewed, err := s.reviewWorkloadCredential(ctx, credential)
+	if err != nil {
+		return AdmissionKey{}, err
+	}
+	hopNamespace := s.moduleNamespaces.Namespace(HopModule)
+	if reviewed.Namespace != hopNamespace || reviewed.ServiceAccount != HopService {
+		return AdmissionKey{}, fmt.Errorf("%w: the caller is %s/%s, not the hop (%s/%s)",
+			ErrAdmissionKeyNotTheHop, reviewed.Namespace, reviewed.ServiceAccount, hopNamespace, HopService)
+	}
+	if len(public) != ed25519.PublicKeySize {
+		return AdmissionKey{}, fmt.Errorf("%w: %d bytes, not %d", ErrAdmissionKeyMalformed, len(public), ed25519.PublicKeySize)
+	}
+	if s.admissionKeys == nil {
+		return AdmissionKey{}, ErrAdmissionKeysUnwired
+	}
+	key := AdmissionKey{ID: AdmissionKeyID(public), PublicKey: append(ed25519.PublicKey(nil), public...)}
+	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		expires, published, err := s.admissionKeys.RegisterAdmissionKey(ctx, key, AdmissionKeyLease, MaxAdmissionKeys)
+		if err != nil {
+			return err
+		}
+		key.ExpiresAt = expires
+		if !published {
+			return nil
+		}
+		// A key every module behind the hop now trusts is recorded in the
+		// same transaction that publishes it; a renewal is not.
+		return s.emitTx(ctx, admissionKeyActor, ActorTypeSystem, EventHopAdmissionKeyPublished, "hop_admission_key", key.ID, "", map[string]any{
+			"key_id": key.ID, "workload": reviewed.Namespace + "/" + reviewed.ServiceAccount, "expires_at": expires.UTC().Format(time.RFC3339),
+		})
+	})
+	if err != nil {
+		return AdmissionKey{}, err
+	}
+	return key, nil
+}
+
+// PublishedAdmissionKeys are the registered keys still within their lease, by
+// key id: what Keys publishes in admission_keys, and never among the Work
+// Context keys.
+func (s *Service) PublishedAdmissionKeys(ctx context.Context) ([]AdmissionKey, error) {
+	if s.admissionKeys == nil {
+		return nil, ErrAdmissionKeysUnwired
+	}
+	var keys []AdmissionKey
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		keys, err = s.admissionKeys.AdmissionKeys(ctx)
+		return err
+	})
+	return keys, err
+}

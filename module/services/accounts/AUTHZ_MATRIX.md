@@ -2,18 +2,22 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **285 RPCs** across **40 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **289 RPCs** across **40 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
 | Procedure | Shape | REST mapping | Tier | Guards | Permission / scope | Resource bindings | Audit | Idempotency / rate | Sensitivity req → res | Description |
 |---|---|---|---|---|---|---|---|---|---|---|
+| `/host.authority.v1.AuthorityService/AttachResource` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Record that one resource belongs to an installation; refused by name until this host records installation-owned resources. |
+| `/host.authority.v1.AuthorityService/AuthorizeTransfer` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Decide whether an existing resource may join an installed solution's principal; refused by name until this host records installation-owned resources. |
 | `/host.authority.v1.AuthorityService/Check` | unary | `POST /v1/authority:check` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live. |
 | `/host.authority.v1.AuthorityService/Delegate` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.module_delegation.granted | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Record a signed-in person's grant to a module, within what they hold. |
+| `/host.authority.v1.AuthorityService/DetachResource` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Release one resource from the installation that owns it; refused by name until this host records installation-owned resources. |
 | `/host.authority.v1.AuthorityService/GetDelegation` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read whether one delegation still stands, for its module or its grantor. |
 | `/host.authority.v1.AuthorityService/Issue` | unary | `POST /v1/authority:issue` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | — | SUCCESS: saas.work_context.task_started | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Issue a Work Context for one owner shape, one audience and the scopes asked for, bounded by what the owner holds. |
-| `/host.authority.v1.AuthorityService/Keys` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / STANDARD_READ | PUBLIC → PUBLIC | Return the issuer and the public keys a verifier pins. |
+| `/host.authority.v1.AuthorityService/Keys` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / STANDARD_READ | PUBLIC → PUBLIC | Return the issuer and the public keys a verifier pins: the Work Context keys and, apart from them, the hop's admission keys. |
 | `/host.authority.v1.AuthorityService/ListResources` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Answer which resources of one kind a checked capability covers for one action, from its owner's current grants. |
+| `/host.authority.v1.AuthorityService/RegisterAdmissionKey` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.platform.hop_admission_key_published | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Publish the hop's admission public key in Keys for one lease; only the hop's workload registers one. |
 | `/host.authority.v1.AuthorityService/RevokeDelegation` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.module_delegation.revoked | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | End a delegation; every capability issued from it is refused from then on. |
 | `/host.composition.v1.CompositionService/ApplyManifest` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Deliver one module instance's manifest at one generation; the ceiling is the manifest. |
 | `/host.installation.v1.InstallationService/GrantToTeam` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | SUCCESS: saas.scope.granted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Expose an installation to a team under the installation's role. |
@@ -302,4 +306,4 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `org_admin`: 68
 - `org_member`: 57
 - `platform_admin`: 29
-- `public`: 24
+- `public`: 28
