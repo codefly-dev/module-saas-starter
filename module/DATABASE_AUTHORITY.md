@@ -588,6 +588,51 @@ attached or detached, now needs a `BYPASSRLS` role to read every row, which the
 partition offload planned in
 [ADR 0006](./docs/adr/0006-audit-sink-and-retention-tiers.md) has to provision.
 
+## A retention sweep's predicate must match a usable index, and its cascade children must carry one
+
+`RunRetention`'s row deletes (`DeleteOldSessions`, `DeleteOldNotifications`,
+`DeleteOldWebhookDeliveries`, `DeleteExpiredAuthenticationCeremonies`,
+`pkg/infra/postgres_retention.go`) are bulk `DELETE ... WHERE <column> < $1`
+statements over tables sized by production traffic, run on every tick. Two
+unindexed-by-construction gaps make a sweep like this quadratic rather than a
+missing index being merely slow, and migration
+`48_retention_index_gaps` (#1253) is the one-time catch-up; a new sweep or a new
+cascade from a bulk-deleted table has to carry its own index from the start:
+
+- **The sweep's `WHERE` must name a column a usable index leads with.** This
+  failed two distinct ways before #1253. A *partial* index's own predicate does
+  not count unless the sweep repeats it: `mfa_login_transactions`,
+  `webauthn_ceremonies` and `client_authorization_codes` each carry
+  `(expires_at) WHERE consumed_at IS NULL`, which serves "find live rows," the
+  opposite set from "find rows old enough to delete," while all three sweeps
+  filter `expires_at` alone — so the planner falls back to a sequential scan
+  however selective the sweep's predicate is. Separately, an index that merely
+  *leads* with another column is no better: `sessions`, `notifications` and
+  `webhook_deliveries` are swept on `created_at` while their indexes lead with
+  `expires_at`, `user_id` and `subscription_id`. Migration 48 adds a
+  `created_at` index to each of those three; they are structural and were not
+  measured on their own.
+- **Every `ON DELETE CASCADE` child column a bulk-deleted parent can reach needs
+  its own index.** The cascade trigger fires once per deleted parent row and,
+  with no index on the child's FK column, sequentially scans the child table
+  each time: cost is `rows_deleted x child_table_size`, so it is invisible at
+  seed scale and degrades on its own as the child grows. Measured:
+  `DELETE FROM mfa_login_transactions WHERE expires_at < $1` (1,001 rows)
+  cascading into the unindexed `webauthn_ceremonies.mfa_login_transaction_id`
+  ran 20,199ms, 56ms after adding the index (359x) — the trigger still fired
+  1,001 times either way, it just stopped sequentially scanning to do it. The
+  second measured case has the same shape: `DELETE FROM sessions WHERE
+  created_at < $1` (1,001 rows) ran 15,697ms cascading into the unindexed
+  `client_authorization_codes.session_id`, 38ms once that one column was
+  indexed (418x) — measured with `sessions.created_at` still unindexed and the
+  sweep still sequentially scanning the parent, which is what establishes the
+  cascade rather than the sweep's own scan as the cost.
+
+A migration above the frontier that adds either shape — a new retention
+predicate or a new `ON DELETE CASCADE` reachable from a table a retention sweep
+or an admin bulk-delete (e.g. role deletion) targets — adds the matching index
+in the same migration, not as a follow-up once it is measured slow.
+
 ## Audit retention drops a partition by its recorded range, under lock
 
 Audit retention is a partition drop, and a dropped partition cannot be
