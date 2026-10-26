@@ -46,7 +46,19 @@ serves on a laptop is served here on a cell, and the authority interface reposit
    persists the pair and reconciles it synchronously. `Check` enforces the
    exact applied generation's method policy. Details and limits below.
 5. **Install and GrantToTeam are served.** Install resolves the target and role
-   through the existing catalogues. GrantToTeam resolves the installation's
+   through the existing catalogues. Both human Install RPCs require `approval`:
+   the immutable `target_id` and `generation` offered by ListAvailableSolutions,
+   the installation's `expected_revision` from List (zero if absent), and a new
+   UUID `operation_id`. Keep the entire request unchanged on retry. The database
+   holds the applied binding and installation locks through the consent write;
+   `INSTALLATION_APPROVAL_GENERATION_CHANGED` and
+   `INSTALLATION_APPROVAL_REVISION_CHANGED` require a fresh review and approval.
+   A receipt returns the unchanged operation's installation while its resulting
+   revision is current; changed inputs refuse with
+   `INSTALLATION_APPROVAL_OPERATION_CONFLICT`. An old request cannot reapprove
+   delivered widening, undo narrowing, or recreate its revoked installation.
+   Host-owned fixture setup resolves its own fresh approval through this same
+   transaction. No human RPC resolves approval fields for its caller. GrantToTeam resolves the installation's
    standing role under its installation lock and uses `GrantInstallationToTeam`.
    Pending installations remain unexposable until the durable install step is
    acknowledged. The shared suite still needs fixture hooks for that acknowledgement

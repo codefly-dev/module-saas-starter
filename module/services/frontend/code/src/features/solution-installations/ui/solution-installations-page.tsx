@@ -180,7 +180,7 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 					error={install.isError ? hostRefusal(install.error) : undefined}
 					onSubmit={(values) => {
 						install.mutate(
-							{ targetId: installing.targetId, values },
+							{ targetId: installing.targetId, generation: installing.appliedGeneration, operationId: crypto.randomUUID(), values },
 							{
 								onSuccess: () => {
 									toast.success(

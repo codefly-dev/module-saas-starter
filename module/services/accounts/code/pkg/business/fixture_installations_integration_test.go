@@ -113,11 +113,11 @@ func TestInstallTargetByNameNamesWhatItCannotResolve(t *testing.T) {
 	adminID, orgID := mustUserAndOrg(t, ctx, "byname@example.com", "byname", "By Name Co")
 	_, alias := declarePresence(t, "by-name")
 
-	_, _, err := testService.InstallTargetByName(ctx, adminID, orgID, "nothing-delivered", "viewer", "")
+	_, _, err := testService.InstallFixtureTarget(ctx, adminID, orgID, "nothing-delivered", "viewer", "")
 	require.True(t, errors.Is(err, business.ErrInstallTargetNotPresent), "got %v", err)
 	require.ErrorContains(t, err, `"nothing-delivered"`)
 
-	_, _, err = testService.InstallTargetByName(ctx, adminID, orgID, alias, "no such role", "")
+	_, _, err = testService.InstallFixtureTarget(ctx, adminID, orgID, alias, "no such role", "")
 	require.ErrorContains(t, err, `has no role named "no such role"`)
 }
 

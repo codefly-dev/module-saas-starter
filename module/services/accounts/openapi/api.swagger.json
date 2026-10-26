@@ -430,6 +430,11 @@
         "ownerPrincipalId": {
           "type": "string"
         },
+        "revision": {
+          "description": "Current consent/lifecycle revision, for an explicit re-install approval.",
+          "format": "uint64",
+          "type": "string"
+        },
         "revokedAt": {
           "format": "date-time",
           "type": "string"
@@ -1441,6 +1446,26 @@
           "type": "string"
         },
         "mfaToken": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1ConsentApproval": {
+      "description": "ConsentApproval binds an explicit approval to the state reviewed by the admin.\nObtain target_id and generation from ListAvailableSolutions, and revision from\nthe installation listing (zero means absent). Keep these values and operation_id\nunchanged on retry; a refusal requires a fresh review and operation.",
+      "properties": {
+        "expectedRevision": {
+          "format": "uint64",
+          "type": "string"
+        },
+        "generation": {
+          "format": "uint64",
+          "type": "string"
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "targetId": {
           "type": "string"
         }
       },
@@ -2480,6 +2505,10 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "approval": {
+          "$ref": "#/definitions/v1ConsentApproval",
+          "description": "Required: the exact offer and installation state reviewed by the admin."
         },
         "coOwnerPrincipalIds": {
           "description": "Succession set: any one being a current org admin keeps the installation\nhealthy. Each must be a human principal.",

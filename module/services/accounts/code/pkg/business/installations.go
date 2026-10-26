@@ -14,6 +14,8 @@ import (
 // solution scope node, standing grant, and installation row are created together
 // in one transaction; see InstallationStore.InstallSolution.
 type InstallSolutionParams struct {
+	ApprovalReplayed    bool `json:"-"`
+	Approval            *InstallationApproval
 	Kind                string
 	RegistryBindingID   string
 	RegistryPrincipalID string
@@ -123,6 +125,15 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	w := wool.Get(ctx).In("InstallSolution",
 		wool.Field("org_id", params.OrgID),
 		wool.Field("target_id", params.TargetID))
+	// Bind the original intent before prepareInstallation fills mutable defaults.
+	approval, approvalErr := params.Approval.bindIntent(struct {
+		Actor  string
+		Params *InstallSolutionParams
+	}{actorID, params})
+	if approvalErr != nil {
+		return nil, approvalErr
+	}
+	params.Approval = approval
 	params.GrantedBy = actorID
 	// Composing at the store level (one transaction) skips the friendly
 	// Principal.Validate() check the CreateAgentPrincipal domain path runs, so a
@@ -172,6 +183,9 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		installation, e = s.installationStore().InstallSolution(ctx, params)
 		if e != nil {
 			return e
+		}
+		if params.ApprovalReplayed {
+			return nil
 		}
 		// Publish installation.created in the same transaction (outbox). The
 		// boundary is the solution scope node the install just composed.

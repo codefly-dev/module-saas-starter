@@ -31,7 +31,7 @@ import (
 const installationColumns = `id::text, org_id::text, agent_principal_id::text,
 	owner_principal_id::text, co_owner_principal_ids::text[],
 	root_scope_node_id::text, status, created_at, revoked_at,
-	COALESCE(target_id::text, ''), COALESCE(revoked_reason, ''), COALESCE(failure_reason, '')`
+	COALESCE(target_id::text, ''), COALESCE(revoked_reason, ''), COALESCE(failure_reason, ''), revision`
 
 func scanInstallation(row rowScanner) (*gen.Installation, error) {
 	var (
@@ -40,9 +40,10 @@ func scanInstallation(row rowScanner) (*gen.Installation, error) {
 		coOwners                                        []string
 		createdAt                                       time.Time
 		revokedAt                                       *time.Time
+		revision                                        uint64
 	)
 	if err := row.Scan(&id, &orgID, &agentID, &ownerID, &coOwners,
-		&rootNodeID, &status, &createdAt, &revokedAt, &targetID, &revokedReason, &failureReason); err != nil {
+		&rootNodeID, &status, &createdAt, &revokedAt, &targetID, &revokedReason, &failureReason, &revision); err != nil {
 		return nil, err
 	}
 	out := &gen.Installation{
@@ -57,6 +58,7 @@ func scanInstallation(row rowScanner) (*gen.Installation, error) {
 		TargetId:            targetID,
 		RevokedReason:       revokedReason,
 		FailureReason:       failureReason,
+		Revision:            revision,
 	}
 	if revokedAt != nil {
 		out.RevokedAt = timestamppb.New(*revokedAt)
@@ -113,7 +115,7 @@ func firstEligibleOwner(ctx context.Context, executor QueryExecutor, orgID strin
 // Only acknowledged consent is usable. An active identical install is idempotent;
 // pending/failed consent requires its existing lifecycle, never a second install.
 // Composed modules retain their installation path; the callback is solution-owned.
-func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.InstallSolutionParams) (*gen.Installation, error) {
+func (s *PostgresStore) installSolution(ctx context.Context, params *business.InstallSolutionParams) (*gen.Installation, error) {
 	w := wool.Get(ctx).In("InstallSolution",
 		wool.Field("org_id", params.OrgID),
 		wool.Field("target_id", params.TargetID))
@@ -364,7 +366,7 @@ func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, 
 		existing.OrgId, existing.RootScopeNodeId, existing.AgentPrincipalId).Scan(&roleID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("load existing standing grant role: %w", err)
 	}
-	reconsent := kind == "module" && params.ModuleCeiling != nil && !requested.Follows &&
+	reconsent := kind == "module" && params.Approval != nil && params.ModuleCeiling != nil && !requested.Follows &&
 		business.InstallationScopeWithin(requested, *params.ModuleCeiling) &&
 		business.InstallationScopeWithin(*params.ModuleCeiling, requested)
 	sameAgent := agentIdentifier == params.AgentIdentifier
@@ -525,7 +527,7 @@ func installationHealthFromLabel(label string) gen.InstallationHealth {
 const installationListingColumns = `i.id::text, i.org_id::text, i.agent_principal_id::text,
 	i.owner_principal_id::text, i.co_owner_principal_ids::text[],
 	i.root_scope_node_id::text, i.status, i.created_at, i.revoked_at,
-	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), COALESCE(i.failure_reason, ''), ` + installationHealthLabel
+	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), COALESCE(i.failure_reason, ''), i.revision, ` + installationHealthLabel
 
 // withHealthLabel scans one listing row: the installation's own columns through
 // scanInstallation, so the wire mapping has one definition, then the label.

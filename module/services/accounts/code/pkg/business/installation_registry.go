@@ -47,9 +47,20 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 		return nil, NewStoreError(ErrSolutionTargetNotInstallable, ErrTypeValidation)
 	}
 	target := available[0]
+	if params.Approval != nil {
+		if err := params.Approval.Validate(); err != nil {
+			return nil, err
+		}
+		if params.Approval.TargetID != target.TargetID || params.Approval.Generation != target.AppliedGeneration {
+			return nil, InstallationApprovalRefusal("INSTALLATION_APPROVAL_GENERATION_CHANGED", "the reviewed target or generation is no longer current; review ListAvailableSolutions and approve again")
+		}
+	}
 	principal, grant, err := installationRegistryEntry(snapshot, target.BindingID, params.OrgID)
 	if err != nil {
 		return nil, err
+	}
+	if params.Approval != nil && grant.PresenceGeneration != 0 && grant.PresenceGeneration != params.Approval.Generation {
+		return nil, InstallationApprovalRefusal("INSTALLATION_APPROVAL_GENERATION_CHANGED", "the authority registry has not reconciled the reviewed generation; refresh the catalogue before approving")
 	}
 	params.RegistryBindingID, params.RegistryPrincipalID = target.BindingID, principal
 	params.RouteAlias, params.Kind = target.RouteAlias, target.Kind

@@ -9,6 +9,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -64,13 +65,14 @@ func TestModuleReinstallRecordsExplicitAdministratorConsent(t *testing.T) {
 			require.Equal(t, codes.FailedPrecondition, status.Code(err))
 			require.ErrorContains(t, err, "InstallationService/Install")
 			reInstall := func(actor string) (*gen.Installation, error) {
+				approval := &business.InstallationApproval{TargetID: target, Generation: 1, ExpectedRevision: state().Revision, OperationID: uuid.NewString()}
 				if byName {
-					row, created, err := testService.InstallTargetByName(ctx, actor, org, alias, "installable role "+role, "")
+					row, created, err := testService.InstallTargetByName(ctx, actor, org, alias, "installable role "+role, "", approval)
 					require.Equal(t, err == nil, created, "a successful module re-install records an explicit consent action")
 					return row, err
 				}
 				return testService.InstallSolution(ctx, actor, &business.InstallSolutionParams{
-					OrgID: org, TargetID: target, AgentIdentifier: "acme/" + alias + ":1.0.0", RoleID: role,
+					Approval: approval, OrgID: org, TargetID: target, AgentIdentifier: "acme/" + alias + ":1.0.0", RoleID: role,
 				})
 			}
 			before := state()

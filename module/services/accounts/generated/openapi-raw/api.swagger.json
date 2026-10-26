@@ -7057,6 +7057,11 @@
         "failureReason": {
           "type": "string",
           "description": "Why the install step failed: the solution's bounded refusal reason, or a\nfixed reason when it never answered. Empty unless status is FAILED."
+        },
+        "revision": {
+          "type": "string",
+          "format": "uint64",
+          "description": "Current consent/lifecycle revision, for an explicit re-install approval."
         }
       },
       "description": "Installation is one solution's bound identity in an org. Server-assigned ids;\nthe browser cannot attest to tenancy, the agent principal, or the scope node."
@@ -8134,6 +8139,26 @@
           "description": "JSON-encoded PublicKeyCredential assertion returned by the browser."
         }
       }
+    },
+    "v1ConsentApproval": {
+      "type": "object",
+      "properties": {
+        "targetId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "expectedRevision": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "operationId": {
+          "type": "string"
+        }
+      },
+      "description": "ConsentApproval binds an explicit approval to the state reviewed by the admin.\nObtain target_id and generation from ListAvailableSolutions, and revision from\nthe installation listing (zero means absent). Keep these values and operation_id\nunchanged on retry; a refusal requires a fresh review and operation."
     },
     "v1ConsentPurpose": {
       "type": "string",
@@ -9250,6 +9275,10 @@
         "scope": {
           "type": "string",
           "description": "Installed consent as JSON: capabilities, queues, namespaces,\nexternal_namespaces, resources, read_audiences, operation_audiences and\nartifact_policies, with the same shapes as the module envelope grant.\nMust be a subset of the current ceiling. Omitted selects that ceiling;\nan explicit {} grants nothing. Tenant and identity are never scope fields."
+        },
+        "approval": {
+          "$ref": "#/definitions/v1ConsentApproval",
+          "description": "Required: the exact offer and installation state reviewed by the admin."
         }
       }
     },

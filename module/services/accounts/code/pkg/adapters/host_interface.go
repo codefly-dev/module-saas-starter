@@ -454,7 +454,11 @@ func (s *HostInstallationServer) Install(ctx context.Context, req *installationv
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
-	installation, installed, err := s.service.InstallTargetByName(ctx, actorID, req.GetOrganizationId(), req.GetTarget(), req.GetRole(), req.GetOwnerPersonId())
+	approval, err := installationApproval(req.GetApproval())
+	if err != nil {
+		return nil, err
+	}
+	installation, installed, err := s.service.InstallTargetByName(ctx, actorID, req.GetOrganizationId(), req.GetTarget(), req.GetRole(), req.GetOwnerPersonId(), approval)
 	switch {
 	case errors.Is(err, business.ErrInstallTargetNotPresent):
 		return nil, status.Error(codes.FailedPrecondition, err.Error())

@@ -130,7 +130,7 @@ func (i *Installations) Converge(ctx context.Context) error {
 	var failures []error
 	remaining := i.pending[:0]
 	for _, row := range i.pending {
-		installation, installed, err := i.service.InstallTargetByName(ctx, row.ownerID, row.orgID, row.declared.Target, row.declared.Role, row.ownerID)
+		installation, installed, err := i.service.InstallFixtureTarget(ctx, row.ownerID, row.orgID, row.declared.Target, row.declared.Role, row.ownerID)
 		switch {
 		case errors.Is(err, business.ErrInstallTargetNotPresent):
 			if !row.waiting {

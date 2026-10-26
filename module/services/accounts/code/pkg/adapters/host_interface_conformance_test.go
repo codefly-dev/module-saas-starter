@@ -10,6 +10,7 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -24,11 +25,15 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
+	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/gen/saas/accounts/v1/accountsv1connect"
+
 	conformance "github.com/codefly-dev/authority/libraries/conformance/go"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	"github.com/codefly-dev/core/sdk"
 	"github.com/codefly-dev/core/solutionhost"
 	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -485,7 +490,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		// A person's capability at a solution is sealed to the organisation's
 		// installation of it, so the solution is installed, through the host's
 		// own install path and acknowledged, before anyone is issued there.
-		_, installed, err := svc.InstallTargetByName(ctx, conformanceAlex, fixtureOrganization, audience, "Collection reader", conformanceAlex)
+		_, installed, err := svc.InstallFixtureTarget(ctx, conformanceAlex, fixtureOrganization, audience, "Collection reader", conformanceAlex)
 		require.NoError(t, err)
 		require.True(t, installed)
 		require.NoError(t, acknowledgeInstallSteps(ctx, svc))
@@ -708,13 +713,51 @@ func runHostInterfaceFixture(t *testing.T) {
 		}
 		admin, member := bearer("fixture-alex"), bearer("fixture-remi")
 		client := installationv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
+		saas := accountsv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
+		catalogue := connect.NewRequest(&gen.ListAvailableSolutionsRequest{OrgId: fixtureOrganization})
+		catalogue.Header().Set("Authorization", "Bearer "+admin)
+		offers, err := saas.ListAvailableSolutions(ctx, catalogue)
+		require.NoError(t, err)
+		var target string
+		for _, offer := range offers.Msg.GetSolutions() {
+			if offer.GetRouteAlias() == m.Alias {
+				target = offer.GetTargetId()
+			}
+		}
+		require.NotEmpty(t, target)
+		approval := &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, OperationId: uuid.NewString()}
 		install := func(token string) (*connect.Response[installationv1.Installation], error) {
-			req := connect.NewRequest(&installationv1.InstallRequest{OrganizationId: fixtureOrganization, Target: m.Alias, Role: "Collection reader"})
+			req := connect.NewRequest(&installationv1.InstallRequest{OrganizationId: fixtureOrganization, Target: m.Alias, Role: "Collection reader", Approval: approval})
 			req.Header().Set("Authorization", "Bearer "+token)
 			return client.Install(ctx, req)
 		}
 		first, err := install(admin)
 		require.NoError(t, err)
+		retry, err := install(admin)
+		require.NoError(t, err, "initial retry is idempotent")
+		require.Equal(t, first.Msg, retry.Msg)
+		originalApproval := approval
+		approval = nil
+		_, err = install(admin)
+		require.ErrorContains(t, err, "INSTALLATION_APPROVAL_REQUIRED")
+		approval = proto.Clone(originalApproval).(*installationv1.ConsentApproval)
+		approval.ExpectedRevision = first.Msg.GetRevision()
+		_, err = install(admin)
+		require.ErrorContains(t, err, "INSTALLATION_APPROVAL_OPERATION_CONFLICT")
+		approval = originalApproval
+		readRevision := func() uint64 {
+			req := connect.NewRequest(&installationv1.ListRequest{OrganizationId: fixtureOrganization})
+			req.Header().Set("Authorization", "Bearer "+admin)
+			rows, err := client.List(ctx, req)
+			require.NoError(t, err)
+			for _, row := range rows.Msg.GetInstallations() {
+				if row.GetId() == first.Msg.GetId() {
+					return row.GetRevision()
+				}
+			}
+			t.Fatal("installation missing from listing")
+			return 0
+		}
 		svc.SetModuleAuthorityReads(store, nil)
 		t.Cleanup(func() {
 			svc.SetModuleAuthorityReads(withdrawnModuleInstallations{ComposedModuleInstallations: composed, withdrawn: "conformance-idle"}, nil)
@@ -732,11 +775,69 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 		_, err = svc.AuthorizeModuleCapability(ctx, caller)
 		require.Equal(t, codes.FailedPrecondition, status.Code(err), "member re-install does not consent")
+		approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: readRevision(), OperationId: uuid.NewString()}
 		again, err := install(admin)
 		require.NoError(t, err, "the named remedy returns success on the wire")
 		require.Equal(t, first.Msg.GetId(), again.Msg.GetId())
 		_, err = svc.AuthorizeModuleCapability(ctx, caller)
 		require.NoError(t, err, "admin re-install records usable consent")
+		retry, err = install(admin)
+		require.NoError(t, err, "re-consent retry is idempotent")
+		require.Equal(t, again.Msg, retry.Msg)
+		// Preserve the exact successful request and still-valid bearer across
+		// a wider signed delivery: this is the reviewer's replay schedule.
+		m.Generation++
+		m.Authority.ResourceKinds = append(m.Authority.ResourceKinds, "example-sensitive")
+		raw, err = solutionhost.SignedPayload(m)
+		require.NoError(t, err)
+		_, err = composition.ApplyManifest(ctx, connect.NewRequest(&compositionv1.ApplyManifestRequest{Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + m.Alias}))
+		require.NoError(t, err)
+		_, err = install(admin)
+		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+		require.ErrorContains(t, err, "INSTALLATION_APPROVAL_GENERATION_CHANGED")
+		held, err := svc.AuthorizeModuleCapability(ctx, caller)
+		require.NoError(t, err)
+		require.Equal(t, []string{"example-records"}, held.Grant.Resources)
+		approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: readRevision(), OperationId: uuid.NewString()}
+		_, err = install(admin)
+		require.NoError(t, err, "fresh review explicitly approves generation two")
+		held, err = svc.AuthorizeModuleCapability(ctx, caller)
+		require.NoError(t, err)
+		require.ElementsMatch(t, m.Authority.ResourceKinds, held.Grant.Resources)
+		// Exercise the other public remedy using its generated Connect client.
+		details, err := svc.ReadHostInstallation(ctx, fixtureOrganization, first.Msg.GetId())
+		require.NoError(t, err)
+		saasBody := &gen.InstallSolutionRequest{OrgId: fixtureOrganization, TargetId: target, AgentIdentifier: "conformance/conformance-reconsent:0.1.0", RoleId: details.RoleID, Approval: &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: readRevision(), OperationId: uuid.NewString()}}
+		installSaaS := func() error {
+			req := connect.NewRequest(saasBody)
+			req.Header().Set("Authorization", "Bearer "+admin)
+			_, err := saas.InstallSolution(ctx, req)
+			return err
+		}
+		require.NoError(t, installSaaS())
+		require.NoError(t, installSaaS(), "same-generation retry is idempotent")
+		// Narrow through the real lifecycle owner, then retry both saved bodies.
+		narrowed := business.FullInstallationScope(held.Grant)
+		narrowed.Resources = []string{"example-records"}
+		scopeJSON, err := json.Marshal(narrowed)
+		require.NoError(t, err)
+		narrowReq := connect.NewRequest(&gen.NarrowInstallationRequest{OrgId: fixtureOrganization, InstallationId: first.Msg.GetId(), Scope: string(scopeJSON)})
+		narrowReq.Header().Set("Authorization", "Bearer "+admin)
+		_, err = saas.NarrowInstallation(ctx, narrowReq)
+		require.NoError(t, err)
+		_, err = install(admin)
+		require.ErrorContains(t, err, "INSTALLATION_APPROVAL_REVISION_CHANGED")
+		require.ErrorContains(t, installSaaS(), "INSTALLATION_APPROVAL_REVISION_CHANGED")
+		held, err = svc.AuthorizeModuleCapability(ctx, caller)
+		require.NoError(t, err)
+		require.Equal(t, []string{"example-records"}, held.Grant.Resources)
+		m.Generation++
+		raw, err = solutionhost.SignedPayload(m)
+		require.NoError(t, err)
+		_, err = composition.ApplyManifest(ctx, connect.NewRequest(&compositionv1.ApplyManifestRequest{Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + m.Alias}))
+		require.NoError(t, err)
+		require.ErrorContains(t, installSaaS(), "INSTALLATION_APPROVAL_GENERATION_CHANGED")
+
 	})
 
 }

@@ -113,7 +113,7 @@ func ResolveInstallationScope(scope, full InstallationScope) InstallationScope {
 // while an envelope set the grant (or before the signed manifest became the
 // ceiling), so its organisation never consented to what the manifest alone now
 // asks for.
-var ErrModuleInstallationConsentRequired = errors.New("this installation follows an administrative envelope this host does not have, so its organisation has not consented to the signed manifest's ceiling; an organization owner or admin must call host.installation.v1.InstallationService/Install again with this module as target (or saas.accounts.v1.InstallationService/InstallSolution with its target_id) to approve the current ceiling")
+var ErrModuleInstallationConsentRequired = errors.New("this installation follows an administrative envelope this host does not have, so its organisation has not consented to the signed manifest's ceiling; an organization owner or admin must call host.installation.v1.InstallationService/Install again with this module as target (or saas.accounts.v1.InstallationService/InstallSolution with its target_id) with approval.target_id and generation from ListAvailableSolutions, expected_revision from the installation listing, and a fresh operation_id to approve that reviewed ceiling")
 
 // ModuleInstallationConsentRequiredReason is the google.rpc.ErrorInfo reason a
 // capability refused for ErrModuleInstallationConsentRequired carries: an

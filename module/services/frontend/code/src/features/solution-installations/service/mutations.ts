@@ -16,14 +16,19 @@ export function useInstallSolution(orgId: string) {
 	return useMutation({
 		mutationFn: ({
 			targetId,
+			generation,
+			operationId,
 			values,
 		}: {
 			targetId: string;
+			generation: bigint;
+			operationId: string;
 			values: InstallSolutionValues;
 		}) =>
 			service.installSolution({
 				orgId,
 				targetId,
+				approval: { targetId, generation, expectedRevision: BigInt(0), operationId },
 				agentIdentifier: values.agentIdentifier.trim(),
 				displayName: values.displayName.trim(),
 				rootScopeLabel: values.rootScopeLabel.trim(),

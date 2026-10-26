@@ -26,19 +26,21 @@ var ErrInstallTargetNotPresent = errors.New("no installable target answers to th
 // It resolves and nothing more: the catalogue is the one ListAvailableSolutions
 // serves, so nothing is installable here that an administrator could not pick,
 // and the install is InstallSolution, with every check it makes. An
-// organisation that already holds an active installation of the target gets
-// that installation back. An explicit module re-install
-// records fresh consent through InstallSolution (installed is true); a solution
-// retains its lifecycle (installed is false). Held is what the catalogue's
+// unchanged retry gets its installation back. A fresh module approval records
+// consent through InstallSolution; a solution retains its acknowledged lifecycle.
+// Held is what the catalogue's
 // `installed` means: any installation not revoked, a pending one among them.
-func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, target, role, ownerID string) (installation *gen.Installation, installed bool, err error) {
-	available, err := s.availableTargetNamed(ctx, orgID, target)
+func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, target, role, ownerID string, approval *InstallationApproval) (installation *gen.Installation, installed bool, err error) {
+	approval, err = approval.bindIntent(struct {
+		Actor, Org, Target, Role, Owner string
+		Approval                        *InstallationApproval
+	}{actorID, orgID, target, role, ownerID, approval})
 	if err != nil {
 		return nil, false, err
 	}
-	if available.Installed && available.Kind != "module" {
-		existing, err := s.heldTargetInstallation(ctx, orgID, available.TargetID)
-		return existing, false, err
+	available, err := s.availableTargetNamed(ctx, orgID, target)
+	if err != nil {
+		return nil, false, err
 	}
 	var coOwners []string
 	if available.Installed {
@@ -67,6 +69,7 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		return nil, false, err
 	}
 	installation, err = s.InstallSolution(ctx, actorID, &InstallSolutionParams{
+		Approval:            approval,
 		OrgID:               orgID,
 		AgentIdentifier:     available.ReleasePublisher + "/" + available.ReleaseName + ":" + available.ReleaseVersion,
 		TargetID:            available.TargetID,
