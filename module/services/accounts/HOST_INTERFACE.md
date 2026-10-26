@@ -925,7 +925,7 @@ The shared suite now reports **40 of 45 shared cases passing, 5 failing**
 
 | Case | What the host must change |
 | --- | --- |
-| a delegation issues as its grantor | implement `Delegate`, `GetDelegation`, `RevokeDelegation` and Issue from a delegation |
+| a delegation issues as its grantor | served: see "Delegations to a module" below |
 
 ## An installation owns its capability as its agent (2026-10-26)
 
@@ -972,6 +972,7 @@ suite has not reached the second and third hops yet. The unit test
 `TestAHopFromAnInstallationOwnedParentInheritsTheInstallationsStandingGrants`
 covers two agent-owned hops.
 
+<<<<<<< HEAD
 ## A hop's actor is the module's name (2026-10-26)
 
 On the coordinator's decision, a hop through a binding names its actor by the
@@ -1012,3 +1013,41 @@ harness cases). "a module tool binding carries the person's solution role",
 subcase of "child target projection" are green. Still red: the delegation
 case and the child-projection delegation subcase (`Delegate` is
 unimplemented).
+||||||| parent of b6180538 (docs(accounts): delegations behind the host interface, and what still holds the case red)
+=======
+## Delegations to a module (2026-10-26)
+
+`Delegate`, `GetDelegation`, `RevokeDelegation` and Issue from a delegation are
+served. A delegation is a row of `module_delegations` (migration 48: tenant
+scoped, forced RLS, revoked once and never deleted, its grant immutable).
+
+- **Bounded by the grantor.** `Delegate` holds each delegated action to what
+  the signed-in person holds now, at the module or at an audience one of its
+  bindings reaches, by the check every mint makes; beyond that is
+  `PermissionDenied` (`delegates what they do not hold`).
+- **Issue from a delegation** proves the actor's workload, which must be the
+  delegation's module (anyone else: `NotFound`), refuses a revoked delegation
+  by name, and issues the module's one hop through the binding it names, for
+  the grantor (`owner_principal_id`) with the delegation's id on the hop: the
+  grantor's current grants through the binding, cut to what was delegated.
+  Every later hop of that chain is cut to the delegation again, re-read from the
+  store (a revoked or mismatched one refuses the hop), so a kind or a resource
+  the person did not delegate is never recovered below it.
+- **Revocation is immediate.** Only the grantor may revoke (anyone else is told
+  there is none). The row is stamped under the policy log like every other
+  narrowing, and the stamp advances the grantor's authorization revision in the
+  same statement, so every capability issued from it fails its next `Check`
+  and a child of one is refused. Its module reads it as ended through
+  `GetDelegation`, which, like `Issue`, admits a bearer-less call whose actor
+  credential authenticates it (`business.ShapeAuthenticated`).
+- **Evidence.** Suite pinned at authority `3222e991`: 40 of 45 shared cases
+  (43/48 with the three harness cases, the new one being "a delegation is
+  bounded by its grantor and ends with its revocation"). Both delegation cases
+  now fail only where they compare the acting hop's `principal_id` with the
+  module's name (decision 1); with exactly those two comparisons removed from a
+  local copy of the suite, "a delegation issues as its grantor" and "a narrowed
+  delegation parent stays narrowed down two hops" pass.
+- **Not done.** No audit event records a delegation or its revocation (a new
+  event type moves the event catalog); production wires no policy log, so a
+  deployed host refuses a revocation as it refuses every other narrowing.
+>>>>>>> b6180538 (docs(accounts): delegations behind the host interface, and what still holds the case red)
