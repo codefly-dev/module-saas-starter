@@ -240,8 +240,13 @@ type bindingJournal struct {
 	hops map[string]business.ActorChainHopInput
 }
 
+// AppendActorChainHop keeps the first row under an id, as Postgres does
+// (ON CONFLICT (id) DO NOTHING): a second append under the same id is absorbed,
+// never recorded over the first.
 func (j *bindingJournal) AppendActorChainHop(_ context.Context, hop business.ActorChainHopInput) (*business.ActorChainHop, error) {
-	j.hops[hop.ID] = hop
+	if _, kept := j.hops[hop.ID]; !kept {
+		j.hops[hop.ID] = hop
+	}
 	return &business.ActorChainHop{}, nil
 }
 

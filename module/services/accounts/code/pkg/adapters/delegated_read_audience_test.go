@@ -263,7 +263,7 @@ func TestDelegatedReadExchangePreservesChainAndRechecksAuthority(t *testing.T) {
 		require.Equal(t, actor.DelegationID, child.ActorChain[i].GetDelegationId())
 		require.NotZero(t, child.ActorChain[i].GetPrincipalEpoch())
 	}
-	require.Equal(t, []string{"hop-1", "hop-2"}, journal.ids)
+	require.Subset(t, journal.ids, []string{"hop-1", "hop-2"}, "every hop's own journal row is asked about")
 	for _, hop := range journal.ids {
 		journal.revoked = hop
 		out, err = invoke()

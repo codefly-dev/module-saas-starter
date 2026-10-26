@@ -51,7 +51,7 @@ func (s *WorkContextAuthorityServer) requireInstallationStands(ctx context.Conte
 		return "", nil, status.Errorf(codes.PermissionDenied, "installation %s no longer acts through agent %s", installation, agent)
 	}
 	if chain := wc.GetActorChain(); len(chain) > 0 {
-		if err := s.requireChainNotRevoked(ctx, tenant, chain); err != nil {
+		if err := s.requireChainNotRevoked(ctx, tenant, wc.GetTaskId(), chain); err != nil {
 			return "", nil, err
 		}
 	} else if err := enforceActorCeiling(ctx, facts.Actor, wc.GetAudience(), carried); err != nil {

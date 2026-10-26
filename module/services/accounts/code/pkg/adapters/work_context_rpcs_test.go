@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -365,7 +366,9 @@ func TestWorkContextReadOraclesRequireTheCallingModuleAndProjectExactFacts(t *te
 	})
 	require.NoError(t, server.configureErr)
 
-	orgID := "019fec91-1000-7000-8000-000000000001"
+	// The calling module is installed in its own tenant, so that is the one
+	// organisation it is answered about.
+	orgID := moduleWorkContextTenant
 	ownerID := "019fec91-1000-7000-8000-000000000002"
 	actorID := "019fec91-1000-7000-8000-000000000003"
 	sealsNone := true
@@ -399,6 +402,26 @@ func TestWorkContextReadOraclesRequireTheCallingModuleAndProjectExactFacts(t *te
 	require.Equal(t, "evidence", fake.revisionSubjects[0].Permissions[0].ResourceKind)
 	require.Equal(t, orgID, fake.verifiedTenant)
 	require.Equal(t, ownerID, fake.verifiedUser)
+
+	// Another organisation, where the module is not installed, and one that
+	// does not exist are refused alike, by name, before anything is read.
+	elsewhere := func(org string) error {
+		other := proto.CloneOf(revisionRequest)
+		other.OrgId = org
+		_, err := server.CheckAuthorizationRevision(moduleContext, other)
+		return err
+	}
+	fake.revisionOrg = ""
+	notInstalled := elsewhere("019fec91-1000-7000-8000-000000000001")
+	absent := elsewhere("019fec91-1000-7000-8000-0000000000ff")
+	require.Equal(t, codes.PermissionDenied, status.Code(notInstalled))
+	require.Contains(t, status.Convert(notInstalled).Message(), "not installed in organization 019fec91-1000-7000-8000-000000000001")
+	require.Equal(t, strings.Replace(status.Convert(notInstalled).Message(), "000000000001", "0000000000ff", 1), status.Convert(absent).Message())
+	require.Equal(t, codes.PermissionDenied, status.Code(absent))
+	require.Empty(t, fake.revisionOrg, "nothing is read for an organisation the module is not installed in")
+	_, err = server.AuthorizeEvidenceRead(moduleContext, &gen.AuthorizeEvidenceReadRequest{OrgId: "019fec91-1000-7000-8000-000000000001", CallerPrincipalId: actorID})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "not installed in organization")
 
 	fake.revisionErr = business.ErrWorkContextAuthorizationStale
 	_, err = server.CheckAuthorizationRevision(moduleContext, revisionRequest)
