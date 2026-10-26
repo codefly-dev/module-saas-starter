@@ -926,8 +926,6 @@ The shared suite now reports **40 of 45 shared cases passing, 5 failing**
 | Case | What the host must change |
 | --- | --- |
 | a delegation issues as its grantor | implement `Delegate`, `GetDelegation`, `RevokeDelegation` and Issue from a delegation |
-| a module tool binding carries the person's role; child target projection | a hop's actor is the module's name, not its registry principal id: every reader of a hop principal (seal, epoch and binding answers, the journal, solution-role paths) must resolve the name |
-| an installation owner survives | (owner done, see below) the hop's actor is the module's name: decision 1 above |
 
 ## An installation owns its capability as its agent (2026-10-26)
 
@@ -974,3 +972,43 @@ suite has not reached the second and third hops yet. The unit test
 `TestAHopFromAnInstallationOwnedParentInheritsTheInstallationsStandingGrants`
 covers two agent-owned hops.
 
+## A hop's actor is the module's name (2026-10-26)
+
+On the coordinator's decision, a hop through a binding names its actor by the
+module's NAME, as binding ids (`<organisation>/<module>/<binding>`) already
+name it; the registry id (`ModulePrincipalID`) stays this host's storage
+identity.
+
+- **The binding answer.** A module's installed operation binding is answered
+  as granted to the module's name; core holds the exercising principal to it
+  by equality, so another module (by name or id) cannot exercise it, and the
+  host refuses to sign such a hop before core would. The module's own headless
+  context (`StartModuleOperationTask`) is still owned by its registry id,
+  because the consumer contract (`CheckAuthorizationRevision`) types an owner
+  and every subject as a UUID; the seal source answers that context in its
+  owner's spelling, exactly when the owner is the binding's module
+  (`hostSealSource.grantee`). Moving headless owners to the name too needs that
+  contract to accept a module name, which is a regeneration of
+  `saas.accounts.v1`, not done here.
+- **Seal, epoch and revision answers** resolve a principal to the declared
+  module by its name or its registry id (`ModulePrincipalRegistry.RegistryIDOf`),
+  locally and on the module authority surface. A module named as a UUID is
+  refused at registry derivation (`ValidateModulePrincipalGrant`), so names and
+  ids never collide; two manifests asking for one name were already refused.
+- **The journal** records a module actor under its registry id (the column is
+  typed as an id; a name would have been dropped to NULL).
+- **The solution-role path** reads the hop principals as names, which is what
+  `PersonSolutionRoles` was always given.
+- **The revision check** (`ConfirmModuleHopBinding`, `IsDeclaredModulePrincipal`)
+  resolves a hop's module by name.
+- Not moved: the source-delegation and installed-content hops and the module's
+  own identity capability still carry the registry id; the interface issues
+  none of them yet, and every reader above resolves both spellings.
+
+With the installation-owner work above (rebased onto `acf1593c`), the
+shared suite reports **43 of 45 shared cases passing** (45/47 with the two
+harness cases). "a module tool binding carries the person's solution role",
+"an installation owner survives successive module actors" and the first
+subcase of "child target projection" are green. Still red: the delegation
+case and the child-projection delegation subcase (`Delegate` is
+unimplemented).
