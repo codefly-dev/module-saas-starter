@@ -36,6 +36,9 @@ func (s *HostAuthorityServer) ListResources(ctx context.Context, req *authorityv
 		return nil, interfaceStatus(err)
 	}
 	wc := capability.Context()
+	if err := requireModuleChainStands(ctx, wc); err != nil {
+		return nil, err
+	}
 	// An installation's agent owns its capability by its installation's
 	// standing, re-read here as Check re-reads it.
 	if wc.GetOwnerPrincipalKind() == business.PrincipalKindAgent {

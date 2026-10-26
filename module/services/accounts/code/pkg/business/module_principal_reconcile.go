@@ -479,7 +479,9 @@ func (r *ModulePrincipalReconciler) appliedManifestsVerified(
 			refuse(errors.New("the stored carrier is not the applied manifest"))
 			continue
 		}
-		manifests = append(manifests, manifest)
+		// What grants is the manifest the signature covers, read from the
+		// verified bytes, never the applied record that merely matches it.
+		manifests = append(manifests, verified)
 	}
 	return manifests, refusals
 }

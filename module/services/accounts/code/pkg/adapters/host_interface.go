@@ -86,6 +86,9 @@ func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckR
 	if err != nil {
 		return nil, interfaceStatus(err)
 	}
+	if err := requireModuleChainStands(ctx, verified.Context()); err != nil {
+		return nil, err
+	}
 	// An installation's agent owns its capability by its installation's
 	// standing, which core's seal and revision do not wholly carry (a
 	// standing grant narrowed moves neither), so it is re-read here.
@@ -738,6 +741,9 @@ func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, 
 	parent, err := s.workContexts.verifyFor(ctx, parentToken, prefix)
 	if err != nil {
 		return nil, interfaceStatus(err)
+	}
+	if err := requireModuleChainStands(ctx, parent.Context()); err != nil {
+		return nil, err
 	}
 	return s.bindingHop(ctx, prefix, parent, req)
 }

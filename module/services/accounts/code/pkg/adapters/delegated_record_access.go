@@ -53,8 +53,8 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 		if installedRead {
 			continue
 		}
-		if !slices.Contains(subjects, actor.GetPrincipalId()) {
-			subjects = append(subjects, actor.GetPrincipalId())
+		if subject := storedPrincipal(actor.GetPrincipalId()); !slices.Contains(subjects, subject) {
+			subjects = append(subjects, subject)
 		}
 	}
 	current := func(ctx context.Context) error {

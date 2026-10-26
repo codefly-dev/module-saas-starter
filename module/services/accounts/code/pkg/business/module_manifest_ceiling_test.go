@@ -176,6 +176,50 @@ func TestWithNoEnvelopeAnUnverifiedManifestGrantsNothing(t *testing.T) {
 	require.Empty(t, host.service.ModulePrincipals())
 }
 
+// With no envelope the signed manifest is the grant, so its signature is what
+// stands in front of the grant. Every way the applied manifest can fail to be
+// the signed one grants nothing: no signature, a carrier the inbox does not
+// hold, no pinned keys to verify with, and an applied document that is not the
+// one the signature covers (a manifest edited to ask for more after signing).
+func TestWithNoEnvelopeOnlyAVerifiedSignatureGrants(t *testing.T) {
+	asking := testManifest(t, map[string][]string{"invoke": {"profiles:read"}})
+	key := fmt.Sprintf("%s@%d", asking.Binding, asking.Generation)
+	for name, spoil := range map[string]func(t *testing.T, host *SolutionHostBindingReconciler){
+		"unsigned": func(t *testing.T, host *SolutionHostBindingReconciler) {
+			host.service.deliveryStore.(signedInbox).rows[key].Envelope = nil
+		},
+		"no carrier in the inbox": func(t *testing.T, host *SolutionHostBindingReconciler) {
+			delete(host.service.deliveryStore.(signedInbox).rows, key)
+		},
+		"no pinned keys": func(t *testing.T, host *SolutionHostBindingReconciler) {
+			host.verifier = nil
+		},
+		"an applied document the signature does not cover": func(t *testing.T, host *SolutionHostBindingReconciler) {
+			wider := testManifest(t, map[string][]string{"invoke": {"profiles:read", "profiles:write"}})
+			document, err := solutionhost.Marshal(wider)
+			require.NoError(t, err)
+			digest, err := wider.Digest()
+			require.NoError(t, err)
+			applied := host.service.store.(appliedBindingsStore).records[0].Applied
+			applied.Document, applied.Digest = string(document), digest
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			host := deliveredHost(t, noEnvelopeWritten{}, ceilingReleaseKey, asking)
+			spoil(t, host)
+			err := host.modulePrincipals.RunOnce(context.Background())
+			require.ErrorIs(t, err, ErrModulePrincipalOmitted)
+			require.Contains(t, err.Error(), `binding "acme.test.reports" generation 1 grants nothing`)
+			require.Empty(t, host.service.ModulePrincipals())
+		})
+	}
+	// And the same manifest, signed and verified, does grant: the refusals
+	// above are the signature's, not the fixture's.
+	host := deliveredHost(t, noEnvelopeWritten{}, ceilingReleaseKey, asking)
+	require.NoError(t, host.modulePrincipals.RunOnce(context.Background()))
+	require.Len(t, host.service.ModulePrincipals(), 1)
+}
+
 // A read failure never adds authority: an envelope store that cannot answer is
 // not read as "none written", so the manifests do not stand alone.
 func TestAnUnreadableEnvelopeIsNotReadAsNone(t *testing.T) {

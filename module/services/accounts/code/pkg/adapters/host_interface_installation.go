@@ -87,7 +87,9 @@ func (s *HostAuthorityServer) forInstallation(ctx context.Context, installationI
 
 // installationOrganization is the organisation an installation's work runs in:
 // the one the request names, held to the solution's own tenant when the
-// composition pins one, or that tenant when the request names none.
+// composition pins one (a pinned principal is never issued outside its pin,
+// whatever cross_tenant says: ModulePrincipalGrant.IssuedIn), or that tenant when the
+// request names none.
 func installationOrganization(prefix, named string) (string, error) {
 	grant := service.ModulePrincipals()[business.ModulePrincipalID(prefix)]
 	switch {
@@ -95,7 +97,7 @@ func installationOrganization(prefix, named string) (string, error) {
 		return "", status.Errorf(codes.InvalidArgument, "%s is not pinned to one organization, so its installation's issue names the organization", prefix)
 	case named == "":
 		return grant.Tenant, nil
-	case grant.Tenant != "" && named != grant.Tenant && !grant.CrossTenant:
+	case !grant.IssuedIn(named):
 		return "", status.Errorf(codes.PermissionDenied, "%s acts in organization %s, not %s", prefix, grant.Tenant, named)
 	}
 	return named, nil

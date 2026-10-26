@@ -216,6 +216,23 @@ func (s *WorkContextAuthorityServer) confirmCurrentAuthority(
 			Permissions: permissions,
 		})
 	}
+	// Every module hop upstream of the last is held to the binding it hopped
+	// through, as the last is to the binding the context seals above: the
+	// subjects after the owner are the actor chain, in its order.
+	if hops := req.GetSubjects()[1:]; len(hops) > 1 && service != nil {
+		chain := make([]business.ModuleChainHop, 0, len(hops))
+		for _, subject := range hops {
+			chain = append(chain, business.ModuleChainHop{Principal: subject.GetPrincipalId(), Scopes: moduleScopesOf(subject)})
+		}
+		if err := service.ConfirmModuleChain(ctx, req.GetOrgId(), "", chain); err != nil {
+			wool.Get(ctx).In("CheckAuthorizationRevision").Warn("a module hop upstream in this Work Context no longer stands",
+				wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()), wool.ErrField(err))
+			if status.Code(err) == codes.Unavailable {
+				return err
+			}
+			return status.Error(codes.PermissionDenied, business.ErrModuleHopStale.Error())
+		}
+	}
 	// Only a subject the STORE must answer for needs the store.
 	if len(subjects) == 0 {
 		return nil
@@ -1689,10 +1706,8 @@ func (s *WorkContextAuthorityServer) journalActorHop(
 		parentDelegationID = chain[index-1].GetDelegationId()
 	}
 	actorID := actor.GetPrincipalId()
-	if actor.GetPrincipalKind() == business.PrincipalKindService && service != nil {
-		if id, isModule := service.ModuleRegistryID(actorID); isModule {
-			actorID = id
-		}
+	if actor.GetPrincipalKind() == business.PrincipalKindService {
+		actorID = storedPrincipal(actorID)
 	}
 	_, err := s.journal.AppendActorChainHop(ctx, business.ActorChainHopInput{
 		ID:                    actor.GetDelegationId(),

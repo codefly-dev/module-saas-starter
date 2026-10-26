@@ -277,6 +277,18 @@ func (e ExecutionIdentity) auditFields() map[string]any {
 	}
 }
 
+// IssuedIn reports whether a capability of this principal's own — its module
+// mint, its headless context, its installation's issue — may be issued in
+// orgID: a principal pinned to a tenant is issued in that tenant only, whatever
+// cross_tenant says, and an unpinned one in the organisation the work names.
+// cross_tenant lets a principal's installed authority serve installations in
+// other organisations (moduleAvailableToOrganization); it never moves where
+// the principal itself is issued. This is the one statement of the pin rule;
+// the mint below and the host interface's installation issue both read it.
+func (g ModulePrincipalGrant) IssuedIn(orgID string) bool {
+	return orgID != "" && (g.Tenant == "" || g.Tenant == orgID)
+}
+
 // A shared principal selects consent, not authority: execution still proves the
 // principal and the subsequent live read must find that org's installation.
 // A tenant-pinned principal cannot switch orgs even if it has cross_tenant.
@@ -294,7 +306,7 @@ func moduleMintOrganization(grant ModulePrincipalGrant, requested []string) (str
 		}
 	}
 	if grant.Tenant != "" {
-		if org != "" && org != grant.Tenant {
+		if org != "" && !grant.IssuedIn(org) {
 			return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "requested organization differs from pinned tenant")
 		}
 		return grant.Tenant, nil

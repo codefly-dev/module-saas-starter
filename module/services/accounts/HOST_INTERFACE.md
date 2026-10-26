@@ -972,7 +972,6 @@ suite has not reached the second and third hops yet. The unit test
 `TestAHopFromAnInstallationOwnedParentInheritsTheInstallationsStandingGrants`
 covers two agent-owned hops.
 
-<<<<<<< HEAD
 ## A hop's actor is the module's name (2026-10-26)
 
 On the coordinator's decision, a hop through a binding names its actor by the
@@ -1013,8 +1012,7 @@ harness cases). "a module tool binding carries the person's solution role",
 subcase of "child target projection" are green. Still red: the delegation
 case and the child-projection delegation subcase (`Delegate` is
 unimplemented).
-||||||| parent of b6180538 (docs(accounts): delegations behind the host interface, and what still holds the case red)
-=======
+
 ## Delegations to a module (2026-10-26)
 
 `Delegate`, `GetDelegation`, `RevokeDelegation` and Issue from a delegation are
@@ -1051,4 +1049,46 @@ scoped, forced RLS, revoked once and never deleted, its grant immutable).
 - **Not done.** No audit event records a delegation or its revocation (a new
   event type moves the event catalog); production wires no policy log, so a
   deployed host refuses a revocation as it refuses every other narrowing.
->>>>>>> b6180538 (docs(accounts): delegations behind the host interface, and what still holds the case red)
+
+## Review r93: chains, pins and the signed manifest (2026-10-26)
+
+- **Every hop of a chain is re-read.** A capability seals one binding, its
+  last hop's, and core re-reads only that one; a child therefore kept
+  verifying while a binding upstream of it narrowed or was withdrawn.
+  `ConfirmModuleChain` now holds each module hop to the binding it hopped
+  through (its module's binding addressed to the next hop's module, or to the
+  capability's audience for the last): the binding must still be installed,
+  and every scope the hop carries of a kind that binding governs must still lie
+  within it. A kind the chain carried down from an upstream hop is therefore
+  held to that hop's binding as it is now (rule A: a narrowing is never
+  recovered, and an upstream one takes effect below it). It runs on the host
+  interface's `Check`, `ListResources` and on a parent before a hop is issued
+  from it, and on `CheckAuthorizationRevision` for every hop before the last
+  (the subjects after the owner are read as the actor chain, in order).
+- **One tenant-pin rule.** A principal pinned to a tenant is issued
+  capabilities in that tenant only, whatever `cross_tenant` says
+  (`ModulePrincipalGrant.IssuedIn`). The installation issue used to let a
+  pinned solution with `cross_tenant` be issued in another organisation while
+  the module mint refused; both now read the one rule. `cross_tenant` keeps
+  its one meaning: a principal's installed authority may serve installations
+  in other organisations (`moduleAvailableToOrganization`, which the
+  source-delegation and installation paths rely on); it never moves where the
+  principal itself is issued.
+- **With no envelope, only a verified signature grants.** The accepted rule is
+  that the signed manifest is the ceiling when no envelope is written. What
+  stands in front of the grant is the signature: the applied manifest's
+  carrier is re-read from the delivery inbox and verified under the pinned
+  keys on every registry pass, and its digest must be the applied
+  generation's. The grant is now derived from the verified bytes themselves.
+  An unsigned carrier, no carrier, no pinned keys, a key the pins do not hold,
+  and an applied document the signature does not cover each grant nothing
+  (`TestWithNoEnvelopeOnlyAVerifiedSignatureGrants`,
+  `TestWithNoEnvelopeAnUnverifiedManifestGrantsNothing`).
+- **Readers of a hop actor beyond the token.** No other service in this
+  repository compares a hop actor to a registry id (the auth gateway forwards
+  principals without reading them). Inside accounts, the delegated record
+  access and readable-sources paths hand a hop's actor to storage as a grant
+  subject; a module named by its name is now handed over as its registry id
+  there, as the journal already was. The remaining registry-id comparisons are
+  on capabilities that still carry the registry id (source delegations,
+  installed-content reads, the module's own identity and headless contexts).
