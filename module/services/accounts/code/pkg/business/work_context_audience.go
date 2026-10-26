@@ -43,7 +43,10 @@ import (
 //     good at a successor declared under the same alias until it expires. That
 //     is bounded by the capability's lifetime and by the per-request
 //     installation admission the gateway makes before forwarding it.
-//  5. Nothing else. The gateway's own name is never an audience: a capability
+//  5. The host's own source-operation and directory audiences. These have no
+//     installation of their own; an installed module_actor binding retains the
+//     calling module's seal when it addresses either host surface.
+//  6. Nothing else. The gateway's own name is never an audience: a capability
 //     addressed to the forwarding hop is one the hop would consume rather than
 //     forward.
 //
@@ -66,6 +69,11 @@ const (
 	// ModuleWorkContextAudience constant is pinned to it by a test — two spellings
 	// of one audience is exactly the drift this set exists to prevent.
 	ModuleCapabilitiesAudience = "module-capabilities"
+
+	// DirectoryAudience addresses the host's organization-directory reads.
+	// A module exchanges its admitted person's context through an installed
+	// operation binding before forwarding it to this surface.
+	DirectoryAudience = "saas-directory"
 )
 
 // SolutionAudience is the audience of a declared solution binding.
@@ -195,6 +203,7 @@ func (s *Service) HostAudiences(ctx context.Context) (map[string]struct{}, error
 	set := make(map[string]struct{}, len(bindings)+len(modules)+1)
 	set[ModuleCapabilitiesAudience] = struct{}{}
 	set[SourceOperationAudience] = struct{}{}
+	set[DirectoryAudience] = struct{}{}
 	for _, binding := range bindings {
 		if id := strings.TrimSpace(binding.BindingID); id != "" {
 			set[SolutionAudience(id)] = struct{}{}

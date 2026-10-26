@@ -36,7 +36,8 @@ func TestALiveDeclaredModuleAliasIsAnAudience(t *testing.T) {
 	require.Contains(t, audiences, SolutionAudience("acme.test.documents"))
 	require.Contains(t, audiences, SolutionAudience("acme.test.notebook"))
 	require.NotContains(t, audiences, "notebook", "a solution is addressed by its binding, never its alias")
-	require.Len(t, audiences, 5, "module-capabilities, source operations, two bindings and one module alias")
+	require.Contains(t, audiences, DirectoryAudience)
+	require.Len(t, audiences, 6, "module-capabilities, source operations, directory, two bindings and one module alias")
 	require.NoError(t, service.RequireHostAudience(context.Background(), "documents"))
 	require.ErrorIs(t, service.RequireHostAudience(context.Background(), "notebook"), ErrAudienceNotInHostVocabulary)
 }
