@@ -132,8 +132,14 @@ func TestAuthorizationCatalogValidationRejectsUnsafeDrift(t *testing.T) {
 	wrongFailureMode.Methods[failsOpen].RateLimitBackendFailureMode = catalogv1.RateLimitBackendFailureMode_RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED
 	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(wrongFailureMode), "failure mode")
 
+	// A factor attempt on a method that is not a public secret authentication
+	// request: one that is (a workload-credential call) would be admissible.
 	invalidFactor := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
-	invalidFactor.Methods[0].Policy.AuthenticationFactorAttempt = true
+	authenticated := slices.IndexFunc(invalidFactor.Methods, func(m *catalogv1.AuthorizationMethod) bool {
+		return m.GetPolicy().GetExposure() == policyv1.Exposure_EXPOSURE_AUTHENTICATED
+	})
+	require.GreaterOrEqual(t, authenticated, 0)
+	invalidFactor.Methods[authenticated].Policy.AuthenticationFactorAttempt = true
 	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(invalidFactor), "authentication-factor")
 
 	invalidCondition := proto.Clone(catalog).(*catalogv1.AuthorizationCatalog)
