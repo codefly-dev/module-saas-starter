@@ -156,7 +156,8 @@ func readBackRefusal(err error) (gen.WorkloadOperationRefusal, bool) {
 
 // isModuleOperationContextShape reports whether a service principal's claims
 // are exactly what StartModuleOperationTask signs: the module acting as itself
-// (no actor chain, no grant hop, no operation binding, no owner agent), a root
+// (no actor chain, no grant hop, no owner agent, and no operation binding but
+// one of the owner's own installed ones, which that mint names), a root
 // session of its own task, the binding's headless scopes, idempotent, and no
 // longer than the operation-context window. Anything a re-mint, a child or
 // another service mint would add is a difference, and a difference refuses.
@@ -164,7 +165,8 @@ func isModuleOperationContextShape(claims *basev0.WorkContextV1) bool {
 	window := time.Duration(claims.GetExpiresAtUnix()-claims.GetIssuedAtUnix()) * time.Second
 	return len(claims.GetActorChain()) == 0 &&
 		claims.GrantHop == nil &&
-		claims.OperationBinding == nil &&
+		(claims.OperationBinding == nil ||
+			business.IsModuleOperationBindingOf(claims.GetOperationBinding().GetBindingId(), claims.GetTenantId(), claims.GetOwnerPrincipalId())) &&
 		claims.OwnerAgentId == nil &&
 		claims.ParentSessionId == nil &&
 		claims.WorkspaceId == nil &&

@@ -30,12 +30,25 @@ var ErrModuleHopStale = errors.New("the module authority this Work Context asser
 // OWNER's, and the owner's own resolver compares it; a module hop carries no
 // revision of its own. What makes the hop current is that its installation
 // still declares the binding and still grants the scopes.
-func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalID, bindingID string, scopes []ModuleOperationScope) error {
+//
+// The hop names its module as the capability does: by name for a hop the host
+// interface issued, by registry id for the hops it does not. Either resolves
+// to the one declared module, and every comparison below is on its registry id.
+func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principal, bindingID string, scopes []ModuleOperationScope) error {
 	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
 	if fenceErr != nil {
 		return fenceErr
 	}
 	defer releaseAuthority()
+
+	snapshot := s.moduleRegistrySnapshot()
+	if snapshot == nil {
+		return ErrModuleHopStale
+	}
+	principalID, declared := snapshot.registry.RegistryIDOf(principal)
+	if !declared {
+		return ErrModuleHopStale
+	}
 
 	if NamesInstalledBinding(bindingID) {
 		identity, err := s.resolveInstalledBinding(ctx, orgID, bindingID)
@@ -61,12 +74,18 @@ func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalI
 	if bindingID == "" {
 		return ErrModuleHopStale
 	}
-	snapshot := s.moduleRegistrySnapshot()
-	if snapshot == nil {
-		return ErrModuleHopStale
-	}
-	if _, declared := snapshot.registry[principalID]; !declared {
-		return ErrModuleHopStale
+	// The binding id this host seals on a module's hop through a binding
+	// (<organisation>/<module>/<binding>, ModuleOperationBindingID). The hop
+	// exercising it is confirmed against that binding as below; another
+	// organisation's id confirms nothing. A module hop replayed ahead of it
+	// carries the owner's authority through the last hop's binding and nothing
+	// of its own: it stands while its module is installed here.
+	replayed := false
+	if org, prefix, key, sealed := parseModuleOperationBindingID(bindingID); sealed {
+		if org != orgID {
+			return ErrModuleHopStale
+		}
+		bindingID, replayed = key, ModulePrincipalID(prefix) != principalID
 	}
 	installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot,
 		ModuleCaller{PrincipalID: principalID, BoundOrg: orgID})
@@ -75,6 +94,9 @@ func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalI
 	}
 	if !moduleAvailableToOrganization(installed.Grant, orgID) {
 		return ErrModuleHopStale
+	}
+	if replayed {
+		return nil
 	}
 	binding, declared := installed.Grant.OperationAudiences[bindingID]
 	if !declared {
@@ -98,8 +120,9 @@ func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalI
 	return nil
 }
 
-// IsDeclaredModulePrincipal reports whether a principal id names a declared
-// module, so one caller can route a subject to the resolver that knows it.
+// IsDeclaredModulePrincipal reports whether a principal names a declared
+// module, by its name or its registry id, so one caller can route a subject to
+// the resolver that knows it.
 func (s *Service) IsDeclaredModulePrincipal(principalID string) bool {
 	return s.isDeclaredModulePrincipal(principalID)
 }
@@ -109,4 +132,123 @@ func (s *Service) IsDeclaredModulePrincipal(principalID string) bool {
 // rather than by the shape of the context.
 func NamesASourceDelegation(bindingID string) bool {
 	return namesASourceDelegation(bindingID)
+}
+
+// ModuleChainHop is one hop of a context's actor chain as the token carries
+// it: the principal acting and the scopes it was granted.
+type ModuleChainHop struct {
+	Principal string
+	Scopes    []ModuleOperationScope
+	// Through is the binding the hop went through and the scope set of it the
+	// hop was issued under, as the actor-chain journal recorded it; zero when
+	// the caller holds no record of it.
+	Through ActorChainHopBinding
+}
+
+// ConfirmModuleChain re-reads EVERY module hop of a chain against the binding
+// it hopped through, not only the last one the context seals.
+//
+// A context seals one binding, the last hop's, and core re-reads only that
+// one; without this a child kept verifying while a binding upstream of it was
+// withdrawn or narrowed, for as long as the child lived. A module hops only on
+// a token addressed to it, so hop i went through one of its module's bindings
+// addressed to the next hop's module (and the last hop through one addressed
+// to audience). That binding must still be installed here, and every scope the
+// hop carries of a kind its original journaled grant governed must still be within it: a kind
+// the chain carried down from that hop is held to the binding as it is now,
+// so a narrowing upstream takes effect below it (rule A: never recovered).
+// Kinds this hop did not grant are the owner's and other hops', checked
+// where they are held.
+//
+// audience is the context's own audience; empty leaves the last hop to the
+// caller, which confirms it by the binding the context seals. A hop that is
+// not a declared module (a person, a registered agent) is answered by the
+// authority store, not here.
+func (s *Service) ConfirmModuleChain(ctx context.Context, orgID, audience string, hops []ModuleChainHop) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+	snapshot := s.moduleRegistrySnapshot()
+	if snapshot == nil {
+		return ErrModuleHopStale
+	}
+	for i, hop := range hops {
+		id, isModule := snapshot.registry.RegistryIDOf(hop.Principal)
+		if !isModule {
+			continue
+		}
+		target := audience
+		if i+1 < len(hops) {
+			target = hops[i+1].Principal
+			if next, ok := snapshot.registry.RegistryIDOf(target); ok {
+				target = snapshot.registry[next].Prefix
+			}
+		} else if target == "" {
+			continue
+		}
+		installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: id, BoundOrg: orgID})
+		if err != nil {
+			return err
+		}
+		if !moduleAvailableToOrganization(installed.Grant, orgID) {
+			return ErrModuleHopStale
+		}
+		if !hopWithinItsSet(snapshot.registry, installed.Grant, orgID, id, target, hop) {
+			return ErrModuleHopStale
+		}
+	}
+	return nil
+}
+
+// hopWithinItsSet holds a hop whose binding is on record to exactly the scope
+// set of that binding it was issued under: the binding must still be its
+// module's own, installed here and addressed to target, and every scope the
+// hop carries of a kind originally granted by this hop must lie within
+// that one set. A set narrowed, or a kind it dropped, ends the hop even while
+// another set of the same binding still grants it: a hop issued under invoke
+// never stands on lookup. A denial row (a kind and no action) widens nothing
+// and is not held.
+func hopWithinItsSet(registry ModulePrincipalRegistry, grant ModulePrincipalGrant, orgID, moduleID, target string, hop ModuleChainHop) bool {
+	org, prefix, key, ok := parseModuleOperationBindingID(hop.Through.BindingID)
+	if !ok || org != orgID {
+		return false
+	}
+	if owner, declared := registry.RegistryIDOf(prefix); !declared || owner != moduleID {
+		return false
+	}
+	binding, declared := grant.OperationAudiences[key]
+	if !declared || (target != "" && binding.Audience != target) {
+		return false
+	}
+	var set []ModuleOperationScope
+	switch hop.Through.Operation {
+	case "invoke":
+		set = binding.InvokeScopes
+	case "lookup":
+		set = binding.LookupScopes
+	case "headless":
+		set = binding.HeadlessScopes
+	default:
+		return false
+	}
+	// Descendant tokens carry other hops' kinds too. The immutable journal,
+	// not today's declaration, identifies which kinds this hop granted.
+	if len(hop.Through.GrantedScopes) == 0 {
+		return false
+	}
+	governed := map[string]bool{}
+	for _, scope := range hop.Through.GrantedScopes {
+		governed[scope.ResourceKind] = true
+	}
+	for _, scope := range hop.Scopes {
+		if !governed[scope.ResourceKind] || len(scope.Actions) == 0 {
+			continue
+		}
+		if !operationScopesSubset([]ModuleOperationScope{scope}, set) {
+			return false
+		}
+	}
+	return true
 }

@@ -19,9 +19,6 @@ type moduleParentAuthentication struct {
 }
 
 func authenticateModuleParent(ctx context.Context, encoded string) (moduleParentAuthentication, error) {
-	if err := requireInternalCredential(ctx); err != nil {
-		return moduleParentAuthentication{}, err
-	}
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get(workContextHeader)) != 1 {
 		return moduleParentAuthentication{}, status.Error(codes.Unauthenticated, "one module Work Context required")

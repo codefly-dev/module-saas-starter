@@ -236,6 +236,10 @@ type SolutionHostBindingReconciler struct {
 	// into the service each pass.
 	modulePrincipals *ModulePrincipalReconciler
 
+	// afterPass runs at the end of every pass, once what the pass delivered is
+	// installable (AfterEachPass).
+	afterPass func(context.Context) error
+
 	// trigger asks the loop for a pass now. Buffered by one: a request made
 	// while a pass is pending is already satisfied by that pass.
 	trigger chan struct{}
@@ -267,9 +271,8 @@ type SolutionHostBindingReconcilerConfig struct {
 	// requested authority is intersected with — is read from on every pass,
 	// so a narrowing takes effect at the next pass with no restart.
 	//
-	// Optional, and its absence is not a weaker ceiling: no source, or no
-	// revision written, means the module registry is empty. It is never read
-	// out of a delivered manifest: a manifest requests, it never approves.
+	// Optional administrative narrowing for the existing installation surface.
+	// With no revision written, the applied signed manifest is the ceiling.
 	Envelopes ModuleEnvelopeSource
 }
 
@@ -400,6 +403,14 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 		}
 	}
 
+	// What waits on delivery runs last, once this pass's targets are open and
+	// the registry that decides who may install them is derived.
+	if r.afterPass != nil {
+		if err := r.afterPass(ctx); err != nil {
+			failures = append(failures, err)
+		}
+	}
+
 	// A document core refused to parse still gets its refusal recorded against
 	// the binding it names, so "delivery is shipping something this host cannot
 	// read" is visible beside the generation it last applied rather than only in
@@ -416,6 +427,14 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// AfterEachPass sets what runs at the end of every pass: work that waits on a
+// delivered target being installable, such as a fixture's declared
+// installations. Its refusal is reported with the pass's. Boot wiring, before
+// Start.
+func (r *SolutionHostBindingReconciler) AfterEachPass(run func(context.Context) error) {
+	r.afterPass = run
 }
 
 // Trigger asks for a pass now instead of at the next tick, without waiting for

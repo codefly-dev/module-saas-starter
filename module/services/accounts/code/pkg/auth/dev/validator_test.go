@@ -189,3 +189,33 @@ users:
 	require.NoError(t, err)
 	require.Equal(t, "dev", claims.Provider, "provider must default to 'dev' when omitted")
 }
+
+func TestFixtureTokensFollowWinningDeclarationsAndCannotMutateValidator(t *testing.T) {
+	path := writeFixture(t, `
+users:
+  - email: old@example.com
+    provider_id: old-subject
+    fixture_token: shared-token
+  - email: skipped@example.com
+  - email: middle@example.com
+    provider_id: fallback-token
+  - email: current@example.com
+    provider_id: current-subject
+    fixture_token: shared-token
+`)
+	v, err := devvalidator.New(path)
+	require.NoError(t, err)
+	tokens := v.FixtureTokens()
+	require.Equal(t, []string{"fallback-token", "shared-token"}, tokens)
+	for i, subject := range []string{"fallback-token", "current-subject"} {
+		claims, err := v.Validate(t.Context(), tokens[i])
+		require.NoError(t, err)
+		require.Equal(t, subject, claims.Subject)
+		claims.Subject = "changed-by-caller"
+	}
+	tokens[0] = "changed-by-caller"
+	require.Equal(t, []string{"fallback-token", "shared-token"}, v.FixtureTokens())
+	claims, err := v.Validate(t.Context(), "shared-token")
+	require.NoError(t, err)
+	require.Equal(t, "current-subject", claims.Subject)
+}

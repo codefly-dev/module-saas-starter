@@ -16,6 +16,11 @@
   "max_input_bytes": 4096,
   "max_output_bytes": 4096,
   "completion": "COMPLETION_CALL",
+  "tool": {
+    "description": "PruneSourceOperationReceipts expires response bodies after Invoke's declared total timeout plus a 24-hour lookup grace. It retains effect tombstones. The composition schedules this source-scoped host operation in the runtime. Shared sources require an org admin; personal sources require their owner.",
+    "effect": "EFFECT_MUTATION",
+    "name": "PruneSourceOperationReceipts"
+  },
   "required_scope_slots": [
     {
       "lookup": true,

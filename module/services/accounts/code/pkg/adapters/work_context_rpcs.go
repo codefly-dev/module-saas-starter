@@ -129,7 +129,9 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 // orchestrator makes to an owner it executes an operation for.
 //
 // Every refusal is PermissionDenied: a consumer must read a changed or forged
-// context as denied, never as an authority outage it may retry.
+// context as denied, never as an authority outage it may retry. The asking
+// module proves itself first (requireCallingModule); an unidentified caller is
+// Unauthenticated, which a consumer reads as its own composition's fault.
 func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	ctx context.Context,
 	req *gen.CheckAuthorizationRevisionRequest,
@@ -137,7 +139,7 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalCredential(ctx); err != nil {
+	if err := s.requireCallingModule(ctx, req.GetOrgId()); err != nil {
 		return nil, err
 	}
 	if len(req.GetSubjects()) == 0 ||
@@ -213,6 +215,23 @@ func (s *WorkContextAuthorityServer) confirmCurrentAuthority(
 			PrincipalID: principalID,
 			Permissions: permissions,
 		})
+	}
+	// Every module hop upstream of the last is held to the binding it hopped
+	// through, as the last is to the binding the context seals above: the
+	// subjects after the owner are the actor chain, in its order.
+	if hops := req.GetSubjects()[1:]; len(hops) > 1 && service != nil {
+		chain := make([]business.ModuleChainHop, 0, len(hops))
+		for _, subject := range hops {
+			chain = append(chain, business.ModuleChainHop{Principal: subject.GetPrincipalId(), Scopes: moduleScopesOf(subject)})
+		}
+		if err := service.ConfirmModuleChain(ctx, req.GetOrgId(), "", chain); err != nil {
+			wool.Get(ctx).In("CheckAuthorizationRevision").Warn("a module hop upstream in this Work Context no longer stands",
+				wool.Field("org", req.GetOrgId()), wool.Field("owner", req.GetOwnerPrincipalId()), wool.ErrField(err))
+			if status.Code(err) == codes.Unavailable {
+				return err
+			}
+			return status.Error(codes.PermissionDenied, business.ErrModuleHopStale.Error())
+		}
 	}
 	// Only a subject the STORE must answer for needs the store.
 	if len(subjects) == 0 {
@@ -294,6 +313,9 @@ func checkModuleOperationContextRevision(ctx context.Context, req *gen.CheckAuth
 	return true, nil
 }
 
+// AuthorizeEvidenceRead answers whether the caller principal may read the
+// evidence of the (owner, task, session) the request names. The asking module
+// proves itself (requireCallingModule) before anything is read.
 func (s *WorkContextAuthorityServer) AuthorizeEvidenceRead(
 	ctx context.Context,
 	req *gen.AuthorizeEvidenceReadRequest,
@@ -301,7 +323,7 @@ func (s *WorkContextAuthorityServer) AuthorizeEvidenceRead(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalCredential(ctx); err != nil {
+	if err := s.requireCallingModule(ctx, req.GetOrgId()); err != nil {
 		return nil, err
 	}
 	if s == nil || s.consumer == nil {
@@ -541,6 +563,10 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
 	}
+	if err := requireOperationBindingMint(ctx, req); err != nil {
+		return nil, err
+	}
+	authorityScopes := req.GetAuthorityScopes()
 	eligible := mintContentReads(req.GetAudience())
 	var standing []string
 	if service != nil && req.GetActorPrincipalId() == "" {
@@ -551,8 +577,20 @@ func (s *WorkContextAuthorityServer) StartTask(
 			return nil, err
 		}
 		defer release()
+		// Inside the authority span, so the installation the bindings resolve
+		// against is the one this capability is signed under.
+		if names := req.GetOperationBindings(); len(names) > 0 {
+			projection, err := s.withOperationBindingScopes(ctx, req.GetOrgId(), req.GetAudience(), authorityScopes, names)
+			if err != nil {
+				return nil, err
+			}
+			authorityScopes = projection.scopes
+			standing = append(standing, projection.identities...)
+			direct := eligible
+			eligible = func(kind string) bool { return direct(kind) || slices.Contains(projection.readKinds, kind) }
+		}
 		var kinds []string
-		for _, scope := range req.GetAuthorityScopes() {
+		for _, scope := range authorityScopes {
 			if len(scope.GetActions()) == 1 && scope.GetActions()[0] == "read" {
 				kinds = append(kinds, scope.GetResourceKind())
 			}
@@ -561,11 +599,11 @@ func (s *WorkContextAuthorityServer) StartTask(
 		if err != nil {
 			return nil, err
 		}
-		standing = identities
+		standing = append(standing, identities...)
 		direct := eligible
 		eligible = func(kind string) bool { return direct(kind) || slices.Contains(foreign, kind) }
 	}
-	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes(), eligible)
+	permissions, scopes, err := workContextScopes(authorityScopes, eligible)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -607,6 +645,9 @@ func (s *WorkContextAuthorityServer) StartTask(
 		return nil, err
 	}
 
+	if facts.Actor == nil {
+		scopes = append(scopes, droppedKindScopes(ctx, scopes)...)
+	}
 	request := mintRequest{
 		Start: workcontext.StartInput{
 			TenantID:           req.GetOrgId(),
@@ -640,7 +681,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 	}
 	token, signed, err := s.mint(ctx, request)
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	// The consumer's declaration must still be the one the ceiling was decided
 	// against now that the capability is signed and before it leaves: a binding
@@ -879,6 +920,33 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
+	return s.startInstallationTask(ctx, req, ownedByOwnerOfRecord)
+}
+
+// installationOwnership is whom an installation's capability names as its
+// owner. The two shapes carry the same authority (the agent's standing grants
+// within its ceiling) and differ in attribution only.
+type installationOwnership int
+
+const (
+	// ownedByOwnerOfRecord: the installation's human owner of record owns it
+	// and its agent is the sole actor. The internal headless mint and the
+	// install step: work a person put in motion and answers for.
+	ownedByOwnerOfRecord installationOwnership = iota
+	// ownedByAgent: the installation's agent owns it and nothing acts below
+	// it. An installation acting for itself behind the host interface: no
+	// person is acting, so naming one would misattribute the action.
+	ownedByAgent
+)
+
+// startInstallationTask is the headless mint once its caller is authenticated:
+// the internal credential on StartInstallationTask, the installed solution's
+// own workload behind the host interface (HostAuthorityServer.forInstallation).
+func (s *WorkContextAuthorityServer) startInstallationTask(
+	ctx context.Context,
+	req *gen.StartInstallationTaskRequest,
+	owner installationOwnership,
+) (*gen.IssuedWorkContext, error) {
 	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
 	}
@@ -904,12 +972,12 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err != nil {
 		return nil, err
 	}
-	return s.signInstallationTask(ctx, req, facts, scopes)
+	return s.signInstallationTask(ctx, req, facts, scopes, owner)
 }
 
 // Shared by the ordinary headless mint and the leased install step. Only the
 // latter resolves pending consent; neither path changes ordinary use admission.
-func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1) (*gen.IssuedWorkContext, error) {
+func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1, owner installationOwnership) (*gen.IssuedWorkContext, error) {
 	// An installation context is always agent-actored; a nil actor means the store
 	// broke its contract (a healthy resolve always names the agent). Fail closed
 	// rather than mint an unattributed token.
@@ -925,7 +993,7 @@ func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, r
 	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
-	return s.mintInstallationTask(ctx, req, facts, scopes)
+	return s.mintInstallationTask(ctx, req, facts, scopes, owner)
 }
 
 // InstallationStepResourceKind and InstallationStepAction name the one scope
@@ -978,41 +1046,53 @@ func (s *WorkContextAuthorityServer) signInstallationStep(ctx context.Context, r
 		ResourceIds:  []string{req.GetInstallationId()},
 	})
 	sort.SliceStable(step, func(i, j int) bool { return step[i].GetResourceKind() < step[j].GetResourceKind() })
-	return s.mintInstallationTask(ctx, req, facts, step)
+	return s.mintInstallationTask(ctx, req, facts, step, ownedByOwnerOfRecord)
 }
 
 // mintInstallationTask signs resolved, ceiling-checked installation authority.
-func (s *WorkContextAuthorityServer) mintInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1) (*gen.IssuedWorkContext, error) {
-	// Sealed to the installation the authority is drawn from, owned by its owner
-	// of record and actored by its agent. The session is a fresh one: this
-	// caller holds a service credential, not a session, and a session id a
-	// caller names is never signed (see callerSession).
-	token, signed, err := s.mint(ctx, mintRequest{
-		Start: workcontext.StartInput{
-			TenantID:           req.GetOrgId(),
-			OwnerPrincipalID:   facts.OwnerPrincipalID,
-			OwnerPrincipalKind: business.PrincipalKindHuman,
-			OrganizationID:     req.GetOrgId(),
-			TaskID:             req.GetTaskId(),
-			Audience:           req.GetAudience(),
-			AuthorityScopes:    scopes,
-			AttributionTeamIDs: facts.AttributionTeamIDs,
-			WorkspaceID:        req.GetWorkspaceId(),
-			ProjectID:          req.GetProjectId(),
-			InstallationID:     req.GetInstallationId(),
-		},
-		Hops: []delegationHop{{
+func (s *WorkContextAuthorityServer) mintInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1, owner installationOwnership) (*gen.IssuedWorkContext, error) {
+	// Sealed to the installation the authority is drawn from. The session is a
+	// fresh one: this caller holds a service credential, not a session, and a
+	// session id a caller names is never signed (see callerSession).
+	start := workcontext.StartInput{
+		TenantID:        req.GetOrgId(),
+		OrganizationID:  req.GetOrgId(),
+		TaskID:          req.GetTaskId(),
+		Audience:        req.GetAudience(),
+		AuthorityScopes: scopes,
+		WorkspaceID:     req.GetWorkspaceId(),
+		ProjectID:       req.GetProjectId(),
+		InstallationID:  req.GetInstallationId(),
+	}
+	var hops []delegationHop
+	switch owner {
+	case ownedByAgent:
+		// Owned by its agent, with nothing acting below it and no person's
+		// teams to attribute it to: the installation is the one acting.
+		if facts.Actor.Kind != business.PrincipalKindAgent || facts.Actor.AgentIdentifier == "" {
+			return nil, status.Error(codes.Internal, "installation authority resolved an actor that is not an identified agent")
+		}
+		start.OwnerPrincipalID, start.OwnerPrincipalKind, start.OwnerAgentID = facts.Actor.ID, business.PrincipalKindAgent, facts.Actor.AgentIdentifier
+	default:
+		// Owned by its owner of record and actored by its agent.
+		start.OwnerPrincipalID, start.OwnerPrincipalKind = facts.OwnerPrincipalID, business.PrincipalKindHuman
+		start.AttributionTeamIDs = facts.AttributionTeamIDs
+		hops = []delegationHop{{
 			PrincipalID:   facts.Actor.ID,
 			PrincipalKind: facts.Actor.Kind,
 			AgentID:       facts.Actor.AgentIdentifier,
 			DelegationID:  uuid.NewString(),
 			GrantedScopes: cloneWorkScopes(scopes),
-		}},
+		}}
+	}
+	token, signed, err := s.mint(ctx, mintRequest{
+		Start:  start,
+		Hops:   hops,
 		Replay: workContextReplayPolicy(req.GetReplayPolicy()),
 		TTL:    workContextTTL(req.GetTtlSeconds()),
 	})
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	if err := s.journalActorHop(ctx, signed); err != nil {
 		return nil, err
@@ -1134,8 +1214,17 @@ func (s *WorkContextAuthorityServer) StartModuleTask(
 			InstallationID:     authority.InstallationID,
 		},
 		Replay: workcontext.ReplayIdempotent,
-		TTL:    moduleWorkContextTTL,
+		TTL:    askedTTL(authority.TTL, moduleWorkContextTTL),
 	})
+}
+
+// askedTTL is the lifetime a mint signs: the one asked for when it is shorter
+// than the mint's ceiling, the ceiling otherwise.
+func askedTTL(asked, ceiling time.Duration) time.Duration {
+	if asked > 0 && asked < ceiling {
+		return asked
+	}
+	return ceiling
 }
 
 // StartModuleOperationTask mints the capability a composed module presents, with
@@ -1168,19 +1257,28 @@ func (s *WorkContextAuthorityServer) StartModuleOperationTask(
 	// The authorization revision is not an input: core reads it, from the same
 	// answer CheckAuthorizationRevision confirms a consumer's copy against
 	// (ModuleOperationContextRevision of the installed grant).
+	start := workcontext.StartInput{
+		TenantID:           authority.Tenant,
+		OwnerPrincipalID:   authority.PrincipalID,
+		OwnerPrincipalKind: business.PrincipalKindService,
+		OrganizationID:     authority.Tenant,
+		TaskID:             uuid.NewString(),
+		Audience:           authority.Audience,
+		AuthorityScopes:    scopes,
+		InstallationID:     authority.InstallationID,
+	}
+	if authority.BindingID != "" {
+		// The context names the binding it exercises, so a verifier resolves
+		// exactly that binding instead of fitting the scopes to one.
+		if authority.ModulePrefix == "" || business.ModulePrincipalID(authority.ModulePrefix) != authority.PrincipalID {
+			return "", nil, fmt.Errorf("%w: operation context binding names no module", workcontext.ErrInvalid)
+		}
+		start.OperationBindingID = business.ModuleOperationBindingID(authority.Tenant, authority.ModulePrefix, authority.BindingID)
+	}
 	return s.mint(ctx, mintRequest{
-		Start: workcontext.StartInput{
-			TenantID:           authority.Tenant,
-			OwnerPrincipalID:   authority.PrincipalID,
-			OwnerPrincipalKind: business.PrincipalKindService,
-			OrganizationID:     authority.Tenant,
-			TaskID:             uuid.NewString(),
-			Audience:           authority.Audience,
-			AuthorityScopes:    scopes,
-			InstallationID:     authority.InstallationID,
-		},
+		Start:  start,
 		Replay: workcontext.ReplayIdempotent,
-		TTL:    business.ModuleOperationContextTTL,
+		TTL:    askedTTL(authority.TTL, business.ModuleOperationContextTTL),
 	})
 }
 
@@ -1273,7 +1371,7 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
 		nil, "", moduleBindingSeal{})
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	return issuedWorkContext(token, signed), nil
 }
@@ -1329,7 +1427,7 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
 		attenuated, session, exercised)
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	return issuedWorkContext(token, signed), nil
 }
@@ -1451,7 +1549,7 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 		TTL:           ttl,
 	})
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	if err := s.journalActorHop(ctx, signed); err != nil {
 		return nil, err
@@ -1574,7 +1672,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	token, signed, err := s.remint(ctx, parent, audience, replayPolicy, workContextTTL(req.GetTtlSeconds()),
 		attenuated, "", moduleBindingSeal{})
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	return issuedWorkContext(token, signed), nil
 }
@@ -1585,9 +1683,58 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 // the ephemeral token share one identifier. Durability is a guarantee, not
 // best-effort: a failed append fails issuance rather than minting an
 // unaccountable token.
+//
+// The journal's principal columns are typed as ids, so a module actor the
+// token names by its name (a hop through a binding) is recorded under its
+// registry id: the same module, in the identity storage holds it by, instead of
+// a name the column cannot hold and would silently drop.
 func (s *WorkContextAuthorityServer) journalActorHop(
 	ctx context.Context,
 	signed *basev0.WorkContextV1,
+) error {
+	return s.journalHopThrough(ctx, signed, business.ActorChainHopBinding{}, "")
+}
+
+// journalRowID is the journal row a hop of a capability in taskID is recorded
+// under. A hop's own delegation id, as the token carries it, except for the
+// hop issued from a stored delegation: the interface states that hop's
+// delegation_id as the delegation's own (under), and every issue from one
+// delegation carries it, so the row is that delegation's within the task the
+// issue opened (a delegation's issue starts a fresh task, and every child of
+// it keeps that task). One row per issue, never one per delegation.
+func journalRowID(delegationID, taskID, under string) string {
+	if under != "" && delegationID == under {
+		return delegatedHopRowID(delegationID, taskID)
+	}
+	return delegationID
+}
+
+func delegatedHopRowID(delegationID, taskID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/delegated-hop/"+delegationID+"/"+taskID)).String()
+}
+
+// journalKeys is every row id a capability's hops may be recorded under: each
+// hop's own id, and the per-issue row a delegation's hop is recorded under. A
+// reader asks for both rather than deciding which hop acts under a delegation.
+func journalKeys(taskID string, chain []*basev0.WorkActorV1) []string {
+	keys := make([]string, 0, 2*len(chain))
+	for _, hop := range chain {
+		if id := hop.GetDelegationId(); id != "" {
+			keys = append(keys, id, delegatedHopRowID(id, taskID))
+		}
+	}
+	return keys
+}
+
+// journalHopThrough is journalActorHop for a module's hop through one of its
+// bindings: the row also records the binding and the scope set of it the hop
+// was issued under, which is what the hop is held to while it lives
+// (business.ConfirmModuleChain).
+func (s *WorkContextAuthorityServer) journalHopThrough(
+	ctx context.Context,
+	signed *basev0.WorkContextV1,
+	through business.ActorChainHopBinding,
+	under string,
 ) error {
 	if s.journal == nil {
 		return nil
@@ -1600,22 +1747,30 @@ func (s *WorkContextAuthorityServer) journalActorHop(
 	actor := chain[index]
 	parentDelegationID := ""
 	if index > 0 {
-		parentDelegationID = chain[index-1].GetDelegationId()
+		parentDelegationID = journalRowID(chain[index-1].GetDelegationId(), signed.GetTaskId(), under)
+	}
+	actorID := actor.GetPrincipalId()
+	if actor.GetPrincipalKind() == business.PrincipalKindService {
+		actorID = storedPrincipal(actorID)
 	}
 	_, err := s.journal.AppendActorChainHop(ctx, business.ActorChainHopInput{
-		ID:                    actor.GetDelegationId(),
+		ID:                    journalRowID(actor.GetDelegationId(), signed.GetTaskId(), under),
 		OrgID:                 signed.GetTenantId(),
 		TaskID:                signed.GetTaskId(),
 		SessionID:             signed.GetSessionId(),
 		OwnerPrincipalID:      signed.GetOwnerPrincipalId(),
-		ActorPrincipalID:      actor.GetPrincipalId(),
+		ActorPrincipalID:      actorID,
 		ActorKind:             actor.GetPrincipalKind(),
 		ParentDelegationID:    parentDelegationID,
 		GrantedScopes:         actorChainScopes(actor.GetGrantedScopes()),
 		AuthorizationRevision: signed.GetAuthorizationRevision(),
 		HopIndex:              index,
+		OperationBindingID:    through.BindingID,
+		Operation:             through.Operation,
 	})
 	if err != nil {
+		wool.Get(ctx).In("journalActorHop").Warn("the actor chain hop could not be persisted, so the capability is withheld",
+			wool.Field("org", signed.GetTenantId()), wool.Field("hop", actor.GetDelegationId()), wool.ErrField(err))
 		return status.Error(codes.Internal, "cannot persist actor chain hop")
 	}
 	return nil
@@ -1632,23 +1787,19 @@ func (s *WorkContextAuthorityServer) journalActorHop(
 // hops predate the journal and cannot have been revoked (revocation needs a row).
 func (s *WorkContextAuthorityServer) requireChainNotRevoked(
 	ctx context.Context,
-	orgID string,
+	orgID, taskID string,
 	actors []*basev0.WorkActorV1,
 ) error {
 	if s.journal == nil {
 		return nil
 	}
-	delegationIDs := make([]string, 0, len(actors))
-	for _, actor := range actors {
-		if id := actor.GetDelegationId(); id != "" {
-			delegationIDs = append(delegationIDs, id)
-		}
-	}
-	if len(delegationIDs) == 0 {
+	keys := journalKeys(taskID, actors)
+	if len(keys) == 0 {
 		return nil
 	}
-	revoked, err := s.journal.AnyActorChainHopRevoked(ctx, orgID, delegationIDs)
+	revoked, err := s.journal.AnyActorChainHopRevoked(ctx, orgID, keys)
 	if err != nil {
+		wool.Get(ctx).In("requireChainNotRevoked").Warn("the actor chain's revocation could not be read", wool.Field("org", orgID), wool.ErrField(err))
 		return status.Error(codes.Internal, "cannot check actor chain revocation")
 	}
 	if revoked {
@@ -1798,7 +1949,7 @@ func (s *WorkContextAuthorityServer) requireCurrentAuthority(
 		}
 		return nil, nil
 	}
-	if err := s.requireChainNotRevoked(ctx, orgID, parent.GetActorChain()); err != nil {
+	if err := s.requireChainNotRevoked(ctx, orgID, parent.GetTaskId(), parent.GetActorChain()); err != nil {
 		return nil, err
 	}
 	var outermostActor *business.Principal
@@ -2132,7 +2283,10 @@ func issuedWorkContext(
 // mapWorkContextError maps a refusal from core's minter. ErrRevoked — the
 // parent or the authority moved underneath the mint — is a precondition the
 // caller can re-establish; ErrInvalid is a request core will never sign.
-func mapWorkContextError(err error) error {
+// mapWorkContextError turns an issue or verification error into the status a
+// caller sees. A reason the caller must not learn is still named in this
+// service's own log: a refusal with no reason anywhere is a bug, not a posture.
+func mapWorkContextError(ctx context.Context, err error) error {
 	if _, isStatus := status.FromError(err); isStatus && status.Code(err) != codes.Unknown {
 		return err
 	}
@@ -2144,6 +2298,8 @@ func mapWorkContextError(err error) error {
 	case errors.Is(err, ErrWorkContextAuthorityUnconfigured):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
+	// The caller learns no reason; this log is the one place the reason lives.
+	wool.Get(ctx).In("WorkContext").Warn("Work Context refused for a reason the caller is not told", wool.ErrField(err))
 	return status.Error(codes.Internal, "cannot issue Work Context")
 }
 

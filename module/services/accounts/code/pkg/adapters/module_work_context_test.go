@@ -44,6 +44,13 @@ type recordingModuleStore struct {
 // declared tenant's existence check, then the issuance record. controlPlaneErr
 // targets the record — the case the tests using it are about — so it is
 // applied only once the tenant check has run.
+// LiveDeclaredBindings declares no solution binding: the host audience set is
+// then the module capability audience and the declared module prefixes, which
+// every mint's audience guard reads.
+func (s *recordingModuleStore) LiveDeclaredBindings(context.Context) ([]business.LiveDeclaredBinding, error) {
+	return nil, nil
+}
+
 func (s *recordingModuleStore) WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error {
 	s.controlPlaneCalls++
 	if s.controlPlaneErr != nil && s.tenantChecks > 0 {
@@ -59,6 +66,17 @@ func (s *recordingModuleStore) WithControlPlane(ctx context.Context, fn func(ctx
 // than returning a zero value — which is the right failure for a read nobody
 // meant to make, and the reason this one is spelled out.
 func (s *recordingModuleStore) GetSourceDelegation(context.Context, string, string) (*business.SourceDelegation, error) {
+	return nil, nil
+}
+
+// WithOrgTx and ModuleDelegations answer that this organization records no
+// delegation to a module, which is what a hop asks of every delegation id its
+// chain names: none of them is a stored delegation here.
+func (s *recordingModuleStore) WithOrgTx(ctx context.Context, _ string, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s *recordingModuleStore) ModuleDelegations(context.Context, string, []string) ([]*business.ModuleDelegation, error) {
 	return nil, nil
 }
 

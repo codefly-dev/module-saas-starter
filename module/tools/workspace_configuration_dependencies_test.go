@@ -215,6 +215,17 @@ func TestEveryWorkspaceGroupReadIsDeclared(t *testing.T) {
 	}
 }
 
+// cliOwnedGroups are the workspace configuration groups Codefly itself writes
+// for each run or environment, so a module ships no default for them — the CLI
+// refuses an authored one — and their keys are the CLI's to name.
+var cliOwnedGroups = map[string]string{
+	// Its ROOT is the run's actual digest cache directory
+	// (composition.ArtifactCacheDir), not a shipped path.
+	"artifact-cache": "the native run's artifact cache",
+	// HOSTS is generated from the environment's egress declaration.
+	"egress": "the environment's declared egress hosts",
+}
+
 // A declared group with no shipped default leaves a composing workspace to
 // discover the group's existence from a runtime failure. Every group this
 // module's services declare ships a default here, secret groups excepted:
@@ -223,29 +234,33 @@ func TestEveryDeclaredWorkspaceGroupShipsADefault(t *testing.T) {
 	moduleDir := findModuleDir(t)
 	for _, service := range servicesWithManifests(t) {
 		for group := range declaredWorkspaceGroups(t, service) {
-			// CLI owns this native-run value and refuses authored defaults.
-			// Unlike module configuration, its ROOT is the run's actual digest
-			// cache directory (composition.ArtifactCacheDir), not a shipped path.
-			if group == "artifact-cache" {
-				for _, suffix := range []string{".env", ".secret.env"} {
+			// The CLI owns these values and refuses authored defaults.
+			if owner, cliOwned := cliOwnedGroups[group]; cliOwned {
+				for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
 					_, err := os.Stat(filepath.Join(moduleDir, "configurations", "local", group+suffix))
 					if !os.IsNotExist(err) {
-						t.Errorf("renderer-owned %s must have no authored default", group)
+						t.Errorf("CLI-owned %s (%s) must have no authored default", group, owner)
 					}
 				}
 				continue
 			}
 			plain := filepath.Join(moduleDir, "configurations", "local", group+".env")
 			secret := filepath.Join(moduleDir, "configurations", "local", group+".secret.env")
+			// A document group (read with WorkspaceConfigurationDocument) ships
+			// its default as a YAML document.
+			document := filepath.Join(moduleDir, "configurations", "local", group+".yaml")
 			if _, err := os.Stat(plain); err == nil {
+				continue
+			}
+			if _, err := os.Stat(document); err == nil {
 				continue
 			}
 			if _, err := os.Stat(secret); err == nil {
 				continue
 			}
-			t.Errorf("service %s declares workspace configuration group %q but configurations/local ships neither %s.env nor %s.secret.env; "+
+			t.Errorf("service %s declares workspace configuration group %q but configurations/local ships none of %s.env, %s.secret.env or %s.yaml; "+
 				"a composing workspace then meets the group for the first time as a runtime failure",
-				service, group, group, group)
+				service, group, group, group, group)
 		}
 	}
 }
@@ -336,6 +351,10 @@ func TestEveryWorkspaceGroupKeyReadIsDeclared(t *testing.T) {
 		}
 		sort.Strings(groups)
 		for _, group := range groups {
+			// A CLI-owned group ships no default to declare its keys in.
+			if _, cliOwned := cliOwnedGroups[group]; cliOwned {
+				continue
+			}
 			declared := declaredGroupKeys(t, moduleDir, group)
 			keys := make([]string, 0, len(read[group]))
 			for key := range read[group] {

@@ -100,11 +100,6 @@ func moduleIdentity(t *testing.T, prefix, token, tenant string) string {
 	return resp.GetToken()
 }
 
-func internalContext() context.Context {
-	return metadata.NewIncomingContext(context.Background(),
-		metadata.Pairs("x-codefly-internal-token", delegationExchangeInternalToken))
-}
-
 // mintSource runs the real RPC as the docstore module.
 func mintSource(sourceID string) (*gen.ModuleMintSourceOperationContextResponse, error) {
 	return adapters.ModuleCapabilitiesSingleton().MintSourceOperationContext(context.Background(),
@@ -146,8 +141,15 @@ func revisionRequest(signed *basev0.WorkContextV1) *gen.CheckAuthorizationRevisi
 	}
 }
 
-func checkRevision(signed *basev0.WorkContextV1) error {
-	_, err := adapters.WorkContextSingleton().CheckAuthorizationRevision(internalContext(), revisionRequest(signed))
+// checkRevision asks the revision oracle as the runtime module, the consumer
+// holding these capabilities, does: with its own module identity, minted from
+// its pod's projected token for the organization of the work it is checking.
+func checkRevision(t *testing.T, signed *basev0.WorkContextV1) error {
+	t.Helper()
+	asker := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		carrier.HeaderName, moduleIdentity(t, runtimeModule, runtimeModuleToken, signed.GetTenantId()),
+	))
+	_, err := adapters.WorkContextSingleton().CheckAuthorizationRevision(asker, revisionRequest(signed))
 	return err
 }
 
@@ -176,7 +178,7 @@ func TestSourceDelegation_FixedTenantModulesReachTheOrgThroughTheDelegation(t *t
 	require.Equal(t, w.admin, parent.GetOwnerPrincipalId())
 	require.Equal(t, runtimeModule, parent.GetAudience())
 	require.Equal(t, delegation.ID, parent.GetActorChain()[0].GetDelegationId())
-	require.NoError(t, checkRevision(parent))
+	require.NoError(t, checkRevision(t, parent))
 
 	// A module pinned to this organization holds no credential in another to
 	// present: the identity mint itself refuses it.
@@ -194,7 +196,7 @@ func TestSourceDelegation_FixedTenantModulesReachTheOrgThroughTheDelegation(t *t
 		"the exchanged capability is used by the runtime, so its hop is the runtime's")
 	require.Equal(t, delegation.ID, child.GetActorChain()[0].GetDelegationId())
 	require.Equal(t, business.SourceDelegationBindingID(delegation.ID, runtimeModule), child.GetOperationBinding().GetBindingId())
-	require.NoError(t, checkRevision(child), "the revision check covers an exchanged context")
+	require.NoError(t, checkRevision(t, child), "the revision check covers an exchanged context")
 
 	_, err = w.svc.RevokeSourceDelegation(testCtx, w.other, w.org, delegation.ID)
 	require.NoError(t, err)
@@ -204,8 +206,8 @@ func TestSourceDelegation_FixedTenantModulesReachTheOrgThroughTheDelegation(t *t
 	// before the host's own re-check is reached.
 	_, err = exchangeAsRuntime(t, w.org, minted.GetToken())
 	require.Equal(t, codes.FailedPrecondition, status.Code(err), "%v", err)
-	require.Equal(t, codes.PermissionDenied, status.Code(checkRevision(parent)))
-	require.Equal(t, codes.PermissionDenied, status.Code(checkRevision(child)))
+	require.Equal(t, codes.PermissionDenied, status.Code(checkRevision(t, parent)))
+	require.Equal(t, codes.PermissionDenied, status.Code(checkRevision(t, child)))
 	_, err = mintSource(sourceID)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 }
@@ -353,7 +355,7 @@ func TestSourceDelegation_ReferenceBackedExchangeOutlivesEveryCapability(t *test
 	require.Equal(t, business.SourceOperationContextTTL, lifetime)
 	require.LessOrEqual(t, lifetime, 15*time.Minute)
 
-	require.NoError(t, checkRevision(child), "a reference-backed capability is confirmed by the same revision check")
+	require.NoError(t, checkRevision(t, child), "a reference-backed capability is confirmed by the same revision check")
 
 	// Renewal, in full: exchanged again against the same reference, holding
 	// nothing. Submit-mode work renews exactly this way.
@@ -362,7 +364,7 @@ func TestSourceDelegation_ReferenceBackedExchangeOutlivesEveryCapability(t *test
 	second := signing.verify(t, renewed.GetToken())
 	require.NotEqual(t, child.GetTaskId(), second.GetTaskId(), "each call is its own task, never a renewed one")
 	require.Equal(t, child.GetAuthorizationRevision(), second.GetAuthorizationRevision())
-	require.NoError(t, checkRevision(second))
+	require.NoError(t, checkRevision(t, second))
 
 	// Each mint is recorded against the delegation, not just the first.
 	require.Len(t, w.audit.of(business.EventSourceDelegationUsed, sourceID), 2)
@@ -381,14 +383,14 @@ func TestSourceDelegation_RevokeBetweenTwoCallsRefusesTheNext(t *testing.T) {
 	first, err := exchangeByReference(t, w.org, delegation.ID, "ingest", false)
 	require.NoError(t, err)
 	inFlight := signing.verify(t, first.GetToken())
-	require.NoError(t, checkRevision(inFlight))
+	require.NoError(t, checkRevision(t, inFlight))
 
 	_, err = w.svc.RevokeSourceDelegation(testCtx, w.other, w.org, delegation.ID)
 	require.NoError(t, err)
 
 	_, err = exchangeByReference(t, w.org, delegation.ID, "ingest", false)
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
-	require.Equal(t, codes.PermissionDenied, status.Code(checkRevision(inFlight)),
+	require.Equal(t, codes.PermissionDenied, status.Code(checkRevision(t, inFlight)),
 		"the capability already in flight stops being confirmed at its next hop")
 
 	// The run closes partial rather than continuing: no further capability is
@@ -419,7 +421,7 @@ func TestSourceDelegation_MembershipLapsingMidRunRefusesTheNextCall(t *testing.T
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 	require.Equal(t, business.SourceDelegationMemberRemoved, w.only(t, w.org, sourceID, delegationModule).RevokedReason,
 		"the reference arm revokes what no longer holds, with the reason, exactly as a mint does")
-	require.Equal(t, codes.PermissionDenied, status.Code(checkRevision(inFlight)))
+	require.Equal(t, codes.PermissionDenied, status.Code(checkRevision(t, inFlight)))
 }
 
 // A reference is an identifier, not a bearer capability. What stops it being
@@ -485,7 +487,7 @@ func TestSourceDelegation_ReferenceExchangeNarrowsAReceiptLookup(t *testing.T) {
 	child := signing.verify(t, issued.GetToken())
 	require.Equal(t, map[string][]string{"collections": {"read"}}, scopeActions(child.GetActorChain()[0].GetGrantedScopes()),
 		"write is dropped: a lookup may not produce the effect it recovers")
-	require.NoError(t, checkRevision(child))
+	require.NoError(t, checkRevision(t, child))
 }
 
 // Exactly one authority, enforced by the contract rather than by the handler.
@@ -563,7 +565,7 @@ func TestSourceDelegation_MultiHopActorChainIsRefusedUnderADelegation(t *testing
 
 	// And the revision check refuses it at every hop too, so a consumer that
 	// somehow received one could not confirm it either.
-	require.Equal(t, codes.PermissionDenied, status.Code(checkRevision(deeperContext)))
+	require.Equal(t, codes.PermissionDenied, status.Code(checkRevision(t, deeperContext)))
 
 	// The genuine single-hop parent, by contrast, exchanges — so what was
 	// refused is the extra hop, not the fixture.

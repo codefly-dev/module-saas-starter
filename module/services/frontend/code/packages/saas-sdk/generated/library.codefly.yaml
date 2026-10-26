@@ -12,46 +12,15 @@ sources:
       module: saas-starter
       service: accounts
       endpoint: connect
-      contract-digest: sha256:c2af68c66470556658bef9c7d6f36b577057067ba51446698c9c60356109a898
+      contract-digest: sha256:e8b577955a9bc1cdd7924063718b82563794917421ad4a83aecfff9629e500c6
       services:
-        - APIKeyService
         - AccessibleScopeService
-        - ApprovalReviewService
         - AuditService
-        - AuthService
-        - BillingService
-        - ClientRegistryService
-        - ConsentService
-        - DashboardService
         - DatasourceService
-        - DelegationService
         - DirectoryService
-        - GDPRService
-        - IdentityService
-        - InstallationService
-        - IntrospectionService
-        - InvitationService
-        - MFAService
-        - ModuleCapabilitiesService
-        - NotificationService
-        - OnboardingService
-        - OrganizationService
-        - PermissionService
-        - PlatformAdminService
-        - PrincipalService
-        - ResourceFollowService
-        - SSOAdminService
-        - SolutionEntitlementService
-        - SolutionRegistryService
-        - TeamService
-        - UsageService
-        - UserService
-        - UserSettingsService
-        - WaitlistService
         - WebhookService
-        - WorkContextService
       as: accounts
 generated-by:
-    codefly: 0.1.191
-    companion: ghcr.io/codefly-dev/proto:0.0.16
+    codefly: 0.1.215
+    companion: ghcr.io/codefly-dev/proto:0.0.18
     facade: true

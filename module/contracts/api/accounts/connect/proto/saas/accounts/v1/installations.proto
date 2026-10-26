@@ -5,6 +5,7 @@ package saas.accounts.v1;
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
+import "host/installation/v1/installation.proto";
 import "google/protobuf/timestamp.proto";
 import "saas/accounts/v1/authorization.proto";
 import "saas/policy/v1/options.proto";
@@ -97,6 +98,8 @@ message Installation {
   // Why the install step failed: the solution's bounded refusal reason, or a
   // fixed reason when it never answered. Empty unless status is FAILED.
   string failure_reason = 13 [(buf.validate.field).string.max_len = 512];
+  // Current consent/lifecycle revision, for an explicit re-install approval.
+  uint64 revision = 14;
 }
 
 message InstallSolutionRequest {
@@ -174,6 +177,8 @@ message InstallSolutionRequest {
   // Must be a subset of the current ceiling. Omitted selects that ceiling;
   // an explicit {} grants nothing. Tenant and identity are never scope fields.
   optional string scope = 13 [(buf.validate.field).string = {min_len: 2 max_bytes: 1048576}];
+  // Required: the exact offer and installation state reviewed by the admin.
+  host.installation.v1.ConsentApproval approval = 14;
 
 }
 

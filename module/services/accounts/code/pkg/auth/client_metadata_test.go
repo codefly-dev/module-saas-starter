@@ -394,7 +394,7 @@ func allowLoopbackMetadataDial(t *testing.T) {
 // The guard itself: the addresses it refuses are the ones an attacker-supplied
 // client_id would be aimed at.
 func TestTheMetadataDialGuardRefusesEveryNonPublicAddress(t *testing.T) {
-	guard := auth.MetadataDialGuardForTest()
+	guard := auth.MetadataDialGuardForTest("client.example.com:443")
 	for _, address := range []string{
 		"127.0.0.1:443",
 		"[::1]:443",

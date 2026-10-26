@@ -119,12 +119,28 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	lookup, err := exchange(true)
 	require.NoError(t, err)
 	require.Equal(t, s.principalID(), lookup.CurrentActorPrincipalId)
-	readCtx := metadata.NewIncomingContext(testCtx, metadata.Pairs("x-codefly-internal-token", delegationExchangeInternalToken, "x-codefly-work-context", child.Token))
-	record := &gen.CheckWorkContextRecordAccessRequest{ResourceType: "documents", ResourceId: "known-document", Action: "read"}
-	decision, err := adapters.ModuleCapabilitiesSingleton().CheckWorkContextRecordAccess(readCtx, record)
+	// The child is addressed to the target module, which is the one that asks:
+	// with its own identity, minted against its current installation, in the
+	// header, and the child it holds in the request.
+	// While the target is uninstalled it has no identity to mint, so it asks
+	// with none and is refused for that.
+	asTarget := func() context.Context {
+		t.Helper()
+		pairs := []string{"x-codefly-internal-token", delegationExchangeInternalToken}
+		if credential, _, err := issuer.StartModuleTask(testCtx, business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID(target.solutionID), Tenant: s.tenant, InstallationID: targetInstall.Id}); err == nil {
+			pairs = append(pairs, "x-codefly-work-context", credential)
+		}
+		return metadata.NewIncomingContext(testCtx, metadata.Pairs(pairs...))
+	}
+	check := func(viewer string) (*gen.CheckWorkContextRecordAccessResponse, error) {
+		t.Helper()
+		return adapters.ModuleCapabilitiesSingleton().CheckWorkContextRecordAccess(asTarget(),
+			&gen.CheckWorkContextRecordAccessRequest{ResourceType: "documents", ResourceId: "known-document", Action: "read", ViewerWorkContextToken: viewer})
+	}
+	decision, err := check(child.Token)
 	require.NoError(t, err)
 	require.True(t, decision.Allowed)
-	page, err := adapters.ModuleCapabilitiesSingleton().ListReadableSourceCollections(readCtx, &gen.ListReadableSourceCollectionsRequest{PageSize: 10})
+	page, err := adapters.ModuleCapabilitiesSingleton().ListReadableSourceCollections(asTarget(), &gen.ListReadableSourceCollectionsRequest{PageSize: 10, ViewerWorkContextToken: child.Token})
 	require.NoError(t, err)
 	require.Len(t, page.Collections, 1)
 	// An actual monotonic host update removes then identically restores the read.
@@ -135,11 +151,11 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	put()
 	_, err = exchange(false)
 	require.Error(t, err)
-	_, err = adapters.ModuleCapabilitiesSingleton().CheckWorkContextRecordAccess(readCtx, record)
+	_, err = check(child.Token)
 	require.Error(t, err)
 	grants[s.prefix] = original
 	put()
-	_, err = adapters.ModuleCapabilitiesSingleton().CheckWorkContextRecordAccess(readCtx, record)
+	_, err = check(child.Token)
 	require.Error(t, err, "identical policy cannot revive old binding lifetime")
 	// Existing installation consent remains authoritative after envelope changes.
 	// A new child is allowed only if that same consent still covers the binding.
@@ -148,7 +164,7 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	// Each case starts with a fresh signed child, then moves an owner fact
 	// through its actual writer. The retained token must fail verification at
 	// the served record check, not merely differ in a decoded binding string.
-	freshRead := func() context.Context {
+	freshRead := func() string {
 		t.Helper()
 		root, err = issuer.StartTask(caller, &gen.StartTaskWorkContextRequest{OrgId: s.tenant, TaskId: business.NewIDString(), Audience: s.prefix, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "documents", Actions: []string{"read"}}}})
 		require.NoError(t, err)
@@ -157,17 +173,13 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 		moduleCtx = metadata.NewIncomingContext(testCtx, metadata.Pairs("x-codefly-internal-token", delegationExchangeInternalToken, "x-codefly-work-context", moduleToken))
 		next, err := exchange(false)
 		require.NoError(t, err)
-		held := metadata.NewIncomingContext(testCtx, metadata.Pairs("x-codefly-internal-token", delegationExchangeInternalToken, "x-codefly-work-context", next.Token))
-		allowed, err := adapters.ModuleCapabilitiesSingleton().CheckWorkContextRecordAccess(held, record)
+		allowed, err := check(next.Token)
 		require.NoError(t, err)
 		require.True(t, allowed.Allowed)
-		return held
+		return next.Token
 	}
 	t.Run("content mode removed", func(t *testing.T) {
-		held := freshRead()
-		heldMetadata, ok := metadata.FromIncomingContext(held)
-		require.True(t, ok)
-		token := heldMetadata.Get("x-codefly-work-context")[0]
+		token := freshRead()
 		heldClaims, err := workcontext.Decode(token)
 		require.NoError(t, err)
 		bindingID := heldClaims.Context().GetOperationBinding().GetBindingId()
@@ -217,16 +229,16 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 				s.pass(t)
 			case "target installation":
 				require.NoError(t, svc.UninstallSolution(testCtx, s.admin, s.tenant, targetInstall.Id))
-				_, err = adapters.ModuleCapabilitiesSingleton().CheckWorkContextRecordAccess(held, record)
+				_, err = check(held)
 				require.Error(t, err)
 				targetInstall = targetScenario.install(t, s.tenant)
 			case "origin installation":
 				require.NoError(t, svc.UninstallSolution(testCtx, s.admin, s.tenant, originInstall.Id))
-				_, err = adapters.ModuleCapabilitiesSingleton().CheckWorkContextRecordAccess(held, record)
+				_, err = check(held)
 				require.Error(t, err)
 				originInstall = s.install(t, s.tenant)
 			}
-			_, err = adapters.ModuleCapabilitiesSingleton().CheckWorkContextRecordAccess(held, record)
+			_, err = check(held)
 			require.Error(t, err, "changed owner lifetime must reject retained signed child")
 		})
 	}

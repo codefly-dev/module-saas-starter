@@ -89,7 +89,7 @@ func TestLocalEgress_RefusedOutsideALocalRuntime(t *testing.T) {
 // family, and never a non-public address the public guard refuses.
 func TestLocalEgress_AdmitsOnlyTheListedAddress(t *testing.T) {
 	installLocalEgress(t, "127.0.0.1:18080")
-	control := withLocalEgress(dialControl)
+	control := withLocalEgress(dialControl("stub.example.com:443"))
 	if err := control("tcp", "127.0.0.1:18080", nil); err != nil {
 		t.Fatalf("listed address refused: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestLocalEgress_NoAllowanceIsThePublicGuard(t *testing.T) {
 	if reflect.ValueOf(withLocalEgress(next)).Pointer() != reflect.ValueOf(next).Pointer() {
 		t.Fatal("with no allowance the dial control must be the guard it wraps, itself")
 	}
-	if err := withLocalEgress(dialControl)("tcp", "127.0.0.1:18080", nil); !errors.Is(err, ErrBlockedAddress) {
+	if err := withLocalEgress(dialControl("stub.example.com:443"))("tcp", "127.0.0.1:18080", nil); !errors.Is(err, ErrBlockedAddress) {
 		t.Fatalf("loopback without an allowance = %v, want ErrBlockedAddress", err)
 	}
 }

@@ -27,7 +27,7 @@ type Client struct {
 // New binds the facade to a gateway. Extra connect.ClientOptions are
 // forwarded to every sub-client.
 func New(gw Gateway, opts ...connect.ClientOption) *Client {
-	return &Client{gw: gw, opts: append(opts, connect.WithGRPC())}
+	return &Client{gw: gw, opts: opts}
 }
 
 // ModuleCapabilities returns the typed ModuleCapabilitiesService facade.
@@ -279,6 +279,14 @@ func (a *ModuleCapabilitiesClient) ListSubscriptions(ctx context.Context, req *v
 
 func (a *ModuleCapabilitiesClient) ReplayEvents(ctx context.Context, req *v1.ModuleReplayEventsRequest) (*v1.ModuleReplayEventsResponse, error) {
 	resp, err := a.inner.ReplayEvents(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+func (a *ModuleCapabilitiesClient) ResolveWorkContextAuthority(ctx context.Context, req *v1.ModuleResolveWorkContextAuthorityRequest) (*v1.ModuleResolveWorkContextAuthorityResponse, error) {
+	resp, err := a.inner.ResolveWorkContextAuthority(ctx, connect.NewRequest(req))
 	if err != nil {
 		return nil, err
 	}

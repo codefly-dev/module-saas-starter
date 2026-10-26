@@ -9,6 +9,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"accounts/pkg/auth"
 )
 
 // allowLoopback disables the SSRF dial guard for the duration of a test so it
@@ -17,7 +19,7 @@ import (
 func allowLoopback(t *testing.T) {
 	t.Helper()
 	prev := dialGuard
-	dialGuard = func(_, _ string, _ syscall.RawConn) error { return nil }
+	dialGuard = func(string) auth.DialControl { return func(_, _ string, _ syscall.RawConn) error { return nil } }
 	t.Cleanup(func() { dialGuard = prev })
 }
 

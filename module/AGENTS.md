@@ -105,11 +105,13 @@ Postgres 0.0.146 and Vault 0.0.42, which include their owners' outcome fixes.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-CI selects released CLI v0.1.197 in `scripts/ci/install-codefly.sh` for every
-planner/executor job. This release includes the merged lifecycle/artifact-cache
-implementation and environment-wide standard OTEL delivery from the optional
-`telemetry:` declaration. The historical source candidate remains available only
-for explicit development qualification; release tags refuse source candidates.
+CI selects released Codefly CLI **v0.1.215** in
+`scripts/ci/install-codefly.sh` for every planner/executor job. Use that release
+for local runtime qualification too: the accounts service declares Codefly's
+`egress` configuration producer, which older development binaries may not
+resolve. The CLI exports the host interfaces alongside the owned API in one
+Connect contract. The root module agent and `module/tools` retain Core
+`v0.19.7-0.20261025161440-4e7f8ef01ed2` to validate that multi-package format.
 
 Accounts and auth-gateway use released SDK v0.4.1; other services retain their
 own released pins.
@@ -150,8 +152,8 @@ Design records: [SOLUTION_REGISTRATION.md](./SOLUTION_REGISTRATION.md),
 consumer workspace — `legal`, `identity`, `internal-auth`, `federation`, and
 the rest. A consumer overrides a group only by declaring one of the same name.
 No group declares module authority: the module principal registry is derived
-from delivered authority inside the module envelope a platform super_admin
-writes ([services/accounts/AGENTS.md](./services/accounts/AGENTS.md#the-composed-module-service-principal)).
+from applied signed manifests; an existing administrative envelope can narrow
+them ([services/accounts/AGENTS.md](./services/accounts/AGENTS.md#the-composed-module-service-principal)).
 
 **A credential's blast radius is the set of services that DECLARE its group**, not
 the set that reads it: a declared group is injected whether anything reads it or

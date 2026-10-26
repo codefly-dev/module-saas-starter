@@ -372,7 +372,7 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			// instead, and carry their own deny. See DEPLOYMENT_TOPOLOGY.md,
 			// "Cluster-internal HTTP routes".
 			for _, path := range paths {
-				require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
+				require.True(t, (strings.HasPrefix(path.(string), "/saas.accounts.v1.") || strings.HasPrefix(path.(string), "/host.")),
 					"the gate lists gRPC procedures, not HTTP routes: %q", path)
 			}
 		case "Gateway":
@@ -442,7 +442,7 @@ func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
 				operation, ok := rule.(map[string]any)["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)
 				require.True(t, ok)
 				for _, path := range operation["paths"].([]any) {
-					require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
+					require.True(t, (strings.HasPrefix(path.(string), "/saas.accounts.v1.") || strings.HasPrefix(path.(string), "/host.")),
 						"a catalog-derived gate lists gRPC procedures, not HTTP routes: %q", path)
 				}
 			}

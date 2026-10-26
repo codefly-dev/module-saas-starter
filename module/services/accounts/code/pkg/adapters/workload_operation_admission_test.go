@@ -36,6 +36,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	"accounts/pkg/business/moduleregistrytest"
+	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -142,6 +143,7 @@ func moduleOperationFixture(t *testing.T) (business.ModuleOperationContextAuthor
 	return business.ModuleOperationContextAuthority{
 		ModuleWorkContextAuthority: business.ModuleWorkContextAuthority{PrincipalID: principal, Tenant: moduleWorkContextTenant, InstallationID: installation},
 		BindingID:                  "model",
+		ModulePrefix:               "documents",
 		Audience:                   "modelservice",
 		Scopes:                     []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}}},
 		Revision:                   1,
@@ -222,6 +224,25 @@ func workloadOperationRows() []admissionRow {
 				require.NoError(t, err)
 				return workContextSingleton, "reports", issued.GetToken()
 			}},
+		// A module's hop through its binding on a person's capability (gap 14).
+		{"host interface binding hop", "", human, person,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				f := newHopFixture(t, "tool.items:read", "example-records:read")
+				parent, _ := f.parent(t, "tools", hopScope("tool.items", []string{"read"}))
+				out, err := f.hop(parent, f.tool, "records", "documents")
+				require.NoError(t, err)
+				return f.issuer, "documents", out.GetToken()
+			}},
+		// A person's issue at a solution whose roles decide what they hold.
+		{"host interface solution role issue", "", human, person,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				issuer, server, _ := hostChildFixture(t)
+				server.roles = fixedSolutionRoles{"documents": {kinds: []string{"documents"}, held: []*basev0.WorkScopeV1{hopScope("documents", []string{"read"})}}}
+				out, err := server.Issue(stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, auth.Assurance{}),
+					&authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "documents"})
+				require.NoError(t, err)
+				return issuer, "documents", out.GetToken()
+			}},
 		// Person-owned unattended work: sealed elsewhere by design, still a person's.
 		{"source-operation context", "ModuleCapabilitiesService/MintSourceOperationContext", human, person,
 			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
@@ -236,6 +257,14 @@ func workloadOperationRows() []admissionRow {
 				issued, err := server.StartInstallationTask(installInternalContext(), installTaskRequest())
 				require.NoError(t, err)
 				return server, installTaskRequest().GetAudience(), issued.GetToken()
+			}},
+		// An installation acting for itself: owned by its agent, still no workload's.
+		{"host interface installation issue", "", business.PrincipalKindAgent, person,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				server, _, solution, _ := installationIssueFixture(t)
+				out, err := server.Issue(context.Background(), installationIssue(notesInstallation, solution, ""))
+				require.NoError(t, err)
+				return server.workContexts, "notes.test", out.GetToken()
 			}},
 		{"installation step", "", human, person,
 			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
@@ -442,9 +471,11 @@ var mintEntrypointRows = map[string][]string{
 	"(*WorkContextAuthorityServer).StartChildSession":        {"StartChildSession"},
 	"(*WorkContextAuthorityServer).exchangeInstalledBinding": {"operation exchange, content_read, invoke", "operation exchange, module_actor, invoke"},
 	"(*WorkContextAuthorityServer).startSourceOperation":     {"source-operation context", "operation exchange, source delegation reference", "operation exchange, source delegation parent"},
-	"(*WorkContextAuthorityServer).mintInstallationTask":     {"installation task", "installation step"},
+	"(*WorkContextAuthorityServer).mintInstallationTask":     {"installation task", "installation step", "host interface installation issue"},
 	"(*WorkContextAuthorityServer).StartModuleTask":          {"module identity", "installer token route"},
 	"(*WorkContextAuthorityServer).StartModuleOperationTask": {"module operation context", "module operation context for its own module"},
+	"(*WorkContextAuthorityServer).mintBindingHop":           {"host interface binding hop"},
+	"(*WorkContextAuthorityServer).startRoleTask":            {"host interface solution role issue"},
 }
 
 // isSigningMethod reports the methods a signing function references: every method
@@ -987,4 +1018,29 @@ type uninstalledModuleAuthority struct{ currentModuleAuthority }
 
 func (uninstalledModuleAuthority) LiveModuleAuthority(context.Context, string, string, string) (*business.LiveModuleAuthority, error) {
 	return nil, business.ErrModuleInstallationInactive
+}
+
+// The operation context names its owner's own installed binding, and only that
+// one fits the shape: core will not sign another module's binding for this
+// owner, and the shape refuses it independently of core.
+func TestOperationContextShapeAdmitsOnlyTheOwnersOwnBinding(t *testing.T) {
+	installModuleOperationContextService(t, headlessPrincipals)
+	installModuleWorkContextAuthority(t)
+	resp, err := mintModuleOperationContext("documents", moduleToken(t, "documents"), "model")
+	require.NoError(t, err)
+	decoded, err := workcontext.Decode(resp.GetToken())
+	require.NoError(t, err)
+	claims := proto.Clone(decoded.Context()).(*basev0.WorkContextV1)
+	owner := claims.GetOwnerPrincipalId()
+	require.Equal(t, moduleWorkContextTenant+"/documents/model", claims.GetOperationBinding().GetBindingId())
+	require.True(t, isModuleOperationContextShape(claims))
+
+	claims.OperationBinding.BindingId = business.ModuleOperationBindingID(moduleWorkContextTenant, "reports", "model")
+	require.False(t, isModuleOperationContextShape(claims), "another module's binding")
+	claims.OperationBinding.BindingId = business.ModuleOperationBindingID("66666666-6666-4666-8666-666666666666", "documents", "model")
+	require.False(t, isModuleOperationContextShape(claims), "its binding in another organisation")
+	claims.OperationBinding.BindingId = "installed-binding/" + owner
+	require.False(t, isModuleOperationContextShape(claims), "a binding that is not a module operation binding")
+	claims.OperationBinding = nil
+	require.True(t, isModuleOperationContextShape(claims), "an operation context that names no binding")
 }

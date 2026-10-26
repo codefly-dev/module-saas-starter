@@ -671,8 +671,13 @@ func (r *Repository) fetch(ctx context.Context, args []string, stdin io.Reader) 
 	defer cancel()
 	var exceeded bool
 	var mu sync.Mutex
+	// The bound this fetch is held to, read once: the watchdog never reads the
+	// package value from its own goroutine.
+	limit := maxMirrorBytes
 	done := make(chan struct{})
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
 		ticker := time.NewTicker(200 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -680,7 +685,7 @@ func (r *Repository) fetch(ctx context.Context, args []string, stdin io.Reader) 
 			case <-done:
 				return
 			case <-ticker.C:
-				if size, err := dirSize(r.dir); err == nil && size > maxMirrorBytes {
+				if size, err := dirSize(r.dir); err == nil && size > limit {
 					mu.Lock()
 					exceeded = true
 					mu.Unlock()
@@ -692,11 +697,14 @@ func (r *Repository) fetch(ctx context.Context, args []string, stdin io.Reader) 
 	}()
 	err := r.run(fetchCtx, true, stdin, nil, args...)
 	close(done)
+	// Joined before the mirror can be discarded: a watchdog still measuring the
+	// directory must not outlive the fetch it guards.
+	<-stopped
 	mu.Lock()
 	over := exceeded
 	mu.Unlock()
 	if !over {
-		if size, sizeErr := dirSize(r.dir); sizeErr == nil && size > maxMirrorBytes {
+		if size, sizeErr := dirSize(r.dir); sizeErr == nil && size > limit {
 			over = true
 		}
 	}

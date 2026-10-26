@@ -15,6 +15,8 @@ import (
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -29,7 +31,7 @@ import (
 const installationColumns = `id::text, org_id::text, agent_principal_id::text,
 	owner_principal_id::text, co_owner_principal_ids::text[],
 	root_scope_node_id::text, status, created_at, revoked_at,
-	COALESCE(target_id::text, ''), COALESCE(revoked_reason, ''), COALESCE(failure_reason, '')`
+	COALESCE(target_id::text, ''), COALESCE(revoked_reason, ''), COALESCE(failure_reason, ''), revision`
 
 func scanInstallation(row rowScanner) (*gen.Installation, error) {
 	var (
@@ -38,9 +40,10 @@ func scanInstallation(row rowScanner) (*gen.Installation, error) {
 		coOwners                                        []string
 		createdAt                                       time.Time
 		revokedAt                                       *time.Time
+		revision                                        uint64
 	)
 	if err := row.Scan(&id, &orgID, &agentID, &ownerID, &coOwners,
-		&rootNodeID, &status, &createdAt, &revokedAt, &targetID, &revokedReason, &failureReason); err != nil {
+		&rootNodeID, &status, &createdAt, &revokedAt, &targetID, &revokedReason, &failureReason, &revision); err != nil {
 		return nil, err
 	}
 	out := &gen.Installation{
@@ -55,6 +58,7 @@ func scanInstallation(row rowScanner) (*gen.Installation, error) {
 		TargetId:            targetID,
 		RevokedReason:       revokedReason,
 		FailureReason:       failureReason,
+		Revision:            revision,
 	}
 	if revokedAt != nil {
 		out.RevokedAt = timestamppb.New(*revokedAt)
@@ -109,9 +113,9 @@ func firstEligibleOwner(ctx context.Context, executor QueryExecutor, orgID strin
 // InstallSolution composes the agent principal, solution scope node, standing
 // grant, pending installation and durable step inside the caller's WithOrgTx.
 // Only acknowledged consent is usable. An active identical install is idempotent;
-// pending/failed consent requires its existing lifecycle, never a second install.
+// Fresh approval can supersede pending consent; failed work uses retry.
 // Composed modules retain their installation path; the callback is solution-owned.
-func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.InstallSolutionParams) (*gen.Installation, error) {
+func (s *PostgresStore) installSolution(ctx context.Context, params *business.InstallSolutionParams) (*gen.Installation, error) {
 	w := wool.Get(ctx).In("InstallSolution",
 		wool.Field("org_id", params.OrgID),
 		wool.Field("target_id", params.TargetID))
@@ -123,6 +127,19 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 	}
 	if err := lockSolutionInstallation(ctx, executor, params.OrgID, params.TargetID); err != nil {
 		return nil, err
+	}
+
+	// A module install or re-install is explicit consent by an organization
+	// administrator. Check the actor here too: fixture and business callers
+	// do not pass through the RPC authorization interceptor.
+	if params.Kind == "module" {
+		admin, err := isCurrentOrgAdmin(ctx, executor, params.OrgID, params.GrantedBy)
+		if err != nil {
+			return nil, w.Wrapf(err, "failed to check installing actor org-admin status")
+		}
+		if !admin {
+			return nil, status.Error(codes.PermissionDenied, "only a current organization owner or admin may install or re-install a module to record consent")
+		}
 	}
 
 	// The owner of record must be a current org admin. The installing caller is
@@ -138,17 +155,16 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		)
 	}
 
-	// Idempotent re-install: an active installation for this solution already
-	// composed the agent, node, and grant. A re-install that names the same
-	// authority envelope (ceiling, standing-grant role, co-owner set) returns the
-	// existing row unchanged; one that names a different envelope is rejected rather
-	// than silently ignored — a changed ceiling is applied by uninstall + reinstall.
+	// Reuse the installation, agent and standing grant. For a module, the
+	// administrator's explicit re-install consents to the current scope; the
+	// existing revision trigger revokes credentials and work under old consent.
 	existing, err := scanInstallation(executor.QueryRow(ctx,
 		`SELECT `+installationColumns+` FROM installations
 		 WHERE org_id = $1 AND target_id = $2::uuid AND status <> 'revoked'`,
 		params.OrgID, params.TargetID))
 	if err == nil {
-		if existing.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+		if existing.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE &&
+			!(existing.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING && params.Approval != nil) {
 			return nil, installerConflict("installation already exists; retry a failed installation or uninstall it")
 		}
 		if e := reconcileExistingInstallation(ctx, executor, existing, params); e != nil {
@@ -201,8 +217,9 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 	installation, err := scanInstallation(executor.QueryRow(ctx, `
 		INSERT INTO installations
 			(id, org_id, agent_principal_id, target_id, owner_principal_id,
-			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id, kind, registry_binding_id, registry_principal_id, scope)
-		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, CASE WHEN $8='module' THEN 'active' ELSE 'pending' END, NULLIF($7, '')::uuid, COALESCE(NULLIF($8,''),'solution'), NULLIF($9,''), NULLIF($10, '')::uuid, $11::jsonb)
+			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id, kind, registry_binding_id, registry_principal_id, scope, revision)
+		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, CASE WHEN $8='module' THEN 'active' ELSE 'pending' END, NULLIF($7, '')::uuid, COALESCE(NULLIF($8,''),'solution'), NULLIF($9,''), NULLIF($10, '')::uuid, $11::jsonb,
+ (SELECT COALESCE(max(revision),0)+1 FROM public.installations WHERE org_id=$1 AND target_id=$3::uuid))
 		RETURNING `+installationColumns,
 		params.OrgID, agentID, params.TargetID, params.OwnerPrincipalID,
 		stringArray(params.CoOwnerPrincipalIDs), nodeID, params.InstallerPrincipalID,
@@ -221,7 +238,7 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		}
 		return nil, w.Wrapf(err, "failed to insert installation")
 	}
-	if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING {
+	if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING && params.Approval == nil {
 		if err := s.EnqueueInstallationStep(ctx, params.OrgID, installation.Id, "initial"); err != nil {
 			return nil, err
 		}
@@ -307,11 +324,9 @@ func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *b
 	return node.Id, node.ScopePath, nil
 }
 
-// reconcileExistingInstallation guards the idempotent re-install path: it returns
-// a conflict when a re-install of an already-active solution names a different
-// authority envelope (ceiling, standing-grant role, or co-owner set) than the one
-// on record, so a narrowed ceiling is never silently discarded. Identical params
-// reconcile to a no-op and the caller returns the existing row.
+// reconcileExistingInstallation preserves identity, ownership and standing
+// grants. A module's explicit admin re-install records the newly prepared
+// consent; solutions still use their acknowledged installation lifecycle.
 func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, existing *gen.Installation, params *business.InstallSolutionParams) error {
 	var installedScope []byte
 	var principal, binding, kind string
@@ -328,7 +343,8 @@ func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, 
 	}
 	sameAuthority := principal == params.RegistryPrincipalID &&
 		(params.RegistryBindingID == "" || binding == params.RegistryBindingID) &&
-		(params.Kind == "" || kind == params.Kind) &&
+		(params.Kind == "" || kind == params.Kind)
+	sameScope := current.Follows == requested.Follows &&
 		business.InstallationScopeWithin(current, requested) && business.InstallationScopeWithin(requested, current)
 	var allowedAudiences, allowedScopes []string
 	var agentIdentifier, displayName string
@@ -352,12 +368,32 @@ func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, 
 		existing.OrgId, existing.RootScopeNodeId, existing.AgentPrincipalId).Scan(&roleID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("load existing standing grant role: %w", err)
 	}
-	if sameAuthority && roleID == params.RoleID && live && agentIdentifier == params.AgentIdentifier &&
+	reconsent := kind == "module" && params.Approval != nil && params.ModuleCeiling != nil && !requested.Follows &&
+		business.InstallationScopeWithin(requested, *params.ModuleCeiling) &&
+		business.InstallationScopeWithin(*params.ModuleCeiling, requested)
+	sameAgent := agentIdentifier == params.AgentIdentifier
+	if kind == "module" {
+		// A new delivered release does not replace the installation's agent.
+		// Re-consent updates only scope; publisher/name must still agree.
+		installedName, _, _ := strings.Cut(agentIdentifier, ":")
+		requestedName, _, _ := strings.Cut(params.AgentIdentifier, ":")
+		sameAgent = installedName == requestedName
+	}
+	if sameAuthority && (reconsent || sameScope) && roleID == params.RoleID && live && sameAgent &&
 		existing.OwnerPrincipalId == params.OwnerPrincipalID &&
 		(params.DisplayName == "" || params.DisplayName == displayName) &&
 		sameStringSet(allowedAudiences, params.AllowedAudiences) &&
 		sameStringSet(allowedScopes, params.AllowedScopes) &&
 		sameStringSet(existing.CoOwnerPrincipalIds, params.CoOwnerPrincipalIDs) {
+		if reconsent {
+			encoded, err := json.Marshal(requested)
+			if err != nil {
+				return err
+			}
+			_, err = executor.Exec(ctx, `UPDATE public.installations SET scope=$3::jsonb
+				WHERE id=$1::uuid AND org_id=$2::uuid AND scope IS DISTINCT FROM $3::jsonb`, existing.Id, existing.OrgId, encoded)
+			return err
+		}
 		return nil
 	}
 	return business.NewStoreError(
@@ -493,7 +529,7 @@ func installationHealthFromLabel(label string) gen.InstallationHealth {
 const installationListingColumns = `i.id::text, i.org_id::text, i.agent_principal_id::text,
 	i.owner_principal_id::text, i.co_owner_principal_ids::text[],
 	i.root_scope_node_id::text, i.status, i.created_at, i.revoked_at,
-	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), COALESCE(i.failure_reason, ''), ` + installationHealthLabel
+	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), COALESCE(i.failure_reason, ''), i.revision, ` + installationHealthLabel
 
 // withHealthLabel scans one listing row: the installation's own columns through
 // scanInstallation, so the wire mapping has one definition, then the label.
@@ -996,8 +1032,10 @@ func installationTeamGrants(
 // path. A revoked installation is not found either: exposing an uninstalled
 // solution would grant reach into a node nothing is installed at.
 //
-// It takes a SHARE lock on the installation row, held until the caller's
-// transaction ends. UninstallSolution flips the row to revoked with an UPDATE,
+// It takes an UPDATE lock on the installation row, held until the caller's
+// transaction ends. Exposure changes its revision in this transaction too,
+// so an UPDATE lock prevents concurrent grants from deadlocking on upgrade.
+// UninstallSolution flips the row to revoked with an UPDATE,
 // which that lock blocks, so the two serialize on the row: an uninstall that
 // commits first leaves the row revoked, and this read — waiting on it, then
 // re-checking `status = 'active'` against the committed row — finds nothing; a
@@ -1009,7 +1047,7 @@ func (s *PostgresStore) InstallationRootScopePath(ctx context.Context, orgID, in
 		  FROM installations i
 		  JOIN scope_nodes n ON n.id = i.root_scope_node_id
 		 WHERE i.org_id = $1 AND i.id::text = $2 AND i.status = 'active'
-		   FOR SHARE OF i`,
+		   FOR UPDATE OF i`,
 		orgID, installationID).Scan(&path)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", business.NewStoreError(
@@ -1099,3 +1137,22 @@ func (t trailingColumns) Scan(dest ...any) error {
 }
 
 var _ business.InstallationStore = (*PostgresStore)(nil)
+
+// InstallationRoleRevision reads the standing grant at this installation's own
+// root, including pending consent. It never chooses among ambiguous roles.
+func (s *PostgresStore) InstallationRoleRevision(ctx context.Context, org, id string) (string, string, uint64, error) {
+	var roleID, role string
+	var revision uint64
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+ SELECT r.id::text, r.name, i.revision
+ FROM installations i JOIN scope_nodes n ON n.id=i.root_scope_node_id
+ JOIN scope_grants g ON g.org_id=i.org_id AND g.subject_kind='principal'
+   AND g.subject_id=i.agent_principal_id AND g.scope_path=n.scope_path
+ JOIN roles r ON r.id=g.role_id
+ WHERE i.org_id=$1 AND i.id=$2 AND i.status <> 'revoked'
+ AND 1 = (SELECT count(*) FROM scope_grants own WHERE own.org_id=i.org_id AND own.subject_kind='principal' AND own.subject_id=i.agent_principal_id AND own.scope_path=n.scope_path)`, org, id).Scan(&roleID, &role, &revision)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("installation %s standing role and revision: %w", id, err)
+	}
+	return roleID, role, revision, nil
+}

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"accounts/pkg/auth"
 )
 
 // allowDial overrides the SSRF dial guard so tests can reach httptest's
@@ -17,7 +19,7 @@ import (
 func allowDial(t *testing.T) {
 	t.Helper()
 	saved := dialGuard
-	dialGuard = func(_, _ string, _ syscall.RawConn) error { return nil }
+	dialGuard = func(string) auth.DialControl { return func(_, _ string, _ syscall.RawConn) error { return nil } }
 	t.Cleanup(func() { dialGuard = saved })
 }
 

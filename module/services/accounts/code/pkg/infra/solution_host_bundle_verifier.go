@@ -39,6 +39,7 @@ var ErrSolutionHostTrustUnavailable = errors.New("solution host trust policy una
 type solutionHostBundleVerifierWithPolicy interface {
 	// Verifier is unavailable until a local policy has proven its cluster.
 	Verifier() (*solutionhost.Verifier, error)
+	VerifyAuthority(document, envelope []byte) (string, error)
 
 	// SignerDomains maps each attested signer identity to the ownership domains
 	// it may deliver under, in the shape core's Host takes.

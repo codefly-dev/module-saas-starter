@@ -49,6 +49,10 @@ func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.Insta
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
 		return nil, err
 	}
+	approval, err := installationApproval(req.GetApproval())
+	if err != nil {
+		return nil, err
+	}
 	var scope *business.InstallationScope
 	if req.Scope != nil {
 		parsed, err := business.ParseInstallationScope(req.GetScope())
@@ -58,6 +62,7 @@ func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.Insta
 		scope = &parsed
 	}
 	installation, err := service.InstallSolution(ctx, actorID, &business.InstallSolutionParams{
+		Approval:            approval,
 		Scope:               scope,
 		OrgID:               req.GetOrgId(),
 		AgentIdentifier:     req.GetAgentIdentifier(),

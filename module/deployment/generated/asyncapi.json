@@ -1384,6 +1384,28 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.module_delegation.granted": {
+      "address": "saas.module_delegation.granted",
+      "title": "saas.module_delegation.granted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.module_delegation.granted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.module_delegation.revoked": {
+      "address": "saas.module_delegation.revoked",
+      "title": "saas.module_delegation.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.module_delegation.revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.onboarding.step_completed": {
       "address": "saas.onboarding.step_completed",
       "title": "saas.onboarding.step_completed",
@@ -3008,6 +3030,20 @@
       },
       "title": "saas publishes saas.module.work_context_minted"
     },
+    "send:saas.module_delegation.granted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.module_delegation.granted"
+      },
+      "title": "saas publishes saas.module_delegation.granted"
+    },
+    "send:saas.module_delegation.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.module_delegation.revoked"
+      },
+      "title": "saas publishes saas.module_delegation.revoked"
+    },
     "send:saas.onboarding.step_completed": {
       "action": "send",
       "channel": {
@@ -4351,6 +4387,20 @@
       "saas.module.work_context_minted": {
         "name": "saas.module.work_context_minted",
         "title": "saas.module.work_context_minted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.module_delegation.granted": {
+        "name": "saas.module_delegation.granted",
+        "title": "saas.module_delegation.granted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.module_delegation.revoked": {
+        "name": "saas.module_delegation.revoked",
+        "title": "saas.module_delegation.revoked",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

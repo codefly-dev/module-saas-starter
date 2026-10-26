@@ -660,9 +660,13 @@ type ServiceCatalog struct {
 	Permissions []*PermissionDefinition `protobuf:"bytes,7,rep,name=permissions,proto3" json:"permissions,omitempty"`
 	// entitlements is the sorted server-owned feature/quota vocabulary shared
 	// by plans, runtime checks, generated clients, and plugin manifests.
-	Entitlements  []*EntitlementDefinition `protobuf:"bytes,8,rep,name=entitlements,proto3" json:"entitlements,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Entitlements []*EntitlementDefinition `protobuf:"bytes,8,rep,name=entitlements,proto3" json:"entitlements,omitempty"`
+	// Protobuf packages of the published interfaces this service implements, beside
+	// its own api_package. A method of one of these packages is served and
+	// catalogued like any other; its policy is the implementation's own sidecar.
+	InterfacePackages []string `protobuf:"bytes,9,rep,name=interface_packages,json=interfacePackages,proto3" json:"interface_packages,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ServiceCatalog) Reset() {
@@ -747,6 +751,13 @@ func (x *ServiceCatalog) GetPermissions() []*PermissionDefinition {
 func (x *ServiceCatalog) GetEntitlements() []*EntitlementDefinition {
 	if x != nil {
 		return x.Entitlements
+	}
+	return nil
+}
+
+func (x *ServiceCatalog) GetInterfacePackages() []string {
+	if x != nil {
+		return x.InterfacePackages
 	}
 	return nil
 }
@@ -2516,7 +2527,7 @@ var File_saas_catalog_v1_catalog_proto protoreflect.FileDescriptor
 
 const file_saas_catalog_v1_catalog_proto_rawDesc = "" +
 	"\n" +
-	"\x1dsaas/catalog/v1/catalog.proto\x12\x0fsaas.catalog.v1\x1a\x1csaas/policy/v1/options.proto\"\xac\x03\n" +
+	"\x1dsaas/catalog/v1/catalog.proto\x12\x0fsaas.catalog.v1\x1a\x1csaas/policy/v1/options.proto\"\xdb\x03\n" +
 	"\x0eServiceCatalog\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\tR\rschemaVersion\x123\n" +
 	"\x05owner\x18\x02 \x01(\v2\x1d.saas.catalog.v1.ServiceOwnerR\x05owner\x12\x1f\n" +
@@ -2527,7 +2538,8 @@ const file_saas_catalog_v1_catalog_proto_rawDesc = "" +
 	"\bservices\x18\x05 \x03(\v2\x18.saas.catalog.v1.ServiceR\bservices\x121\n" +
 	"\amethods\x18\x06 \x03(\v2\x17.saas.catalog.v1.MethodR\amethods\x12G\n" +
 	"\vpermissions\x18\a \x03(\v2%.saas.catalog.v1.PermissionDefinitionR\vpermissions\x12J\n" +
-	"\fentitlements\x18\b \x03(\v2&.saas.catalog.v1.EntitlementDefinitionR\fentitlements\"\xd6\x01\n" +
+	"\fentitlements\x18\b \x03(\v2&.saas.catalog.v1.EntitlementDefinitionR\fentitlements\x12-\n" +
+	"\x12interface_packages\x18\t \x03(\tR\x11interfacePackages\"\xd6\x01\n" +
 	"\x14PermissionDefinition\x12\x1e\n" +
 	"\n" +
 	"permission\x18\x01 \x01(\tR\n" +

@@ -185,6 +185,11 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 			(binding.Audience == prefix && !selfAdmittingBinding(binding)) {
 			return fmt.Errorf("invalid installed module operation audience binding")
 		}
+		// The module capability surface's own audience is reserved: a context
+		// addressed to it is read as a module identity, so no binding may name it.
+		if binding.Audience == ModuleCapabilitiesAudience {
+			return fmt.Errorf("invalid installed module operation audience binding %q: %q is this host's module capability surface and is never a binding's audience", id, ModuleCapabilitiesAudience)
+		}
 		if binding.DelegationMode != "" {
 			if _, known := installedBindingPrefixes[binding.DelegationMode]; !known || len(binding.InvokeScopes) == 0 || binding.HeadlessScopes != nil || binding.SourceDelegationScopes != nil {
 				return fmt.Errorf("invalid installed delegation mode")

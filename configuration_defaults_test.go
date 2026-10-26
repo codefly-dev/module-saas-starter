@@ -120,7 +120,20 @@ func moduleDefaultFiles(group string) []string {
 			names = append(names, name)
 		}
 	}
+	// A document group (read with WorkspaceConfigurationDocument) is one YAML
+	// document, <group>.yaml, which is how Codefly reads a configuration
+	// document; its default is a document that states at least one key.
+	name := group + ".yaml"
+	if data, err := os.ReadFile(filepath.Join(moduleConfigLocalDir, name)); err == nil && statesADocument(data) {
+		names = append(names, name)
+	}
 	return names
+}
+
+// statesADocument reports whether data is one YAML mapping with at least one key.
+func statesADocument(data []byte) bool {
+	var document map[string]any
+	return yaml.Unmarshal(data, &document) == nil && len(document) > 0
 }
 
 // repoRootMirrorsModule verifies the repo-root entry for name is a symlink that
@@ -234,11 +247,12 @@ func assertSecretDefaultIsPlaceholder(t *testing.T, name string) {
 
 func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 	for _, group := range declaredWorkspaceConfigGroups(t) {
-		// CLI supplies this group per native run. An authored path (even an
-		// empty placeholder) conflicts with its render-owned declaration.
-		if group == "artifact-cache" {
+		// The CLI supplies these groups: artifact-cache per native run, egress
+		// from the environment's egress declaration. An authored path (even an
+		// empty placeholder) conflicts with its CLI-owned declaration.
+		if group == "artifact-cache" || group == "egress" {
 			for _, directory := range []string{moduleConfigLocalDir, workspaceConfigLocalDir} {
-				for _, suffix := range []string{".env", ".secret.env"} {
+				for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
 					path := filepath.Join(directory, group+suffix)
 					if _, err := os.Lstat(path); !os.IsNotExist(err) {
 						t.Errorf("CLI-owned group %s must have no authored default at %s", group, path)
@@ -250,7 +264,7 @@ func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 		// The base-synced location is what a base-synced consumer inherits.
 		moduleDefaults := moduleDefaultFiles(group)
 		if len(moduleDefaults) == 0 {
-			t.Errorf("declared config group %q has no default under the base-synced module subtree: add a %s/%s.env (or .secret.env) that assigns at least one variable, so a base-synced solution inherits it instead of dying at runtime-init with \"no configuration found for %s\"",
+			t.Errorf("declared config group %q has no default under the base-synced module subtree: add a %s/%s.env (or .secret.env, or a .yaml document) that assigns at least one variable, so a base-synced solution inherits it instead of dying at runtime-init with \"no configuration found for %s\"",
 				group, moduleConfigLocalDir, group, group)
 		}
 		// Each module default this group ships must be mirrored by a repo-root

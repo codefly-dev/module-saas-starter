@@ -24,6 +24,7 @@ import (
 	"accounts/pkg/jobs"
 	"accounts/pkg/keyservice"
 	"accounts/pkg/membership"
+	"accounts/pkg/meshtransport"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
 	"accounts/pkg/redisstate"
@@ -935,11 +936,6 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, fmt.Errorf("application: %w", err)
 	}
 	service.SetOrganizationCreationPolicy(orgCreationPolicy)
-	enforcement, err := business.ParseModuleAuthorityEnforcement(applicationEnv("MODULE_AUTHORITY_ENFORCEMENT"))
-	if err != nil {
-		return nil, fmt.Errorf("application: %w", err)
-	}
-	service.SetModuleAuthorityEnforcement(enforcement)
 
 	emailConfig, err := configuredEmail(ctx, codefly.IsLocal())
 	if err != nil {
@@ -1299,10 +1295,20 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	}()
 
 	if selectedFixture != "" {
-		err = fixtures.Seed(ctx, service, selectedFixture)
+		installations, err := fixtures.SeedWithInstallations(ctx, service, selectedFixture)
 		if err != nil {
 			retentionCancel()
 			return nil, err
+		}
+		// A declared installation names a target the composition delivers
+		// after this boot, so it is performed after each delivery pass. A host
+		// with no delivery surface offers no target to install.
+		switch {
+		case installations == nil:
+		case solutionHostBindingReconciler != nil:
+			solutionHostBindingReconciler.AfterEachPass(installations.Converge)
+		default:
+			w.Warn("the fixture declares installations and this host has no delivery surface (no SOLUTION_HOST_COORDINATE), so no target is offered and none is installed")
 		}
 	}
 	if stripeWebhookWorker != nil {
@@ -2016,6 +2022,7 @@ func configuredSolutionHostBindingReconciler(
 	service.SetModuleNamespaceRule(namespaces)
 	service.SetSolutionDelivery(keyVerifier, store, carrier)
 	service.SetSolutionDeliveryCoordinate(coordinate)
+	service.SetAuthorityDocumentVerifier(verifier.VerifyAuthority)
 	service.SetModuleEnvelopeDeliveryHost(hostModule)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
@@ -2028,10 +2035,12 @@ func configuredSolutionHostBindingReconciler(
 	// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
 	adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
 
-	// The AUTHORITY CEILING is the module envelope a platform super_admin
-	// writes at runtime, read by every pass from the store — never a file read
-	// once here, and never out of a delivered manifest, because a manifest
-	// requests authority and never approves its own.
+	// The AUTHORITY CEILING is the applied, signed module manifest: what the
+	// composition delivers, verified against the pinned release keys, is what
+	// a module holds, so a composition runs with no hand-written authority.
+	// Where a platform super_admin has written a module envelope it narrows
+	// that ceiling; every pass reads it from the store — never a file read once
+	// here.
 	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
 		Source:     business.NewDeliveredSolutionHostBindings(service),
 		Verifier:   keyVerifier,
@@ -2045,6 +2054,7 @@ func configuredSolutionHostBindingReconciler(
 	// A delivery or an envelope write asks for a pass now, so what it changes
 	// is in force within one pass instead of one interval.
 	service.SetModuleRegistryPassTrigger(reconciler.Trigger)
+	service.SetCompositionReconcile(reconciler.RunOnce)
 
 	// EXECUTION-BOUND MINTING, wired here because this is where its inputs
 	// exist: the reviewer is the environment's mechanism (a TokenReview of a
@@ -2695,6 +2705,9 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 	if err := configureLocalEgress(isLocal, infra.InCluster()); err != nil {
 		return err
 	}
+	if err := configureMeshEgress(codefly.For(ctx)); err != nil {
+		return err
+	}
 	selection, err := keyservice.Selection(ctx, isLocal)
 	if err != nil {
 		return err
@@ -2761,6 +2774,42 @@ func configureLocalEgress(isLocal, inCluster bool) error {
 	default:
 		return fmt.Errorf("datasource-oauth/local_egress: %w", err)
 	}
+}
+
+// configureMeshEgress installs the mesh egress admission every guarded egress
+// path applies, or refuses to start on one it cannot install.
+//
+// On a cell whose ambient mesh resolves each declared egress host to an
+// address it allocated (240.240.0.0/16 by default), those addresses are not
+// public, so without this every guarded path refuses the hosts the cell exists
+// to reach. Three values:
+//
+//   - internal-transport/mesh-protected, the mesh assertion the group already
+//     carries. Without it nothing is admitted: declared hosts are inert, and a
+//     mesh egress range refuses startup;
+//   - egress/HOSTS: the hosts the environment's egress declaration gives this
+//     service, as `host:port`, which Codefly generates and delivers;
+//   - internal-transport/mesh-egress-range: the CIDR prefixes the mesh
+//     allocates from, inside 240.0.0.0/4 or 2001:2::/48; 240.240.0.0/16 when
+//     empty.
+func configureMeshEgress(source meshtransport.Source) error {
+	meshed, err := meshtransport.Protected(source)
+	if err != nil {
+		return err
+	}
+	// Literal groups and keys, so the configuration-dependency gate sees the reads.
+	hosts, _ := source.WorkspaceValue("egress", "HOSTS")
+	ranges, _ := source.WorkspaceValue("internal-transport", "mesh-egress-range")
+	if err := auth.ConfigureMeshEgress(meshed, hosts, ranges); err != nil {
+		return fmt.Errorf("egress/HOSTS, internal-transport/mesh-egress-range: %w", err)
+	}
+	if meshed && strings.TrimSpace(hosts) != "" {
+		wool.Get(context.Background()).In("configureMeshEgress").Info(
+			"guarded egress admits these declared hosts at the mesh's egress addresses",
+			wool.Field("egress/HOSTS", hosts),
+			wool.Field("internal-transport/mesh-egress-range", ranges))
+	}
+	return nil
 }
 
 // requireApplicationBaseURL refuses to start a deployed runtime without the

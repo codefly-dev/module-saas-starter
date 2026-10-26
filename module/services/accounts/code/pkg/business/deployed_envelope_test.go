@@ -56,7 +56,6 @@ func TestAnEnvelopeACellIsRunningStillParses(t *testing.T) {
 			t.Errorf("principal %q is in the deployed envelope and this build dropped it", principal)
 		}
 	}
-	// A principal whose manifest publishes no contract legitimately carries
-	// neither an operation audience nor a resource — the envelope stands whole
-	// for it — so the count above is the assertion, not the contents.
+	// Parsing establishes the administrative restrictions, not runtime grants.
+	// Reconciliation intersects them with each signed manifest's authority.
 }

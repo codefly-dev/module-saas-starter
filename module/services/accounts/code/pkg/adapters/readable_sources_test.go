@@ -223,8 +223,8 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	return store, facts, client, mint
 }
 func sourceReadRequest(token string) *connect.Request[gen.ListReadableSourceCollectionsRequest] {
-	r := connect.NewRequest(&gen.ListReadableSourceCollectionsRequest{PageSize: 1})
-	r.Header().Set(workContextHeader, token)
+	r := connect.NewRequest(&gen.ListReadableSourceCollectionsRequest{PageSize: 1, ViewerWorkContextToken: token})
+	r.Header().Set(workContextHeader, callingModuleTokenFor(token))
 	r.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 	return r
 }
@@ -259,23 +259,30 @@ func TestSourceReadSignedConnectProjectionAndRevocation(t *testing.T) {
 }
 func TestSourceReadRejectsUntrustedAuthorityBeforeStorage(t *testing.T) {
 	store, _, client, mint := sourceReadFixture(t)
+	rows := callingModuleTokenFor(mint("rows", "rows", "read"))
 	for _, test := range []struct {
 		name, token string
-		perimeter   bool
+		anonymous   bool
 		duplicate   bool
+		caller      string
 	}{
-		{name: "forged", token: "not-signed", perimeter: true}, {name: "unregistered audience", token: mint("other", "other", "read"), perimeter: true},
-		{name: "undeclared resource kind", token: mint("documents", "rows", "read"), perimeter: true},
-		{name: "scope attenuation", token: mint("documents", "documents", "write"), perimeter: true}, {name: "missing perimeter", token: mint("documents", "documents", "read")},
-		{name: "ambiguous carrier", token: mint("documents", "documents", "read"), perimeter: true, duplicate: true},
+		{name: "forged", token: "not-signed"}, {name: "unregistered audience", token: mint("other", "other", "read")},
+		{name: "undeclared resource kind", token: mint("documents", "rows", "read")},
+		{name: "scope attenuation", token: mint("documents", "documents", "write")},
+		{name: "no calling module", token: mint("documents", "documents", "read"), anonymous: true},
+		{name: "ambiguous calling module", token: mint("documents", "documents", "read"), duplicate: true},
+		{name: "a viewer addressed to another module", token: mint("documents", "documents", "read"), caller: rows},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			r := sourceReadRequest(test.token)
-			if !test.perimeter {
-				r.Header().Del("x-codefly-internal-token")
+			if test.anonymous {
+				r.Header().Del(workContextHeader)
 			}
 			if test.duplicate {
-				r.Header().Add(workContextHeader, test.token)
+				r.Header().Add(workContextHeader, r.Header().Get(workContextHeader))
+			}
+			if test.caller != "" {
+				r.Header().Set(workContextHeader, test.caller)
 			}
 			r.Header().Set("x-tenant-id", readOrg)
 			r.Header().Set("x-user-id", readOwner)

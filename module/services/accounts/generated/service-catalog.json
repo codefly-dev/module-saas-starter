@@ -8,6 +8,44 @@
   "api_version": "0.4.0",
   "services": [
     {
+      "name": "AuthorityService",
+      "full_name": "host.authority.v1.AuthorityService",
+      "procedures": [
+        "/host.authority.v1.AuthorityService/Check",
+        "/host.authority.v1.AuthorityService/Delegate",
+        "/host.authority.v1.AuthorityService/GetDelegation",
+        "/host.authority.v1.AuthorityService/Issue",
+        "/host.authority.v1.AuthorityService/Keys",
+        "/host.authority.v1.AuthorityService/ListResources",
+        "/host.authority.v1.AuthorityService/RevokeDelegation"
+      ]
+    },
+    {
+      "name": "CompositionService",
+      "full_name": "host.composition.v1.CompositionService",
+      "procedures": [
+        "/host.composition.v1.CompositionService/ApplyManifest"
+      ]
+    },
+    {
+      "name": "InstallationService",
+      "full_name": "host.installation.v1.InstallationService",
+      "procedures": [
+        "/host.installation.v1.InstallationService/GrantToTeam",
+        "/host.installation.v1.InstallationService/Install",
+        "/host.installation.v1.InstallationService/List"
+      ]
+    },
+    {
+      "name": "SessionService",
+      "full_name": "host.session.v1.SessionService",
+      "procedures": [
+        "/host.session.v1.SessionService/Current",
+        "/host.session.v1.SessionService/ListFixturePeople",
+        "/host.session.v1.SessionService/SignIn"
+      ]
+    },
+    {
       "name": "APIKeyService",
       "full_name": "saas.accounts.v1.APIKeyService",
       "procedures": [
@@ -496,6 +534,660 @@
     }
   ],
   "methods": [
+    {
+      "procedure": "/host.authority.v1.AuthorityService/Check",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "Check",
+      "input_type": "host.authority.v1.CheckRequest",
+      "output_type": "host.authority.v1.CheckResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/authority:check",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/Delegate",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "Delegate",
+      "input_type": "host.authority.v1.DelegateRequest",
+      "output_type": "host.authority.v1.Delegation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module_delegation.granted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "Record a signed-in person's grant to a module, within what they hold.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/GetDelegation",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "GetDelegation",
+      "input_type": "host.authority.v1.GetDelegationRequest",
+      "output_type": "host.authority.v1.Delegation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "Read whether one delegation still stands, for its module or its grantor.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/Issue",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "Issue",
+      "input_type": "host.authority.v1.IssueRequest",
+      "output_type": "host.authority.v1.IssueResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/authority:issue",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.work_context.task_started"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_member",
+      "description": "Issue a Work Context for one owner shape, one audience and the scopes asked for, bounded by what the owner holds.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/Keys",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "Keys",
+      "input_type": "host.authority.v1.KeysRequest",
+      "output_type": "host.authority.v1.KeysResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_PUBLIC",
+        "response_sensitivity": "SENSITIVITY_PUBLIC",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Return the issuer and the public keys a verifier pins.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/ListResources",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "ListResources",
+      "input_type": "host.authority.v1.ListResourcesRequest",
+      "output_type": "host.authority.v1.ListResourcesResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.authority.v1.AuthorityService/RevokeDelegation",
+      "service": "AuthorityService",
+      "full_service": "host.authority.v1.AuthorityService",
+      "method": "RevokeDelegation",
+      "input_type": "host.authority.v1.RevokeDelegationRequest",
+      "output_type": "host.authority.v1.RevokeDelegationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/authority/v1/authority.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module_delegation.revoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "End a delegation; every capability issued from it is refused from then on.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.composition.v1.CompositionService/ApplyManifest",
+      "service": "CompositionService",
+      "full_service": "host.composition.v1.CompositionService",
+      "method": "ApplyManifest",
+      "input_type": "host.composition.v1.ApplyManifestRequest",
+      "output_type": "host.composition.v1.ApplyManifestResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/composition/v1/composition.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Deliver one module instance's manifest at one generation; the ceiling is the manifest.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/GrantToTeam",
+      "service": "InstallationService",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "GrantToTeam",
+      "input_type": "host.installation.v1.GrantToTeamRequest",
+      "output_type": "host.installation.v1.Installation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/installation/v1/installation.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.scope.granted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_admin",
+      "description": "Expose an installation to a team under the installation's role.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/Install",
+      "service": "InstallationService",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "Install",
+      "input_type": "host.installation.v1.InstallRequest",
+      "output_type": "host.installation.v1.Installation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/installation/v1/installation.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.installation.created"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_admin",
+      "description": "Install one target at one organisation under the least role it needs; pending until its install step is acknowledged.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/List",
+      "service": "InstallationService",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "List",
+      "input_type": "host.installation.v1.ListRequest",
+      "output_type": "host.installation.v1.ListResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/installation/v1/installation.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_admin",
+      "description": "List what one organisation has installed.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.session.v1.SessionService/Current",
+      "service": "SessionService",
+      "full_service": "host.session.v1.SessionService",
+      "method": "Current",
+      "input_type": "host.session.v1.CurrentRequest",
+      "output_type": "host.session.v1.Session",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/session/v1/session.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/session",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "Answer the session the caller's bearer belongs to, without the bearer.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.session.v1.SessionService/ListFixturePeople",
+      "service": "SessionService",
+      "full_service": "host.session.v1.SessionService",
+      "method": "ListFixturePeople",
+      "input_type": "host.session.v1.ListFixturePeopleRequest",
+      "output_type": "host.session.v1.ListFixturePeopleResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/session/v1/session.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/session/fixture-people",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_PUBLIC",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "List the people fixture sign-in admits, in the fixture's order; none where it is not enabled.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.session.v1.SessionService/SignIn",
+      "service": "SessionService",
+      "full_service": "host.session.v1.SessionService",
+      "method": "SignIn",
+      "input_type": "host.session.v1.SignInRequest",
+      "output_type": "host.session.v1.Session",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/session/v1/session.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/session:sign-in",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.auth.login"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Open a session for a fixture person by their fixture token.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
     {
       "procedure": "/saas.accounts.v1.APIKeyService/CreateAPIKey",
       "service": "APIKeyService",
@@ -15017,5 +15709,11 @@
       "unit": "enabled",
       "description": "Single sign-on administration."
     }
+  ],
+  "interface_packages": [
+    "host.authority.v1",
+    "host.composition.v1",
+    "host.installation.v1",
+    "host.session.v1"
   ]
 }

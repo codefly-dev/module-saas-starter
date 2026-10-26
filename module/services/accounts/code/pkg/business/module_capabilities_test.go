@@ -221,7 +221,9 @@ func TestModuleEnqueueJob_UnknownPrincipalRejected(t *testing.T) {
 	_, err := svc.ModuleEnqueueJob(context.Background(),
 		business.ModuleCaller{PrincipalID: "someone-else", BoundOrg: moduleTenantA},
 		moduleTenantA, orgScopedJob(moduleTenantA, "datasource"))
-	requireCode(t, err, codes.PermissionDenied)
+	// A context naming no registered module is the module's own credential
+	// failing: Unauthenticated, so it drops the context and mints again.
+	requireCode(t, err, codes.Unauthenticated)
 }
 
 func TestModuleEnqueueJob_CrossTenantRejected(t *testing.T) {
@@ -907,11 +909,11 @@ func TestModuleSurfaceUnconfiguredAuthorityNamesItsOwnReason(t *testing.T) {
 	_, notify := svc.ModuleNotifyUser(context.Background(), moduleCaller(), business.ModuleNotifyUserInput{
 		Tenant: moduleTenantA, UserID: moduleUserA, Title: "Title", Body: "Body", Type: "info", Category: "security",
 	})
-	requireRefusal(t, notify, codes.FailedPrecondition, business.ModuleLiveAuthorityUnavailableReason)
+	requireRefusal(t, notify, codes.Unavailable, business.ModuleLiveAuthorityUnavailableReason)
 
 	_, enqueue := svc.ModuleEnqueueJob(context.Background(), moduleCaller(), moduleTenantA,
 		subjectScopedJob(moduleUserA, "documents"))
-	requireRefusal(t, enqueue, codes.FailedPrecondition, business.ModuleLiveAuthorityUnavailableReason)
+	requireRefusal(t, enqueue, codes.Unavailable, business.ModuleLiveAuthorityUnavailableReason)
 
 	// The recipient here IS a member, so a reason naming membership would be
 	// wrong about the world as well as unhelpful.
@@ -958,7 +960,7 @@ func TestModuleSurfaceSeparatesANonMemberFromAModuleSideRefusal(t *testing.T) {
 			// could no longer answer PermissionDenied.
 			requireRefusal(t, call(t, noMembers(), moduleCaller(), moduleTenantB), codes.PermissionDenied, "")
 			requireRefusal(t, call(t, noMembers(), business.ModuleCaller{PrincipalID: "someone-else", BoundOrg: moduleTenantA}, moduleTenantA),
-				codes.PermissionDenied, "")
+				codes.Unauthenticated, "")
 			requireRefusal(t, call(t, noMembers(), business.ModuleCaller{BoundOrg: moduleTenantA}, moduleTenantA), codes.Unauthenticated, "")
 
 			// A membership read that FAILED proves nothing either way, so it
@@ -1237,7 +1239,7 @@ func TestModuleListSubjectVisibility_UnknownPrincipalRejected(t *testing.T) {
 	_, err := svc.ModuleListSubjectVisibility(context.Background(),
 		business.ModuleCaller{PrincipalID: "someone-else", BoundOrg: moduleTenantA},
 		moduleTenantA, moduleUserA)
-	requireCode(t, err, codes.PermissionDenied)
+	requireCode(t, err, codes.Unauthenticated)
 }
 
 func TestModuleListSubjectVisibility_CrossTenantRejected(t *testing.T) {

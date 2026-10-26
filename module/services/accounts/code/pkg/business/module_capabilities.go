@@ -288,6 +288,39 @@ func ModulePrincipalID(prefix string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/module-principal/"+prefix)).String()
 }
 
+// RegistryIDOf resolves the principal a capability names to the registry id of
+// the declared module it is, and reports false for every other principal.
+//
+// A module is named by its NAME wherever the host interface states it: the
+// actor of a hop, the owner of a headless operation context, the principal an
+// installed operation binding (<organisation>/<module>/<binding>) is granted
+// to. The registry id (ModulePrincipalID) is this host's storage identity and
+// is still what the capabilities the interface does not issue carry, so it
+// resolves too. The two never overlap: a module name never parses as a UUID
+// (ValidateModulePrincipalGrant refuses one), so a principal spelled as an id
+// is looked up as an id and nothing else, and a name only as the entry
+// declared under exactly that name.
+func (r ModulePrincipalRegistry) RegistryIDOf(principal string) (string, bool) {
+	if principal == "" {
+		return "", false
+	}
+	id := moduleRegistryKey(principal)
+	grant, declared := r[id]
+	if !declared || (id != principal && grant.Prefix != principal) {
+		return "", false
+	}
+	return id, true
+}
+
+// moduleRegistryKey is the registry key a principal is looked up under: itself
+// when it is spelled as an id, the id its name derives otherwise.
+func moduleRegistryKey(principal string) string {
+	if _, err := uuid.Parse(principal); err == nil {
+		return principal
+	}
+	return ModulePrincipalID(principal)
+}
+
 // canonicalModuleTenant parses a principal's tenant and returns its canonical
 // spelling.
 //
@@ -391,6 +424,16 @@ func validateModulePrincipalCeiling(prefix string, grant ModulePrincipalGrant) e
 // and saying so here names the entry instead of leaving every one of its calls
 // refused as "denied".
 func ValidateModulePrincipalGrant(prefix string, grant ModulePrincipalGrant) error {
+	// A module's name is the principal every capability it exercises names it
+	// by, beside the person and agent ids those capabilities carry, which are
+	// UUIDs. A name spelled as one would collide with them (RegistryIDOf).
+	if _, err := uuid.Parse(prefix); err == nil {
+		return fmt.Errorf("module principal %q is named as an id: a module's name is its principal in every capability it exercises, so it must never read as a principal id", prefix)
+	}
+	if slices.Contains(grant.Queues, InstallationStepQueue) {
+		return fmt.Errorf("principal %q asks for host-only queue %q", prefix, InstallationStepQueue)
+	}
+
 	if grant.Prefix != prefix {
 		return fmt.Errorf("module principal %q carries prefix %q", prefix, grant.Prefix)
 	}
@@ -563,8 +606,8 @@ func moduleRefusal(code codes.Code, reason, message string) error {
 // of the caller's own AUTHORITY stays Unauthenticated or PermissionDenied — an
 // identity it cannot prove, a principal no composition registered, a tenant it
 // is not bound to — held apart from a malformed request (InvalidArgument) and
-// from an operational condition of this host, which answers FailedPrecondition
-// under a reason of its own (ModuleLiveAuthorityUnavailableReason). So a
+// from an operational condition of this host, which answers Unavailable under
+// a reason of its own (ModuleLiveAuthorityUnavailableReason). So a
 // consumer driving this surface from a journal can tell a departed person —
 // final for that person, and nothing the module may retry its way out of —
 // from a composition this host does not admit as a module principal, which is

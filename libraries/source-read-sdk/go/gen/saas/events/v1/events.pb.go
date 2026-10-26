@@ -7,12 +7,13 @@
 package eventsv1
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -252,7 +253,8 @@ const file_saas_events_v1_events_proto_rawDesc = "" +
 	"\x12actor_principal_id\x18\x19 \x01(\tR\x10actorPrincipalId\x12,\n" +
 	"\x12owner_principal_id\x18\x1a \x01(\tR\x10ownerPrincipalId\x12 \n" +
 	"\vtraceparent\x18\x1b \x01(\tR\vtraceparent\x12%\n" +
-	"\x0eschema_version\x18\x1c \x01(\rR\rschemaVersionb\x06proto3"
+	"\x0eschema_version\x18\x1c \x01(\rR\rschemaVersionB\xcc\x01\n" +
+	"\x12com.saas.events.v1B\vEventsProtoP\x01ZOgithub.com/codefly-dev/cli/pkg/builder/clients/accounts/saas/events/v1;eventsv1\xa2\x02\x03SEX\xaa\x02\x0eSaas.Events.V1\xca\x02\x0eSaas\\Events\\V1\xe2\x02\x1aSaas\\Events\\V1\\GPBMetadata\xea\x02\x10Saas::Events::V1b\x06proto3"
 
 var (
 	file_saas_events_v1_events_proto_rawDescOnce sync.Once

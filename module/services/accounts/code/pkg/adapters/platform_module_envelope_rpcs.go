@@ -161,6 +161,13 @@ func moduleEnvelopeError(err error, internal string) error {
 	if errors.Is(err, business.ErrModuleEnvelopeUnavailable) {
 		return status.Error(codes.FailedPrecondition, "this host has no module envelope store")
 	}
+	// A write that changes or removes what a principal is already granted is
+	// a narrowing, which only a policy-log witness admits. The writer can act
+	// on that (add whole principals only, or run with a witness), so it is
+	// told, not handed an internal error.
+	if errors.Is(err, business.ErrPolicyLogUnreachable) {
+		return status.Error(codes.FailedPrecondition, "the envelope changes what an existing principal is granted, a narrowing this host admits only under the policy log's witness, and the policy log is unreachable")
+	}
 	return status.Error(codes.Internal, internal)
 }
 

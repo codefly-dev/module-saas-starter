@@ -118,8 +118,9 @@ func (c moduleActorCase) exchange(binding, parent, credential string, lookup boo
 	return (&ModuleCapabilitiesServer{}).ExchangeDelegatedOperationAudience(ctx, &gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent, Lookup: lookup})
 }
 
-// revision asks the host whether a child still stands, as a callee does,
-// naming the operation binding the child seals.
+// revision asks the host whether a child still stands, as a callee does:
+// presenting its own module Work Context and naming the operation binding the
+// child seals.
 func (c moduleActorCase) revision(t *testing.T, child *basev0.WorkContextV1) error {
 	t.Helper()
 	subjects := []*gen.WorkContextRevisionSubject{{PrincipalId: child.OwnerPrincipalId, Scopes: wireScopes(child.AuthorityScopes)}}
@@ -127,7 +128,7 @@ func (c moduleActorCase) revision(t *testing.T, child *basev0.WorkContextV1) err
 		subjects = append(subjects, &gen.WorkContextRevisionSubject{PrincipalId: hop.PrincipalId, Scopes: wireScopes(hop.GrantedScopes)})
 	}
 	binding := child.GetOperationBinding().GetBindingId()
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "installed-read-test"))
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(workContextHeader, c.moduleToken))
 	_, err := c.server.CheckAuthorizationRevision(ctx, &gen.CheckAuthorizationRevisionRequest{OrgId: child.TenantId, OwnerPrincipalId: child.OwnerPrincipalId, AuthorizationRevision: child.AuthorizationRevision, Subjects: subjects, OperationBindingId: &binding})
 	return err
 }

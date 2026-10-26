@@ -23,6 +23,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
         "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
+        "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
         "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
@@ -46,6 +47,44 @@
     }
   ],
   "connect": [
+    {
+      "name": "AuthorityService",
+      "fullName": "host.authority.v1.AuthorityService",
+      "procedures": [
+        "/host.authority.v1.AuthorityService/Check",
+        "/host.authority.v1.AuthorityService/Delegate",
+        "/host.authority.v1.AuthorityService/GetDelegation",
+        "/host.authority.v1.AuthorityService/Issue",
+        "/host.authority.v1.AuthorityService/Keys",
+        "/host.authority.v1.AuthorityService/ListResources",
+        "/host.authority.v1.AuthorityService/RevokeDelegation"
+      ]
+    },
+    {
+      "name": "CompositionService",
+      "fullName": "host.composition.v1.CompositionService",
+      "procedures": [
+        "/host.composition.v1.CompositionService/ApplyManifest"
+      ]
+    },
+    {
+      "name": "InstallationService",
+      "fullName": "host.installation.v1.InstallationService",
+      "procedures": [
+        "/host.installation.v1.InstallationService/GrantToTeam",
+        "/host.installation.v1.InstallationService/Install",
+        "/host.installation.v1.InstallationService/List"
+      ]
+    },
+    {
+      "name": "SessionService",
+      "fullName": "host.session.v1.SessionService",
+      "procedures": [
+        "/host.session.v1.SessionService/Current",
+        "/host.session.v1.SessionService/ListFixturePeople",
+        "/host.session.v1.SessionService/SignIn"
+      ]
+    },
     {
       "name": "APIKeyService",
       "fullName": "saas.accounts.v1.APIKeyService",

@@ -407,3 +407,24 @@ func TestSelectedNameEmptyWithoutSelectionSkipsDirectory(t *testing.T) {
 		t.Fatalf("SelectedName() = %q, want empty", name)
 	}
 }
+
+// A role assignment names exactly one subject: an agent or a person.
+func TestValidateFixtureAssignsARoleToExactlyOneSubject(t *testing.T) {
+	for name, tc := range map[string]struct {
+		assignment fixtureRoleAssignment
+		valid      bool
+	}{
+		"an agent": {fixtureRoleAssignment{Org: "Acme", Role: "Reader", AgentIdentifier: "agent"}, true},
+		"a person": {fixtureRoleAssignment{Org: "Acme", Role: "Reader", Email: "jane@example.com"}, true},
+		"neither":  {fixtureRoleAssignment{Org: "Acme", Role: "Reader"}, false},
+		"both":     {fixtureRoleAssignment{Org: "Acme", Role: "Reader", AgentIdentifier: "agent", Email: "jane@example.com"}, false},
+		"no role":  {fixtureRoleAssignment{Org: "Acme", Email: "jane@example.com"}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := validateFixture(&fixtureFile{Assignments: []fixtureRoleAssignment{tc.assignment}})
+			if (err == nil) != tc.valid {
+				t.Fatalf("validateFixture() error = %v, want valid = %v", err, tc.valid)
+			}
+		})
+	}
+}

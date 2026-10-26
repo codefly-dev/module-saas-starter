@@ -79,6 +79,12 @@ const PRUNE_DIRS = new Set([
 const SKIP_FILE = (rel) =>
   /(?:^|\/)tools\/naming-terms\.json$/.test(rel) || // digests only, by construction
   /(?:^|\/)package-lock\.json$/.test(rel) ||
+  // The service catalog is generated: every string in it is a proto identifier
+  // (the protos are scanned as text) or a description from pkg/business
+  // (scanned as Go, and restated in AUTHZ_MATRIX.md, also scanned). The same
+  // reasoning as the descriptor skip below; and it crossed MAX_BYTES at 40
+  // services, which no split of a generated file should decide.
+  /(?:^|\/)generated\/service-catalog\.json$/.test(rel) ||
   /\.(?:png|jpe?g|gif|webp|avif|ico|icns|pdf|zip|gz|tgz|bz2|xz|woff2?|ttf|otf|eot|mp4|webm|wasm|so|dylib|dll|exe|bin|binpb|node)$/i.test(rel) ||
   rel.endsWith(".tsbuildinfo") ||
   rel.endsWith(".DS_Store");

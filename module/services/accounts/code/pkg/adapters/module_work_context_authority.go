@@ -299,6 +299,16 @@ func (s *WorkContextAuthorityServer) answerOperationBinding(
 	case err != nil:
 		return nil, unansweredWorkContextAuthority(ctx, "operation binding", err)
 	}
+	// The binding sealed is the last hop's; every hop above it is held to the
+	// binding and scope set it went through, so a binding narrowed upstream
+	// revokes what a callee verifies here too, not only on this host's Check.
+	revoked := live.Revoked
+	if err := s.requireModuleChainStands(ctx, claims); err != nil {
+		if status.Code(err) != codes.PermissionDenied {
+			return nil, unansweredWorkContextAuthority(ctx, "operation binding", err)
+		}
+		revoked = true
+	}
 	return operationBindingAnswer(&gen.WorkContextOperationBindingAnswer{
 		State:          gen.WorkContextOperationBindingState_WORK_CONTEXT_OPERATION_BINDING_STATE_RESOLVED,
 		BindingId:      live.ID,
@@ -306,7 +316,7 @@ func (s *WorkContextAuthorityServer) answerOperationBinding(
 		InstallationId: live.InstallationID,
 		Revision:       live.Revision,
 		Incarnation:    live.Incarnation,
-		Revoked:        live.Revoked,
+		Revoked:        revoked,
 	}), nil
 }
 
