@@ -52,6 +52,13 @@ afterEach(() => {
 
 const EXPENSES_TARGET = "aaaaaaaa-0000-4000-8000-000000000001";
 const LEDGER_TARGET = "aaaaaaaa-0000-4000-8000-000000000002";
+// The consent the page sends: the reviewed target and generation, a zero
+// (omitted) revision for a first install, and a fresh operation id.
+const LEDGER_APPROVAL = {
+	targetId: LEDGER_TARGET,
+	generation: "5",
+	operationId: expect.any(String),
+};
 const EXPENSES_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000001";
 const READER_ROLE = "cccccccc-0000-4000-8000-000000000001";
 const USE_ROLE = "cccccccc-0000-4000-8000-000000000002";
@@ -386,6 +393,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			orgId: "org-1",
 			// The immutable target the row named, never its route alias.
 			targetId: LEDGER_TARGET,
+			approval: LEDGER_APPROVAL,
 			agentIdentifier: "acme/ledger:0.9.1",
 			roleId: READER_ROLE,
 			allowedAudiences: ["solution:binding-ledger"],
@@ -1192,6 +1200,7 @@ describe("mutation results belong to the page", () => {
 								? {
 										orgId: "org-1",
 										targetId: LEDGER_TARGET,
+										approval: LEDGER_APPROVAL,
 										agentIdentifier: "acme/ledger:0.9.1",
 										roleId: READER_ROLE,
 									}
@@ -1459,6 +1468,7 @@ describe("accessible validation and host text", () => {
 					await assertBody(request, {
 						orgId: "org-1",
 						targetId: LEDGER_TARGET,
+						approval: LEDGER_APPROVAL,
 						agentIdentifier: "acme/ledger:0.9.1",
 						roleId: READER_ROLE,
 					});
