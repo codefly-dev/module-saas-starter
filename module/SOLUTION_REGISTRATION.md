@@ -464,9 +464,15 @@ module installation follows its grant as it moves only while an envelope sets
 that grant — a ceiling a platform administrator, or the composition's signed
 envelope, approved for every organisation. With no envelope, a later manifest
 generation that **widens** the ceiling reaches no organisation that installed
-an earlier one: taking it is an explicit lifecycle action by that
-organisation's administrator (installing again answers a conflict that names
-it), while a fresh installation consents to the current generation. A
+an earlier one. An organization owner or admin explicitly approves the current
+ceiling by calling `host.installation.v1.InstallationService/Install` again with
+the same target and role, or `saas.accounts.v1.InstallationService/InstallSolution`
+with the target ID. A module re-install records a fresh snapshot, retains the
+installation ID, ownership and standing grants, and advances its revision when
+consent changes. A non-admin cannot re-consent, even by naming an admin owner.
+A fresh installation consents to the current generation. Fixture-declared
+installations use this same path: the host's setup is consent at creation and,
+when reseeded, re-consents its own existing module installations. A
 narrowing reaches every installation at once. An installation that already
 follows its grant (recorded under an envelope, or before the signed manifest
 became the ceiling) holds **nothing** on a host with no envelope — its

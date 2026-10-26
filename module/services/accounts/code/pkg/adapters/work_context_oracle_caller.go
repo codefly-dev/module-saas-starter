@@ -2,6 +2,8 @@ package adapters
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"accounts/pkg/business"
 
@@ -56,8 +58,38 @@ func (s *WorkContextAuthorityServer) requireCallingModule(ctx context.Context, o
 		return nil
 	}
 	_, err = service.AuthorizeModuleCapability(ctx, business.ModuleCaller{PrincipalID: caller.PrincipalID, BoundOrg: orgID})
-	if err != nil && status.Code(err) != codes.Unavailable {
-		return status.Errorf(codes.PermissionDenied, errOracleCallerNotInstalled, orgID)
+	if err != nil {
+		return moduleInstallationRefusal(ctx, "WorkContext read oracle", err,
+			status.Errorf(codes.PermissionDenied, errOracleCallerNotInstalled, orgID))
 	}
-	return err
+	return nil
+}
+
+// moduleInstallationRefusal preserves actionable consent/authority failures.
+// Absent installations and organizations outside the current tenant grant share
+// the non-enumerating not-installed response.
+// The log retains the cause, without any presented credential.
+func moduleInstallationRefusal(ctx context.Context, procedure string, cause, notInstalled error) error {
+	refusal := cause
+	switch {
+	case errors.Is(cause, business.ErrModuleInstallationInactive), errors.Is(cause, business.ErrModuleTenantNotCurrent):
+		refusal = notInstalled
+	case errors.Is(cause, business.ErrModuleAuthorityUnreadable):
+		refusal = status.Error(codes.InvalidArgument, business.ErrModuleAuthorityUnreadable.Error())
+	}
+	reason := cause.Error()
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		for _, header := range []string{"authorization", workContextHeader, "x-codefly-internal-token"} {
+			for _, credential := range md.Get(header) {
+				if credential != "" {
+					reason = strings.ReplaceAll(reason, credential, "[redacted credential]")
+					if bearer, ok := strings.CutPrefix(credential, "Bearer "); ok && bearer != "" {
+						reason = strings.ReplaceAll(reason, bearer, "[redacted credential]")
+					}
+				}
+			}
+		}
+	}
+	logRefusal(ctx, procedure, status.Code(refusal), status.Convert(refusal).Message(), errors.New(reason))
+	return refusal
 }

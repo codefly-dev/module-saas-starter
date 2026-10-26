@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.214}"
+version="${CODEFLY_VERSION:-0.1.215}"
 source_revision=""
 case "${version}" in
   source-8de0f6674550fb040f03bc6cb2530116878c8c6b)
@@ -77,6 +77,11 @@ case "${version}" in
     # hop-routes producer, which resolves the authority interface dependency.
     # Digest of the downloaded Linux amd64 archive; matches checksums.txt.
     checksum=e144417e595aa4e98937e01e5c2ce15123ae962fbe446479e8cd82e70ff7536a
+    ;;
+  0.1.215)
+    # cli#1173: --services narrows generated library descriptors and facades.
+    # Published checksums.txt, Linux amd64 archive.
+    checksum=02fee236eb8bee468254a73a88259df0329da71a55977aa0e71b5c1cabd01471
     ;;
   0.1.214)
     # Carries cli#1166 (buf-module client proto sources; generate proto --path

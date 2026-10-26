@@ -1204,7 +1204,37 @@ binding answer gets the exact check.
   the grantor's organisation (`FailedPrecondition`, by name). The store's
   migration runner records every applied migration's name on its version table
   and refuses a database whose recorded names this ledger contradicts (a
-  database recorded before names were cannot be checked, and is recorded on
-  its next run). The harness reads the Connect server's error and retries a
-  port taken between its probe and the bind, the cause of the fresh-store
-  flake.
+  database without recorded names cannot be checked). **Local and validation
+  databases created before migrations 46–49 were renumbered to 49–52 must be
+  recreated.** The guard cannot identify those unstamped databases; no upgrade
+  path is supported, and a migration failure names this remedy. The harness
+  holds a listener bound to `:0`, reads its assigned port, and serves the
+  generated Connect catalog on that listener until cleanup.
+
+
+### Review r153: explicit re-consent and actionable refusals
+
+An organization owner/admin's explicit module re-install is approval of the
+current ceiling. Both Install and InstallSolution retain the installation and
+write its current consent snapshot through the existing transaction; the
+revision trigger invalidates the previous consent's credentials and work.
+Non-admin requests do not change consent. The host's fixture setup consents at
+creation and repairs its declared module installations when reseeded.
+`INSTALLATION_CONSENT_REQUIRED` names both install RPCs as the recovery action.
+
+The read oracles and Delegate distinguish a missing installation from missing
+consent and unreadable authority. Absent and uninstalled organizations, including
+organizations outside the current tenant grant, still answer alike; a moved
+tenant's cause is kept in the log. Both sites log the cause without presented
+credentials. A rewritten delivery reports the stored and offered manifest,
+payload and authority-document digests, so an authority-only change is legible.
+
+CI and library regeneration require released Codefly CLI **v0.1.215**. Runtime
+initialization also passed with v0.1.214, which resolves the accounts service's Codefly-owned `egress` dependency.
+Older development binaries may report “no configuration found for egress”.
+
+The source-read SDK is generated with v0.1.215 and
+`--services ModuleCapabilitiesService`; its contract and facade exclude
+unrelated services. The descriptor-closure regression is restored. The
+TypeScript library is regenerated with the same CI pin through its owning
+script; no generated file is hand-edited or selected out of its output.

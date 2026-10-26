@@ -18,7 +18,11 @@ type InstallSolutionParams struct {
 	RegistryBindingID   string
 	RegistryPrincipalID string
 	Scope               *InstallationScope
-	EnvelopeRevision    uint64
+	// ModuleCeiling is resolved by prepareInstallation, never from the request.
+	// Re-consent may approve this current ceiling; partial reductions use the
+	// witnessed NarrowInstallation lifecycle instead.
+	ModuleCeiling    *InstallationScope
+	EnvelopeRevision uint64
 	// InstallerPrincipalID records ownership for bounded nonhuman reconciliation.
 	InstallerPrincipalID string
 	OrgID                string
@@ -120,9 +124,6 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		wool.Field("org_id", params.OrgID),
 		wool.Field("target_id", params.TargetID))
 	params.GrantedBy = actorID
-	if params.OwnerPrincipalID == "" {
-		params.OwnerPrincipalID = actorID
-	}
 	// Composing at the store level (one transaction) skips the friendly
 	// Principal.Validate() check the CreateAgentPrincipal domain path runs, so a
 	// malformed identifier would otherwise surface as an opaque DB CHECK violation
@@ -147,6 +148,9 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	_, err := s.prepareInstallation(ctx, params)
 	if err != nil {
 		return nil, err
+	}
+	if params.OwnerPrincipalID == "" {
+		params.OwnerPrincipalID = actorID
 	}
 	// The ceiling may only name audiences this host actually serves (issue #952).
 	// `allowed_audiences` used to be free text, so an installation could name a

@@ -12,10 +12,17 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net"
+	"net/http"
+
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
+	"connectrpc.com/otelconnect"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 
 	conformance "github.com/codefly-dev/authority/libraries/conformance/go"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
@@ -36,6 +43,7 @@ import (
 
 	"accounts/fixtures"
 	"accounts/internal/deliverytest"
+	"accounts/pkg/auth"
 	Package "accounts/pkg/auth/dev"
 	ed25519minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
@@ -44,8 +52,13 @@ import (
 	"accounts/pkg/business/executiontest"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
+	"accounts/pkg/gen/host/composition/v1/compositionv1connect"
+	installationv1 "accounts/pkg/gen/host/installation/v1"
+	"accounts/pkg/gen/host/installation/v1/installationv1connect"
 	sessionv1 "accounts/pkg/gen/host/session/v1"
+	"accounts/pkg/gen/host/session/v1/sessionv1connect"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 )
 
 // fixtureOrganization is Acme Corp in the harness's fixture, and
@@ -673,55 +686,90 @@ func runHostInterfaceFixture(t *testing.T) {
 		_, err = client.Current(bearer, &sessionv1.CurrentRequest{})
 		require.Equal(t, codes.Unauthenticated, status.Code(err), "an ended session: %v", err)
 	})
+
+	t.Run("admin re-install through Connect is explicit consent", func(t *testing.T) {
+		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+		composition := compositionv1connect.NewCompositionServiceClient(http.DefaultClient, baseURL)
+		m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: "conformance-reconsent", Alias: "conformance-reconsent", Kind: solutionhost.KindModule, Generation: 1,
+			Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: "conformance-reconsent", Version: "0.1.0"},
+			Workloads: []solutionhost.Workload{{Service: "conformance-reconsent", Container: "app"}}, Authority: &solutionhost.Authority{Principal: "conformance-reconsent", ResourceKinds: []string{"example-records"}}}
+		raw, err := solutionhost.SignedPayload(m)
+		require.NoError(t, err)
+		_, err = composition.ApplyManifest(ctx, connect.NewRequest(&compositionv1.ApplyManifestRequest{
+			Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + m.Alias,
+		}))
+		require.NoError(t, err)
+		sessions := sessionv1connect.NewSessionServiceClient(http.DefaultClient, baseURL)
+		bearer := func(fixture string) string {
+			t.Helper()
+			resp, err := sessions.SignIn(ctx, connect.NewRequest(&sessionv1.SignInRequest{FixtureToken: fixture}))
+			require.NoError(t, err)
+			return resp.Msg.GetBearer()
+		}
+		admin, member := bearer("fixture-alex"), bearer("fixture-remi")
+		client := installationv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
+		install := func(token string) (*connect.Response[installationv1.Installation], error) {
+			req := connect.NewRequest(&installationv1.InstallRequest{OrganizationId: fixtureOrganization, Target: m.Alias, Role: "Collection reader"})
+			req.Header().Set("Authorization", "Bearer "+token)
+			return client.Install(ctx, req)
+		}
+		first, err := install(admin)
+		require.NoError(t, err)
+		svc.SetModuleAuthorityReads(store, nil)
+		t.Cleanup(func() {
+			svc.SetModuleAuthorityReads(withdrawnModuleInstallations{ComposedModuleInstallations: composed, withdrawn: "conformance-idle"}, nil)
+		})
+		caller := business.ModuleCaller{PrincipalID: business.ModulePrincipalID(m.Alias), BoundOrg: fixtureOrganization}
+		_, err = svc.AuthorizeModuleCapability(ctx, caller)
+		require.NoError(t, err, "creation consents")
+		require.NoError(t, store.WithOrgTx(ctx, fixtureOrganization, func(ctx context.Context) error {
+			_, err := storetx.Tx(ctx).Exec(ctx, `UPDATE public.installations SET scope='{"capabilities":true,"follows":true}'::jsonb WHERE id=$1`, first.Msg.GetId())
+			return err
+		}))
+		_, err = svc.AuthorizeModuleCapability(ctx, caller)
+		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		_, err = install(member)
+		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+		_, err = svc.AuthorizeModuleCapability(ctx, caller)
+		require.Equal(t, codes.FailedPrecondition, status.Code(err), "member re-install does not consent")
+		again, err := install(admin)
+		require.NoError(t, err, "the named remedy returns success on the wire")
+		require.Equal(t, first.Msg.GetId(), again.Msg.GetId())
+		_, err = svc.AuthorizeModuleCapability(ctx, caller)
+		require.NoError(t, err, "admin re-install records usable consent")
+	})
+
+}
+
+// serveConnect holds its :0 listener until cleanup and reads the assigned port
+// back from it. Reuse the generated registration and production interceptors.
+func serveConnect(t *testing.T, ctx context.Context, grpcServer *GrpcServer) uint16 {
+	t.Helper()
+	tier, err := NewConnectServer(&Configuration{}, grpcServer)
+	require.NoError(t, err)
+	mux := http.NewServeMux()
+	otel, err := otelconnect.NewInterceptor()
+	require.NoError(t, err)
+	registerCatalogConnectServices(mux, tier, connect.WithInterceptors(otel,
+		connectRefusalInterceptor(), connectAuthInterceptor(func() auth.JWTMinter {
+			return service.JWTMinter()
+		}), rateLimitInterceptor(rateLimiter)))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	server := &http.Server{Handler: h2c.NewHandler(mux, &http2.Server{}), ReadHeaderTimeout: 10 * time.Second,
+		BaseContext: func(net.Listener) context.Context { return ctx }}
+	ran := make(chan error, 1)
+	go func() { ran <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		require.NoError(t, server.Close())
+		require.ErrorIs(t, <-ran, http.ErrServerClosed)
+	})
+	return uint16(listener.Addr().(*net.TCPAddr).Port)
 }
 
 // registeredDescriptors is the descriptor set of every proto file this binary
 // links, which is what codefly generate contracts would export for the served
 // interfaces; the suite drives the interfaces from it with dynamic messages.
-// serveConnect starts the Connect server on a free port and returns it once it
-// accepts connections. The generated server binds the port itself, so a port
-// probed free can be taken by another process before it binds (the flake under
-// a full -race run, where the bind error was discarded and the wait timed out):
-// Run's error is read, and a port lost that way is retried on a fresh one.
-func serveConnect(t *testing.T, ctx context.Context, grpcServer *GrpcServer) uint16 {
-	t.Helper()
-	var lastErr error
-	for attempt := 0; attempt < 5; attempt++ {
-		probe, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-		port := uint16(probe.Addr().(*net.TCPAddr).Port)
-		require.NoError(t, probe.Close())
-		connectServer, err := NewConnectServer(&Configuration{EndpointConnectPort: &port}, grpcServer)
-		require.NoError(t, err)
-		serveCtx, stopServing := context.WithCancel(ctx)
-		ran := make(chan error, 1)
-		go func() { ran <- connectServer.Run(serveCtx) }()
-		deadline := time.Now().Add(20 * time.Second)
-		for time.Now().Before(deadline) {
-			select {
-			case err := <-ran:
-				lastErr = fmt.Errorf("the Connect server on port %d stopped before serving: %w", port, err)
-				deadline = time.Time{}
-				continue
-			default:
-			}
-			if c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 200*time.Millisecond); err == nil {
-				_ = c.Close()
-				t.Cleanup(stopServing)
-				return port
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		stopServing()
-		if lastErr == nil {
-			lastErr = fmt.Errorf("the Connect listener on port %d did not come up within 20s", port)
-		}
-		t.Logf("attempt %d: %v", attempt+1, lastErr)
-	}
-	t.Fatalf("the Connect listener did not come up: %v", lastErr)
-	return 0
-}
-
 func registeredDescriptors(t *testing.T) []byte {
 	t.Helper()
 	set := &descriptorpb.FileDescriptorSet{}

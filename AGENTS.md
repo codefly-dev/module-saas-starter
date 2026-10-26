@@ -184,9 +184,9 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
 
 ## Building, testing, and CI
 
-- The host-interface candidate uses CLI source `8de0f6674550fb040f03bc6cb2530116878c8c6b`
-  for multi-package contract export; `scripts/ci/install-codefly.sh` pins it and
-  refuses release tags until a released CLI is qualified.
+- CI and local runtime qualification use released Codefly CLI **v0.1.215**,
+  pinned in `scripts/ci/install-codefly.sh`. It resolves the Codefly-owned
+  `egress` dependency and exports the multi-package host-interface contract.
 - Canonical **service** gate: `codefly ci run`. It owns lint, compile/typecheck,
   tests, dependency/vuln audit, SBOM, and container build for every service in
   the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).

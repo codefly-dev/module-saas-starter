@@ -76,7 +76,7 @@ func migrateStoreFrom(sourceURL, databaseURL string) error {
 		return err
 	}
 	if err := runner.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("apply database migrations: %w", err)
+		return fmt.Errorf("apply database migrations: %w; local and validation databases created before migrations 46–49 were renumbered to 49–52 must be recreated; no upgrade path is supported for those databases", err)
 	}
 	return recordLedgerNames(runner, databaseURL, names)
 }

@@ -55,10 +55,10 @@ func declarePresence(t *testing.T, label string) (string, string) {
 }
 
 // declarePresenceAt is declarePresence for an alias the test chose first.
-func declarePresenceAt(t *testing.T, alias string) string {
+func declarePresenceAt(t *testing.T, alias string, kinds ...business.SolutionDeclaredKind) string {
 	t.Helper()
 	bindingID := "acme.test." + alias
-	targetID := declareCapabilityPresence(t, bindingID, alias)
+	targetID := declareCapabilityPresence(t, bindingID, alias, kinds...)
 	previous := testService.ModulePrincipals()
 	registry := business.ModulePrincipalRegistry{}
 	for id, grant := range previous {
@@ -70,7 +70,11 @@ func declarePresenceAt(t *testing.T, alias string) string {
 	return targetID
 }
 
-func declareCapabilityPresence(t *testing.T, bindingID, alias string) string {
+func declareCapabilityPresence(t *testing.T, bindingID, alias string, kinds ...business.SolutionDeclaredKind) string {
+	kind := business.SolutionDeclaredKindSolution
+	if len(kinds) > 0 {
+		kind = kinds[0]
+	}
 	t.Helper()
 	now := time.Now().UTC()
 	entry := business.SolutionHostBindingGeneration{
@@ -110,7 +114,7 @@ func declareCapabilityPresence(t *testing.T, bindingID, alias string) string {
 		}
 		return testStore.SaveSolutionRegistration(ctx, &business.SolutionRegistration{
 			SolutionID: alias, Publisher: "solution:" + alias, Revision: revision, UpdatedAt: now,
-			Declared: &business.SolutionDeclaredBinding{BindingID: bindingID, TargetID: targetID, Generation: 1, Release: "acme/" + alias + "@1.0.0", Kind: business.SolutionDeclaredKindSolution},
+			Declared: &business.SolutionDeclaredBinding{BindingID: bindingID, TargetID: targetID, Generation: 1, Release: "acme/" + alias + "@1.0.0", Kind: kind},
 		})
 	}))
 	return targetID

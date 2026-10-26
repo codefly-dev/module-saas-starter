@@ -11,7 +11,7 @@ cd "$repo_root"
 codefly generate client --from saas-starter/accounts/authority --name source-read-sdk \
   --language go --services ModuleCapabilitiesService \
   --go-module github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go \
-  --output libraries/source-read-sdk --force
+  --output libraries/source-read-sdk
 
 # The TypeScript SDK, through its own generator script (both steps).
 (cd module/services/frontend/code/packages/saas-sdk && node scripts/generate.mjs --force)

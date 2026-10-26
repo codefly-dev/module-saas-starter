@@ -27,17 +27,29 @@ var ErrInstallTargetNotPresent = errors.New("no installable target answers to th
 // serves, so nothing is installable here that an administrator could not pick,
 // and the install is InstallSolution, with every check it makes. An
 // organisation that already holds an active installation of the target gets
-// that installation back, unchanged (installed is false), so a caller that
-// declares its installations converges on them. Held is what the catalogue's
+// that installation back. An explicit module re-install
+// records fresh consent through InstallSolution (installed is true); a solution
+// retains its lifecycle (installed is false). Held is what the catalogue's
 // `installed` means: any installation not revoked, a pending one among them.
 func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, target, role, ownerID string) (installation *gen.Installation, installed bool, err error) {
 	available, err := s.availableTargetNamed(ctx, orgID, target)
 	if err != nil {
 		return nil, false, err
 	}
-	if available.Installed {
+	if available.Installed && available.Kind != "module" {
 		existing, err := s.heldTargetInstallation(ctx, orgID, available.TargetID)
 		return existing, false, err
+	}
+	var coOwners []string
+	if available.Installed {
+		existing, err := s.heldTargetInstallation(ctx, orgID, available.TargetID)
+		if err != nil {
+			return nil, false, err
+		}
+		if ownerID == "" {
+			ownerID = existing.GetOwnerPrincipalId()
+		}
+		coOwners = existing.GetCoOwnerPrincipalIds()
 	}
 	// A solution that declares roles is installed holding one of its own: the
 	// role is the solution's word, never the organisation's catalogue's.
@@ -55,13 +67,14 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		return nil, false, err
 	}
 	installation, err = s.InstallSolution(ctx, actorID, &InstallSolutionParams{
-		OrgID:            orgID,
-		AgentIdentifier:  available.ReleasePublisher + "/" + available.ReleaseName + ":" + available.ReleaseVersion,
-		TargetID:         available.TargetID,
-		DisplayName:      available.RouteAlias,
-		RootScopeLabel:   available.RouteAlias,
-		RoleID:           roleID,
-		OwnerPrincipalID: ownerID,
+		OrgID:               orgID,
+		AgentIdentifier:     available.ReleasePublisher + "/" + available.ReleaseName + ":" + available.ReleaseVersion,
+		TargetID:            available.TargetID,
+		DisplayName:         available.RouteAlias,
+		RootScopeLabel:      available.RouteAlias,
+		RoleID:              roleID,
+		OwnerPrincipalID:    ownerID,
+		CoOwnerPrincipalIDs: coOwners,
 	})
 	if err != nil {
 		return nil, false, err

@@ -14,7 +14,6 @@ import (
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -141,65 +140,6 @@ func (JobState) EnumDescriptor() ([]byte, []int) {
 	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{1}
 }
 
-// JobAttemptOutcome records why one processing lease ended.
-type JobAttemptOutcome int32
-
-const (
-	JobAttemptOutcome_JOB_ATTEMPT_OUTCOME_UNSPECIFIED       JobAttemptOutcome = 0
-	JobAttemptOutcome_JOB_ATTEMPT_OUTCOME_SUCCEEDED         JobAttemptOutcome = 1
-	JobAttemptOutcome_JOB_ATTEMPT_OUTCOME_RETRYABLE_FAILURE JobAttemptOutcome = 2
-	JobAttemptOutcome_JOB_ATTEMPT_OUTCOME_PERMANENT_FAILURE JobAttemptOutcome = 3
-	JobAttemptOutcome_JOB_ATTEMPT_OUTCOME_LEASE_EXPIRED     JobAttemptOutcome = 4
-	JobAttemptOutcome_JOB_ATTEMPT_OUTCOME_CANCELED          JobAttemptOutcome = 5
-)
-
-// Enum value maps for JobAttemptOutcome.
-var (
-	JobAttemptOutcome_name = map[int32]string{
-		0: "JOB_ATTEMPT_OUTCOME_UNSPECIFIED",
-		1: "JOB_ATTEMPT_OUTCOME_SUCCEEDED",
-		2: "JOB_ATTEMPT_OUTCOME_RETRYABLE_FAILURE",
-		3: "JOB_ATTEMPT_OUTCOME_PERMANENT_FAILURE",
-		4: "JOB_ATTEMPT_OUTCOME_LEASE_EXPIRED",
-		5: "JOB_ATTEMPT_OUTCOME_CANCELED",
-	}
-	JobAttemptOutcome_value = map[string]int32{
-		"JOB_ATTEMPT_OUTCOME_UNSPECIFIED":       0,
-		"JOB_ATTEMPT_OUTCOME_SUCCEEDED":         1,
-		"JOB_ATTEMPT_OUTCOME_RETRYABLE_FAILURE": 2,
-		"JOB_ATTEMPT_OUTCOME_PERMANENT_FAILURE": 3,
-		"JOB_ATTEMPT_OUTCOME_LEASE_EXPIRED":     4,
-		"JOB_ATTEMPT_OUTCOME_CANCELED":          5,
-	}
-)
-
-func (x JobAttemptOutcome) Enum() *JobAttemptOutcome {
-	p := new(JobAttemptOutcome)
-	*p = x
-	return p
-}
-
-func (x JobAttemptOutcome) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (JobAttemptOutcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_saas_jobs_v1_jobs_proto_enumTypes[2].Descriptor()
-}
-
-func (JobAttemptOutcome) Type() protoreflect.EnumType {
-	return &file_saas_jobs_v1_jobs_proto_enumTypes[2]
-}
-
-func (x JobAttemptOutcome) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use JobAttemptOutcome.Descriptor instead.
-func (JobAttemptOutcome) EnumDescriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{2}
-}
-
 // JobEnqueueDisposition distinguishes a newly committed message from an exact
 // idempotent replay that resolved to the message already stored.
 type JobEnqueueDisposition int32
@@ -235,11 +175,11 @@ func (x JobEnqueueDisposition) String() string {
 }
 
 func (JobEnqueueDisposition) Descriptor() protoreflect.EnumDescriptor {
-	return file_saas_jobs_v1_jobs_proto_enumTypes[3].Descriptor()
+	return file_saas_jobs_v1_jobs_proto_enumTypes[2].Descriptor()
 }
 
 func (JobEnqueueDisposition) Type() protoreflect.EnumType {
-	return &file_saas_jobs_v1_jobs_proto_enumTypes[3]
+	return &file_saas_jobs_v1_jobs_proto_enumTypes[2]
 }
 
 func (x JobEnqueueDisposition) Number() protoreflect.EnumNumber {
@@ -248,7 +188,7 @@ func (x JobEnqueueDisposition) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use JobEnqueueDisposition.Descriptor instead.
 func (JobEnqueueDisposition) EnumDescriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{3}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{2}
 }
 
 // JobScope carries the tenant or subject binding enforced when request traffic
@@ -475,70 +415,6 @@ func (x *JobFailure) GetMessage() string {
 	return ""
 }
 
-// JobExecutionReference correlates Host work with an external execution. Owner
-// is the authenticated module reporting completion; kind and id are that
-// module's assertion and require independent verification against the external
-// execution owner's public read.
-type JobExecutionReference struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Owner         string                 `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
-	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Id            string                 `protobuf:"bytes,3,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *JobExecutionReference) Reset() {
-	*x = JobExecutionReference{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *JobExecutionReference) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*JobExecutionReference) ProtoMessage() {}
-
-func (x *JobExecutionReference) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use JobExecutionReference.ProtoReflect.Descriptor instead.
-func (*JobExecutionReference) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *JobExecutionReference) GetOwner() string {
-	if x != nil {
-		return x.Owner
-	}
-	return ""
-}
-
-func (x *JobExecutionReference) GetKind() string {
-	if x != nil {
-		return x.Kind
-	}
-	return ""
-}
-
-func (x *JobExecutionReference) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
 // JobEnvelope is the product-neutral durable inbox/outbox record. payload is
 // retained as exact bytes; large artifacts belong in object storage and are
 // referenced from the payload. Identity, routing, scope, and payload fields are
@@ -577,7 +453,7 @@ type JobEnvelope struct {
 
 func (x *JobEnvelope) Reset() {
 	*x = JobEnvelope{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[4]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -589,7 +465,7 @@ func (x *JobEnvelope) String() string {
 func (*JobEnvelope) ProtoMessage() {}
 
 func (x *JobEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[4]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -602,7 +478,7 @@ func (x *JobEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobEnvelope.ProtoReflect.Descriptor instead.
 func (*JobEnvelope) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{4}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *JobEnvelope) GetId() string {
@@ -800,7 +676,7 @@ type JobOrderingKey struct {
 
 func (x *JobOrderingKey) Reset() {
 	*x = JobOrderingKey{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[5]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -812,7 +688,7 @@ func (x *JobOrderingKey) String() string {
 func (*JobOrderingKey) ProtoMessage() {}
 
 func (x *JobOrderingKey) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[5]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -825,7 +701,7 @@ func (x *JobOrderingKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobOrderingKey.ProtoReflect.Descriptor instead.
 func (*JobOrderingKey) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{5}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *JobOrderingKey) GetNamespace() string {
@@ -867,7 +743,7 @@ type NewJob struct {
 
 func (x *NewJob) Reset() {
 	*x = NewJob{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[6]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -879,7 +755,7 @@ func (x *NewJob) String() string {
 func (*NewJob) ProtoMessage() {}
 
 func (x *NewJob) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[6]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -892,7 +768,7 @@ func (x *NewJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NewJob.ProtoReflect.Descriptor instead.
 func (*NewJob) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{6}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *NewJob) GetDirection() JobDirection {
@@ -993,1414 +869,6 @@ func (x *NewJob) GetAvailableAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// EnqueueJobRequest is safe to fingerprint deterministically. Exact retries
-// return the original job id; semantically different reuse of the same
-// idempotency key is rejected.
-type EnqueueJobRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Job           *NewJob                `protobuf:"bytes,1,opt,name=job,proto3" json:"job,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EnqueueJobRequest) Reset() {
-	*x = EnqueueJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EnqueueJobRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EnqueueJobRequest) ProtoMessage() {}
-
-func (x *EnqueueJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EnqueueJobRequest.ProtoReflect.Descriptor instead.
-func (*EnqueueJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *EnqueueJobRequest) GetJob() *NewJob {
-	if x != nil {
-		return x.Job
-	}
-	return nil
-}
-
-type EnqueueJobResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Disposition   JobEnqueueDisposition  `protobuf:"varint,2,opt,name=disposition,proto3,enum=saas.jobs.v1.JobEnqueueDisposition" json:"disposition,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EnqueueJobResponse) Reset() {
-	*x = EnqueueJobResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EnqueueJobResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EnqueueJobResponse) ProtoMessage() {}
-
-func (x *EnqueueJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EnqueueJobResponse.ProtoReflect.Descriptor instead.
-func (*EnqueueJobResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *EnqueueJobResponse) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-func (x *EnqueueJobResponse) GetDisposition() JobEnqueueDisposition {
-	if x != nil {
-		return x.Disposition
-	}
-	return JobEnqueueDisposition_JOB_ENQUEUE_DISPOSITION_UNSPECIFIED
-}
-
-// JobSummary is the payload-free operations view. Payload bytes and attributes
-// never cross the platform-administration API boundary.
-type JobSummary struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Direction      JobDirection           `protobuf:"varint,2,opt,name=direction,proto3,enum=saas.jobs.v1.JobDirection" json:"direction,omitempty"`
-	Scope          *JobScope              `protobuf:"bytes,3,opt,name=scope,proto3" json:"scope,omitempty"`
-	Queue          string                 `protobuf:"bytes,4,opt,name=queue,proto3" json:"queue,omitempty"`
-	Topic          string                 `protobuf:"bytes,5,opt,name=topic,proto3" json:"topic,omitempty"`
-	Source         string                 `protobuf:"bytes,6,opt,name=source,proto3" json:"source,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	OrderingKey    string                 `protobuf:"bytes,8,opt,name=ordering_key,json=orderingKey,proto3" json:"ordering_key,omitempty"`
-	SchemaVersion  uint32                 `protobuf:"varint,9,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
-	ContentType    string                 `protobuf:"bytes,10,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
-	State          JobState               `protobuf:"varint,11,opt,name=state,proto3,enum=saas.jobs.v1.JobState" json:"state,omitempty"`
-	Priority       int32                  `protobuf:"varint,12,opt,name=priority,proto3" json:"priority,omitempty"`
-	AttemptCount   uint32                 `protobuf:"varint,13,opt,name=attempt_count,json=attemptCount,proto3" json:"attempt_count,omitempty"`
-	MaxAttempts    uint32                 `protobuf:"varint,14,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
-	Lease          *JobLease              `protobuf:"bytes,15,opt,name=lease,proto3" json:"lease,omitempty"`
-	LastFailure    *JobFailure            `protobuf:"bytes,16,opt,name=last_failure,json=lastFailure,proto3" json:"last_failure,omitempty"`
-	AvailableAt    *timestamppb.Timestamp `protobuf:"bytes,17,opt,name=available_at,json=availableAt,proto3" json:"available_at,omitempty"`
-	LastAttemptAt  *timestamppb.Timestamp `protobuf:"bytes,18,opt,name=last_attempt_at,json=lastAttemptAt,proto3" json:"last_attempt_at,omitempty"`
-	CompletedAt    *timestamppb.Timestamp `protobuf:"bytes,19,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
-	DeadLetteredAt *timestamppb.Timestamp `protobuf:"bytes,20,opt,name=dead_lettered_at,json=deadLetteredAt,proto3" json:"dead_lettered_at,omitempty"`
-	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,21,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,22,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	StateVersion   uint64                 `protobuf:"varint,23,opt,name=state_version,json=stateVersion,proto3" json:"state_version,omitempty"`
-	ReplayOf       string                 `protobuf:"bytes,24,opt,name=replay_of,json=replayOf,proto3" json:"replay_of,omitempty"`
-	Execution      *JobExecutionReference `protobuf:"bytes,25,opt,name=execution,proto3" json:"execution,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *JobSummary) Reset() {
-	*x = JobSummary{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *JobSummary) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*JobSummary) ProtoMessage() {}
-
-func (x *JobSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use JobSummary.ProtoReflect.Descriptor instead.
-func (*JobSummary) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *JobSummary) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *JobSummary) GetDirection() JobDirection {
-	if x != nil {
-		return x.Direction
-	}
-	return JobDirection_JOB_DIRECTION_UNSPECIFIED
-}
-
-func (x *JobSummary) GetScope() *JobScope {
-	if x != nil {
-		return x.Scope
-	}
-	return nil
-}
-
-func (x *JobSummary) GetQueue() string {
-	if x != nil {
-		return x.Queue
-	}
-	return ""
-}
-
-func (x *JobSummary) GetTopic() string {
-	if x != nil {
-		return x.Topic
-	}
-	return ""
-}
-
-func (x *JobSummary) GetSource() string {
-	if x != nil {
-		return x.Source
-	}
-	return ""
-}
-
-func (x *JobSummary) GetIdempotencyKey() string {
-	if x != nil {
-		return x.IdempotencyKey
-	}
-	return ""
-}
-
-func (x *JobSummary) GetOrderingKey() string {
-	if x != nil {
-		return x.OrderingKey
-	}
-	return ""
-}
-
-func (x *JobSummary) GetSchemaVersion() uint32 {
-	if x != nil {
-		return x.SchemaVersion
-	}
-	return 0
-}
-
-func (x *JobSummary) GetContentType() string {
-	if x != nil {
-		return x.ContentType
-	}
-	return ""
-}
-
-func (x *JobSummary) GetState() JobState {
-	if x != nil {
-		return x.State
-	}
-	return JobState_JOB_STATE_UNSPECIFIED
-}
-
-func (x *JobSummary) GetPriority() int32 {
-	if x != nil {
-		return x.Priority
-	}
-	return 0
-}
-
-func (x *JobSummary) GetAttemptCount() uint32 {
-	if x != nil {
-		return x.AttemptCount
-	}
-	return 0
-}
-
-func (x *JobSummary) GetMaxAttempts() uint32 {
-	if x != nil {
-		return x.MaxAttempts
-	}
-	return 0
-}
-
-func (x *JobSummary) GetLease() *JobLease {
-	if x != nil {
-		return x.Lease
-	}
-	return nil
-}
-
-func (x *JobSummary) GetLastFailure() *JobFailure {
-	if x != nil {
-		return x.LastFailure
-	}
-	return nil
-}
-
-func (x *JobSummary) GetAvailableAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.AvailableAt
-	}
-	return nil
-}
-
-func (x *JobSummary) GetLastAttemptAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.LastAttemptAt
-	}
-	return nil
-}
-
-func (x *JobSummary) GetCompletedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.CompletedAt
-	}
-	return nil
-}
-
-func (x *JobSummary) GetDeadLetteredAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.DeadLetteredAt
-	}
-	return nil
-}
-
-func (x *JobSummary) GetCreatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return nil
-}
-
-func (x *JobSummary) GetUpdatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.UpdatedAt
-	}
-	return nil
-}
-
-func (x *JobSummary) GetStateVersion() uint64 {
-	if x != nil {
-		return x.StateVersion
-	}
-	return 0
-}
-
-func (x *JobSummary) GetReplayOf() string {
-	if x != nil {
-		return x.ReplayOf
-	}
-	return ""
-}
-
-func (x *JobSummary) GetExecution() *JobExecutionReference {
-	if x != nil {
-		return x.Execution
-	}
-	return nil
-}
-
-// JobQueueSnapshot is database-derived operational state and is therefore
-// consistent across replicas. Queue is the only metric label; topic, tenant,
-// subject, source, job id, and error text remain out of the metric surface.
-type JobQueueSnapshot struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Queue         string                 `protobuf:"bytes,1,opt,name=queue,proto3" json:"queue,omitempty"`
-	Pending       uint64                 `protobuf:"varint,2,opt,name=pending,proto3" json:"pending,omitempty"`
-	Processing    uint64                 `protobuf:"varint,3,opt,name=processing,proto3" json:"processing,omitempty"`
-	Retrying      uint64                 `protobuf:"varint,4,opt,name=retrying,proto3" json:"retrying,omitempty"`
-	Succeeded     uint64                 `protobuf:"varint,5,opt,name=succeeded,proto3" json:"succeeded,omitempty"`
-	DeadLetter    uint64                 `protobuf:"varint,6,opt,name=dead_letter,json=deadLetter,proto3" json:"dead_letter,omitempty"`
-	Canceled      uint64                 `protobuf:"varint,7,opt,name=canceled,proto3" json:"canceled,omitempty"`
-	Ready         uint64                 `protobuf:"varint,8,opt,name=ready,proto3" json:"ready,omitempty"`
-	Scheduled     uint64                 `protobuf:"varint,9,opt,name=scheduled,proto3" json:"scheduled,omitempty"`
-	ExpiredLeases uint64                 `protobuf:"varint,10,opt,name=expired_leases,json=expiredLeases,proto3" json:"expired_leases,omitempty"`
-	OldestReadyAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=oldest_ready_at,json=oldestReadyAt,proto3" json:"oldest_ready_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *JobQueueSnapshot) Reset() {
-	*x = JobQueueSnapshot{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *JobQueueSnapshot) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*JobQueueSnapshot) ProtoMessage() {}
-
-func (x *JobQueueSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use JobQueueSnapshot.ProtoReflect.Descriptor instead.
-func (*JobQueueSnapshot) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *JobQueueSnapshot) GetQueue() string {
-	if x != nil {
-		return x.Queue
-	}
-	return ""
-}
-
-func (x *JobQueueSnapshot) GetPending() uint64 {
-	if x != nil {
-		return x.Pending
-	}
-	return 0
-}
-
-func (x *JobQueueSnapshot) GetProcessing() uint64 {
-	if x != nil {
-		return x.Processing
-	}
-	return 0
-}
-
-func (x *JobQueueSnapshot) GetRetrying() uint64 {
-	if x != nil {
-		return x.Retrying
-	}
-	return 0
-}
-
-func (x *JobQueueSnapshot) GetSucceeded() uint64 {
-	if x != nil {
-		return x.Succeeded
-	}
-	return 0
-}
-
-func (x *JobQueueSnapshot) GetDeadLetter() uint64 {
-	if x != nil {
-		return x.DeadLetter
-	}
-	return 0
-}
-
-func (x *JobQueueSnapshot) GetCanceled() uint64 {
-	if x != nil {
-		return x.Canceled
-	}
-	return 0
-}
-
-func (x *JobQueueSnapshot) GetReady() uint64 {
-	if x != nil {
-		return x.Ready
-	}
-	return 0
-}
-
-func (x *JobQueueSnapshot) GetScheduled() uint64 {
-	if x != nil {
-		return x.Scheduled
-	}
-	return 0
-}
-
-func (x *JobQueueSnapshot) GetExpiredLeases() uint64 {
-	if x != nil {
-		return x.ExpiredLeases
-	}
-	return 0
-}
-
-func (x *JobQueueSnapshot) GetOldestReadyAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.OldestReadyAt
-	}
-	return nil
-}
-
-type GetJobOperationsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Queue         string                 `protobuf:"bytes,1,opt,name=queue,proto3" json:"queue,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetJobOperationsRequest) Reset() {
-	*x = GetJobOperationsRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetJobOperationsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetJobOperationsRequest) ProtoMessage() {}
-
-func (x *GetJobOperationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetJobOperationsRequest.ProtoReflect.Descriptor instead.
-func (*GetJobOperationsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *GetJobOperationsRequest) GetQueue() string {
-	if x != nil {
-		return x.Queue
-	}
-	return ""
-}
-
-type GetJobOperationsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Queues        []*JobQueueSnapshot    `protobuf:"bytes,1,rep,name=queues,proto3" json:"queues,omitempty"`
-	ObservedAt    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetJobOperationsResponse) Reset() {
-	*x = GetJobOperationsResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetJobOperationsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetJobOperationsResponse) ProtoMessage() {}
-
-func (x *GetJobOperationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetJobOperationsResponse.ProtoReflect.Descriptor instead.
-func (*GetJobOperationsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *GetJobOperationsResponse) GetQueues() []*JobQueueSnapshot {
-	if x != nil {
-		return x.Queues
-	}
-	return nil
-}
-
-func (x *GetJobOperationsResponse) GetObservedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.ObservedAt
-	}
-	return nil
-}
-
-type ListJobsRequest struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Queue  string                 `protobuf:"bytes,1,opt,name=queue,proto3" json:"queue,omitempty"`
-	States []JobState             `protobuf:"varint,2,rep,packed,name=states,proto3,enum=saas.jobs.v1.JobState" json:"states,omitempty"`
-	// Types that are valid to be assigned to Scope:
-	//
-	//	*ListJobsRequest_OrganizationId
-	//	*ListJobsRequest_SubjectId
-	Scope         isListJobsRequest_Scope `protobuf_oneof:"scope"`
-	PageSize      uint32                  `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken     string                  `protobuf:"bytes,6,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListJobsRequest) Reset() {
-	*x = ListJobsRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListJobsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListJobsRequest) ProtoMessage() {}
-
-func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
-func (*ListJobsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *ListJobsRequest) GetQueue() string {
-	if x != nil {
-		return x.Queue
-	}
-	return ""
-}
-
-func (x *ListJobsRequest) GetStates() []JobState {
-	if x != nil {
-		return x.States
-	}
-	return nil
-}
-
-func (x *ListJobsRequest) GetScope() isListJobsRequest_Scope {
-	if x != nil {
-		return x.Scope
-	}
-	return nil
-}
-
-func (x *ListJobsRequest) GetOrganizationId() string {
-	if x != nil {
-		if x, ok := x.Scope.(*ListJobsRequest_OrganizationId); ok {
-			return x.OrganizationId
-		}
-	}
-	return ""
-}
-
-func (x *ListJobsRequest) GetSubjectId() string {
-	if x != nil {
-		if x, ok := x.Scope.(*ListJobsRequest_SubjectId); ok {
-			return x.SubjectId
-		}
-	}
-	return ""
-}
-
-func (x *ListJobsRequest) GetPageSize() uint32 {
-	if x != nil {
-		return x.PageSize
-	}
-	return 0
-}
-
-func (x *ListJobsRequest) GetPageToken() string {
-	if x != nil {
-		return x.PageToken
-	}
-	return ""
-}
-
-type isListJobsRequest_Scope interface {
-	isListJobsRequest_Scope()
-}
-
-type ListJobsRequest_OrganizationId struct {
-	OrganizationId string `protobuf:"bytes,3,opt,name=organization_id,json=organizationId,proto3,oneof"`
-}
-
-type ListJobsRequest_SubjectId struct {
-	SubjectId string `protobuf:"bytes,4,opt,name=subject_id,json=subjectId,proto3,oneof"`
-}
-
-func (*ListJobsRequest_OrganizationId) isListJobsRequest_Scope() {}
-
-func (*ListJobsRequest_SubjectId) isListJobsRequest_Scope() {}
-
-type ListJobsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Jobs          []*JobSummary          `protobuf:"bytes,1,rep,name=jobs,proto3" json:"jobs,omitempty"`
-	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListJobsResponse) Reset() {
-	*x = ListJobsResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListJobsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListJobsResponse) ProtoMessage() {}
-
-func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
-func (*ListJobsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *ListJobsResponse) GetJobs() []*JobSummary {
-	if x != nil {
-		return x.Jobs
-	}
-	return nil
-}
-
-func (x *ListJobsResponse) GetNextPageToken() string {
-	if x != nil {
-		return x.NextPageToken
-	}
-	return ""
-}
-
-type GetJobRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetJobRequest) Reset() {
-	*x = GetJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[15]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetJobRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetJobRequest) ProtoMessage() {}
-
-func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[15]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetJobRequest.ProtoReflect.Descriptor instead.
-func (*GetJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *GetJobRequest) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-type GetJobResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Job           *JobSummary            `protobuf:"bytes,1,opt,name=job,proto3" json:"job,omitempty"`
-	Attempts      []*JobAttempt          `protobuf:"bytes,2,rep,name=attempts,proto3" json:"attempts,omitempty"`
-	Transitions   []*JobStateTransition  `protobuf:"bytes,3,rep,name=transitions,proto3" json:"transitions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetJobResponse) Reset() {
-	*x = GetJobResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[16]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetJobResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetJobResponse) ProtoMessage() {}
-
-func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[16]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetJobResponse.ProtoReflect.Descriptor instead.
-func (*GetJobResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *GetJobResponse) GetJob() *JobSummary {
-	if x != nil {
-		return x.Job
-	}
-	return nil
-}
-
-func (x *GetJobResponse) GetAttempts() []*JobAttempt {
-	if x != nil {
-		return x.Attempts
-	}
-	return nil
-}
-
-func (x *GetJobResponse) GetTransitions() []*JobStateTransition {
-	if x != nil {
-		return x.Transitions
-	}
-	return nil
-}
-
-// ReplayJobRequest creates a new pending copy of one dead-lettered job. The
-// source row remains immutable. idempotency_key makes an operator retry resolve
-// to the same new job instead of duplicating the side effect.
-type ReplayJobRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	SourceJobId    string                 `protobuf:"bytes,1,opt,name=source_job_id,json=sourceJobId,proto3" json:"source_job_id,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	AvailableAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=available_at,json=availableAt,proto3" json:"available_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *ReplayJobRequest) Reset() {
-	*x = ReplayJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReplayJobRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReplayJobRequest) ProtoMessage() {}
-
-func (x *ReplayJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReplayJobRequest.ProtoReflect.Descriptor instead.
-func (*ReplayJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *ReplayJobRequest) GetSourceJobId() string {
-	if x != nil {
-		return x.SourceJobId
-	}
-	return ""
-}
-
-func (x *ReplayJobRequest) GetIdempotencyKey() string {
-	if x != nil {
-		return x.IdempotencyKey
-	}
-	return ""
-}
-
-func (x *ReplayJobRequest) GetAvailableAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.AvailableAt
-	}
-	return nil
-}
-
-type ReplayJobResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Disposition   JobEnqueueDisposition  `protobuf:"varint,2,opt,name=disposition,proto3,enum=saas.jobs.v1.JobEnqueueDisposition" json:"disposition,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ReplayJobResponse) Reset() {
-	*x = ReplayJobResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReplayJobResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReplayJobResponse) ProtoMessage() {}
-
-func (x *ReplayJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReplayJobResponse.ProtoReflect.Descriptor instead.
-func (*ReplayJobResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *ReplayJobResponse) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-func (x *ReplayJobResponse) GetDisposition() JobEnqueueDisposition {
-	if x != nil {
-		return x.Disposition
-	}
-	return JobEnqueueDisposition_JOB_ENQUEUE_DISPOSITION_UNSPECIFIED
-}
-
-// JobWorkerMetrics is a low-cardinality process-local snapshot for one queue.
-// Durable queue depth and age live in JobQueueSnapshot.
-type JobWorkerMetrics struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Queue         string                 `protobuf:"bytes,1,opt,name=queue,proto3" json:"queue,omitempty"`
-	Iterations    uint64                 `protobuf:"varint,2,opt,name=iterations,proto3" json:"iterations,omitempty"`
-	ClaimErrors   uint64                 `protobuf:"varint,3,opt,name=claim_errors,json=claimErrors,proto3" json:"claim_errors,omitempty"`
-	Claimed       uint64                 `protobuf:"varint,4,opt,name=claimed,proto3" json:"claimed,omitempty"`
-	Succeeded     uint64                 `protobuf:"varint,5,opt,name=succeeded,proto3" json:"succeeded,omitempty"`
-	Retried       uint64                 `protobuf:"varint,6,opt,name=retried,proto3" json:"retried,omitempty"`
-	DeadLettered  uint64                 `protobuf:"varint,7,opt,name=dead_lettered,json=deadLettered,proto3" json:"dead_lettered,omitempty"`
-	HandlerPanics uint64                 `protobuf:"varint,8,opt,name=handler_panics,json=handlerPanics,proto3" json:"handler_panics,omitempty"`
-	LeaseLost     uint64                 `protobuf:"varint,9,opt,name=lease_lost,json=leaseLost,proto3" json:"lease_lost,omitempty"`
-	Active        int64                  `protobuf:"varint,10,opt,name=active,proto3" json:"active,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *JobWorkerMetrics) Reset() {
-	*x = JobWorkerMetrics{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *JobWorkerMetrics) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*JobWorkerMetrics) ProtoMessage() {}
-
-func (x *JobWorkerMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use JobWorkerMetrics.ProtoReflect.Descriptor instead.
-func (*JobWorkerMetrics) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *JobWorkerMetrics) GetQueue() string {
-	if x != nil {
-		return x.Queue
-	}
-	return ""
-}
-
-func (x *JobWorkerMetrics) GetIterations() uint64 {
-	if x != nil {
-		return x.Iterations
-	}
-	return 0
-}
-
-func (x *JobWorkerMetrics) GetClaimErrors() uint64 {
-	if x != nil {
-		return x.ClaimErrors
-	}
-	return 0
-}
-
-func (x *JobWorkerMetrics) GetClaimed() uint64 {
-	if x != nil {
-		return x.Claimed
-	}
-	return 0
-}
-
-func (x *JobWorkerMetrics) GetSucceeded() uint64 {
-	if x != nil {
-		return x.Succeeded
-	}
-	return 0
-}
-
-func (x *JobWorkerMetrics) GetRetried() uint64 {
-	if x != nil {
-		return x.Retried
-	}
-	return 0
-}
-
-func (x *JobWorkerMetrics) GetDeadLettered() uint64 {
-	if x != nil {
-		return x.DeadLettered
-	}
-	return 0
-}
-
-func (x *JobWorkerMetrics) GetHandlerPanics() uint64 {
-	if x != nil {
-		return x.HandlerPanics
-	}
-	return 0
-}
-
-func (x *JobWorkerMetrics) GetLeaseLost() uint64 {
-	if x != nil {
-		return x.LeaseLost
-	}
-	return 0
-}
-
-func (x *JobWorkerMetrics) GetActive() int64 {
-	if x != nil {
-		return x.Active
-	}
-	return 0
-}
-
-// JobAttempt is the immutable result of one lease. The attempt row is opened
-// when a job is claimed and finalized once; heartbeats may update heartbeat_at
-// while it remains open.
-type JobAttempt struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	JobId         string                 `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Number        uint32                 `protobuf:"varint,3,opt,name=number,proto3" json:"number,omitempty"`
-	WorkerId      string                 `protobuf:"bytes,4,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	LeaseToken    string                 `protobuf:"bytes,5,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
-	Outcome       JobAttemptOutcome      `protobuf:"varint,6,opt,name=outcome,proto3,enum=saas.jobs.v1.JobAttemptOutcome" json:"outcome,omitempty"`
-	Failure       *JobFailure            `protobuf:"bytes,7,opt,name=failure,proto3" json:"failure,omitempty"`
-	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	HeartbeatAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=heartbeat_at,json=heartbeatAt,proto3" json:"heartbeat_at,omitempty"`
-	FinishedAt    *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *JobAttempt) Reset() {
-	*x = JobAttempt{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[20]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *JobAttempt) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*JobAttempt) ProtoMessage() {}
-
-func (x *JobAttempt) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[20]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use JobAttempt.ProtoReflect.Descriptor instead.
-func (*JobAttempt) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *JobAttempt) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *JobAttempt) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-func (x *JobAttempt) GetNumber() uint32 {
-	if x != nil {
-		return x.Number
-	}
-	return 0
-}
-
-func (x *JobAttempt) GetWorkerId() string {
-	if x != nil {
-		return x.WorkerId
-	}
-	return ""
-}
-
-func (x *JobAttempt) GetLeaseToken() string {
-	if x != nil {
-		return x.LeaseToken
-	}
-	return ""
-}
-
-func (x *JobAttempt) GetOutcome() JobAttemptOutcome {
-	if x != nil {
-		return x.Outcome
-	}
-	return JobAttemptOutcome_JOB_ATTEMPT_OUTCOME_UNSPECIFIED
-}
-
-func (x *JobAttempt) GetFailure() *JobFailure {
-	if x != nil {
-		return x.Failure
-	}
-	return nil
-}
-
-func (x *JobAttempt) GetStartedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.StartedAt
-	}
-	return nil
-}
-
-func (x *JobAttempt) GetHeartbeatAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.HeartbeatAt
-	}
-	return nil
-}
-
-func (x *JobAttempt) GetFinishedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.FinishedAt
-	}
-	return nil
-}
-
-// JobStateTransition is the append-only audit record produced by the database
-// whenever a job is created or changes state.
-type JobStateTransition struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Sequence      int64                  `protobuf:"varint,1,opt,name=sequence,proto3" json:"sequence,omitempty"`
-	JobId         string                 `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	FromState     JobState               `protobuf:"varint,3,opt,name=from_state,json=fromState,proto3,enum=saas.jobs.v1.JobState" json:"from_state,omitempty"`
-	ToState       JobState               `protobuf:"varint,4,opt,name=to_state,json=toState,proto3,enum=saas.jobs.v1.JobState" json:"to_state,omitempty"`
-	StateVersion  uint64                 `protobuf:"varint,5,opt,name=state_version,json=stateVersion,proto3" json:"state_version,omitempty"`
-	AttemptCount  uint32                 `protobuf:"varint,6,opt,name=attempt_count,json=attemptCount,proto3" json:"attempt_count,omitempty"`
-	Actor         string                 `protobuf:"bytes,7,opt,name=actor,proto3" json:"actor,omitempty"`
-	Failure       *JobFailure            `protobuf:"bytes,8,opt,name=failure,proto3" json:"failure,omitempty"`
-	OccurredAt    *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *JobStateTransition) Reset() {
-	*x = JobStateTransition{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[21]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *JobStateTransition) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*JobStateTransition) ProtoMessage() {}
-
-func (x *JobStateTransition) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[21]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use JobStateTransition.ProtoReflect.Descriptor instead.
-func (*JobStateTransition) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *JobStateTransition) GetSequence() int64 {
-	if x != nil {
-		return x.Sequence
-	}
-	return 0
-}
-
-func (x *JobStateTransition) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-func (x *JobStateTransition) GetFromState() JobState {
-	if x != nil {
-		return x.FromState
-	}
-	return JobState_JOB_STATE_UNSPECIFIED
-}
-
-func (x *JobStateTransition) GetToState() JobState {
-	if x != nil {
-		return x.ToState
-	}
-	return JobState_JOB_STATE_UNSPECIFIED
-}
-
-func (x *JobStateTransition) GetStateVersion() uint64 {
-	if x != nil {
-		return x.StateVersion
-	}
-	return 0
-}
-
-func (x *JobStateTransition) GetAttemptCount() uint32 {
-	if x != nil {
-		return x.AttemptCount
-	}
-	return 0
-}
-
-func (x *JobStateTransition) GetActor() string {
-	if x != nil {
-		return x.Actor
-	}
-	return ""
-}
-
-func (x *JobStateTransition) GetFailure() *JobFailure {
-	if x != nil {
-		return x.Failure
-	}
-	return nil
-}
-
-func (x *JobStateTransition) GetOccurredAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.OccurredAt
-	}
-	return nil
-}
-
-// ClaimJobsRequest selects one queue and acquires a bounded batch with a fresh
-// fencing token per job. Claims never cross queue boundaries.
-type ClaimJobsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Queue         string                 `protobuf:"bytes,1,opt,name=queue,proto3" json:"queue,omitempty"`
-	WorkerId      string                 `protobuf:"bytes,2,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	Limit         uint32                 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	LeaseDuration *durationpb.Duration   `protobuf:"bytes,4,opt,name=lease_duration,json=leaseDuration,proto3" json:"lease_duration,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClaimJobsRequest) Reset() {
-	*x = ClaimJobsRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[22]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClaimJobsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClaimJobsRequest) ProtoMessage() {}
-
-func (x *ClaimJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[22]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClaimJobsRequest.ProtoReflect.Descriptor instead.
-func (*ClaimJobsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{22}
-}
-
-func (x *ClaimJobsRequest) GetQueue() string {
-	if x != nil {
-		return x.Queue
-	}
-	return ""
-}
-
-func (x *ClaimJobsRequest) GetWorkerId() string {
-	if x != nil {
-		return x.WorkerId
-	}
-	return ""
-}
-
-func (x *ClaimJobsRequest) GetLimit() uint32 {
-	if x != nil {
-		return x.Limit
-	}
-	return 0
-}
-
-func (x *ClaimJobsRequest) GetLeaseDuration() *durationpb.Duration {
-	if x != nil {
-		return x.LeaseDuration
-	}
-	return nil
-}
-
-// ClaimJobsResponse contains only jobs whose attempt rows committed in the
-// same transaction as their processing transitions.
-type ClaimJobsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Jobs          []*JobEnvelope         `protobuf:"bytes,1,rep,name=jobs,proto3" json:"jobs,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClaimJobsResponse) Reset() {
-	*x = ClaimJobsResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[23]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClaimJobsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClaimJobsResponse) ProtoMessage() {}
-
-func (x *ClaimJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[23]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClaimJobsResponse.ProtoReflect.Descriptor instead.
-func (*ClaimJobsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{23}
-}
-
-func (x *ClaimJobsResponse) GetJobs() []*JobEnvelope {
-	if x != nil {
-		return x.Jobs
-	}
-	return nil
-}
-
 // JobLeaseReference fences every heartbeat and finalization by the job, worker,
 // and unguessable token issued by the most recent claim.
 type JobLeaseReference struct {
@@ -2414,7 +882,7 @@ type JobLeaseReference struct {
 
 func (x *JobLeaseReference) Reset() {
 	*x = JobLeaseReference{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[24]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2426,7 +894,7 @@ func (x *JobLeaseReference) String() string {
 func (*JobLeaseReference) ProtoMessage() {}
 
 func (x *JobLeaseReference) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[24]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2439,7 +907,7 @@ func (x *JobLeaseReference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobLeaseReference.ProtoReflect.Descriptor instead.
 func (*JobLeaseReference) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{24}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *JobLeaseReference) GetJobId() string {
@@ -2463,322 +931,11 @@ func (x *JobLeaseReference) GetLeaseToken() string {
 	return ""
 }
 
-// HeartbeatJobRequest renews a live lease from the database clock. An expired
-// lease cannot be revived, even when no other worker has reclaimed the job.
-type HeartbeatJobRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Lease         *JobLeaseReference     `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
-	Extension     *durationpb.Duration   `protobuf:"bytes,2,opt,name=extension,proto3" json:"extension,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *HeartbeatJobRequest) Reset() {
-	*x = HeartbeatJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[25]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *HeartbeatJobRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*HeartbeatJobRequest) ProtoMessage() {}
-
-func (x *HeartbeatJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[25]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use HeartbeatJobRequest.ProtoReflect.Descriptor instead.
-func (*HeartbeatJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{25}
-}
-
-func (x *HeartbeatJobRequest) GetLease() *JobLeaseReference {
-	if x != nil {
-		return x.Lease
-	}
-	return nil
-}
-
-func (x *HeartbeatJobRequest) GetExtension() *durationpb.Duration {
-	if x != nil {
-		return x.Extension
-	}
-	return nil
-}
-
-type HeartbeatJobResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Lease         *JobLease              `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *HeartbeatJobResponse) Reset() {
-	*x = HeartbeatJobResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[26]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *HeartbeatJobResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*HeartbeatJobResponse) ProtoMessage() {}
-
-func (x *HeartbeatJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[26]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use HeartbeatJobResponse.ProtoReflect.Descriptor instead.
-func (*HeartbeatJobResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{26}
-}
-
-func (x *HeartbeatJobResponse) GetLease() *JobLease {
-	if x != nil {
-		return x.Lease
-	}
-	return nil
-}
-
-// CompleteJobRequest commits a successful attempt and terminal job transition.
-type CompleteJobRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Lease         *JobLeaseReference     `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
-	Execution     *JobExecutionReference `protobuf:"bytes,2,opt,name=execution,proto3" json:"execution,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CompleteJobRequest) Reset() {
-	*x = CompleteJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[27]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CompleteJobRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CompleteJobRequest) ProtoMessage() {}
-
-func (x *CompleteJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[27]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CompleteJobRequest.ProtoReflect.Descriptor instead.
-func (*CompleteJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{27}
-}
-
-func (x *CompleteJobRequest) GetLease() *JobLeaseReference {
-	if x != nil {
-		return x.Lease
-	}
-	return nil
-}
-
-func (x *CompleteJobRequest) GetExecution() *JobExecutionReference {
-	if x != nil {
-		return x.Execution
-	}
-	return nil
-}
-
-// RetryJobRequest commits a retryable failed attempt. When the attempt budget
-// is exhausted, the same operation deterministically dead-letters the job.
-type RetryJobRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Lease         *JobLeaseReference     `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
-	Failure       *JobFailure            `protobuf:"bytes,2,opt,name=failure,proto3" json:"failure,omitempty"`
-	RetryAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=retry_at,json=retryAt,proto3" json:"retry_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RetryJobRequest) Reset() {
-	*x = RetryJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[28]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RetryJobRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RetryJobRequest) ProtoMessage() {}
-
-func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[28]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RetryJobRequest.ProtoReflect.Descriptor instead.
-func (*RetryJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{28}
-}
-
-func (x *RetryJobRequest) GetLease() *JobLeaseReference {
-	if x != nil {
-		return x.Lease
-	}
-	return nil
-}
-
-func (x *RetryJobRequest) GetFailure() *JobFailure {
-	if x != nil {
-		return x.Failure
-	}
-	return nil
-}
-
-func (x *RetryJobRequest) GetRetryAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.RetryAt
-	}
-	return nil
-}
-
-type RetryJobResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	State         JobState               `protobuf:"varint,1,opt,name=state,proto3,enum=saas.jobs.v1.JobState" json:"state,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RetryJobResponse) Reset() {
-	*x = RetryJobResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[29]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RetryJobResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RetryJobResponse) ProtoMessage() {}
-
-func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[29]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RetryJobResponse.ProtoReflect.Descriptor instead.
-func (*RetryJobResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{29}
-}
-
-func (x *RetryJobResponse) GetState() JobState {
-	if x != nil {
-		return x.State
-	}
-	return JobState_JOB_STATE_UNSPECIFIED
-}
-
-// DeadLetterJobRequest commits a permanent failed attempt and immediately
-// moves the job to terminal dead-letter state.
-type DeadLetterJobRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Lease         *JobLeaseReference     `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
-	Failure       *JobFailure            `protobuf:"bytes,2,opt,name=failure,proto3" json:"failure,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeadLetterJobRequest) Reset() {
-	*x = DeadLetterJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[30]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeadLetterJobRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeadLetterJobRequest) ProtoMessage() {}
-
-func (x *DeadLetterJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[30]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeadLetterJobRequest.ProtoReflect.Descriptor instead.
-func (*DeadLetterJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{30}
-}
-
-func (x *DeadLetterJobRequest) GetLease() *JobLeaseReference {
-	if x != nil {
-		return x.Lease
-	}
-	return nil
-}
-
-func (x *DeadLetterJobRequest) GetFailure() *JobFailure {
-	if x != nil {
-		return x.Failure
-	}
-	return nil
-}
-
 var File_saas_jobs_v1_jobs_proto protoreflect.FileDescriptor
 
 const file_saas_jobs_v1_jobs_proto_rawDesc = "" +
 	"\n" +
-	"\x17saas/jobs/v1/jobs.proto\x12\fsaas.jobs.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9d\x01\n" +
+	"\x17saas/jobs/v1/jobs.proto\x12\fsaas.jobs.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9d\x01\n" +
 	"\bJobScope\x123\n" +
 	"\x0forganization_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\x0eorganizationId\x12)\n" +
 	"\n" +
@@ -2795,12 +952,7 @@ const file_saas_jobs_v1_jobs_proto_rawDesc = "" +
 	"\n" +
 	"JobFailure\x123\n" +
 	"\x04code\x18\x01 \x01(\tB\x1f\xbaH\x1cr\x1a\x10\x01\x18\x80\x012\x13^[a-z][a-z0-9_.-]*$R\x04code\x12\"\n" +
-	"\amessage\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\amessage\"\x9b\x01\n" +
-	"\x15JobExecutionReference\x122\n" +
-	"\x05owner\x18\x01 \x01(\tB\x1c\xbaH\x19r\x17\x10\x01\x18?2\x11^[a-z][a-z0-9-]*$R\x05owner\x122\n" +
-	"\x04kind\x18\x02 \x01(\tB\x1e\xbaH\x1br\x19\x10\x01\x18@2\x13^[a-z][a-z0-9_.-]*$R\x04kind\x12\x1a\n" +
-	"\x02id\x18\x03 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x02id\"\xd6\v\n" +
+	"\amessage\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\amessage\"\xd6\v\n" +
 	"\vJobEnvelope\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12@\n" +
 	"\tdirection\x18\x02 \x01(\x0e2\x1a.saas.jobs.v1.JobDirectionB\x06\xbaH\x03\xc8\x01\x01R\tdirection\x124\n" +
@@ -2865,166 +1017,13 @@ const file_saas_jobs_v1_jobs_proto_rawDesc = "" +
 	"\favailable_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\vavailableAt\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"C\n" +
-	"\x11EnqueueJobRequest\x12.\n" +
-	"\x03job\x18\x01 \x01(\v2\x14.saas.jobs.v1.NewJobB\x06\xbaH\x03\xc8\x01\x01R\x03job\"\x84\x01\n" +
-	"\x12EnqueueJobResponse\x12\x1f\n" +
-	"\x06job_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05jobId\x12M\n" +
-	"\vdisposition\x18\x02 \x01(\x0e2#.saas.jobs.v1.JobEnqueueDispositionB\x06\xbaH\x03\xc8\x01\x01R\vdisposition\"\x80\t\n" +
-	"\n" +
-	"JobSummary\x12\x18\n" +
-	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12@\n" +
-	"\tdirection\x18\x02 \x01(\x0e2\x1a.saas.jobs.v1.JobDirectionB\x06\xbaH\x03\xc8\x01\x01R\tdirection\x124\n" +
-	"\x05scope\x18\x03 \x01(\v2\x16.saas.jobs.v1.JobScopeB\x06\xbaH\x03\xc8\x01\x01R\x05scope\x12\x14\n" +
-	"\x05queue\x18\x04 \x01(\tR\x05queue\x12\x14\n" +
-	"\x05topic\x18\x05 \x01(\tR\x05topic\x12\x16\n" +
-	"\x06source\x18\x06 \x01(\tR\x06source\x12'\n" +
-	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x12!\n" +
-	"\fordering_key\x18\b \x01(\tR\vorderingKey\x12%\n" +
-	"\x0eschema_version\x18\t \x01(\rR\rschemaVersion\x12!\n" +
-	"\fcontent_type\x18\n" +
-	" \x01(\tR\vcontentType\x124\n" +
-	"\x05state\x18\v \x01(\x0e2\x16.saas.jobs.v1.JobStateB\x06\xbaH\x03\xc8\x01\x01R\x05state\x12\x1a\n" +
-	"\bpriority\x18\f \x01(\x05R\bpriority\x12#\n" +
-	"\rattempt_count\x18\r \x01(\rR\fattemptCount\x12!\n" +
-	"\fmax_attempts\x18\x0e \x01(\rR\vmaxAttempts\x12,\n" +
-	"\x05lease\x18\x0f \x01(\v2\x16.saas.jobs.v1.JobLeaseR\x05lease\x12;\n" +
-	"\flast_failure\x18\x10 \x01(\v2\x18.saas.jobs.v1.JobFailureR\vlastFailure\x12=\n" +
-	"\favailable_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\vavailableAt\x12B\n" +
-	"\x0flast_attempt_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\rlastAttemptAt\x12=\n" +
-	"\fcompleted_at\x18\x13 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12D\n" +
-	"\x10dead_lettered_at\x18\x14 \x01(\v2\x1a.google.protobuf.TimestampR\x0edeadLetteredAt\x129\n" +
-	"\n" +
-	"created_at\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
-	"\n" +
-	"updated_at\x18\x16 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12#\n" +
-	"\rstate_version\x18\x17 \x01(\x04R\fstateVersion\x12\x1b\n" +
-	"\treplay_of\x18\x18 \x01(\tR\breplayOf\x12A\n" +
-	"\texecution\x18\x19 \x01(\v2#.saas.jobs.v1.JobExecutionReferenceR\texecution\"\xf8\x02\n" +
-	"\x10JobQueueSnapshot\x12\x14\n" +
-	"\x05queue\x18\x01 \x01(\tR\x05queue\x12\x18\n" +
-	"\apending\x18\x02 \x01(\x04R\apending\x12\x1e\n" +
-	"\n" +
-	"processing\x18\x03 \x01(\x04R\n" +
-	"processing\x12\x1a\n" +
-	"\bretrying\x18\x04 \x01(\x04R\bretrying\x12\x1c\n" +
-	"\tsucceeded\x18\x05 \x01(\x04R\tsucceeded\x12\x1f\n" +
-	"\vdead_letter\x18\x06 \x01(\x04R\n" +
-	"deadLetter\x12\x1a\n" +
-	"\bcanceled\x18\a \x01(\x04R\bcanceled\x12\x14\n" +
-	"\x05ready\x18\b \x01(\x04R\x05ready\x12\x1c\n" +
-	"\tscheduled\x18\t \x01(\x04R\tscheduled\x12%\n" +
-	"\x0eexpired_leases\x18\n" +
-	" \x01(\x04R\rexpiredLeases\x12B\n" +
-	"\x0foldest_ready_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\roldestReadyAt\"Q\n" +
-	"\x17GetJobOperationsRequest\x126\n" +
-	"\x05queue\x18\x01 \x01(\tB \xbaH\x1d\xd8\x01\x01r\x18\x18\x80\x012\x13^[a-z][a-z0-9_.-]*$R\x05queue\"\x97\x01\n" +
-	"\x18GetJobOperationsResponse\x126\n" +
-	"\x06queues\x18\x01 \x03(\v2\x1e.saas.jobs.v1.JobQueueSnapshotR\x06queues\x12C\n" +
-	"\vobserved_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\n" +
-	"observedAt\"\xcb\x02\n" +
-	"\x0fListJobsRequest\x126\n" +
-	"\x05queue\x18\x01 \x01(\tB \xbaH\x1d\xd8\x01\x01r\x18\x18\x80\x012\x13^[a-z][a-z0-9_.-]*$R\x05queue\x12C\n" +
-	"\x06states\x18\x02 \x03(\x0e2\x16.saas.jobs.v1.JobStateB\x13\xbaH\x10\x92\x01\r\x10\x06\x18\x01\"\a\x82\x01\x04\x10\x01 \x00R\x06states\x123\n" +
-	"\x0forganization_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\x0eorganizationId\x12)\n" +
-	"\n" +
-	"subject_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\tsubjectId\x12)\n" +
-	"\tpage_size\x18\x05 \x01(\rB\f\xbaH\t\xd8\x01\x01*\x04\x18d(\x01R\bpageSize\x12'\n" +
-	"\n" +
-	"page_token\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\tpageTokenB\a\n" +
-	"\x05scope\"h\n" +
-	"\x10ListJobsResponse\x12,\n" +
-	"\x04jobs\x18\x01 \x03(\v2\x18.saas.jobs.v1.JobSummaryR\x04jobs\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"0\n" +
-	"\rGetJobRequest\x12\x1f\n" +
-	"\x06job_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05jobId\"\xbe\x01\n" +
-	"\x0eGetJobResponse\x122\n" +
-	"\x03job\x18\x01 \x01(\v2\x18.saas.jobs.v1.JobSummaryB\x06\xbaH\x03\xc8\x01\x01R\x03job\x124\n" +
-	"\battempts\x18\x02 \x03(\v2\x18.saas.jobs.v1.JobAttemptR\battempts\x12B\n" +
-	"\vtransitions\x18\x03 \x03(\v2 .saas.jobs.v1.JobStateTransitionR\vtransitions\"\xb4\x01\n" +
-	"\x10ReplayJobRequest\x12,\n" +
-	"\rsource_job_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\vsourceJobId\x123\n" +
-	"\x0fidempotency_key\x18\x02 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x0eidempotencyKey\x12=\n" +
-	"\favailable_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\vavailableAt\"\x83\x01\n" +
-	"\x11ReplayJobResponse\x12\x1f\n" +
-	"\x06job_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05jobId\x12M\n" +
-	"\vdisposition\x18\x02 \x01(\x0e2#.saas.jobs.v1.JobEnqueueDispositionB\x06\xbaH\x03\xc8\x01\x01R\vdisposition\"\xc0\x02\n" +
-	"\x10JobWorkerMetrics\x12\x14\n" +
-	"\x05queue\x18\x01 \x01(\tR\x05queue\x12\x1e\n" +
-	"\n" +
-	"iterations\x18\x02 \x01(\x04R\n" +
-	"iterations\x12!\n" +
-	"\fclaim_errors\x18\x03 \x01(\x04R\vclaimErrors\x12\x18\n" +
-	"\aclaimed\x18\x04 \x01(\x04R\aclaimed\x12\x1c\n" +
-	"\tsucceeded\x18\x05 \x01(\x04R\tsucceeded\x12\x18\n" +
-	"\aretried\x18\x06 \x01(\x04R\aretried\x12#\n" +
-	"\rdead_lettered\x18\a \x01(\x04R\fdeadLettered\x12%\n" +
-	"\x0ehandler_panics\x18\b \x01(\x04R\rhandlerPanics\x12\x1d\n" +
-	"\n" +
-	"lease_lost\x18\t \x01(\x04R\tleaseLost\x12\x16\n" +
-	"\x06active\x18\n" +
-	" \x01(\x03R\x06active\"\xe2\x03\n" +
-	"\n" +
-	"JobAttempt\x12\x18\n" +
-	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1f\n" +
-	"\x06job_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05jobId\x12\x1f\n" +
-	"\x06number\x18\x03 \x01(\rB\a\xbaH\x04*\x02 \x00R\x06number\x12'\n" +
-	"\tworker_id\x18\x04 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\bworkerId\x12)\n" +
-	"\vlease_token\x18\x05 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\n" +
-	"leaseToken\x129\n" +
-	"\aoutcome\x18\x06 \x01(\x0e2\x1f.saas.jobs.v1.JobAttemptOutcomeR\aoutcome\x122\n" +
-	"\afailure\x18\a \x01(\v2\x18.saas.jobs.v1.JobFailureR\afailure\x129\n" +
-	"\n" +
-	"started_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12=\n" +
-	"\fheartbeat_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\vheartbeatAt\x12;\n" +
-	"\vfinished_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"finishedAt\"\xa6\x03\n" +
-	"\x12JobStateTransition\x12#\n" +
-	"\bsequence\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\bsequence\x12\x1f\n" +
-	"\x06job_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05jobId\x125\n" +
-	"\n" +
-	"from_state\x18\x03 \x01(\x0e2\x16.saas.jobs.v1.JobStateR\tfromState\x129\n" +
-	"\bto_state\x18\x04 \x01(\x0e2\x16.saas.jobs.v1.JobStateB\x06\xbaH\x03\xc8\x01\x01R\atoState\x12#\n" +
-	"\rstate_version\x18\x05 \x01(\x04R\fstateVersion\x12#\n" +
-	"\rattempt_count\x18\x06 \x01(\rR\fattemptCount\x12\x1d\n" +
-	"\x05actor\x18\a \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05actor\x122\n" +
-	"\afailure\x18\b \x01(\v2\x18.saas.jobs.v1.JobFailureR\afailure\x12;\n" +
-	"\voccurred_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"occurredAt\"\xeb\x01\n" +
-	"\x10ClaimJobsRequest\x125\n" +
-	"\x05queue\x18\x01 \x01(\tB\x1f\xbaH\x1cr\x1a\x10\x01\x18\x80\x012\x13^[a-z][a-z0-9_.-]*$R\x05queue\x12'\n" +
-	"\tworker_id\x18\x02 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\bworkerId\x12\x1f\n" +
-	"\x05limit\x18\x03 \x01(\rB\t\xbaH\x06*\x04\x18d(\x01R\x05limit\x12V\n" +
-	"\x0elease_duration\x18\x04 \x01(\v2\x19.google.protobuf.DurationB\x14\xbaH\x11\xc8\x01\x01\xaa\x01\v\"\x03\b\x90\x1c2\x04\x10\xc0\x84=R\rleaseDuration\"B\n" +
-	"\x11ClaimJobsResponse\x12-\n" +
-	"\x04jobs\x18\x01 \x03(\v2\x19.saas.jobs.v1.JobEnvelopeR\x04jobs\"\x88\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x88\x01\n" +
 	"\x11JobLeaseReference\x12\x1f\n" +
 	"\x06job_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05jobId\x12'\n" +
 	"\tworker_id\x18\x02 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\bworkerId\x12)\n" +
 	"\vlease_token\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\n" +
-	"leaseToken\"\xa3\x01\n" +
-	"\x13HeartbeatJobRequest\x12=\n" +
-	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\x12M\n" +
-	"\textension\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\x14\xbaH\x11\xc8\x01\x01\xaa\x01\v\"\x03\b\x90\x1c2\x04\x10\xc0\x84=R\textension\"L\n" +
-	"\x14HeartbeatJobResponse\x124\n" +
-	"\x05lease\x18\x01 \x01(\v2\x16.saas.jobs.v1.JobLeaseB\x06\xbaH\x03\xc8\x01\x01R\x05lease\"\x96\x01\n" +
-	"\x12CompleteJobRequest\x12=\n" +
-	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\x12A\n" +
-	"\texecution\x18\x02 \x01(\v2#.saas.jobs.v1.JobExecutionReferenceR\texecution\"\xcb\x01\n" +
-	"\x0fRetryJobRequest\x12=\n" +
-	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\x12:\n" +
-	"\afailure\x18\x02 \x01(\v2\x18.saas.jobs.v1.JobFailureB\x06\xbaH\x03\xc8\x01\x01R\afailure\x12=\n" +
-	"\bretry_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\aretryAt\"H\n" +
-	"\x10RetryJobResponse\x124\n" +
-	"\x05state\x18\x01 \x01(\x0e2\x16.saas.jobs.v1.JobStateB\x06\xbaH\x03\xc8\x01\x01R\x05state\"\x91\x01\n" +
-	"\x14DeadLetterJobRequest\x12=\n" +
-	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\x12:\n" +
-	"\afailure\x18\x02 \x01(\v2\x18.saas.jobs.v1.JobFailureB\x06\xbaH\x03\xc8\x01\x01R\afailure*`\n" +
+	"leaseToken*`\n" +
 	"\fJobDirection\x12\x1d\n" +
 	"\x19JOB_DIRECTION_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13JOB_DIRECTION_INBOX\x10\x01\x12\x18\n" +
@@ -3036,14 +1035,7 @@ const file_saas_jobs_v1_jobs_proto_rawDesc = "" +
 	"\x12JOB_STATE_RETRYING\x10\x03\x12\x17\n" +
 	"\x13JOB_STATE_SUCCEEDED\x10\x04\x12\x19\n" +
 	"\x15JOB_STATE_DEAD_LETTER\x10\x05\x12\x16\n" +
-	"\x12JOB_STATE_CANCELED\x10\x06*\xfa\x01\n" +
-	"\x11JobAttemptOutcome\x12#\n" +
-	"\x1fJOB_ATTEMPT_OUTCOME_UNSPECIFIED\x10\x00\x12!\n" +
-	"\x1dJOB_ATTEMPT_OUTCOME_SUCCEEDED\x10\x01\x12)\n" +
-	"%JOB_ATTEMPT_OUTCOME_RETRYABLE_FAILURE\x10\x02\x12)\n" +
-	"%JOB_ATTEMPT_OUTCOME_PERMANENT_FAILURE\x10\x03\x12%\n" +
-	"!JOB_ATTEMPT_OUTCOME_LEASE_EXPIRED\x10\x04\x12 \n" +
-	"\x1cJOB_ATTEMPT_OUTCOME_CANCELED\x10\x05*\x8d\x01\n" +
+	"\x12JOB_STATE_CANCELED\x10\x06*\x8d\x01\n" +
 	"\x15JobEnqueueDisposition\x12'\n" +
 	"#JOB_ENQUEUE_DISPOSITION_UNSPECIFIED\x10\x00\x12$\n" +
 	" JOB_ENQUEUE_DISPOSITION_INSERTED\x10\x01\x12%\n" +
@@ -3062,120 +1054,48 @@ func file_saas_jobs_v1_jobs_proto_rawDescGZIP() []byte {
 	return file_saas_jobs_v1_jobs_proto_rawDescData
 }
 
-var file_saas_jobs_v1_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_saas_jobs_v1_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
+var file_saas_jobs_v1_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_saas_jobs_v1_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_saas_jobs_v1_jobs_proto_goTypes = []any{
-	(JobDirection)(0),                // 0: saas.jobs.v1.JobDirection
-	(JobState)(0),                    // 1: saas.jobs.v1.JobState
-	(JobAttemptOutcome)(0),           // 2: saas.jobs.v1.JobAttemptOutcome
-	(JobEnqueueDisposition)(0),       // 3: saas.jobs.v1.JobEnqueueDisposition
-	(*JobScope)(nil),                 // 4: saas.jobs.v1.JobScope
-	(*JobLease)(nil),                 // 5: saas.jobs.v1.JobLease
-	(*JobFailure)(nil),               // 6: saas.jobs.v1.JobFailure
-	(*JobExecutionReference)(nil),    // 7: saas.jobs.v1.JobExecutionReference
-	(*JobEnvelope)(nil),              // 8: saas.jobs.v1.JobEnvelope
-	(*JobOrderingKey)(nil),           // 9: saas.jobs.v1.JobOrderingKey
-	(*NewJob)(nil),                   // 10: saas.jobs.v1.NewJob
-	(*EnqueueJobRequest)(nil),        // 11: saas.jobs.v1.EnqueueJobRequest
-	(*EnqueueJobResponse)(nil),       // 12: saas.jobs.v1.EnqueueJobResponse
-	(*JobSummary)(nil),               // 13: saas.jobs.v1.JobSummary
-	(*JobQueueSnapshot)(nil),         // 14: saas.jobs.v1.JobQueueSnapshot
-	(*GetJobOperationsRequest)(nil),  // 15: saas.jobs.v1.GetJobOperationsRequest
-	(*GetJobOperationsResponse)(nil), // 16: saas.jobs.v1.GetJobOperationsResponse
-	(*ListJobsRequest)(nil),          // 17: saas.jobs.v1.ListJobsRequest
-	(*ListJobsResponse)(nil),         // 18: saas.jobs.v1.ListJobsResponse
-	(*GetJobRequest)(nil),            // 19: saas.jobs.v1.GetJobRequest
-	(*GetJobResponse)(nil),           // 20: saas.jobs.v1.GetJobResponse
-	(*ReplayJobRequest)(nil),         // 21: saas.jobs.v1.ReplayJobRequest
-	(*ReplayJobResponse)(nil),        // 22: saas.jobs.v1.ReplayJobResponse
-	(*JobWorkerMetrics)(nil),         // 23: saas.jobs.v1.JobWorkerMetrics
-	(*JobAttempt)(nil),               // 24: saas.jobs.v1.JobAttempt
-	(*JobStateTransition)(nil),       // 25: saas.jobs.v1.JobStateTransition
-	(*ClaimJobsRequest)(nil),         // 26: saas.jobs.v1.ClaimJobsRequest
-	(*ClaimJobsResponse)(nil),        // 27: saas.jobs.v1.ClaimJobsResponse
-	(*JobLeaseReference)(nil),        // 28: saas.jobs.v1.JobLeaseReference
-	(*HeartbeatJobRequest)(nil),      // 29: saas.jobs.v1.HeartbeatJobRequest
-	(*HeartbeatJobResponse)(nil),     // 30: saas.jobs.v1.HeartbeatJobResponse
-	(*CompleteJobRequest)(nil),       // 31: saas.jobs.v1.CompleteJobRequest
-	(*RetryJobRequest)(nil),          // 32: saas.jobs.v1.RetryJobRequest
-	(*RetryJobResponse)(nil),         // 33: saas.jobs.v1.RetryJobResponse
-	(*DeadLetterJobRequest)(nil),     // 34: saas.jobs.v1.DeadLetterJobRequest
-	nil,                              // 35: saas.jobs.v1.JobEnvelope.AttributesEntry
-	nil,                              // 36: saas.jobs.v1.NewJob.AttributesEntry
-	(*timestamppb.Timestamp)(nil),    // 37: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),      // 38: google.protobuf.Duration
+	(JobDirection)(0),             // 0: saas.jobs.v1.JobDirection
+	(JobState)(0),                 // 1: saas.jobs.v1.JobState
+	(JobEnqueueDisposition)(0),    // 2: saas.jobs.v1.JobEnqueueDisposition
+	(*JobScope)(nil),              // 3: saas.jobs.v1.JobScope
+	(*JobLease)(nil),              // 4: saas.jobs.v1.JobLease
+	(*JobFailure)(nil),            // 5: saas.jobs.v1.JobFailure
+	(*JobEnvelope)(nil),           // 6: saas.jobs.v1.JobEnvelope
+	(*JobOrderingKey)(nil),        // 7: saas.jobs.v1.JobOrderingKey
+	(*NewJob)(nil),                // 8: saas.jobs.v1.NewJob
+	(*JobLeaseReference)(nil),     // 9: saas.jobs.v1.JobLeaseReference
+	nil,                           // 10: saas.jobs.v1.JobEnvelope.AttributesEntry
+	nil,                           // 11: saas.jobs.v1.NewJob.AttributesEntry
+	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_saas_jobs_v1_jobs_proto_depIdxs = []int32{
-	37, // 0: saas.jobs.v1.JobLease.expires_at:type_name -> google.protobuf.Timestamp
-	37, // 1: saas.jobs.v1.JobLease.heartbeat_at:type_name -> google.protobuf.Timestamp
+	12, // 0: saas.jobs.v1.JobLease.expires_at:type_name -> google.protobuf.Timestamp
+	12, // 1: saas.jobs.v1.JobLease.heartbeat_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: saas.jobs.v1.JobEnvelope.direction:type_name -> saas.jobs.v1.JobDirection
-	4,  // 3: saas.jobs.v1.JobEnvelope.scope:type_name -> saas.jobs.v1.JobScope
-	35, // 4: saas.jobs.v1.JobEnvelope.attributes:type_name -> saas.jobs.v1.JobEnvelope.AttributesEntry
+	3,  // 3: saas.jobs.v1.JobEnvelope.scope:type_name -> saas.jobs.v1.JobScope
+	10, // 4: saas.jobs.v1.JobEnvelope.attributes:type_name -> saas.jobs.v1.JobEnvelope.AttributesEntry
 	1,  // 5: saas.jobs.v1.JobEnvelope.state:type_name -> saas.jobs.v1.JobState
-	5,  // 6: saas.jobs.v1.JobEnvelope.lease:type_name -> saas.jobs.v1.JobLease
-	6,  // 7: saas.jobs.v1.JobEnvelope.last_failure:type_name -> saas.jobs.v1.JobFailure
-	37, // 8: saas.jobs.v1.JobEnvelope.available_at:type_name -> google.protobuf.Timestamp
-	37, // 9: saas.jobs.v1.JobEnvelope.last_attempt_at:type_name -> google.protobuf.Timestamp
-	37, // 10: saas.jobs.v1.JobEnvelope.completed_at:type_name -> google.protobuf.Timestamp
-	37, // 11: saas.jobs.v1.JobEnvelope.dead_lettered_at:type_name -> google.protobuf.Timestamp
-	37, // 12: saas.jobs.v1.JobEnvelope.created_at:type_name -> google.protobuf.Timestamp
-	37, // 13: saas.jobs.v1.JobEnvelope.updated_at:type_name -> google.protobuf.Timestamp
+	4,  // 6: saas.jobs.v1.JobEnvelope.lease:type_name -> saas.jobs.v1.JobLease
+	5,  // 7: saas.jobs.v1.JobEnvelope.last_failure:type_name -> saas.jobs.v1.JobFailure
+	12, // 8: saas.jobs.v1.JobEnvelope.available_at:type_name -> google.protobuf.Timestamp
+	12, // 9: saas.jobs.v1.JobEnvelope.last_attempt_at:type_name -> google.protobuf.Timestamp
+	12, // 10: saas.jobs.v1.JobEnvelope.completed_at:type_name -> google.protobuf.Timestamp
+	12, // 11: saas.jobs.v1.JobEnvelope.dead_lettered_at:type_name -> google.protobuf.Timestamp
+	12, // 12: saas.jobs.v1.JobEnvelope.created_at:type_name -> google.protobuf.Timestamp
+	12, // 13: saas.jobs.v1.JobEnvelope.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 14: saas.jobs.v1.NewJob.direction:type_name -> saas.jobs.v1.JobDirection
-	4,  // 15: saas.jobs.v1.NewJob.scope:type_name -> saas.jobs.v1.JobScope
-	9,  // 16: saas.jobs.v1.NewJob.ordering:type_name -> saas.jobs.v1.JobOrderingKey
-	36, // 17: saas.jobs.v1.NewJob.attributes:type_name -> saas.jobs.v1.NewJob.AttributesEntry
-	37, // 18: saas.jobs.v1.NewJob.available_at:type_name -> google.protobuf.Timestamp
-	10, // 19: saas.jobs.v1.EnqueueJobRequest.job:type_name -> saas.jobs.v1.NewJob
-	3,  // 20: saas.jobs.v1.EnqueueJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
-	0,  // 21: saas.jobs.v1.JobSummary.direction:type_name -> saas.jobs.v1.JobDirection
-	4,  // 22: saas.jobs.v1.JobSummary.scope:type_name -> saas.jobs.v1.JobScope
-	1,  // 23: saas.jobs.v1.JobSummary.state:type_name -> saas.jobs.v1.JobState
-	5,  // 24: saas.jobs.v1.JobSummary.lease:type_name -> saas.jobs.v1.JobLease
-	6,  // 25: saas.jobs.v1.JobSummary.last_failure:type_name -> saas.jobs.v1.JobFailure
-	37, // 26: saas.jobs.v1.JobSummary.available_at:type_name -> google.protobuf.Timestamp
-	37, // 27: saas.jobs.v1.JobSummary.last_attempt_at:type_name -> google.protobuf.Timestamp
-	37, // 28: saas.jobs.v1.JobSummary.completed_at:type_name -> google.protobuf.Timestamp
-	37, // 29: saas.jobs.v1.JobSummary.dead_lettered_at:type_name -> google.protobuf.Timestamp
-	37, // 30: saas.jobs.v1.JobSummary.created_at:type_name -> google.protobuf.Timestamp
-	37, // 31: saas.jobs.v1.JobSummary.updated_at:type_name -> google.protobuf.Timestamp
-	7,  // 32: saas.jobs.v1.JobSummary.execution:type_name -> saas.jobs.v1.JobExecutionReference
-	37, // 33: saas.jobs.v1.JobQueueSnapshot.oldest_ready_at:type_name -> google.protobuf.Timestamp
-	14, // 34: saas.jobs.v1.GetJobOperationsResponse.queues:type_name -> saas.jobs.v1.JobQueueSnapshot
-	37, // 35: saas.jobs.v1.GetJobOperationsResponse.observed_at:type_name -> google.protobuf.Timestamp
-	1,  // 36: saas.jobs.v1.ListJobsRequest.states:type_name -> saas.jobs.v1.JobState
-	13, // 37: saas.jobs.v1.ListJobsResponse.jobs:type_name -> saas.jobs.v1.JobSummary
-	13, // 38: saas.jobs.v1.GetJobResponse.job:type_name -> saas.jobs.v1.JobSummary
-	24, // 39: saas.jobs.v1.GetJobResponse.attempts:type_name -> saas.jobs.v1.JobAttempt
-	25, // 40: saas.jobs.v1.GetJobResponse.transitions:type_name -> saas.jobs.v1.JobStateTransition
-	37, // 41: saas.jobs.v1.ReplayJobRequest.available_at:type_name -> google.protobuf.Timestamp
-	3,  // 42: saas.jobs.v1.ReplayJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
-	2,  // 43: saas.jobs.v1.JobAttempt.outcome:type_name -> saas.jobs.v1.JobAttemptOutcome
-	6,  // 44: saas.jobs.v1.JobAttempt.failure:type_name -> saas.jobs.v1.JobFailure
-	37, // 45: saas.jobs.v1.JobAttempt.started_at:type_name -> google.protobuf.Timestamp
-	37, // 46: saas.jobs.v1.JobAttempt.heartbeat_at:type_name -> google.protobuf.Timestamp
-	37, // 47: saas.jobs.v1.JobAttempt.finished_at:type_name -> google.protobuf.Timestamp
-	1,  // 48: saas.jobs.v1.JobStateTransition.from_state:type_name -> saas.jobs.v1.JobState
-	1,  // 49: saas.jobs.v1.JobStateTransition.to_state:type_name -> saas.jobs.v1.JobState
-	6,  // 50: saas.jobs.v1.JobStateTransition.failure:type_name -> saas.jobs.v1.JobFailure
-	37, // 51: saas.jobs.v1.JobStateTransition.occurred_at:type_name -> google.protobuf.Timestamp
-	38, // 52: saas.jobs.v1.ClaimJobsRequest.lease_duration:type_name -> google.protobuf.Duration
-	8,  // 53: saas.jobs.v1.ClaimJobsResponse.jobs:type_name -> saas.jobs.v1.JobEnvelope
-	28, // 54: saas.jobs.v1.HeartbeatJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	38, // 55: saas.jobs.v1.HeartbeatJobRequest.extension:type_name -> google.protobuf.Duration
-	5,  // 56: saas.jobs.v1.HeartbeatJobResponse.lease:type_name -> saas.jobs.v1.JobLease
-	28, // 57: saas.jobs.v1.CompleteJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	7,  // 58: saas.jobs.v1.CompleteJobRequest.execution:type_name -> saas.jobs.v1.JobExecutionReference
-	28, // 59: saas.jobs.v1.RetryJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	6,  // 60: saas.jobs.v1.RetryJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
-	37, // 61: saas.jobs.v1.RetryJobRequest.retry_at:type_name -> google.protobuf.Timestamp
-	1,  // 62: saas.jobs.v1.RetryJobResponse.state:type_name -> saas.jobs.v1.JobState
-	28, // 63: saas.jobs.v1.DeadLetterJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	6,  // 64: saas.jobs.v1.DeadLetterJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
-	65, // [65:65] is the sub-list for method output_type
-	65, // [65:65] is the sub-list for method input_type
-	65, // [65:65] is the sub-list for extension type_name
-	65, // [65:65] is the sub-list for extension extendee
-	0,  // [0:65] is the sub-list for field type_name
+	3,  // 15: saas.jobs.v1.NewJob.scope:type_name -> saas.jobs.v1.JobScope
+	7,  // 16: saas.jobs.v1.NewJob.ordering:type_name -> saas.jobs.v1.JobOrderingKey
+	11, // 17: saas.jobs.v1.NewJob.attributes:type_name -> saas.jobs.v1.NewJob.AttributesEntry
+	12, // 18: saas.jobs.v1.NewJob.available_at:type_name -> google.protobuf.Timestamp
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_saas_jobs_v1_jobs_proto_init() }
@@ -3188,17 +1108,13 @@ func file_saas_jobs_v1_jobs_proto_init() {
 		(*JobScope_SubjectId)(nil),
 		(*JobScope_Global)(nil),
 	}
-	file_saas_jobs_v1_jobs_proto_msgTypes[13].OneofWrappers = []any{
-		(*ListJobsRequest_OrganizationId)(nil),
-		(*ListJobsRequest_SubjectId)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_jobs_v1_jobs_proto_rawDesc), len(file_saas_jobs_v1_jobs_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   33,
+			NumEnums:      3,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

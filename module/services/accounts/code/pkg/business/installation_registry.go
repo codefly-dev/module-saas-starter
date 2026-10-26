@@ -38,7 +38,7 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 	var available []*AvailableSolutionTarget
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
-		available, err = s.store.ListAvailableSolutionTargets(ctx, AvailableSolutionQuery{TargetID: params.TargetID, Limit: 1})
+		available, err = s.store.ListAvailableSolutionTargets(ctx, AvailableSolutionQuery{OrgID: params.OrgID, TargetID: params.TargetID, Limit: 1})
 		return err
 	}); err != nil {
 		return nil, err
@@ -53,8 +53,28 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 	}
 	params.RegistryBindingID, params.RegistryPrincipalID = target.BindingID, principal
 	params.RouteAlias, params.Kind = target.RouteAlias, target.Kind
+	if params.Kind == "module" && target.Installed && params.OwnerPrincipalID == "" {
+		existing, err := s.heldTargetInstallation(ctx, params.OrgID, params.TargetID)
+		if err != nil {
+			return nil, err
+		}
+		params.OwnerPrincipalID = existing.GetOwnerPrincipalId()
+		if params.CoOwnerPrincipalIDs == nil {
+			params.CoOwnerPrincipalIDs = existing.GetCoOwnerPrincipalIds()
+		}
+	}
+	params.ModuleCeiling = nil
+	if params.Kind == "module" {
+		ceiling := FullInstallationScope(grant)
+		params.ModuleCeiling = &ceiling
+	}
 	if params.Scope == nil {
 		recorded := consentedInstallationScope(params.Kind, grant, snapshot.envelopeRevision)
+		if params.Kind == "module" && target.Installed {
+			// Re-install is the administrator's explicit approval of this
+			// generation, even when an envelope exists: record its snapshot.
+			recorded = FullInstallationScope(grant)
+		}
 		params.Scope = &recorded
 	}
 	if err := validateInstallationScope(*params.Scope, grant); err != nil {
@@ -77,7 +97,7 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 // generation that widens it must not reach an organisation no person approved
 // it for: the installation keeps its snapshot, and taking the wider generation
 // is an explicit lifecycle action by that organisation's administrator
-// (installing again answers a conflict that names it).
+// (calling InstallationService/Install or InstallSolution again).
 func consentedInstallationScope(kind string, grant ModulePrincipalGrant, envelopeRevision uint64) InstallationScope {
 	if kind == "module" && envelopeRevision > 0 {
 		return InstallationScope{Capabilities: true, Follows: true}

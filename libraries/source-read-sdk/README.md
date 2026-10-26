@@ -59,16 +59,17 @@ provider.
 
 ## Regenerate
 
-From the repository root:
+Requires released Codefly CLI **v0.1.215** (the CI pin). From the repository root:
 
 ```sh
 codefly generate client --from saas-starter/accounts/authority --name source-read-sdk \
   --language go --services ModuleCapabilitiesService \
   --go-module github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go \
-  --output libraries/source-read-sdk --force
+  --output libraries/source-read-sdk
 ```
 
-Generation from this service's proto tree needs a CLI that names sources by
-their buf module (codefly-dev/cli `2c6225ad`); earlier CLIs compile the
-excluded `codefly/` tree and the vendored `codefly/base` under the wrong names
-and fail.
+CLI v0.1.215 applies `--services ModuleCapabilitiesService` to both the facade
+and the contract's transitive descriptor closure. Use `--force` once when
+replacing an older broad generated library; subsequent regeneration must work
+without it. `TestContractContainsOnlyRequiredDescriptors` verifies the single
+service and its required descriptors, and CI checks regeneration for drift.

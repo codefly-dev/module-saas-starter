@@ -94,4 +94,16 @@ func TestMigrationLedgerWhoseNamesMovedIsRefused(t *testing.T) {
 	if !strings.Contains(comment, `"3":"three"`) {
 		t.Fatalf("the upgrade's names are not recorded: %q", comment)
 	}
+	// A pre-renumber database has no name stamp. It cannot be diagnosed by
+	// that guard; when replay fails, the refusal must name the recovery action.
+	if _, err := db.Exec(`COMMENT ON TABLE public.schema_migrations IS NULL`); err != nil {
+		t.Fatal(err)
+	}
+	grown["4_conflict.up.sql"] = "CREATE TABLE two (id int);"
+	grown["4_conflict.down.sql"] = "DROP TABLE two;"
+	err = migrateStoreFrom(ledger(grown), url)
+	if err == nil || !strings.Contains(err.Error(), "before migrations 46–49 were renumbered to 49–52 must be recreated") {
+		t.Fatalf("an unstamped pre-renumber database needs a recreation remedy: %v", err)
+	}
+
 }

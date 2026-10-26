@@ -58,3 +58,12 @@ Reference validation compares committed trees. CI passes `pull_request.base.sha`
 or `merge_group.base_sha` directly rather than the feature branch's old merge
 base. Pushes use the previous commit; new tags and manual runs without a previous
 commit validate the current tree.
+
+## Pre-renumber local and validation databases
+
+Local and validation databases created before the authority-interface branch
+renumbered migrations 46–49 to 49–52 **must be recreated**. They predate the
+migration-name stamp, so the name guard cannot identify them reliably. This
+ledger provides no upgrade path for those databases. Do not mark a failed
+migration clean and continue: recreate the database through the host's setup.
+The runner includes this remedy in migration failures.

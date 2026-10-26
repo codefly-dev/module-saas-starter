@@ -15,6 +15,8 @@ import (
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -125,6 +127,19 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		return nil, err
 	}
 
+	// A module install or re-install is explicit consent by an organization
+	// administrator. Check the actor here too: fixture and business callers
+	// do not pass through the RPC authorization interceptor.
+	if params.Kind == "module" {
+		admin, err := isCurrentOrgAdmin(ctx, executor, params.OrgID, params.GrantedBy)
+		if err != nil {
+			return nil, w.Wrapf(err, "failed to check installing actor org-admin status")
+		}
+		if !admin {
+			return nil, status.Error(codes.PermissionDenied, "only a current organization owner or admin may install or re-install a module to record consent")
+		}
+	}
+
 	// The owner of record must be a current org admin. The installing caller is
 	// already gated as an admin; an explicitly named owner is validated here.
 	admin, err := isCurrentOrgAdmin(ctx, executor, params.OrgID, params.OwnerPrincipalID)
@@ -138,11 +153,9 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		)
 	}
 
-	// Idempotent re-install: an active installation for this solution already
-	// composed the agent, node, and grant. A re-install that names the same
-	// authority envelope (ceiling, standing-grant role, co-owner set) returns the
-	// existing row unchanged; one that names a different envelope is rejected rather
-	// than silently ignored — a changed ceiling is applied by uninstall + reinstall.
+	// Reuse the installation, agent and standing grant. For a module, the
+	// administrator's explicit re-install consents to the current scope; the
+	// existing revision trigger revokes credentials and work under old consent.
 	existing, err := scanInstallation(executor.QueryRow(ctx,
 		`SELECT `+installationColumns+` FROM installations
 		 WHERE org_id = $1 AND target_id = $2::uuid AND status <> 'revoked'`,
@@ -307,11 +320,9 @@ func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *b
 	return node.Id, node.ScopePath, nil
 }
 
-// reconcileExistingInstallation guards the idempotent re-install path: it returns
-// a conflict when a re-install of an already-active solution names a different
-// authority envelope (ceiling, standing-grant role, or co-owner set) than the one
-// on record, so a narrowed ceiling is never silently discarded. Identical params
-// reconcile to a no-op and the caller returns the existing row.
+// reconcileExistingInstallation preserves identity, ownership and standing
+// grants. A module's explicit admin re-install records the newly prepared
+// consent; solutions still use their acknowledged installation lifecycle.
 func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, existing *gen.Installation, params *business.InstallSolutionParams) error {
 	var installedScope []byte
 	var principal, binding, kind string
@@ -328,7 +339,8 @@ func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, 
 	}
 	sameAuthority := principal == params.RegistryPrincipalID &&
 		(params.RegistryBindingID == "" || binding == params.RegistryBindingID) &&
-		(params.Kind == "" || kind == params.Kind) &&
+		(params.Kind == "" || kind == params.Kind)
+	sameScope := current.Follows == requested.Follows &&
 		business.InstallationScopeWithin(current, requested) && business.InstallationScopeWithin(requested, current)
 	var allowedAudiences, allowedScopes []string
 	var agentIdentifier, displayName string
@@ -352,12 +364,32 @@ func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, 
 		existing.OrgId, existing.RootScopeNodeId, existing.AgentPrincipalId).Scan(&roleID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("load existing standing grant role: %w", err)
 	}
-	if sameAuthority && roleID == params.RoleID && live && agentIdentifier == params.AgentIdentifier &&
+	reconsent := kind == "module" && params.ModuleCeiling != nil && !requested.Follows &&
+		business.InstallationScopeWithin(requested, *params.ModuleCeiling) &&
+		business.InstallationScopeWithin(*params.ModuleCeiling, requested)
+	sameAgent := agentIdentifier == params.AgentIdentifier
+	if kind == "module" {
+		// A new delivered release does not replace the installation's agent.
+		// Re-consent updates only scope; publisher/name must still agree.
+		installedName, _, _ := strings.Cut(agentIdentifier, ":")
+		requestedName, _, _ := strings.Cut(params.AgentIdentifier, ":")
+		sameAgent = installedName == requestedName
+	}
+	if sameAuthority && (reconsent || sameScope) && roleID == params.RoleID && live && sameAgent &&
 		existing.OwnerPrincipalId == params.OwnerPrincipalID &&
 		(params.DisplayName == "" || params.DisplayName == displayName) &&
 		sameStringSet(allowedAudiences, params.AllowedAudiences) &&
 		sameStringSet(allowedScopes, params.AllowedScopes) &&
 		sameStringSet(existing.CoOwnerPrincipalIds, params.CoOwnerPrincipalIDs) {
+		if reconsent {
+			encoded, err := json.Marshal(requested)
+			if err != nil {
+				return err
+			}
+			_, err = executor.Exec(ctx, `UPDATE public.installations SET scope=$3::jsonb
+				WHERE id=$1::uuid AND org_id=$2::uuid AND scope IS DISTINCT FROM $3::jsonb`, existing.Id, existing.OrgId, encoded)
+			return err
+		}
 		return nil
 	}
 	return business.NewStoreError(

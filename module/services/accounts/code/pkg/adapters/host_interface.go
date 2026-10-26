@@ -443,8 +443,9 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 
 // Install names the target and the role by name; the host's resolver
 // (InstallTargetByName) reads them from the organisation's catalogue and role
-// catalogue and installs through the host's own install path. A target the
-// organisation already holds is refused naming the installation it holds.
+// catalogue and installs through the host's own install path. A module
+// re-install explicitly approves its current ceiling. A solution the
+// organisation already holds keeps its existing installation lifecycle.
 func (s *HostInstallationServer) Install(ctx context.Context, req *installationv1.InstallRequest) (*installationv1.Installation, error) {
 	actorID, err := requireAuth(ctx)
 	if err != nil {

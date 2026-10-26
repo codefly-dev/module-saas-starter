@@ -3,6 +3,7 @@ package infra
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 
@@ -73,8 +74,10 @@ func (s *PostgresStore) RecordDeliveredDocument(
 	if storedHash == record.ContentHash && bytes.Equal(storedPayload, record.Payload) && bytes.Equal(storedAuthority, record.AuthorityDocument) && (storedAuthority == nil) == (record.AuthorityDocument == nil) {
 		return false, nil
 	}
-	return false, fmt.Errorf("%w: binding %s generation %d was delivered as %s and is now offered as %s",
-		business.ErrSolutionDeliveryConflict, record.Binding, record.Generation, storedHash, record.ContentHash)
+	return false, fmt.Errorf("%w: binding %s generation %d differs: manifest digest stored=%s offered=%s; payload digest stored=sha256:%x offered=sha256:%x; authority document digest stored=sha256:%x (present=%t) offered=sha256:%x (present=%t)",
+		business.ErrSolutionDeliveryConflict, record.Binding, record.Generation, storedHash, record.ContentHash,
+		sha256.Sum256(storedPayload), sha256.Sum256(record.Payload),
+		sha256.Sum256(storedAuthority), storedAuthority != nil, sha256.Sum256(record.AuthorityDocument), record.AuthorityDocument != nil)
 }
 
 // ListNewestDeliveredDocuments returns the newest delivered generation per

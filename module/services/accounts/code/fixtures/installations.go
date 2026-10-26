@@ -114,8 +114,10 @@ func newInstallations(service *business.Service, declared []fixtureInstallation,
 }
 
 // Converge installs every declared installation whose target this host now
-// offers and that its organisation does not hold yet. A target not delivered
-// yet stays pending for the next pass; any other refusal is returned, naming
+// offers. The host's own setup is explicit consent: creation records it and a
+// reseed re-consents an existing module at its current ceiling through the same
+// admin install path. A target not delivered yet stays pending for the next
+// pass; any other refusal is returned, naming
 // the installation, and stays pending too. An installation performed or found
 // is not asked again by this process.
 func (i *Installations) Converge(ctx context.Context) error {

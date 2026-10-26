@@ -2,6 +2,7 @@ package accounts_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,8 @@ import (
 	accounts "github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go"
 	v1 "github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go/gen/saas/accounts/v1"
 	rpc "github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go/gen/saas/accounts/v1/accountsv1connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 type projection struct {
@@ -105,5 +108,55 @@ func TestGeneratedLibraryDoesNotImportLegacySDK(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "github.com/codefly-dev/saas-sdk-go") {
 		t.Fatal("generated client depends on retired SDK")
+	}
+}
+
+func TestContractContainsOnlyRequiredDescriptors(t *testing.T) {
+	raw, err := os.ReadFile("../contract/contract.binpb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var set descriptorpb.FileDescriptorSet
+	if err := proto.Unmarshal(raw, &set); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]*descriptorpb.FileDescriptorProto{}
+	for _, f := range set.File {
+		files[f.GetName()] = f
+		if f.GetName() != "saas/accounts/v1/module_capabilities.proto" && len(f.Service) != 0 {
+			t.Fatalf("unrelated service generated from %s", f.GetName())
+		}
+	}
+	seen := map[string]bool{}
+	var visit func(string)
+	visit = func(name string) {
+		if seen[name] {
+			return
+		}
+		seen[name] = true
+		f := files[name]
+		if f == nil {
+			t.Fatalf("missing dependency %s", name)
+		}
+		for _, dep := range f.Dependency {
+			visit(dep)
+		}
+	}
+	visit("saas/accounts/v1/module_capabilities.proto")
+	if len(seen) != len(files) {
+		t.Fatalf("%d unrelated descriptors shipped", len(files)-len(seen))
+	}
+	raw, err = os.ReadFile("../contract/catalog.codefly.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog struct {
+		Endpoints []struct{ Services []struct{ Name string } }
+	}
+	if err := json.Unmarshal(raw, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Endpoints) != 1 || len(catalog.Endpoints[0].Services) != 1 || catalog.Endpoints[0].Services[0].Name != "ModuleCapabilitiesService" {
+		t.Fatal("unrelated service exposed")
 	}
 }
