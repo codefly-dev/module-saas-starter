@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -752,11 +753,19 @@ func TestModuleRoute_TheBearerLessArmRefusesACapabilityWithNoTenantOrSeal(t *tes
 
 // accountsAdmissionServer is accounts' AdmitWorkloadOperation on a real gRPC
 // listener: it records the method, the internal credential and the request,
-// and answers admit, or blocks until the caller gives up.
+// and answers admit, or blocks until the caller gives up. The handler runs on
+// the server's goroutine, so what it records is read through recorded().
 type accountsAdmissionServer struct {
 	block    bool
+	mu       sync.Mutex
 	token    []string
 	requests []*accountsv1.AdmitWorkloadOperationRequest
+}
+
+func (s *accountsAdmissionServer) recorded() ([]string, []*accountsv1.AdmitWorkloadOperationRequest) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.token, append([]*accountsv1.AdmitWorkloadOperationRequest(nil), s.requests...)
 }
 
 func startAccountsAdmission(t *testing.T, fake *accountsAdmissionServer) *grpc.ClientConn {
@@ -773,8 +782,10 @@ func startAccountsAdmission(t *testing.T, fake *accountsAdmissionServer) *grpc.C
 					return nil, err
 				}
 				md, _ := metadata.FromIncomingContext(ctx)
+				fake.mu.Lock()
 				fake.token = md.Get("x-codefly-internal-token")
 				fake.requests = append(fake.requests, req)
+				fake.mu.Unlock()
 				if fake.block {
 					<-ctx.Done()
 					return nil, ctx.Err()
@@ -805,10 +816,11 @@ func TestAccountsWorkloadAdmissionAsksTheIssuerWithinItsBound(t *testing.T) {
 		answer, err := client.Admit(context.Background(), &accountsv1.AdmitWorkloadOperationRequest{WorkContext: "wc", Alias: "documents"})
 		require.NoError(t, err)
 		require.True(t, answer.GetAdmitted())
-		require.Equal(t, []string{"test-internal-token"}, fake.token)
-		require.Len(t, fake.requests, 1)
-		require.Equal(t, "wc", fake.requests[0].GetWorkContext())
-		require.Equal(t, "documents", fake.requests[0].GetAlias())
+		token, requests := fake.recorded()
+		require.Equal(t, []string{"test-internal-token"}, token)
+		require.Len(t, requests, 1)
+		require.Equal(t, "wc", requests[0].GetWorkContext())
+		require.Equal(t, "documents", requests[0].GetAlias())
 	})
 	t.Run("an issuer that does not answer is a 503", func(t *testing.T) {
 		previous := workloadAdmissionCallTimeout
@@ -825,7 +837,8 @@ func TestAccountsWorkloadAdmissionAsksTheIssuerWithinItsBound(t *testing.T) {
 		require.Equal(t, http.StatusServiceUnavailable, w.Code, w.Body.String())
 		require.Contains(t, w.Body.String(), "module installation authority unavailable")
 		require.Less(t, time.Since(started), 5*time.Second, "bounded by the call timeout")
-		require.Len(t, fake.requests, 1)
+		_, requests := fake.recorded()
+		require.Len(t, requests, 1)
 		require.Zero(t, module.calls)
 	})
 }
