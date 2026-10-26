@@ -207,6 +207,17 @@ its own, and it is the internal tier **narrowed**:
   current grant; a shared token would name no module and add nothing. The two
   read-only oracles do the same: a call presenting no module Work Context, or
   only the internal token, is refused `Unauthenticated` with the reason named.
+- **The endpoint denies by default.** Its interceptor verifies the calling
+  module's own Work Context (exactly one, in `x-codefly-work-context`) before
+  any handler runs, for every procedure except the explicit allowlist of
+  workload mints (`business.ModuleAuthorityAuthenticatesInRequest`), so a method
+  that forgot to identify its caller is still never served open.
+  `TestEveryModuleAuthorityProcedureRefusesAnUnidentifiedCaller` calls every
+  procedure with no credential and with the internal token alone and requires
+  a refusal with nothing written. A module asking about a viewer it serves
+  (`CheckWorkContextRecordAccess`, `ListReadableSourceCollections`) presents its
+  own Work Context in the header and the viewer's in
+  `viewer_work_context_token`, and the viewer must be addressed to that module.
 - **Transport is unchanged**: h2c, resolved rather than configured:
 
 ```go

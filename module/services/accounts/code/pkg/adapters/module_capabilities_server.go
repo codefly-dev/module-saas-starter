@@ -67,8 +67,8 @@ func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
 	}
 	values := md.Get(workContextHeader)
-	if len(values) == 0 || values[0] == "" {
-		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
+	if len(values) != 1 || values[0] == "" {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "exactly one module work context required")
 	}
 	return WorkContextSingleton().VerifyModuleWorkContext(ctx, values[0])
 }

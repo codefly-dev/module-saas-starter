@@ -346,11 +346,20 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 		if policy.Tier != business.RPCPolicyInternal || !business.IsModuleAuthorityProcedure(fullMethod) {
 			return ctx, status.Error(codes.PermissionDenied, "RPC is not exposed on the module authority endpoint")
 		}
-		// Every method served here proves the calling module itself — from its
-		// module Work Context, or for the workload mint from its workload
-		// credential — and refuses by name what the caller did not prove. No
-		// shared perimeter credential is asked: a token every workload holds
-		// names no module.
+		// Default deny: every method served here requires the calling module's
+		// own Work Context, verified before any handler runs, so a method that
+		// forgets to identify its caller is still never served open. The one
+		// exception is the explicit allowlist of workload mints, which prove the
+		// module from the workload credential the request carries. The handler
+		// then holds the module to its grant. No shared perimeter credential is
+		// asked: a token every workload holds names no module.
+		if business.ModuleAuthorityAuthenticatesInRequest(fullMethod) {
+			return ctx, nil
+		}
+		if _, err := moduleCaller(ctx); err != nil {
+			st := status.Convert(err)
+			return ctx, status.Errorf(st.Code(), "the module authority endpoint answers only an authenticated module: %s", st.Message())
+		}
 		return ctx, nil
 	}
 	if i.exposure == rpcExposureInternal {
