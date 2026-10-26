@@ -79,6 +79,12 @@ unknown field, missing/extra service, unsupported binding kind, duplicate
 plugin, unsafe template, route collision, internal exposure, or ownership drift
 fails generation.
 
+The plugin registers the generated `InstallationService` transcoder as well as
+the principal, delegation and Work Context transcoders. Its transport regression
+test exercises every installation REST route through gRPC and preserves the
+selected RPC's permission refusal; catalog presence alone does not prove a
+handler is mounted.
+
 ## Runtime boundary
 
 Accounts registers only catalog-selected services and wraps grpc-gateway in a
@@ -117,10 +123,23 @@ Run from `module/services/accounts`, with Docker running and a Codefly CLI at
 or above 0.1.160:
 
 ```sh
-codefly generate proto --proto ./proto --path saas --output .. --template accounts/proto/buf.gen.yaml
+codefly generate proto --proto ./proto --output .. --template accounts/proto/buf.gen.yaml
 cd code
 go generate ./pkg/business ./pkg/adapters ./pkg/cataloggen
 ```
+
+Pass no `--path`: the template's own `inputs` select both owned trees, `saas`
+and the implemented host interfaces under `host`. `--path saas` alone leaves
+`host` out of the merged raw OpenAPI document (`strategy: all`), so the tree no
+longer regenerates to what is committed. An implemented interface's
+`google.api.http` mappings are not on this service's REST surface: the gateway
+route compiler gives an interface procedure Connect routes only and
+`RenderPublicOpenAPI` drops its operations.
+
+The catalog step is the repository's own compilers run through `go generate`.
+Codefly does not yet drive them through its generation lifecycle (an open
+tooling gap at the Go agent and Core `Sync`); until it does, this is the
+documented path, and CI's freshness checks hold its output to it.
 
 The adapters step also emits `generated/api-contract-surfaces.json` from the
 complete Connect registration catalog and the authority listener's allowlist.

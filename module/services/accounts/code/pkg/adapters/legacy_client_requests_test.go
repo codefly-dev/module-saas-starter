@@ -39,7 +39,7 @@ import (
 func TestTheOldestSupportedClientIsStillAnswered(t *testing.T) {
 	installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
-	ctx := revisionTestContext(t)
+	ctx := revisionTestContext(t, "documents", moduleWorkContextTenant)
 
 	signed := mintedOperationContextClaims(t)
 	legacy := revisionRequestFromClaims(signed)

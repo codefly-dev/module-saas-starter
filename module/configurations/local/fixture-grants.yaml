@@ -1,0 +1,9 @@
+# The roles a composing workspace's people hold at the modules it composes,
+# and the installations its organisations hold of what it composes, added to
+# the selected fixture: the fixture's own `roles`, `assignments` and
+# `installations` shape. This module cannot name a composed module's
+# permissions or a composition's targets, so its default grants and installs
+# nothing; a composing workspace overrides this document.
+roles: []
+assignments: []
+installations: []

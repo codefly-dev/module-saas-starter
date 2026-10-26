@@ -144,7 +144,7 @@ export function isEntitlement(value: string): value is Entitlement {
 `)
 
 	source.WriteString("export const ACCOUNT_SERVICE_DESCRIPTORS = {\n")
-	for _, service := range catalog.GetServices() {
+	for _, service := range frontendServices(catalog) {
 		fmt.Fprintf(&source, "  %s,\n", service.GetName())
 	}
 	source.WriteString(`} as const;
@@ -153,7 +153,7 @@ export type AccountServiceName = keyof typeof ACCOUNT_SERVICE_DESCRIPTORS;
 
 export interface AccountsClients {
 `)
-	for _, service := range catalog.GetServices() {
+	for _, service := range frontendServices(catalog) {
 		fmt.Fprintf(&source, "  readonly %s: Client<typeof %s>;\n", service.GetName(), service.GetName())
 	}
 	source.WriteString(`}
@@ -161,13 +161,26 @@ export interface AccountsClients {
 export function createAccountsClients(transport: Transport): AccountsClients {
   return {
 `)
-	for _, service := range catalog.GetServices() {
+	for _, service := range frontendServices(catalog) {
 		fmt.Fprintf(&source, "    %s: createClient(%s, transport),\n", service.GetName(), service.GetName())
 	}
 	source.WriteString(`  };
 }
 `)
 	return []byte(source.String()), nil
+}
+
+// frontendServices are the services the accounts TypeScript package carries: the
+// service's own API package. An implemented interface's services are generated
+// into their own TypeScript packages and are not frontend plugins' clients.
+func frontendServices(catalog *catalogv1.ServiceCatalog) []*catalogv1.Service {
+	var out []*catalogv1.Service
+	for _, service := range catalog.GetServices() {
+		if strings.HasPrefix(service.GetFullName(), catalog.GetApiPackage()+".") {
+			out = append(out, service)
+		}
+	}
+	return out
 }
 
 func frontendServiceImports(catalog *catalogv1.ServiceCatalog) (map[string][]string, error) {
@@ -180,7 +193,7 @@ func frontendServiceImports(catalog *catalogv1.ServiceCatalog) (map[string][]str
 	}
 
 	imports := make(map[string][]string)
-	for _, service := range catalog.GetServices() {
+	for _, service := range frontendServices(catalog) {
 		if !typescriptIdentifierPattern.MatchString(service.GetName()) {
 			return nil, fmt.Errorf("service %q is not a TypeScript identifier", service.GetName())
 		}

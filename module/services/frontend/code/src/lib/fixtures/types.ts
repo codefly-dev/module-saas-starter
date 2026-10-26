@@ -50,12 +50,18 @@ export const FixtureRoleSchema = z.object({
 	permissions: z.array(FixturePermissionSchema).min(1),
 });
 
-export const FixtureRoleAssignmentSchema = z.object({
-	org: z.string().min(1),
-	role: z.string().min(1),
-	agent_identifier: z.string().min(1),
-	scope: z.string().min(1).optional(),
-});
+/** Assigns an organisation role to exactly one subject: an agent or a person. */
+export const FixtureRoleAssignmentSchema = z
+	.object({
+		org: z.string().min(1),
+		role: z.string().min(1),
+		agent_identifier: z.string().min(1).optional(),
+		email: z.string().email().optional(),
+		scope: z.string().min(1).optional(),
+	})
+	.refine((a) => (a.agent_identifier === undefined) !== (a.email === undefined), {
+		message: "exactly one of agent_identifier and email is required",
+	});
 
 export const FixtureFileSchema = z.object({
 	users: z.array(FixtureUserSchema),

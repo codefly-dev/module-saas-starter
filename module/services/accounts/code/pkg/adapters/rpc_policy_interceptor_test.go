@@ -213,22 +213,34 @@ func TestInternalListenerOnlyAdmitsInternalRPCWithCredential(t *testing.T) {
 }
 
 // The module authority endpoint is the internal tier narrowed to what a
-// composed module may call: a module-surface method passes with the internal
-// credential, a host-only internal method and a tenant method never do, and no
-// method passes without the credential.
-func TestModuleAuthorityListenerAdmitsOnlyTheModuleSurfaceWithCredential(t *testing.T) {
+// composed module may call, and it denies by default: every procedure on it
+// requires the calling module's own Work Context before any handler runs —
+// the internal token is never a substitute — except the explicit allowlist of
+// workload mints, which prove the module from the request itself. A host-only
+// internal method and a tenant method never pass, whatever they carry.
+func TestModuleAuthorityListenerAdmitsOnlyTheModuleSurface(t *testing.T) {
+	installModuleWorkContextService(t, documentsPrincipals)
+	installModuleWorkContextAuthority(t)
 	previousToken := internalToken
 	SetInternalToken("test-internal-token")
 	t.Cleanup(func() { SetInternalToken(previousToken) })
 
 	policy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureModule}
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "test-internal-token"))
+	withToken := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "test-internal-token"))
+	asModule := stampModuleWorkContext(t, business.ModulePrincipalID("documents"), moduleWorkContextTenant)
 
 	for _, method := range business.ModuleAuthorityProcedures() {
-		_, err := policy.authorize(ctx, method)
-		require.NoError(t, err, method)
-		_, err = policy.authorize(context.Background(), method)
-		require.Equal(t, codes.PermissionDenied, status.Code(err), method)
+		_, err := policy.authorize(asModule, method)
+		require.NoError(t, err, "%s with the calling module's Work Context", method)
+		for name, ctx := range map[string]context.Context{"no credential": context.Background(), "the internal token alone": withToken} {
+			_, err = policy.authorize(ctx, method)
+			if business.ModuleAuthorityAuthenticatesInRequest(method) {
+				require.NoError(t, err, "%s proves the module from its request", method)
+				continue
+			}
+			require.Equal(t, codes.Unauthenticated, status.Code(err), "%s with %s", method, name)
+			require.Contains(t, status.Convert(err).Message(), "answers only an authenticated module", method)
+		}
 	}
 	for _, method := range []string{
 		"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
@@ -237,12 +249,14 @@ func TestModuleAuthorityListenerAdmitsOnlyTheModuleSurfaceWithCredential(t *test
 		"/saas.accounts.v1.UsageService/ConsumeUsage",
 		"/saas.accounts.v1.UserService/GetSelf",
 		// Internal-tier, and on the same service as the two admitted oracles,
-		// but it authorizes on the shared perimeter credential alone and writes
-		// a replay claim for the org the request names.
+		// but it proves no caller and writes a replay claim for the org the
+		// request names.
 		"/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
 	} {
-		_, err := policy.authorize(ctx, method)
-		require.Equal(t, codes.PermissionDenied, status.Code(err), method)
+		for _, ctx := range []context.Context{withToken, asModule} {
+			_, err := policy.authorize(ctx, method)
+			require.Equal(t, codes.PermissionDenied, status.Code(err), "%s must stay off the endpoint whatever it carries", method)
+		}
 	}
 }
 

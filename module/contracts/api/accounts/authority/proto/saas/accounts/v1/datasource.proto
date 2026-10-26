@@ -1458,6 +1458,10 @@ message InvokeSourceOperationRequest {
   string operation = 3 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9_]{0,63}$"];
   string input_json = 4 [(buf.validate.field).string.max_bytes = 65536];
   string effect_id = 5 [(buf.validate.field).string.max_bytes = 128];
+  // Optional for legacy callers. A caller that admitted a declaration supplies
+  // its canonical digest; a replacement is refused before provider dispatch.
+  // This precondition participates in the receipt request fingerprint.
+  optional string expected_declaration_digest = 6 [(buf.validate.field).string.pattern = "^(sha256:[0-9a-f]{64})?$"];
 }
 // SourceOperationReceipt contains only the committed result and safe metadata.
 message SourceOperationReceipt {

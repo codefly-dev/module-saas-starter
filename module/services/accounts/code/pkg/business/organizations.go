@@ -17,6 +17,10 @@ import (
 // are the same violation and return the same error.
 var ErrOrgAdminContinuity = errors.New("organization must keep at least one owner or admin")
 
+// OrgRoleName is a membership role as a session states it: "owner", "admin"
+// or "member".
+func OrgRoleName(role gen.OrgRole) string { return orgRoleToString(role) }
+
 func orgRoleToString(role gen.OrgRole) string {
 	switch role {
 	case gen.OrgRole_ORG_ROLE_OWNER:

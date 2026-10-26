@@ -162,7 +162,9 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 				<>
 					<AvailableSection
 						query={available}
-						installing={install.isPending}
+						installing={
+							install.isPending || !installed.isSuccess || installed.isFetching
+						}
 						onInstall={(solution) => {
 							install.reset();
 							setInstalling(solution);
@@ -180,7 +182,20 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 					error={install.isError ? hostRefusal(install.error) : undefined}
 					onSubmit={(values) => {
 						install.mutate(
-							{ targetId: installing.targetId, values },
+							{
+								targetId: installing.targetId,
+								generation: installing.appliedGeneration,
+								expectedRevision: (installed.data ?? []).reduce(
+									(revision, row) =>
+										row.installation?.targetId === installing.targetId &&
+										row.installation.revision > revision
+											? row.installation.revision
+											: revision,
+									BigInt(0),
+								),
+								operationId: crypto.randomUUID(),
+								values,
+							},
 							{
 								onSuccess: () => {
 									toast.success(

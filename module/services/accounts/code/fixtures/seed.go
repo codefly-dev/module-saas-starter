@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/codefly-dev/core/wool"
+	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/codefly-dev/sdk-go/fixture"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
@@ -40,6 +41,7 @@ type fixtureFile struct {
 	Roles         []fixtureRole           `yaml:"roles"`
 	Collections   []fixtureCollection     `yaml:"collections"`
 	Assignments   []fixtureRoleAssignment `yaml:"assignments"`
+	Installations []fixtureInstallation   `yaml:"installations"`
 }
 
 type fixtureCollection struct {
@@ -101,11 +103,22 @@ type fixtureRole struct {
 	Permissions []fixturePermission `yaml:"permissions"`
 }
 
+// fixtureRoleAssignment assigns an organisation role to exactly one subject:
+// a registered agent (agent_identifier) or a person (email).
 type fixtureRoleAssignment struct {
 	Org             string `yaml:"org"`
 	Role            string `yaml:"role"`
 	AgentIdentifier string `yaml:"agent_identifier"`
+	Email           string `yaml:"email"`
 	Scope           string `yaml:"scope"`
+}
+
+// subject names the assignee for messages.
+func (a fixtureRoleAssignment) subject() string {
+	if a.Email != "" {
+		return a.Email
+	}
+	return a.AgentIdentifier
 }
 
 var fixtureNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
@@ -226,16 +239,35 @@ func FixturePath(name string) (string, error) {
 // Seed loads and converges any explicitly selected module fixture. Product
 // consumers can add fixtures/<name>.yaml without modifying Starter-owned Go
 // code; the same name is also consumed by the development auth validator.
+//
+// Seed does not perform the fixture's declared installations, which wait on
+// delivery: SeedWithInstallations returns them to be converged after each
+// delivery pass.
 func Seed(ctx context.Context, service *business.Service, name string) error {
+	_, err := SeedWithInstallations(ctx, service, name)
+	return err
+}
+
+// SeedWithInstallations is Seed, returning the fixture's declared
+// installations (nil when it declares none) for the caller to converge once
+// their targets are delivered (Installations.Converge).
+func SeedWithInstallations(ctx context.Context, service *business.Service, name string) (*Installations, error) {
 	path, err := FixturePath(name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	w := wool.Get(ctx).In("fixtures.Seed")
 	f, err := loadFixtureFile(path)
 	if err != nil {
-		return w.Wrapf(err, "cannot load %s fixture", name)
+		return nil, w.Wrapf(err, "cannot load %s fixture", name)
+	}
+	grants, err := readWorkspaceGrants(codefly.For(ctx).WorkspaceConfigurationDocument)
+	if err != nil {
+		return nil, err
+	}
+	if err := withWorkspaceGrants(f, grants); err != nil {
+		return nil, err
 	}
 
 	w.Info("Applying fixtures",
@@ -245,7 +277,8 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 		wool.Field("teams", len(f.Teams)),
 		wool.Field("agents", len(f.Agents)),
 		wool.Field("roles", len(f.Roles)),
-		wool.Field("assignments", len(f.Assignments)))
+		wool.Field("assignments", len(f.Assignments)),
+		wool.Field("installations", len(f.Installations)))
 
 	// Every condition that can make this seed refuse is checked before the
 	// first write. seedUsers commits each user in its own transaction and
@@ -253,16 +286,16 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 	// once organizations are being seeded — would leave fixture users
 	// belonging to no organization at all. Decide first, then write.
 	if err := validateOrganizationPreconditions(ctx, service, f.Organizations); err != nil {
-		return err
+		return nil, err
 	}
 
 	userIDs, err := seedUsers(ctx, w, service, f.Users)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	orgIDs, err := seedOrganizations(ctx, w, service, f.Organizations, userIDs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	orgOwnerIDs := make(map[string]string, len(f.Organizations))
 	for _, organization := range f.Organizations {
@@ -270,25 +303,30 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 			orgOwnerIDs[organization.Name] = ownerID
 		}
 	}
-	seedTeams(ctx, w, service, f.Teams, orgIDs, userIDs)
+	teamIDs := seedTeams(ctx, w, service, f.Teams, orgIDs, userIDs)
 	agentIDs, err := seedAgents(ctx, w, service, f.Agents, orgIDs, userIDs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	roleIDs, err := seedRoles(ctx, w, service, f.Roles, orgIDs, orgOwnerIDs)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := seedRoleAssignments(ctx, w, service, f.Assignments, orgIDs, agentIDs, roleIDs); err != nil {
-		return err
+	if err := seedRoleAssignments(ctx, w, service, f.Assignments, orgIDs, agentIDs, userIDs, roleIDs); err != nil {
+		return nil, err
 	}
 
 	if err := seedCollections(ctx, service, f.Collections, orgIDs, orgOwnerIDs, userIDs, roleIDs); err != nil {
-		return err
+		return nil, err
+	}
+
+	installations, err := newInstallations(service, f.Installations, orgIDs, userIDs, teamIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	w.Info("fixtures applied", wool.Field("fixture", name))
-	return nil
+	return installations, nil
 }
 
 func loadFixtureFile(path string) (*fixtureFile, error) {
@@ -429,13 +467,14 @@ func validateFixture(f *fixtureFile) error {
 		}
 	}
 	for i, assignment := range f.Assignments {
-		if strings.TrimSpace(assignment.Org) == "" ||
-			strings.TrimSpace(assignment.Role) == "" ||
-			strings.TrimSpace(assignment.AgentIdentifier) == "" {
-			return fmt.Errorf("assignment[%d]: org, role, and agent_identifier are required", i)
+		if strings.TrimSpace(assignment.Org) == "" || strings.TrimSpace(assignment.Role) == "" {
+			return fmt.Errorf("assignment[%d]: org and role are required", i)
+		}
+		if (strings.TrimSpace(assignment.AgentIdentifier) == "") == (strings.TrimSpace(assignment.Email) == "") {
+			return fmt.Errorf("assignment[%d]: exactly one of agent_identifier and email is required", i)
 		}
 	}
-	return nil
+	return validateInstallations(f)
 }
 
 func orgRoleFromString(s string, w *wool.Wool) gen.OrgRole {
@@ -777,8 +816,10 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 	return orgIDs, nil
 }
 
-// seedTeams creates teams from the fixture, idempotently.
-func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, teams []fixtureTeam, orgIDs, userIDs map[string]string) {
+// seedTeams creates teams from the fixture, idempotently, and answers each
+// seeded team's id by fixtureScopedKey(org, name).
+func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, teams []fixtureTeam, orgIDs, userIDs map[string]string) map[string]string {
+	ids := map[string]string{}
 	for _, team := range teams {
 		orgID, ok := orgIDs[team.Org]
 		if !ok {
@@ -811,6 +852,7 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 			teamID = teamResp.GetTeam().GetId()
 			w.Info("seeded team", wool.Field("name", team.Name))
 		}
+		ids[fixtureScopedKey(team.Org, team.Name)] = teamID
 
 		for _, email := range team.Members {
 			memberID, ok := userIDs[email]
@@ -829,6 +871,7 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 			}
 		}
 	}
+	return ids
 }
 
 func fixtureScopedKey(org, value string) string {
@@ -965,16 +1008,19 @@ func seedRoleAssignments(
 	w *wool.Wool,
 	service *business.Service,
 	assignments []fixtureRoleAssignment,
-	orgIDs, agentIDs, roleIDs map[string]string,
+	orgIDs, agentIDs, userIDs, roleIDs map[string]string,
 ) error {
 	for _, assignment := range assignments {
 		orgID, ok := orgIDs[assignment.Org]
 		if !ok {
 			return fmt.Errorf("assignment references unknown organization %q", assignment.Org)
 		}
-		agentID, ok := agentIDs[fixtureScopedKey(assignment.Org, assignment.AgentIdentifier)]
+		subjectID, ok := agentIDs[fixtureScopedKey(assignment.Org, assignment.AgentIdentifier)]
+		if assignment.Email != "" {
+			subjectID, ok = userIDs[assignment.Email]
+		}
 		if !ok {
-			return fmt.Errorf("assignment references unknown agent %q in %q", assignment.AgentIdentifier, assignment.Org)
+			return fmt.Errorf("assignment references unknown subject %q in %q", assignment.subject(), assignment.Org)
 		}
 		roleID, ok := roleIDs[fixtureScopedKey(assignment.Org, assignment.Role)]
 		if !ok {
@@ -987,7 +1033,7 @@ func seedRoleAssignments(
 			existing, listErr = service.Store().ListRoleAssignments(
 				ctx,
 				orgID,
-				agentID,
+				subjectID,
 				gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 			)
 			return listErr
@@ -1004,12 +1050,12 @@ func seedRoleAssignments(
 		if found {
 			w.Info("role assignment already exists, reusing",
 				wool.Field("org", assignment.Org),
-				wool.Field("agent_identifier", assignment.AgentIdentifier),
+				wool.Field("subject", assignment.subject()),
 				wool.Field("role", assignment.Role))
 			continue
 		}
 		if _, err := service.AssignRole(ctx, &gen.AssignRoleRequest{
-			SubjectId:   agentID,
+			SubjectId:   subjectID,
 			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
 			RoleId:      roleID,
 			OrgId:       orgID,
@@ -1019,7 +1065,7 @@ func seedRoleAssignments(
 		}
 		w.Info("seeded role assignment",
 			wool.Field("org", assignment.Org),
-			wool.Field("agent_identifier", assignment.AgentIdentifier),
+			wool.Field("subject", assignment.subject()),
 			wool.Field("role", assignment.Role))
 	}
 	return nil

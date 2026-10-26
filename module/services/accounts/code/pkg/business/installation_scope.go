@@ -3,6 +3,7 @@ package business
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -16,9 +17,10 @@ type InstallationScope struct {
 	Capabilities bool `json:"capabilities"`
 	// Follows marks a scope that narrows nothing: the installation holds its
 	// module's grant (envelope ∩ manifest) as it moves. A module install records
-	// it; a person who narrows writes the axes out and clears it. It replaced
-	// the snapshot of the whole grant an install used to freeze here, which lost
-	// every operation a later generation declared until a person rewrote the row.
+	// it only while an administrative envelope sets that grant; a person who
+	// narrows writes the axes out and clears it. With no envelope an install
+	// records the consented snapshot, so a later manifest generation that widens
+	// the ceiling reaches no organisation until its administrator takes it.
 	Follows            bool                                `json:"follows,omitempty"`
 	Queues             []string                            `json:"queues,omitempty"`
 	Namespaces         []string                            `json:"namespaces,omitempty"`
@@ -104,6 +106,30 @@ func ResolveInstallationScope(scope, full InstallationScope) InstallationScope {
 		return full
 	}
 	return scope
+}
+
+// ErrModuleInstallationConsentRequired reports an installation that follows its
+// module's grant on a host with no administrative envelope: it was consented
+// while an envelope set the grant (or before the signed manifest became the
+// ceiling), so its organisation never consented to what the manifest alone now
+// asks for.
+var ErrModuleInstallationConsentRequired = errors.New("this installation follows an administrative envelope this host does not have, so its organisation has not consented to the signed manifest's ceiling; an organization owner or admin must call host.installation.v1.InstallationService/Install again with this module as target (or saas.accounts.v1.InstallationService/InstallSolution with its target_id) with approval.target_id and generation from ListAvailableSolutions, expected_revision from the installation listing, and a fresh operation_id to approve that reviewed ceiling")
+
+// ModuleInstallationConsentRequiredReason is the google.rpc.ErrorInfo reason a
+// capability refused for ErrModuleInstallationConsentRequired carries: an
+// administrator's to resolve, never a fact about the caller.
+const ModuleInstallationConsentRequiredReason = "INSTALLATION_CONSENT_REQUIRED"
+
+// consentedGrant is what an installation holds of grant under this registry:
+// the grant intersected with what the organisation consented to. A following
+// installation holds the grant itself only while an envelope sets it; with no
+// envelope it holds nothing until an administrator installs again, so a
+// signed generation's widening never reaches it unapproved.
+func (r *installedModuleRegistry) consentedGrant(g ModulePrincipalGrant, consent InstallationScope) (ModulePrincipalGrant, error) {
+	if consent.Follows && (r == nil || r.envelopeRevision == 0) {
+		return ModulePrincipalGrant{}, ErrModuleInstallationConsentRequired
+	}
+	return intersectInstallationScope(g, consent), nil
 }
 
 func intersectInstallationScope(g ModulePrincipalGrant, consent InstallationScope) ModulePrincipalGrant {

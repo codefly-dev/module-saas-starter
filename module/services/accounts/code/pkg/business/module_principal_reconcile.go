@@ -19,25 +19,37 @@ import (
 // The module registry, DERIVED (the solution lifecycle design, §3 and §4.2).
 //
 // Every capability decision reads one registry — declaredModules() — and each
-// reconcile pass builds the WHOLE of it from two inputs and swaps it in:
+// reconcile pass builds the WHOLE of it from the module manifests this host has
+// APPLIED, each re-verified against the current pins: which workloads run as
+// the module, and the authority it asks for — and swaps it in.
 //
-//   - the module manifests this host has APPLIED, each re-verified against the
-//     current pins: which workloads run as the module, and the authority it
-//     asks for;
-//   - the current envelope, the administrator's approval, which a platform
-//     super_admin writes at runtime.
+// THE CEILING IS THE MANIFEST. A principal is in the registry while an applied,
+// live, signed manifest asks for it, and it holds what that manifest asks for:
+// the composition delivers the ceiling, and no administrator hand-writes one
+// before a module may run. What keeps that ceiling from moving unseen is the
+// manifest's own generations — a delivery only moves forward, a different
+// document at an applied generation is refused (solutionhost admission and the
+// immutable inbox row with its authority document), and what a later
+// generation widens reaches an organization only through what its installation
+// consents to (intersectInstallationScope).
 //
-// A principal is in the registry only while both agree: an applied, live
-// manifest asks for it, and the envelope allows it. Its entry is the
-// envelope's grant intersected with what the manifest asks for — never wider
-// than either — and its workloads are the manifest's, spelled by the cell's
+// WHERE A PLATFORM ADMINISTRATOR HAS WRITTEN A MODULE ENVELOPE, it narrows: a
+// principal is then in the registry only while the envelope also allows it,
+// and its entry is the envelope's grant intersected with what the manifest asks
+// for — never wider than either (deriveModulePrincipalGrant). Writing the first
+// envelope over granted manifests is therefore a narrowing, witnessed like any
+// other (moduleEnvelopeNarrows).
+//
+// Either way an entry's workloads are the manifest's, spelled by the cell's
 // rule (namespace from the module, ServiceAccount from the service).
 //
 // A READ FAILURE NEVER ADDS AUTHORITY. A pass that cannot read the applied
 // manifests publishes an empty registry. A pass that can read them but not the
 // envelope keeps only the entries whose manifest is still the applied, live
 // generation it was derived from, at the revision it was derived under, so the
-// envelope fence still refuses them once a newer ceiling is committed.
+// envelope fence still refuses them once a newer ceiling is committed. Only an
+// envelope store answering that none was written — or a host wired with none —
+// lets the manifests stand alone.
 //
 // A principal the inputs describe incoherently — two manifests asking for it,
 // a manifest that no longer verifies, a workload two principals claim, an
@@ -56,11 +68,6 @@ var (
 	// ErrModulePrincipalBindingOmitted reports an operation binding a manifest
 	// asks for that the envelope does not allow, or allows nothing of.
 	ErrModulePrincipalBindingOmitted = errors.New("module operation audience omitted from the registry")
-
-	// ErrModuleEnvelopeMissing reports applied manifests that ask for
-	// authority on a host with no module envelope: the registry is empty, so
-	// every one of them is denied until a platform super_admin writes one.
-	ErrModuleEnvelopeMissing = errors.New("applied module manifests ask for authority and there is no module envelope")
 )
 
 // ModuleBindingOmission is one operation binding an applied, live manifest asks
@@ -134,8 +141,8 @@ type modulePrincipalSource struct {
 
 func (r *ModulePrincipalReconciler) publish(published *publishedModuleRegistry) {
 	r.last = published
-	r.reconciler.service.InstallDerivedModulePrincipals(
-		published.registry, published.revision, published.delivered, published.withheld...)
+	r.reconciler.service.installModuleRegistry(
+		published.registry, published.revision, published.delivered, true, published.withheld...)
 }
 
 // modulePrincipalInputs is one snapshot of the applied state and the inbox.
@@ -164,32 +171,12 @@ func (r *ModulePrincipalReconciler) readInputs(ctx context.Context) (*modulePrin
 	return inputs, err
 }
 
-// currentEnvelope is the ceiling this pass derives inside. Nil with
-// ErrModuleEnvelopeUnavailable is a host with no envelope store; nil with no
-// error is a store no envelope has been written to. Both grant nothing.
+// currentEnvelope is the administrator's narrowing this pass derives inside.
+// Nil with ErrModuleEnvelopeUnavailable is a host with no envelope store; nil
+// with no error is a store no envelope has been written to. Neither narrows:
+// the manifests are the ceiling.
 func (r *ModulePrincipalReconciler) currentEnvelope(ctx context.Context) (*ModuleEnvelope, error) {
 	return r.envelopes.CurrentModuleEnvelope(ctx)
-}
-
-// envelopeMissing names, on every pass, the applied manifests that ask for
-// authority while there is no envelope to derive it inside. The registry such
-// a pass publishes is empty, so each of their mints is refused; without this
-// the refusal has no reason anywhere on the host.
-func envelopeMissing(applied []*SolutionHostBindingRecord, storeUnavailable bool) error {
-	asking := AppliedAuthorityRequests(applied)
-	if len(asking) == 0 {
-		return nil
-	}
-	named := make([]string, 0, len(asking))
-	for _, request := range asking {
-		named = append(named, fmt.Sprintf("%q (binding %q generation %d)", request.Principal, request.Binding, request.Generation))
-	}
-	why := "no module envelope has been written"
-	if storeUnavailable {
-		why = "this host has no module envelope store"
-	}
-	return fmt.Errorf("%w: %d applied manifests ask for authority (%s) and %s; every module is denied until a platform super_admin writes one (PlatformAdminService.PutModuleEnvelope)",
-		ErrModuleEnvelopeMissing, len(asking), strings.Join(named, ", "), why)
 }
 
 // ModuleAuthorityRequest is the authority one applied, live module manifest
@@ -255,8 +242,9 @@ func (r *ModulePrincipalReconciler) degraded(applied []*SolutionHostBindingRecor
 	return kept
 }
 
-// RunOnce derives the registry from the applied manifests and the envelope and
-// installs it. Its error names every principal and binding it omitted.
+// RunOnce derives the registry from the applied manifests, narrowed by the
+// envelope where one has been written, and installs it. Its error names every
+// principal and binding it omitted.
 func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -266,23 +254,14 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}, revision: r.lastRevision()})
 		return fmt.Errorf("%w: %w", ErrModulePrincipalInputsUnreadable, inputsErr)
 	}
-	if r.envelopes == nil {
-		// Built with no ceiling source at all: a reconciler that derives no
-		// module authority by construction, so there is no ceiling to miss.
-		// Production always wires one (the service), whose store being absent
-		// is reported below.
-		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}, delivered: inputs.delivered})
-		return nil
-	}
-	envelope, err := r.currentEnvelope(ctx)
-	storeUnavailable := errors.Is(err, ErrModuleEnvelopeUnavailable)
-	if err != nil && !storeUnavailable {
-		r.publish(r.degraded(inputs.applied))
-		return fmt.Errorf("%w: the envelope: %w", ErrModulePrincipalInputsUnreadable, err)
-	}
-	if envelope == nil {
-		r.publish(&publishedModuleRegistry{registry: ModulePrincipalRegistry{}, delivered: inputs.delivered})
-		return envelopeMissing(inputs.applied, storeUnavailable)
+	var envelope *ModuleEnvelope
+	if r.envelopes != nil {
+		var err error
+		envelope, err = r.currentEnvelope(ctx)
+		if err != nil && !errors.Is(err, ErrModuleEnvelopeUnavailable) {
+			r.publish(r.degraded(inputs.applied))
+			return fmt.Errorf("%w: the envelope: %w", ErrModulePrincipalInputsUnreadable, err)
+		}
 	}
 
 	manifests, refusals := r.appliedManifestsVerified(ctx, inputs.applied)
@@ -294,8 +273,10 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 	}
 
 	next := &publishedModuleRegistry{
-		registry: ModulePrincipalRegistry{}, revision: envelope.Revision,
-		sources: map[string]modulePrincipalSource{}, delivered: inputs.delivered,
+		registry: ModulePrincipalRegistry{}, sources: map[string]modulePrincipalSource{}, delivered: inputs.delivered,
+	}
+	if envelope != nil {
+		next.revision = envelope.Revision
 	}
 	rule := r.reconciler.service.moduleNamespaces
 	for _, manifest := range manifests {
@@ -315,14 +296,28 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 			omit(fmt.Errorf("asked for by the manifests of bindings %v, so which one it runs as has no single answer", named))
 			continue
 		}
-		entry, allowed := envelope.Principals[prefix]
 		workloads := make([]ModuleWorkload, 0, len(manifest.Workloads))
 		for _, workload := range manifest.Workloads {
 			workloads = append(workloads, ModuleWorkload{
 				Namespace: rule.Namespace(manifest.Alias), ServiceAccount: workload.Service, Container: workload.Container,
 			})
 		}
-		grant, omitted, err := deriveUnderEnforcement(r.reconciler.service.ModuleAuthorityEnforcementMode(), prefix, entry, allowed, manifest, workloads, envelope)
+		var (
+			grant   ModulePrincipalGrant
+			omitted []error
+			err     error
+		)
+		if envelope == nil {
+			// No envelope: the ceiling is the manifest.
+			grant, omitted, err = deriveModulePrincipalGrant(prefix, manifestCeiling(manifest.Authority), manifest, workloads)
+		} else {
+			entry, allowed := envelope.Principals[prefix]
+			if !allowed {
+				err = errors.New("the administrative policy declares no grant for it")
+			} else {
+				grant, omitted, err = deriveModulePrincipalGrant(prefix, entry, manifest, workloads)
+			}
+		}
 		refusals = append(refusals, omitted...)
 		if err != nil {
 			omit(err)
@@ -484,7 +479,9 @@ func (r *ModulePrincipalReconciler) appliedManifestsVerified(
 			refuse(errors.New("the stored carrier is not the applied manifest"))
 			continue
 		}
-		manifests = append(manifests, manifest)
+		// What grants is the manifest the signature covers, read from the
+		// verified bytes, never the applied record that merely matches it.
+		manifests = append(manifests, verified)
 	}
 	return manifests, refusals
 }
@@ -538,6 +535,11 @@ func deriveModulePrincipalGrant(
 ) (ModulePrincipalGrant, []error, error) {
 	ceiling := entry.Grant
 	request := manifest.Authority
+	if asksNothing(request) {
+		// Administrative restrictions cannot supply authority absent from the
+		// signed manifest. Preserve only the existing tenant restriction.
+		ceiling = ModulePrincipalGrant{Tenant: ceiling.Tenant}
+	}
 	grant := ModulePrincipalGrant{
 		PresenceBinding:    manifest.Binding,
 		PresenceGeneration: manifest.Generation,
@@ -552,28 +554,6 @@ func deriveModulePrincipalGrant(
 		Workloads:          workloads,
 	}
 	grant.ExternalNamespaces = keepDeclared(ceiling.ExternalNamespaces, grant.Namespaces)
-
-	// A manifest that asks for nothing on every axis published no contract: a
-	// generic module whose work is the composition's — the runtime, whose
-	// operations are the installations Codefly prepares for it, and whose
-	// contract therefore cannot name them. The envelope is the owner's written
-	// consent for this cell, so for such a module it stands whole: the ceiling
-	// is the grant, and nothing the owner did not write is granted. A manifest
-	// that asks is held to the intersection below, as before.
-	if asksNothing(request) {
-		grant.Queues, grant.Namespaces, grant.Resources = slices.Clone(ceiling.Queues), slices.Clone(ceiling.Namespaces), slices.Clone(ceiling.Resources)
-		grant.ExternalNamespaces = keepDeclared(ceiling.ExternalNamespaces, grant.Namespaces)
-		if len(ceiling.OperationAudiences) > 0 {
-			grant.OperationAudiences = maps.Clone(ceiling.OperationAudiences)
-		}
-		wool.Get(context.Background()).In("deriveModulePrincipalGrant").Info(
-			"the manifest publishes no contract, so the envelope stands whole for this module",
-			wool.Field("module", prefix), wool.Field("manifest", manifest.Binding), wool.Field("generation", manifest.Generation))
-		if err := ValidateModulePrincipalGrant(prefix, grant); err != nil {
-			return ModulePrincipalGrant{}, nil, err
-		}
-		return grant, nil, nil
-	}
 
 	var omitted []error
 	omit := func(id string, err error) {
@@ -669,8 +649,6 @@ func deriveModulePrincipalGrant(
 	return grant, omitted, nil
 }
 
-// keepDeclared is allowed narrowed to what declared also names, in allowed's
-// order.
 // asksNothing reports a manifest authority that requests nothing on any axis:
 // no binding, queue, namespace or resource kind — the shape of a module that
 // published no contract.
@@ -678,6 +656,7 @@ func asksNothing(request *solutionhost.Authority) bool {
 	return request == nil || len(request.Bindings) == 0 && len(request.Queues) == 0 && len(request.Namespaces) == 0 && len(request.ResourceKinds) == 0
 }
 
+// keepDeclared intersects administrative permission with the manifest request.
 func keepDeclared(allowed, declared []string) []string {
 	var kept []string
 	for _, value := range allowed {

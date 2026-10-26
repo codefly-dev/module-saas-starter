@@ -7,6 +7,7 @@
 package accountsv1
 
 import (
+	v1 "accounts/pkg/gen/host/installation/v1"
 	_ "accounts/pkg/gen/saas/policy/v1"
 	reflect "reflect"
 	sync "sync"
@@ -405,6 +406,8 @@ type Installation struct {
 	// Why the install step failed: the solution's bounded refusal reason, or a
 	// fixed reason when it never answered. Empty unless status is FAILED.
 	FailureReason string `protobuf:"bytes,13,opt,name=failure_reason,json=failureReason,proto3" json:"failure_reason,omitempty"`
+	// Current consent/lifecycle revision, for an explicit re-install approval.
+	Revision      uint64 `protobuf:"varint,14,opt,name=revision,proto3" json:"revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -523,6 +526,13 @@ func (x *Installation) GetFailureReason() string {
 	return ""
 }
 
+func (x *Installation) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
 type InstallSolutionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -573,7 +583,9 @@ type InstallSolutionRequest struct {
 	// artifact_policies, with the same shapes as the module envelope grant.
 	// Must be a subset of the current ceiling. Omitted selects that ceiling;
 	// an explicit {} grants nothing. Tenant and identity are never scope fields.
-	Scope         *string `protobuf:"bytes,13,opt,name=scope,proto3,oneof" json:"scope,omitempty"`
+	Scope *string `protobuf:"bytes,13,opt,name=scope,proto3,oneof" json:"scope,omitempty"`
+	// Required: the exact offer and installation state reviewed by the admin.
+	Approval      *v1.ConsentApproval `protobuf:"bytes,14,opt,name=approval,proto3" json:"approval,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -683,6 +695,13 @@ func (x *InstallSolutionRequest) GetScope() string {
 		return *x.Scope
 	}
 	return ""
+}
+
+func (x *InstallSolutionRequest) GetApproval() *v1.ConsentApproval {
+	if x != nil {
+		return x.Approval
+	}
+	return nil
 }
 
 // An org administrator may only remove installed authority. The host reads
@@ -2239,7 +2258,7 @@ var File_saas_accounts_v1_installations_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\n" +
-	"$saas/accounts/v1/installations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$saas/accounts/v1/authorization.proto\x1a\x1csaas/policy/v1/options.proto\"\x94\x05\n" +
+	"$saas/accounts/v1/installations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a'host/installation/v1/installation.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$saas/accounts/v1/authorization.proto\x1a\x1csaas/policy/v1/options.proto\"\xb0\x05\n" +
 	"\fInstallation\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1f\n" +
 	"\x06org_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x126\n" +
@@ -2255,8 +2274,9 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampH\x00R\trevokedAt\x88\x01\x01\x12(\n" +
 	"\ttarget_id\x18\v \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\btargetId\x12/\n" +
 	"\x0erevoked_reason\x18\f \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\rrevokedReason\x12/\n" +
-	"\x0efailure_reason\x18\r \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\rfailureReasonB\r\n" +
-	"\v_revoked_atJ\x04\b\x04\x10\x05R\x13solution_identifier\"\xf6\x04\n" +
+	"\x0efailure_reason\x18\r \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\rfailureReason\x12\x1a\n" +
+	"\brevision\x18\x0e \x01(\x04R\brevisionB\r\n" +
+	"\v_revoked_atJ\x04\b\x04\x10\x05R\x13solution_identifier\"\xb9\x05\n" +
 	"\x16InstallSolutionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x125\n" +
 	"\x10agent_identifier\x18\x02 \x01(\tB\n" +
@@ -2270,7 +2290,8 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	" \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\x80\x04R\x10allowedAudiences\x126\n" +
 	"\x0eallowed_scopes\x18\v \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\x80\x01R\rallowedScopes\x12%\n" +
 	"\ttarget_id\x18\f \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\x12&\n" +
-	"\x05scope\x18\r \x01(\tB\v\xbaH\br\x06\x10\x02(\x80\x80@H\x00R\x05scope\x88\x01\x01B\b\n" +
+	"\x05scope\x18\r \x01(\tB\v\xbaH\br\x06\x10\x02(\x80\x80@H\x00R\x05scope\x88\x01\x01\x12A\n" +
+	"\bapproval\x18\x0e \x01(\v2%.host.installation.v1.ConsentApprovalR\bapprovalB\b\n" +
 	"\x06_scopeJ\x04\b\x03\x10\x04J\x04\b\x05\x10\x06R\x13solution_identifierR\x0froot_scope_path\"\x92\x01\n" +
 	"\x19NarrowInstallationRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
@@ -2497,63 +2518,65 @@ var file_saas_accounts_v1_installations_proto_goTypes = []any{
 	(*ListAvailableSolutionsRequest)(nil),         // 27: saas.accounts.v1.ListAvailableSolutionsRequest
 	(*ListAvailableSolutionsResponse)(nil),        // 28: saas.accounts.v1.ListAvailableSolutionsResponse
 	(*timestamppb.Timestamp)(nil),                 // 29: google.protobuf.Timestamp
-	(*CollectionReadGrant)(nil),                   // 30: saas.accounts.v1.CollectionReadGrant
-	(*ScopeGrant)(nil),                            // 31: saas.accounts.v1.ScopeGrant
-	(*emptypb.Empty)(nil),                         // 32: google.protobuf.Empty
+	(*v1.ConsentApproval)(nil),                    // 30: host.installation.v1.ConsentApproval
+	(*CollectionReadGrant)(nil),                   // 31: saas.accounts.v1.CollectionReadGrant
+	(*ScopeGrant)(nil),                            // 32: saas.accounts.v1.ScopeGrant
+	(*emptypb.Empty)(nil),                         // 33: google.protobuf.Empty
 }
 var file_saas_accounts_v1_installations_proto_depIdxs = []int32{
 	0,  // 0: saas.accounts.v1.Installation.status:type_name -> saas.accounts.v1.InstallationStatus
 	29, // 1: saas.accounts.v1.Installation.created_at:type_name -> google.protobuf.Timestamp
 	29, // 2: saas.accounts.v1.Installation.revoked_at:type_name -> google.protobuf.Timestamp
-	5,  // 3: saas.accounts.v1.GetInstallationResponse.installation:type_name -> saas.accounts.v1.Installation
-	1,  // 4: saas.accounts.v1.GetInstallationResponse.health:type_name -> saas.accounts.v1.InstallationHealth
-	0,  // 5: saas.accounts.v1.ListInstallationsRequest.status:type_name -> saas.accounts.v1.InstallationStatus
-	5,  // 6: saas.accounts.v1.InstallationSummary.installation:type_name -> saas.accounts.v1.Installation
-	1,  // 7: saas.accounts.v1.InstallationSummary.health:type_name -> saas.accounts.v1.InstallationHealth
-	14, // 8: saas.accounts.v1.ListInstallationsResponse.installations:type_name -> saas.accounts.v1.InstallationSummary
-	5,  // 9: saas.accounts.v1.OrganizationInstallation.installation:type_name -> saas.accounts.v1.Installation
-	1,  // 10: saas.accounts.v1.OrganizationInstallation.health:type_name -> saas.accounts.v1.InstallationHealth
-	26, // 11: saas.accounts.v1.OrganizationInstallation.target:type_name -> saas.accounts.v1.AvailableSolution
-	30, // 12: saas.accounts.v1.OrganizationInstallation.granted_teams:type_name -> saas.accounts.v1.CollectionReadGrant
-	30, // 13: saas.accounts.v1.OrganizationInstallation.inherited_teams:type_name -> saas.accounts.v1.CollectionReadGrant
-	19, // 14: saas.accounts.v1.OrganizationInstallation.readiness:type_name -> saas.accounts.v1.InstallationReadiness
-	20, // 15: saas.accounts.v1.OrganizationInstallation.reached_modules:type_name -> saas.accounts.v1.ReachedModule
-	2,  // 16: saas.accounts.v1.ReadinessCondition.kind:type_name -> saas.accounts.v1.ReadinessConditionKind
-	3,  // 17: saas.accounts.v1.ReadinessCondition.cleared_by:type_name -> saas.accounts.v1.ReadinessClearedBy
-	4,  // 18: saas.accounts.v1.ReadinessCondition.action:type_name -> saas.accounts.v1.ReadinessAction
-	18, // 19: saas.accounts.v1.InstallationReadiness.unmet:type_name -> saas.accounts.v1.ReadinessCondition
-	17, // 20: saas.accounts.v1.ListOrganizationInstallationsResponse.installations:type_name -> saas.accounts.v1.OrganizationInstallation
-	31, // 21: saas.accounts.v1.GrantInstallationToTeamResponse.grant:type_name -> saas.accounts.v1.ScopeGrant
-	23, // 22: saas.accounts.v1.GrantInstallationToTeamResponse.carried:type_name -> saas.accounts.v1.CarriedModuleAccess
-	18, // 23: saas.accounts.v1.GrantInstallationToTeamResponse.unmet:type_name -> saas.accounts.v1.ReadinessCondition
-	26, // 24: saas.accounts.v1.ListAvailableSolutionsResponse.solutions:type_name -> saas.accounts.v1.AvailableSolution
-	6,  // 25: saas.accounts.v1.InstallationService.InstallSolution:input_type -> saas.accounts.v1.InstallSolutionRequest
-	9,  // 26: saas.accounts.v1.InstallationService.UninstallSolution:input_type -> saas.accounts.v1.UninstallSolutionRequest
-	7,  // 27: saas.accounts.v1.InstallationService.NarrowInstallation:input_type -> saas.accounts.v1.NarrowInstallationRequest
-	8,  // 28: saas.accounts.v1.InstallationService.RetryInstallation:input_type -> saas.accounts.v1.RetryInstallationRequest
-	10, // 29: saas.accounts.v1.InstallationService.TransferInstallationOwnership:input_type -> saas.accounts.v1.TransferInstallationOwnershipRequest
-	11, // 30: saas.accounts.v1.InstallationService.GetInstallation:input_type -> saas.accounts.v1.GetInstallationRequest
-	13, // 31: saas.accounts.v1.InstallationService.ListInstallations:input_type -> saas.accounts.v1.ListInstallationsRequest
-	27, // 32: saas.accounts.v1.InstallationService.ListAvailableSolutions:input_type -> saas.accounts.v1.ListAvailableSolutionsRequest
-	16, // 33: saas.accounts.v1.InstallationService.ListOrganizationInstallations:input_type -> saas.accounts.v1.ListOrganizationInstallationsRequest
-	22, // 34: saas.accounts.v1.InstallationService.GrantInstallationToTeam:input_type -> saas.accounts.v1.GrantInstallationToTeamRequest
-	25, // 35: saas.accounts.v1.InstallationService.RevokeInstallationFromTeam:input_type -> saas.accounts.v1.RevokeInstallationFromTeamRequest
-	5,  // 36: saas.accounts.v1.InstallationService.InstallSolution:output_type -> saas.accounts.v1.Installation
-	32, // 37: saas.accounts.v1.InstallationService.UninstallSolution:output_type -> google.protobuf.Empty
-	32, // 38: saas.accounts.v1.InstallationService.NarrowInstallation:output_type -> google.protobuf.Empty
-	5,  // 39: saas.accounts.v1.InstallationService.RetryInstallation:output_type -> saas.accounts.v1.Installation
-	5,  // 40: saas.accounts.v1.InstallationService.TransferInstallationOwnership:output_type -> saas.accounts.v1.Installation
-	12, // 41: saas.accounts.v1.InstallationService.GetInstallation:output_type -> saas.accounts.v1.GetInstallationResponse
-	15, // 42: saas.accounts.v1.InstallationService.ListInstallations:output_type -> saas.accounts.v1.ListInstallationsResponse
-	28, // 43: saas.accounts.v1.InstallationService.ListAvailableSolutions:output_type -> saas.accounts.v1.ListAvailableSolutionsResponse
-	21, // 44: saas.accounts.v1.InstallationService.ListOrganizationInstallations:output_type -> saas.accounts.v1.ListOrganizationInstallationsResponse
-	24, // 45: saas.accounts.v1.InstallationService.GrantInstallationToTeam:output_type -> saas.accounts.v1.GrantInstallationToTeamResponse
-	32, // 46: saas.accounts.v1.InstallationService.RevokeInstallationFromTeam:output_type -> google.protobuf.Empty
-	36, // [36:47] is the sub-list for method output_type
-	25, // [25:36] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	30, // 3: saas.accounts.v1.InstallSolutionRequest.approval:type_name -> host.installation.v1.ConsentApproval
+	5,  // 4: saas.accounts.v1.GetInstallationResponse.installation:type_name -> saas.accounts.v1.Installation
+	1,  // 5: saas.accounts.v1.GetInstallationResponse.health:type_name -> saas.accounts.v1.InstallationHealth
+	0,  // 6: saas.accounts.v1.ListInstallationsRequest.status:type_name -> saas.accounts.v1.InstallationStatus
+	5,  // 7: saas.accounts.v1.InstallationSummary.installation:type_name -> saas.accounts.v1.Installation
+	1,  // 8: saas.accounts.v1.InstallationSummary.health:type_name -> saas.accounts.v1.InstallationHealth
+	14, // 9: saas.accounts.v1.ListInstallationsResponse.installations:type_name -> saas.accounts.v1.InstallationSummary
+	5,  // 10: saas.accounts.v1.OrganizationInstallation.installation:type_name -> saas.accounts.v1.Installation
+	1,  // 11: saas.accounts.v1.OrganizationInstallation.health:type_name -> saas.accounts.v1.InstallationHealth
+	26, // 12: saas.accounts.v1.OrganizationInstallation.target:type_name -> saas.accounts.v1.AvailableSolution
+	31, // 13: saas.accounts.v1.OrganizationInstallation.granted_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	31, // 14: saas.accounts.v1.OrganizationInstallation.inherited_teams:type_name -> saas.accounts.v1.CollectionReadGrant
+	19, // 15: saas.accounts.v1.OrganizationInstallation.readiness:type_name -> saas.accounts.v1.InstallationReadiness
+	20, // 16: saas.accounts.v1.OrganizationInstallation.reached_modules:type_name -> saas.accounts.v1.ReachedModule
+	2,  // 17: saas.accounts.v1.ReadinessCondition.kind:type_name -> saas.accounts.v1.ReadinessConditionKind
+	3,  // 18: saas.accounts.v1.ReadinessCondition.cleared_by:type_name -> saas.accounts.v1.ReadinessClearedBy
+	4,  // 19: saas.accounts.v1.ReadinessCondition.action:type_name -> saas.accounts.v1.ReadinessAction
+	18, // 20: saas.accounts.v1.InstallationReadiness.unmet:type_name -> saas.accounts.v1.ReadinessCondition
+	17, // 21: saas.accounts.v1.ListOrganizationInstallationsResponse.installations:type_name -> saas.accounts.v1.OrganizationInstallation
+	32, // 22: saas.accounts.v1.GrantInstallationToTeamResponse.grant:type_name -> saas.accounts.v1.ScopeGrant
+	23, // 23: saas.accounts.v1.GrantInstallationToTeamResponse.carried:type_name -> saas.accounts.v1.CarriedModuleAccess
+	18, // 24: saas.accounts.v1.GrantInstallationToTeamResponse.unmet:type_name -> saas.accounts.v1.ReadinessCondition
+	26, // 25: saas.accounts.v1.ListAvailableSolutionsResponse.solutions:type_name -> saas.accounts.v1.AvailableSolution
+	6,  // 26: saas.accounts.v1.InstallationService.InstallSolution:input_type -> saas.accounts.v1.InstallSolutionRequest
+	9,  // 27: saas.accounts.v1.InstallationService.UninstallSolution:input_type -> saas.accounts.v1.UninstallSolutionRequest
+	7,  // 28: saas.accounts.v1.InstallationService.NarrowInstallation:input_type -> saas.accounts.v1.NarrowInstallationRequest
+	8,  // 29: saas.accounts.v1.InstallationService.RetryInstallation:input_type -> saas.accounts.v1.RetryInstallationRequest
+	10, // 30: saas.accounts.v1.InstallationService.TransferInstallationOwnership:input_type -> saas.accounts.v1.TransferInstallationOwnershipRequest
+	11, // 31: saas.accounts.v1.InstallationService.GetInstallation:input_type -> saas.accounts.v1.GetInstallationRequest
+	13, // 32: saas.accounts.v1.InstallationService.ListInstallations:input_type -> saas.accounts.v1.ListInstallationsRequest
+	27, // 33: saas.accounts.v1.InstallationService.ListAvailableSolutions:input_type -> saas.accounts.v1.ListAvailableSolutionsRequest
+	16, // 34: saas.accounts.v1.InstallationService.ListOrganizationInstallations:input_type -> saas.accounts.v1.ListOrganizationInstallationsRequest
+	22, // 35: saas.accounts.v1.InstallationService.GrantInstallationToTeam:input_type -> saas.accounts.v1.GrantInstallationToTeamRequest
+	25, // 36: saas.accounts.v1.InstallationService.RevokeInstallationFromTeam:input_type -> saas.accounts.v1.RevokeInstallationFromTeamRequest
+	5,  // 37: saas.accounts.v1.InstallationService.InstallSolution:output_type -> saas.accounts.v1.Installation
+	33, // 38: saas.accounts.v1.InstallationService.UninstallSolution:output_type -> google.protobuf.Empty
+	33, // 39: saas.accounts.v1.InstallationService.NarrowInstallation:output_type -> google.protobuf.Empty
+	5,  // 40: saas.accounts.v1.InstallationService.RetryInstallation:output_type -> saas.accounts.v1.Installation
+	5,  // 41: saas.accounts.v1.InstallationService.TransferInstallationOwnership:output_type -> saas.accounts.v1.Installation
+	12, // 42: saas.accounts.v1.InstallationService.GetInstallation:output_type -> saas.accounts.v1.GetInstallationResponse
+	15, // 43: saas.accounts.v1.InstallationService.ListInstallations:output_type -> saas.accounts.v1.ListInstallationsResponse
+	28, // 44: saas.accounts.v1.InstallationService.ListAvailableSolutions:output_type -> saas.accounts.v1.ListAvailableSolutionsResponse
+	21, // 45: saas.accounts.v1.InstallationService.ListOrganizationInstallations:output_type -> saas.accounts.v1.ListOrganizationInstallationsResponse
+	24, // 46: saas.accounts.v1.InstallationService.GrantInstallationToTeam:output_type -> saas.accounts.v1.GrantInstallationToTeamResponse
+	33, // 47: saas.accounts.v1.InstallationService.RevokeInstallationFromTeam:output_type -> google.protobuf.Empty
+	37, // [37:48] is the sub-list for method output_type
+	26, // [26:37] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_installations_proto_init() }

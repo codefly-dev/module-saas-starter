@@ -45,12 +45,13 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	// declared-presence RPC this branch adds. Base 49, main +4, this branch +1;
 	// then -2 when MintModuleRegistration and MintSolutionRegistration were
 	// deleted with their secrets (#1056), and +1 for the live-authority read a
-	// callee's verifier asks (#1107), and +1 for the issuer's admission of a
-	// bearer-less module route's capability (AdmitWorkloadOperation). Picking
-	// either side's number would be silently wrong, so this is read off the
-	// regenerated generated/authz-methods.json.
-	require.Equal(t, 55, internalCount) // includes the internal retained-frontend read
-	require.Equal(t, 17, failClosedCount)
+	// callee's verifier asks (#1107), +1 for the issuer's admission of a
+	// bearer-less module route's capability (AdmitWorkloadOperation), and +1
+	// for the composition interface's ApplyManifest. Picking either side's
+	// number would be silently wrong, so this is read off the regenerated
+	// generated/authz-methods.json.
+	require.Equal(t, 55, internalCount)   // ApplyManifest now authenticates its signed carrier on the tenant listener
+	require.Equal(t, 20, failClosedCount) // +1: signed composition delivery; +2: the session interface's SignIn and ListFixturePeople are rate-limited as authentication and fail closed
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(
 		t,
@@ -170,5 +171,5 @@ func TestImpersonationRestrictionsMatchTheDescriptorsTheInterceptorReads(t *test
 	}
 
 	require.Equal(t, catalogued, enforced)
-	require.Len(t, enforced, 57)
+	require.Len(t, enforced, 65) // 57 of the API package + Issue, Delegate, RevokeDelegation, GetDelegation, Install, GrantToTeam, List, Current of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
 }

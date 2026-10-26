@@ -52,6 +52,13 @@ afterEach(() => {
 
 const EXPENSES_TARGET = "aaaaaaaa-0000-4000-8000-000000000001";
 const LEDGER_TARGET = "aaaaaaaa-0000-4000-8000-000000000002";
+// The consent the page sends: the reviewed target and generation, a zero
+// (omitted) revision for a first install, and a fresh operation id.
+const LEDGER_APPROVAL = {
+	targetId: LEDGER_TARGET,
+	generation: "5",
+	operationId: expect.any(String),
+};
 const EXPENSES_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000001";
 const READER_ROLE = "cccccccc-0000-4000-8000-000000000001";
 const USE_ROLE = "cccccccc-0000-4000-8000-000000000002";
@@ -386,6 +393,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			orgId: "org-1",
 			// The immutable target the row named, never its route alias.
 			targetId: LEDGER_TARGET,
+			approval: LEDGER_APPROVAL,
 			agentIdentifier: "acme/ledger:0.9.1",
 			roleId: READER_ROLE,
 			allowedAudiences: ["solution:binding-ledger"],
@@ -411,6 +419,49 @@ describe("SolutionInstallationsPage admin container", () => {
 			).getByText("ledger"),
 		).toBeTruthy();
 		expect(toast.success).toHaveBeenCalledWith("ledger installation pending");
+	});
+
+	it("reinstalls after revoke using the revision reported by the installation listing", async () => {
+		serve();
+		let sent: Record<string, unknown> | undefined;
+		server.use(
+			http.post(
+				rpc("InstallationService", "ListOrganizationInstallations"),
+				() =>
+					HttpResponse.json({
+						installations: [
+							{
+								installation: {
+									id: "revoked-ledger",
+									orgId: "org-1",
+									targetId: LEDGER_TARGET,
+									status: "INSTALLATION_STATUS_REVOKED",
+									revision: "17",
+								},
+							},
+						],
+					}),
+			),
+			http.post(
+				rpc("InstallationService", "InstallSolution"),
+				async ({ request }) => {
+					sent = (await request.json()) as Record<string, unknown>;
+					return HttpResponse.json({});
+				},
+			),
+		);
+		renderInApp(<Page />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Install ledger" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		await choose(dialog, "Agent role", "Expense reader — expenses:read");
+		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
+		await waitFor(() => expect(sent).toBeDefined());
+		expect(sent?.approval).toEqual({
+			...LEDGER_APPROVAL,
+			expectedRevision: "17",
+		});
 	});
 
 	it("does not install without a role for the solution's agent", async () => {
@@ -1192,6 +1243,7 @@ describe("mutation results belong to the page", () => {
 								? {
 										orgId: "org-1",
 										targetId: LEDGER_TARGET,
+										approval: LEDGER_APPROVAL,
 										agentIdentifier: "acme/ledger:0.9.1",
 										roleId: READER_ROLE,
 									}
@@ -1459,6 +1511,7 @@ describe("accessible validation and host text", () => {
 					await assertBody(request, {
 						orgId: "org-1",
 						targetId: LEDGER_TARGET,
+						approval: LEDGER_APPROVAL,
 						agentIdentifier: "acme/ledger:0.9.1",
 						roleId: READER_ROLE,
 					});

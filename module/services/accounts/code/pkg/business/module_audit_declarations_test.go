@@ -134,7 +134,7 @@ func TestModuleDeclareAuditEventTypes_FailsClosed(t *testing.T) {
 		},
 		"a principal with no entry": {
 			grants: ModulePrincipalRegistry{}, caller: caller, prefix: "acme",
-			types: sharedConversationTypes(), code: codes.PermissionDenied,
+			types: sharedConversationTypes(), code: codes.Unauthenticated,
 		},
 		"the host's own namespace": {
 			grants: moduleGrants("acme", "saas"), caller: caller, prefix: "acme",

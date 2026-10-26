@@ -23,6 +23,19 @@ func (g internalGateway) HTTPClient() *http.Client { return g.client }
 // h2c inside the mesh; HTTPS endpoints retain normal certificate verification.
 // Supply credentials through Connect interceptors, never through the URL.
 func NewInternal(baseURL string, opts ...connect.ClientOption) (*Client, error) {
+	gw, err := InternalGateway(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	return New(gw, append(opts, connect.WithGRPC())...), nil
+}
+
+// InternalGateway is the Gateway of Accounts' private endpoint: HTTP/2, h2c for
+// http:// inside the mesh, certificate-verified TLS for https://. The facade
+// skips streaming RPCs, so a caller of FetchDatasourceBlob or
+// FetchDatasourceFiles builds the generated accountsv1connect client on it
+// (with connect.WithGRPC()) rather than dialling the endpoint itself.
+func InternalGateway(baseURL string) (Gateway, error) {
 	endpoint, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, err
@@ -37,7 +50,7 @@ func NewInternal(baseURL string, opts ...connect.ClientOption) (*Client, error) 
 			return (&net.Dialer{}).DialContext(ctx, network, address)
 		}
 	}
-	return New(internalGateway{url: baseURL, client: &http.Client{Transport: transport}}, opts...), nil
+	return internalGateway{url: baseURL, client: &http.Client{Transport: transport}}, nil
 }
 
 type errInvalidInternalEndpoint struct{}

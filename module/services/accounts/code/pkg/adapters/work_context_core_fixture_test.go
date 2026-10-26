@@ -37,6 +37,8 @@ type sealAnswersFake struct {
 	unheld map[string]bool
 	// uninstalled names audiences the organization never installed.
 	uninstalled map[string]bool
+	// installations overrides the installation answered for an audience.
+	installations map[string]string
 	// moduleRevision, when set, answers a module principal's revision from
 	// the business service, so a module capability carries the revision a
 	// consumer's CheckAuthorizationRevision confirms it against.
@@ -58,13 +60,14 @@ type sealAnswersFake struct {
 
 func newSealAnswersFake(revision uint64) *sealAnswersFake {
 	return &sealAnswersFake{
-		revision:    revision,
-		revisions:   map[string]uint64{},
-		epochs:      map[string]uint64{},
-		unknown:     map[string]bool{},
-		unheld:      map[string]bool{},
-		uninstalled: map[string]bool{},
-		revisionErr: map[string]error{},
+		revision:      revision,
+		revisions:     map[string]uint64{},
+		epochs:        map[string]uint64{},
+		unknown:       map[string]bool{},
+		unheld:        map[string]bool{},
+		uninstalled:   map[string]bool{},
+		installations: map[string]string{},
+		revisionErr:   map[string]error{},
 	}
 }
 
@@ -120,6 +123,9 @@ func (f *sealAnswersFake) WorkContextAudienceInstallation(_ context.Context, _, 
 	defer f.mu.Unlock()
 	if f.uninstalled[audience] {
 		return "", business.ErrWorkContextNoAudienceInstallation
+	}
+	if id, ok := f.installations[audience]; ok {
+		return id, nil
 	}
 	return testInstallation(audience), nil
 }
@@ -200,7 +206,9 @@ type testCapability struct {
 	Owner    string
 	// OwnerKind defaults to human.
 	OwnerKind string
-	Task      string
+	// OwnerAgent is the agent identifier an agent owner carries.
+	OwnerAgent string
+	Task       string
 	// Session is the issuer-bound session; empty mints a fresh one.
 	Session string
 	// Replay defaults to idempotent.
@@ -237,6 +245,7 @@ func tryMintTestCapability(server *WorkContextAuthorityServer, c testCapability)
 			TenantID:           c.Tenant,
 			OwnerPrincipalID:   c.Owner,
 			OwnerPrincipalKind: c.OwnerKind,
+			OwnerAgentID:       c.OwnerAgent,
 			OrganizationID:     c.Tenant,
 			TaskID:             c.Task,
 			Audience:           c.Audience,

@@ -9,10 +9,10 @@ scope and RLS posture is in
 registration and module-identity records that only accounts may write.
 
 **Regenerating after a proto change** is one command from this directory,
-`codefly generate proto --proto ./proto --path saas --output .. --template
+`codefly generate proto --proto ./proto --output .. --template
 accounts/proto/buf.gen.yaml` (Docker, Codefly CLI ≥ 0.1.160), then the
 `go generate` steps. `codefly sync service accounts` also runs the agent-owned
-regeneration; `buf.gen.yaml` limits its input to the owned `saas` tree so the
+regeneration; `buf.gen.yaml` limits its input to the owned `saas` and `host` trees so the
 vendored Core options never become duplicate Go descriptors. The `--output . --local --template buf.gen.local.yaml`
 spelling that older docs and the `generated-pins-gate` message still show no
 longer works. The full procedure and why are in
@@ -24,6 +24,28 @@ Context exchanges below; no secret does.
 
 The principal directory lists stored identities only. Declared module authority
 is read by the capability checks and does not create synthetic directory rows.
+
+## Forwarded Work Contexts on the organization directory
+
+`DirectoryService` on the Connect endpoint accepts a person-owned Work Context
+addressed to `saas-directory` in `x-codefly-work-context`. A consuming module uses
+its existing `ExchangeDelegatedOperationAudience` binding in `module_actor` mode
+to obtain that context from the person's admitted parent. The binding declares
+`audience: saas-directory`; its scopes stay within the parent's effective scopes.
+Like a source-operation binding, it retains the calling module's installation
+seal: the host directory has no installation of its own.
+
+Admission shares the source-operation owner verifier: signature, intended
+audience, validity window, live seal/revision and current delegation authority.
+It stamps only the verified owner and tenant. The existing `requireAuth` and
+organization-membership gates still run, including for a team's resolved
+organization; membership in another organization never widens the context's
+tenant. A supplied invalid context is refused even beside a valid bearer.
+Without the Work Context header, bearer admission is unchanged.
+
+The module's own `module-capabilities` identity and a parent addressed to the
+module are not directory credentials. The three directory reads remain SaaS
+operations; no directory fact or RPC is added to the authority interface.
 
 ## The one diagnostic the binary answers
 
@@ -114,11 +136,26 @@ authority below.
 
 The module registry every capability check reads is **derived** each pass
 (`business.ModulePrincipalReconciler`) from the applied, live manifests whose
-stored carrier still verifies and the module envelope a platform super_admin
-writes: the manifest's `authority` is the request, the envelope's per-principal
-`grant` the ceiling, the entry their intersection, and its workloads the
-manifest's `(service, container)` spelled by the namespace rule. The envelope
-names no workload and approves no build.
+stored carrier still verifies. The signed manifest is the ceiling; no module
+envelope is needed on a fresh store. An existing administrative envelope narrows
+that ceiling. Workloads are the manifest's `(service, container)` spelled by the
+namespace rule; no administrative policy approves a build.
+
+## Composition interface delivery
+
+`CompositionService/ApplyManifest` accepts the same authenticated signed delivery
+on the Connect listener and synchronously runs the existing reconciler. Its
+optional authority document is signed by the same pinned key and bound to the
+core manifest digest, module and generation. Both carriers persist in one inbox
+row (migration 49). An exact replay preserves policy; a rewritten pair is refused.
+`AuthorityService/Check` reads and verifies only the applied pair and requires
+whole-kind authority for whole-kind method requirements. A missing policy refuses
+the named method. `HOST_INTERFACE.md` records conformance and remaining gaps.
+
+`InstallationService/GrantToTeam` uses the installation's standing role under the
+existing grant transaction. A pending installation must be acknowledged first.
+Root team-grant changes advance the installation revision through migration 50;
+unchanged re-grants preserve it. Scope-grant audit is reused.
 
 ## The solution's runtime boundary is derived from its delivered binding
 
@@ -328,10 +365,10 @@ configuration declares. The module principal reconciler derives the whole
 registry on every reconcile pass (and on a delivery or an envelope write,
 without waiting for the tick) and installs it tagged with the envelope revision
 it was derived from — the only production writer — so installing, narrowing or
-withdrawing a module takes effect with no restart. An entry exists only while
-two inputs agree:
+withdrawing a module takes effect with no restart. Applied manifest generations
+are fenced on each authority decision. Its inputs are:
 
-- **the module envelope** — the authority ceiling a platform super_admin writes
+- **an optional module envelope** — an administrative restriction a platform super_admin writes
   through `PlatformAdminService/PutModuleEnvelope` (`requirePlatformRole`, so
   never through an impersonated session; audited as
   `saas.platform.module_envelope_written`; append-only and revisioned in
@@ -351,7 +388,10 @@ two inputs agree:
   workload (namespace and service account) maps to exactly one principal, and
   two manifests asking for one principal are both omitted.
 
-The entry is the envelope's grant bounded by the manifest: queues, namespaces
+Without an envelope, the entry grants the manifest's queues, namespaces, resource
+kinds and operation scopes. It invents no tenant pin, cross-tenant grant, resource
+instance rights or installed delegation mode. With an envelope, the entry is
+its grant bounded by the manifest: queues, namespaces
 and resource kinds the manifest also asks for, and each operation binding only
 when the manifest asks for it on the envelope's audience with an `invoke`
 operation, every operation's scopes intersected with what the manifest asks.
@@ -372,15 +412,10 @@ nothing there is indistinguishable from the legitimate "no composed module
 accepts a delegation here" and the person is otherwise told, by the next sync,
 to reconnect what they just reconnected.
 
-**No envelope is said by name, every pass.** A pass that finds no envelope
-(none written, or no envelope store) publishes an empty registry and, while any
-applied manifest asks for authority, returns `ErrModuleEnvelopeMissing` naming
-each principal, binding and generation — logged by the reconcile loop as
-`solution host binding reconcile pass failed`, beside the omitted-principal
-reasons. The mint's refusal of a prefix the registry does not hold logs
-`module identity refused` with the prefix and why (the registry is empty and
-derived from no envelope, empty, or holds no entry for it), as a refused
-execution does; the caller still hears only the denial.
+**No envelope is required.** A fresh store derives its registry directly from
+applied signed manifests. An unreadable existing envelope never widens authority.
+Every omitted principal or binding still has a named refusal. The removed
+runtime enforcement switch cannot turn a refusal into a grant.
 
 **The administrator writes it at `/admin/platform/module-authority`.**
 `GetModuleEnvelope` answers, beside the current revision (`revision`,
@@ -399,7 +434,9 @@ the passkey, and lands back on the same page to write again
 (`features/auth/model/step-up.ts` — every sensitive screen turns `mfa_required`
 into that, never into a bare error).
 
-**The registry is fenced by the committed envelope revision.** Every module
+**The registry is fenced by applied manifest generations and, when present, the
+committed envelope revision.** A changed or withdrawn generation refuses an
+older registry snapshot with Unavailable and requests reconciliation. Every module
 authority decision — `AuthorizeModuleCapability`, the work-context and
 headless operation-context mints, the source-delegation mint, and the
 revision confirmations behind `CheckAuthorizationRevision` — takes its grant
@@ -435,9 +472,8 @@ credentials sealed for the old one at the next check. The grant ceiling's keys:
 | `tenant` | the org it is bound to |
 | `cross_tenant` | an inbox worker serving every tenant |
 
-**No envelope written, or no delivered authority inside it, means no module may
-call the surface** — accounts starts with an empty registry and serves no module
-until its first pass.
+**No verified delivered authority means no module may call the surface** —
+accounts starts with an empty registry and serves no module until its first pass.
 
 ### A non-member person is not a refusal of the module
 
@@ -472,7 +508,15 @@ one, under domain `saas.accounts.v1`:
 | `TENANT_MEMBERSHIP_MISSING` (`business.ModuleTenantMembershipMissingReason`) | the person named is not a member of the tenant | nobody's — final for that person |
 | `NOTIFICATION_IDEMPOTENCY_CONFLICT` (`business.ModuleNotificationIdempotencyConflictReason`) | the idempotency key was used for different content | the calling module's; a retry never clears it |
 | `SUBJECT_VISIBILITY_SET_TOO_LARGE` (`business.ModuleSubjectVisibilitySetTooLargeReason`) | the viewer's set exceeds `ModuleSubjectVisibilityMaxSet` | an administrator's, by changing the hierarchy |
-| `LIVE_AUTHORITY_UNAVAILABLE` (`business.ModuleLiveAuthorityUnavailableReason`) | this host cannot re-read live module authority, so it exercises no capability at all — refused by `AuthorizeModuleCapability` before any membership read | the operator's; **retain** the work and retry once repaired |
+| `LIVE_AUTHORITY_UNAVAILABLE` (`business.ModuleLiveAuthorityUnavailableReason`) | this host cannot re-read live module authority, so it exercises no capability at all — refused `UNAVAILABLE` (not `FAILED_PRECONDITION`) by `AuthorizeModuleCapability` before any membership read | the operator's; **retain** the work and retry once repaired |
+
+A module context `AuthorizeModuleCapability` does not admit — a principal no
+composition registers, installed nowhere for the bound organization, a tenant
+its grant no longer names, an installation of another registry binding — is the
+calling module's own credential failing, never a revocation of anyone it acts
+for. It answers `UNAUTHENTICATED`, naming the reason, so the module drops its
+context and mints again. `PERMISSION_DENIED` stays for a module this host admits
+asking for what its grant does not hold.
 
 Only `TENANT_MEMBERSHIP_MISSING` is final. **An absent or unrecognised reason is
 retainable, never final:** the table is what the surface answers today, not a
@@ -623,8 +667,9 @@ was bound to — namespace, ServiceAccount, pod, pod UID, container. The respons
   (`configuredSolutionHostBindingReconciler`), so **a host with no delivery mints
   for no module**, and a module run outside Kubernetes has no token to present.
 - A tenant-pinned module keeps the envelope's `tenant`; requesting a different
-  organization is refused. A shared module must name `organization_id` and have
-  `cross_tenant` in the envelope. Execution proves the principal first; the
+  organization is refused. A delivered shared module must name `organization_id`;
+  its current installation consent authorizes that organization. A directly
+  configured grant still requires `cross_tenant`. Execution proves the principal first; the
   organization's live installation then authorizes the mint. A selector grants
   nothing by itself.
 - **Every module credential is sealed.** Accounts mints and verifies Work
@@ -1092,9 +1137,10 @@ widens what every composed module can reach, so
 `business.ValidateModuleAuthorityProcedures` runs in the catalog and deployment
 generators and refuses an entry that is neither on the capability surface that
 authenticates the calling module from its Work Context nor one of the two
-declared read-only oracles. A method that authorizes on the shared perimeter
-credential alone and mutates state therefore cannot reach every composed module
-through a one-line edit to the list.
+declared read-only oracles, which authenticate the calling module the same way.
+A method that proves no caller, or mutates state for a tenant the request
+names, therefore cannot reach every composed module through a one-line edit to
+the list.
 
 `cmd/connect-registration` also generates
 `generated/api-contract-surfaces.json`, selected by the module's CLI-owned

@@ -108,3 +108,46 @@ func TestTheSealHoldsAPendingInstallationAndNoEndedOne(t *testing.T) {
 		})
 	}
 }
+
+// An installation acting for itself owns its capability as its agent, so the
+// seal reads let that agent stand in its organisation exactly while the
+// installation does: active, its agent live, an owner of record still an
+// administrator. It then holds the organisation's installations and carries
+// its revision; the moment any of those stops, it holds nothing.
+func TestAnInstallationsAgentStandsWhileItsInstallationDoes(t *testing.T) {
+	for name, end := range map[string]string{
+		"the installation is revoked":    `UPDATE installations SET status='revoked', revoked_at=CURRENT_TIMESTAMP WHERE id=$1`,
+		"the agent is disabled":          `UPDATE principals SET disabled_at=CURRENT_TIMESTAMP WHERE id=(SELECT agent_principal_id FROM installations WHERE id=$1)`,
+		"no owner of record is an admin": `UPDATE organization_members SET role='member' WHERE org_id=(SELECT org_id FROM installations WHERE id=$1)`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			i := newDynamicInstall(t, "", "", "")
+			agent := i.installation.GetAgentPrincipalId()
+			require.NotEmpty(t, agent)
+
+			found, err := testStore.WorkContextAgentInstallation(testCtx, i.org, agent)
+			require.NoError(t, err)
+			require.Equal(t, i.installation.Id, found)
+			_, err = testStore.WorkContextHeldInstallation(testCtx, i.org, agent, i.installation.Id)
+			require.NoError(t, err, "the agent holds its organisation's installations")
+			revision, err := testStore.WorkContextOwnerRevision(testCtx, i.org, agent)
+			require.NoError(t, err)
+			require.NotZero(t, revision)
+			stands, err := testStore.WorkContextOrgStanding(testCtx, i.org, agent)
+			require.NoError(t, err)
+			require.True(t, stands)
+
+			require.NoError(t, testStore.WithOrgTx(testCtx, i.org, func(ctx context.Context) error {
+				_, err := storetx.Tx(ctx).Exec(ctx, end, i.installation.Id)
+				return err
+			}))
+			_, err = testStore.WorkContextHeldInstallation(testCtx, i.org, agent, i.installation.Id)
+			require.ErrorIs(t, err, business.ErrWorkContextSealUnheld)
+			_, err = testStore.WorkContextOwnerRevision(testCtx, i.org, agent)
+			require.ErrorIs(t, err, business.ErrWorkContextPrincipalUnknown)
+			stands, err = testStore.WorkContextOrgStanding(testCtx, i.org, agent)
+			require.NoError(t, err)
+			require.False(t, stands)
+		})
+	}
+}

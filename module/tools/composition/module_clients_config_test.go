@@ -229,16 +229,15 @@ func TestAllowlistedClientServicesAreAloneInTheirProtoFile(t *testing.T) {
 			t.Fatalf("parse contract %q as a FileDescriptorSet: %v", endpoint.Path, err)
 		}
 
-		// Files of the endpoint's own proto package, and the services each declares.
+		// A listener may span packages. Index full service names, and inspect
+		// imports across every package so a foreign service cannot leak either.
 		servicesByFile := map[string][]string{}
 		fileOfService := map[string]string{}
 		for _, file := range set.GetFile() {
-			if file.GetPackage() != endpoint.Package {
-				continue
-			}
 			for _, service := range file.GetService() {
-				servicesByFile[file.GetName()] = append(servicesByFile[file.GetName()], service.GetName())
-				fileOfService[service.GetName()] = file.GetName()
+				fullName := file.GetPackage() + "." + service.GetName()
+				servicesByFile[file.GetName()] = append(servicesByFile[file.GetName()], fullName)
+				fileOfService[fullName] = file.GetName()
 			}
 		}
 		dependenciesByFile := map[string][]string{}
@@ -248,7 +247,17 @@ func TestAllowlistedClientServicesAreAloneInTheirProtoFile(t *testing.T) {
 
 		for _, name := range config.Services {
 			name = strings.TrimSpace(name)
-			source, found := fileOfService[name]
+			var matches []string
+			for _, service := range endpoint.Services {
+				if service.Name == name || service.FullName == name {
+					matches = append(matches, service.FullName)
+				}
+			}
+			if len(matches) != 1 {
+				t.Errorf("allowlisted service %q must name exactly one exported service, found %v", name, matches)
+				continue
+			}
+			source, found := fileOfService[matches[0]]
 			if !found {
 				t.Errorf("allowlisted service %q declares no file in package %s of contract %q",
 					name, endpoint.Package, endpoint.Path)

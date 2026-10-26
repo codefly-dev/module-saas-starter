@@ -63,14 +63,16 @@ func (s *PostgresStore) AppendActorChainHop(
 				id, org_id, task_id, session_id, owner_principal_id,
 				actor_principal_id, actor_kind, parent_delegation_id,
 				delegation_grant_id, granted_scopes, authorization_revision,
-				revocation_id, hop_index, prev_hash, hop_hash
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+				revocation_id, hop_index, prev_hash, hop_hash,
+				operation_binding_id, operation
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 			ON CONFLICT (id) DO NOTHING`,
 			hop.ID, hop.OrgID, nilIfEmpty(hop.TaskID), nilIfEmpty(hop.SessionID),
 			nilIfNotUUID(hop.OwnerPrincipalID), nilIfNotUUID(hop.ActorPrincipalID),
 			hop.ActorKind, nilIfNotUUID(hop.ParentDelegationID),
 			nilIfNotUUID(hop.DelegationGrantID), scopes, int64(hop.AuthorizationRevision),
 			uuid.NewString(), hop.HopIndex, nilIfEmpty(prevHash), hopHash,
+			nilIfEmpty(hop.OperationBindingID), nilIfEmpty(hop.Operation),
 		); err != nil {
 			return fmt.Errorf("append actor chain hop: %w", err)
 		}
@@ -143,6 +145,50 @@ func (s *PostgresStore) AnyActorChainHopRevoked(
 	}
 	return revoked, nil
 }
+
+// ActorChainHopBindings answers the module binding and operation each named
+// hop was journaled with. A hop with none recorded is absent from the answer.
+func (s *PostgresStore) ActorChainHopBindings(
+	ctx context.Context,
+	orgID string,
+	hopIDs []string,
+) (map[string]business.ActorChainHopBinding, error) {
+	out := map[string]business.ActorChainHopBinding{}
+	if orgID == "" || len(hopIDs) == 0 {
+		return out, nil
+	}
+	err := s.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+			SELECT id::text, operation_binding_id, operation, granted_scopes
+			  FROM actor_chain_journal
+			 WHERE id = ANY($1) AND org_id = $2 AND operation_binding_id IS NOT NULL`,
+			hopIDs, orgID,
+		)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			var binding business.ActorChainHopBinding
+			var raw []byte
+			if err := rows.Scan(&id, &binding.BindingID, &binding.Operation, &raw); err != nil {
+				return err
+			}
+			if err := json.Unmarshal(raw, &binding.GrantedScopes); err != nil {
+				return err
+			}
+			out[id] = binding
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read actor chain hop bindings: %w", err)
+	}
+	return out, nil
+}
+
+var _ business.ActorChainHopBindingReader = (*PostgresStore)(nil)
 
 func (s *PostgresStore) RevokeActorChainHop(
 	ctx context.Context,

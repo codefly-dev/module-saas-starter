@@ -96,6 +96,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"github_app_installations":             {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"delegation_grants":                    {selectRows: true, insertRows: true, updateRows: true},
 	"source_delegations":                   {selectRows: true, insertRows: true, updateRows: true}, // revoked, never deleted
+	"module_delegations":                   {selectRows: true, insertRows: true, updateRows: true}, // revoked, never deleted
 	"domain_events":                        {selectRows: true},                                     // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
 	"executable_artifact_approvals":        {selectRows: true, insertRows: true}, // only revocation columns, no table-wide UPDATE
@@ -457,6 +458,11 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// person delegated outlives the source and the person it names.
 			// Organization deletion removes them through the FK cascade.
 			if relation == "source_delegations" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// module_delegations likewise: a revoked delegation to a module stays
+			// readable as what was delegated, to whom, and when it stopped.
+			if relation == "module_delegations" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 			// approval_decisions is append-only like actor_chain_journal: read and

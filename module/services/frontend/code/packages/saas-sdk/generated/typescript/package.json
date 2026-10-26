@@ -1,6 +1,6 @@
 {
   "name": "@codefly-dev/saas-sdk",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

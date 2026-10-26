@@ -47,6 +47,11 @@ message WorkContextScope {
 // credential's, and a confined credential is paired with a capability on the
 // session alone.
 message StartTaskWorkContextRequest {
+  option (buf.validate.message).cel = {
+    id: "start_task.authority_ask"
+    message: "authority_scopes or operation_bindings is required"
+    expression: "size(this.authority_scopes) > 0 || size(this.operation_bindings) > 0"
+  };
   reserved 3;
   reserved "session_id";
   string org_id = 1 [(buf.validate.field).string.uuid = true];
@@ -69,7 +74,6 @@ message StartTaskWorkContextRequest {
   // registered agent Principal in org_id.
   string actor_principal_id = 4;
   repeated WorkContextScope authority_scopes = 5 [
-    (buf.validate.field).repeated.min_items = 1,
     (buf.validate.field).repeated.max_items = 64
   ];
   string audience = 6 [
@@ -91,6 +95,20 @@ message StartTaskWorkContextRequest {
   optional string project_id = 10 [
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 512
+  ];
+  // Operation bindings of the audience module, by name, whose invoke scopes
+  // this capability carries beside authority_scopes. The host resolves each
+  // name to the binding as installed at org_id, narrowed by that installation
+  // exactly as the module's delegated exchange redeems it, and keeps each
+  // resource only if the person holds it. The caller names a binding and never
+  // its resource ids. A direct human-owned mint only.
+  repeated string operation_bindings = 11 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items.string = {
+      min_len: 1
+      max_len: 256
+    }
   ];
 }
 

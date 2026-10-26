@@ -153,6 +153,10 @@ var authorities = map[string]Authority{
 		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
 		Notes: "Revoked, never deleted: a delegation keeps its record after the source or the person it names is gone.",
 	},
+	"module_delegations": {
+		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
+		Notes: "Revoked, never deleted: a person's delegation to a module keeps its record after it stopped.",
+	},
 	"github_app_installations": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"delegation_grants":        {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"domain_events": {

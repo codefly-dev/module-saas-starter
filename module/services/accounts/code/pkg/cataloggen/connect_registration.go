@@ -33,6 +33,64 @@ type connectBindingSource struct {
 	Name string `yaml:"name,omitempty"`
 }
 
+// bindingFor resolves a service's binding: by full name first, so two services
+// of one short name in different packages (the service's own InstallationService
+// and an implemented interface's) bind apart; by short name otherwise, as every
+// existing entry is spelled.
+func bindingFor(bindings connectBindings, service *catalogv1.Service) (connectBinding, string, bool) {
+	if binding, ok := bindings.Services[service.GetFullName()]; ok {
+		return binding, service.GetFullName(), true
+	}
+	binding, ok := bindings.Services[service.GetName()]
+	return binding, service.GetName(), ok
+}
+
+// generatedPackages names the Go packages protoc wrote for a service's protobuf
+// package. The service's own API package keeps the historical aliases; an
+// implemented interface's package gets aliases derived from its name, with the
+// import paths buf's managed mode produces (accounts/pkg/gen + the package path).
+type generatedPackages struct {
+	genAlias, genPath, connectAlias, connectPath string
+}
+
+func generatedPackagesFor(catalog *catalogv1.ServiceCatalog, service *catalogv1.Service) generatedPackages {
+	pkg := strings.TrimSuffix(service.GetFullName(), "."+service.GetName())
+	if pkg == catalog.GetApiPackage() {
+		return generatedPackages{genAlias: "gen", genPath: "accounts/pkg/gen/saas/accounts/v1", connectAlias: "genconnect", connectPath: "accounts/pkg/gen/saas/accounts/v1/accountsv1connect"}
+	}
+	parts := strings.Split(pkg, ".")
+	alias := strings.Join(parts, "_")
+	path := "accounts/pkg/gen/" + strings.Join(parts, "/")
+	connectDir := strings.Join(parts[len(parts)-2:], "") + "connect"
+	return generatedPackages{genAlias: alias, genPath: path, connectAlias: alias + "connect", connectPath: path + "/" + connectDir}
+}
+
+func importBlock(catalog *catalogv1.ServiceCatalog, bindings connectBindings, connect bool) string {
+	seen := map[string]string{}
+	for _, service := range catalog.GetServices() {
+		pkgs := generatedPackagesFor(catalog, service)
+		if connect {
+			seen[pkgs.connectAlias] = pkgs.connectPath
+			continue
+		}
+		// The raw-gRPC file registers only gRPC-backed services, so it imports
+		// only their packages; an unused import would not compile.
+		if binding, _, _ := bindingFor(bindings, service); grpcBacked(binding) {
+			seen[pkgs.genAlias] = pkgs.genPath
+		}
+	}
+	aliases := make([]string, 0, len(seen))
+	for alias := range seen {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	var b strings.Builder
+	for _, alias := range aliases {
+		fmt.Fprintf(&b, "\t%s %q\n", alias, seen[alias])
+	}
+	return b.String()
+}
+
 // RenderConnectRegistration joins the descriptor-owned service catalog with a
 // finite dependency-injection binding file and emits compile-time checked
 // Connect registration. The binding file cannot contain raw Go expressions.
@@ -52,16 +110,16 @@ import (
 
 	"connectrpc.com/connect"
 
-	genconnect "accounts/pkg/gen/saas/accounts/v1/accountsv1connect"
-)
+` + importBlock(catalog, bindings, true) + `)
 
 // Compile-time assertions keep every configured adapter aligned with the
 // descriptor-generated Connect handler interface.
 var (
 `)
 	for _, service := range catalog.GetServices() {
-		binding := bindings.Services[service.GetName()]
-		fmt.Fprintf(&source, "\t_ genconnect.%sHandler = (*%s)(nil)\n", service.GetName(), binding.Handler)
+		binding, _, _ := bindingFor(bindings, service)
+		pkgs := generatedPackagesFor(catalog, service)
+		fmt.Fprintf(&source, "\t_ %s.%sHandler = (*%s)(nil)\n", pkgs.connectAlias, service.GetName(), binding.Handler)
 	}
 	source.WriteString(`)
 
@@ -70,9 +128,10 @@ var (
 func registerCatalogConnectServices(mux *http.ServeMux, server *ConnectServer, options ...connect.HandlerOption) {
 `)
 	for _, service := range catalog.GetServices() {
-		binding := bindings.Services[service.GetName()]
-		fmt.Fprintf(&source, "\tmux.Handle(genconnect.New%sHandler(&%s{%s}, options...))\n",
-			service.GetName(), binding.Handler, bindingInitializer(binding.Source))
+		binding, _, _ := bindingFor(bindings, service)
+		pkgs := generatedPackagesFor(catalog, service)
+		fmt.Fprintf(&source, "\tmux.Handle(%s.New%sHandler(&%s{%s}, options...))\n",
+			pkgs.connectAlias, service.GetName(), binding.Handler, bindingInitializer(binding.Source))
 	}
 	source.WriteString("}\n")
 
@@ -103,8 +162,7 @@ package adapters
 import (
 	"google.golang.org/grpc"
 
-	gen "accounts/pkg/gen/saas/accounts/v1"
-)
+` + importBlock(catalog, bindings, false) + `)
 
 // registerCatalogGRPCServices registers every catalog service backed by a
 // native gRPC implementation. Connect-native business handlers are served by
@@ -112,16 +170,17 @@ import (
 func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcServer) {
 `)
 	for _, service := range catalog.GetServices() {
-		binding := bindings.Services[service.GetName()]
+		binding, _, _ := bindingFor(bindings, service)
 		if initializer, ok := grpcBindingInitializer(binding); ok {
-			fmt.Fprintf(&source, "\tgen.Register%sServer(registrar, %s)\n", service.GetName(), initializer)
+			pkgs := generatedPackagesFor(catalog, service)
+			fmt.Fprintf(&source, "\t%s.Register%sServer(registrar, %s)\n", pkgs.genAlias, service.GetName(), initializer)
 		}
 	}
 	source.WriteString("}\n\n")
 
 	source.WriteString("var catalogGRPCServiceNames = []string{\n")
 	for _, service := range catalog.GetServices() {
-		if _, ok := grpcBindingInitializer(bindings.Services[service.GetName()]); !ok {
+		if binding, _, _ := bindingFor(bindings, service); !grpcBacked(binding) {
 			continue
 		}
 		fmt.Fprintf(&source, "\t%q,\n", service.GetFullName())
@@ -130,7 +189,7 @@ func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcSe
 
 	source.WriteString("var catalogConnectOnlyServiceNames = []string{\n")
 	for _, service := range catalog.GetServices() {
-		if _, ok := grpcBindingInitializer(bindings.Services[service.GetName()]); ok {
+		if binding, _, _ := bindingFor(bindings, service); grpcBacked(binding) {
 			continue
 		}
 		fmt.Fprintf(&source, "\t%q,\n", service.GetFullName())
@@ -182,11 +241,10 @@ func decodeConnectBindings(document []byte) (connectBindings, error) {
 func validateConnectBindingCoverage(catalog *catalogv1.ServiceCatalog, bindings connectBindings) error {
 	wanted := make(map[string]struct{}, len(catalog.GetServices()))
 	for _, service := range catalog.GetServices() {
-		name := service.GetName()
+		binding, name, exists := bindingFor(bindings, service)
 		wanted[name] = struct{}{}
-		binding, exists := bindings.Services[name]
 		if !exists {
-			return fmt.Errorf("missing Connect binding for catalog service %q", name)
+			return fmt.Errorf("missing Connect binding for catalog service %q", service.GetFullName())
 		}
 		if !token.IsIdentifier(binding.Handler) {
 			return fmt.Errorf("invalid handler identifier %q for Connect service %q", binding.Handler, name)
@@ -224,6 +282,11 @@ func validateConnectBindingCoverage(catalog *catalogv1.ServiceCatalog, bindings 
 		return fmt.Errorf("services in Connect bindings are absent from the catalog: %s", strings.Join(extras, ", "))
 	}
 	return nil
+}
+
+func grpcBacked(binding connectBinding) bool {
+	_, ok := grpcBindingInitializer(binding)
+	return ok
 }
 
 func bindingInitializer(source connectBindingSource) string {

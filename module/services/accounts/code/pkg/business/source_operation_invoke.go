@@ -48,7 +48,7 @@ type APIOperationClient interface {
 // dispatch. Invocation fences the current declaration. Lookup recovers retained
 // evidence independently of declarations, under the actor's current source read
 // authority; deleting or replacing a declaration cannot erase an attempt.
-func (s *Service) SourceOperationAuthority(ctx context.Context, actor, org, source, operation, effectID string, lookup bool) (*DatasourceSource, operations.Declaration, error) {
+func (s *Service) SourceOperationAuthority(ctx context.Context, actor, org, source, operation, effectID, expectedDigest string, lookup bool) (*DatasourceSource, operations.Declaration, error) {
 	declarations, ok := s.store.(SourceOperationStore)
 	attempts, attemptsOK := s.store.(SourceOperationAttemptStore)
 	if !ok || !attemptsOK {
@@ -115,6 +115,9 @@ func (s *Service) SourceOperationAuthority(ctx context.Context, actor, org, sour
 			return operationRefused("SOURCE_DECLARATION_INVALID")
 		}
 		declaration = checked
+		if expectedDigest != "" && expectedDigest != declaration.Digest {
+			return operationRefused("SOURCE_DECLARATION_CHANGED")
+		}
 		if attempt != nil && attempt.DeclarationDigest != declaration.Digest {
 			return operationRefused("SOURCE_EFFECT_BINDING_CHANGED")
 		}
@@ -182,7 +185,7 @@ func operationRateLimited(reset time.Time) error {
 // records its wire response through receipts.Record in the supplied transaction.
 // The attempt marker survives any uncertain provider outcome or commit failure;
 // an external mutation cannot be rolled back with our Postgres transaction.
-func (s *Service) InvokeSourceOperation(ctx context.Context, actor, org, source, operation string, input []byte, commit func(context.Context, *SourceOperationResult) error) (response *SourceOperationResult, returnedErr error) {
+func (s *Service) InvokeSourceOperation(ctx context.Context, actor, org, source, operation, expectedDigest string, input []byte, commit func(context.Context, *SourceOperationResult) error) (response *SourceOperationResult, returnedErr error) {
 	effect, ok := receipts.EffectFromContext(ctx)
 	if !ok || effect.Tenant != org || effect.Method != SourceOperationMethod || commit == nil {
 		return nil, operationRefused("SOURCE_EFFECT_REQUIRED")
@@ -208,7 +211,7 @@ func (s *Service) InvokeSourceOperation(ctx context.Context, actor, org, source,
 		defer cancel()
 		s.AuditSourceOperation(auditCtx, actor, org, source, declaration, effect.ID, outcome)
 	}()
-	src, admitted, err := s.SourceOperationAuthority(ctx, actor, org, source, operation, effect.ID, false)
+	src, admitted, err := s.SourceOperationAuthority(ctx, actor, org, source, operation, effect.ID, expectedDigest, false)
 	declaration = admitted
 	if err != nil {
 		return nil, err

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"syscall"
 	"time"
@@ -18,14 +19,39 @@ import (
 // restoring it.
 func SetMetadataDialGuardForTest(guard func(string, string, syscall.RawConn) error) func() {
 	previous := metadataDialGuard
-	metadataDialGuard = guard
+	metadataDialGuard = func(string) DialControl { return guard }
 	return func() { metadataDialGuard = previous }
 }
 
-// MetadataDialGuardForTest exposes the production guard so a test can assert
-// what it refuses without opening a connection.
-func MetadataDialGuardForTest() func(string, string, syscall.RawConn) error {
-	return metadataDialGuard
+// MetadataDialGuardForTest exposes the production guard for a dial to
+// requested ("host:port") so a test can assert what it refuses without opening
+// a connection.
+func MetadataDialGuardForTest(requested string) func(string, string, syscall.RawConn) error {
+	return metadataDialGuard(requested)
+}
+
+// WrapMetadataDialGuardForTest wraps the production guard's hook for each dial
+// with wrap (a recorder that stops the dial, for example) and returns a
+// function restoring it.
+func WrapMetadataDialGuardForTest(wrap func(DialControl) DialControl) func() {
+	previous := metadataDialGuard
+	metadataDialGuard = func(requested string) DialControl { return wrap(previous(requested)) }
+	return func() { metadataDialGuard = previous }
+}
+
+// SetMetadataResolverForTest replaces the resolver a metadata fetch dial
+// consults and returns a function restoring it.
+func SetMetadataResolverForTest(resolver Resolver) func() {
+	previous := metadataResolver
+	metadataResolver = resolver
+	return func() { metadataResolver = previous }
+}
+
+// FetchMetadataDocumentForTest runs the production HTTP fetch of one document
+// URL, with its real transport, and returns only the error.
+func FetchMetadataDocumentForTest(ctx context.Context, documentURL string) error {
+	_, _, err := newHTTPMetadataFetcher().Fetch(ctx, documentURL)
+	return err
 }
 
 // SetTransportForTest points this resolver's HTTP fetcher at a test server's

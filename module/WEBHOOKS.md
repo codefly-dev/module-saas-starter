@@ -4,7 +4,11 @@ Webhook endpoints must be public `https://` URLs on port 443. Accounts resolves
 all A/AAAA records when an endpoint is registered and again immediately before
 each connection. If any answer is not on the public internet, the request is
 rejected. That judgement is `auth.IsPublicDestination`, the classifier the
-host's guarded egress paths share. The paths it covers, and the OIDC clients it
+host's guarded egress paths share, plus one admission they share too: on a
+meshed cell, a host the environment declares as accounts' egress
+(`egress/HOSTS`) may answer
+with an address in the mesh egress range
+([Mesh egress](./CALLABLE_SOURCES.md#mesh-egress)). The paths it covers, and the OIDC clients it
 does not, are listed in
 [CALLABLE_SOURCES.md](./CALLABLE_SOURCES.md#oauth-and-disclosure). It reads the
 IANA IPv4 and IPv6 special-purpose registries, with IPv6 bounded to the

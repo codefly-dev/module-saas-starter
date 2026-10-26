@@ -284,17 +284,28 @@ type cachedMetadataClient struct {
 	expiresAt time.Time
 }
 
-// metadataDialGuard refuses to open a connection to a non-public address. It
-// runs after DNS resolution with the concrete IP being dialed, so it blocks the
-// address the connection would actually reach, closing the DNS-rebinding gap a
-// hostname-only check leaves open. Package-level var so tests can point a
-// resolver at a loopback server; production always uses the guard.
-var metadataDialGuard = func(_, address string, _ syscall.RawConn) error {
-	if !IsPublicDestinationDialAddress(address) {
-		return ErrClientMetadataUnreachable
+// metadataDialGuard builds the Control hook for one metadata fetch dial, from
+// the "host:port" the fetch asked for: it refuses a connection the egress rule
+// (AdmitsDestinationDialAddress) does not admit. The hook runs with the
+// concrete IP being dialed, so it blocks the address the connection would
+// actually reach, closing the DNS-rebinding gap a hostname-only check leaves
+// open. Package-level var so tests can point a resolver at a loopback server;
+// production always uses the guard.
+var metadataDialGuard = metadataGuard
+
+func metadataGuard(requested string) DialControl {
+	return func(_, address string, _ syscall.RawConn) error {
+		if !AdmitsDestinationDialAddress(requested, address) {
+			return ErrClientMetadataUnreachable
+		}
+		return nil
 	}
-	return nil
 }
+
+// metadataResolver resolves a metadata document's host before the dial.
+// net.DefaultResolver in production; a variable only so a test can answer with
+// the address it needs.
+var metadataResolver Resolver = net.DefaultResolver
 
 // NewClientMetadataResolver builds a resolver for one policy, fetching
 // documents over HTTPS with the production bounds and SSRF guard.
@@ -325,10 +336,8 @@ type httpMetadataFetcher struct {
 
 func newHTTPMetadataFetcher() *httpMetadataFetcher {
 	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: clientMetadataFetchTimeout,
-			Control: metadataDialGuard,
-		}).DialContext,
+		DialContext: GuardedDialContext(net.Dialer{Timeout: clientMetadataFetchTimeout}, metadataResolver,
+			func(requested string) DialControl { return metadataDialGuard(requested) }),
 		TLSHandshakeTimeout:   clientMetadataFetchTimeout,
 		ResponseHeaderTimeout: clientMetadataFetchTimeout,
 		DisableKeepAlives:     false,

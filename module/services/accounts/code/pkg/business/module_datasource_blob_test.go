@@ -69,7 +69,7 @@ func TestModuleFetchDatasourceBlob_UnknownPrincipalRejected(t *testing.T) {
 
 	_, _, err := svc.ModuleFetchDatasourceBlob(context.Background(),
 		business.ModuleCaller{PrincipalID: "someone-else", BoundOrg: moduleTenantA}, source.ID, "sha-1")
-	requireCode(t, err, codes.PermissionDenied)
+	requireCode(t, err, codes.Unauthenticated)
 }
 
 // TestModuleFetchDatasourceBlob_DisallowedQueueRejected pins that fetching a

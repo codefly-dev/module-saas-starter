@@ -318,6 +318,24 @@ func revokeSourceDelegationPolicyLogEntry(actorID, orgID, delegationID string) *
 	}
 }
 
+// revokeModuleDelegationPolicyLogEntry describes a person revoking their
+// delegation to a module: the module stops acting for them, and every
+// capability already issued from the delegation is refused.
+func revokeModuleDelegationPolicyLogEntry(actorID, orgID, delegationID string) *PolicyLogEntry {
+	return &PolicyLogEntry{
+		OperationID: newPolicyLogOperationID("revoke-module-delegation"),
+		Decision:    PolicyLogNarrowed,
+		SubjectKind: PolicyLogBinding,
+		SubjectID:   delegationID,
+		Policy: map[string]any{
+			"org_id":        orgID,
+			"delegation_id": delegationID,
+			"status":        "revoked",
+		},
+		Actor: actorID,
+	}
+}
+
 // removeOrgMemberPolicyLogEntry describes removing an organization membership:
 // the member loses the standing every grant inside that organization hangs
 // from, and the team memberships that outlive it go in the same transaction.

@@ -32,8 +32,8 @@ type InstallationExposure struct {
 	InheritedTeams []*gen.CollectionReadGrant
 }
 
-// OrganizationInstallation is one nonrevoked installation as its organization's
-// administrator manages it.
+// OrganizationInstallation is one installation as its administrator manages it,
+// including the revoked revision a fresh reinstall approval must name.
 type OrganizationInstallation struct {
 	Summary  *gen.InstallationSummary
 	Exposure *InstallationExposure
@@ -164,13 +164,15 @@ func (s *Service) ListOrganizationInstallations(
 	out := make([]*OrganizationInstallation, 0, len(summaries))
 	for _, summary := range summaries {
 		installation := summary.GetInstallation()
-		if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_REVOKED {
-			continue
-		}
 		row := &OrganizationInstallation{
 			Summary:  summary,
 			Exposure: exposure[installation.GetId()],
 			Target:   targets[installation.GetTargetId()],
+		}
+		if installation.GetStatus() == gen.InstallationStatus_INSTALLATION_STATUS_REVOKED {
+			// Its former root may now be reused by a new installation. Those
+			// grants belong to the new consent, never to this review history.
+			row.Exposure = &InstallationExposure{}
 		}
 		row.Readiness, row.ReachedModules = facts.readinessFor(
 			installation, summary.GetHealth(), row.Target, installedByPrincipal)
@@ -208,7 +210,7 @@ func (s *Service) ListOrganizationInstallations(
 // each an ordinary grant too, so a grant that exposed a solution and carried
 // nothing because a later statement failed is not a state this can reach.
 //
-// The resolution takes a SHARE lock on the installation row and holds it to
+// The resolution takes an UPDATE lock on the installation row and holds it to
 // commit (InstallationRootScopePath). An uninstall revokes that row with an
 // UPDATE, so the two serialize: if the uninstall commits first, the resolution
 // finds no active installation and nothing is written; if the resolution locks
@@ -247,19 +249,45 @@ func (s *Service) GrantInstallationToTeam(
 		alias = row.Target.RouteAlias
 	}
 
+	// Naming no role is the installation's role: the solution's own of that
+	// name when it declares roles, the standing role otherwise. Resolved here,
+	// before the transaction, because the declaration is control-plane state.
+	why := ""
+	if roleID == "" {
+		if roleID, why, err = s.solutionExposureRole(ctx, orgID, installationID, row.Target); err != nil {
+			return nil, w.Wrapf(err, "cannot expose installation to team")
+		}
+	}
+
 	out := &InstallationGrant{Unmet: unmet}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		path, err := s.installationStore().InstallationRootScopePath(ctx, orgID, installationID)
 		if err != nil {
 			return err
 		}
+		// The host interface names the installation's own role. Resolve it
+		// under the same installation lock as the exposure write.
+		if roleID == "" {
+			reader, ok := s.store.(hostInstallationReader)
+			if !ok {
+				return fmt.Errorf("installation role reader is not wired")
+			}
+			roleID, _, _, err = reader.InstallationRoleRevision(ctx, orgID, installationID)
+			if err != nil {
+				return err
+			}
+		}
 		permits, err := s.installationStore().RolePermits(ctx, roleID, ResourceTypeSolution, ActionUseSolution)
 		if err != nil {
 			return err
 		}
 		if !permits {
-			return NewStoreError(fmt.Errorf("%w: role %s does not permit %s:%s, so a grant of it would expose nothing",
-				ErrRoleDoesNotExposeSolution, roleID, ResourceTypeSolution, ActionUseSolution), ErrTypeValidation)
+			reason := fmt.Errorf("%w: role %s does not permit %s:%s, so a grant of it would expose nothing",
+				ErrRoleDoesNotExposeSolution, roleID, ResourceTypeSolution, ActionUseSolution)
+			if why != "" {
+				reason = fmt.Errorf("%w (the installation's standing role was granted because %s)", reason, why)
+			}
+			return NewStoreError(reason, ErrTypeValidation)
 		}
 		out.Grant, err = s.grantScopeTx(ctx, actorID, &gen.GrantScopeRequest{
 			OrgId:       orgID,

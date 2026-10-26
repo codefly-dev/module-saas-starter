@@ -254,3 +254,35 @@ func seedActiveGrant(t *testing.T, orgID, actorID, grantorID string) string {
 	}))
 	return id
 }
+
+// A module's hop records the binding it went through and the scope set it was
+// issued under, and the journal answers both back; a hop recorded with none
+// (an agent's) is absent from the answer, and a half-recorded one is refused.
+func TestActorChainJournal_RecordsTheBindingAHopWentThrough(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	agent := seedAgentPrincipal(t, orgID, "ci.test/agent:0.1.0")
+
+	plain := newRootHopInput(orgID, owner, agent.ID)
+	_, err := testStore.AppendActorChainHop(testCtx, plain)
+	require.NoError(t, err)
+
+	through := newRootHopInput(orgID, owner, agent.ID)
+	through.ActorKind = "service"
+	through.OperationBindingID, through.Operation = orgID+"/tools/records", "lookup"
+	hop, err := testStore.AppendActorChainHop(testCtx, through)
+	require.NoError(t, err)
+	require.Equal(t, business.HopContentHash(through, ""), hop.HopHash)
+	require.NotEqual(t, business.HopContentHash(plain, ""), business.HopContentHash(through, ""))
+
+	bindings, err := testStore.ActorChainHopBindings(testCtx, orgID, []string{plain.ID, through.ID})
+	require.NoError(t, err)
+	require.Equal(t, map[string]business.ActorChainHopBinding{
+		through.ID: {BindingID: orgID + "/tools/records", Operation: "lookup", GrantedScopes: through.GrantedScopes},
+	}, bindings)
+
+	half := newRootHopInput(orgID, owner, agent.ID)
+	half.OperationBindingID = orgID + "/tools/records"
+	_, err = testStore.AppendActorChainHop(testCtx, half)
+	require.Error(t, err, "a binding recorded without the scope set it was issued under")
+}

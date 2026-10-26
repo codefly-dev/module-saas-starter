@@ -35,9 +35,12 @@ import (
 // which workloads a principal runs as is the applied module manifest's, and
 // "only approved images run" is deploy-time admission, outside this host.
 //
-// WHAT IT IS NOT. It is not the registry. The registry is DERIVED each
-// reconcile pass from the applied module manifests and this ceiling
-// (module_principal_reconcile.go): a principal is in it only while both say so —
+// WHAT IT IS NOT. It is not the registry, and it is not required. The
+// registry is DERIVED each reconcile pass from the applied module manifests
+// (module_principal_reconcile.go), and the ceiling is the manifest: a host no
+// envelope was written to grants each signed manifest what it asks for, so a
+// composition runs with no hand-written authority. Where an envelope IS
+// written it narrows: a principal is in the registry only while both say so —
 // a signed manifest asks for it AND this envelope allows it — and it holds the
 // intersection of the two, never more than either.
 
@@ -535,6 +538,12 @@ func (s *Service) moduleRegistrySnapshot() *installedModuleRegistry {
 // Where no envelope store is wired (a registry stated directly by a test)
 // there is no committed revision to compare with.
 func (s *Service) fenceModuleRegistrySnapshot(ctx context.Context, snapshot *installedModuleRegistry) error {
+	if snapshot.manifestDerived {
+		if err := s.fenceManifestGenerations(ctx, snapshot); err != nil {
+			return err
+		}
+	}
+
 	if s.moduleEnvelopes == nil {
 		return nil
 	}
@@ -692,28 +701,20 @@ func installationTenancyAllowed(envelope *ModuleEnvelope, principalID, orgID str
 // narrowing.
 //
 // A pure grant is exactly this, against the envelope in force: every principal
-// is still there with a section that is the same JSON value, every other
-// top-level key is the same JSON value, and no installation loses its
-// organization. What may differ is the revision and whole principals that were
-// added.
+// is still there and holds at least what it held (moduleEnvelopeOnlyAdds), and
+// no installation loses its organization. What may differ is the revision,
+// whole principals that were added, and authority added to a principal that
+// was kept.
 //
-// A principal's section is compared member by member, and only ADDED members
-// are a gain (jsonOnlyGains): the deny-by-default lists — queues, namespaces,
-// external namespaces, resources, the four scope lists of an operation
-// audience — grant nothing until they name it, so a member appearing there
-// widens. Everything else is a narrowing, whatever changed, because the schema
-// does not let changed JSON mean more authority: a resource list that appears
-// narrows an audience that was unrestricted, a required kind that appears
-// refuses artifacts that passed, and a tenant that is set removes every other
-// organization. The one member that is an addition AND a narrowing is that
-// tenant, which is why apply re-checks every active installation against the
-// new ceiling (errModuleEnvelopeNarrowsAfterAll) rather than trusting this
-// classification alone. A comparison that tried to tell each case apart field
-// by field would be a second copy of every rule that reads the envelope, wrong
-// whenever one of them moved.
+// The tenant is the one addition that is also a narrowing — a tenant set
+// removes every other organization — which is why apply re-checks every active
+// installation against the new ceiling (errModuleEnvelopeNarrowsAfterAll)
+// rather than trusting this classification alone.
 //
-// A host with no envelope has granted nothing, so its first envelope narrows
-// nothing an envelope granted; installations are still checked.
+// A host with no envelope has granted each applied manifest what it asks for
+// (the ceiling is the manifest), so a first envelope over any manifest that
+// asks for authority is a narrowing; over none, it narrows nothing and only
+// the installations are checked.
 func (s *Service) moduleEnvelopeNarrows(ctx context.Context, next *ModuleEnvelope, nextDocument []byte) (bool, error) {
 	narrows := false
 	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -724,6 +725,16 @@ func (s *Service) moduleEnvelopeNarrows(ctx context.Context, next *ModuleEnvelop
 		if current != nil && !moduleEnvelopeOnlyAdds(current.Document, nextDocument) {
 			narrows = true
 			return nil
+		}
+		if current == nil {
+			applied, err := s.store.ListSolutionHostBindings(ctx)
+			if err != nil {
+				return err
+			}
+			if len(AppliedAuthorityRequests(applied)) > 0 {
+				narrows = true
+				return nil
+			}
 		}
 		// Inside the control plane, like the apply's own read: outside it a
 		// row policy hides every installation, and the answer is "none lose
@@ -743,142 +754,70 @@ func (s *Service) moduleEnvelopeNarrows(ctx context.Context, next *ModuleEnvelop
 	return narrows, err
 }
 
-// moduleEnvelopeOnlyAdds reports that after is before plus whole principals,
-// and nothing else: see moduleEnvelopeNarrows. Anything
-// it cannot read as that — a document that does not decode, a key it does not
-// know — is not an addition.
+// moduleEnvelopeOnlyAdds reports that after keeps every principal before holds,
+// each with at least the authority it had (moduleGrantOnlyGains), and may add
+// principals. A document it cannot decode as an envelope, a key the envelope
+// does not have among them, is not an addition.
+//
+// The documents are decoded, not validated: the revision in force was
+// validated when it was written, the next one before this is asked, and a rule
+// that later tightened is the registry derivation's to apply, not this
+// classification's to refuse.
 func moduleEnvelopeOnlyAdds(before, after []byte) bool {
-	was, ok := envelopeTopLevel(before)
+	was, ok := decodeModuleEnvelopeWire(before)
 	if !ok {
 		return false
 	}
-	is, ok := envelopeTopLevel(after)
+	is, ok := decodeModuleEnvelopeWire(after)
 	if !ok {
 		return false
 	}
-	for key := range was {
-		if _, kept := is[key]; !kept {
-			return false
-		}
-	}
-	for key, value := range is {
-		switch key {
-		case "revision":
-		case "principals":
-			if !envelopePrincipalsKept(was[key], value) {
-				return false
-			}
-		default:
-			previous, existed := was[key]
-			if !existed || !sameJSONValue(previous, value) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func envelopeTopLevel(document []byte) (map[string]json.RawMessage, bool) {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(document, &top); err != nil || top == nil {
-		return nil, false
-	}
-	return top, true
-}
-
-func envelopePrincipalsKept(before, after json.RawMessage) bool {
-	var was, is map[string]json.RawMessage
-	if len(before) > 0 && json.Unmarshal(before, &was) != nil {
-		return false
-	}
-	if len(after) > 0 && json.Unmarshal(after, &is) != nil {
-		return false
-	}
-	for prefix, section := range was {
-		kept, exists := is[prefix]
-		if !exists || !envelopeDelegationModesKept(section, kept) || !jsonOnlyGains(section, kept) {
+	for prefix, principal := range was.Principals {
+		kept, exists := is.Principals[prefix]
+		if !exists || !moduleGrantOnlyGains(principal.Grant.grant(prefix), kept.Grant.grant(prefix)) {
 			return false
 		}
 	}
 	return true
 }
 
-// Changing an existing binding's credential semantics is never a pure grant.
-// In particular, adding content_read restricts ordinary owner-only exchanges,
-// although adding an object field would otherwise look additive to JSON.
-func envelopeDelegationModesKept(before, after json.RawMessage) bool {
-	var was, is ModuleEnvelopePrincipal
-	if json.Unmarshal(before, &was) != nil || json.Unmarshal(after, &is) != nil {
-		return false
+func decodeModuleEnvelopeWire(document []byte) (moduleEnvelopeWire, bool) {
+	decoder := json.NewDecoder(bytes.NewReader(document))
+	decoder.DisallowUnknownFields()
+	var wire moduleEnvelopeWire
+	if err := decoder.Decode(&wire); err != nil || decoder.More() {
+		return moduleEnvelopeWire{}, false
 	}
-	for id, binding := range was.Grant.OperationAudiences {
-		if current, ok := is.Grant.OperationAudiences[id]; !ok || current.DelegationMode != binding.DelegationMode {
-			return false
-		}
-	}
-	return true
+	return wire, true
 }
 
-// jsonOnlyGains reports that after is before with MEMBERS ADDED and nothing
-// else: every object key before holds is still there holding the same value,
-// recursively, and after may carry keys before did not.
+// moduleGrantOnlyGains reports that a kept principal loses nothing: what an
+// installation may hold of it (its queues, namespaces, resources, read and
+// operation audiences, artifact approvals) fits within what it holds next, by
+// the one rule this host already holds an installation's consent to its
+// ceiling with (InstallationScopeWithin); its tenant is unchanged and a
+// cross-tenant grant is kept; and every binding it had keeps its delegation
+// mode.
 //
-// It is what lets a principal be widened without a witness. The rule this
-// serves is the one stated above — a write that grants, and that no
-// installation loses anything by, is not a narrowing — and a principal that
-// gains an arm of a binding it already had loses nobody anything: a restore
-// that undid it would leave LESS authority, which is the fail-closed
-// direction. Before this, such a write was classified a narrowing purely
-// because the principal's section was not byte-identical, so on a host with no
-// policy log (there is none: the warehouse cannot issue the receipt the
-// protocol requires) the only writable change was a whole new principal. A
-// module missing one arm of its ceiling could not be corrected at all.
+// Reusing that rule is what lets a gain be told from a change without a second
+// copy of the envelope's semantics: a resource kind added to an allowlist, an
+// action added to a binding's scope, a binding's resource ids widened or
+// dropped (every resource) are gains there, so they are gains here; a kind
+// removed, an audience retargeted, resource ids appearing on a scope that had
+// none, or an artifact approval changed are not, there or here.
 //
-// It stays deliberately narrow. An ARRAY must be identical, so adding an
-// action to a list of them, or a resource id to a scope, is still a narrowing
-// to be witnessed: an array's members are not independent — reordering,
-// replacing or extending one can change what the whole means — and this
-// cannot tell those apart. Only a member that did not exist is free.
-func jsonOnlyGains(before, after json.RawMessage) bool {
-	if sameJSONValue(before, after) {
-		return true
-	}
-	var was, is map[string]json.RawMessage
-	if json.Unmarshal(before, &was) != nil || json.Unmarshal(after, &is) != nil {
-		// Not both objects: anything but an exact match is a change, not a gain.
+// The delegation mode is outside that rule because it is not authority an
+// installation consents to but how the binding's credential is exchanged:
+// content_read restricts ordinary owner-only exchanges, so any change to it is
+// witnessed.
+func moduleGrantOnlyGains(was, is ModulePrincipalGrant) bool {
+	if was.Tenant != is.Tenant || was.CrossTenant && !is.CrossTenant {
 		return false
 	}
-	for key, value := range was {
-		kept, exists := is[key]
-		if !exists || !jsonOnlyGains(value, kept) {
+	for id, binding := range was.OperationAudiences {
+		if kept, ok := is.OperationAudiences[id]; !ok || kept.DelegationMode != binding.DelegationMode {
 			return false
 		}
 	}
-	return true
-}
-
-// sameJSONValue reports that two encodings are one JSON value: key order and
-// whitespace aside, every member, element and number literal equal. Numbers
-// are compared as written, so two revisions past 2^53 that a float would fold
-// together stay different.
-func sameJSONValue(a, b json.RawMessage) bool {
-	canonical := func(raw json.RawMessage) ([]byte, bool) {
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		var value any
-		if err := decoder.Decode(&value); err != nil {
-			return nil, false
-		}
-		if decoder.More() {
-			return nil, false
-		}
-		encoded, err := json.Marshal(value)
-		return encoded, err == nil
-	}
-	left, ok := canonical(a)
-	if !ok {
-		return false
-	}
-	right, ok := canonical(b)
-	return ok && bytes.Equal(left, right)
+	return InstallationScopeWithin(FullInstallationScope(was), FullInstallationScope(is))
 }

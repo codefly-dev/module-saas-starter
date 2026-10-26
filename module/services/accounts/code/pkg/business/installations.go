@@ -14,11 +14,17 @@ import (
 // solution scope node, standing grant, and installation row are created together
 // in one transaction; see InstallationStore.InstallSolution.
 type InstallSolutionParams struct {
+	ApprovalReplayed    bool `json:"-"`
+	Approval            *InstallationApproval
 	Kind                string
 	RegistryBindingID   string
 	RegistryPrincipalID string
 	Scope               *InstallationScope
-	EnvelopeRevision    uint64
+	// ModuleCeiling is resolved by prepareInstallation, never from the request.
+	// Re-consent may approve this current ceiling; partial reductions use the
+	// witnessed NarrowInstallation lifecycle instead.
+	ModuleCeiling    *InstallationScope
+	EnvelopeRevision uint64
 	// InstallerPrincipalID records ownership for bounded nonhuman reconciliation.
 	InstallerPrincipalID string
 	OrgID                string
@@ -119,10 +125,16 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	w := wool.Get(ctx).In("InstallSolution",
 		wool.Field("org_id", params.OrgID),
 		wool.Field("target_id", params.TargetID))
-	params.GrantedBy = actorID
-	if params.OwnerPrincipalID == "" {
-		params.OwnerPrincipalID = actorID
+	// Bind the original intent before prepareInstallation fills mutable defaults.
+	approval, approvalErr := params.Approval.bindIntent(struct {
+		Actor  string
+		Params *InstallSolutionParams
+	}{actorID, params})
+	if approvalErr != nil {
+		return nil, approvalErr
 	}
+	params.Approval = approval
+	params.GrantedBy = actorID
 	// Composing at the store level (one transaction) skips the friendly
 	// Principal.Validate() check the CreateAgentPrincipal domain path runs, so a
 	// malformed identifier would otherwise surface as an opaque DB CHECK violation
@@ -148,6 +160,9 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	if err != nil {
 		return nil, err
 	}
+	if params.OwnerPrincipalID == "" {
+		params.OwnerPrincipalID = actorID
+	}
 	// The ceiling may only name audiences this host actually serves (issue #952).
 	// `allowed_audiences` used to be free text, so an installation could name a
 	// consumer that does not exist and then mint for it — the audience is what
@@ -168,6 +183,9 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		installation, e = s.installationStore().InstallSolution(ctx, params)
 		if e != nil {
 			return e
+		}
+		if params.ApprovalReplayed {
+			return nil
 		}
 		// Publish installation.created in the same transaction (outbox). The
 		// boundary is the solution scope node the install just composed.

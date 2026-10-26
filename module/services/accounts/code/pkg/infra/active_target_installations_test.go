@@ -1,3 +1,5 @@
+//go:build !pure
+
 package infra_test
 
 import (

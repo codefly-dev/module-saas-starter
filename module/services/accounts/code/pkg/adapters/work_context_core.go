@@ -56,6 +56,10 @@ type workContextSealAnswers interface {
 type hostSealSource struct {
 	answers workContextSealAnswers
 	tenant  string
+	// owner is the owner of the capability being minted or checked, on the
+	// same terms as the tenant. It decides one thing: how a module's installed
+	// operation binding names the module it is granted to (OperationBinding).
+	owner string
 }
 
 func (s hostSealSource) Seal(ctx context.Context, principalID, installationID string) (workcontext.Seal, error) {
@@ -93,9 +97,30 @@ func (s hostSealSource) OperationBinding(ctx context.Context, bindingID string) 
 		return workcontext.OperationBinding{}, err
 	}
 	return workcontext.OperationBinding{
-		ID: live.ID, PrincipalID: live.PrincipalID, InstallationID: live.InstallationID,
+		ID: live.ID, PrincipalID: s.grantee(live), InstallationID: live.InstallationID,
 		Revision: live.Revision, Incarnation: live.Incarnation, Revoked: live.Revoked,
 	}, nil
+}
+
+// grantee is the principal a binding is granted to, spelled as the capability
+// names the module exercising it, and core holds the exercising principal to it
+// by equality.
+//
+// A module's installed operation binding is exercised two ways, and each names
+// the module one way only. A hop through it, which a person's or an
+// installation's capability carries, names its actor by the module's NAME, as
+// the host interface states an actor; that is the answer. The module's own
+// headless context (StartModuleOperationTask) is OWNED by the module, and its
+// owner is the module's registry id, the spelling the consumer contract
+// (CheckAuthorizationRevision) types an owner in; that context is answered in
+// its owner's spelling, exactly when the owner is this binding's module.
+// Another module, by either spelling, matches neither answer and is refused by
+// core; so is a hop naming this module by its registry id.
+func (s hostSealSource) grantee(live business.WorkContextOperationBinding) string {
+	if live.ModuleRegistryID != "" && s.owner == live.ModuleRegistryID {
+		return s.owner
+	}
+	return live.PrincipalID
 }
 
 var _ workcontext.SealSource = hostSealSource{}
@@ -172,7 +197,7 @@ func (noApprovalGrants) Grant(context.Context, string) (*workcontext.Grant, erro
 func (s *WorkContextAuthorityServer) moduleAuthoritySources(
 	tenant, owner string,
 ) (workcontext.SealSource, workcontext.RevisionSource, workcontext.GrantSource) {
-	return hostSealSource{answers: s.seals, tenant: tenant},
+	return hostSealSource{answers: s.seals, tenant: tenant, owner: owner},
 		ownerRevisions{answers: s.seals, owner: owner},
 		noApprovalGrants{}
 }
@@ -184,7 +209,7 @@ func (s *WorkContextAuthorityServer) coreAuthority(tenant, owner string) *workco
 		KeyID:     s.keyID,
 		Key:       s.key,
 		Revisions: ownerRevisions{answers: s.seals, owner: owner},
-		Seals:     hostSealSource{answers: s.seals, tenant: tenant},
+		Seals:     hostSealSource{answers: s.seals, tenant: tenant, owner: owner},
 		MaxTTL:    workcontext.DefaultMaxTTL,
 		Now:       s.now,
 	}
@@ -200,7 +225,7 @@ func (s *WorkContextAuthorityServer) coreVerifier(tenant, owner, audience string
 		Revisions: ownerRevisions{answers: s.seals, owner: owner},
 		Replay:    tenantReplay{store: s.replay, tenant: tenant},
 		Grants:    noApprovalGrants{},
-		Seals:     hostSealSource{answers: s.seals, tenant: tenant},
+		Seals:     hostSealSource{answers: s.seals, tenant: tenant, owner: owner},
 		Now:       s.now,
 	}
 }
@@ -318,8 +343,14 @@ type mintRequest struct {
 	// Never a caller-named value — see core's ChildInput.SessionID for why a
 	// pairing on the session holds only while that is true.
 	Session string
-	Replay  string
-	TTL     time.Duration
+	// DerivedFrom is the session of a verified capability this chain is
+	// re-derived from (a child re-built from its parent's owner). The
+	// capability the last hop is derived from carries it, so the one returned
+	// descends from that parent (its parent_session_id), as a caller holding the
+	// parent checks. Like Session, only ever the issuer's own value.
+	DerivedFrom string
+	Replay      string
+	TTL         time.Duration
 }
 
 // mint issues a capability through core's Authority.
@@ -347,6 +378,9 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 		return authority.Start(ctx, start)
 	}
 	start.SessionID = ""
+	if len(request.Hops) == 1 {
+		start.SessionID = request.DerivedFrom
+	}
 	start.ReplayPolicy = workcontext.ReplayIdempotent
 	start.TTL = ttl
 	token, _, err := authority.Start(ctx, start)
@@ -371,6 +405,9 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 			// A hop naming none carries its parent's, which for the owner's
 			// session is none.
 			OperationBindingID: hop.OperationBindingID,
+		}
+		if i == len(request.Hops)-2 {
+			child.SessionID = request.DerivedFrom
 		}
 		if i == len(request.Hops)-1 {
 			child.SessionID = request.Session

@@ -11,20 +11,21 @@ import (
 	"testing"
 	"time"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/auth/egresstest"
 )
 
 func TestGuardDial_RefusesEveryNonPublicRange(t *testing.T) {
 	for _, tc := range egresstest.Refused {
 		t.Run(tc.Name, func(t *testing.T) {
-			if err := guardDial("tcp", tc.DialAddress(), nil); !errors.Is(err, ErrBlockedAddress) {
+			if err := guardDial(tc.DialAddress())("tcp", tc.DialAddress(), nil); !errors.Is(err, ErrBlockedAddress) {
 				t.Fatalf("guardDial(%q) = %v, want ErrBlockedAddress", tc.DialAddress(), err)
 			}
 		})
 	}
 	for _, tc := range egresstest.Unclassifiable {
 		t.Run(tc.Name, func(t *testing.T) {
-			if err := guardDial("tcp", tc.Address, nil); !errors.Is(err, ErrBlockedAddress) {
+			if err := guardDial(tc.Address)("tcp", tc.Address, nil); !errors.Is(err, ErrBlockedAddress) {
 				t.Fatalf("guardDial(%q) = %v, want ErrBlockedAddress", tc.Address, err)
 			}
 		})
@@ -34,7 +35,7 @@ func TestGuardDial_RefusesEveryNonPublicRange(t *testing.T) {
 func TestGuardDial_AdmitsPublicAddresses(t *testing.T) {
 	for _, tc := range egresstest.Admitted {
 		t.Run(tc.Name, func(t *testing.T) {
-			if err := guardDial("tcp", tc.DialAddress(), nil); err != nil {
+			if err := guardDial(tc.DialAddress())("tcp", tc.DialAddress(), nil); err != nil {
 				t.Fatalf("guardDial(%q) = %v, want admitted", tc.DialAddress(), err)
 			}
 		})
@@ -63,7 +64,7 @@ func TestEveryOutboundDialIsGuarded(t *testing.T) {
 	}
 	recorder := &egresstest.Recorder{}
 	saved := dialControl
-	dialControl = recorder.Wrap(guardDial)
+	dialControl = func(requested string) auth.DialControl { return recorder.Wrap(guardDial(requested)) }
 	t.Cleanup(func() { dialControl = saved })
 
 	origin := live.URL
@@ -121,4 +122,34 @@ func TestEveryOutboundDialIsGuarded(t *testing.T) {
 	if n := reached.Load(); n != 0 {
 		t.Fatalf("live listener was reached %d times", n)
 	}
+}
+
+// Every outbound path applies the egress rule's mesh admission end to end: a
+// declared host a meshed cell resolves into its mesh egress range is dialled,
+// and every case around it is refused (egresstest.MeshCases). DNS is a fake
+// and an admitted dial is stopped before it connects.
+func TestEveryOutboundPathAppliesTheMeshEgressRule(t *testing.T) {
+	egresstest.RunMeshCases(t, []egresstest.MeshPath{
+		{Name: "operation dial (Do)", Call: func(ctx context.Context, origin string) error {
+			_, err := New(Config{BaseURL: origin, CredentialKind: CredentialKindBearer}, "example-token").
+				Do(ctx, http.MethodPost, origin+"/v1/items", []byte(`{}`))
+			return err
+		}},
+		{Name: "operation dial (Fetch)", Call: func(ctx context.Context, origin string) error {
+			_, err := New(Config{BaseURL: origin, ResourcePath: "/v1/items", CredentialKind: CredentialKindBearer}, "example-token").
+				Fetch(ctx)
+			return err
+		}},
+		{Name: "token exchange (client credentials)", Call: func(ctx context.Context, origin string) error {
+			_, err := ClientCredentials(ctx, OAuth2Config{TokenURL: origin + "/token"}, "example-client", "example-secret")
+			return err
+		}},
+	}, ErrBlockedAddress, func(t *testing.T, c egresstest.MeshCase) *egresstest.Recorder {
+		recorder := &egresstest.Recorder{}
+		savedControl, savedResolver := dialControl, dialResolver
+		dialControl = func(requested string) auth.DialControl { return recorder.Wrap(guardDial(requested)) }
+		dialResolver = c.Resolver()
+		t.Cleanup(func() { dialControl, dialResolver = savedControl, savedResolver })
+		return recorder
+	})
 }

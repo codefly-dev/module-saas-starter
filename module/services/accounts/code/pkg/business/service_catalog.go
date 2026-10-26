@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -53,11 +54,18 @@ func BuildServiceCatalog() (*catalogv1.ServiceCatalog, error) {
 		}
 		seenProcedures[rpc.FullMethod] = struct{}{}
 
+		// The catalog has one API package, the service's own, and may carry the
+		// packages of the published interfaces the service implements beside it.
 		apiPackage := packageName(rpc.FullService)
-		if catalog.ApiPackage == "" {
+		switch {
+		case apiPackage == ServiceAPIPackage:
 			catalog.ApiPackage = apiPackage
-		} else if catalog.ApiPackage != apiPackage {
-			return nil, fmt.Errorf("procedure %q belongs to package %q, catalog package is %q", rpc.FullMethod, apiPackage, catalog.ApiPackage)
+		case interfacePackage(apiPackage):
+			if !slices.Contains(catalog.InterfacePackages, apiPackage) {
+				catalog.InterfacePackages = append(catalog.InterfacePackages, apiPackage)
+			}
+		default:
+			return nil, fmt.Errorf("procedure %q belongs to package %q, which is neither the API package %q nor an implemented interface", rpc.FullMethod, apiPackage, ServiceAPIPackage)
 		}
 
 		httpBindings := make([]*catalogv1.HTTPBinding, 0, len(rpc.HTTPBindings))
@@ -250,8 +258,8 @@ func ValidateServiceCatalog(catalog *catalogv1.ServiceCatalog) error {
 		if method.GetProcedure() != "/"+method.GetFullService()+"/"+method.GetMethod() {
 			return fmt.Errorf("procedure %q does not match its service and method identity", method.GetProcedure())
 		}
-		if packageName(method.GetFullService()) != catalog.GetApiPackage() {
-			return fmt.Errorf("procedure %q does not belong to API package %q", method.GetProcedure(), catalog.GetApiPackage())
+		if pkg := packageName(method.GetFullService()); pkg != catalog.GetApiPackage() && !slices.Contains(catalog.GetInterfacePackages(), pkg) {
+			return fmt.Errorf("procedure %q does not belong to API package %q or an implemented interface package", method.GetProcedure(), catalog.GetApiPackage())
 		}
 		if method.GetOwner().GetModule() != catalog.GetOwner().GetModule() ||
 			method.GetOwner().GetService() != catalog.GetOwner().GetService() {
