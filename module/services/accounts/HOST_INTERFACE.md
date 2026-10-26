@@ -1320,8 +1320,8 @@ reds are contracts this host does not serve: composition 0.2.0's
 cases), installation 0.2.0's `ListRoleGrants` and review, an absent
 installation answered as `PermissionDenied`, and the installation-owned
 resources case. The harness therefore stays on the suite's 0.2 revision
-(`6870db87`, 52 of 52 locally on this branch) and adds the admission-key case
-over the listener (`the hop's registered admission key is published in Keys`).
+(`6870db87`) and adds the admission-key case over the listener (`the hop's
+registered admission key is published in Keys`): 53 of 53 pass on this branch.
 
 **Labelled stopgap.** The authority client stays at `fff5385f`: the suite
 revision the harness pins does not build against the client at `49101ae1`
