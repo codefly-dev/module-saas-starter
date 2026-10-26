@@ -927,4 +927,50 @@ The shared suite now reports **40 of 45 shared cases passing, 5 failing**
 | --- | --- |
 | a delegation issues as its grantor | implement `Delegate`, `GetDelegation`, `RevokeDelegation` and Issue from a delegation |
 | a module tool binding carries the person's role; child target projection | a hop's actor is the module's name, not its registry principal id: every reader of a hop principal (seal, epoch and binding answers, the journal, solution-role paths) must resolve the name |
-| an installation acts for itself; an installation owner survives | an installation's capability is owned by its agent, not by its human owner of record, and a hop from it inherits the installation's standing grants |
+| an installation owner survives | (owner done, see below) the hop's actor is the module's name: decision 1 above |
+
+## An installation owns its capability as its agent (2026-10-26)
+
+On the coordinator's decision: an installation acting for itself is the
+owner of what it is issued. No person is acting, so the human owner of
+record is no longer named.
+
+- **The issue.** `forInstallation` mints through the same headless path with
+  `ownedByAgent`: the owner is the installation's agent principal, its kind
+  is `agent`, `owner_agent_id` is the agent identifier, there is no actor
+  hop and no team attribution. The internal `StartInstallationTask` and the
+  install step keep their shape (owner of record, agent acting): a person put
+  that work in motion.
+- **Seal and revision.** The row-backed seal reads let an agent stand in its
+  organisation while its installation does (`standsInOrganization`): the
+  installation is active, the agent is neither revoked nor disabled, and an
+  owner or co-owner is still an organisation admin. The agent then holds the
+  organisation's installations and carries the greater of the organisation's
+  revision and its own, so core's check revokes the capability when any of
+  these ends.
+- **Check and ListResources** re-verify an agent-owned capability
+  (`requireInstallationStands`). The agent must still act for one active
+  installation, that installation's authority must still resolve, and its
+  standing grants must still admit what the capability carries. A standing
+  grant can narrow without moving any revision, which is why this re-read is
+  needed. A removed owner is now `PermissionDenied`, a decision, where it
+  used to be `Internal`. That applies to a person who left as well.
+- **Hops.** Rule A reads the installation's standing grants the way it reads a
+  person's current grants. Through the binding, a child carries what those
+  grants admit at the audience, within the agent's kind ceiling. The parent
+  is re-verified first. The child stays owned by the agent, and narrowing is
+  never recovered.
+- **Harness.** The installation the suite refuses at an unrelated module is
+  now `conformance-proposals`. `conformance-pages` cannot serve: its viewer
+  role grants `example-records:write`, so `documents` is related to it, and
+  the local authority would grant that too.
+
+Suite at `3222e991`: **41 of 45 shared pass** (43/47 with the harness cases).
+"an installation acts for itself" is green. "an installation owner survives"
+now passes the agent-owned root and the first hop's owner, kind, agent,
+tenant, task, session and expiry checks. It stops on that hop's
+`actor_chain[0].principal_id`, which is the registry uuid (decision 1), so the
+suite has not reached the second and third hops yet. The unit test
+`TestAHopFromAnInstallationOwnedParentInheritsTheInstallationsStandingGrants`
+covers two agent-owned hops.
+
