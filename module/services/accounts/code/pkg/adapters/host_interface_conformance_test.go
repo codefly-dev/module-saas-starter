@@ -421,6 +421,42 @@ func runHostInterfaceFixture(t *testing.T) {
 			Lifecycle: &conformance.InstallationLifecycleCase{
 				Target: "conformance-lifecycle", Credential: credential("conformance-lifecycle"), Kind: "conformance-lifecycle.page",
 				Team: teamNamed(t, ctx, svc, fixtureOrganization, "Finance"),
+				Review: func(ctx context.Context, org, target string) (proto.Message, error) {
+					baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+					catalogue := accountsv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
+					installations := installationv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
+					authorization, _ := metadata.FromOutgoingContext(ctx)
+					read := connect.NewRequest(&installationv1.ListRequest{OrganizationId: org})
+					read.Header().Set("Authorization", strings.Join(authorization.Get("authorization"), ""))
+					held, err := installations.List(ctx, read)
+					if err != nil {
+						return nil, err
+					}
+					approval := &installationv1.ConsentApproval{}
+					for _, installation := range held.Msg.GetInstallations() {
+						if installation.GetTarget() == target {
+							approval.ExpectedRevision = installation.GetRevision()
+						}
+					}
+					for token := ""; ; {
+						request := connect.NewRequest(&gen.ListAvailableSolutionsRequest{OrgId: org, PageToken: token})
+						request.Header().Set("Authorization", read.Header().Get("Authorization"))
+						offers, err := catalogue.ListAvailableSolutions(ctx, request)
+						if err != nil {
+							return nil, err
+						}
+						for _, offer := range offers.Msg.GetSolutions() {
+							if offer.GetRouteAlias() == target {
+								approval.TargetId, approval.Generation = offer.GetTargetId(), offer.GetAppliedGeneration()
+								return approval, nil
+							}
+						}
+						token = offers.Msg.GetNextPageToken()
+						if token == "" {
+							return nil, fmt.Errorf("installation review: target %q is absent from the organization's catalogue", target)
+						}
+					}
+				},
 				PauseInstall: func() func() {
 					var once sync.Once
 					return func() { once.Do(func() { require.NoError(t, acknowledgeInstallSteps(ctx, svc)) }) }
