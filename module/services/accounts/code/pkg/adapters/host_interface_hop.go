@@ -52,14 +52,14 @@ import (
 func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, parent *workcontext.Verified, req *authorityv1.IssueRequest) (*gen.IssuedWorkContext, error) {
 	claims := parent.Context()
 	tenant, owner := claims.GetTenantId(), claims.GetOwnerPrincipalId()
-	actor := business.ModulePrincipalID(prefix)
+	registered := business.ModulePrincipalID(prefix)
 	bindingID := req.GetOperationBindingId()
 	if kind := claims.GetOwnerPrincipalKind(); kind != business.PrincipalKindHuman && kind != business.PrincipalKindAgent {
 		return nil, status.Errorf(codes.PermissionDenied, "a hop through a binding inherits its owner's current grants, which this host reads for a person or an installation's agent; this context is owned by a %s", kind)
 	}
 	// The binding as installed in this organisation: an installation narrows
 	// its declaration, and a headless-only binding does nothing as a person.
-	installed, err := service.ModuleOperationAudience(ctx, business.ModuleCaller{PrincipalID: actor, BoundOrg: tenant}, tenant, prefix, bindingID)
+	installed, err := service.ModuleOperationAudience(ctx, business.ModuleCaller{PrincipalID: registered, BoundOrg: tenant}, tenant, prefix, bindingID)
 	if err != nil {
 		return nil, interfaceStatus(err)
 	}
@@ -194,6 +194,12 @@ func (s *WorkContextAuthorityServer) requireParentStands(ctx context.Context, pa
 // narrowings of every other kind; the parent's actors replayed; then the
 // acting module's hop exercising the binding, granted scopes. It never
 // outlives its parent and descends from the parent's session.
+//
+// The acting module is named by its NAME, as the interface states an actor
+// and as the binding it exercises is granted (<organisation>/<module>/<binding>
+// is answered as granted to <module>): core refuses a hop whose actor is not
+// the binding's, so the name is what makes the hop verify and what keeps one
+// module from exercising another's binding.
 func (s *WorkContextAuthorityServer) mintBindingHop(
 	ctx context.Context, parent *basev0.WorkContextV1, prefix, bindingID, audience string,
 	scopes, carried []*basev0.WorkScopeV1, ttl time.Duration,
@@ -204,7 +210,7 @@ func (s *WorkContextAuthorityServer) mintBindingHop(
 		return nil, err
 	}
 	tenant := parent.GetTenantId()
-	actor := business.ModulePrincipalID(prefix)
+	actor := prefix
 	sealed := business.ModuleOperationBindingID(tenant, prefix, bindingID)
 	binding, err := s.seals.WorkContextOperationBinding(ctx, tenant, sealed)
 	switch {
@@ -212,6 +218,11 @@ func (s *WorkContextAuthorityServer) mintBindingHop(
 		return nil, status.Errorf(codes.PermissionDenied, "operation binding %q is not installed for %s in this organisation", bindingID, actor)
 	case err != nil:
 		return nil, mapWorkContextError(ctx, err)
+	case binding.PrincipalID != actor:
+		// The binding the hop seals is granted to the module acting, by name,
+		// or the hop is not signed at all: core would refuse it, and a host
+		// that signed it would be one disagreement away from accepting it.
+		return nil, status.Errorf(codes.PermissionDenied, "operation binding %q is granted to %s, not %s", bindingID, binding.PrincipalID, actor)
 	}
 	now := time.Now()
 	if s.now != nil {

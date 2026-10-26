@@ -127,7 +127,7 @@ func TestAHopThroughABindingCarriesTheOwnersCurrentGrantsWithinIt(t *testing.T) 
 	require.Equal(t, hopOwner, wc.GetOwnerPrincipalId())
 	require.Equal(t, "documents", wc.GetAudience())
 	require.Len(t, wc.GetActorChain(), 1)
-	require.Equal(t, business.ModulePrincipalID("tools"), wc.GetActorChain()[0].GetPrincipalId())
+	require.Equal(t, "tools", wc.GetActorChain()[0].GetPrincipalId())
 	require.Equal(t, moduleWorkContextTenant+"/tools/records", wc.GetOperationBinding().GetBindingId())
 	require.Equal(t, parentClaims.GetSessionId(), wc.GetParentSessionId())
 	requireScopes(t, []*basev0.WorkScopeV1{hopScope("example-records", []string{"read"})}, wc.GetActorChain()[0].GetGrantedScopes())
@@ -136,7 +136,7 @@ func TestAHopThroughABindingCarriesTheOwnersCurrentGrantsWithinIt(t *testing.T) 
 
 	// The revision check confirms the hop by the binding it seals.
 	require.NoError(t, service.ConfirmModuleHopBinding(context.Background(), moduleWorkContextTenant,
-		business.ModulePrincipalID("tools"), wc.GetOperationBinding().GetBindingId(), operationScopesFromCore(wc.GetActorChain()[0].GetGrantedScopes())))
+		wc.GetActorChain()[0].GetPrincipalId(), wc.GetOperationBinding().GetBindingId(), operationScopesFromCore(wc.GetActorChain()[0].GetGrantedScopes())))
 }
 
 func TestAHopThroughABindingItsModuleDoesNotDeclareIsNotFound(t *testing.T) {
@@ -215,8 +215,8 @@ func TestANarrowingHoldsDownTheChain(t *testing.T) {
 	// The module the chain passed through stands while it is installed; the
 	// last hop is confirmed by its own binding.
 	sealed := wc.GetOperationBinding().GetBindingId()
-	require.NoError(t, service.ConfirmModuleHopBinding(context.Background(), moduleWorkContextTenant, business.ModulePrincipalID("tools"), sealed, operationScopesFromCore(wc.GetActorChain()[0].GetGrantedScopes())))
-	require.NoError(t, service.ConfirmModuleHopBinding(context.Background(), moduleWorkContextTenant, business.ModulePrincipalID("documents"), sealed, operationScopesFromCore(wc.GetActorChain()[1].GetGrantedScopes())))
+	require.NoError(t, service.ConfirmModuleHopBinding(context.Background(), moduleWorkContextTenant, wc.GetActorChain()[0].GetPrincipalId(), sealed, operationScopesFromCore(wc.GetActorChain()[0].GetGrantedScopes())))
+	require.NoError(t, service.ConfirmModuleHopBinding(context.Background(), moduleWorkContextTenant, wc.GetActorChain()[1].GetPrincipalId(), sealed, operationScopesFromCore(wc.GetActorChain()[1].GetGrantedScopes())))
 
 	_, err = f.hop(first.GetToken(), f.docs, "items", "tools", ask("tool.items", []string{"read"}, "t2"))
 	requireRefused(t, err, codes.PermissionDenied, "widens what its parent narrowed")

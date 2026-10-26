@@ -1666,6 +1666,11 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 // the ephemeral token share one identifier. Durability is a guarantee, not
 // best-effort: a failed append fails issuance rather than minting an
 // unaccountable token.
+//
+// The journal's principal columns are typed as ids, so a module actor the
+// token names by its name (a hop through a binding) is recorded under its
+// registry id: the same module, in the identity storage holds it by, instead of
+// a name the column cannot hold and would silently drop.
 func (s *WorkContextAuthorityServer) journalActorHop(
 	ctx context.Context,
 	signed *basev0.WorkContextV1,
@@ -1683,13 +1688,19 @@ func (s *WorkContextAuthorityServer) journalActorHop(
 	if index > 0 {
 		parentDelegationID = chain[index-1].GetDelegationId()
 	}
+	actorID := actor.GetPrincipalId()
+	if actor.GetPrincipalKind() == business.PrincipalKindService && service != nil {
+		if id, isModule := service.ModuleRegistryID(actorID); isModule {
+			actorID = id
+		}
+	}
 	_, err := s.journal.AppendActorChainHop(ctx, business.ActorChainHopInput{
 		ID:                    actor.GetDelegationId(),
 		OrgID:                 signed.GetTenantId(),
 		TaskID:                signed.GetTaskId(),
 		SessionID:             signed.GetSessionId(),
 		OwnerPrincipalID:      signed.GetOwnerPrincipalId(),
-		ActorPrincipalID:      actor.GetPrincipalId(),
+		ActorPrincipalID:      actorID,
 		ActorKind:             actor.GetPrincipalKind(),
 		ParentDelegationID:    parentDelegationID,
 		GrantedScopes:         actorChainScopes(actor.GetGrantedScopes()),
