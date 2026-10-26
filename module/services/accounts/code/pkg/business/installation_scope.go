@@ -2,6 +2,7 @@ package business
 
 import (
 	"bytes"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -105,6 +106,30 @@ func ResolveInstallationScope(scope, full InstallationScope) InstallationScope {
 		return full
 	}
 	return scope
+}
+
+// ErrModuleInstallationConsentRequired reports an installation that follows its
+// module's grant on a host with no administrative envelope: it was consented
+// while an envelope set the grant (or before the signed manifest became the
+// ceiling), so its organisation never consented to what the manifest alone now
+// asks for.
+var ErrModuleInstallationConsentRequired = errors.New("this installation follows an administrative envelope this host does not have, so its organisation has not consented to the signed manifest's ceiling; an administrator of the organisation must install the module again")
+
+// ModuleInstallationConsentRequiredReason is the google.rpc.ErrorInfo reason a
+// capability refused for ErrModuleInstallationConsentRequired carries: an
+// administrator's to resolve, never a fact about the caller.
+const ModuleInstallationConsentRequiredReason = "INSTALLATION_CONSENT_REQUIRED"
+
+// consentedGrant is what an installation holds of grant under this registry:
+// the grant intersected with what the organisation consented to. A following
+// installation holds the grant itself only while an envelope sets it; with no
+// envelope it holds nothing until an administrator installs again, so a
+// signed generation's widening never reaches it unapproved.
+func (r *installedModuleRegistry) consentedGrant(g ModulePrincipalGrant, consent InstallationScope) (ModulePrincipalGrant, error) {
+	if consent.Follows && (r == nil || r.envelopeRevision == 0) {
+		return ModulePrincipalGrant{}, ErrModuleInstallationConsentRequired
+	}
+	return intersectInstallationScope(g, consent), nil
 }
 
 func intersectInstallationScope(g ModulePrincipalGrant, consent InstallationScope) ModulePrincipalGrant {

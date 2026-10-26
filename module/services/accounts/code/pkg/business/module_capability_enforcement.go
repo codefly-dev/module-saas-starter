@@ -273,7 +273,11 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 	if live.EnvelopeRevision != nil && *live.EnvelopeRevision != snapshot.envelopeRevision {
 		return nil, nil, wrapStatus(codes.Unavailable, ErrModuleRegistryStale, "installation decision observed envelope revision %d", *live.EnvelopeRevision)
 	}
-	grant = intersectInstallationScope(grant, live.Scope)
+	grant, err = snapshot.consentedGrant(grant, live.Scope)
+	if err != nil {
+		return nil, nil, moduleRefusal(codes.FailedPrecondition, ModuleInstallationConsentRequiredReason,
+			fmt.Sprintf("principal %s in organization %s: %v", caller.PrincipalID, caller.BoundOrg, err))
+	}
 	authority := &ModuleCapabilityAuthority{
 		Caller:               caller,
 		Grant:                grant,

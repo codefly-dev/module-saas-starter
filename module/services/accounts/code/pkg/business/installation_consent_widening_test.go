@@ -55,3 +55,26 @@ func TestAManifestWideningWithNoEnvelopeDoesNotReachExistingInstallations(t *tes
 	// A solution's installation always records its consent.
 	require.False(t, consentedInstallationScope("solution", one, 3).Follows)
 }
+
+// An installation that already follows its grant — recorded while an envelope
+// set it, or before the signed manifest became the ceiling — holds nothing on a
+// host with no envelope: its organisation never consented to what the manifest
+// alone asks for, so a widening cannot reach it that way either. Under an
+// envelope it follows as before, and a consented snapshot holds its intersection.
+func TestAFollowingInstallationNeedsConsentWithNoEnvelope(t *testing.T) {
+	grant := ModulePrincipalGrant{Queues: []string{"reports.render"}}
+	following := InstallationScope{Capabilities: true, Follows: true}
+
+	_, err := (&installedModuleRegistry{}).consentedGrant(grant, following)
+	require.ErrorIs(t, err, ErrModuleInstallationConsentRequired)
+	_, err = (*installedModuleRegistry)(nil).consentedGrant(grant, following)
+	require.ErrorIs(t, err, ErrModuleInstallationConsentRequired)
+
+	held, err := (&installedModuleRegistry{envelopeRevision: 2}).consentedGrant(grant, following)
+	require.NoError(t, err)
+	require.Equal(t, grant.Queues, held.Queues)
+
+	held, err = (&installedModuleRegistry{}).consentedGrant(grant, FullInstallationScope(grant))
+	require.NoError(t, err)
+	require.Equal(t, grant.Queues, held.Queues)
+}

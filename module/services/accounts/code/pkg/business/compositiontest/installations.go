@@ -100,13 +100,14 @@ func (c *ComposedModuleInstallations) LiveModuleAuthority(_ context.Context, pri
 	if installationID != "" && installationID != id {
 		return nil, fmt.Errorf("%w: %s holds %s, not %s", business.ErrModuleInstallationInactive, principalID, id, installationID)
 	}
-	// The manifest is the ceiling: a composed installation's scope is the
-	// declared grant itself, narrowed by nothing.
+	// The manifest is the ceiling: a composed installation consents to the
+	// declared grant itself, narrowed by nothing — recorded, as every
+	// installation with no envelope is, rather than following it.
 	grant := c.service.ModulePrincipals()[principalID]
 	return &business.LiveModuleAuthority{
 		RegistryBindingID: grant.PresenceBinding, InstallationID: id, InstallationRevision: 1, ProducerEpoch: 1,
 		Scope: business.InstallationScope{
-			Capabilities: true, Follows: true, Queues: grant.Queues, Namespaces: grant.Namespaces,
+			Capabilities: true, Queues: grant.Queues, Namespaces: grant.Namespaces,
 			ExternalNamespaces: grant.ExternalNamespaces, Resources: grant.Resources,
 			ReadAudiences: grant.ReadAudiences, OperationAudiences: grant.OperationAudiences, ArtifactPolicies: grant.ArtifactPolicies,
 		},

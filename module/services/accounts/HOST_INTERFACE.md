@@ -775,7 +775,11 @@ its administrator installs again; a narrowing still reaches it.
 `TestAManifestWideningWithNoEnvelopeDoesNotReachExistingInstallations` derives
 generations 1 and 2 through the real pass and holds an existing installation to
 generation 1's read. Where an envelope is written, a module installation keeps
-following it.
+following it. An installation that already follows its grant holds nothing on
+a host with no envelope (`ErrModuleInstallationConsentRequired`, answered
+`FAILED_PRECONDITION` with reason `INSTALLATION_CONSENT_REQUIRED`) until its
+administrator installs again; `TestAFollowingInstallationNeedsConsentWithNoEnvelope`
+covers it.
 
 Reader inventory before deletion: `MODULE_PRINCIPALS` has no runtime reader and
 was already removed. `MODULE_AUTHORITY_ENFORCEMENT` was read by `work.go` and

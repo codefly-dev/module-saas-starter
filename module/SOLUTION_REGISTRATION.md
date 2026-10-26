@@ -467,7 +467,11 @@ generation that **widens** the ceiling reaches no organisation that installed
 an earlier one: taking it is an explicit lifecycle action by that
 organisation's administrator (installing again answers a conflict that names
 it), while a fresh installation consents to the current generation. A
-narrowing reaches every installation at once. A binding the envelope does not allow, or allows on another
+narrowing reaches every installation at once. An installation that already
+follows its grant (recorded under an envelope, or before the signed manifest
+became the ceiling) holds **nothing** on a host with no envelope — its
+capabilities answer `FAILED_PRECONDITION` with reason
+`INSTALLATION_CONSENT_REQUIRED` — until its administrator installs again. A binding the envelope does not allow, or allows on another
 audience, is omitted by name. Two manifests asking for one principal, or two
 principals sharing a workload, are omitted. The envelope document is
 `{"revision": N, "principals": {"<principal>": {"grant": {…}}}}`; it names no
