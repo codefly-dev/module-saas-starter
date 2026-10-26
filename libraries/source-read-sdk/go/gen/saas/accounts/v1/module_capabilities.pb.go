@@ -3943,13 +3943,17 @@ func (x *CollectionSyncProvenance) GetRequestedByLabel() string {
 	return ""
 }
 
-// Tenant and viewer come exclusively from the verified Work Context.
+// The calling module authenticates with its own module Work Context in the
+// x-codefly-work-context header; the viewer it reads for travels here, and
+// must be addressed to that module. Tenant and viewer come exclusively from
+// the verified viewer Work Context.
 type ListReadableSourceCollectionsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PageSize      int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken     string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	PageSize               int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken              string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	ViewerWorkContextToken string                 `protobuf:"bytes,3,opt,name=viewer_work_context_token,json=viewerWorkContextToken,proto3" json:"viewer_work_context_token,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *ListReadableSourceCollectionsRequest) Reset() {
@@ -3992,6 +3996,13 @@ func (x *ListReadableSourceCollectionsRequest) GetPageSize() int32 {
 func (x *ListReadableSourceCollectionsRequest) GetPageToken() string {
 	if x != nil {
 		return x.PageToken
+	}
+	return ""
+}
+
+func (x *ListReadableSourceCollectionsRequest) GetViewerWorkContextToken() string {
+	if x != nil {
+		return x.ViewerWorkContextToken
 	}
 	return ""
 }
@@ -4194,15 +4205,19 @@ func (x *ModulePlaceRecordResponse) GetNodeId() string {
 	return ""
 }
 
-// Exact-record delegated oracle. Tenant and subjects come only from the signed
-// forwarded Work Context; a caller cannot provide a scope path or principal.
+// Exact-record delegated oracle. The calling module authenticates with its
+// own module Work Context in the x-codefly-work-context header; the viewer it
+// asks for travels here, and must be addressed to that module. Tenant and
+// subjects come only from the signed viewer Work Context; a caller cannot
+// provide a scope path or principal.
 type CheckWorkContextRecordAccessRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ResourceType  string                 `protobuf:"bytes,1,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
-	ResourceId    string                 `protobuf:"bytes,2,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
-	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	ResourceType           string                 `protobuf:"bytes,1,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
+	ResourceId             string                 `protobuf:"bytes,2,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	Action                 string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
+	ViewerWorkContextToken string                 `protobuf:"bytes,4,opt,name=viewer_work_context_token,json=viewerWorkContextToken,proto3" json:"viewer_work_context_token,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *CheckWorkContextRecordAccessRequest) Reset() {
@@ -4252,6 +4267,13 @@ func (x *CheckWorkContextRecordAccessRequest) GetResourceId() string {
 func (x *CheckWorkContextRecordAccessRequest) GetAction() string {
 	if x != nil {
 		return x.Action
+	}
+	return ""
+}
+
+func (x *CheckWorkContextRecordAccessRequest) GetViewerWorkContextToken() string {
+	if x != nil {
+		return x.ViewerWorkContextToken
 	}
 	return ""
 }
@@ -6209,12 +6231,13 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\atrigger\x18\x04 \x01(\tR\atrigger\x12W\n" +
 	"\x14requester_disclosure\x18\x05 \x01(\x0e2$.saas.accounts.v1.MetadataDisclosureR\x13requesterDisclosure\x12=\n" +
 	"\frequested_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vrequestedAt\x12,\n" +
-	"\x12requested_by_label\x18\a \x01(\tR\x10requestedByLabel\"x\n" +
+	"\x12requested_by_label\x18\a \x01(\tR\x10requestedByLabel\"\xc0\x01\n" +
 	"$ListReadableSourceCollectionsRequest\x12'\n" +
 	"\tpage_size\x18\x01 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12'\n" +
 	"\n" +
-	"page_token\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x10R\tpageToken\"\x9d\x01\n" +
+	"page_token\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x10R\tpageToken\x12F\n" +
+	"\x19viewer_work_context_token\x18\x03 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16viewerWorkContextToken\"\x9d\x01\n" +
 	"%ListReadableSourceCollectionsResponse\x12L\n" +
 	"\vcollections\x18\x01 \x03(\v2*.saas.accounts.v1.ReadableSourceCollectionR\vcollections\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xa3\x02\n" +
@@ -6230,7 +6253,7 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\n" +
 	"resourceId\">\n" +
 	"\x19ModulePlaceRecordResponse\x12!\n" +
-	"\anode_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06nodeId\"\xa7\x01\n" +
+	"\anode_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06nodeId\"\xef\x01\n" +
 	"#CheckWorkContextRecordAccessRequest\x12/\n" +
 	"\rresource_type\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x02R\fresourceType\x12+\n" +
@@ -6238,7 +6261,8 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\n" +
 	"resourceId\x12\"\n" +
 	"\x06action\x18\x03 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x02R\x06action\"d\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x02R\x06action\x12F\n" +
+	"\x19viewer_work_context_token\x18\x04 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x02R\x16viewerWorkContextToken\"d\n" +
 	"$CheckWorkContextRecordAccessResponse\x12\x18\n" +
 	"\aallowed\x18\x01 \x01(\bR\aallowed\x12\"\n" +
 	"\rscope_node_id\x18\x02 \x01(\tR\vscopeNodeId\"\x9f\x01\n" +

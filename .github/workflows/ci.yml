@@ -457,6 +457,8 @@ jobs:
         run: codefly generate contracts saas-starter --check
       - name: Check derived source operations
         run: codefly generate runnables saas-starter --check
+      - name: Check generated libraries are reproducible with the pinned CLI
+        run: bash scripts/ci/check-generated-libraries.sh
 
   module-package:
     name: Immutable module package

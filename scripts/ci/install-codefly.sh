@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.213}"
+version="${CODEFLY_VERSION:-0.1.214}"
 source_revision=""
 case "${version}" in
   source-8de0f6674550fb040f03bc6cb2530116878c8c6b)
@@ -77,6 +77,13 @@ case "${version}" in
     # hop-routes producer, which resolves the authority interface dependency.
     # Digest of the downloaded Linux amd64 archive; matches checksums.txt.
     checksum=e144417e595aa4e98937e01e5c2ce15123ae962fbe446479e8cd82e70ff7536a
+    ;;
+  0.1.214)
+    # Carries cli#1166 (buf-module client proto sources; generate proto --path
+    # over multi-input templates) and cli#1162 (namespaced TypeScript client
+    # barrel exports), so the generated libraries regenerate from a release.
+    # Digest of the downloaded Linux amd64 archive; matches checksums.txt.
+    checksum=4916b4926ff801c42bc5a7734ff9b254e6537d441f00aad59766c4ac4f76244c
     ;;
   0.1.185)
     # Released Core v0.18.0 and cli#947: scope-slot delivery, endpoint-served
