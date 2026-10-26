@@ -788,6 +788,13 @@ administrative contract or migrate its installed delegation modes.
 
 ## Composition responses belong to one binding
 
+`ApplyManifest` is served **in-cluster only**: the composition's deliverer calls
+accounts' Connect listener directly with its module's `delivery` credential,
+and the gateway never routes it (`business.ServedInClusterOnly`), exactly as the
+HTTP delivery route is kept off the edge. `TestTheGatewayNeverRoutesModuleDelivery`
+holds the built and committed route catalogs and the gateway's route table to
+that, and the route validator refuses a catalog that carries it.
+
 `ApplyManifest` waits for the reconciliation pass, then answers from its own
 binding's committed generation and digest. A failure applying another binding
 or converging fixture installations is logged for the operator and cannot turn

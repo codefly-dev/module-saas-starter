@@ -40,6 +40,35 @@ func ShapeAuthenticated(method string) bool {
 	return method == HostIssueMethod || method == HostGetDelegationMethod
 }
 
+// HostApplyManifestMethod is the composition interface's delivery.
+const HostApplyManifestMethod = "/host.composition.v1.CompositionService/ApplyManifest"
+
+// servedInClusterOnly are the procedures this module serves on its own
+// listener and never routes at the gateway edge. Each authenticates in the
+// request itself, and its caller is an in-cluster workload that reaches
+// accounts directly, so routing it through the edge would put its credential
+// across the perimeter for no gain.
+//
+//   - ApplyManifest takes the module's `delivery` service account token and
+//     the signed carrier, exactly as the HTTP delivery route does, which is
+//     kept off the gateway for the same reason (work.go): delivery is
+//     in-cluster and never the public edge.
+//
+// Its exposure stays public on the Connect listener, where the composition's
+// deliverer calls it with its own credential; an internal exposure would refuse
+// it there and leave only the private listener, which asks the shared internal
+// token.
+var servedInClusterOnly = map[string]struct{}{
+	HostApplyManifestMethod: {},
+}
+
+// ServedInClusterOnly reports whether procedure is served on this module's own
+// listener only, so the gateway route catalog must never carry it.
+func ServedInClusterOnly(procedure string) bool {
+	_, ok := servedInClusterOnly[procedure]
+	return ok
+}
+
 func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 	authenticatedMint := func(event string) *policyv1.MethodPolicy {
 		return &policyv1.MethodPolicy{
@@ -97,7 +126,8 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		"/host.authority.v1.AuthorityService/RevokeDelegation": sessionMint(string(EventModuleDelegationRevoked)),
 		"/host.authority.v1.AuthorityService/GetDelegation":    read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// Authentication belongs to signed delivery and its workload credential.
-		"/host.composition.v1.CompositionService/ApplyManifest": {
+		// In-cluster only (ServedInClusterOnly): never routed at the gateway.
+		HostApplyManifestMethod: {
 			Exposure: policyv1.Exposure_EXPOSURE_PUBLIC, Tenant: policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE,
 			Mfa: policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
 			// The delivery path this will route into emits saas.solution.host_binding_applied itself (outside RPC); declaring it here too would double it.

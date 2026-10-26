@@ -3572,22 +3572,6 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
-      "path": "/host.composition.v1.CompositionService/ApplyManifest",
-      "match": "GATEWAY_MATCH_EXACT",
-      "procedure": "/host.composition.v1.CompositionService/ApplyManifest",
-      "owner": {
-        "module": "saas-starter",
-        "service": "accounts"
-      },
-      "upstream_endpoint": "connect",
-      "exposure": "EXPOSURE_PUBLIC",
-      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
-      "rewrite_path": "",
-      "remove_after": ""
-    },
-    {
-      "protocol": "GATEWAY_PROTOCOL_CONNECT",
-      "method": "POST",
       "path": "/host.installation.v1.InstallationService/GrantToTeam",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/host.installation.v1.InstallationService/GrantToTeam",
