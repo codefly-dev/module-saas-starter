@@ -136,11 +136,24 @@ func (s *HostAuthorityServer) hopFrom(ctx context.Context, prefix string, claims
 	// owner holds through the binding that the child was not granted, so that
 	// kind stays dropped down the chain (rule A: a narrowing is never recovered).
 	carried := narrowed.deny(held, scopes).outside(scopes)
-	hopID := ""
+	// A hop issued from a delegation carries its id; every hop of a chain that
+	// acts under one (a chain holds at most one: a delegation's issue starts
+	// it) is sealed to it, so its revocation ends exactly these capabilities.
+	hop := delegatedHop{}
 	if issuing != nil {
-		hopID = issuing.ID
+		hop.ID = issuing.ID
 	}
-	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, carried, workContextTTL(ttl), hopID)
+	for _, d := range delegations {
+		hop.Under = d.ID
+	}
+	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, carried, workContextTTL(ttl), hop)
+}
+
+// delegatedHop is how a hop relates to a stored delegation: ID, the id the
+// hop carries (the delegation's own when issued from it), and Under, the
+// delegation its binding is sealed to. Both empty for a chain under none.
+type delegatedHop struct {
+	ID, Under string
 }
 
 // personHeldThrough is what a person who owns parent holds at audience within
@@ -266,8 +279,8 @@ func (s *WorkContextAuthorityServer) requireParentStands(ctx context.Context, pa
 // mintBindingHop mints the child: the owner's session sealed to the
 // installation the binding is granted within, carrying scopes and the
 // narrowings of every other kind; the parent's actors replayed; then the
-// acting module's hop exercising the binding, granted scopes, under
-// delegationID when the hop acts under a stored delegation (a fresh id
+// acting module's hop exercising the binding, granted scopes, carrying and
+// sealed under the stored delegation it acts under, if any (a fresh id
 // otherwise). It never outlives its parent and descends from the parent's
 // session.
 //
@@ -278,7 +291,7 @@ func (s *WorkContextAuthorityServer) requireParentStands(ctx context.Context, pa
 // module from exercising another's binding.
 func (s *WorkContextAuthorityServer) mintBindingHop(
 	ctx context.Context, parent *basev0.WorkContextV1, prefix, bindingID, audience string,
-	scopes, carried []*basev0.WorkScopeV1, ttl time.Duration, delegationID string,
+	scopes, carried []*basev0.WorkScopeV1, ttl time.Duration, delegated delegatedHop,
 ) (*gen.IssuedWorkContext, error) {
 	// The structural audience rule every mint runs: none empty, and never the
 	// module capability surface's own.
@@ -288,6 +301,9 @@ func (s *WorkContextAuthorityServer) mintBindingHop(
 	tenant := parent.GetTenantId()
 	actor := prefix
 	sealed := business.ModuleOperationBindingID(tenant, prefix, bindingID)
+	if delegated.Under != "" {
+		sealed = business.DelegatedOperationBindingID(sealed, delegated.Under)
+	}
 	binding, err := s.seals.WorkContextOperationBinding(ctx, tenant, sealed)
 	switch {
 	case errors.Is(err, business.ErrNoOperationBinding):
@@ -321,7 +337,7 @@ func (s *WorkContextAuthorityServer) mintBindingHop(
 		})
 	}
 	hops = append(hops, delegationHop{
-		PrincipalID: actor, PrincipalKind: business.PrincipalKindService, DelegationID: cmp.Or(delegationID, uuid.NewString()),
+		PrincipalID: actor, PrincipalKind: business.PrincipalKindService, DelegationID: cmp.Or(delegated.ID, uuid.NewString()),
 		GrantedScopes: cloneWorkScopes(scopes), OperationBindingID: sealed,
 	})
 	token, signed, err := s.mint(ctx, mintRequest{

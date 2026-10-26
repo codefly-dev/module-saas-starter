@@ -277,10 +277,11 @@ type Store interface {
 	// ModuleDelegations reads the delegations among ids, in orgID, or by id
 	// alone when orgID is empty (control plane only).
 	ModuleDelegations(ctx context.Context, orgID string, ids []string) ([]*ModuleDelegation, error)
-	// RevokeModuleDelegation stamps principalID's delegation id in orgID as
-	// revoked by them, if it is active, and returns it as it then stands. Nil
-	// when orgID holds no such delegation of principalID's.
-	RevokeModuleDelegation(ctx context.Context, orgID, principalID, id string) (*ModuleDelegation, error)
+	// RevokeModuleDelegation stamps delegation id in orgID as revoked by
+	// revokedBy, if it is active, and returns it as it then stands, and whether
+	// this call revoked it. grantor, when set, must be the delegation's grantor.
+	// Nil when orgID holds no such delegation.
+	RevokeModuleDelegation(ctx context.Context, orgID, grantor, id, revokedBy string) (*ModuleDelegation, bool, error)
 
 	// Source delegations (source_delegation.go, migration 9). The tenant-facing
 	// calls run inside the organization's transaction; the module-facing mint

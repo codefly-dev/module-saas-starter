@@ -78,32 +78,46 @@ func (s *PostgresStore) ModuleDelegations(ctx context.Context, orgID string, ids
 	return scanModuleDelegations(rows)
 }
 
-func (s *PostgresStore) RevokeModuleDelegation(ctx context.Context, orgID, principalID, id string) (*business.ModuleDelegation, error) {
+func (s *PostgresStore) RevokeModuleDelegation(ctx context.Context, orgID, grantor, id, revokedBy string) (*business.ModuleDelegation, bool, error) {
 	if _, err := uuid.Parse(id); err != nil {
-		return nil, nil
+		return nil, false, nil
 	}
 	// The stamp lands only on an active row; an already revoked one is read
 	// back unchanged, so a second revoke is answered as the first left it.
 	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
 		WITH revoked AS (
 			UPDATE module_delegations
-			SET revoked_at = CURRENT_TIMESTAMP, revoked_by = $2::uuid
-			WHERE org_id = $1::uuid AND principal_id = $2::uuid AND id = $3::uuid AND revoked_at IS NULL
+			SET revoked_at = CURRENT_TIMESTAMP, revoked_by = $4::uuid
+			WHERE org_id = $1::uuid AND id = $3::uuid AND revoked_at IS NULL
+			  AND (NULLIF($2, '')::uuid IS NULL OR principal_id = NULLIF($2, '')::uuid)
 			RETURNING `+moduleDelegationColumns+`
 		)
-		SELECT * FROM revoked
+		SELECT *, true FROM revoked
 		UNION ALL
-		SELECT `+moduleDelegationColumns+`
+		SELECT `+moduleDelegationColumns+`, false
 		FROM module_delegations
-		WHERE org_id = $1::uuid AND principal_id = $2::uuid AND id = $3::uuid
+		WHERE org_id = $1::uuid AND id = $3::uuid
+		  AND (NULLIF($2, '')::uuid IS NULL OR principal_id = NULLIF($2, '')::uuid)
 		  AND NOT EXISTS (SELECT 1 FROM revoked)`,
-		orgID, principalID, id)
+		orgID, grantor, id, revokedBy)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	found, err := scanModuleDelegations(rows)
-	if err != nil || len(found) == 0 {
-		return nil, err
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, false, rows.Err()
 	}
-	return found[0], nil
+	var d business.ModuleDelegation
+	var revokedAt *time.Time
+	var scopes []byte
+	var revokedNow bool
+	if err := rows.Scan(&d.ID, &d.OrgID, &d.PrincipalID, &d.ModulePrefix, &scopes, &d.Purpose,
+		&d.CreatedAt, &revokedAt, &d.RevokedBy, &revokedNow); err != nil {
+		return nil, false, err
+	}
+	if err := json.Unmarshal(scopes, &d.Scopes); err != nil {
+		return nil, false, fmt.Errorf("module delegation %s: scopes do not decode: %w", d.ID, err)
+	}
+	d.RevokedAt = revokedAt
+	return &d, revokedNow, rows.Err()
 }

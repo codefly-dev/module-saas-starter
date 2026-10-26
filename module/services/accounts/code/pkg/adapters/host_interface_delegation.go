@@ -11,15 +11,19 @@ package adapters
 // delegation's id: the same hop a module's child derives (hopFrom), from the
 // grantor's standing instead of a parent capability. Every later hop of that
 // chain is cut to the delegation again (chainDelegations), so no hop below it
-// gets what the person did not delegate. Revoking it advances the grantor's
-// authorization revision in the statement that stamps it, so every capability
-// issued from it fails its next check.
+// gets what the person did not delegate. Every hop of that chain is sealed to
+// the delegation (business.DelegatedOperationBindingID), which every verifier
+// reads live, so revoking it fails each of those capabilities at its next
+// check and touches nothing else its grantor holds. A host that cannot witness
+// a revocation records no delegation.
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"slices"
 	"time"
+	"unicode/utf8"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
@@ -37,16 +41,23 @@ import (
 // Delegate records the signed-in person's grant to a module, within what they
 // hold now.
 func (s *HostAuthorityServer) Delegate(ctx context.Context, req *authorityv1.DelegateRequest) (*authorityv1.Delegation, error) {
-	identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "a delegation is made by the signed-in person; the call carries no bearer")
+	identity, err := delegatingPerson(ctx, "delegate")
+	if err != nil {
+		return nil, err
 	}
 	module := req.GetModule()
 	if service == nil || !service.IsDeclaredModulePrincipal(business.ModulePrincipalID(module)) {
 		return nil, status.Errorf(codes.NotFound, "module %q is not composed", module)
 	}
+	// Fail closed: a delegation this host could never end is never recorded.
+	if !service.ModuleDelegationsRevocable() {
+		return nil, delegationStatus(business.ErrModuleDelegationUnrevocable)
+	}
 	if len(req.GetScopes()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "a delegation names what it grants")
+	}
+	if utf8.RuneCountInString(req.GetPurpose()) > business.ModuleDelegationPurposeLimit {
+		return nil, delegationStatus(business.ErrModuleDelegationPurposeTooLong)
 	}
 	org, person := identity.OrgID.String(), identity.EffectiveSubject.String()
 	if err := requireOrgMember(ctx, person, org); err != nil {
@@ -117,21 +128,57 @@ func (s *HostAuthorityServer) GetDelegation(ctx context.Context, req *authorityv
 	return delegationToWire(d), nil
 }
 
-// RevokeDelegation ends one of the signed-in person's delegations; the next
-// issue from it, and every capability issued from it, is refused.
+// RevokeDelegation ends a delegation, for its grantor or an administrator of
+// its organisation; the next issue from it, and every capability issued under
+// it, is refused.
 func (s *HostAuthorityServer) RevokeDelegation(ctx context.Context, req *authorityv1.RevokeDelegationRequest) (*authorityv1.RevokeDelegationResponse, error) {
-	identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "a delegation is revoked by its grantor, signed in; the call carries no bearer")
+	identity, err := delegatingPerson(ctx, "revoke a delegation")
+	if err != nil {
+		return nil, err
 	}
 	if service == nil {
 		return nil, status.Error(codes.Unavailable, "the authority is not wired")
 	}
-	d, err := service.RevokeModuleDelegation(ctx, identity.OrgID.String(), identity.EffectiveSubject.String(), req.GetDelegationId())
+	org, person := identity.OrgID.String(), identity.EffectiveSubject.String()
+	role, err := lookupMembership(ctx, org, person)
+	if err != nil {
+		return nil, membershipLookupStatus("cannot verify membership", err)
+	}
+	if role == "" {
+		return nil, status.Error(codes.PermissionDenied, "not a member of this organization")
+	}
+	d, err := service.RevokeModuleDelegation(ctx, org, person, req.GetDelegationId(),
+		role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String())
 	if err != nil {
 		return nil, delegationStatus(err)
 	}
 	return &authorityv1.RevokeDelegationResponse{Delegation: delegationToWire(d)}, nil
+}
+
+// delegatingPerson is the signed-in person a delegation is made or revoked by,
+// in their own right: an interactive session, never a credential confined to
+// one consumer (it acts only within that consumer's ceiling, and a delegation
+// would outlive and exceed it), never an identity acting on someone's behalf
+// (X-Act) or viewed as by an administrator, and never an API key. The same
+// credentials every other person mint holds back.
+func delegatingPerson(ctx context.Context, what string) (accountsauth.RequestIdentity, error) {
+	identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
+	if !ok {
+		return identity, status.Errorf(codes.Unauthenticated, "only the signed-in person may %s; the call carries no bearer", what)
+	}
+	if _, confined := accountsauth.VerifiedResourceConfinement(ctx); confined {
+		return identity, status.Errorf(codes.PermissionDenied, "a resource-confined credential cannot %s: it acts only within its consumer's ceiling, and a delegation is a standing grant beyond it", what)
+	}
+	if _, acting := accountsauth.VerifiedActorFromContext(ctx); acting || identity.Delegation != nil {
+		return identity, status.Errorf(codes.PermissionDenied, "an identity acting on someone's behalf (X-Act) cannot %s for them", what)
+	}
+	if identity.Impersonated() {
+		return identity, status.Errorf(codes.PermissionDenied, "an impersonated session cannot %s for the person it views as", what)
+	}
+	if kind := credentialKindFromContext(ctx); kind != credentialKindSession {
+		return identity, status.Errorf(codes.PermissionDenied, "only an interactive session may %s; this call presented %s", what, cmp.Or(kind, "no credential kind"))
+	}
+	return identity, nil
 }
 
 // delegationHop is Issue from a delegation: the acting module proves itself,
@@ -302,8 +349,10 @@ func delegationStatus(err error) error {
 	switch {
 	case errors.Is(err, business.ErrModuleDelegationNotFound):
 		return status.Error(codes.NotFound, "no such delegation of yours")
-	case errors.Is(err, business.ErrModuleDelegationInvalid):
+	case errors.Is(err, business.ErrModuleDelegationInvalid), errors.Is(err, business.ErrModuleDelegationPurposeTooLong):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, business.ErrModuleDelegationUnrevocable):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, business.ErrPolicyLogUnreachable):
 		return status.Errorf(codes.Unavailable, "the revocation cannot be witnessed, so it is refused: %v", err)
 	}
