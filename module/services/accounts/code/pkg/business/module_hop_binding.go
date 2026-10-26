@@ -30,12 +30,25 @@ var ErrModuleHopStale = errors.New("the module authority this Work Context asser
 // OWNER's, and the owner's own resolver compares it; a module hop carries no
 // revision of its own. What makes the hop current is that its installation
 // still declares the binding and still grants the scopes.
-func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalID, bindingID string, scopes []ModuleOperationScope) error {
+//
+// The hop names its module as the capability does: by name for a hop the host
+// interface issued, by registry id for the hops it does not. Either resolves
+// to the one declared module, and every comparison below is on its registry id.
+func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principal, bindingID string, scopes []ModuleOperationScope) error {
 	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
 	if fenceErr != nil {
 		return fenceErr
 	}
 	defer releaseAuthority()
+
+	snapshot := s.moduleRegistrySnapshot()
+	if snapshot == nil {
+		return ErrModuleHopStale
+	}
+	principalID, declared := snapshot.registry.RegistryIDOf(principal)
+	if !declared {
+		return ErrModuleHopStale
+	}
 
 	if NamesInstalledBinding(bindingID) {
 		identity, err := s.resolveInstalledBinding(ctx, orgID, bindingID)
@@ -74,13 +87,6 @@ func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalI
 		}
 		bindingID, replayed = key, ModulePrincipalID(prefix) != principalID
 	}
-	snapshot := s.moduleRegistrySnapshot()
-	if snapshot == nil {
-		return ErrModuleHopStale
-	}
-	if _, declared := snapshot.registry[principalID]; !declared {
-		return ErrModuleHopStale
-	}
 	installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot,
 		ModuleCaller{PrincipalID: principalID, BoundOrg: orgID})
 	if err != nil {
@@ -114,8 +120,9 @@ func (s *Service) ConfirmModuleHopBinding(ctx context.Context, orgID, principalI
 	return nil
 }
 
-// IsDeclaredModulePrincipal reports whether a principal id names a declared
-// module, so one caller can route a subject to the resolver that knows it.
+// IsDeclaredModulePrincipal reports whether a principal names a declared
+// module, by its name or its registry id, so one caller can route a subject to
+// the resolver that knows it.
 func (s *Service) IsDeclaredModulePrincipal(principalID string) bool {
 	return s.isDeclaredModulePrincipal(principalID)
 }

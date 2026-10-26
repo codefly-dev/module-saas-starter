@@ -40,9 +40,17 @@ func parseModuleOperationBindingID(id string) (orgID, prefix, bindingID string, 
 }
 
 // moduleOperationBinding answers the live state of a module's installed operation
-// binding: held by the module principal within its installation at this
-// organisation, at the revision of its terms. Another organisation's id, not
-// declared, or not installed, is no binding.
+// binding: held by the module within its installation at this organisation, at
+// the revision of its terms. Another organisation's id, not declared, or not
+// installed, is no binding.
+//
+// The principal it is granted to is the module's NAME, the one the binding id
+// already names it by and the one a hop exercising it carries as its actor.
+// Core holds a context to this answer by equality (the exercising principal
+// must be the binding's), so a module that presents another module's binding
+// is refused by name. ModuleRegistryID is the same module as this host stores
+// it, which is how the module's own headless context names its owner
+// (hostSealSource answers that context in its owner's spelling).
 func (s *Service) moduleOperationBinding(ctx context.Context, orgID, id string) (WorkContextOperationBinding, error) {
 	org, prefix, bindingID, _ := parseModuleOperationBindingID(id)
 	if org != orgID {
@@ -63,7 +71,7 @@ func (s *Service) moduleOperationBinding(ctx context.Context, orgID, id string) 
 		return WorkContextOperationBinding{}, ErrNoOperationBinding
 	}
 	return WorkContextOperationBinding{
-		ID: id, PrincipalID: principalID, InstallationID: installed.InstallationID,
+		ID: id, PrincipalID: prefix, ModuleRegistryID: principalID, InstallationID: installed.InstallationID,
 		Revision: ModuleOperationContextRevision(installed.Grant), Incarnation: 1,
 	}, nil
 }
