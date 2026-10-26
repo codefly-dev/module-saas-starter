@@ -133,3 +133,102 @@ func (s *Service) IsDeclaredModulePrincipal(principalID string) bool {
 func NamesASourceDelegation(bindingID string) bool {
 	return namesASourceDelegation(bindingID)
 }
+
+// ModuleChainHop is one hop of a context's actor chain as the token carries
+// it: the principal acting and the scopes it was granted.
+type ModuleChainHop struct {
+	Principal string
+	Scopes    []ModuleOperationScope
+}
+
+// ConfirmModuleChain re-reads EVERY module hop of a chain against the binding
+// it hopped through, not only the last one the context seals.
+//
+// A context seals one binding, the last hop's, and core re-reads only that
+// one; without this a child kept verifying while a binding upstream of it was
+// withdrawn or narrowed, for as long as the child lived. A module hops only on
+// a token addressed to it, so hop i went through one of its module's bindings
+// addressed to the next hop's module (and the last hop through one addressed
+// to audience). That binding must still be installed here, and every scope the
+// hop carries of a kind the binding governs must still be within it: a kind
+// the chain carried down from that hop is held to the binding as it is now,
+// so a narrowing upstream takes effect below it (rule A: never recovered).
+// Kinds the binding does not govern are the owner's and other hops', checked
+// where they are held.
+//
+// audience is the context's own audience; empty leaves the last hop to the
+// caller, which confirms it by the binding the context seals. A hop that is
+// not a declared module (a person, a registered agent) is answered by the
+// authority store, not here.
+func (s *Service) ConfirmModuleChain(ctx context.Context, orgID, audience string, hops []ModuleChainHop) error {
+	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseAuthority()
+	snapshot := s.moduleRegistrySnapshot()
+	if snapshot == nil {
+		return ErrModuleHopStale
+	}
+	for i, hop := range hops {
+		id, isModule := snapshot.registry.RegistryIDOf(hop.Principal)
+		if !isModule {
+			continue
+		}
+		target := audience
+		if i+1 < len(hops) {
+			target = hops[i+1].Principal
+			if next, ok := snapshot.registry.RegistryIDOf(target); ok {
+				target = snapshot.registry[next].Prefix
+			}
+		} else if target == "" {
+			continue
+		}
+		installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot, ModuleCaller{PrincipalID: id, BoundOrg: orgID})
+		if err != nil {
+			return err
+		}
+		if !moduleAvailableToOrganization(installed.Grant, orgID) || !hopWithinBindingsTo(installed.Grant, target, hop.Scopes) {
+			return ErrModuleHopStale
+		}
+	}
+	return nil
+}
+
+// hopWithinBindingsTo reports whether grant still holds a binding addressed to
+// target, and every scope of a kind those bindings govern lies within one of
+// their lists (invoke, lookup or headless, which are what a hop is minted from).
+func hopWithinBindingsTo(grant ModulePrincipalGrant, target string, scopes []ModuleOperationScope) bool {
+	var lists [][]ModuleOperationScope
+	governed := map[string]bool{}
+	for _, binding := range grant.OperationAudiences {
+		if binding.Audience != target {
+			continue
+		}
+		for _, list := range [][]ModuleOperationScope{binding.InvokeScopes, binding.LookupScopes, binding.HeadlessScopes} {
+			lists = append(lists, list)
+			for _, scope := range list {
+				governed[scope.ResourceKind] = true
+			}
+		}
+	}
+	if len(lists) == 0 {
+		return false
+	}
+	for _, scope := range scopes {
+		if !governed[scope.ResourceKind] {
+			continue
+		}
+		within := false
+		for _, list := range lists {
+			if operationScopesSubset([]ModuleOperationScope{scope}, list) {
+				within = true
+				break
+			}
+		}
+		if !within {
+			return false
+		}
+	}
+	return true
+}

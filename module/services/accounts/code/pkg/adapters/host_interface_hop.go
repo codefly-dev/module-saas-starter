@@ -213,6 +213,43 @@ func hopOperationScopes(installed business.ModuleOperationAudience, bindingID, o
 	return scopes, nil
 }
 
+// storedPrincipal is the principal as storage holds it: a module a capability
+// names by its name is stored under its registry id (the identity columns and
+// grant subjects are ids), and every other principal is itself.
+func storedPrincipal(principal string) string {
+	if service != nil {
+		if id, isModule := service.ModuleRegistryID(principal); isModule {
+			return id
+		}
+	}
+	return principal
+}
+
+// requireModuleChainStands re-reads every module hop of a capability against
+// the binding it hopped through (business.ConfirmModuleChain): core re-reads
+// only the binding the capability seals, the last hop's, so a binding narrowed
+// or withdrawn upstream would otherwise go unnoticed until the child expired.
+func requireModuleChainStands(ctx context.Context, wc *basev0.WorkContextV1) error {
+	chain := wc.GetActorChain()
+	if len(chain) == 0 {
+		return nil
+	}
+	if service == nil {
+		return status.Error(codes.Unavailable, "no module authority is wired, so a module chain cannot be re-read")
+	}
+	hops := make([]business.ModuleChainHop, 0, len(chain))
+	for _, hop := range chain {
+		hops = append(hops, business.ModuleChainHop{Principal: hop.GetPrincipalId(), Scopes: operationScopesFromCore(hop.GetGrantedScopes())})
+	}
+	if err := service.ConfirmModuleChain(ctx, wc.GetTenantId(), wc.GetAudience(), hops); err != nil {
+		if errors.Is(err, business.ErrModuleHopStale) {
+			return status.Error(codes.PermissionDenied, "a binding a hop of this chain went through no longer grants what it carries")
+		}
+		return interfaceStatus(err)
+	}
+	return nil
+}
+
 // requireParentStands refuses a parent whose authority moved since it was
 // issued: the owner's revision for an owner-only parent, as every derivation
 // checks, and the journal's revocation of any hop for a chained one (a module

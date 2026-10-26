@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
@@ -10,6 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/business/moduleregistrytest"
+	authorityv1 "accounts/pkg/gen/host/authority/v1"
+
+	"google.golang.org/grpc/codes"
 )
 
 // A hop names its actor by the module's NAME (the host interface's decision):
@@ -163,4 +168,67 @@ func TestARevisionCheckConfirmsAHopByItsModulesName(t *testing.T) {
 	sealed := wc.GetOperationBinding().GetBindingId()
 	require.NoError(t, service.ConfirmModuleHopBinding(context.Background(), moduleWorkContextTenant, "tools", sealed, scopes))
 	require.ErrorIs(t, service.ConfirmModuleHopBinding(context.Background(), moduleWorkContextTenant, "not-composed", sealed, scopes), business.ErrModuleHopStale)
+}
+
+// recompose replaces the composition with hopPrincipals as edited, the way a
+// new delivery or envelope narrows a binding while capabilities are live.
+func recompose(t *testing.T, edit func(string) string) {
+	t.Helper()
+	registry, err := moduleregistrytest.Parse(edit(hopPrincipals))
+	require.NoError(t, err)
+	service.SetModuleCapabilities(nil, nil, registry)
+}
+
+// A binding narrowed or withdrawn UPSTREAM of the last hop takes effect on the
+// child below it: core re-reads only the binding the child seals (the last
+// hop's), so every hop is re-read against the binding it went through.
+func TestABindingNarrowedUpstreamEndsTheChildBelowIt(t *testing.T) {
+	for name, edit := range map[string]func(string) string{
+		"narrowed": func(s string) string {
+			s = strings.Replace(s, `"invoke_scopes":[{"resource_kind":"example-records","actions":["invoke","read"]}]`, `"invoke_scopes":[{"resource_kind":"example-records","actions":["invoke"]}]`, 1)
+			return strings.Replace(s, `,"lookup_scopes":[{"resource_kind":"example-records","actions":["read"]}]`, ``, 1)
+		},
+		"withdrawn": func(s string) string {
+			return strings.Replace(s, `"audience":"documents"`, `"audience":"elsewhere"`, 1)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newHopFixture(t, "tool.items:read", "example-records:read")
+			parent, _ := f.parent(t, "tools", hopScope("tool.items", []string{"read"}))
+			first, err := f.hop(parent, f.tool, "records", "documents")
+			require.NoError(t, err)
+			second, err := f.hop(first.GetToken(), f.docs, "items", "tools")
+			require.NoError(t, err)
+			check := func() error {
+				_, err := f.server.Check(context.Background(), &authorityv1.CheckRequest{Token: second.GetToken(), Audience: "tools"})
+				return err
+			}
+			require.NoError(t, check())
+			wc := claims(t, second)
+			chain := []business.ModuleChainHop{}
+			for _, hop := range wc.GetActorChain() {
+				chain = append(chain, business.ModuleChainHop{Principal: hop.GetPrincipalId(), Scopes: operationScopesFromCore(hop.GetGrantedScopes())})
+			}
+			require.NoError(t, service.ConfirmModuleChain(context.Background(), moduleWorkContextTenant, "", chain))
+
+			// tools's binding to documents moves; documents' binding back, the
+			// one the child seals, does not.
+			recompose(t, edit)
+			requireRefused(t, check(), codes.PermissionDenied, "no longer grants")
+			require.ErrorIs(t, service.ConfirmModuleChain(context.Background(), moduleWorkContextTenant, "", chain), business.ErrModuleHopStale)
+			_, err = f.hop(second.GetToken(), f.tool, "records", "documents")
+			require.Error(t, err, "a hop on a child whose upstream binding moved was issued")
+		})
+	}
+}
+
+// The installation issue reads the same pin rule: a pinned solution with
+// cross_tenant still names only its own organisation.
+func TestAnInstallationIssueNeverLeavesItsSolutionsPin(t *testing.T) {
+	installModuleWorkContextService(t, strings.Replace(hopPrincipals, `"resources":["tool.items"]`, `"cross_tenant":true,"resources":["tool.items"]`, 1))
+	_, err := installationOrganization("tools", "00000000-0000-7000-8000-0000000000b2")
+	requireRefused(t, err, codes.PermissionDenied, "acts in organization")
+	org, err := installationOrganization("tools", moduleWorkContextTenant)
+	require.NoError(t, err)
+	require.Equal(t, moduleWorkContextTenant, org)
 }

@@ -78,7 +78,7 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 		if installedRead {
 			continue
 		}
-		subjects = append(subjects, actor.GetPrincipalId())
+		subjects = append(subjects, storedPrincipal(actor.GetPrincipalId()))
 	}
 	// The capability's own sealed scopes decide which collection details this
 	// viewer may inspect: nothing is disclosed that the mint did not already
