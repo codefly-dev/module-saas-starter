@@ -1040,9 +1040,10 @@ scoped, forced RLS, revoked once and never deleted, its grant immutable).
   and a child of one is refused. Its module reads it as ended through
   `GetDelegation`, which, like `Issue`, admits a bearer-less call whose actor
   credential authenticates it (`business.ShapeAuthenticated`).
-- **Evidence.** Suite pinned at authority `3222e991`: 40 of 45 shared cases
-  (43/48 with the three harness cases, the new one being "a delegation is
-  bounded by its grantor and ends with its revocation"). Both delegation cases
+- **Evidence.** Suite pinned at authority `3222e991`, on top of the
+  agent-owned installation above: **41 of 45 shared cases** (44/48 with the
+  three harness cases, the new one being "a delegation is bounded by its
+  grantor and ends with its revocation", green). Both delegation cases
   now fail only where they compare the acting hop's `principal_id` with the
   module's name (decision 1); with exactly those two comparisons removed from a
   local copy of the suite, "a delegation issues as its grantor" and "a narrowed
