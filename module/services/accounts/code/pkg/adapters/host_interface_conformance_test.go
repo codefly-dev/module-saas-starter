@@ -518,6 +518,76 @@ func runHostInterfaceFixture(t *testing.T, fullSuite bool) {
 		}
 	})
 
+	// Beyond the suite: a delegation never reaches past what its grantor holds
+	// or what it names, and once revoked it issues nothing, every capability
+	// issued from it fails its next check, and its module reads it as ended.
+	t.Run("a delegation is bounded by its grantor and ends with its revocation", func(t *testing.T) {
+		client := authorityv1.NewAuthorityServiceClient(conn)
+		signIn := func(token string) context.Context {
+			sess, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: token})
+			require.NoError(t, err)
+			return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())
+		}
+		alex, bob := signIn("fixture-alex"), signIn("dev-bob")
+		records := func(actions ...string) []*authorityv1.WorkScopeV1 {
+			return []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: actions}}
+		}
+		requireCode := func(err error, code codes.Code, reason string) {
+			t.Helper()
+			require.Equal(t, code, status.Code(err), "%v", err)
+			require.Contains(t, status.Convert(err).Message(), reason)
+		}
+
+		// Bob reads example records and writes none: he cannot delegate a write.
+		_, err := client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("write"), Purpose: "beyond"})
+		requireCode(err, codes.PermissionDenied, "delegates what they do not hold")
+
+		// Alex holds invoke and read; he delegates read alone. The binding
+		// would carry both, the grantor holds both, the delegation one.
+		d, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: "a scheduled job"})
+		require.NoError(t, err)
+		require.True(t, d.GetActive())
+		issue := func(scopes []*authorityv1.WorkScopeV1) (*authorityv1.IssueResponse, error) {
+			return client.Issue(ctx, &authorityv1.IssueRequest{
+				As:    &authorityv1.IssueRequest_Delegation{Delegation: &authorityv1.DelegationRef{DelegationId: d.GetDelegationId()}},
+				Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}, OperationBindingId: "documents", Audience: "documents", Scopes: scopes,
+			})
+		}
+		issued, err := issue(nil)
+		require.NoError(t, err)
+		require.Equal(t, d.GetGrantor(), issued.GetContext().GetOwnerPrincipalId())
+		hops := issued.GetContext().GetActorChain()
+		require.Len(t, hops, 1)
+		require.Equal(t, d.GetDelegationId(), hops[0].GetDelegationId())
+		require.Len(t, hops[0].GetGrantedScopes(), 1)
+		require.Equal(t, []string{"read"}, hops[0].GetGrantedScopes()[0].GetActions())
+		_, err = issue(records("invoke"))
+		requireCode(err, codes.PermissionDenied, "holds and delegated")
+
+		// Another module's workload, and another person, learn nothing of it.
+		_, err = client.Issue(ctx, &authorityv1.IssueRequest{
+			As:    &authorityv1.IssueRequest_Delegation{Delegation: &authorityv1.DelegationRef{DelegationId: d.GetDelegationId()}},
+			Actor: &authorityv1.WorkloadCredential{Credential: documentsCredential}, OperationBindingId: "model", Audience: "model",
+		})
+		requireCode(err, codes.NotFound, "is granted to documents")
+		_, err = client.RevokeDelegation(bob, &authorityv1.RevokeDelegationRequest{DelegationId: d.GetDelegationId()})
+		requireCode(err, codes.NotFound, "delegation")
+
+		revoked, err := client.RevokeDelegation(alex, &authorityv1.RevokeDelegationRequest{DelegationId: d.GetDelegationId()})
+		require.NoError(t, err)
+		require.False(t, revoked.GetDelegation().GetActive())
+		again, err := client.RevokeDelegation(alex, &authorityv1.RevokeDelegationRequest{DelegationId: d.GetDelegationId()})
+		require.NoError(t, err, "revoking twice answers the delegation as it stands")
+		require.False(t, again.GetDelegation().GetActive())
+		_, err = issue(nil)
+		requireCode(err, codes.PermissionDenied, "is revoked")
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "documents"})
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "a capability issued before the revocation: %v", err)
+		read, err := client.GetDelegation(ctx, &authorityv1.GetDelegationRequest{DelegationId: d.GetDelegationId(), Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}})
+		require.NoError(t, err)
+		require.False(t, read.GetActive())
+	})
+
 	// Beyond the suite: the session a page reads is the live one. A fixture
 	// person of the authority's fixture is current with their organisation, role
 	// and team, the bearer is not handed back, and once the session's access is
