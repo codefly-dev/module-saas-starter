@@ -11,7 +11,7 @@ in `.claude/skills/`. See [Where the depth lives](#where-the-depth-lives).
 `saas-starter` is a Codefly **module**: a multi-tenant SaaS backend
 (three-layer authorization, Postgres RLS, RBAC, impersonation, audit), an
 authenticated Next.js product, a separately deployable marketing site, and the
-supporting cache/store/vault/telemetry services. It is published as an
+supporting cache/store/vault services. It is published as an
 immutable module package that downstream workspaces **compose** (never fork).
 
 - Architecture, service graph, and capability ownership: [MODULE.md](./MODULE.md)
@@ -165,14 +165,15 @@ here. Its baseline shrinks and never grows: clean a file, delete its line.
 
 ## Where the depth lives
 
-A **solution** or composed module is independently deployed and **self-registers with
-this host at runtime** — a remote in the frontend, an upstream in the gateway — so the
-host renders and proxies it with no rebuild, and nothing here names a specific one.
+A **solution** or composed module is independently deployed. The host reconciles
+its signed delivery, projects its optional frontend and resolves its routes through
+the SDK. Registration is a delivery lifecycle event; runtime work exchanges do not
+refresh presence. Nothing here names a specific consumer.
 Depth sits with the code that owns it:
 
 | File | Covers |
 | --- | --- |
-| [module/AGENTS.md](./module/AGENTS.md) | the shipped tree: generated vs authored files, the six Go modules and how to test each, configuration groups |
+| [module/AGENTS.md](./module/AGENTS.md) | the shipped tree: generated vs authored files, the Go modules and how to test each, configuration groups |
 | [module/deployment/AGENTS.md](./module/deployment/AGENTS.md) | the manifests as the model, `spec.deployment`, and moving an agent version |
 | [module/services/auth-gateway/AGENTS.md](./module/services/auth-gateway/AGENTS.md) | upstream registration, the composed-module REST prefix, the credentials both take |
 | [module/services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md) | the durable registry record, module principals, minting a module Work Context, mesh reachability |
@@ -183,6 +184,9 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
 
 ## Building, testing, and CI
 
+- CI and local runtime qualification use released Codefly CLI **v0.1.215**,
+  pinned in `scripts/ci/install-codefly.sh`. It resolves the Codefly-owned
+  `egress` dependency and exports the multi-package host-interface contract.
 - Canonical **service** gate: `codefly ci run`. It owns lint, compile/typecheck,
   tests, dependency/vuln audit, SBOM, and container build for every service in
   the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
@@ -199,7 +203,7 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
   such a list with a count: nothing enforces one, so two changes that each add a
   step and each bump the same number merge cleanly into a total that is silently
   wrong.
-- Go suites live in six independent Go modules with no `go.work`
+- Go suites live in independent Go modules with no `go.work`
   ([module/AGENTS.md](./module/AGENTS.md#go-suites)).
 - Vulnerability policy: the complete audit runs non-blocking so vendor-image
   findings stay in the evidence report, while a separate fail-closed step enforces

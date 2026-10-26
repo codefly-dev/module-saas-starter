@@ -87,7 +87,7 @@ func (p *WebhookEndpointPolicy) NormalizeAndValidate(ctx context.Context, raw st
 	if err := validateWebhookHostname(host); err != nil {
 		return "", err
 	}
-	addresses, err := p.resolvePublic(ctx, host)
+	addresses, err := p.resolvePublic(ctx, host, "443")
 	if err != nil {
 		return "", err
 	}
@@ -154,12 +154,15 @@ func isAmbiguousNumericHost(host string) bool {
 	return true
 }
 
-// resolvePublic resolves host and requires every answer to be on the public
-// internet, as auth.IsPublicDestination judges it: the classifier the host's
-// guarded egress paths share (auth/public_address.go lists them, and the OIDC
-// clients that have no guard). An address literal is judged as
-// written, zone included, and only unmapped once it has been admitted.
-func (p *WebhookEndpointPolicy) resolvePublic(ctx context.Context, host string) ([]netip.Addr, error) {
+// resolvePublic resolves host and requires every answer to be admitted by the
+// egress rule the host's guarded egress paths share, auth.AdmitsDestination: on
+// the public internet as auth.IsPublicDestination judges it
+// (auth/public_address.go lists the paths, and the OIDC clients that have no
+// guard), or — for a host the deployment declares, on a meshed cell — in the
+// mesh egress range (auth/mesh_egress.go). An address literal is judged as
+// written, zone included, and only unmapped once it has been admitted; it is
+// never a declared host.
+func (p *WebhookEndpointPolicy) resolvePublic(ctx context.Context, host, port string) ([]netip.Addr, error) {
 	if addr, err := netip.ParseAddr(host); err == nil {
 		if !auth.IsPublicDestination(addr) {
 			return nil, fmt.Errorf("webhook address %s is not public", addr.Unmap())
@@ -173,8 +176,9 @@ func (p *WebhookEndpointPolicy) resolvePublic(ctx context.Context, host string) 
 	if len(addresses) == 0 {
 		return nil, errors.New("webhook host did not resolve to an address")
 	}
+	requested := net.JoinHostPort(host, port)
 	for _, addr := range addresses {
-		if !auth.IsPublicDestination(addr) {
+		if !auth.AdmitsDestination(requested, addr) {
 			return nil, fmt.Errorf("webhook host resolves to non-public address %s", addr.Unmap())
 		}
 	}
@@ -193,7 +197,7 @@ func (p *WebhookEndpointPolicy) dialContext(ctx context.Context, network, addres
 	if port != "443" {
 		return nil, errors.New("webhook delivery may connect only to port 443")
 	}
-	addresses, err := p.resolvePublic(ctx, strings.TrimSuffix(host, "."))
+	addresses, err := p.resolvePublic(ctx, strings.TrimSuffix(host, "."), port)
 	if err != nil {
 		return nil, err
 	}

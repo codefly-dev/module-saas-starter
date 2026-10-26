@@ -116,6 +116,48 @@ func (h *datasourceConnectHandler) AddSource(
 	return connect.NewResponse(&gen.AddSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source))}), nil
 }
 
+func (h *datasourceConnectHandler) UpdateSource(
+	ctx context.Context,
+	req *connect.Request[gen.UpdateSourceRequest],
+) (*connect.Response[gen.UpdateSourceResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	actorID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	input := business.UpdateSourceInput{
+		OrgID:          req.Msg.OrgId,
+		ID:             req.Msg.Id,
+		Branch:         req.Msg.Branch,
+		Paths:          req.Msg.Paths,
+		FileExtensions: req.Msg.FileExtensions,
+	}
+	// The scope the caller was shown. The descriptor marks it required, so an
+	// absent one is already refused before this handler runs; it is mapped
+	// rather than defaulted so a request that somehow arrives without one is
+	// refused by the business rule too, never applied unconditionally.
+	if expected := req.Msg.GetExpected(); expected != nil {
+		input.Expected = &business.DatasourceFetchScope{
+			Branch:         expected.GetBranch(),
+			Paths:          expected.GetPaths(),
+			FileExtensions: expected.GetFileExtensions(),
+		}
+	}
+	source, jobID, err := h.svc.UpdateSource(ctx, actorID, input)
+	if err != nil {
+		// Not found and a scope that moved under the editor are business
+		// refusals (refusalStatus): each travels with its own sentence.
+		return nil, translateGRPCError(err)
+	}
+	return connect.NewResponse(&gen.UpdateSourceResponse{
+		Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source)),
+		JobId:      jobID,
+	}), nil
+}
+
 func (h *datasourceConnectHandler) GetDatasourceCatalog(
 	ctx context.Context,
 	req *connect.Request[gen.GetDatasourceCatalogRequest],
@@ -167,9 +209,6 @@ func (h *datasourceConnectHandler) GetSource(
 	}
 	source, err := h.svc.GetDatasourceSourceForActor(ctx, req.Msg.OrgId, req.Msg.Id, actorID)
 	if err != nil {
-		if errors.Is(err, business.ErrDatasourceSourceNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.GetSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source))}), nil
@@ -202,9 +241,6 @@ func (h *datasourceConnectHandler) SyncSource(
 			}
 			return nil, connect.NewError(code, errors.New(failure.Failure.Message))
 		}
-		if errors.Is(err, business.ErrDatasourceSourceNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.SyncSourceResponse{JobId: jobID}), nil
@@ -227,9 +263,6 @@ func (h *datasourceConnectHandler) GetSourceSync(
 	}
 	operation, err := h.svc.GetDatasourceSync(ctx, req.Msg.OrgId, req.Msg.SourceId, req.Msg.JobId)
 	if err != nil {
-		if errors.Is(err, business.ErrDatasourceSourceNotFound) || errors.Is(err, business.ErrDatasourceSyncNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	response := &gen.GetSourceSyncResponse{JobId: operation.JobID, State: operation.State}

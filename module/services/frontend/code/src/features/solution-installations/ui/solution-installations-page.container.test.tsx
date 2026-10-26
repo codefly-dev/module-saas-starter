@@ -52,6 +52,13 @@ afterEach(() => {
 
 const EXPENSES_TARGET = "aaaaaaaa-0000-4000-8000-000000000001";
 const LEDGER_TARGET = "aaaaaaaa-0000-4000-8000-000000000002";
+// The consent the page sends: the reviewed target and generation, a zero
+// (omitted) revision for a first install, and a fresh operation id.
+const LEDGER_APPROVAL = {
+	targetId: LEDGER_TARGET,
+	generation: "5",
+	operationId: expect.any(String),
+};
 const EXPENSES_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000001";
 const READER_ROLE = "cccccccc-0000-4000-8000-000000000001";
 const USE_ROLE = "cccccccc-0000-4000-8000-000000000002";
@@ -256,7 +263,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		renderInApp(<Page />);
 
 		const availableTable = await screen.findByRole("table", {
-			name: "Available solutions",
+			name: "Available modules and solutions",
 		});
 		const ledger = within(availableTable).getByText("ledger").closest("tr");
 		const expenses = within(availableTable).getByText("expenses").closest("tr");
@@ -278,7 +285,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBe(true);
 
 		const installedTable = await screen.findByRole("table", {
-			name: "Installed solutions",
+			name: "Installed modules and solutions",
 		});
 		// The route and the release are the catalogue row the host joined to the
 		// installation's target.
@@ -317,7 +324,9 @@ describe("SolutionInstallationsPage admin container", () => {
 			),
 		);
 		renderInApp(<Page />);
-		await screen.findByRole("table", { name: "Installed solutions" });
+		await screen.findByRole("table", {
+			name: "Installed modules and solutions",
+		});
 		expect(asked).toEqual({ orgId: "org-1", pageSize: 500 });
 	});
 
@@ -384,6 +393,7 @@ describe("SolutionInstallationsPage admin container", () => {
 			orgId: "org-1",
 			// The immutable target the row named, never its route alias.
 			targetId: LEDGER_TARGET,
+			approval: LEDGER_APPROVAL,
 			agentIdentifier: "acme/ledger:0.9.1",
 			roleId: READER_ROLE,
 			allowedAudiences: ["solution:binding-ledger"],
@@ -405,10 +415,53 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBe(true);
 		expect(
 			within(
-				screen.getByRole("table", { name: "Installed solutions" }),
+				screen.getByRole("table", { name: "Installed modules and solutions" }),
 			).getByText("ledger"),
 		).toBeTruthy();
 		expect(toast.success).toHaveBeenCalledWith("ledger installation pending");
+	});
+
+	it("reinstalls after revoke using the revision reported by the installation listing", async () => {
+		serve();
+		let sent: Record<string, unknown> | undefined;
+		server.use(
+			http.post(
+				rpc("InstallationService", "ListOrganizationInstallations"),
+				() =>
+					HttpResponse.json({
+						installations: [
+							{
+								installation: {
+									id: "revoked-ledger",
+									orgId: "org-1",
+									targetId: LEDGER_TARGET,
+									status: "INSTALLATION_STATUS_REVOKED",
+									revision: "17",
+								},
+							},
+						],
+					}),
+			),
+			http.post(
+				rpc("InstallationService", "InstallSolution"),
+				async ({ request }) => {
+					sent = (await request.json()) as Record<string, unknown>;
+					return HttpResponse.json({});
+				},
+			),
+		);
+		renderInApp(<Page />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Install ledger" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		await choose(dialog, "Agent role", "Expense reader — expenses:read");
+		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
+		await waitFor(() => expect(sent).toBeDefined());
+		expect(sent?.approval).toEqual({
+			...LEDGER_APPROVAL,
+			expectedRevision: "17",
+		});
 	});
 
 	it("does not install without a role for the solution's agent", async () => {
@@ -516,7 +569,9 @@ describe("SolutionInstallationsPage admin container", () => {
 		await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
 		expect(
 			within(
-				await screen.findByRole("table", { name: "Installed solutions" }),
+				await screen.findByRole("table", {
+					name: "Installed modules and solutions",
+				}),
 			).getByText("expenses"),
 		).toBeTruthy();
 	});
@@ -573,7 +628,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		expect(reads.installed).toBe(2);
 		expect(
 			within(
-				screen.getByRole("table", { name: "Available solutions" }),
+				screen.getByRole("table", { name: "Available modules and solutions" }),
 			).getByText("Generation 4 (opened at 2)"),
 		).toBeTruthy();
 		expect(
@@ -583,7 +638,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBeTruthy();
 		expect(
 			within(
-				screen.getByRole("table", { name: "Installed solutions" }),
+				screen.getByRole("table", { name: "Installed modules and solutions" }),
 			).getByText("Agent disabled"),
 		).toBeTruthy();
 		expect(toast.success).toHaveBeenCalledExactlyOnceWith(
@@ -694,7 +749,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		renderInApp(<Page />);
 		expect(
 			await screen.findByText(
-				/You don't have permission to see the installed solutions/,
+				/You don't have permission to see the installed modules and solutions/,
 			),
 		).toBeTruthy();
 		expect(screen.getByRole("alert").textContent).toContain(
@@ -703,7 +758,9 @@ describe("SolutionInstallationsPage admin container", () => {
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(screen.queryByText(/Nothing is installed/)).toBeNull();
 		expect(
-			await screen.findByRole("table", { name: "Available solutions" }),
+			await screen.findByRole("table", {
+				name: "Available modules and solutions",
+			}),
 		).toBeTruthy();
 	});
 
@@ -714,10 +771,14 @@ describe("SolutionInstallationsPage admin container", () => {
 		});
 		renderInApp(<Page />);
 		expect(
-			await screen.findByText("No solution is available to this organization."),
+			await screen.findByText(
+				"No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list.",
+			),
 		).toBeTruthy();
 		expect(
-			await screen.findByText("Nothing is installed in this organization."),
+			await screen.findByText(
+				"Nothing is installed in this organization. Once a module or solution is available above, choose it to install it.",
+			),
 		).toBeTruthy();
 	});
 });
@@ -744,7 +805,9 @@ describe("organization administration boundary", () => {
 			expect(canPresent(navigation, session)).toBe(allowed);
 			const { client } = renderInApp(<Page />);
 			if (allowed) {
-				await screen.findByRole("table", { name: "Installed solutions" });
+				await screen.findByRole("table", {
+					name: "Installed modules and solutions",
+				});
 				expect(reads.available).toBe(1);
 				expect(reads.installed).toBe(1);
 			} else {
@@ -762,7 +825,9 @@ describe("organization administration boundary", () => {
 		const reads = serve();
 		renderInApp(<Page />);
 		expect(
-			screen.getByText("Select an organization to manage its solutions"),
+			screen.getByText(
+				"Select an organization to manage its modules and solutions",
+			),
 		).toBeTruthy();
 		expect(Object.values(reads)).toEqual([0, 0, 0, 0]);
 	});
@@ -817,7 +882,10 @@ describe("organization administration boundary", () => {
 			),
 		);
 		renderInApp(<Page />);
-		for (const name of ["Available solutions", "Installed solutions"]) {
+		for (const name of [
+			"Available modules and solutions",
+			"Installed modules and solutions",
+		]) {
 			const table = await screen.findByRole("table", { name });
 			expect(within(table).getByText("expenses")).toBeTruthy();
 			expect(within(table).getByText("ledger")).toBeTruthy();
@@ -883,7 +951,9 @@ describe("organization administration boundary", () => {
 			await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 			expect(
 				within(
-					await screen.findByRole("table", { name: "Installed solutions" }),
+					await screen.findByRole("table", {
+						name: "Installed modules and solutions",
+					}),
 				).queryByText("expenses"),
 			).toBeNull();
 			fireEvent.click(
@@ -905,8 +975,8 @@ describe("organization administration boundary", () => {
 
 describe("host read refusals and retained data", () => {
 	it.each([
-		["ListAvailableSolutions", "Available solutions"],
-		["ListOrganizationInstallations", "Installed solutions"],
+		["ListAvailableSolutions", "Available modules and solutions"],
+		["ListOrganizationInstallations", "Installed modules and solutions"],
 	])(
 		"shows the host's reason on a cold refusal of %s",
 		async (method, table) => {
@@ -930,8 +1000,12 @@ describe("host read refusals and retained data", () => {
 		async (code) => {
 			serve();
 			renderInApp(<Page />);
-			await screen.findByRole("table", { name: "Available solutions" });
-			await screen.findByRole("table", { name: "Installed solutions" });
+			await screen.findByRole("table", {
+				name: "Available modules and solutions",
+			});
+			await screen.findByRole("table", {
+				name: "Installed modules and solutions",
+			});
 			for (const method of [
 				"ListAvailableSolutions",
 				"ListOrganizationInstallations",
@@ -954,10 +1028,14 @@ describe("host read refusals and retained data", () => {
 			}
 			if (code === "permission_denied") {
 				expect(
-					screen.queryByRole("table", { name: "Available solutions" }),
+					screen.queryByRole("table", {
+						name: "Available modules and solutions",
+					}),
 				).toBeNull();
 				expect(
-					screen.queryByRole("table", { name: "Installed solutions" }),
+					screen.queryByRole("table", {
+						name: "Installed modules and solutions",
+					}),
 				).toBeNull();
 			} else {
 				expect(
@@ -966,10 +1044,14 @@ describe("host read refusals and retained data", () => {
 						.filter((element) => element.textContent?.includes("out of date")),
 				).toHaveLength(2);
 				expect(
-					screen.getByRole("table", { name: "Available solutions" }),
+					screen.getByRole("table", {
+						name: "Available modules and solutions",
+					}),
 				).toBeTruthy();
 				expect(
-					screen.getByRole("table", { name: "Installed solutions" }),
+					screen.getByRole("table", {
+						name: "Installed modules and solutions",
+					}),
 				).toBeTruthy();
 			}
 			expect(toast.success).not.toHaveBeenCalled();
@@ -1161,6 +1243,7 @@ describe("mutation results belong to the page", () => {
 								? {
 										orgId: "org-1",
 										targetId: LEDGER_TARGET,
+										approval: LEDGER_APPROVAL,
 										agentIdentifier: "acme/ledger:0.9.1",
 										roleId: READER_ROLE,
 									}
@@ -1259,7 +1342,7 @@ describe("mutation results belong to the page", () => {
 		expect(reads.installed).toBe(2);
 		expect(
 			within(
-				screen.getByRole("table", { name: "Available solutions" }),
+				screen.getByRole("table", { name: "Available modules and solutions" }),
 			).getByText("Generation 4 (opened at 2)"),
 		).toBeTruthy();
 		expect(
@@ -1300,7 +1383,9 @@ describe("mutation results belong to the page", () => {
 		expect(reads.available).toBe(2);
 		expect(reads.installed).toBe(2);
 		expect(
-			screen.getByText("Nothing is installed in this organization."),
+			screen.getByText(
+				"Nothing is installed in this organization. Once a module or solution is available above, choose it to install it.",
+			),
 		).toBeTruthy();
 		expect(
 			screen.queryByRole("button", { name: "Uninstall expenses" }),
@@ -1426,6 +1511,7 @@ describe("accessible validation and host text", () => {
 					await assertBody(request, {
 						orgId: "org-1",
 						targetId: LEDGER_TARGET,
+						approval: LEDGER_APPROVAL,
 						agentIdentifier: "acme/ledger:0.9.1",
 						roleId: READER_ROLE,
 					});
@@ -1436,12 +1522,16 @@ describe("accessible validation and host text", () => {
 		renderInApp(<Page />);
 		expect(
 			within(
-				await screen.findByRole("table", { name: "Available solutions" }),
+				await screen.findByRole("table", {
+					name: "Available modules and solutions",
+				}),
 			).getByText(hostile),
 		).toBeTruthy();
 		expect(
 			within(
-				await screen.findByRole("table", { name: "Installed solutions" }),
+				await screen.findByRole("table", {
+					name: "Installed modules and solutions",
+				}),
 			).getByText(hostile),
 		).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", { name: `Install ${hostile}` }));

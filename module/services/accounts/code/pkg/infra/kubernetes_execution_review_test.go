@@ -32,12 +32,6 @@ type reviewTransport func(*http.Request) (*http.Response, error)
 
 func (f reviewTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-type reviewApproval struct{}
-
-func (reviewApproval) ApprovedBuild(context.Context, string) (business.ApprovedDigest, uint64, error) {
-	return business.ApprovedDigest(reviewDigest), 7, nil
-}
-
 var reviewDigest = "sha256:" + strings.Repeat("1", 64)
 
 // reviewToken is a JWT-shaped projected token with the given lifetime. Its
@@ -92,7 +86,7 @@ func reviewService(t *testing.T, client *KubernetesClient, registry string) *bus
 	}
 	service.SetModulePrincipals(parsed)
 	service.SetModuleAuthorityReads(installations, nil)
-	service.SetExecutionBinding(client, reviewApproval{})
+	service.SetExecutionBinding(client)
 	return service
 }
 
@@ -107,9 +101,23 @@ const (
 // The control, so every refusal below is about its one difference.
 func TestReviewedRunningAppAloneMints(t *testing.T) {
 	service := reviewService(t, reviewClient(t, reviewAppSpec, reviewAppStatus), reviewAlphaOnly)
-	authority, err := service.ModuleAuthorizeWorkContext(context.Background(), "alpha", reviewToken(t, 10*time.Minute))
+	authority, err := service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), "alpha", reviewToken(t, 10*time.Minute))
 	require.NoError(t, err)
 	require.Equal(t, "pod-alpha", authority.Execution.PodUID)
+}
+
+// #1145: containerd reports, as a container's status.imageID, the FIRST digest
+// it learned for the content, so a build re-published unchanged under a new
+// digest reads as the old one. Nothing at mint reads an image any more: a pod
+// whose spec and status name different digests for the same container mints,
+// because the workload is what binds, never the build.
+func TestAnAliasedImageIDIsNotReadAtMint(t *testing.T) {
+	spec := `"containers":[{"name":"app","image":"registry.example/app@sha256:` + strings.Repeat("a", 64) + `"}]`
+	status := `"phase":"Running","containerStatuses":[{"name":"app","imageID":"registry.example/app@sha256:` + strings.Repeat("b", 64) + `","state":{"running":{}}}]`
+	service := reviewService(t, reviewClient(t, spec, status), reviewAlphaOnly)
+	authority, err := service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), "alpha", reviewToken(t, 10*time.Minute))
+	require.NoError(t, err)
+	require.Equal(t, "app", authority.Execution.ContainerName)
 }
 
 // FINDING 1: alpha's own token minted as beta (and alpha) when the two share a
@@ -117,7 +125,7 @@ func TestReviewedRunningAppAloneMints(t *testing.T) {
 func TestReviewSharedWorkloadMintsAsNeitherPrefix(t *testing.T) {
 	service := reviewService(t, reviewClient(t, reviewAppSpec, reviewAppStatus), reviewShared)
 	for _, prefix := range []string{"alpha", "beta"} {
-		_, err := service.ModuleAuthorizeWorkContext(context.Background(), prefix, reviewToken(t, 10*time.Minute))
+		_, err := service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), prefix, reviewToken(t, 10*time.Minute))
 		require.ErrorIs(t, err, business.ErrModuleIdentityDenied, prefix)
 		require.ErrorIs(t, err, business.ErrExecutionWorkloadAmbiguous, prefix)
 	}
@@ -173,7 +181,7 @@ func TestReviewPodsTheApprovalDoesNotCoverMintNothing(t *testing.T) {
 				client = reviewClientDeleting(t)
 			}
 			service := reviewService(t, client, reviewAlphaOnly)
-			_, err := service.ModuleAuthorizeWorkContext(context.Background(), "alpha", reviewToken(t, 10*time.Minute))
+			_, err := service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), "alpha", reviewToken(t, 10*time.Minute))
 			require.ErrorIs(t, err, tc.want)
 			require.ErrorIs(t, err, business.ErrModuleIdentityDenied)
 		})
@@ -200,11 +208,33 @@ func reviewClientDeleting(t *testing.T) *KubernetesClient {
 // FINDING 2b, through the real decoder: the token's own iat and exp bound it.
 func TestReviewATokenLongerLivedThanTenMinutesMintsNothing(t *testing.T) {
 	service := reviewService(t, reviewClient(t, reviewAppSpec, reviewAppStatus), reviewAlphaOnly)
-	_, err := service.ModuleAuthorizeWorkContext(context.Background(), "alpha", reviewToken(t, time.Hour))
+	_, err := service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), "alpha", reviewToken(t, time.Hour))
 	require.ErrorIs(t, err, business.ErrExecutionTokenLifetime)
 
 	// A token the review authenticates but whose claims cannot be read is
 	// refused rather than given an assumed lifetime.
-	_, err = service.ModuleAuthorizeWorkContext(context.Background(), "alpha", "copied-valid-alpha-token")
+	_, err = service.ModuleAuthorizeWorkContext(business.WithVerifiedWorkloadPresenter(context.Background(), "spiffe://cluster.local/ns/acme-prod/sa/shared"), "alpha", "copied-valid-alpha-token")
 	require.ErrorIs(t, err, business.ErrExecutionTokenRejected)
+}
+
+// Exercise presenter binding through the production Kubernetes decoder and
+// business authorization, with a valid copied token and an approved live pod.
+func TestProductionPresenterMustMatchAppliedAndReviewedWorkload(t *testing.T) {
+	client := reviewClient(t, reviewAppSpec, reviewAppStatus)
+	require.False(t, client.NativeDevelopment())
+	service := reviewService(t, client, reviewAlphaOnly)
+	token := reviewToken(t, 10*time.Minute)
+	const valid = "spiffe://cluster.local/ns/acme-prod/sa/shared"
+	for _, presenter := range []string{"", "spiffe://cluster.local/ns/other/sa/shared", "spiffe://cluster.local/ns/acme-prod/sa/attacker", valid + "?"} {
+		t.Run(presenter, func(t *testing.T) {
+			ctx := business.WithVerifiedWorkloadPresenter(context.Background(), presenter)
+			_, err := service.ModuleAuthorizeWorkContext(ctx, "alpha", token)
+			require.ErrorIs(t, err, business.ErrExecutionIdentityMismatch)
+		})
+	}
+	ctx := business.WithVerifiedWorkloadPresenter(context.Background(), valid)
+	for range 3 {
+		_, err := service.ModuleAuthorizeWorkContext(ctx, "alpha", token)
+		require.NoError(t, err, "legitimate exchanges do not spend the projection")
+	}
 }

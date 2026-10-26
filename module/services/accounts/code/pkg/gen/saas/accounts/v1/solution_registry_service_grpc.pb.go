@@ -20,8 +20,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SolutionRegistryService_ListSolutionHostBindings_FullMethodName  = "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings"
-	SolutionRegistryService_ListSolutionRegistrations_FullMethodName = "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
+	SolutionRegistryService_ListSolutionHostBindings_FullMethodName    = "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings"
+	SolutionRegistryService_ListSolutionRegistrations_FullMethodName   = "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations"
+	SolutionRegistryService_GetRetainedSolutionFrontend_FullMethodName = "/saas.accounts.v1.SolutionRegistryService/GetRetainedSolutionFrontend"
 )
 
 // SolutionRegistryServiceClient is the client API for SolutionRegistryService service.
@@ -40,6 +41,8 @@ type SolutionRegistryServiceClient interface {
 	// ListSolutionRegistrations returns the whole registry so a restarted or
 	// lagging replica can rebuild its routing cache from authoritative state.
 	ListSolutionRegistrations(ctx context.Context, in *ListSolutionRegistrationsRequest, opts ...grpc.CallOption) (*ListSolutionRegistrationsResponse, error)
+	// Read one retained frontend on a live target, without granting API access.
+	GetRetainedSolutionFrontend(ctx context.Context, in *GetRetainedSolutionFrontendRequest, opts ...grpc.CallOption) (*GetRetainedSolutionFrontendResponse, error)
 }
 
 type solutionRegistryServiceClient struct {
@@ -70,6 +73,16 @@ func (c *solutionRegistryServiceClient) ListSolutionRegistrations(ctx context.Co
 	return out, nil
 }
 
+func (c *solutionRegistryServiceClient) GetRetainedSolutionFrontend(ctx context.Context, in *GetRetainedSolutionFrontendRequest, opts ...grpc.CallOption) (*GetRetainedSolutionFrontendResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRetainedSolutionFrontendResponse)
+	err := c.cc.Invoke(ctx, SolutionRegistryService_GetRetainedSolutionFrontend_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SolutionRegistryServiceServer is the server API for SolutionRegistryService service.
 // All implementations must embed UnimplementedSolutionRegistryServiceServer
 // for forward compatibility.
@@ -86,6 +99,8 @@ type SolutionRegistryServiceServer interface {
 	// ListSolutionRegistrations returns the whole registry so a restarted or
 	// lagging replica can rebuild its routing cache from authoritative state.
 	ListSolutionRegistrations(context.Context, *ListSolutionRegistrationsRequest) (*ListSolutionRegistrationsResponse, error)
+	// Read one retained frontend on a live target, without granting API access.
+	GetRetainedSolutionFrontend(context.Context, *GetRetainedSolutionFrontendRequest) (*GetRetainedSolutionFrontendResponse, error)
 	mustEmbedUnimplementedSolutionRegistryServiceServer()
 }
 
@@ -101,6 +116,9 @@ func (UnimplementedSolutionRegistryServiceServer) ListSolutionHostBindings(conte
 }
 func (UnimplementedSolutionRegistryServiceServer) ListSolutionRegistrations(context.Context, *ListSolutionRegistrationsRequest) (*ListSolutionRegistrationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSolutionRegistrations not implemented")
+}
+func (UnimplementedSolutionRegistryServiceServer) GetRetainedSolutionFrontend(context.Context, *GetRetainedSolutionFrontendRequest) (*GetRetainedSolutionFrontendResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRetainedSolutionFrontend not implemented")
 }
 func (UnimplementedSolutionRegistryServiceServer) mustEmbedUnimplementedSolutionRegistryServiceServer() {
 }
@@ -160,6 +178,24 @@ func _SolutionRegistryService_ListSolutionRegistrations_Handler(srv interface{},
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SolutionRegistryService_GetRetainedSolutionFrontend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRetainedSolutionFrontendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SolutionRegistryServiceServer).GetRetainedSolutionFrontend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SolutionRegistryService_GetRetainedSolutionFrontend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SolutionRegistryServiceServer).GetRetainedSolutionFrontend(ctx, req.(*GetRetainedSolutionFrontendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SolutionRegistryService_ServiceDesc is the grpc.ServiceDesc for SolutionRegistryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -174,6 +210,10 @@ var SolutionRegistryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSolutionRegistrations",
 			Handler:    _SolutionRegistryService_ListSolutionRegistrations_Handler,
+		},
+		{
+			MethodName: "GetRetainedSolutionFrontend",
+			Handler:    _SolutionRegistryService_GetRetainedSolutionFrontend_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

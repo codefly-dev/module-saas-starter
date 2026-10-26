@@ -144,10 +144,11 @@ type generatedLibraryDocument struct {
 		Path string `yaml:"path"`
 	} `yaml:"languages"`
 	Sources []struct {
-		Package        string `yaml:"package"`
-		Service        string `yaml:"service"`
-		Endpoint       string `yaml:"endpoint"`
-		ContractDigest string `yaml:"contract-digest"`
+		Package        string   `yaml:"package"`
+		Service        string   `yaml:"service"`
+		Endpoint       string   `yaml:"endpoint"`
+		ContractDigest string   `yaml:"contract-digest"`
+		Services       []string `yaml:"services"`
 	} `yaml:"sources"`
 }
 
@@ -210,7 +211,7 @@ func findGeneratedLibraries(t *testing.T, moduleRoot string) []string {
 
 // TestGeneratedLibraryContractDigestsMatchThePackage proves no generated client
 // library has fallen behind the contract it is generated from. A library vendors
-// its own copy of the contract and records that copy's digest; nothing in the
+// its selected contract and records the producer's digest; nothing in the
 // existing pipeline reads it back. `codefly generate contracts --check` compares
 // the exported contract against the service protos and stops there, and
 // `module-package run-generators` never enters a library directory — so a
@@ -225,9 +226,11 @@ func TestGeneratedLibraryContractDigestsMatchThePackage(t *testing.T) {
 		t.Fatalf("load package manifest: %v", err)
 	}
 	published := make(map[string]string)
+	publishedPaths := make(map[string]string)
 	for _, service := range manifest.Services {
 		for _, contract := range service.APIContracts {
 			published[service.Name+"\x00"+contract.Endpoint] = contract.Digest
+			publishedPaths[service.Name+"\x00"+contract.Endpoint] = contract.Path
 		}
 	}
 
@@ -267,7 +270,7 @@ func TestGeneratedLibraryContractDigestsMatchThePackage(t *testing.T) {
 				t.Errorf("%s is stale: generated from %s/%s at %s, the package publishes %s — regenerate the library", relative, source.Service, source.Endpoint, source.ContractDigest, digest)
 				continue
 			}
-			assertLibraryBindingsMatchContract(t, moduleRoot, path, relative, document, digest)
+			assertLibraryBindingsMatchContract(t, moduleRoot, path, relative, document, publishedPaths[key], source.Services)
 		}
 		// A library this gate silently skips is a library that can rot. The one
 		// in the tree matches, so this cannot fire today; it fires the first time
@@ -284,14 +287,14 @@ func TestGeneratedLibraryContractDigestsMatchThePackage(t *testing.T) {
 }
 
 // assertLibraryBindingsMatchContract checks the two things the recorded digest
-// cannot: that the contract the library actually vendors is the published one,
+// cannot: that the contract the library vendors is an unchanged, resolving projection of the published one,
 // and that the bindings on disk cover every proto in it.
 //
 // The recorded `contract-digest` is one string in one YAML file. Clearing this
 // gate by editing that string is a one-line change, and the regeneration it
 // stands in for is not one line — so the string alone is an invitation, not a
 // guarantee. These two checks are what make the gate about the artifact.
-func assertLibraryBindingsMatchContract(t *testing.T, moduleRoot, libraryPath, relative string, document generatedLibraryDocument, digest string) {
+func assertLibraryBindingsMatchContract(t *testing.T, moduleRoot, libraryPath, relative string, document generatedLibraryDocument, publishedPath string, services []string) {
 	t.Helper()
 
 	libraryDir := filepath.Dir(libraryPath)
@@ -301,9 +304,39 @@ func assertLibraryBindingsMatchContract(t *testing.T, moduleRoot, libraryPath, r
 		t.Errorf("%s records a contract digest but its vendored contract is unreadable: %v", relative, err)
 		return
 	}
-	if vendoredDigest := corecomposition.APIContractDigest(data); vendoredDigest != digest {
-		t.Errorf("%s records %s but the contract it vendors hashes to %s — the digest was edited without regenerating", relative, digest, vendoredDigest)
-		return
+	// CLI 0.1.215 records the producer's digest in sources, while the local
+	// catalog hashes the selected projection. Verify both, including the
+	// projection's declarations against the actual published contract.
+	catalogData, err := os.ReadFile(filepath.Join(libraryDir, "contract", "catalog.codefly.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog corecomposition.APIContractCatalog
+	if err := json.Unmarshal(catalogData, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Endpoints) != 1 || catalog.Endpoints[0].Digest != corecomposition.APIContractDigest(data) {
+		t.Fatalf("%s: vendored catalog does not hash the vendored contract", relative)
+	}
+	published, err := os.ReadFile(filepath.Join(moduleRoot, publishedPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateContractProjection(published, data, services); err != nil {
+		t.Fatalf("%s: invalid generated contract projection: %v", relative, err)
+	}
+	var selected []string
+	for _, service := range catalog.Endpoints[0].Services {
+		selected = append(selected, service.Name)
+	}
+	slices.Sort(selected)
+	wanted := slices.Clone(services)
+	slices.Sort(wanted)
+	if len(wanted) > 0 && !slices.Equal(selected, wanted) {
+		t.Fatalf("%s: catalog services %v differ from selection %v", relative, selected, wanted)
 	}
 
 	files, err := contractProtoFiles(data)

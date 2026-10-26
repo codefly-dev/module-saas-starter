@@ -24,6 +24,7 @@ var forwardedIdentityHeaders = []string{
 	"X-Acting-As-User-Id", "X-Act", "X-Scopes", "X-Credential-Kind", "X-MFA-Satisfied",
 	"X-Authentication-Methods", "X-Auth-Time", "X-Assurance-Level", "X-MFA-Verified-At",
 	"X-Client-Id",
+	"X-Codefly-Workload-Presenter",
 	// Which registered solution a Work Context mint is for, and the publisher
 	// its credential named (issue #1015). Neither names a person, but together
 	// they select the runtime boundary the capability is sealed under, so they
@@ -261,6 +262,9 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 		var err error
 		ctx, err = auth.WithVerifiedPublicOrigin(ctx, forwardedPublicOrigin)
 		if err != nil {
+			// The reason names the forwarded and configured origins; the caller
+			// keeps the generic answer.
+			wool.Get(ctx).In("connectPolicyInterceptor").Warn("trusted public origin refused", wool.ErrField(err))
 			return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("invalid trusted public origin"))
 		}
 	}
@@ -278,6 +282,15 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 
 	if sourceOperationProcedure(procedure) && len(headers.Values(workContextHeader)) != 0 {
 		return authenticateSourceOperationContext(ctx, headers)
+	}
+	if directoryProcedure(procedure) && len(headers.Values(workContextHeader)) != 0 {
+		return authenticateOwnerWorkContext(ctx, headers, business.DirectoryAudience, "directory")
+	}
+	if business.ShapeAuthenticated(procedure) && headers.Get("Authorization") == "" && !trustedForwarded {
+		// A call carrying no credential at all: the request's shape
+		// authenticates (business.ShapeAuthenticated). A forwarded identity or a
+		// bearer is admitted as on every other method.
+		return ctx, nil
 	}
 	if trustedForwarded && headers.Get("X-User-Id") != "" {
 		forwarded, err := stampForwardedHTTPIdentity(ctx, headers)
@@ -302,7 +315,7 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	if err != nil {
 		if errors.Is(err, auth.ErrRevocationUnavailable) {
 			wool.Get(ctx).In("connectPolicyInterceptor").Warn("revocation list unavailable, denying (fail-closed)", wool.ErrField(err))
-			return ctx, connect.NewError(connect.CodeUnavailable, errors.New("authorization temporarily unavailable"))
+			return ctx, connect.NewError(connect.CodeUnavailable, errors.New(authorizationUnavailableMessage))
 		}
 		wool.Get(ctx).In("connectPolicyInterceptor").Debug("VerifyAccess failed", wool.ErrField(err))
 		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid or expired access token"))

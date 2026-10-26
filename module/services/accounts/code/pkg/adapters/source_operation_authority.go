@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -35,6 +36,7 @@ type sourceOperationDelegationKey struct{}
 func sourceOperationProcedure(method string) bool {
 	switch method {
 	case business.SourceOperationMethod,
+		"/saas.accounts.v1.DatasourceService/ListSourceOperations",
 		"/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
 		business.SourceReceiptRetentionMethod,
 		"/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts",
@@ -50,22 +52,34 @@ func sourceOperationProcedure(method string) bool {
 // accepts only this owner's audience, then rechecks its live chain and revision.
 // The module-capabilities identity token has no source scope and is never a call.
 func authenticateSourceOperationContext(ctx context.Context, headers http.Header) (context.Context, error) {
+	return authenticateOwnerWorkContext(ctx, headers, business.SourceOperationAudience, "source")
+}
+
+// authenticateOwnerWorkContext is the owner admission shared by source
+// operations and directory reads. The audience is selected by the procedure,
+// never by the presented claims. The resulting identity is the verified owner
+// and tenant, so the existing handler and database membership gates still apply.
+func authenticateOwnerWorkContext(ctx context.Context, headers http.Header, audience, surface string) (context.Context, error) {
 	authority := WorkContextSingleton()
 	if !authority.configured() {
-		return ctx, connect.NewError(connect.CodeUnavailable, errors.New("source authority unavailable"))
+		return ctx, connect.NewError(connect.CodeUnavailable, fmt.Errorf("%s authority unavailable", surface))
 	}
 	values := headers.Values(workContextHeader)
 	if len(values) != 1 {
-		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("one source Work Context required"))
+		return ctx, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("one %s Work Context required", surface))
 	}
-	// Presented TO the source operation surface, so verified as its audience.
-	verified, err := authority.verifyFor(ctx, values[0], business.SourceOperationAudience)
-	if err != nil || verified.Context().GetTenantId() == "" || verified.Context().GetOwnerPrincipalId() == "" {
-		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid source Work Context"))
+	verified, err := authority.verifyFor(ctx, values[0], audience)
+	if err != nil {
+		// Core's refusal names the failed signature, audience, window, seal or
+		// revision check; it never includes the presented credential.
+		return ctx, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("invalid %s Work Context: %w", surface, err))
+	}
+	if verified.Context().GetTenantId() == "" || verified.Context().GetOwnerPrincipalId() == "" {
+		return ctx, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("%s Work Context owner and tenant required", surface))
 	}
 	claims := verified.Context()
 	if claims.GetReplayPolicy() != workcontext.ReplayIdempotent {
-		return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("idempotent source Work Context required"))
+		return ctx, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("idempotent %s Work Context required", surface))
 	}
 	ctx = stampRequestIdentity(ctx, auth.OrdinaryRequestIdentity(claims.GetOwnerPrincipalId(), claims.GetTenantId()), auth.Assurance{})
 	delegated, delegation, err := service.ConfirmSourceDelegationParent(ctx, claims.TenantId, claims.OwnerPrincipalId, claims.AuthorizationRevision, operationScopesFromCore(claims.AuthorityScopes), sourceDelegationHops(claims.ActorChain), claims.GetOperationBinding().GetBindingId())

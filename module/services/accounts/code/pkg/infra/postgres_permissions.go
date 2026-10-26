@@ -34,9 +34,16 @@ func (s *PostgresStore) CreateRole(ctx context.Context, role *gen.Role) error {
 		if role.OrgId != "" {
 			orgID = &role.OrgId
 		}
+		// derived_from is named and written NULL rather than left to its default:
+		// this is the tenant's own role-creation path, and a role THIS HOST
+		// derived (derived_module_access.go) may never be minted through it. A
+		// derived role is invisible in every picker and refuses every hand
+		// grant, so one created here would be a role an administrator could see
+		// and then not use; naming the column is what keeps a later editor from
+		// quietly carrying provenance in on a copied statement.
 		if _, err := executor.Exec(ctx, `
-			INSERT INTO roles (id, name, description, built_in, org_id, created_at)
-			VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
+			INSERT INTO roles (id, name, description, built_in, org_id, derived_from, created_at)
+			VALUES ($1, $2, $3, $4, $5, NULL, CURRENT_TIMESTAMP)`,
 			role.Id, role.Name, role.Description, role.BuiltIn, orgID,
 		); err != nil {
 			return w.Wrapf(err, "failed to insert role")
@@ -80,14 +87,21 @@ func (s *PostgresStore) ListRoles(ctx context.Context, orgID string) ([]*gen.Rol
 		FROM roles r
 		LEFT JOIN role_permissions rp ON rp.role_id = r.id
 		`
+	// A DERIVED role is never listed. This listing is what every role picker
+	// reads — the grant dialog's among them — and a derived role offered there
+	// could be granted to a team by hand at any node, which would give that
+	// team the module reach of a solution it holds no installation grant on.
+	// The grant paths refuse it too (GrantScope, AssignRole, ShareRecord); this
+	// is the half that keeps it from being offered in the first place, because a
+	// control an administrator can see and not use is its own defect.
 	if orgID == "" {
 		rows, err = executor.Query(ctx, baseQuery+`
-			WHERE r.org_id IS NULL
+			WHERE r.derived_from IS NULL AND r.org_id IS NULL
 			ORDER BY r.built_in DESC, r.name, rp.resource, rp.action`,
 		)
 	} else {
 		rows, err = executor.Query(ctx, baseQuery+`
-			WHERE r.org_id IS NULL OR r.org_id = $1
+			WHERE r.derived_from IS NULL AND (r.org_id IS NULL OR r.org_id = $1)
 			ORDER BY r.built_in DESC, r.name, rp.resource, rp.action`, orgID,
 		)
 	}
@@ -102,18 +116,29 @@ func (s *PostgresStore) ListRoles(ctx context.Context, orgID string) ([]*gen.Rol
 	var order []string
 	for rows.Next() {
 		var (
-			rid, rname, rdesc string
-			builtIn           bool
-			orgIDVal          *string
-			createdAt         time.Time
-			resource, action  *string
+			rid, rname string
+			builtIn    bool
+			// description is NULLABLE, and the role catalog writes NULL for a
+			// role it declares without one (nilIfEmpty, postgres_role_catalog.go).
+			// Scanning it into a string made this listing — the picker every
+			// grant dialog reads — fail outright for the whole organisation after
+			// such an import, with "cannot scan NULL into *string". Fixed here,
+			// where the column's nullability is read, rather than by requiring
+			// every writer to store an empty string.
+			rdesc            *string
+			orgIDVal         *string
+			createdAt        time.Time
+			resource, action *string
 		)
 		if err := rows.Scan(&rid, &rname, &rdesc, &builtIn, &orgIDVal, &createdAt, &resource, &action); err != nil {
 			return nil, w.Wrapf(err, "failed to scan role row")
 		}
 		r, seen := byID[rid]
 		if !seen {
-			r = &gen.Role{Id: rid, Name: rname, Description: rdesc, BuiltIn: builtIn}
+			r = &gen.Role{Id: rid, Name: rname, BuiltIn: builtIn}
+			if rdesc != nil {
+				r.Description = *rdesc
+			}
 			if orgIDVal != nil {
 				r.OrgId = *orgIDVal
 			}
@@ -151,8 +176,9 @@ func (s *PostgresStore) UpdateRole(ctx context.Context, roleID, orgID, descripti
 	}
 
 	var (
-		name    string
-		builtIn bool
+		name        string
+		builtIn     bool
+		derivedFrom *string
 	)
 	// FOR UPDATE states the serialization this replace depends on rather than
 	// inheriting it. Two concurrent saves must not interleave: under READ
@@ -164,11 +190,11 @@ func (s *PostgresStore) UpdateRole(ctx context.Context, roleID, orgID, descripti
 	// the lock here is not what makes it correct — it is what keeps it correct
 	// if that write ever becomes conditional on the description having changed.
 	err := executor.QueryRow(ctx, `
-		SELECT name, built_in FROM roles
+		SELECT name, built_in, derived_from FROM roles
 		WHERE id = $1 AND org_id IS NOT DISTINCT FROM $2::uuid
 		FOR UPDATE`,
 		roleID, scope,
-	).Scan(&name, &builtIn)
+	).Scan(&name, &builtIn, &derivedFrom)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, status.Errorf(codes.NotFound, "role %q not found", roleID)
@@ -177,6 +203,17 @@ func (s *PostgresStore) UpdateRole(ctx context.Context, roleID, orgID, descripti
 	}
 	if builtIn {
 		return nil, status.Error(codes.FailedPrecondition, "cannot update built-in role")
+	}
+	// A derived role's permissions are a function of the solution's declared
+	// consumption and the role the administrator chose, re-derived on the next
+	// grant or revoke of its cause. An edit here would be silently reverted at
+	// best, and at worst would widen a live carried grant beyond what the
+	// solution declared — which is the one thing the derivation guarantees.
+	if derivedFrom != nil {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"role %q is derived by this host from %s: its permissions are the solution's declared "+
+				"consumption intersected with the chosen role, and editing them would widen a carried grant",
+			roleID, *derivedFrom)
 	}
 
 	if _, err := executor.Exec(ctx, `
@@ -238,12 +275,23 @@ func (s *PostgresStore) DeleteRole(ctx context.Context, roleID string) error {
 
 	// Prevent deleting built-in roles
 	var builtIn bool
-	err := executor.QueryRow(ctx, `SELECT built_in FROM roles WHERE id = $1`, roleID).Scan(&builtIn)
+	var derivedFrom *string
+	err := executor.QueryRow(ctx, `SELECT built_in, derived_from FROM roles WHERE id = $1`, roleID).Scan(&builtIn, &derivedFrom)
 	if err != nil {
 		return w.Wrapf(err, "failed to check role")
 	}
 	if builtIn {
 		return w.NewError("cannot delete built-in role")
+	}
+	// Deleting a derived role cascades away every carried grant that holds it,
+	// so a solution's teams would silently lose the module access the solution
+	// declares it needs, with no revocation of the cause to explain it. The
+	// derived set is this host's to manage: it goes when its cause goes.
+	if derivedFrom != nil {
+		return status.Errorf(codes.FailedPrecondition,
+			"role %q is derived by this host from %s and is removed with the grant that caused it, "+
+				"never on its own: deleting it would cascade away the carried grants that hold it",
+			roleID, *derivedFrom)
 	}
 
 	_, err = executor.Exec(ctx, `DELETE FROM roles WHERE id = $1`, roleID)
@@ -273,6 +321,18 @@ func (s *PostgresStore) AssignRole(ctx context.Context, assignment *gen.RoleAssi
 	// the roles policy exposes only own-org and global roles, matching GrantScope
 	// and ShareRecord.
 	if err := requireVisibleRole(ctx, executor, assignment.RoleId); err != nil {
+		return w.Wrapf(err, "failed to validate role")
+	}
+
+	// A role assignment is ORGANISATION-WIDE or scoped by a free-text `scope`,
+	// and it is resolved by CheckPermission rather than by the scope tree. An
+	// assignment of a DERIVED role would therefore hand every member of the
+	// organisation — or of the named scope — the module reach a solution
+	// declared, with no installation, no exposure grant and no cause to revoke
+	// it with. That is strictly worse than the node path it bypasses, so it is
+	// refused here exactly as hard: a derived role is granted only by the
+	// derivation, at one node, with its cause named.
+	if err := requireNotDerivedRole(ctx, executor, assignment.RoleId); err != nil {
 		return w.Wrapf(err, "failed to validate role")
 	}
 

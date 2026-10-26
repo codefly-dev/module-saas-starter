@@ -105,6 +105,17 @@ type Store interface {
 	//     Call it at the top level only — nesting it inside an existing
 	//     WithOrgTx/WithControlPlane violates the no-nesting rule.
 	InsertDatasourceSource(ctx context.Context, source *DatasourceSource) error
+	// UpdateDatasourceSourceFetchScope replaces what a Source fetches — branch,
+	// paths and the config envelope carrying its file-type filter — and nothing
+	// else. Reports ErrDatasourceSourceNotFound when no row matched, so a source
+	// deleted since the caller read it cannot be answered as a successful edit.
+	// MUST run inside the caller's WithOrgTx.
+	UpdateDatasourceSourceFetchScope(ctx context.Context, source *DatasourceSource) error
+	// LockDatasourceSourceFetchScope reads one Source under a row lock, or
+	// (nil, nil) when none matches, so an edit compares the scope it expects
+	// against the row as it is at the moment it writes. MUST run inside the
+	// caller's WithOrgTx.
+	LockDatasourceSourceFetchScope(ctx context.Context, orgID, id string) (*DatasourceSource, error)
 	WithSourceReadSnapshot(context.Context, string, func(context.Context) error) error
 	SourceReadRevision(context.Context, string, []string) (string, time.Time, error)
 	ListReadableSourcesPage(context.Context, string, []string, []string, string, int) ([]*gen.ReadableSourceCollection, error)
@@ -255,6 +266,22 @@ type Store interface {
 	ListDatasourceDomains(ctx context.Context, orgID string) ([]*DatasourceDomain, error)
 	GetDatasourceDomain(ctx context.Context, orgID, id string) (*DatasourceDomain, error)
 	MarkDatasourceDomainVerified(ctx context.Context, orgID, id string, at time.Time) error
+
+	// Module delegations (module_delegation.go, migration 51). Tenant-facing
+	// calls run in the organization's transaction; a module's lookup by id runs
+	// under the control plane with an empty orgID.
+	//
+	// InsertModuleDelegation records one active delegation and sets its
+	// creation time.
+	InsertModuleDelegation(ctx context.Context, delegation *ModuleDelegation) error
+	// ModuleDelegations reads the delegations among ids, in orgID, or by id
+	// alone when orgID is empty (control plane only).
+	ModuleDelegations(ctx context.Context, orgID string, ids []string) ([]*ModuleDelegation, error)
+	// RevokeModuleDelegation stamps delegation id in orgID as revoked by
+	// revokedBy, if it is active, and returns it as it then stands, and whether
+	// this call revoked it. grantor, when set, must be the delegation's grantor.
+	// Nil when orgID holds no such delegation.
+	RevokeModuleDelegation(ctx context.Context, orgID, grantor, id, revokedBy string) (*ModuleDelegation, bool, error)
 
 	// Source delegations (source_delegation.go, migration 9). The tenant-facing
 	// calls run inside the organization's transaction; the module-facing mint

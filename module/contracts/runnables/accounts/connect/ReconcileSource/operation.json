@@ -16,6 +16,11 @@
   "max_input_bytes": 4096,
   "max_output_bytes": 4096,
   "completion": "COMPLETION_CALL",
+  "tool": {
+    "description": "ReconcileSource performs one reconcile pass over a source: the host operation the declared schedule's occurrences admit, and the same work a person asks for by hand. It resolves nothing with the provider itself — GitHub gets a conditional reconcile that snapshots only if its head moved, and a pull provider the full sync its connector has — so an occurrence is never slowed by one unreachable source.",
+    "effect": "EFFECT_MUTATION",
+    "name": "ReconcileSource"
+  },
   "required_scope_slots": [
     {
       "lookup": true,

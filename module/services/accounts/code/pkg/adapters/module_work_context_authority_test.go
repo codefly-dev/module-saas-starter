@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
-	"accounts/pkg/business/executiontest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -154,25 +153,6 @@ func (s servedSources) PrincipalEpoch(ctx context.Context, principalID string) (
 		return 0, workcontext.ErrNoSeal
 	default:
 		return 0, fmt.Errorf("the host answered no principal state")
-	}
-}
-
-func (s servedSources) ApprovedBuild(ctx context.Context, principalID string) (string, uint64, error) {
-	response, err := s.ask(ctx, &gen.WorkContextApprovedBuildQuestion{PrincipalId: principalID})
-	if err != nil {
-		return "", 0, err
-	}
-	answer := response.GetApprovedBuild()
-	if answer == nil || answer.GetPrincipalId() != principalID {
-		return "", 0, fmt.Errorf("the host answered no approved build for principal %q", principalID)
-	}
-	switch answer.GetState() {
-	case gen.WorkContextApprovedBuildState_WORK_CONTEXT_APPROVED_BUILD_STATE_APPROVED:
-		return answer.GetImageDigest(), answer.GetBuildIncarnation(), nil
-	case gen.WorkContextApprovedBuildState_WORK_CONTEXT_APPROVED_BUILD_STATE_BEARS_NO_EXECUTION:
-		return "", 0, workcontext.ErrNoApprovedBuild
-	default:
-		return "", 0, fmt.Errorf("the host answered no approved-build state")
 	}
 }
 
@@ -547,23 +527,8 @@ func TestAnUnknownPrincipalIsRefusedThroughTheServedSources(t *testing.T) {
 	_, err := sources.PrincipalEpoch(context.Background(), authorityPerson)
 	require.ErrorIs(t, err, workcontext.ErrNoSeal)
 
-	_, _, err = sources.ApprovedBuild(context.Background(), authorityPerson)
-	require.Equal(t, codes.FailedPrecondition, status.Code(err),
-		"an unknown principal is a decision, and not 'bears no execution'")
-
 	_, err = verifier.Verify(context.Background(), fixture.token)
 	require.Error(t, err)
-	require.NotErrorIs(t, err, workcontext.ErrNoApprovedBuild,
-		"an unknown principal must not read as one that bears no execution")
-}
-
-// A person's session bears no execution, which is the answer and not a failure.
-func TestAPersonBearsNoExecutionThroughTheServedSources(t *testing.T) {
-	fixture := installWorkContextAuthorityFixture(t)
-
-	_, _, err := fixture.sources(t, fixture.caller).ApprovedBuild(context.Background(), authorityPerson)
-
-	require.ErrorIs(t, err, workcontext.ErrNoApprovedBuild)
 }
 
 // THE CAPABILITY IS THE AUTHORIZATION. A module may resolve the live authority
@@ -583,8 +548,6 @@ func TestAModuleCannotResolveAuthorityForACapabilityAddressedElsewhere(t *testin
 
 	// No answer leaks through another question either.
 	_, err = foreign.PrincipalEpoch(context.Background(), authorityPerson)
-	require.Equal(t, codes.PermissionDenied, status.Code(err))
-	_, _, err = foreign.ApprovedBuild(context.Background(), authorityPerson)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 	_, err = foreign.AuthorizationRevision(context.Background(), authorityOrg)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
@@ -636,8 +599,6 @@ func TestAQuestionMustBeAboutThePresentedCapability(t *testing.T) {
 	// A principal that is neither the owner nor a hop: the membership oracle
 	// this surface must not be.
 	_, err := sources.PrincipalEpoch(context.Background(), authorityStranger)
-	require.Equal(t, codes.InvalidArgument, status.Code(err))
-	_, _, err = sources.ApprovedBuild(context.Background(), authorityStranger)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 
 	// Another installation, and another owner's revision.
@@ -837,44 +798,6 @@ func TestAWithdrawnOperationBindingIsRefusedThroughTheServedSources(t *testing.T
 	binding, err := sources.OperationBinding(context.Background(), bindingID)
 	require.NoError(t, err)
 	require.True(t, binding.Revoked, "the served binding says it was withdrawn")
-
-	_, err = verifier.Verify(context.Background(), sources.token)
-	require.ErrorIs(t, err, workcontext.ErrRevoked)
-}
-
-// A module principal's APPROVED BUILD, the arm a person's capability never
-// reaches: the answer is the digest and incarnation the issuer approves for the
-// hop's principal, which is what core holds the sealed execution against.
-func TestAModulePrincipalsApprovedBuildIsServed(t *testing.T) {
-	installDelegationBindingService(t)
-	sources, _ := delegationSources(t)
-	using := business.ModulePrincipalID("ingestservice")
-
-	digest, incarnation, err := sources.ApprovedBuild(context.Background(), using)
-
-	require.NoError(t, err)
-	require.Equal(t, executiontest.Digest("ingestservice"), digest)
-	require.Equal(t, uint64(1), incarnation)
-}
-
-// A REPLACED BUILD is refused, which is the second revocation the issue names.
-// The issuer approves another image for the module exercising the capability, so
-// the execution it is sealed to is no longer the one the issuer approves.
-func TestAReplacedBuildIsRefusedThroughTheServedSources(t *testing.T) {
-	installDelegationBindingService(t)
-	sources, _ := delegationSources(t)
-	verifier := verifierOver(t, "reports", sources)
-	require.NoError(t, mustVerify(t, verifier, sources.token))
-	using := business.ModulePrincipalID("ingestservice")
-
-	replaced := testBuildFor("a replacement image")
-	replaced.BuildIncarnation = 2
-	workContextSingleton.seals.(*sealAnswersFake).approve(using, replaced)
-
-	digest, incarnation, err := sources.ApprovedBuild(context.Background(), using)
-	require.NoError(t, err)
-	require.Equal(t, replaced.ImageDigest, digest)
-	require.Equal(t, uint64(2), incarnation)
 
 	_, err = verifier.Verify(context.Background(), sources.token)
 	require.ErrorIs(t, err, workcontext.ErrRevoked)

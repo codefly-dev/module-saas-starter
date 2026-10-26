@@ -226,7 +226,7 @@ func TestNoCredentialByteSequenceLeaks(t *testing.T) {
 			effectID := business.NewIDString()
 			sum := sha256.Sum256(input)
 			ctx := receipts.WithEffect(requestCtx, receipts.Effect{ID: effectID, Tenant: org, Method: "/saas.accounts.v1.DatasourceService/InvokeSourceOperation", RequestDigest: sum[:]})
-			response, err := svc.InvokeSourceOperation(ctx, actor, org, source.ID, "read_item", input, func(context.Context, *business.SourceOperationResult) error {
+			response, err := svc.InvokeSourceOperation(ctx, actor, org, source.ID, "read_item", "", input, func(context.Context, *business.SourceOperationResult) error {
 				t.Fatal("failure must not commit a receipt")
 				return nil
 			})

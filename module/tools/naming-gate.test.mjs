@@ -206,7 +206,7 @@ test("canonicalScanRoot widens to the repository root only in canonical", () => 
 });
 
 test("a file too large to scan is reported, never skipped silently", () => {
-  const big = "clean line\n".repeat(60000); // comfortably over the 512 KiB cap
+  const big = "clean line\n".repeat(120000); // comfortably over the 1 MiB cap
   assert.match(joined({ "big.md": big }), /big\.md: too large to scan/);
   // The allowlist is the escape hatch the message names, so it must actually silence it.
   assert.deepEqual(

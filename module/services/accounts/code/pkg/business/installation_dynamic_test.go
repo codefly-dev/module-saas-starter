@@ -70,7 +70,7 @@ func TestDynamicInstallationIsolationAndAttribution(t *testing.T) {
 	caller.BoundOrg = "org-c"
 	_, err = s.AuthorizeModuleCapability(context.Background(), caller)
 	require.ErrorIs(t, err, ErrModuleInstallationInactive)
-	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
 	require.Equal(t, []string{"org-a/principal", "org-b/principal", "org-c/principal"}, f.calls)
 	// A's seal never selects A's consent while claiming to act in B.
 	caller.BoundOrg = "org-b"
@@ -230,7 +230,7 @@ func TestDynamicInstallationJobStampCannotBeForged(t *testing.T) {
 func TestDynamicInstallationMintRequiresConsent(t *testing.T) {
 	s, f, caller := dynamicInstallationFixture()
 	grant := s.ModulePrincipals()[caller.PrincipalID]
-	grant.Workload = ModuleWorkload{Namespace: "example", ServiceAccount: "example", Container: "app"}
+	grant.Workloads = []ModuleWorkload{ModuleWorkload{Namespace: "example", ServiceAccount: "example", Container: "app"}}
 	id := ModulePrincipalID(grant.Prefix)
 	s.SetModulePrincipals(ModulePrincipalRegistry{id: grant})
 	f.rows["org-a/"+id] = f.rows["org-a/principal"]
@@ -319,7 +319,7 @@ func TestDynamicInstallationServiceUsesSuppliedStore(t *testing.T) {
 	require.NoError(t, err)
 	unwired.SetModulePrincipals(original.ModulePrincipals())
 	_, err = unwired.AuthorizeModuleCapability(context.Background(), caller)
-	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.Equal(t, codes.Unavailable, status.Code(err))
 }
 
 func (f *installationDecisionStore) BeginModuleAuthorityUse(ctx context.Context) (context.Context, func(), error) {

@@ -7,24 +7,22 @@ import (
 	"strings"
 	"testing"
 
+	"accounts/pkg/business"
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-const revisionTestInternalToken = "module-operation-revision-test-token"
-
-func revisionTestContext(t *testing.T) context.Context {
+// revisionTestContext is how a composed module asks the revision oracle: with
+// its own module Work Context, for the module prefix registered in tenant,
+// minted by the shared issuer that verifies it.
+func revisionTestContext(t *testing.T, prefix, tenant string) context.Context {
 	t.Helper()
-	SetInternalToken(revisionTestInternalToken)
-	t.Cleanup(func() { SetInternalToken("") })
-	return metadata.NewIncomingContext(context.Background(),
-		metadata.Pairs("x-codefly-internal-token", revisionTestInternalToken))
+	return callingModuleContext(t, WorkContextSingleton(), business.ModulePrincipalID(prefix), tenant)
 }
 
 func revisionScopes(scopes []*basev0.WorkScopeV1) []*gen.WorkContextScope {
@@ -59,8 +57,13 @@ func revisionRequestFromClaims(signed *basev0.WorkContextV1) *gen.CheckAuthoriza
 		AuthorizationRevision: signed.GetAuthorizationRevision(),
 		Subjects:              subjects,
 	}
+	// What every consumer does: say which binding the context names, or assert
+	// it names none. Absence is stated, never left to be inferred.
 	if binding := signed.GetOperationBinding().GetBindingId(); binding != "" {
 		request.OperationBindingId = &binding
+	} else {
+		none := true
+		request.SealsNoBinding = &none
 	}
 	return request
 }
@@ -78,7 +81,7 @@ func mintedOperationContextClaims(t *testing.T) *basev0.WorkContextV1 {
 func TestCheckAuthorizationRevisionConfirmsAMintedModuleOperationContext(t *testing.T) {
 	installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
-	ctx := revisionTestContext(t)
+	ctx := revisionTestContext(t, "documents", moduleWorkContextTenant)
 
 	signed := mintedOperationContextClaims(t)
 	require.NotZero(t, signed.GetAuthorizationRevision(), "zero is not a revision a consumer can check")
@@ -92,7 +95,7 @@ func TestCheckAuthorizationRevisionConfirmsAMintedModuleOperationContext(t *test
 func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *testing.T) {
 	installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
-	ctx := revisionTestContext(t)
+	ctx := revisionTestContext(t, "documents", moduleWorkContextTenant)
 	signed := mintedOperationContextClaims(t)
 	owner := signed.GetOwnerPrincipalId()
 
@@ -136,7 +139,7 @@ func TestCheckAuthorizationRevisionDeniesAnyModuleOperationContextMismatch(t *te
 func TestCheckAuthorizationRevisionAcceptsANarrowerModuleOperationSubject(t *testing.T) {
 	installModuleOperationContextService(t, headlessPrincipals)
 	installModuleWorkContextAuthority(t)
-	ctx := revisionTestContext(t)
+	ctx := revisionTestContext(t, "documents", moduleWorkContextTenant)
 	request := revisionRequestFromClaims(mintedOperationContextClaims(t))
 	request.Subjects[0].Scopes[0].Actions = []string{"invoke"}
 
@@ -158,8 +161,10 @@ func TestCheckAuthorizationRevisionRevokesModuleOperationContextsOnConfigChange(
 			require.NotEqual(t, headlessPrincipals, changed)
 			installModuleOperationContextService(t, headlessPrincipals)
 			installModuleWorkContextAuthority(t)
-			ctx := revisionTestContext(t)
 			request := revisionRequestFromClaims(mintedOperationContextClaims(t))
+			// Minted before the restart: when the module is removed, so is the
+			// asker, and only its old identity is left to present.
+			ctx := revisionTestContext(t, "documents", moduleWorkContextTenant)
 
 			// The deployment restarts with a changed declaration; the signing key
 			// is unchanged, so only the declaration can revoke the context.
@@ -167,6 +172,11 @@ func TestCheckAuthorizationRevisionRevokesModuleOperationContextsOnConfigChange(
 			require.NoError(t, err)
 			service.SetModuleAuthorityReads(currentModuleAuthority{service: service}, nil)
 			service.SetModuleCapabilities(nil, nil, registry)
+			if name != "module removed" {
+				// The module asking holds an identity minted after the restart;
+				// the context it asks about was minted before it.
+				ctx = revisionTestContext(t, "documents", moduleWorkContextTenant)
+			}
 
 			_, err = WorkContextSingleton().CheckAuthorizationRevision(ctx, request)
 			if name == "module removed" {
@@ -194,15 +204,17 @@ func TestCheckAuthorizationRevisionLeavesNonModuleOwnersToTheStore(t *testing.T)
 		Seals: newSealAnswersFake(7),
 	})
 	require.NoError(t, server.configureErr)
-	ctx := revisionTestContext(t)
+	ctx := callingModuleContext(t, server, business.ModulePrincipalID("documents"), moduleWorkContextTenant)
 	ownerID := "019fec91-1000-7000-8000-000000000002"
 	actorID := "019fec91-1000-7000-8000-000000000003"
 
+	sealsNone := true
 	_, err = server.CheckAuthorizationRevision(ctx, &gen.CheckAuthorizationRevisionRequest{
 		OrgId:                 moduleWorkContextTenant,
 		OwnerPrincipalId:      ownerID,
 		AuthorizationRevision: 7,
 		Subjects:              []*gen.WorkContextRevisionSubject{{PrincipalId: ownerID}, {PrincipalId: actorID}},
+		SealsNoBinding:        &sealsNone,
 	})
 
 	require.NoError(t, err)

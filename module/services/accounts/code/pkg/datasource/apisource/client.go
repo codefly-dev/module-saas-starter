@@ -12,8 +12,10 @@
 // check. "Not on the public internet" is auth.IsPublicDestination, read from
 // the IANA special-purpose registries: the classifier the host's guarded egress
 // paths share (auth/public_address.go lists them).
-// The one exception is a local runtime's explicit list of loopback addresses
-// (local_egress.go), refused at boot anywhere else.
+// A declared host a meshed cell resolves into its mesh egress range is admitted
+// by the same rule (auth/mesh_egress.go). The one other exception is a local
+// runtime's explicit list of loopback addresses (local_egress.go), refused at
+// boot anywhere else.
 package apisource
 
 import (
@@ -104,10 +106,8 @@ func guardedClient() *http.Client {
 		// useful here nor safe for a declared mutation using an HTTP method that
 		// net/http treats as replayable after a lost reply.
 		DisableKeepAlives: true,
-		DialContext: (&net.Dialer{
-			Timeout: 10 * time.Second,
-			Control: withLocalEgress(dialControl),
-		}).DialContext,
+		DialContext: auth.GuardedDialContext(net.Dialer{Timeout: 10 * time.Second}, dialResolver,
+			func(requested string) auth.DialControl { return withLocalEgress(dialControl(requested)) }),
 	}
 	return &http.Client{
 		Timeout:       30 * time.Second,
@@ -451,22 +451,32 @@ func refreshPermanentlyRejected(statusCode int, body []byte) bool {
 	}
 }
 
-// dialControl is the Control hook of every dial this package makes. It is
-// always guardDial in production; it is a variable only so a test can wrap
-// guardDial in a recorder that never lets a connection proceed, and so prove
-// each outbound path runs the guard without sending traffic anywhere.
+// dialControl builds the Control hook of every dial this package makes, from
+// the "host:port" the client asked for. It is always guardDial in production;
+// it is a variable only so a test can wrap guardDial in a recorder that never
+// lets a connection proceed, and so prove each outbound path runs the guard
+// without sending traffic anywhere.
 var dialControl = guardDial
 
-// guardDial refuses to open a connection to an address that is not on the
-// public internet. It runs after DNS resolution with the concrete IP:port being
-// dialed, so it blocks the exact address the connection would reach — closing
-// the DNS-rebinding gap a hostname-only check leaves open. The judgement is
-// auth.IsPublicDestinationDialAddress, never Go's net.IP predicates: those call
+// dialResolver resolves the requested host before the dial. It is
+// net.DefaultResolver in production; a variable only so a test can answer with
+// the address it needs.
+var dialResolver auth.Resolver = net.DefaultResolver
+
+// guardDial refuses to open a connection the egress rule does not admit. Its
+// hook runs with the concrete IP:port being dialed, so it blocks the exact
+// address the connection would reach — closing the DNS-rebinding gap a
+// hostname-only check leaves open. The judgement is
+// auth.AdmitsDestinationDialAddress: a public address, as
+// auth.IsPublicDestination judges it (never Go's net.IP predicates: those call
 // carrier NAT, NAT64, 6to4, Teredo, benchmarking and reserved space "global
-// unicast". An address it cannot parse is refused.
-func guardDial(_, address string, _ syscall.RawConn) error {
-	if !auth.IsPublicDestinationDialAddress(address) {
-		return ErrBlockedAddress
+// unicast"), or a declared host's address in a meshed cell's mesh egress range.
+// An address it cannot parse is refused.
+func guardDial(requested string) auth.DialControl {
+	return func(_, address string, _ syscall.RawConn) error {
+		if !auth.AdmitsDestinationDialAddress(requested, address) {
+			return ErrBlockedAddress
+		}
+		return nil
 	}
-	return nil
 }

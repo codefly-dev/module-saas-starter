@@ -64,6 +64,10 @@ type edgeCapability struct {
 	Owner    string
 	Session  string
 	Now      func() time.Time
+	// Installation is the seal; empty seals to "installation-1".
+	Installation string
+	// Issuer defaults to the issuer this edge trusts.
+	Issuer string
 }
 
 // mintCapability signs c with core's Authority under kid/priv, sealed against
@@ -78,12 +82,17 @@ func mintCapability(t *testing.T, kid string, priv ed25519.PrivateKey, c edgeCap
 	if c.Owner == "" {
 		c.Owner = "user-1"
 	}
+	if c.Installation == "" {
+		c.Installation = "installation-1"
+	}
+	if c.Issuer == "" {
+		c.Issuer = workContextIssuer
+	}
 	seals := workcontext.NewMemorySealSource()
-	require.NoError(t, seals.Put(c.Owner, workcontext.Seal{InstallationID: "installation-1", InstallationRevision: 1}))
+	require.NoError(t, seals.Put(c.Owner, workcontext.Seal{InstallationID: c.Installation, InstallationRevision: 1}))
 	require.NoError(t, seals.PutEpoch(c.Owner, 1))
-	require.NoError(t, seals.PutBearsNoExecution(c.Owner))
 	authority := &workcontext.Authority{
-		Issuer: workContextIssuer, KeyID: kid, Key: priv,
+		Issuer: c.Issuer, KeyID: kid, Key: priv,
 		Revisions: workcontext.FixedRevision(1), Seals: seals, Now: c.Now,
 	}
 	token, _, err := authority.Start(context.Background(), workcontext.StartInput{
@@ -94,7 +103,7 @@ func mintCapability(t *testing.T, kid string, priv ed25519.PrivateKey, c edgeCap
 		TaskID:             "task-1",
 		Audience:           c.Audience,
 		AuthorityScopes:    []*basev0.WorkScopeV1{{ResourceKind: "audit", Actions: []string{"read"}}},
-		InstallationID:     "installation-1",
+		InstallationID:     c.Installation,
 		SessionID:          c.Session,
 		TTL:                5 * time.Minute,
 	})

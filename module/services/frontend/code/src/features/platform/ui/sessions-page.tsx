@@ -38,9 +38,14 @@ import { useActiveSessions } from "../service/queries";
 
 const col = createColumnHelper<SessionInfo>();
 
+// The rows when there is no answer. TanStack Table resets the page on every new
+// `data` array and that reset re-renders this page, so a fresh `[]` per render
+// would re-render it forever while the read is refused or disabled.
+const NO_SESSIONS: SessionInfo[] = [];
+
 export function SessionsPage() {
 	const {
-		data: sessions = [],
+		data: sessions = NO_SESSIONS,
 		isLoading,
 		isError,
 		refetch,

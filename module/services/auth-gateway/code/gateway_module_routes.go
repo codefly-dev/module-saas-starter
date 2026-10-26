@@ -113,6 +113,12 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 		// answering 404 — which would read as "this host does not serve that".
 		httpError(w, http.StatusServiceUnavailable, "solution registry unavailable")
 		return true
+	case solutionRegistryStale:
+		// A snapshot loaded, and the registry has not confirmed it within the
+		// revocation lease: a withdrawal applied since would be invisible here,
+		// so nothing is routed on it.
+		httpError(w, http.StatusServiceUnavailable, "solution registry snapshot is stale")
+		return true
 	}
 
 	// An alias the CATALOG owns is refused rather than served in part. The catalog
@@ -150,9 +156,21 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 		return true
 	}
 
-	// Same identity discipline as every protected route: drop caller-supplied
-	// identity, run ext_authz, require a valid credential. A bearer-less call is
-	// denied here, so a declared module adds a proxy target and never widens the
+	// TWO ARMS from here. A request with no bearer and no cookie, on the
+	// workload endpoint, presenting a capability for THIS alias, is a composed
+	// workload's headless operation context: there is no person, so the person
+	// path below cannot admit it, and gateway_workload_operation.go decides it
+	// from the capability's signed tenant and seal. Everything else takes the
+	// person path, unchanged.
+	if selectsWorkloadOperation(r, capability, alias) {
+		g.serveWorkloadOperation(w, r, alias, routing, capability)
+		return true
+	}
+
+	// The person path. Same identity discipline as every protected route: drop
+	// caller-supplied identity, run ext_authz, require a valid credential. A
+	// bearer-less call that the arm above did not select is denied here, so on
+	// this path a declared module adds a proxy target and never widens the
 	// authenticated surface.
 	//
 	// The verified capability is carried INTO the check, because it is what lets a
@@ -183,13 +201,13 @@ func (g *Gateway) handleDeclaredModule(w http.ResponseWriter, r *http.Request) b
 	injectHeaders(r, checkResp.GetOkResponse().GetHeaders())
 
 	// Forward the full /v1/<alias>/... path unchanged: the module owns and serves
-	// its own /v1/<alias> surface. The caller's bearer travels with it, because a
-	// declared upstream authenticates the request by it and the audience-bound
-	// capability that should replace it exists on neither side yet (SA-F-BEARER,
-	// open — see removePersonsSessionCredential in gateway.go). The caller's
-	// COOKIE does not travel, and a resource-bound token cannot be replayed off
-	// its own solution, so what an upstream holds is the person's host session
-	// and nothing wider.
+	// its own /v1/<alias> surface. On this path the caller's bearer travels with
+	// it, because a declared upstream authenticates a PERSON's request by it and
+	// no capability minted from a browser session replaces it yet (SA-F-BEARER,
+	// open on this path; see removePersonsSessionCredential in gateway.go). The
+	// bearer-less arm above forwards none. The caller's COOKIE does not travel,
+	// and a resource-bound token cannot be replayed off its own solution, so what
+	// an upstream holds is the person's host session and nothing wider.
 	//
 	// A module data endpoint and its admission read must consume the
 	// same per-org/per-IP budget an equivalent catalog route does, or /v1/<alias>/*

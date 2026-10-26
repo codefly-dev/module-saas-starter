@@ -49,6 +49,10 @@ func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.Insta
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
 		return nil, err
 	}
+	approval, err := installationApproval(req.GetApproval())
+	if err != nil {
+		return nil, err
+	}
 	var scope *business.InstallationScope
 	if req.Scope != nil {
 		parsed, err := business.ParseInstallationScope(req.GetScope())
@@ -58,6 +62,7 @@ func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.Insta
 		scope = &parsed
 	}
 	installation, err := service.InstallSolution(ctx, actorID, &business.InstallSolutionParams{
+		Approval:            approval,
 		Scope:               scope,
 		OrgID:               req.GetOrgId(),
 		AgentIdentifier:     req.GetAgentIdentifier(),
@@ -191,7 +196,34 @@ func availableSolutionProto(entry *business.AvailableSolutionTarget) *gen.Availa
 		OpenedGeneration:  entry.OpenedGeneration,
 		AppliedGeneration: entry.AppliedGeneration,
 		Installed:         entry.Installed,
+		Kind:              entry.Kind,
 	}
+}
+
+// readinessProto carries the verdict and its conditions as the host worded them.
+// Nothing is rephrased here: a condition's detail is the owning part of the
+// host's own sentence, and a surface that shortened it would be inventing a
+// reason.
+func readinessProto(readiness business.InstallationReadiness) *gen.InstallationReadiness {
+	unmet := make([]*gen.ReadinessCondition, 0, len(readiness.Unmet))
+	for _, condition := range readiness.Unmet {
+		unmet = append(unmet, &gen.ReadinessCondition{
+			Kind:      condition.Kind,
+			Subject:   condition.Subject,
+			Detail:    condition.Detail,
+			ClearedBy: condition.ClearedBy,
+			Action:    condition.Action,
+			SourceId:  condition.SourceID,
+		})
+	}
+	return &gen.InstallationReadiness{Ready: readiness.Ready, Unmet: unmet}
+}
+
+// readinessConditionsProto carries a bare condition list — the one a grant
+// returns for what it could not carry — through the same mapping the readiness
+// verdict uses, so the two can never word the same condition differently.
+func readinessConditionsProto(conditions []business.ReadinessCondition) []*gen.ReadinessCondition {
+	return readinessProto(business.InstallationReadiness{Unmet: conditions}).GetUnmet()
 }
 
 // ListOrganizationInstallations serves an organization administrator's view of
@@ -232,6 +264,14 @@ func (s *InstallationServer) ListOrganizationInstallations(
 		if row.Target != nil {
 			item.Target = availableSolutionProto(row.Target)
 		}
+		item.Readiness = readinessProto(row.Readiness)
+		for _, reached := range row.ReachedModules {
+			item.ReachedModules = append(item.ReachedModules, &gen.ReachedModule{
+				Audience:       reached.Audience,
+				InstallationId: reached.InstallationID,
+				RouteAlias:     reached.RouteAlias,
+			})
+		}
 		out = append(out, item)
 	}
 	return &gen.ListOrganizationInstallationsResponse{Installations: out, NextPageToken: next}, nil
@@ -253,12 +293,30 @@ func (s *InstallationServer) GrantInstallationToTeam(
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
 		return nil, err
 	}
-	grant, err := service.GrantInstallationToTeam(ctx, actorID,
+	granted, err := service.GrantInstallationToTeam(ctx, actorID,
 		req.GetOrgId(), req.GetInstallationId(), req.GetTeamId(), req.GetRoleId())
 	if err != nil {
 		return nil, mapInstallationExposureError(err)
 	}
-	return &gen.GrantInstallationToTeamResponse{Grant: grant}, nil
+	// What the grant CARRIED, and where it carried nothing, travel back with the
+	// grant. An administrator who has just exposed a solution learns here that a
+	// module it reaches holds nothing — instead of a person learning it later as
+	// a bare Forbidden on a page, which is the trail this replaces.
+	carried := make([]*gen.CarriedModuleAccess, 0, len(granted.Carried))
+	for _, entry := range granted.Carried {
+		carried = append(carried, &gen.CarriedModuleAccess{
+			Audience:       entry.Audience,
+			InstallationId: entry.InstallationID,
+			ScopePath:      entry.ScopePath,
+			RoleId:         entry.RoleID,
+			Scopes:         entry.Scopes,
+		})
+	}
+	return &gen.GrantInstallationToTeamResponse{
+		Grant:   granted.Grant,
+		Carried: carried,
+		Unmet:   readinessConditionsProto(granted.Unmet),
+	}, nil
 }
 
 // RevokeInstallationFromTeam removes a team's grant at an installation. It is a

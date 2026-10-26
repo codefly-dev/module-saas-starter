@@ -647,6 +647,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.datasource.source.updated": {
+      "address": "saas.datasource.source.updated",
+      "title": "saas.datasource.source.updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.source.updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.datasource.sync.completed": {
       "address": "saas.datasource.sync.completed",
       "title": "saas.datasource.sync.completed",
@@ -1373,6 +1384,28 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.module_delegation.granted": {
+      "address": "saas.module_delegation.granted",
+      "title": "saas.module_delegation.granted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.module_delegation.granted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.module_delegation.revoked": {
+      "address": "saas.module_delegation.revoked",
+      "title": "saas.module_delegation.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.module_delegation.revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.onboarding.step_completed": {
       "address": "saas.onboarding.step_completed",
       "title": "saas.onboarding.step_completed",
@@ -1478,6 +1511,17 @@
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.org.updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.platform.module_envelope_delivered": {
+      "address": "saas.platform.module_envelope_delivered",
+      "title": "saas.platform.module_envelope_delivered",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.platform.module_envelope_delivered"
         }
       },
       "x-visibility": "external",
@@ -2517,6 +2561,13 @@
       },
       "title": "saas publishes saas.datasource.source.synced"
     },
+    "send:saas.datasource.source.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.source.updated"
+      },
+      "title": "saas publishes saas.datasource.source.updated"
+    },
     "send:saas.datasource.sync.completed": {
       "action": "send",
       "channel": {
@@ -2979,6 +3030,20 @@
       },
       "title": "saas publishes saas.module.work_context_minted"
     },
+    "send:saas.module_delegation.granted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.module_delegation.granted"
+      },
+      "title": "saas publishes saas.module_delegation.granted"
+    },
+    "send:saas.module_delegation.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.module_delegation.revoked"
+      },
+      "title": "saas publishes saas.module_delegation.revoked"
+    },
     "send:saas.onboarding.step_completed": {
       "action": "send",
       "channel": {
@@ -3048,6 +3113,13 @@
         "$ref": "#/channels/saas.org.updated"
       },
       "title": "saas publishes saas.org.updated"
+    },
+    "send:saas.platform.module_envelope_delivered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.platform.module_envelope_delivered"
+      },
+      "title": "saas publishes saas.platform.module_envelope_delivered"
     },
     "send:saas.platform.module_envelope_written": {
       "action": "send",
@@ -3850,6 +3922,13 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.datasource.source.updated": {
+        "name": "saas.datasource.source.updated",
+        "title": "saas.datasource.source.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.datasource.sync.completed": {
         "name": "saas.datasource.sync.completed",
         "title": "saas.datasource.sync.completed",
@@ -4312,6 +4391,20 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.module_delegation.granted": {
+        "name": "saas.module_delegation.granted",
+        "title": "saas.module_delegation.granted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.module_delegation.revoked": {
+        "name": "saas.module_delegation.revoked",
+        "title": "saas.module_delegation.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.onboarding.step_completed": {
         "name": "saas.onboarding.step_completed",
         "title": "saas.onboarding.step_completed",
@@ -4378,6 +4471,13 @@
       "saas.org.updated": {
         "name": "saas.org.updated",
         "title": "saas.org.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.platform.module_envelope_delivered": {
+        "name": "saas.platform.module_envelope_delivered",
+        "title": "saas.platform.module_envelope_delivered",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

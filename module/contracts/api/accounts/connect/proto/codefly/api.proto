@@ -159,6 +159,8 @@ message CheckAuthorizationRevisionRequest {
   string owner_principal_id = 2;
   uint64 authorization_revision = 3;
   repeated WorkContextRevisionSubject subjects = 4;
+  optional string operation_binding_id = 5;
+  optional bool seals_no_binding = 6;
 }
 
 message AuthorizeEvidenceReadRequest {

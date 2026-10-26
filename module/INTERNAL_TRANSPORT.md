@@ -173,24 +173,23 @@ composed module; it grants neither public ingress nor application authority.
 The retired `module` spelling is refused by current Codefly. Four do not
 carry this tier: `accounts/connect` and `auth-gateway/grpc` are tenant surfaces
 whose tiering interceptor refuses internal methods, `auth-gateway/rest`
-carries the brokered bootstrap routes (registration, Work Context mints) and the
-key set, and `auth-gateway/workload` serves the same gateway routes over mutual
-TLS to workloads that present a platform-issued SVID listed in its
-allowed-callers file, where a module mint must also come from the SPIFFE ID its
-delivered presence declares. The fifth, `accounts/authority`, is a gRPC endpoint with a listener of
+carries the key set and the public routes, and `auth-gateway/workload` serves
+the same gateway routes over plain HTTP to composed workloads, admitted by the
+cell's mesh alone; the module credential exchanges (the Work Context mints) are
+served there and nowhere else. The fifth, `accounts/authority`, is a gRPC endpoint with a listener of
 its own, and it is the internal tier **narrowed**:
 
 - **Only the module surface is served.** `business.ModuleAuthorityProcedures`
   lists it, and `business.ValidateModuleAuthorityProcedures` — which runs in the
   catalog and deployment generators — holds every entry to one of two shapes:
   the module capability surface, which authenticates the calling module from its
-  verified Work Context and authorizes it against the grant its composition
-  declared; or one of two read-only authority oracles
-  (`CheckAuthorizationRevision`, `AuthorizeEvidenceRead`), which authorize on
-  the perimeter credential alone and answer one bit about a capability the
-  consumer already holds. Every other method is refused on this listener,
-  whatever credential it carries: the exchanges the gateway brokers (a module
-  never presents its own secret to accounts), the gateway's registries and
+  verified Work Context (or, for `MintSourceOperationContext`, its workload
+  credential) and authorizes it against the grant its composition declared; or one of two read-only authority oracles
+  (`CheckAuthorizationRevision`, `AuthorizeEvidenceRead`), which authenticate
+  the calling module from its own module Work Context the same way and answer
+  one bit about a capability the consumer already holds. Every other method is refused on this listener,
+  whatever credential it carries: a module's own Work Context and operation
+  context mints (the authority interface's Issue serves them), the gateway's registries and
   validators, the generic permission oracles, principal administration, and
   every method that authorizes on the perimeter credential alone **and mutates
   state** — `ConsumeUsage`, `StartInstallationTask`, and `ConsumeSingleUse`,
@@ -201,9 +200,24 @@ its own, and it is the internal tier **narrowed**:
   `AlreadyExists` on its own valid token, or fill the replay table for tenants it
   has no relationship with. Each joins the endpoint once it decides on a
   credential bound to the consuming module.
-- **Every call still carries the internal credential**, exactly as on the
-  private listener, and the capability surface still decides on the verified
-  Work Context and the module's declared grant.
+- **The endpoint asks no perimeter credential.** Every method on it proves
+  the calling module itself — from its verified module Work Context, or for the
+  one workload mint (`MintSourceOperationContext`) from the pod's workload
+  credential, reviewed and bound to its build — and holds it to the module's
+  current grant; a shared token would name no module and add nothing. The two
+  read-only oracles do the same: a call presenting no module Work Context, or
+  only the internal token, is refused `Unauthenticated` with the reason named.
+- **The endpoint denies by default.** Its interceptor verifies the calling
+  module's own Work Context (exactly one, in `x-codefly-work-context`) before
+  any handler runs, for every procedure except the explicit allowlist of
+  workload mints (`business.ModuleAuthorityAuthenticatesInRequest`), so a method
+  that forgot to identify its caller is still never served open.
+  `TestEveryModuleAuthorityProcedureRefusesAnUnidentifiedCaller` calls every
+  procedure with no credential and with the internal token alone and requires
+  a refusal with nothing written. A module asking about a viewer it serves
+  (`CheckWorkContextRecordAccess`, `ListReadableSourceCollections`) presents its
+  own Work Context in the header and the viewer's in
+  `viewer_work_context_token`, and the viewer must be addressed to that module.
 - **Transport is unchanged**: h2c, resolved rather than configured:
 
 ```go

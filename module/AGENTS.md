@@ -60,11 +60,13 @@ adding a REST-enabled RPC means editing it. Do not go looking for a generator.
 ## Go suites
 
 Every Go service here carries **its own `go.mod`** — `accounts`, `auth-gateway`,
-`store`, `telemetry` — and `tools` is another, with **no `go.work`** tying them
-together. So `go test ./...` only ever covers the module you run it in, and a
-service's suite is outside whatever you run from the tree root. The canonical
-repository adds its own root module (the module agent, the host, and the generated
-reference composition), for six in total; a consumer's root module is its own.
+`store` and `policy-log` — and `tools` is another, with **no `go.work`** tying them together. So
+`go test ./...` only ever covers the module you run it in, and a service's suite
+is outside whatever you run from the tree root. The canonical repository adds its
+own root module (the module agent, the host, and the generated reference
+composition); a consumer's root module is its own.
+`libraries/source-read-sdk/go` and `qualification/module-authority` are two more
+modules, outside this tree, that CI exercises in steps of their own.
 
 To exercise a service, run its suite from its own directory — its DB-backed
 suites need Codefly and Docker — or let `codefly ci run` do it.
@@ -82,39 +84,53 @@ each invocation fresh database state. Do not opt into `WithSharedControlChannel`
 which is only for older CLIs and reuses fixed local database directories across
 otherwise independent runs and migration revisions.
 
-Core is pinned per Go module. The host's five services (accounts, auth-gateway,
-policy-log, store, telemetry) run one core release, v0.19.3, which carries the
-issuer-side `Authority.ReadBack`. The module agent (the root module),
-`module/tools` and the module-authority qualification module stay on released
-v0.18.0. Never ship a host release on an untagged pseudo-version. Run
-qualification with `GOWORK=off` so a developer workspace cannot mask the pinned
-dependency.
-Accounts requires Go 1.27.2. All go-grpc services pin released agent 0.1.54,
-whose builder uses Go 1.27.2 under `GOTOOLCHAIN=local`; CI uses the same patch.
-Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613).
+Core is pinned per Go module. Accounts and auth-gateway currently select
+candidate presence/delivery revisions for the lifecycle PR. Released SDK
+v0.4.1 includes the lifecycle APIs and owns tracing startup and shutdown.
+Their `go.mod` files are the exact source pins. The other services and tools
+retain their own released pins. These are development candidates, not release
+qualification: never ship a host release on an untagged pseudo-version.
+Run qualification with `GOWORK=off` so a workspace cannot mask the pins.
+Accounts requires Go 1.27.3. All go-grpc services pin released agent 0.1.58,
+whose builder uses Go 1.27.3 under `GOTOOLCHAIN=local`; CI uses the same patch.
+Go 1.27.0 is affected by [GO-2026-6613](https://pkg.go.dev/vuln/GO-2026-6613),
+and Go 1.27.2 by [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809).
 A source audit under a newer compiler does not qualify the compiler used in the
 image: move the owning agent and image contract together, regenerate the recipe,
 and check the built executable's toolchain evidence. Never lower the accounts
 minimum to accommodate an older builder.
 CLI v0.1.185 requires an explicit run-level test outcome from every service
-agent. The cache, store and vault manifests pin released Redis 0.0.97,
-Postgres 0.0.144 and Vault 0.0.42, which include their owners' outcome fixes.
+agent. The cache, store and vault manifests pin released Redis 0.0.100,
+Postgres 0.0.146 and Vault 0.0.42, which include their owners' outcome fixes.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-Accounts, auth-gateway, policy-log, store and telemetry use released SDK v0.3.1;
-accounts must not retain the pre-release SDK SHA from the callable-source
-development branch. Their listeners resolve allocated
+CI selects released Codefly CLI **v0.1.215** in
+`scripts/ci/install-codefly.sh` for every planner/executor job. Use that release
+for local runtime qualification too: the accounts service declares Codefly's
+`egress` configuration producer, which older development binaries may not
+resolve. The CLI exports the host interfaces alongside the owned API in one
+Connect contract. The root module agent and `module/tools` retain Core
+`v0.19.7-0.20261025161440-4e7f8ef01ed2` to validate that multi-package format.
+
+Accounts and auth-gateway use released SDK v0.4.1; other services retain their
+own released pins.
+Their listeners resolve allocated
 endpoints through `ResolveNetworkInstance`, which selects the delivered or local
 endpoint from the runtime environment; the removed `WithDefaultNetwork` switch
 must not be replaced with a hard-coded address or port.
 
+The shared `frontendpayload` Go module is an additional independent suite:
+`cd module/frontendpayload && GOWORK=off go test -race ./... && go vet ./...`.
+Its CI step verifies preparation separately from the service consumers.
+
 ## Runtime composition seams
 
-Solutions and composed modules are independently deployed and **self-register at
-runtime**: the host learns to render and proxy them with no rebuild. Nothing in
-this tree names a specific one — a registered target is data, never a branch, and
-the seam must stay generic (repository-root `AGENTS.md`, § Boundaries).
+Solutions and composed modules are independently deployed. Signed delivery
+updates their presence; the host projects optional pages and resolves routes through
+the SDK. Organisation installation grants remain separate from shared deployment,
+and idle runtime credential renewal does not establish presence. A declared target
+is data, never a branch (repository-root `AGENTS.md`, § Boundaries).
 
 The depth sits with the code that owns each half:
 
@@ -136,8 +152,8 @@ Design records: [SOLUTION_REGISTRATION.md](./SOLUTION_REGISTRATION.md),
 consumer workspace — `legal`, `identity`, `internal-auth`, `federation`, and
 the rest. A consumer overrides a group only by declaring one of the same name.
 No group declares module authority: the module principal registry is derived
-from delivered authority inside the module envelope a platform super_admin
-writes ([services/accounts/AGENTS.md](./services/accounts/AGENTS.md#the-composed-module-service-principal)).
+from applied signed manifests; an existing administrative envelope can narrow
+them ([services/accounts/AGENTS.md](./services/accounts/AGENTS.md#the-composed-module-service-principal)).
 
 **A credential's blast radius is the set of services that DECLARE its group**, not
 the set that reads it: a declared group is injected whether anything reads it or
@@ -179,3 +195,54 @@ accepts or a default that side can no longer boot on.
 Every **other** group still ships a working default that a deployed runtime will
 use: an unprovisioned optional group is not a denied one. Where that matters for a
 credential, the loader's own "is this required" check is the place to say so.
+
+**A key the group does not declare is inert, which is worse than absent.** A
+composition supplies values for declared keys; it cannot declare one. So a
+`workspaceEnv(group, KEY)` whose KEY no `configurations/local/<group>.env`
+assigns returns nothing on every deployment, while reading as wired — the
+operator sets the value, the platform carries none, and nothing errors.
+`security`/`TRUSTED_PROXY_CIDRS` was that for as long as accounts had per-IP
+rate limiting. Both halves are gated in
+`module/tools/workspace_configuration_dependencies_test.go`, over every
+service's Go and TypeScript source: every group a service reads is declared in
+its manifest, and every literal key it reads is declared in that group's
+default. An undeclared GROUP is the same failure one level up — the frontend
+read `application`/`APP_BASE_URL` undeclared and presented its cluster-internal
+address to accounts as its public origin. [configurations/README.md](./configurations/README.md)
+carries the rule and the few pairs that knowingly stay inert.
+
+**A group is required by the BACKEND SELECTION, not by a workload's presence.**
+accounts declares the `vault` group to *reach* the vault key service — an
+address, an auth method, an AppRole mount, and the credential in its secret
+half. What makes that binding necessary is the backend the environment selected
+(`KEY_SERVICE_BACKEND` at runtime, `key-service:` on the environment at render
+time), so that is what the module agent asks before declaring it: a composition
+whose every environment selects the cell's cloud key service stops answering for
+`VAULT_AUTH_METHOD` and the AppRole pair of a Vault it does not use, and one
+where any environment selects the vault backend keeps the group.
+
+Keying it off the `vault` service's presence gave the same answer for this
+module — the only thing that service is for IS that backend — and the wrong one
+as soon as the two part: a cell whose Vault is the **cell's**, composed here as a
+managed `cell-vault`, renders no Vault of this module's and needs every key in
+the group. The selection is resolved once, in `gitops.go`'s `resolveKeyService`,
+and read by both the manifest edit and the overlay render, so the group a service
+declares and the workloads an environment schedules cannot disagree.
+
+The grain is the composition, not the environment: a group is declared in one
+service manifest for the whole composition, so it is withdrawn only when **no**
+environment selects the backend it reaches. A composition that runs this
+module's Vault locally and its cell's cloud key service in the cell therefore
+keeps the group — the local run needs it — and accounts answers for the mismatch
+at boot instead: with a vault backend selected and the group carrying nothing,
+it refuses naming the group and the selection rather than blaming the first key
+read out of it (`requireVaultGroup`).
+
+Whether a Vault is composed **per environment** is a declaration in the
+composing workspace's manifest rather than here — `key-service: vault | kms`,
+where `kms` composes no Vault at all. The module agent implements it; the CLI
+does not yet parse the field, so the live route for a composition with no Vault
+anywhere is the service inventory, which the agent reads as the same selection.
+Neither route reaches a composition that pins a published release of this
+module — see [deployment/README.md](./deployment/README.md), "Composing no
+Vault".

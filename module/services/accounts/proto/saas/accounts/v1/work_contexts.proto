@@ -6,6 +6,7 @@ import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/workload_operation_admission.proto";
 import "saas/policy/v1/options.proto";
 
 // WorkContextReplayPolicy controls how a consumer may accept a signed Work
@@ -46,6 +47,11 @@ message WorkContextScope {
 // credential's, and a confined credential is paired with a capability on the
 // session alone.
 message StartTaskWorkContextRequest {
+  option (buf.validate.message).cel = {
+    id: "start_task.authority_ask"
+    message: "authority_scopes or operation_bindings is required"
+    expression: "size(this.authority_scopes) > 0 || size(this.operation_bindings) > 0"
+  };
   reserved 3;
   reserved "session_id";
   string org_id = 1 [(buf.validate.field).string.uuid = true];
@@ -68,7 +74,6 @@ message StartTaskWorkContextRequest {
   // registered agent Principal in org_id.
   string actor_principal_id = 4;
   repeated WorkContextScope authority_scopes = 5 [
-    (buf.validate.field).repeated.min_items = 1,
     (buf.validate.field).repeated.max_items = 64
   ];
   string audience = 6 [
@@ -90,6 +95,20 @@ message StartTaskWorkContextRequest {
   optional string project_id = 10 [
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 512
+  ];
+  // Operation bindings of the audience module, by name, whose invoke scopes
+  // this capability carries beside authority_scopes. The host resolves each
+  // name to the binding as installed at org_id, narrowed by that installation
+  // exactly as the module's delegated exchange redeems it, and keeps each
+  // resource only if the person holds it. The caller names a binding and never
+  // its resource ids. A direct human-owned mint only.
+  repeated string operation_bindings = 11 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items.string = {
+      min_len: 1
+      max_len: 256
+    }
   ];
 }
 
@@ -288,6 +307,18 @@ message CheckAuthorizationRevisionRequest {
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 512
   ];
+  // seals_no_binding ASSERTS that the context names no operation binding at
+  // all. A consumer must send either this or operation_binding_id, and a
+  // request carrying neither is refused as malformed rather than confirmed.
+  //
+  // The distinction is the whole point. The signed capability never crosses
+  // this boundary (see above), so the host reads the binding from fields the
+  // consumer copied out of it — and an OMITTED field and a context that
+  // genuinely seals none are indistinguishable unless one of them is stated.
+  // While they were, a consumer that simply forgot the binding had a narrowed
+  // delegation confirmed against its module's much broader installation. Now
+  // absence is something a consumer asserts, and forgetting is an error.
+  optional bool seals_no_binding = 6;
 }
 
 // AuthorizeEvidenceReadRequest asks Accounts to authorize one filtered
@@ -372,6 +403,32 @@ service WorkContextService {
   // a replay and returns ALREADY_EXISTS. A caller must treat that as the
   // capability being spent and fail the operation closed, not retry it.
   rpc ConsumeSingleUse(ConsumeSingleUseWorkContextRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // AdmitWorkloadOperation answers whether a capability presented with no
+  // bearer at the declared module route /v1/<alias>/* is a module operation
+  // context (StartModuleOperationTask) for that alias, and admits nothing else;
+  // and whether the route's target is installed in the capability's tenant.
+  // The auth-gateway's bearer-less arm is its caller. Unlike the revision
+  // checks above, the signed capability itself crosses this boundary: the
+  // answer depends on its owner, owner kind and chain, which only the issuer
+  // reads. It reads the capability back (core's Authority.ReadBack: signature
+  // under this issuer, window, audience, revision, seal, epochs) and never
+  // verifies it as presented, so nothing is consumed and the callee still
+  // verifies at full strength. Internal-tier: the tenant it answers about is
+  // the one the capability names.
+  rpc AdmitWorkloadOperation(AdmitWorkloadOperationRequest) returns (AdmitWorkloadOperationResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
       tenant: TENANT_REQUIREMENT_NONE

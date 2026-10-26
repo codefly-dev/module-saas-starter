@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/codefly-dev/core/wool"
+
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -35,6 +37,21 @@ type delegatedAudienceRequest struct {
 	lookup    bool
 }
 
+// operationBinding is the binding a context exchanged under this request may
+// seal as its OPERATION binding — the bindingID for an operation exchange, and
+// nothing for a read one. read_audiences and operation_audiences are separate
+// maps with separate validators and operator-chosen keys, so a read key
+// stamped as the operation binding is either confirmed against the wrong
+// binding's invoke scopes (when an operator happens to use one key in both) or
+// against no declared binding at all. Neither is the authority the read
+// exchange granted.
+func (r delegatedAudienceRequest) operationBinding() string {
+	if r.kind == "operation" {
+		return r.bindingID
+	}
+	return ""
+}
+
 func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context, encodedParent string, request delegatedAudienceRequest, resolve delegatedAudienceResolver) (*gen.IssuedWorkContext, error) {
 	ctx, releaseAuthority, fenceErr := service.BeginModuleAuthorityUse(ctx)
 	if fenceErr != nil {
@@ -42,9 +59,6 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	}
 	defer releaseAuthority()
 
-	if err := requireInternalCredential(ctx); err != nil {
-		return nil, err
-	}
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get(workContextHeader)) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one module Work Context required")
@@ -110,6 +124,9 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	default:
 		return nil, refuseUnidentifiedParent()
 	}
+	if business.NamesInstalledBinding(verified.GetOperationBinding().GetBindingId()) {
+		return nil, status.Error(codes.PermissionDenied, "installed binding child cannot be exchanged")
+	}
 	if verified.GetTenantId() == "" || verified.GetOwnerPrincipalId() == "" {
 		return nil, refuseUnidentifiedParent()
 	}
@@ -118,12 +135,14 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, verified.OwnerPrincipalId, verified.TenantId)
 	parent := verified
 	var actor *business.Principal
+	actorID := delegatedAudienceActorID(parent)
 	audit := func(outcome, audience string, exchangeErr error) {
+		logDelegatedAudienceRefusal(ctx, request, audience, exchangeErr)
 		service.ObserveDelegatedAudienceExchange(ctx, business.DelegatedAudienceExchangeObservation{
 			Caller:      caller,
 			OwnerID:     parent.OwnerPrincipalId,
 			Actor:       actor,
-			ActorID:     delegatedAudienceActorID(parent),
+			ActorID:     actorID,
 			Tenant:      parent.TenantId,
 			BindingKind: request.kind,
 			BindingID:   request.bindingID,
@@ -170,6 +189,16 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		audit(business.DelegatedAudienceExchangeRefused, "", err)
 		return nil, err
 	}
+	operation, _ := binding.policy.(business.ModuleOperationAudience)
+	// An installed delegation mode is the binding's, never the request's: the
+	// caller cannot ask for an ordinary child of it, or for this child of an
+	// ordinary binding, and the chain-preserving exchange stays as it was.
+	installed := operation.DelegationMode != ""
+	if installed && (delegated || len(parent.ActorChain) != 0 || parent.GetOwnerPrincipalKind() != business.PrincipalKindHuman) {
+		err := status.Error(codes.PermissionDenied, "installed binding requires an ordinary human parent")
+		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
+		return nil, err
+	}
 	ttl := min(int64(60), parent.ExpiresAtUnix-time.Now().Unix()-2)
 	if ttl <= 0 {
 		err = status.Error(codes.PermissionDenied, "parent expires before exchange")
@@ -181,8 +210,10 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	var issued *gen.IssuedWorkContext
 	if delegated {
 		issued, err = authority.exchangeDelegatedParent(ctx, caller, parent, delegation, binding, time.Duration(ttl)*time.Second)
+	} else if installed {
+		issued, err = authority.exchangeInstalledBinding(ctx, presented, caller, request, binding, operation.DelegationMode, time.Duration(ttl)*time.Second)
 	} else {
-		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, workcontext.Execution{}, "")
+		issued, err = authority.exchangeVerifiedParent(ctx, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: parent.TenantId, Audience: binding.audience, AttenuatedScopes: binding.scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}, "", moduleBindingSeal{PrincipalID: caller.PrincipalID, BindingID: request.operationBinding()})
 	}
 	if err != nil {
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
@@ -216,6 +247,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 		audit(business.DelegatedAudienceExchangeRefused, binding.audience, err)
 		return nil, err
 	}
+	actorID = issued.CurrentActorPrincipalId
 	audit(business.DelegatedAudienceExchangeIssued, binding.audience, nil)
 	return issued, nil
 }
@@ -243,9 +275,6 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 	}
 	defer releaseAuthority()
 
-	if err := requireInternalCredential(ctx); err != nil {
-		return nil, err
-	}
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get(workContextHeader)) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one module Work Context required")
@@ -266,6 +295,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 	// which is why a refusal here is still a complete record.
 	granted := business.SourceOperationContextAuthority{}
 	audit := func(outcome string, exchangeErr error) {
+		logDelegatedAudienceRefusal(ctx, request, granted.Audience, exchangeErr)
 		service.ObserveDelegatedAudienceExchange(ctx, business.DelegatedAudienceExchangeObservation{
 			Caller:       caller,
 			OwnerID:      granted.OwnerPrincipalID,
@@ -282,6 +312,16 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 	}
 	granted, err = service.AuthorizeDelegationReferenceExchange(ctx, caller, delegationID, request.bindingID, request.lookup)
 	if err != nil {
+		// The caller hears one sentence for every way a delegation fails to
+		// authorize (delegationReferenceError); the operator must not. A
+		// source whose module binding widened since the person delegated, a
+		// delegation revoked, one that names another module: each is a
+		// different repair, so the refuser log names which before the mapping
+		// erases it.
+		wool.Get(ctx).In("ModuleCapabilities.exchangeDelegatedAudience").Warn(
+			"source delegation refused this work",
+			wool.Field("binding", request.bindingID), wool.Field("delegation", delegationID),
+			wool.Field("lookup", request.lookup), wool.Field("cause", err.Error()))
 		err = delegationReferenceError(err)
 		audit(business.DelegatedAudienceExchangeRefused, err)
 		return nil, err
@@ -291,7 +331,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			err = status.Error(codes.Unavailable, "work context authority unavailable")
 		} else {
-			err = mapWorkContextError(err)
+			err = mapWorkContextError(ctx, err)
 		}
 		audit(business.DelegatedAudienceExchangeRefused, err)
 		return nil, err
@@ -340,6 +380,20 @@ func delegatedAudienceActorID(parent *basev0.WorkContextV1) string {
 		return parent.GetOwnerPrincipalId()
 	}
 	return actors[len(actors)-1].GetPrincipalId()
+}
+
+// logDelegatedAudienceRefusal records WHY an exchange was refused. The audit
+// row keeps the status code alone and the caller is told a bare code, which left
+// a refused turn with no record of its reason anywhere: a module saw
+// "operation exchange failed (invalid_argument)" and nothing named the scope. A
+// gRPC status message carries no credential — the parent never reaches an error.
+func logDelegatedAudienceRefusal(ctx context.Context, request delegatedAudienceRequest, audience string, err error) {
+	if err == nil {
+		return
+	}
+	wool.Get(ctx).In("ModuleCapabilities.exchangeDelegatedAudience").Warn("module operation exchange refused",
+		wool.Field("binding", request.bindingID), wool.Field("kind", request.kind), wool.Field("audience", audience),
+		wool.Field("lookup", request.lookup), wool.Field("code", status.Code(err).String()), wool.Field("reason", status.Convert(err).Message()))
 }
 
 func delegatedAudienceRefusalCode(err error) string {
@@ -468,8 +522,7 @@ func sourceDelegationHops(actors []*basev0.WorkActorV1) []business.SourceDelegat
 // the caller's own binding. The caller — the module the delegation's binding
 // names as its audience — is the module that USES what is issued, so the
 // capability is minted afresh: the person's session, then the caller's hop
-// exercising the delegation as its operation binding, attesting the build its
-// verified credential was sealed to. Core resolves that binding live and refuses
+// exercising the delegation as its operation binding. Core resolves that binding live and refuses
 // it for any module the delegation does not entitle.
 func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
 	ctx context.Context, caller business.ModuleCaller, parent *basev0.WorkContextV1,
@@ -490,7 +543,7 @@ func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
 	authority := business.SourceOperationContextAuthority{
 		ModuleWorkContextAuthority: business.ModuleWorkContextAuthority{
 			PrincipalID: caller.PrincipalID, Tenant: parent.GetTenantId(),
-			InstallationID: *caller.Sealed.InstallationID, Execution: caller.SealedExecution(),
+			InstallationID: *caller.Sealed.InstallationID,
 		},
 		ModulePrefix:     grant.Prefix,
 		OwnerPrincipalID: parent.GetOwnerPrincipalId(),
@@ -501,7 +554,7 @@ func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
 	}
 	token, signed, err := s.startSourceOperation(ctx, authority, ttl)
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	return issuedWorkContext(token, signed), nil
 }

@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	"github.com/google/uuid"
 )
 
@@ -156,17 +158,28 @@ type Service struct {
 	// asserted by its constant rather than by its behaviour.
 	audienceClock func() time.Time
 
-	// The delivery inbox's wiring. All three or none: ReceiveSolutionDelivery
+	// The delivery inbox's wiring. All of it or none: ReceiveSolutionDelivery
 	// fails closed and names the gap when any is absent, because a deployment
 	// that mounted the endpoint without a verifier must not accept documents.
-	deliveryVerifier        *solutionhost.Verifier
-	deliveryStore           SolutionDeliveryStore
-	deliveryCarrier         SolutionDeliveryCarrierAuthorizer
-	deliveryDomainsBySigner map[string][]string
-	// deliveryCoordinate is this host's coordinate, so an authority document
-	// addressed to another host is refused at receipt. Empty skips that check
-	// (the reconcile pass still applies it).
+	deliveryVerifier          *solutionhost.Verifier
+	authorityDocumentVerifier func([]byte, []byte) (string, error)
+	// authorityDocuments is each binding's applied authority document, verified
+	// once per generation.
+	authorityDocuments   verifiedAuthorityDocuments
+	compositionReconcile func(context.Context) error
+	deliveryStore        SolutionDeliveryStore
+	deliveryCarrier      SolutionDeliveryCarrierAuthorizer
+	// deliveryCoordinate is this host's coordinate, which every admission is
+	// decided under.
 	deliveryCoordinate string
+	// moduleNamespaces spells the namespace a module's workloads run in.
+	moduleNamespaces ModuleNamespaceRule
+	// hostModule is the module this host was composed as. A delivered module
+	// envelope is the host's own document, so its carrier is the delivery
+	// account of this module's namespace (module_envelope_delivery.go).
+	hostModule             string
+	frontendSource         frontendpayload.Source
+	frontendLazyLoadWindow time.Duration
 
 	// The policy log's wiring: the external append-only record, this host's
 	// local receipts and cursor, and an overridable clock.
@@ -194,11 +207,10 @@ type Service struct {
 	moduleInstallations     ModuleInstallationResolver
 	moduleOperationBindings ModuleOperationBindingStore
 
-	// The independent sources execution-bound minting needs. Unset means
+	// The workload reviewer execution-bound minting needs. Unset means
 	// BindExecution answers ErrExecutionUnbound — never a mint that skips the
 	// check.
-	executionReviewer  ExecutionReviewer
-	executionAuthority ExecutionAuthority
+	executionReviewer ExecutionReviewer
 
 	// workContextSeals answers the row-backed half of a Work Context's seal
 	// (work_context_seal.go). Unset answers no seal, so no capability is
@@ -234,15 +246,9 @@ func (s *Service) SetPolicyLog(log PolicyLog, store PolicyLogStore) {
 	s.policyLogStore = store
 }
 
-// SetSolutionDelivery wires the delivery endpoint: the bundle verifier, the
-// inbox's persistence, the carrier authorizer, and which ownership domains each
-// attested signer may deliver under.
-//
-// The signer-to-domain mapping comes from the SAME document as the identity
-// allowlist — the verifier's own policy — rather than from this host's
-// environment. When the two were separable, a deployer who could set the
-// environment could widen what an accepted signer speaks for without touching
-// the independently-delivered policy at all.
+// SetSolutionDelivery wires the delivery endpoint: the pinned-key verifier,
+// the inbox's persistence and the carrier authorizer. Which ownership domains a
+// signer may deliver under is the verifier's own pin policy.
 //
 // Boot wiring, called once before the service listens, so these are plain
 // fields: an atomic that is only ever written once reads as a claim that
@@ -251,12 +257,10 @@ func (s *Service) SetSolutionDelivery(
 	verifier *solutionhost.Verifier,
 	store SolutionDeliveryStore,
 	carrier SolutionDeliveryCarrierAuthorizer,
-	domainsBySigner map[string][]string,
 ) {
 	s.deliveryVerifier = verifier
 	s.deliveryStore = store
 	s.deliveryCarrier = carrier
-	s.deliveryDomainsBySigner = maps.Clone(domainsBySigner)
 }
 
 // declaredModules is the module principal registry as it stands right now.
@@ -302,12 +306,20 @@ func (s *Service) moduleRegistryFenced() bool {
 // it was derived from. Published together through one pointer, so a reader can
 // never pair one pass's registry with another pass's revision.
 type installedModuleRegistry struct {
+	manifestDerived  bool
 	registry         ModulePrincipalRegistry
 	envelopeRevision uint64
 	// delivered is the size of the delivery inbox this registry was derived
 	// from, nil when it was not derived from a counted read of it. See
 	// deliveredSince.
 	delivered *uint64
+	// withheld is every operation binding an applied manifest asked for that
+	// this registry does not hold. It travels with the registry through the
+	// same pointer because it is the other half of the same answer: the
+	// registry says what a module MAY do, and this says what the pass could
+	// not give it, which is the difference between "no module accepts a source
+	// delegation here" and "the one that does is missing".
+	withheld []ModuleBindingOmission
 }
 
 // SetModuleCapabilities wires the module-facing capability surface (issue #463):
@@ -360,9 +372,42 @@ func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 // delivered is the size of the delivery inbox the registry was derived from,
 // read in the same snapshot as its inputs, or nil when it was not derived from
 // a counted read of the inbox. See deliveredSince.
-func (s *Service) InstallDerivedModulePrincipals(registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64) {
+//
+// withheld is every operation binding the pass could not grant. It is variadic
+// so that the common statement — a registry with nothing withheld — is spelled
+// by passing nothing, and so the one production caller publishes both halves
+// through the one pointer rather than through a second store a reader could
+// pair with a different pass.
+func (s *Service) InstallDerivedModulePrincipals(
+	registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64, withheld ...ModuleBindingOmission,
+) {
+	s.installModuleRegistry(registry, envelopeRevision, delivered, false, withheld...)
+}
+
+func (s *Service) installModuleRegistry(registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64, manifestDerived bool, withheld ...ModuleBindingOmission) {
 	s.observeModuleEnvelopeRevision(envelopeRevision)
-	s.modulePrincipals.Store(&installedModuleRegistry{registry: maps.Clone(registry), envelopeRevision: envelopeRevision, delivered: delivered})
+	s.modulePrincipals.Store(&installedModuleRegistry{
+		manifestDerived: manifestDerived,
+		registry:        maps.Clone(registry), envelopeRevision: envelopeRevision,
+		delivered: delivered, withheld: slices.Clone(withheld),
+	})
+}
+
+// withheldModuleBindings is every operation binding an applied manifest asked
+// for that the pass which derived the current registry could not grant.
+//
+// Nil has one meaning and it is "nothing is known to be missing": a registry
+// stated directly rather than derived (a test, or a host before its first
+// pass) publishes no omissions, and a caller must not read that as a claim
+// that the envelope allowed everything. The one caller that acts on it —
+// recordSourceDelegationsTx — therefore fails closed on the registry's own
+// fence as well, which answers the pass that has not run yet.
+func (s *Service) withheldModuleBindings() []ModuleBindingOmission {
+	installed := s.modulePrincipals.Load()
+	if installed == nil {
+		return nil
+	}
+	return installed.withheld
 }
 
 // observeModuleEnvelopeRevision records that a revision is committed. It only

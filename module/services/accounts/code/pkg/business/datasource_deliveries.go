@@ -70,6 +70,13 @@ const (
 
 	reconcileModeConditional = "conditional"
 	reconcileModeForce       = "force"
+	// reconcileModeReconfigured is a forced reconcile an UpdateSource asked for:
+	// the source's branch or filters moved, so the snapshot it takes covers a
+	// different set of files than the last one did. It forces exactly as
+	// reconcileModeForce does — which is why every decision about forcing reads
+	// forcedReconcileMode rather than comparing to one constant — and is a
+	// separate value only so the sync it drives can say why it ran.
+	reconcileModeReconfigured = "reconfigured"
 
 	changeTypeModified = "modified"
 	changeTypeRemoved  = "removed"
@@ -260,9 +267,12 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 				resultErr = s.parkUnreadablePublicSource(ctx, source, resultErr)
 				resultErr = datasourceProcessingError(resultErr)
 				trigger := "reconcile"
-				if envelope.GetTopic() == datasourcePushTopic {
+				switch {
+				case envelope.GetTopic() == datasourcePushTopic:
 					trigger = "webhook"
-				} else if envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce {
+				case envelope.GetAttributes()[attrReconcileMode] == reconcileModeReconfigured:
+					trigger = "reconfigured"
+				case envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce:
 					trigger = "manual"
 				}
 				fields := datasourceFailureFields(resultErr, source.Repo, trigger)
@@ -283,7 +293,7 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 		// A reconcile a person asked for ("Sync now", the first sync at connect)
 		// is interactive: it may spend the whole credential budget. Webhook
 		// deliveries and the periodic reconcile are background and yield.
-		if envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce {
+		if forcedReconcileMode(envelope.GetAttributes()[attrReconcileMode]) {
 			ctx = connector.WithPriority(ctx, connector.PriorityInteractive)
 		}
 
@@ -301,7 +311,7 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 			}
 			return err
 		case DatasourceReconcileTopic:
-			force := envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce
+			force := forcedReconcileMode(envelope.GetAttributes()[attrReconcileMode])
 			_, err := s.ReconcileGitHubSource(ctx, source, force, envelope.GetId())
 			return err
 		default:
@@ -949,7 +959,8 @@ func (s *Service) RunDatasourceReconcile(ctx context.Context) (int, error) {
 // STOPGAP (issue #1112).
 func (s *Service) enqueueScheduledReconcile(ctx context.Context, source *DatasourceSource) error {
 	if source.Provider == DatasourceProviderGitHub {
-		return s.enqueueReconcile(ctx, source, reconcileModeConditional, scheduledReconcileKey(source))
+		_, err := s.enqueueReconcile(ctx, source, reconcileModeConditional, scheduledReconcileKey(source))
+		return err
 	}
 	return s.enqueueScheduledPullSync(ctx, source)
 }
@@ -977,8 +988,11 @@ func scheduledReconcileKey(source *DatasourceSource) string {
 	return "datasource.scheduled:" + source.ID + ":" + source.NextReconcileAt.UTC().Format(time.RFC3339Nano)
 }
 
-func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource, mode, idempotencyKey string) error {
-	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
+// enqueueReconcile queues one reconcile of a source in the given mode and
+// returns the durable job id, which is what a caller hands back as the sync to
+// watch. Callers with nothing to watch discard it.
+func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource, mode, idempotencyKey string) (string, error) {
+	response, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
@@ -999,7 +1013,18 @@ func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource
 			},
 		},
 	})
-	return err
+	if err != nil {
+		return "", err
+	}
+	return response.GetJobId(), nil
+}
+
+// forcedReconcileMode reports whether a reconcile mode takes a full snapshot
+// regardless of the source's cursor. Every mode that forces must be named here:
+// a new forcing mode compared against one constant somewhere else would quietly
+// reconcile conditionally, find the head unmoved, and hand nothing off.
+func forcedReconcileMode(mode string) bool {
+	return mode == reconcileModeForce || mode == reconcileModeReconfigured
 }
 
 // enqueueFirstPullSync is a pull source's sync at connect. It is the scheduled

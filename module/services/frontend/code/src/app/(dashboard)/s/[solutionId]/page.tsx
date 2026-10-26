@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
 import { SolutionDashboards } from "@/solutions/SolutionDashboard";
+import { SolutionLivePage } from "@/solutions/SolutionLivePage";
 import { SolutionRuntime } from "@/solutions/SolutionRuntime";
 import {
 	browserManifestUrl,
@@ -67,24 +68,31 @@ export default async function SolutionPage({
 	// (no graph, or a graph of events and metrics with no dashboard in it)
 	// renders as before, with no tab bar for a single tab.
 	return (
-		<div className="flex flex-col gap-4 p-6">
-			<h1 data-slot="page-title" className="type-page-title">{solution.nav.title}</h1>
-			{solution.dashboard?.dashboards?.length ? (
-				<Tabs defaultValue="app" className="w-full">
-					<TabsList>
-						<TabsTrigger value="app">App</TabsTrigger>
-						<TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-					</TabsList>
-					<TabsContent value="app" keepMounted>
-						{app}
-					</TabsContent>
-					<TabsContent value="dashboard">
-						<SolutionDashboards graph={solution.dashboard} solutionId={solution.id} />
-					</TabsContent>
-				</Tabs>
-			) : (
-				app
-			)}
-		</div>
+		<SolutionLivePage id={solution.id} assetVersion={solution.assetVersion}>
+			<div className="flex flex-col gap-4 p-6">
+				<h1 data-slot="page-title" className="type-page-title">
+					{solution.nav.title}
+				</h1>
+				{solution.dashboard?.dashboards?.length ? (
+					<Tabs defaultValue="app" className="w-full">
+						<TabsList>
+							<TabsTrigger value="app">App</TabsTrigger>
+							<TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+						</TabsList>
+						<TabsContent value="app" keepMounted>
+							{app}
+						</TabsContent>
+						<TabsContent value="dashboard">
+							<SolutionDashboards
+								graph={solution.dashboard}
+								solutionId={solution.id}
+							/>
+						</TabsContent>
+					</Tabs>
+				) : (
+					app
+				)}
+			</div>
+		</SolutionLivePage>
 	);
 }

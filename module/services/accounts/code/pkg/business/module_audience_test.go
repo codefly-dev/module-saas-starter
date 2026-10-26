@@ -24,13 +24,11 @@ func (s *liveDeclarationsStore) LiveDeclaredBindings(context.Context) ([]LiveDec
 
 // A live declared module's alias is an audience, so a solution can mint a
 // viewer's Work Context for a module that only serves; a solution is addressed
-// by its binding and never by its alias; and an alias spelling one of the
-// vocabulary's own members adds nothing.
+// by its binding and never by its alias.
 func TestALiveDeclaredModuleAliasIsAnAudience(t *testing.T) {
 	service := &Service{store: &liveDeclarationsStore{bindings: []LiveDeclaredBinding{
 		{BindingID: "acme.test.documents", Kind: SolutionDeclaredKindModule, Alias: "documents"},
 		{BindingID: "acme.test.notebook", Kind: SolutionDeclaredKindSolution, Alias: "notebook"},
-		{BindingID: "acme.test.squatter", Kind: SolutionDeclaredKindModule, Alias: SolutionAudiencePrefix + "acme.test.notebook"},
 	}}}
 	audiences, err := service.HostAudiences(context.Background())
 	require.NoError(t, err)
@@ -38,7 +36,8 @@ func TestALiveDeclaredModuleAliasIsAnAudience(t *testing.T) {
 	require.Contains(t, audiences, SolutionAudience("acme.test.documents"))
 	require.Contains(t, audiences, SolutionAudience("acme.test.notebook"))
 	require.NotContains(t, audiences, "notebook", "a solution is addressed by its binding, never its alias")
-	require.Len(t, audiences, 6, "module-capabilities, source operations, three bindings and one module alias")
+	require.Contains(t, audiences, DirectoryAudience)
+	require.Len(t, audiences, 6, "module-capabilities, source operations, directory, two bindings and one module alias")
 	require.NoError(t, service.RequireHostAudience(context.Background(), "documents"))
 	require.ErrorIs(t, service.RequireHostAudience(context.Background(), "notebook"), ErrAudienceNotInHostVocabulary)
 }
@@ -49,5 +48,5 @@ func TestADeclaredModuleIsActiveWithNoReportedHalf(t *testing.T) {
 	module := &SolutionRegistration{SolutionID: "documents", Declared: &SolutionDeclaredBinding{BindingID: "acme.test.documents", Kind: SolutionDeclaredKindModule}}
 	require.Equal(t, SolutionRegistrationActive, module.Status())
 	solution := &SolutionRegistration{SolutionID: "notebook", Declared: &SolutionDeclaredBinding{BindingID: "acme.test.notebook", Kind: SolutionDeclaredKindSolution}}
-	require.Equal(t, SolutionRegistrationPending, solution.Status(), "a solution still waits for both of its halves")
+	require.Equal(t, SolutionRegistrationActive, solution.Status(), "a headless solution is available independently of frontend metadata")
 }

@@ -100,7 +100,7 @@ capability; it does not claim that every planned provider is released yet.
 | Product analytics | PostHog | The `product-analytics@1` browser/server APIs may capture registered events and perform consent-gated identify, alias, organization grouping, and privacy suppression. An event may carry a variant already evaluated by Unleash for experiment analysis. | Flag definition or evaluation, exception capture, and traces, metrics, or logs |
 | Session replay | PostHog | A browser-only recorder may start after separate replay consent and redaction policy resolve to allow. It has no server SDK or implicit analytics-consent fallback. | Flags, errors, and APM signals |
 | Error tracking | Sentry | Browser/server exception events, release/environment tags, source-map upload, and the error-issue workflow. Provisioning credentials remain build/provider-only. | Performance transactions, profiles, replay, logs, metrics, and feature flags |
-| APM traces, metrics, and logs | SigNoz | Applications use OpenTelemetry SDKs and standard OTLP configuration through the in-graph collector. SigNoz receives those signals as the OTLP backend. | Product analytics, replay, feature flags, and the Sentry error-issue contract |
+| APM traces, metrics, and logs | SigNoz | Applications use OpenTelemetry SDKs and export traces and metrics over OTLP/gRPC to the HTTPS operations intake, whose address the environment's `telemetry:` declaration delivers as the standard `OTEL_EXPORTER_OTLP_ENDPOINT` variable (or delivers nothing, and then nothing is exported); logs go to stdout. SigNoz receives those signals as the OTLP backend. | Product analytics, replay, feature flags, and the Sentry error-issue contract |
 
 Provider manifests are allowlists. `provider-posthog` may project only
 `product-analytics@1`; its browser initialization must disable flag remote
@@ -111,8 +111,9 @@ Sentry trace sampling at zero and installs no Sentry tracing integration.
 `provider-signoz`, if API qualification succeeds, may manage exactly owned
 dashboards and alerts but projects no application runtime configuration. In
 particular, dashboard provisioning is not an application telemetry contract:
-application OTLP endpoints remain instrumentation configuration resolved
-through the telemetry service.
+the application OTLP endpoint remains instrumentation configuration, delivered
+as the standard `OTEL_EXPORTER_OTLP_ENDPOINT` variable through the
+environment's optional `telemetry:` declaration.
 
 The starter keeps the capability configurations independent. Selecting
 PostHog never selects flags, errors, or observability; selecting Sentry never
@@ -687,7 +688,7 @@ names the source repository and a package version rather than a path:
 modules:
   - name: saas-starter
     source: codefly-dev/module-saas-starter
-    version: "0.1.0"
+    version: "0.2.0"
 ```
 
 Resolution fails closed, so the workspace must also say who it trusts to have
@@ -740,6 +741,29 @@ manifest files that belong to a non-composed service and reports them as an
 expected omission, not a missing base file — module-level files are always
 enforced. So absent base files for a service you never composed are normal;
 missing base files for a service you DID compose are a real failure.
+
+**Composing no Vault** is the common case of this, because a cell whose keys
+live in its cloud key-management service reads none:
+`KEY_SERVICE_BACKEND=kms` with `KEY_SERVICE_SIGNING_BACKEND=kms-wrapped` opens
+no Vault connection at all. Leave `vault` out of `services:` and the service
+tree is not copied, accounts' `vault` service-dependency is pruned, no
+environment schedules one, and — because leaving it out is how a composition
+*selects* the cloud key service today — the **`vault` configuration group is
+withdrawn with the selection**, so nothing is left answering for the address and
+AppRole credential of a Vault that is not there. The group follows the backend
+selection rather than the service's presence: a cell whose Vault is the cell's
+own keeps the group though this module renders no Vault at all.
+
+A composition that wants the Vault in its local environment but not on its cell
+needs the finer grain, `key-service: vault | kms` per environment. That is
+implemented in the module agent and **not declarable yet**: the environment
+block's schema is the CLI's, parsed strictly with no extension seam. Neither
+route reaches a composition that **pins a published release** of this module,
+which is the shape a hosted cell actually deploys: both are declarations in the
+consumer's own manifest, and a pinned consumer still composes the `vault`
+service until it edits that manifest. See `module/deployment/README.md`,
+"Composing no Vault", for both routes, the refusals, what the CLI still owes,
+and what a pinned composition can and cannot do today.
 
 For the frontend product-plugin overlay specifically — package layout,
 generated projections, and gates — see

@@ -45,6 +45,55 @@ users:
     provider: email
     provider_id: dev-dana
 
+  # The people of the host authority interface's local fixture, signed in by
+  # the same fixture tokens, so a composition whose host is accounts offers the
+  # sign-in page the authority gateway offers, with the same organisations and
+  # teams. What they hold at a composed module is a role over that module's
+  # permissions, which this host cannot name: the composing workspace's own
+  # fixture adds those roles and assigns them by email (`assignments`). Here
+  # alex and dev are Acme administrators and zoe owns Globex.
+  - id: 00000000-0000-7000-8000-0000000000b1
+    email: maya@acme.test
+    name: Maya Viewer
+    role: member
+    provider: email
+    provider_id: fixture-maya
+
+  - id: 00000000-0000-7000-8000-0000000000b2
+    email: remi@acme.test
+    name: Remi Editor
+    role: member
+    provider: email
+    provider_id: fixture-remi
+
+  - id: 00000000-0000-7000-8000-0000000000b3
+    email: alex@acme.test
+    name: Alex Admin
+    role: member
+    provider: email
+    provider_id: fixture-alex
+
+  - id: 00000000-0000-7000-8000-0000000000b4
+    email: dev@acme.test
+    name: Dev Developer
+    role: member
+    provider: email
+    provider_id: fixture-dev
+
+  - id: 00000000-0000-7000-8000-0000000000b5
+    email: zoe@globex.test
+    name: Zoe Admin
+    role: member
+    provider: email
+    provider_id: fixture-zoe
+
+  - id: 00000000-0000-7000-8000-0000000000b6
+    email: omar@globex.test
+    name: Omar Member
+    role: member
+    provider: email
+    provider_id: fixture-omar
+
 # Organization ids are pinned for the same reason as user ids: a module
 # principal grant (the module envelope) names its tenant by organization id, and a
 # committed grant can only quote an id that survives a fresh seed.
@@ -59,6 +108,21 @@ organizations:
         role: member
       - email: carol@acme.com
         role: member
+      - email: maya@acme.test
+        role: member
+      - email: remi@acme.test
+        role: member
+      - email: alex@acme.test
+        role: admin
+      - email: dev@acme.test
+        role: admin
+
+  - id: 00000000-0000-7000-8000-0000000000c2
+    name: Globex
+    owner: zoe@globex.test
+    members:
+      - email: omar@globex.test
+        role: member
 
 teams:
   - name: Engineering
@@ -66,11 +130,26 @@ teams:
     members:
       - alice@acme.com
       - bob@acme.com
+      - remi@acme.test
+      - alex@acme.test
+      - dev@acme.test
 
   - name: Design
     org: Acme Corp
     members:
       - carol@acme.com
+
+  - name: Finance
+    org: Acme Corp
+    members:
+      - maya@acme.test
+      - alex@acme.test
+
+  - name: Ops
+    org: Globex
+    members:
+      - zoe@globex.test
+      - omar@globex.test
 
 roles:
   - org: Acme Corp

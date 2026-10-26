@@ -76,7 +76,11 @@ func (s *Service) WithInstallationStep(ctx context.Context, lease *jobsv1.JobLea
 		if !ok || a.BindingID != grant.PresenceBinding || !moduleAvailableToOrganization(grant, a.OrganizationID) {
 			return ErrModuleInstallationInactive
 		}
-		a.Scope = FullInstallationScope(intersectInstallationScope(grant, a.Scope))
+		consented, err := snapshot.consentedGrant(grant, a.Scope)
+		if err != nil {
+			return err
+		}
+		a.Scope = FullInstallationScope(consented)
 		if err := mint(ctx, a, installationStepScopes(a)); err != nil {
 			return err
 		}

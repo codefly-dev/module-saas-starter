@@ -72,11 +72,7 @@ func newBoundaryRegistryService(t *testing.T) *boundaryRegistryStore {
 		Publisher:  "solution:example-solution",
 		Revision:   7,
 		Frontend: &business.SolutionFrontendHalf{
-			Revision: 7, Manifest: `{"id":"example-solution"}`,
-		},
-		Backend: &business.SolutionBackendHalf{
-			Revision: 7, Upstream: "http://upstream.example:8080",
-			ServiceAlias: "example-solution",
+			Revision: 7, Manifest: `{"title":"Example","order":1,"exposed_module":"./Page","host_contract":1}`,
 		},
 		UpdatedAt: time.Now().UTC(),
 	}}

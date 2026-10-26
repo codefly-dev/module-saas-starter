@@ -50,12 +50,9 @@ func TestListPlatformCatalogueWithholdsRegistryTopology(t *testing.T) {
 			SolutionID: "example-solution",
 			Publisher:  "solution:example-solution",
 			Revision:   12,
+			Group:      &business.SolutionGroup{ID: "operations", Title: "Operations", Order: 1},
 			Frontend: &business.SolutionFrontendHalf{
-				Revision: 11, Manifest: `{"id":"example-solution"}`, ContractVersion: "v1",
-			},
-			Backend: &business.SolutionBackendHalf{
-				Revision: 12, Upstream: "http://upstream.example:8080", ServiceAlias: "example-solution",
-				ContractVersion: "v1",
+				Revision: 11, Manifest: `{"title":"Example","order":1,"exposed_module":"./Page","host_contract":1}`,
 			},
 			// An installation names the immutable target, so the declared
 			// record is what maps it back to this solution. Without it the
@@ -63,7 +60,7 @@ func TestListPlatformCatalogueWithholdsRegistryTopology(t *testing.T) {
 			// id instead — which is correct behaviour, and not what this test
 			// is about.
 			Declared: &business.SolutionDeclaredBinding{
-				BindingID: "acme.test.example-solution", Generation: 1,
+				BindingID: "acme.test.example-solution", Generation: 1, Kind: business.SolutionDeclaredKindSolution,
 				Release: "acme/example-solution@1.0.0", TargetID: platformTargetD,
 			},
 			UpdatedAt: time.Now().UTC(),
@@ -88,6 +85,7 @@ func TestListPlatformCatalogueWithholdsRegistryTopology(t *testing.T) {
 	require.Equal(t, "Acme", entry.GetInstallations()[0].GetOrgName())
 
 	registration := entry.GetRegistration()
+	require.Equal(t, "operations", registration.GetGroup().GetId(), "presentation is retained while topology is withheld")
 	require.Equal(t, gen.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE, registration.GetStatus())
 	// THE BOUNDARY IS WITHHELD STRUCTURALLY, not emptied. This asserted
 	// `GetRuntimeBoundary()` was empty; the wire message has no such field at
@@ -100,8 +98,9 @@ func TestListPlatformCatalogueWithholdsRegistryTopology(t *testing.T) {
 			"the seed selects the boundary a Work Context is sealed under, so a response that could "+
 			"carry it lets one solution learn another's")
 	require.Empty(t, registration.GetFrontend().GetManifest())
-	require.Empty(t, registration.GetBackend().GetUpstream())
-	require.Empty(t, registration.GetBackend().GetServiceAlias())
 	require.Equal(t, int64(11), registration.GetFrontend().GetRevision())
-	require.Equal(t, "v1", registration.GetBackend().GetContractVersion())
+	// No address at all, structurally: the record carries none, since a
+	// solution is reached where the Codefly SDK resolves its declared endpoint.
+	require.Nil(t, registration.ProtoReflect().Descriptor().Fields().ByName("backend"),
+		"saas.accounts.v1.SolutionRegistration must carry no backend field: an address is resolved, never recorded")
 }

@@ -8,7 +8,7 @@ import {
 	type SolutionClientSurfaces,
 	type SolutionManifest,
 	type SolutionNav,
-	solutionProxyBase,
+	solutionAssetProxyBase,
 } from "@/solutions/registry";
 
 /**
@@ -211,6 +211,10 @@ export function navProjection(
 	return {
 		id: manifest.id,
 		nav: { ...manifest.nav },
+		...(manifest.kind === "solution" && manifest.group
+			? { group: { ...manifest.group } }
+			: {}),
+		...(manifest.assetVersion ? { assetVersion: manifest.assetVersion } : {}),
 		available: entitlement.healthy,
 	};
 }
@@ -251,7 +255,7 @@ export function surfacesProjection(
 		return null;
 	}
 	const modulePath = (module: string) =>
-		servedByHost ? `${solutionProxyBase(manifest.id)}${module}` : module;
+		servedByHost ? `${solutionAssetProxyBase(manifest)}${module}` : module;
 	return {
 		id: manifest.id,
 		title: manifest.nav.title,

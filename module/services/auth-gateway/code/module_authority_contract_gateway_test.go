@@ -136,11 +136,25 @@ func TestModuleAuthorityContractGateway(t *testing.T) {
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	server := &http.Server{Handler: newGatewayHTTPHandler(gateway, nil), ReadHeaderTimeout: 10 * time.Second}
+	handler := newGatewayHTTPHandler(gateway, nil)
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
+	// The workload endpoint, as main serves it: the same handler on a port of
+	// its own, marked so the module credential exchanges know they are on it.
+	// The module-authority client mints there — the composition points the
+	// gateway value a workload reads at this endpoint — and the viewer's
+	// reads stay on the public one.
+	workloadPort, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	workloadServer := &http.Server{Handler: workloadListener(handler), ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = workloadServer.Serve(workloadPort) }()
+	t.Cleanup(func() { _ = workloadServer.Close() })
 
-	announced := map[string]any{"gateway": "http://" + listener.Addr().String()}
+	announced := map[string]any{
+		"gateway":  "http://" + listener.Addr().String(),
+		"workload": "http://" + workloadPort.Addr().String(),
+	}
 	if input.Connect != "" {
 		announced["flow"] = serveModuleReadFlow(t, gateway, access, input)
 	}

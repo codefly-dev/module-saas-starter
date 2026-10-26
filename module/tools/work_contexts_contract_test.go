@@ -1,9 +1,13 @@
 package tools
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -41,24 +45,60 @@ const (
 // choosing an id by hand can exceed.
 var resourceIDBound = regexp.MustCompile(`sortedUniqueOperationValues\(scope\.ResourceIDs,\s*(\d+)\)`)
 
-// registryWriters are the setters that replace the registry every capability
-// decision reads: the derived install, tagged with the envelope revision the
-// fence compares (both its original and exported names), and the untagged one
-// tests state a registry with.
-var registryWriters = []string{"installDerivedModulePrincipals", "InstallDerivedModulePrincipals", "SetModulePrincipals"}
+// registryWriters are the publication entry points, including the private
+// helper shared by the production reconciler and explicit test fixtures.
+var registryWriters = []string{"installDerivedModulePrincipals", "InstallDerivedModulePrincipals", "installModuleRegistry", "SetModulePrincipals"}
 
-// writesRegistry reports a *call* to a setter. Counting calls against
-// declarations rather than matching a call's shape is deliberate: a qualified
-// call (`service.Set...`) and a receiver call inside the declaring package read
-// differently, and a check that only recognised one form would miss the very
-// change it exists to catch.
-func writesRegistry(body string) bool {
-	for _, writer := range registryWriters {
-		if strings.Count(body, writer+"(") > strings.Count(body, ") "+writer+"(") {
+// writesRegistry counts callers of publication entry points. A setter delegating
+// to their shared implementation is one mechanism, not a second authority owner.
+func writesRegistry(body string) (bool, error) {
+	file, err := parser.ParseFile(token.NewFileSet(), "registry.go", body, 0)
+	if err != nil {
+		return false, err
+	}
+	writes := false
+	for _, declaration := range file.Decls {
+		if fn, ok := declaration.(*ast.FuncDecl); ok && slices.Contains(registryWriters, fn.Name.Name) {
+			continue
+		}
+		ast.Inspect(declaration, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			var name string
+			switch function := call.Fun.(type) {
+			case *ast.SelectorExpr:
+				name = function.Sel.Name
+			case *ast.Ident:
+				name = function.Name
+			}
+			if slices.Contains(registryWriters, name) {
+				writes = true
+			}
 			return true
+		})
+	}
+	return writes, nil
+}
+
+func TestRegistryWriterScanFollowsPublicationEntryPoints(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want bool
+	}{
+		{`func publish() { service.installModuleRegistry(nil, 0, nil, true) }`, true},
+		{`func publish() { service.InstallDerivedModulePrincipals(nil, 0, nil) }`, true},
+		{`func publish() { SetModulePrincipals(nil) }`, true},
+		{`func publish() { service.SetModulePrincipals (nil) }`, true},
+		{`func InstallDerivedModulePrincipals() { service.installModuleRegistry(nil, 0, nil, false) }`, false},
+		{`func publish() { /* service.SetModulePrincipals(nil) */ }`, false},
+	} {
+		got, err := writesRegistry("package example\n" + tc.body)
+		if err != nil || got != tc.want {
+			t.Errorf("scan %q = %t, %v; want %t", tc.body, got, err, tc.want)
 		}
 	}
-	return false
 }
 
 // readsModulePrincipalsVariable reports source that names the retired
@@ -85,9 +125,9 @@ func TestWorkContextsContractNamesTheEnforcedResourceIDBound(t *testing.T) {
 
 // TestWorkContextsContractDerivesTheRegistryFromDeliveredAuthority pins the
 // fact the document's advice now rests on: the module principal registry is
-// derived each reconcile pass from delivered authority inside the module
-// envelope, and nothing else writes it. Two ways that would silently stop being
-// true, each refused here:
+// derived each reconcile pass from signed delivered authority, narrowed by an
+// administrative envelope when one exists, and nothing else writes it. Two ways
+// that would silently stop being true, each refused here:
 //
 //   - a process reading the registry from its environment again — the
 //     MODULE_PRINCIPALS read this replaced, under which an entry change was a
@@ -121,7 +161,11 @@ func TestWorkContextsContractDerivesTheRegistryFromDeliveredAuthority(t *testing
 			t.Errorf("%s names MODULE_PRINCIPALS: %s says the registry is derived from delivered authority, and no process reads it from its environment",
 				relative, workContextsDoc)
 		}
-		if writesRegistry(string(body)) {
+		writes, scanErr := writesRegistry(string(body))
+		if scanErr != nil {
+			return scanErr
+		}
+		if writes {
 			writers[relative] = true
 		}
 		return nil
@@ -151,7 +195,7 @@ func TestWorkContextsContractStatesTheGrantNamingDecision(t *testing.T) {
 		"the producing module owns what its ids mean",
 		"The host neither derives nor checks them",
 		"Name the resource by its **stable identity**, not by a digest of its current definition.",
-		"The module principal registry is derived, each reconcile pass, from the delivered authority documents inside the module envelope",
+		"The module principal registry is derived, each reconcile pass, from applied signed manifests, narrowed by an administrative envelope when one exists",
 		"an entry change does not revoke them",
 		"Pinning a definition is the producer's own check",
 		"The host makes no such check",

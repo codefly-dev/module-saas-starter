@@ -1,6 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import {
+	groupSolutionNavigation,
+	type SolutionGroup,
+} from "@/solutions/solution-groups";
 import { useSyncExternalStore } from "react";
 
 import { decodeJWTPayload } from "@/lib/auth-session";
@@ -12,6 +16,8 @@ import {
 
 interface SolutionNav {
 	id: string;
+	assetVersion?: string;
+	group?: SolutionGroup;
 	nav: { title: string; path: string; order?: number };
 	/**
 	 * False when the solution is installed and granted but its installation is
@@ -30,6 +36,7 @@ type Listener = () => void;
 
 const EMPTY: SolutionNav[] = [];
 let snapshot: SolutionNav[] = EMPTY;
+let snapshotLoaded = false;
 const listeners = new Set<Listener>();
 let timer: ReturnType<typeof setInterval> | null = null;
 let stopWatchingToken: (() => void) | null = null;
@@ -66,10 +73,11 @@ function currentViewer(): string | null {
 	return `${subject}\u0000${org}`;
 }
 
-function publish(next: SolutionNav[]): void {
+function publish(next: SolutionNav[], loaded = true): void {
 	// Keep the reference stable when nothing changed so subscribers don't
 	// re-render on every poll (useSyncExternalStore compares by identity).
-	if (sameList(snapshot, next)) return;
+	if (sameList(snapshot, next) && snapshotLoaded === loaded) return;
+	snapshotLoaded = loaded;
 	snapshot = next;
 	for (const listener of listeners) {
 		listener();
@@ -85,7 +93,7 @@ function forgetIfViewerChanged(): boolean {
 	const viewer = currentViewer();
 	if (viewer === snapshotViewer) return false;
 	snapshotViewer = viewer;
-	publish(EMPTY);
+	publish(EMPTY, false);
 	return true;
 }
 
@@ -98,10 +106,15 @@ function sameList(a: SolutionNav[], b: SolutionNav[]): boolean {
 			item.id === other.id &&
 			item.nav.title === other.nav.title &&
 			item.nav.path === other.nav.path &&
+			item.nav.order === other.nav.order &&
+			item.group?.id === other.group?.id &&
+			item.group?.title === other.group?.title &&
+			item.group?.order === other.group?.order &&
 			// Availability is rendered, so a change in it must re-render. Leaving it
 			// out of the comparison would freeze a solution's disabled state for the
 			// life of the page.
-			item.available === other.available
+			item.available === other.available &&
+			item.assetVersion === other.assetVersion
 		);
 	});
 }
@@ -177,20 +190,60 @@ function getSnapshot(): SolutionNav[] {
 }
 
 /**
- * Live list of registered solutions, read from the runtime registry. Solutions
- * self-register at startup, so this reflects whatever is currently deployed —
+ * Live list of registered solutions, read from the runtime registry. Modules and solutions
+ * are declared by delivery, so this reflects the entitled deployed set —
  * the host names none of them. All consumers share one poll loop (see above).
  */
 export function useRegisteredSolutions(): SolutionNav[] {
 	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+/** Whether this viewer's first authenticated projection has arrived. */
+export function useRegisteredSolutionsLoaded(): boolean {
+	return useSyncExternalStore(
+		subscribe,
+		() => currentViewer() === snapshotViewer && snapshotLoaded,
+		() => false,
+	);
+}
+
 /** Sidebar/inline navigation for registered solutions. */
-export function SolutionsMenu({ variant = "list" }: { variant?: "list" | "cards" }) {
+export function SolutionsMenu({
+	variant = "list",
+}: {
+	variant?: "list" | "cards";
+}) {
 	const solutions = useRegisteredSolutions();
 	if (solutions.length === 0) {
 		return null;
 	}
+	return (
+		<div className="flex flex-col gap-4">
+			{groupSolutionNavigation(solutions).map((section) => (
+				<section
+					key={section.key}
+					aria-label={section.title}
+					className="flex flex-col gap-2"
+				>
+					{solutions.some((entry) => entry.group) && (
+						<h3 className="text-sm font-medium text-muted-foreground">
+							{section.title}
+						</h3>
+					)}
+					<SolutionLinks solutions={section.items} variant={variant} />
+				</section>
+			))}
+		</div>
+	);
+}
+
+function SolutionLinks({
+	solutions,
+	variant,
+}: {
+	solutions: SolutionNav[];
+	variant: "list" | "cards";
+}) {
 	if (variant === "cards") {
 		return (
 			<div className="grid gap-3 sm:grid-cols-2">

@@ -14,11 +14,17 @@ import (
 // solution scope node, standing grant, and installation row are created together
 // in one transaction; see InstallationStore.InstallSolution.
 type InstallSolutionParams struct {
+	ApprovalReplayed    bool `json:"-"`
+	Approval            *InstallationApproval
 	Kind                string
 	RegistryBindingID   string
 	RegistryPrincipalID string
 	Scope               *InstallationScope
-	EnvelopeRevision    uint64
+	// ModuleCeiling is resolved by prepareInstallation, never from the request.
+	// Re-consent may approve this current ceiling; partial reductions use the
+	// witnessed NarrowInstallation lifecycle instead.
+	ModuleCeiling    *InstallationScope
+	EnvelopeRevision uint64
 	// InstallerPrincipalID records ownership for bounded nonhuman reconciliation.
 	InstallerPrincipalID string
 	OrgID                string
@@ -87,6 +93,19 @@ type InstallationStore interface {
 	// RolePermits reports whether a role visible to the tenant permits
 	// (resource, action), directly or by wildcard.
 	RolePermits(ctx context.Context, roleID, resource, action string) (bool, error)
+	// RolePermittedScopes answers RolePermits for a whole (resource, action) set
+	// in one statement, in the order asked, through the same match. It is what a
+	// derived role's permission set is built from (derived_module_access.go).
+	RolePermittedScopes(ctx context.Context, roleID string, resources, actions []string) ([]bool, error)
+	// EnsureDerivedRole writes the role this host derived for one (solution
+	// installation, reached module, chosen role) and returns its id, replacing
+	// its permission set so a moved declaration is reconciled rather than
+	// accumulated.
+	EnsureDerivedRole(ctx context.Context, role DerivedRole) (string, error)
+	// DerivedScopeGrants lists the grants caused by one grant, or by every grant
+	// at one installation's authority-root node, so a revocation removes exactly
+	// what it caused.
+	DerivedScopeGrants(ctx context.Context, orgID, causeGrantID, causeScopeNodeID string) ([]*gen.ScopeGrant, error)
 	// WithOrgReadSnapshot runs fn on one read-only REPEATABLE READ snapshot
 	// bound to orgID, so several reads describe one moment.
 	WithOrgReadSnapshot(ctx context.Context, orgID string, fn func(ctx context.Context) error) error
@@ -106,10 +125,16 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	w := wool.Get(ctx).In("InstallSolution",
 		wool.Field("org_id", params.OrgID),
 		wool.Field("target_id", params.TargetID))
-	params.GrantedBy = actorID
-	if params.OwnerPrincipalID == "" {
-		params.OwnerPrincipalID = actorID
+	// Bind the original intent before prepareInstallation fills mutable defaults.
+	approval, approvalErr := params.Approval.bindIntent(struct {
+		Actor  string
+		Params *InstallSolutionParams
+	}{actorID, params})
+	if approvalErr != nil {
+		return nil, approvalErr
 	}
+	params.Approval = approval
+	params.GrantedBy = actorID
 	// Composing at the store level (one transaction) skips the friendly
 	// Principal.Validate() check the CreateAgentPrincipal domain path runs, so a
 	// malformed identifier would otherwise surface as an opaque DB CHECK violation
@@ -135,6 +160,9 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	if err != nil {
 		return nil, err
 	}
+	if params.OwnerPrincipalID == "" {
+		params.OwnerPrincipalID = actorID
+	}
 	// The ceiling may only name audiences this host actually serves (issue #952).
 	// `allowed_audiences` used to be free text, so an installation could name a
 	// consumer that does not exist and then mint for it — the audience is what
@@ -155,6 +183,9 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		installation, e = s.installationStore().InstallSolution(ctx, params)
 		if e != nil {
 			return e
+		}
+		if params.ApprovalReplayed {
+			return nil
 		}
 		// Publish installation.created in the same transaction (outbox). The
 		// boundary is the solution scope node the install just composed.
@@ -248,6 +279,43 @@ func (s *Service) ListInstallations(ctx context.Context, req *gen.ListInstallati
 	return &gen.ListInstallationsResponse{Installations: summaries, NextPageToken: nextToken}, nil
 }
 
+// activeTargetInstallationPageLimit bounds ActiveTargetInstallations: a cursor
+// that has not ended after this many full pages is an error, never a short
+// answer.
+const activeTargetInstallationPageLimit = 20
+
+// ActiveTargetInstallations answers the ids of orgID's ACTIVE installations of
+// targetID, read through ListInstallations page by page. It is the admission
+// read of the gateway's bearer-less module arm, asked inside
+// AdmitWorkloadOperation so the gateway makes one call; the arm needs every
+// row, because a seal on ANY of them is the target's own.
+func (s *Service) ActiveTargetInstallations(ctx context.Context, orgID, targetID string) ([]string, error) {
+	var ids []string
+	token := ""
+	for page := 0; page < activeTargetInstallationPageLimit; page++ {
+		resp, err := s.ListInstallations(ctx, &gen.ListInstallationsRequest{
+			OrgId:     orgID,
+			Status:    gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE,
+			PageSize:  listInstallationsMaxPageSize,
+			PageToken: token,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, summary := range resp.GetInstallations() {
+			installation := summary.GetInstallation()
+			if installation.GetOrgId() == orgID && installation.GetTargetId() == targetID &&
+				installation.GetStatus() == gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+				ids = append(ids, installation.GetId())
+			}
+		}
+		if token = resp.GetNextPageToken(); token == "" {
+			return ids, nil
+		}
+	}
+	return nil, fmt.Errorf("installations of organization %s did not end within %d pages", orgID, activeTargetInstallationPageLimit)
+}
+
 // TransferInstallationOwnership reassigns the owner of record and replaces the
 // co-owner succession set. The new owner must be a current org admin; the store
 // fails closed otherwise.
@@ -314,6 +382,19 @@ func (s *Service) uninstallSolutionTx(ctx context.Context, actorID, actorType, o
 	// the same transaction (outbox) so the revoke and its event are atomic.
 	if !transitioned {
 		return nil
+	}
+	// Every grant this installation's exposure CAUSED at the modules it reaches
+	// goes with the installation, in this transaction and this narrowing. The
+	// cause itself — a team's grant at this installation's own authority root —
+	// is left as it is, exactly as the scope node is, so a reinstall re-exposes
+	// the solution to the same teams; what must not survive is reach into
+	// ANOTHER module that only this installation's declaration justified.
+	//
+	// The cause is named by its NODE rather than by a path resolved after the
+	// row was revoked: the installation row carries its root node id, so nothing
+	// here has to read back a row it has already changed.
+	if err := s.revokeDerivedGrantsTx(ctx, actorID, orgID, "", installation.GetRootScopeNodeId()); err != nil {
+		return err
 	}
 	if err := s.publishLifecycleEvent(ctx, EventInstallationRevoked, orgID,
 		installation.GetRootScopeNodeId(), actorID, map[string]any{

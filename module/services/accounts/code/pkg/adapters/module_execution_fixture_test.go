@@ -18,35 +18,30 @@ var moduleExecution struct {
 	registry business.ModulePrincipalRegistry
 }
 
-// bindModuleExecution wires svc to a fresh fake cluster and approves, for every
-// declared principal, the build its pods run by default (named for its prefix).
+// bindModuleExecution wires svc to a fresh fake cluster.
 func bindModuleExecution(t *testing.T, svc *business.Service, registry business.ModulePrincipalRegistry) *executiontest.Cluster {
 	t.Helper()
 	cluster := executiontest.New()
-	svc.SetExecutionBinding(cluster, cluster)
-	for _, grant := range registry {
-		cluster.Approve(grant.Prefix, executiontest.Digest(grant.Prefix), 1)
-	}
+	svc.SetExecutionBinding(cluster)
 	previous := moduleExecution
 	t.Cleanup(func() { moduleExecution = previous })
 	moduleExecution.cluster, moduleExecution.registry = cluster, registry
 	return cluster
 }
 
-// moduleToken schedules a pod for prefix's declared workload, running its
-// approved build, and returns the token Kubernetes projects into it for
-// accounts.
+// moduleToken schedules a pod for prefix's declared workload and returns the
+// token Kubernetes projects into it for accounts.
 func moduleToken(t *testing.T, prefix string) string {
 	t.Helper()
 	require.NotNil(t, moduleExecution.cluster, "no module execution is bound for this test")
 	grant, declared := moduleExecution.registry[business.ModulePrincipalID(prefix)]
 	require.True(t, declared, "%s is not a declared principal", prefix)
-	return moduleExecution.cluster.Run(moduleWorkload(grant), executiontest.Image(prefix))
+	return moduleExecution.cluster.Run(moduleWorkload(grant))
 }
 
 func moduleWorkload(grant business.ModulePrincipalGrant) executiontest.Workload {
+	workload := grant.Workloads[0]
 	return executiontest.Workload{
-		Namespace: grant.Workload.Namespace, ServiceAccount: grant.Workload.ServiceAccount,
-		Container: grant.Workload.Container,
+		Namespace: workload.Namespace, ServiceAccount: workload.ServiceAccount, Container: workload.Container,
 	}
 }

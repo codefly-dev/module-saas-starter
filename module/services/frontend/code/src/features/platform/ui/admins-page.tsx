@@ -10,6 +10,8 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+
+import { refusalToast } from "@/features/auth/model/step-up";
 import { UserLabel } from "@/components/user-label";
 import { UserPicker } from "@/components/user-picker";
 import { formatDate } from "@/shared/lib/utils";
@@ -50,6 +52,11 @@ import { usePlatformAdmins } from "../service/queries";
 
 const col = createColumnHelper<PlatformAdmin>();
 
+// The rows when there is no answer. TanStack Table resets the page on every new
+// `data` array and that reset re-renders this page, so a fresh `[]` per render
+// would re-render it forever while the read is refused or disabled.
+const NO_ADMINS: PlatformAdmin[] = [];
+
 const platformRoleLabels: Record<string, string> = {
 	super_admin: "Super admin",
 	billing: "Billing",
@@ -57,7 +64,7 @@ const platformRoleLabels: Record<string, string> = {
 };
 
 export function AdminsPage() {
-	const { data: admins = [], isLoading } = usePlatformAdmins();
+	const { data: admins = NO_ADMINS, isLoading } = usePlatformAdmins();
 	const grantRole = useGrantPlatformRole();
 	const revokeRole = useRevokePlatformRole();
 
@@ -75,7 +82,7 @@ export function AdminsPage() {
 					setUserId("");
 					setOpen(false);
 				},
-				onError: () => toast.error("Failed to grant role"),
+				onError: (error) => refusalToast(error, "Failed to grant role"),
 			},
 		);
 	}
@@ -141,7 +148,7 @@ export function AdminsPage() {
 										onClick={() =>
 											revokeRole.mutate(admin.userId, {
 												onSuccess: () => toast.success("Role revoked"),
-												onError: () => toast.error("Failed to revoke role"),
+												onError: (error) => refusalToast(error, "Failed to revoke role"),
 											})
 										}
 									>

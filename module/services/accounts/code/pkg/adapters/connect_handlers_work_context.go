@@ -37,6 +37,13 @@ func (h *workContextConnectHandler) ConsumeSingleUse(
 	return unary(ctx, req, h.inner.ConsumeSingleUse)
 }
 
+func (h *workContextConnectHandler) AdmitWorkloadOperation(
+	ctx context.Context,
+	req *connect.Request[gen.AdmitWorkloadOperationRequest],
+) (*connect.Response[gen.AdmitWorkloadOperationResponse], error) {
+	return unary(ctx, req, h.inner.AdmitWorkloadOperation)
+}
+
 func (h *workContextConnectHandler) StartTask(
 	ctx context.Context,
 	req *connect.Request[gen.StartTaskWorkContextRequest],

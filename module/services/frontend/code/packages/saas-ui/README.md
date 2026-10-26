@@ -203,7 +203,11 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
   `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
   (repo · status · paths · branch · boundary · live updates · last sync) with per-row **Sync**/**Delete** and
-  a **Connect GitHub** action. The last-sync cell shows whichever clock applies:
+  catalog-driven connect actions. Every provider returned by `GetDatasourceCatalog`
+  is listed; a provider refusing new sources keeps its exact `conformance_gap`
+  text visible. A removed provider disappears, including an open form, on the
+  next catalog refresh (15 seconds or window focus). A failed catalog read
+  withdraws connect forms and offers a retry. The last-sync cell shows whichever clock applies:
   `last_synced_at` for a provider that pulls, or `last ingest <date, time> ·
   <short commit>` for a github source, whose change sets the compiler enqueues
   (a webhook delivery, or a reconcile pass — a declared schedule's occurrence or
@@ -268,6 +272,34 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   it keeps syncing, but the host connects no new source of that provider. The
   flag is keyed on `conformance_gap`, so an older host that sends no
   conformance fields flags nothing.
+
+The optional `DatasourceClient.getCatalog()` and `addSource(input)` methods are
+implemented by both kit transport bindings. Existing injected clients compile
+unchanged; without catalog support the panel states that the catalog is
+unavailable and invents no provider. No new panel prop is required.
+
+The host descriptor owns field keys, labels, help, required flags and credential
+modes. The adapter uses the SDK's `AddSource` message descriptor to encode the
+matching config oneof: text stays text, repeated strings accept one value per
+line, and other field types accept JSON. No provider table lives in the panel.
+A provider with unknown config fields stays visible with a newer-kit requirement;
+it is never silently dropped. A host adding a wire-contract variant still
+requires a compatible SDK. Prefixes and include/exclude patterns appear only
+when the host describes them. This UI does not change provider admission.
+
+`ConnectSourceInput.credential` is a typed, transient value. Password inputs are
+uncontrolled and cleared before the call; neither those values nor operation
+errors enter a query or mutation cache, storage, logs, or component state.
+Failures use neutral wording because an error may echo submitted secrets. The
+existing app-install return form also clears its credentials and calls directly.
+The catalog also gates installation-return redemption: a missing, refused,
+unsupported or failed catalog entry offers no return form and triggers no
+completion call. Organization-app support follows the advertised credential
+mode and the SDK setup operations matching its connector key; a credential mode
+alone never offers another connector’s installation workflow. No-credential and organization-app modes send no secret. Connecting still
+refreshes sources, collection grants and readable boundaries. Preview stories
+`CatalogProviders` and `RefusedProvider` exercise the descriptor-driven surface.
+
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, webhook secret, and an access token only on the PAT path).
   Its Authentication choice always offers **Public repository (no token)**: the
@@ -386,7 +418,29 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   phase names and getting the terminal cases wrong. `<SourceSyncProgress source
   report />` is the card, and `useSourceSync(client, orgId, source)` the read.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
-  `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
+  `useUpdateSource`, `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`,
+  `useMyAccountLinks`.
+- `<EditSourceForm source onSubmit … />`, behind the row's **Edit**, changes
+  what a connected source fetches: its branch and its path and file-type
+  filters, bound by the same schema the connect form uses. It offers the connect
+  form's *mutable* fields only — the repository and the collection are the
+  source's identity and the host refuses to move either, so the dialog states
+  them rather than offering them disabled. Every field is submitted whole, as
+  `updateSource` replaces rather than patches, which is why the fields arrive
+  seeded from the source. A client without `updateSource` is offered no Edit at
+  all. Because every field is a whole-field replacement, `EditSourceInput`
+  carries `expected` — the scope the dialog was seeded with — and the host
+  **refuses** a save whose expectation no longer matches the stored row rather
+  than applying it: a dialog left open across someone else's narrowing would
+  otherwise restore the wider scope and re-ingest everything they excluded. A
+  consumer calling `updateSource` itself must send the scope it last read, not a
+  blank one. The panel keeps the dialog open on that refusal and refetches the
+  list, so reopening it seeds from the current row. Saving deletes nothing that
+  was already ingested — the next sync hands off what the new scope covers, and
+  what becomes of files it no longer covers is the consuming module's rule. The sync the host queues when the scope moves reports the
+  `reconfigured` trigger, and `describeSync` says so: a re-snapshot hands off
+  the whole new scope, which beside an ordinary sync reads as a fault unless
+  something names the cause.
 
 ### Connecting through the GitHub App
 
@@ -412,6 +466,59 @@ the App registration**, which nothing in this repo can set or verify. Point it a
 the page that mounts this panel (`https://<host>/admin/datasources` in the portal)
 and enable "Redirect on update", or the tenant installs the App and is returned no
 source and no error. See `module/configurations/local/github-app.env`.
+
+### Connecting an API over OAuth
+
+`<ApiSourceCard gateway={{ apiBase, getAccessToken }} orgId={…} api={{ baseUrl,
+name }} operations={…} />` connects a person to one generic OAuth `api` source —
+the `api` counterpart of `<DeclaredSourceCard>`. The surface fixes the API (its
+base URL, optionally a `resourcePath`, the `collection` or `boundaryNodeId` it
+writes into); the person supplies only the sign-in. Where the API and its
+operation declarations come from is the caller's to decide: the card takes them
+as props and reads no manifest.
+
+- **Set up** — the person has no source for the base URL. **Connect** creates
+  it with `AddSource` (`API_CREDENTIAL_KIND_OAUTH2` + `GRANT_AUTHORIZATION_CODE`,
+  no credential — the host makes it personal to its creator and resolves the
+  client, endpoints and scopes from the deployment's `datasource-oauth`
+  registration), declares `operations` on it if given, and sends the browser to
+  the provider with `BeginDatasourceAccountLink.source_id` set to it.
+- **Sign-in needed** — the source exists and the person has not signed in for
+  it. A failure after the source was created lands here, so a retry signs in
+  for that source rather than creating a second one; `operations` are declared
+  again before every sign-in, which the host's atomic replace makes harmless.
+- **Connected** — the person's link for the source is listed.
+
+The source is matched on provider `api`, the authorization-code grant, and the
+base URL and resource path, trimmed and otherwise exact (`matchPersonalApiSources`).
+`ListSources` never lists another member's personal source, so every match is
+the caller's; two are reported rather than one picked. The host's refusals are
+worded as something to do (`apiSourceRefusal`): no sign-in configured for the
+deployment, the administrator role that `AddSource` and `DeclareSourceOperations`
+take, no access to the source's collection, a source personal to someone else.
+Mount the card on the page the provider returns to, and no second
+`DatasourceAccountLinks` beside it — both would redeem the one-time state.
+
+The card renders `<DatasourceAccountLinks connector="api" sourceId={…}
+providerName={…} />`, which is usable alone for a source a surface created
+itself. With `sourceId` it begins the sign-in with that source, completes the
+provider's return on the page (reading `code` and `state` off the address once,
+then removing them — and reporting an OAuth `error` return rather than leaving
+it in the address bar), and lists the person's link for that source only: the
+host records a generic OAuth link under the account `source:<source id>`, since
+the sign-in authorizes the source and proves nothing about who the person is at
+the provider. It offers **no Unlink**: deleting the link record leaves the
+source's stored authorization in place, so the control would claim a disconnect
+that did not happen. `beforeLink` runs before the sign-in begins and stops it on
+a rejection. Without `sourceId` it is unchanged: a person's GitHub account link.
+
+On the client, `beginAccountLink(orgId, connector, redirectUri, sourceId?)`
+carries the source (required by the host for `api`, ignored for the other
+connectors), `addPersonalApiSource(input)` creates the person's source and
+resolves to it, and `declareSourceOperations(orgId, sourceId, operations)`
+replaces its operation set. A `DatasourceView` of an `api` source now reads
+`provider: "api"` with an `api` block (base URL, resource path, credential kind,
+OAuth grant); it read `unknown` before.
 
 ### Data boundaries
 
@@ -508,6 +615,19 @@ elapsed through `Intl.RelativeTimeFormat`, for a consumer's own shell.
 
 ## Installing from a solution
 
+Version 0.13 requires Zod `^4.6.6`, `@hookform/resolvers >=5.1.0` and
+React Hook Form `>=7.55.0`. The exported source schemas use Zod 4 declarations
+and its `check` refinement hook; Zod 3 cannot consume them. Zod 4.6.6 is the
+minimum patched release for GHSA-mrhx-c7xc-m3w5. The resolver must understand
+Zod 4 errors so invalid form input becomes a field error instead of a thrown
+exception. The co-versioned `@codefly-dev/ui` peer is `^0.13.0`.
+
+The `example-registry-ui` consumer in `scripts/test-registry-ui.mjs` installs
+packed packages through a registry fixture, compiles imports of both source
+schemas and their inferred value types, and exercises valid, missing-token and
+oversized-scope input through the form resolver. Run it from the frontend with
+`npm run test:published-ui` after building the workspace packages.
+
 This package is published to GitHub Packages under the org's `@codefly-dev`
 scope, so a consumer needs that scope routed to the GitHub registry with a read
 token:
@@ -554,6 +674,8 @@ offer a Markdown preset. The host intersects suffixes with paths for snapshots
 and incremental changes; empty keeps all file types. The filter is selected at
 connection time and does not rewrite existing sources.
 
-The SDK peer floor is **0.3.14**: principal-name resolution imports the directory
-service introduced in that release. Earlier SDK versions must be rejected during
-installation rather than accepted and then failing when the component loads.
+The SDK peer floor is **0.3.35**: the datasource client maps an `api` source's
+credential kind and OAuth grant, and declares operations, with enums the SDK
+exports from that release (principal-name resolution needs 0.3.14's directory
+service). Earlier SDK versions must be rejected during installation rather than
+accepted and then failing when the component loads.

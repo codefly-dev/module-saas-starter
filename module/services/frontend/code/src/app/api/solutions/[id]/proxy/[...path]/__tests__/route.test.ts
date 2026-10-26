@@ -68,11 +68,12 @@ function withTrustContext(publicOrigin = "http://frontend") {
 	);
 }
 
-function registerAudit(serviceAlias = "audit-backend") {
+function registerAudit(serviceAlias = "audit-backend", kind: "module" | "solution" = "solution") {
 	findSolution.mockImplementation(async (id: string) =>
 		id === "audit"
 			? {
 					id: "audit",
+					kind,
 					nav: { title: "Audit", path: "/s/audit" },
 					frontend: {
 						type: "module-federation",
@@ -1012,4 +1013,109 @@ describe("solution proxy trace context", () => {
 		expect(headers.has("x-forwarded-for")).toBe(false);
 		expect(headers.has("x-b3-traceid")).toBe(false);
 	});
+});
+
+
+describe("shared module frontend", () => {
+ it.each([
+  ["records", "v1"],
+  ["assets/mf-manifest.json", "solutions"],
+  [".well-known/capabilities", "solutions"],
+ ])("routes %s through its owning gateway surface", async (path, prefix) => {
+  withGateway();
+  registerAudit("shared-example", "module");
+  const res = await GET(proxyRequest(`http://frontend/api/solutions/audit/proxy/${path}`, {
+   headers: { authorization: "Bearer caller-token" },
+  }), context("audit", path.split("/")));
+  expect(res.status).toBe(200);
+  expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/${prefix}/shared-example/${path}`);
+  expect((fetchMock.mock.calls[0][1].headers as Headers).get("authorization")).toBe("Bearer caller-token");
+ });
+ it("preserves a live installation refusal from the module gateway", async () => {
+  withGateway();
+  registerAudit("shared-example", "module");
+  fetchMock.mockResolvedValue(new Response("installation revoked", {status: 403}));
+  const res = await GET(proxyRequest("http://frontend/api/solutions/audit/proxy/records"), context("audit", ["records"]));
+  expect(res.status).toBe(403);
+  expect(await res.text()).toBe("installation revoked");
+  expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/v1/shared-example/records`);
+ });
+});
+
+describe("versioned frontend assets", () => {
+	it("asks the gateway whether an older asset generation is retained", async () => {
+		withGateway();
+		registerAudit();
+		findSolution.mockResolvedValue({
+			id: "audit",
+			assetVersion: "b".repeat(64),
+			backend: { serviceAlias: "audit" },
+		});
+		const res = await GET(
+			proxyRequest("http://frontend/assets/mf-manifest.json"),
+			{
+				params: Promise.resolve({
+					id: "audit",
+					version: "a".repeat(64),
+					path: ["assets", "mf-manifest.json"],
+				}),
+			},
+		);
+		expect(res.status).toBe(200);
+		expect((fetchMock.mock.calls[0][1].headers as Headers).get("X-Codefly-Frontend-Version")).toBe("a".repeat(64));
+	});
+	it("asks the gateway to compare the generation again beside route resolution", async () => {
+		withGateway();
+		const version = "a".repeat(64);
+		findSolution.mockResolvedValue({
+			id: "audit",
+			assetVersion: version,
+			backend: { serviceAlias: "audit" },
+		});
+		await GET(
+			proxyRequest("http://frontend/assets/remoteEntry.js", {
+				headers: { "X-Codefly-Frontend-Version": "forged" },
+			}),
+			{
+				params: Promise.resolve({
+					id: "audit",
+					version,
+					path: ["assets", "remoteEntry.js"],
+				}),
+			},
+		);
+		expect(
+			(fetchMock.mock.calls[0][1].headers as Headers).get(
+				"X-Codefly-Frontend-Version",
+			),
+		).toBe(version);
+	});
+});
+
+describe("retained frontend authority", () => {
+ it.each([200, 410, 502, 503])("keeps gateway status %s with a headless current generation", async (status) => {
+  withGateway();
+  findSolution.mockResolvedValue(null);
+  const cache = status === 200 ? "public, max-age=31536000, immutable" : "no-store";
+  fetchMock.mockResolvedValue(new Response("retained response", {status, headers: {"cache-control": cache}}));
+  const res = await GET(proxyRequest("http://frontend/assets/lazy.js"), {params: Promise.resolve({id: "audit", version: "a".repeat(64), path: ["assets", "lazy.js"]})});
+  expect(res.status).toBe(status);
+  expect(await res.text()).toBe("retained response");
+  expect(res.headers.get("cache-control")).toBe(cache);
+  expect(findSolution).not.toHaveBeenCalled();
+  expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/solutions/audit/assets/lazy.js`);
+ });
+ it("refuses malformed version before asking the gateway", async () => {
+  withGateway();
+  const res = await GET(proxyRequest("http://frontend/assets/lazy.js"), {params: Promise.resolve({id: "audit", version: "bad", path: ["assets", "lazy.js"]})});
+  expect(res.status).toBe(410);
+  expect(fetchMock).not.toHaveBeenCalled();
+ });
+ it("does not use retained code identity to open data routes", async () => {
+  withGateway();
+  findSolution.mockResolvedValue({id: "audit", assetVersion: "b".repeat(64), backend: {serviceAlias: "audit"}});
+  const res = await GET(proxyRequest("http://frontend/records"), {params: Promise.resolve({id: "audit", version: "a".repeat(64), path: ["records"]})});
+  expect(res.status).toBe(410);
+  expect(fetchMock).not.toHaveBeenCalled();
+ });
 });

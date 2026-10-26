@@ -32,6 +32,15 @@ type servicePermissionDefinition struct {
 // TypeScript are projections of this list rather than parallel inventories.
 var servicePermissionVocabulary = []servicePermissionDefinition{
 	{Permission: "*:*", Description: "Full access to all resources and actions.", BuiltInRoles: []string{"admin"}, APIKeyScope: true},
+	// The module envelope: the authority ceiling every module principal's
+	// registry entry is derived inside. A session writes it with fresh AAL2
+	// evidence; a machine credential has no second factor and never will, so
+	// these two scopes stand in its place and name this ceiling alone. They
+	// are API-key scopes precisely so an operator and an automation have a way
+	// in that is not a browser — the design calls this record dynamic, and
+	// before them nothing but a signed-in human could move it.
+	{Permission: "module_envelope:read", Description: "Read the module envelope, the authority ceiling every module principal is derived inside.", BuiltInRoles: []string{"platform super_admin (via *:*)"}, APIKeyScope: true},
+	{Permission: "module_envelope:write", Description: "Write the next revision of the module envelope. Narrower than it sounds: it moves no module's own authority, only the ceiling each is derived inside, and a key carrying it can do nothing else.", BuiltInRoles: []string{"platform super_admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "api_keys:read", Description: "List API keys.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "api_keys:write", Description: "Mint and revoke API keys. As an API-key scope it only revokes: minting takes an interactive session.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
 	{Permission: "audit:read", Description: "Read and export audit events.", BuiltInRoles: []string{"admin (via *:*)"}, APIKeyScope: true},
@@ -113,6 +122,20 @@ func memberPermissionIndex(contributed []permissioncatalog.Permission) map[strin
 func IsMemberPermission(resource, action string) bool {
 	_, ok := memberPermissions[resource+":"+action]
 	return ok
+}
+
+// VocabularyActions is every action the composed permission vocabulary names
+// on one resource kind: the service's own and every contributed permission.
+// A wildcard names no action.
+func VocabularyActions(resource string) []string {
+	var actions []string
+	for _, definition := range completeServicePermissionVocabulary() {
+		kind, action := splitPermission(definition.Permission)
+		if kind == resource && action != "*" {
+			actions = append(actions, action)
+		}
+	}
+	return actions
 }
 
 func completeServicePermissionVocabulary() []servicePermissionDefinition {

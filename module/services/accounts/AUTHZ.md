@@ -73,6 +73,15 @@ Until installation identity (#474) lands there is no org-root/solution node to
 parent under, so a minted `collection` node is registered as a **root**; it will
 be reparented under the org's solution node when that identity exists.
 
+`UpdateSource` changes what an already-connected source fetches — its branch and
+its path and file-type filters — under the same `org_admin` tenancy and the same
+organization resource binding as `AddSource`. It deliberately cannot move the
+boundary: the collection a source writes into is what grants reach, so re-aiming
+one in place would replace a granted collection's contents without any grant
+changing. The repository and the credential are out of reach for the same
+reason — one is the source's identity, the other rebinds whose authority its
+syncs run under (a reconnect, through `SyncSource`).
+
 Who *triggered* a source's sync is not a datasource field. `ListSources` and
 `GetSource` project `Datasource` to any org member under no declared permission,
 while `SyncSource` is org-admin only and reading its actor goes through
@@ -120,9 +129,11 @@ It is narrow, and fails closed on every other axis:
   administrator's role is not the impersonator's to borrow. A Work Context
   cannot be minted while impersonating, so a module's forwarded viewer is always
   someone acting as themselves.
-- **Every delegated subject still reads independently.** A Work Context read
-  intersects the owner and every actor in its chain; an actor with no grant
-  fails the intersection whatever the owner's role.
+- **Ordinary delegated subjects read independently.** A Work Context read
+  intersects the owner and every ordinary actor in its chain; an actor with no
+  grant fails the intersection whatever the owner's role. The explicitly marked
+  installed content-read child described below authenticates module execution
+  separately and retains the human's personal visibility.
 - **It replaces the grant, never the declaration.** A module that declares no
   content resource reads nothing, administrator or not.
 
@@ -135,6 +146,42 @@ decision is the record. Granting or revoking the platform role itself is
 audited, and bumps the authorization revision of every organization the user
 belongs to, which invalidates outstanding Work Contexts and read cursors.
 
+## Explicit installed content-read delegation
+
+An envelope operation binding marked `delegation_mode: content_read` separates
+module execution authority from a person's source visibility. The host accepts
+only a human root without actor hops, authenticated independently from the
+calling module. Core creates a child with that module's actual service actor.
+The exact binding records both modules' installation/presence lifetime and the
+envelope revision. Every content read revalidates that lifetime before using
+the owner's existing collection grants, shares or platform read authority.
+The module actor contributes no personal grants; it also does not remove the
+human's valid visibility by being treated as a second collection reader.
+The actor hop is journaled before the child is returned; an append failure
+refuses issuance through the existing actor-chain journal.
+
+StartTask may admit an unscoped foreign read carried by a current marked binding
+when the human has existing content-read standing. This never admits content
+writes, model inference, host permissions or an absent target declaration.
+The child is terminal: renewal, further exchange, actor/source-delegated
+parents and source references are refused. Optional bounded lookup uses the
+same child path. Ordinary operation, proof, Model and source-delegation paths
+keep their prior subject intersection and credential shape.
+
+The host retains the explicit mode through manifest/envelope intersection.
+Missing target authority is a refusal or outage, never an ordinary fallback.
+Mode changes on existing bindings require the existing policy-log witness;
+a host without it refuses migration and preserves its current envelope.
+See [Work Contexts](../../WORK_CONTEXTS.md#installed-delegated-audience-exchange)
+for the envelope field, terminal-lifetime rules and full exchange contract.
+
+`delegation_mode: module_actor` issues the same terminal child for invoke
+scopes the audience serves, addressed to a module, a `solution:` audience or
+the host's source operations for named sources, so the callee sees the
+installed module acting for the person. The person's own grants still decide
+every scope; the module's hop adds none, and its binding commits to both
+installations' lifetimes where the audience has one.
+
 ## A read grant is standing to mint a content read
 
 A module reading content for a viewer presents that viewer's Work Context,
@@ -142,7 +189,7 @@ carrying an **unscoped** `read` of the content's permission resource type. The
 capability is not organization-wide authority over the content: every read
 still resolves node by node through the oracles above (the readable-source
 projection, the exact-record check), intersected over the owner and every
-actor. So the mint admits that one permission on the same bases those oracles
+ordinary delegated actor. So the mint admits that one permission on the same bases those oracles
 accept — an organization-level role as before, **or** a live scope grant (the
 owner's or a team's), a live record share, or platform read authority on at
 least one node. Without this a member granted read on one collection could see
@@ -162,9 +209,10 @@ ask for one.
 It is narrow on every other axis (`workContextPermissionAllowed`, flagged by
 the adapters' `markContentReads`):
 
-- **Declared content only**, and at the mint that means the content declared by
-  **the audience this capability is being minted for** — not the composition's
-  union. That audience is the one module that will ever present the capability
+- **Declared content only.** Ordinary mint standing uses content declared by
+  **the audience this capability is being minted for**, not the composition's
+  union. An explicit installed content-read binding supplies the bounded foreign
+  read standing described below. That audience is the one module that will ever present the capability
   back, and both module-facing reads already refuse a scope outside its own
   declaration, so the union would seal scopes no consumer can use and let one
   module's declaration decide what another module's capability may carry. A
@@ -198,6 +246,30 @@ the adapters' `markContentReads`):
   re-checks by comparing that revision alone will not see the revocation;
   `CheckAuthorizationRevision` catches it because it re-resolves every
   permission before it compares revisions at all.
+
+## A derived role, and why it is not grantable
+
+`roles.derived_from` marks a role THIS HOST derived and owns, rather than one
+anybody authored: its permissions are a solution's declared consumption for ONE
+module it reaches, intersected with the role an administrator chose, and it is
+granted at that module's authority-root node with
+`scope_grants.derived_from_grant_id` naming the grant that caused it
+(`business/derived_module_access.go`;
+[../../MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md#a-grant-of-a-solution-carries-the-module-access-it-declares-it-consumes)
+carries the argument).
+
+It changes nothing in the decision above: a derived grant is an ordinary
+`scope_grants` row and `CheckAccess`, `ListAccessibleScopes` and
+`ListAccessibleResourceIDs` resolve it exactly as they resolve any other, so
+there is no second answer to "what does this viewer reach".
+
+What is different is that it may be conferred ONLY by the derivation. A derived
+role granted at some other node, or organisation-wide, would hand a subject the
+module reach of a solution they hold no installation grant on — the property the
+derivation exists to deny. So `ListRoles` hides it (no picker offers it),
+`GrantScope` refuses it unless the write names a cause, `AssignRole` and
+`ShareRecord` refuse it, `UpdateRole` and `DeleteRole` refuse it, `CreateRole`
+cannot mint one, and the role catalog importer leaves it alone.
 
 ## Deferred
 

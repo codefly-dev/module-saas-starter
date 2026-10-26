@@ -5,8 +5,8 @@ description: Boot this module's whole service graph on a developer machine — w
 
 # Running the starter locally
 
-The graph is vault → store → cache → telemetry → accounts → auth-gateway →
-frontend, plus marketing. One command boots all of it with a fake-auth fixture:
+The graph is vault → store → cache → accounts → auth-gateway → frontend, plus
+marketing. One command boots all of it with a fake-auth fixture:
 
 ```bash
 codefly run service --fixture dev-admin
@@ -23,6 +23,14 @@ codefly run service --fixture dev-admin
 - No TTY (CI, pipes, MCP) auto-enables `--headless`.
 - Docker must be running. `codefly doctor` checks prerequisites; `codefly clear`
   reaps stray processes and containers between runs.
+- The module ships no collector. Standard OpenTelemetry process variables
+  select export: `OTEL_EXPORTER_OTLP_ENDPOINT` names the collector, with
+  `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` supplying identity.
+  CLIs implementing [CLI #1097](https://github.com/codefly-dev/cli/pull/1097)
+  deliver these for every service through an environment's optional `telemetry:`
+  block, pointing at the HTTPS operations intake.
+  Without an endpoint, SDK Init enables no tracing, including for `local`.
+  No module configuration group is required.
 
 For a real external identity provider and the production-grade provider stack,
 use the `local-dogfood` environment and its configuration groups:
@@ -44,19 +52,25 @@ codefly run service --fixture dev-admin   # from the solution root
 Composition provisions this host's `configurations/local/*` groups — `legal`,
 `identity`, `internal-auth` (token included), and the rest — into the solution
 workspace automatically. The solution does not hand-author them; it overrides a
-group only by declaring one of the same name. A well-behaved solution runtime
-self-registers with both the host and the gateway on its own through the codefly
-SDK.
+group only by declaring one of the same name. The CLI's native delivery signs
+presence and authority for Accounts to reconcile. The runtime does not register
+itself or renew presence on an idle timer; its work credentials are separate.
+
+For a disposable qualification run, add `--temporary-ports` to isolate ports,
+container names and runtime state. `--output-env <owner-only-file>` with
+`--output-env-service <module>/<service>` exports the resolved environment for
+that service. Read only the required endpoint from it; never copy its credentials
+into a hand-written runtime command or publish the file.
 
 ## When a run will not come up
 
 **Do not hand-write the environment the SDK resolves.** Injected variables,
 endpoint addresses, derived ports, credentials copied out of another component's
 config — if you are typing one of those, stop. The value is true only on this
-machine for the next ten minutes, and a service started that way can boot,
-serve, and still be absent from the graph: at least one runtime skips
-registration *silently* when its credential is missing, logging nothing. A
-hand-built environment that "works" is the failure mode, not the fix.
+machine for the next ten minutes, and a service started that way can boot and
+serve without its signed delivery being applied to the host. A listening socket
+does not prove graph membership or installation. A hand-built environment that
+"works" is the failure mode, not the fix.
 
 The fix for a run the tooling cannot express is a fix **in the tooling**. File it
 against the CLI (codefly-dev/cli) and say in your PR body what you could not

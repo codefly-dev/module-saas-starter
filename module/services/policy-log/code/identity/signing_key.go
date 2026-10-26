@@ -1,59 +1,38 @@
-// Package identity owns the fixed witness signing-key trust boundary.
+// Package identity owns the witness signing-key trust boundary.
 package identity
 
 import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/x509"
-	"encoding/pem"
+	"encoding/base64"
 	"errors"
-	"fmt"
-	"io"
-	"io/fs"
-	"os"
 )
 
-const SigningKeyPath = "/etc/obin/policy-log/signing_key"
+const SigningKeySetting = "POLICY_LOG_SIGNING_KEY"
 
-// LoadSigningKey has no path argument and no environment override. Delivery
-// mounts a PKCS#8 PEM Ed25519 private key at the fixed path, mode 0400 or 0600,
-// readable by the service uid. No key is generated at boot.
-func LoadSigningKey() (ed25519.PrivateKey, error) {
-	return loadSigningKey(func(path string) (fs.File, error) { return os.Open(path) })
-}
-
-func loadSigningKey(open func(string) (fs.File, error)) (ed25519.PrivateKey, error) {
-	f, err := open(SigningKeyPath)
+// ParseSigningKey accepts the persistent Ed25519 PKCS#8 key delivered as a
+// standard-base64 secret value. It never reads a file or generates a key.
+// Startup errors contain no supplied value or parser detail.
+func ParseSigningKey(value string) (ed25519.PrivateKey, error) {
+	if len(value) == 0 || len(value) > 4096 {
+		return nil, errors.New("policy-log: a signing-key secret of at most 4096 bytes is required")
+	}
+	body, err := base64.StdEncoding.Strict().DecodeString(value)
+	if err != nil || base64.StdEncoding.EncodeToString(body) != value {
+		return nil, errors.New("policy-log: signing-key secret must be canonical standard base64")
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(body)
 	if err != nil {
-		return nil, fmt.Errorf("policy-log: signing key required: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 4096 {
-		return nil, errors.New("policy-log: signing key must be a private regular file of at most 4096 bytes")
-	}
-	body, err := io.ReadAll(io.LimitReader(f, 4097))
-	if err != nil {
-		return nil, err
-	}
-	if len(body) > 4096 {
-		return nil, errors.New("policy-log: signing key too large")
-	}
-	block, rest := pem.Decode(body)
-	if block == nil || block.Type != "PRIVATE KEY" || len(block.Headers) != 0 || len(bytes.TrimSpace(rest)) != 0 ||
-		!bytes.Equal(bytes.TrimSpace(body), bytes.TrimSpace(pem.EncodeToMemory(block))) {
-		return nil, errors.New("policy-log: signing key must be exactly one PKCS#8 private key")
-	}
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("policy-log: parse signing key: %w", err)
+		return nil, errors.New("policy-log: signing-key secret must contain exactly one PKCS#8 private key")
 	}
 	key, ok := parsed.(ed25519.PrivateKey)
 	if !ok || len(key) != ed25519.PrivateKeySize {
-		return nil, errors.New("policy-log: signing key is not Ed25519")
+		return nil, errors.New("policy-log: signing-key secret is not Ed25519")
+	}
+	canonical, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil || !bytes.Equal(canonical, body) {
+		return nil, errors.New("policy-log: signing-key secret must contain exactly one canonical PKCS#8 key")
 	}
 	return key, nil
 }

@@ -51,17 +51,25 @@ type Gateway struct {
 	// clients is this replica's view of the registered-client registry: which
 	// browser origins each first-party client speaks from (track 0016).
 	clients *clientRegistryCache
-	// registeredTransport guards module upstream DNS/address resolution.
-	// Solutions use the same guarded dialer with per-destination workload TLS;
+	// registeredTransport guards declared upstream DNS/address resolution,
+	// for a solution exactly as for a module: plain HTTP to where the Codefly
+	// SDK resolved the route, re-validated at dial time;
 	// catalog upstreams keep the default transport.
 	registeredTransport http.RoundTripper
-	workload            *workloadIdentity
 	// solutionEntitlements answers what one viewer may use (#949). Set after
 	// construction, like workContext: a nil client fails the entitlement surface
 	// closed rather than answering an empty projection, which would retract every
 	// solution a viewer is currently using.
 	solutionEntitlements solutionEntitlementClient
 	workContext          *workContextVerifier
+	// workloadAdmission asks accounts whether a capability on the bearer-less
+	// module arm is a module operation context. Set after construction; nil
+	// answers 503 there and never admits.
+	workloadAdmission workloadAdmissionClient
+	// requireWorkloadPresenter makes the bearer-less arm require the waypoint
+	// presenter the workload listener authenticated. Set outside native
+	// development, where the listener already requires one.
+	requireWorkloadPresenter bool
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -471,7 +479,6 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	// token. Never expose these capabilities to the frontend upstream.
 	r.Header.Del("X-Codefly-Gateway-Token")
 	r.Header.Del("X-Codefly-Internal-Token")
-	r.Header.Del(workloadSPIFFEHeader)
 	r.Header.Del("X-Codefly-Public-Origin")
 	if isAccountsRoute(entry) && g.authz != nil && g.authz.gatewayToken != "" {
 		r.Header.Set("X-Codefly-Gateway-Token", g.authz.gatewayToken)
@@ -506,22 +513,21 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	}
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
 	if isRuntimeRegisteredRoute(entry) && g.registeredTransport != nil {
-		// A runtime-registered upstream — module or solution — merely names a mesh
-		// host that its registrant chose; re-validate the resolved address at dial
+		// A declared upstream — module or solution — is where the Codefly SDK
+		// resolved an endpoint the composition wrote, reached over plain HTTP
+		// inside the cell's mesh; re-validate the resolved address at dial
 		// time (SSRF / DNS-rebinding defense). Catalog upstreams keep the default
 		// transport.
 		proxy.Transport = g.registeredTransport
 	}
-	if entry != nil && strings.HasPrefix(entry.Service, solutionServicePrefix) {
-		transport, err := g.workload.upstreamTransport(entry.WorkloadSPIFFEID)
-		if err != nil || upstream.Scheme != "https" {
-			httpError(w, http.StatusBadGateway, "solution workload identity unavailable")
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		if entry != nil && entry.staticUpstreamError {
+			// The dial detail stays in this log (SP-GW-13): a caller of a route
+			// that asks for it learns only that the upstream failed.
+			log.Printf("WARN: upstream error: service=%s err=%v", entry.Service, err)
+			httpError(w, http.StatusBadGateway, "upstream error")
 			return
 		}
-		defer transport.CloseIdleConnections()
-		proxy.Transport = transport
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
 	proxy.ServeHTTP(w, r)
@@ -584,8 +590,14 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 //
 // For every other upstream path the host-wide session is still removed, and an upstream
 // that needs to act on the person's behalf there still needs a host-minted capability
-// bound to its own audience. **That remains unbuilt: see the audience-bound context
-// note in services/auth-gateway/AGENTS.md.**
+// bound to its own audience. **That remains unbuilt for a person: see the
+// audience-bound context note in services/auth-gateway/AGENTS.md.**
+//
+// A HEADLESS caller now gets exactly that capability. The declared module route's
+// bearer-less arm (gateway_workload_operation.go) forwards an operation context
+// accounts minted for the upstream's own audience, with no bearer, no cookie and
+// no identity header: the first path that meets SP-GW-07's positive half. The
+// person's path stays open.
 //
 // Catalog routes are untouched: accounts is the host's own API, where the session
 // is the credential.
@@ -843,6 +855,7 @@ func stripAllIdentityHeaders(r *http.Request) {
 const grpcMetadataHeaderPrefix = "grpc-metadata-"
 
 var untrustedAuthHeaders = []string{
+	workloadPresenterHeader,
 	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",
 	"x-scoped-roles", "x-scoped-roles-truncated",
 	"x-auth-id", "x-user-email", "x-user-name", "x-session-id",
@@ -904,6 +917,11 @@ const resourceConfinementHeader = "x-codefly-resource"
 // resourceConfinementHeader is, because ext_authz does not consult the
 // entitlement authority and an empty value here would be a claim this process
 // cannot make.
+//
+// A declared module route's bearer-less arm stamps NO value: a caller's is
+// stripped like any other, and the upstream verifies the operation context
+// itself. That arm admits on the caller's installation, which is not consent on
+// the target's side, so no header stating it could be read correctly here.
 const installationConfinementHeader = "x-codefly-installation-id"
 
 // solutionIdentityHeader and solutionPublisherHeader are the headers accounts

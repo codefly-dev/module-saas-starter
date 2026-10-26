@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"strings"
 
 	"github.com/codefly-dev/core/wool"
 
@@ -18,6 +19,31 @@ func (s *Service) getUserAsSelf(ctx context.Context, userID string) (*gen.User, 
 		return nil, err
 	}
 	return user, nil
+}
+
+// SessionDisplayNames is how a session names its person and organization for
+// display: the person's profile name, or their primary email when they gave
+// none (as a passkey prompt names them), and the organization's name, or none
+// for a session signed into no organization. Each is read under its own
+// row-level binding, the person as themself and the organization as itself;
+// the caller has already verified the session.
+func (s *Service) SessionDisplayNames(ctx context.Context, personID, orgID string) (person, organization string, err error) {
+	user, err := s.getUserAsSelf(ctx, personID)
+	if err != nil {
+		return "", "", err
+	}
+	person = strings.TrimSpace(user.GetProfile()["name"])
+	if person == "" {
+		person = user.GetPrimaryEmail()
+	}
+	if orgID == "" {
+		return person, "", nil
+	}
+	org, err := s.GetOrganization(ctx, &gen.GetOrganizationRequest{Id: orgID})
+	if err != nil {
+		return "", "", err
+	}
+	return person, org.GetName(), nil
 }
 
 // GetSelf returns the full profile for the authenticated user.

@@ -17,9 +17,30 @@ Released CLI v0.1.185 uses it to derive packages only on Connect. Discovery
 projects individual declaration schemas/effects/digests over this one binding.
 The caller never chooses a destination, HTTP header, credential or method.
 
-Invoke takes `org_id`, `source_id`, `operation`, `input_json`, and `effect_id`.
+`ListSourceOperations` reads the current declarations through the same Connect
+endpoint. Interactive readers retain the membership and source-boundary gates.
+A Work Context reader presents an idempotent `saas-datasource` capability with
+an explicit `datasource.sources:read` scope naming the requested source. The
+host verifies the capability and current authority on every request, then checks
+its tenant, exact source scope, any borrowed-source delegation, membership,
+personal ownership and source-boundary read permission before reading declarations.
+An invoke-only scope or an unconstrained source kind cannot list declarations.
+The result includes each declaration's schemas, effect, bound and canonical digest;
+it grants no invocation authority and is not itself a model-facing tool projection.
+Consumers must freeze the admitted declaration and separately authorize execution.
+
+Invoke takes `org_id`, `source_id`, `operation`, `input_json`, `effect_id`, and
+optional `expected_declaration_digest`. A consumer admitting a frozen operation
+supplies its canonical `sha256:` declaration digest. A different live declaration
+is refused with `SOURCE_DECLARATION_CHANGED` before creating an attempt or
+calling the provider, including after waiting for receipt serialization.
+Omitting the precondition retains the existing current-declaration behavior.
+The precondition is part of the SDK request fingerprint; adding, removing or
+changing it under an existing effect cannot replay a different request.
+Lookup still takes only the original effect ID and recovers retained evidence
+under current source-read authority after declaration replacement or removal.
 `input_json` is a string containing exactly one JSON object. The complete
-protojson request (proto field names, unpopulated fields included) is limited to
+protojson request (proto field names, unpopulated non-optional fields included) is limited to
 65,536 bytes. Declarations require a closed input-object schema; named template
 parameters become escaped path components, listed query fields become query
 parameters, and the remaining object becomes the body. GET and DELETE refuse a
@@ -132,7 +153,24 @@ a connector-owned linker. Authorization-code envelopes hold only provider
 tokens and expiry; refresh resolves the client ID, secret, token URL and scopes
 from the current deployment registration, so app rotation does not require
 copying a new secret into every source. This generic link identifies a source authorization, not a provider
-subject or email; it is not a provider-directory ACL mapping.
+subject or email; it is not a provider-directory ACL mapping. Its account link
+is recorded under connector `api` and provider account `source:<source id>`,
+which is how a client finds the link for one source. Deleting that link record
+does not remove the authorization stored on the source.
+
+## Connecting in the UI
+
+The host's kit (`@codefly-dev/saas-ui`) connects a person to one API with
+`ApiSourceCard`: given a base URL and, optionally, the operation declarations
+to declare, it creates the person's `api` source with
+`API_CREDENTIAL_KIND_OAUTH2` + `GRANT_AUTHORIZATION_CODE` when they have none,
+declares the operations, begins the link with that `source_id`, and completes
+it on the page the provider returns to through `DatasourceAccountLinks`
+(`connector="api"`, `sourceId`). Where the API and its declarations come from is
+the caller's decision; the card takes them as props. `AddSource` and
+`DeclareSourceOperations` require an organization administrator today, so a
+member without that role is refused and told so. The kit's README describes the
+states and the refusals it words.
 
 Refresh and client-credentials resolution reuse the credential row lock.
 Transport uses the resolved-IP egress guard and same-origin redirect policy.
@@ -154,9 +192,11 @@ Teredo are refused outright rather than decoded, because a network-specific
 NAT64 prefix cannot be recognised and a decoded public address is still reached
 through a translator on the host's own network. A v4-mapped `::ffff:a.b.c.d` is
 judged as `a.b.c.d`. A zoned address, or one the guard cannot parse, is refused.
-The one exception is a local runtime's explicit list of loopback addresses,
-described in [Local egress](#local-egress); every address it does not list is
-still judged by the guard.
+Every guard asks one rule, `auth.AdmitsDestination`: that classifier, plus a
+declared host a meshed cell resolves into its mesh egress range, described in
+[Mesh egress](#mesh-egress). The one other exception is a local runtime's
+explicit list of loopback addresses, described in [Local egress](#local-egress);
+every address it does not list is still judged by the guard.
 Named refusal/receipt/audit constructors discard provider error bodies and raw
 transport errors. Credential reflection in a successful provider body is refused.
 Audit records actor, source, operation, effect, effect ID and the closed outcome
@@ -182,6 +222,64 @@ refusal change.
 with a binding scoped to two sources and authority borrowed from just one;
 `TestSourceOperationRefusalAuditPersists` exercises the same owner emitter and
 payload against the tenant database.
+
+## Mesh egress
+
+On a cell whose ambient mesh carries egress, the mesh answers DNS for each host
+the deployment declares as external reach with an address it allocated itself:
+Istio ambient's auto-allocated ServiceEntry addresses, `240.240.0.0/16` by
+default. It routes a connection to that address through its egress waypoint to
+the real host. The address is reserved space, so the public-address classifier
+refuses it, and without an admission every guarded path refuses the hosts the
+cell exists to reach.
+
+The rule every guarded path applies (`pkg/auth/mesh_egress.go`), to the
+concrete address a connection is about to reach:
+
+- a **public** address is admitted, as before;
+- an address in the **mesh egress range** is admitted only when the deployment
+  asserts its mesh (`internal-transport/mesh-protected=true`) **and** the client
+  asked for a **hostname** that is declared, on the declared port, in
+  `egress/HOSTS`;
+- everything else is refused exactly as before: an IP literal (never a declared
+  host, whatever range it is in), an undeclared hostname resolving into the
+  range, and every loopback, link-local, metadata, private or other non-public
+  address whatever name produced it.
+
+Both conditions are needed. Any name a tenant controls can answer with a mesh
+address, which the mesh then routes to whichever declared host owns it, so the
+range alone would admit a tenant's name. A declared name answering with
+`10.0.0.1` is not a mesh answer, so the name alone would admit it.
+
+It is decided on the address actually dialled. Each guarded client resolves the
+requested host, then dials each answer as an IP literal, with the dial's
+Control hook judging that literal against the host:port the client asked for,
+so a later DNS answer cannot replace a judged one. The webhook client keeps its
+own resolve-and-pin dial and asks the same rule.
+
+Configuration. The hosts are the environment's `egress` declaration for
+`saas/accounts`, the same entry the cell renders its egress ServiceEntries
+from; Codefly generates [`egress`](configurations/README.md#egress)/`HOSTS`
+from it (`api.example.com:443,hooks.example.com:8443`) and delivers it to
+accounts, so nothing here lists them. The mesh assertion and the range are
+[`internal-transport`](configurations/README.md#internal-transport) values:
+
+```
+mesh-protected=true
+mesh-egress-range=240.240.0.0/16
+```
+
+- **Nothing declared, nothing admitted.** No host is admitted at a mesh
+  address until the environment declares one.
+- **Inert without the mesh.** Declared hosts on a deployment without
+  `mesh-protected=true` start the service and admit nothing: a declared host
+  resolving into the range is refused there like any other reserved address.
+  A `mesh-egress-range` without `mesh-protected=true` refuses startup, naming
+  the keys, because a range is only ever set by hand for a mesh.
+- **The range is bounded.** `mesh-egress-range` defaults to `240.240.0.0/16`.
+  A configured prefix must lie inside `240.0.0.0/4` or `2001:2::/48`, the
+  blocks Istio allocates from, which no pod, node, Service or metadata address
+  uses.
 
 ## Local egress
 
@@ -296,10 +394,11 @@ in-memory and httptest fixtures qualify HTTP and host decisions; real business
 tests require Postgres and Vault booted by Codefly. Test results and any boot or
 Core/CLI delivery blocker are recorded in the PR; a compiled test is not a passed
 integration test. The callable-sources handbook decision is accepted (proposal
-#269, merged in handbook PR #271). All host Go modules that depend on Core pin released v0.18.0, which carries
-#755; host suites run with `GOWORK=off`. Generation and CI pin released CLI
-v0.1.185 (`3558defb95c8316cd2ad078327b10c721cf187d5`), carrying #943/#947.
-No development CLI or local Core override is required. The CLI preserves scope
+#269, merged in handbook PR #271). Host suites run with `GOWORK=off`. Generation and CI select the exact
+CLI source candidate documented in `AGENTS.md`, which exports the owned API
+and implemented host interfaces together. The root and tools Core pins validate
+that multi-package contract; service pins remain independent. This candidate
+is not release qualification. The CLI preserves scope
 slots in operation documents and resolves composition selections during
 preparation, checking that the called endpoint serves both Invoke and Lookup.
 A passing generation drift check alone does not qualify the delivery path.

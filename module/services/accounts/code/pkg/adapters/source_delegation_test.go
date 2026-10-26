@@ -10,7 +10,6 @@ import (
 	"connectrpc.com/connect"
 
 	"accounts/pkg/business"
-	"accounts/pkg/business/executiontest"
 	"accounts/pkg/business/moduleregistrytest"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -236,10 +235,8 @@ func TestMintSourceOperationContextSealsTheDelegation(t *testing.T) {
 			require.Equal(t, delegationOrg, used[0].OrgID)
 			require.Equal(t, delegationSource, used[0].ResourceID)
 			payload := used[0].Payload
-			require.Equal(t, executiontest.Image("docstore"), payload["running_digest"],
-				"the mint names the build that obtained the delegated capability")
-			require.NotEmpty(t, payload["pod_uid"])
-			for _, key := range []string{"namespace", "service_account", "pod", "pod_uid", "container", "running_digest", "build_incarnation"} {
+			require.NotEmpty(t, payload["pod_uid"], "the mint names the workload that obtained the delegated capability")
+			for _, key := range []string{"namespace", "service_account", "pod", "pod_uid", "container"} {
 				delete(payload, key)
 			}
 			require.Equal(t, map[string]any{
@@ -310,44 +307,70 @@ func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
 
 	t.Run("confirms a minted context", func(t *testing.T) {
 		_, request := mint(t)
-		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t, "docstore", delegationOrg), request)
 		require.NoError(t, err)
 	})
 	t.Run("refuses after revoke", func(t *testing.T) {
 		store, request := mint(t)
 		store.revoke(t)
-		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t, "docstore", delegationOrg), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
 	t.Run("refuses once the person's revision moves", func(t *testing.T) {
 		store, request := mint(t)
 		store.facts.PrincipalRevision++
-		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t, "docstore", delegationOrg), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
 	t.Run("refuses once the person is demoted", func(t *testing.T) {
 		store, request := mint(t)
 		store.facts.MemberRole = "member"
-		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t, "docstore", delegationOrg), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
 	t.Run("refuses a widened scope", func(t *testing.T) {
 		_, request := mint(t)
 		request.Subjects[1].Scopes[0].Actions = []string{"read", "write"}
-		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t, "docstore", delegationOrg), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
-	t.Run("refuses without the binding the context sealed", func(t *testing.T) {
+	// An omitted binding is now a MALFORMED request rather than a context to
+	// judge. The signed capability never crosses this boundary, so "I forgot
+	// the binding" and "this context seals none" were the same request, and a
+	// consumer that forgot had a narrowed delegation confirmed against its
+	// module's far broader installation. A consumer must now say which.
+	// PHASE TWO asserts InvalidArgument here. In phase one the request is
+	// judged instead, and a delegation context missing its binding is REFUSED
+	// by the delegation resolver rather than confirmed — which is the property
+	// that actually protects it, and the reason requiring the field can wait
+	// for every consumer to state it.
+	t.Run("a delegation context without its binding is refused, not confirmed", func(t *testing.T) {
 		_, request := mint(t)
 		request.OperationBindingId = nil
-		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t, "docstore", delegationOrg), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+	t.Run("refuses a delegation context that asserts it seals none", func(t *testing.T) {
+		_, request := mint(t)
+		request.OperationBindingId = nil
+		asserted := true
+		request.SealsNoBinding = &asserted
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t, "docstore", delegationOrg), request)
+		require.Equal(t, codes.PermissionDenied, status.Code(err),
+			"asserting no binding does not buy a laxer check: the hop is then confirmed from a binding it does not name")
+	})
+	t.Run("refuses a request that both names a binding and asserts none", func(t *testing.T) {
+		_, request := mint(t)
+		asserted := true
+		request.SealsNoBinding = &asserted
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t, "docstore", delegationOrg), request)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
 	t.Run("refuses a binding naming another module", func(t *testing.T) {
 		_, request := mint(t)
 		other := business.SourceDelegationBindingID(delegationID, "reports")
 		request.OperationBindingId = &other
-		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t, "docstore", delegationOrg), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
 	t.Run("refuses another tenant", func(t *testing.T) {
@@ -356,7 +379,7 @@ func TestCheckAuthorizationRevisionFollowsTheSourceDelegation(t *testing.T) {
 		// the absence of a delegation in that tenant.
 		store.delegations[delegationID].OrgID = moduleWorkContextTenant
 		request.OrgId = delegationOrg
-		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t), request)
+		_, err := WorkContextSingleton().CheckAuthorizationRevision(revisionTestContext(t, "docstore", delegationOrg), request)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
 }
@@ -418,6 +441,8 @@ func TestDelegatedOperationExchangeWithoutADelegationHopKeepsTheTenantCheck(t *t
 		_, err := client.ExchangeDelegatedOperationAudience(context.Background(), req)
 		return err
 	}
-	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(exchange(false)))
+	// The module's context is bound to a tenant its grant no longer names: its
+	// own credential is not valid here, so it is told to mint again.
+	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(exchange(false)))
 	require.NoError(t, exchange(true))
 }

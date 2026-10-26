@@ -1,5 +1,6 @@
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
+import { Profiler } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
@@ -50,6 +51,26 @@ describe("PlatformOrganizationsPage", () => {
 		expect(
 			screen.getByRole("button", { name: "Create organization" }),
 		).toBeTruthy();
+	});
+
+	// The rows were a new array on every render, and TanStack Table answers a new
+	// array with a page reset that re-renders the page: the first keystroke in
+	// the search box started a loop that froze the tab.
+	it("settles after the search box is typed in", async () => {
+		let commits = 0;
+		renderInApp(
+			<Profiler id="organizations" onRender={() => commits++}>
+				<PlatformOrganizationsPage />
+			</Profiler>,
+		);
+		expect(await screen.findAllByRole("button", { name: /./ })).toBeTruthy();
+		fireEvent.change(screen.getByLabelText("Search organizations"), {
+			target: { value: "ac" },
+		});
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		const settled = commits;
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		expect(commits - settled).toBe(0);
 	});
 
 	it("tells someone without a platform role why there is nothing to see", () => {

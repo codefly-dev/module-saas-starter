@@ -1,6 +1,6 @@
 kind: library
 name: saas-sdk
-version: 0.1.0
+version: 0.2.0
 languages:
     - name: typescript
       path: typescript/
@@ -8,50 +8,19 @@ languages:
         - '@codefly-dev/saas-sdk'
 sources:
     - package: codefly/saas-starter
-      version: 0.1.0
+      version: 0.2.0
       module: saas-starter
       service: accounts
       endpoint: connect
-      contract-digest: sha256:510daf371e882d8baa728008078001faf736f541f5d78c1396dfdf59b9d4ebe3
+      contract-digest: sha256:e8b577955a9bc1cdd7924063718b82563794917421ad4a83aecfff9629e500c6
       services:
-        - APIKeyService
         - AccessibleScopeService
-        - ApprovalReviewService
         - AuditService
-        - AuthService
-        - BillingService
-        - ClientRegistryService
-        - ConsentService
-        - DashboardService
         - DatasourceService
-        - DelegationService
         - DirectoryService
-        - GDPRService
-        - IdentityService
-        - InstallationService
-        - IntrospectionService
-        - InvitationService
-        - MFAService
-        - ModuleCapabilitiesService
-        - NotificationService
-        - OnboardingService
-        - OrganizationService
-        - PermissionService
-        - PlatformAdminService
-        - PrincipalService
-        - ResourceFollowService
-        - SSOAdminService
-        - SolutionEntitlementService
-        - SolutionRegistryService
-        - TeamService
-        - UsageService
-        - UserService
-        - UserSettingsService
-        - WaitlistService
         - WebhookService
-        - WorkContextService
       as: accounts
 generated-by:
-    codefly: 0.1.185
-    companion: ghcr.io/codefly-dev/proto:0.0.16
+    codefly: 0.1.215
+    companion: ghcr.io/codefly-dev/proto:0.0.18
     facade: true

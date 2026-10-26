@@ -173,9 +173,16 @@ type StartTaskWorkContextRequest struct {
 	// capability to this exact workspace and reject cross-workspace reuse.
 	WorkspaceId *string `protobuf:"bytes,9,opt,name=workspace_id,json=workspaceId,proto3,oneof" json:"workspace_id,omitempty"`
 	// Optional product/project attribution inside workspace_id.
-	ProjectId     *string `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3,oneof" json:"project_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ProjectId *string `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3,oneof" json:"project_id,omitempty"`
+	// Operation bindings of the audience module, by name, whose invoke scopes
+	// this capability carries beside authority_scopes. The host resolves each
+	// name to the binding as installed at org_id, narrowed by that installation
+	// exactly as the module's delegated exchange redeems it, and keeps each
+	// resource only if the person holds it. The caller names a binding and never
+	// its resource ids. A direct human-owned mint only.
+	OperationBindings []string `protobuf:"bytes,11,rep,name=operation_bindings,json=operationBindings,proto3" json:"operation_bindings,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *StartTaskWorkContextRequest) Reset() {
@@ -269,6 +276,13 @@ func (x *StartTaskWorkContextRequest) GetProjectId() string {
 		return *x.ProjectId
 	}
 	return ""
+}
+
+func (x *StartTaskWorkContextRequest) GetOperationBindings() []string {
+	if x != nil {
+		return x.OperationBindings
+	}
+	return nil
 }
 
 // StartInstallationTaskRequest is the headless (no-user-present) mint path. The
@@ -956,8 +970,20 @@ type CheckAuthorizationRevisionRequest struct {
 	// confirmed only against that binding, re-read live; such a context checked
 	// without it is not confirmed. Empty for a context that seals none.
 	OperationBindingId *string `protobuf:"bytes,5,opt,name=operation_binding_id,json=operationBindingId,proto3,oneof" json:"operation_binding_id,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// seals_no_binding ASSERTS that the context names no operation binding at
+	// all. A consumer must send either this or operation_binding_id, and a
+	// request carrying neither is refused as malformed rather than confirmed.
+	//
+	// The distinction is the whole point. The signed capability never crosses
+	// this boundary (see above), so the host reads the binding from fields the
+	// consumer copied out of it — and an OMITTED field and a context that
+	// genuinely seals none are indistinguishable unless one of them is stated.
+	// While they were, a consumer that simply forgot the binding had a narrowed
+	// delegation confirmed against its module's much broader installation. Now
+	// absence is something a consumer asserts, and forgetting is an error.
+	SealsNoBinding *bool `protobuf:"varint,6,opt,name=seals_no_binding,json=sealsNoBinding,proto3,oneof" json:"seals_no_binding,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CheckAuthorizationRevisionRequest) Reset() {
@@ -1023,6 +1049,13 @@ func (x *CheckAuthorizationRevisionRequest) GetOperationBindingId() string {
 		return *x.OperationBindingId
 	}
 	return ""
+}
+
+func (x *CheckAuthorizationRevisionRequest) GetSealsNoBinding() bool {
+	if x != nil && x.SealsNoBinding != nil {
+		return *x.SealsNoBinding
+	}
+	return false
 }
 
 // AuthorizeEvidenceReadRequest asks Accounts to authorize one filtered
@@ -1177,18 +1210,17 @@ var File_saas_accounts_v1_work_contexts_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\n" +
-	"$saas/accounts/v1/work_contexts.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xad\x01\n" +
+	"$saas/accounts/v1/work_contexts.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a3saas/accounts/v1/workload_operation_admission.proto\x1a\x1csaas/policy/v1/options.proto\"\xad\x01\n" +
 	"\x10WorkContextScope\x12/\n" +
 	"\rresource_kind\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\fresourceKind\x12/\n" +
 	"\aactions\x18\x02 \x03(\tB\x15\xbaH\x12\x92\x01\x0f\b\x01\x10@\x18\x01\"\ar\x05\x10\x01\x18\x80\x01R\aactions\x127\n" +
-	"\fresource_ids\x18\x03 \x03(\tB\x14\xbaH\x11\x92\x01\x0e\x10\x80\x02\x18\x01\"\ar\x05\x10\x01\x18\x80\x04R\vresourceIds\"\xa8\x04\n" +
+	"\fresource_ids\x18\x03 \x03(\tB\x14\xbaH\x11\x92\x01\x0e\x10\x80\x02\x18\x01\"\ar\x05\x10\x01\x18\x80\x04R\vresourceIds\"\x88\x06\n" +
 	"\x1bStartTaskWorkContextRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12$\n" +
 	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12,\n" +
-	"\x12actor_principal_id\x18\x04 \x01(\tR\x10actorPrincipalId\x12Y\n" +
-	"\x10authority_scopes\x18\x05 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\n" +
-	"\xbaH\a\x92\x01\x04\b\x01\x10@R\x0fauthorityScopes\x12&\n" +
+	"\x12actor_principal_id\x18\x04 \x01(\tR\x10actorPrincipalId\x12W\n" +
+	"\x10authority_scopes\x18\x05 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\b\xbaH\x05\x92\x01\x02\x10@R\x0fauthorityScopes\x12&\n" +
 	"\baudience\x18\x06 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\baudience\x12N\n" +
 	"\rreplay_policy\x18\a \x01(\x0e2).saas.accounts.v1.WorkContextReplayPolicyR\freplayPolicy\x12+\n" +
@@ -1200,7 +1232,9 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\n" +
 	" \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x01R\tprojectId\x88\x01\x01B\x0f\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x01R\tprojectId\x88\x01\x01\x12B\n" +
+	"\x12operation_bindings\x18\v \x03(\tB\x13\xbaH\x10\x92\x01\r\x10@\x18\x01\"\ar\x05\x10\x01\x18\x80\x02R\x11operationBindings:\x9b\x01\xbaH\x97\x01\x1a\x94\x01\n" +
+	"\x18start_task.authority_ask\x122authority_scopes or operation_bindings is required\x1aDsize(this.authority_scopes) > 0 || size(this.operation_bindings) > 0B\x0f\n" +
 	"\r_workspace_idB\r\n" +
 	"\v_project_idJ\x04\b\x03\x10\x04R\n" +
 	"session_id\"\xab\x04\n" +
@@ -1292,7 +1326,7 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\v_project_id\"\x8f\x01\n" +
 	"\x1aWorkContextRevisionSubject\x12+\n" +
 	"\fprincipal_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\vprincipalId\x12D\n" +
-	"\x06scopes\x18\x02 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\b\xbaH\x05\x92\x01\x02\x10@R\x06scopes\"\xee\x02\n" +
+	"\x06scopes\x18\x02 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\b\xbaH\x05\x92\x01\x02\x10@R\x06scopes\"\xb2\x03\n" +
 	"!CheckAuthorizationRevisionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x126\n" +
 	"\x12owner_principal_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x10ownerPrincipalId\x12>\n" +
@@ -1300,8 +1334,10 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\bsubjects\x18\x04 \x03(\v2,.saas.accounts.v1.WorkContextRevisionSubjectB\n" +
 	"\xbaH\a\x92\x01\x04\b\x01\x10\x11R\bsubjects\x12A\n" +
 	"\x14operation_binding_id\x18\x05 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x00R\x12operationBindingId\x88\x01\x01B\x17\n" +
-	"\x15_operation_binding_id\"\xc2\x02\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x00R\x12operationBindingId\x88\x01\x01\x12-\n" +
+	"\x10seals_no_binding\x18\x06 \x01(\bH\x01R\x0esealsNoBinding\x88\x01\x01B\x17\n" +
+	"\x15_operation_binding_idB\x13\n" +
+	"\x11_seals_no_binding\"\xc2\x02\n" +
 	"\x1cAuthorizeEvidenceReadRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x128\n" +
 	"\x13caller_principal_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x11callerPrincipalId\x12;\n" +
@@ -1325,11 +1361,12 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\x17WorkContextReplayPolicy\x12*\n" +
 	"&WORK_CONTEXT_REPLAY_POLICY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT\x10\x01\x12)\n" +
-	"%WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE\x10\x022\xfb\f\n" +
+	"%WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE\x10\x022\x93\x0e\n" +
 	"\x12WorkContextService\x12\x83\x01\n" +
 	"\x1aCheckAuthorizationRevision\x123.saas.accounts.v1.CheckAuthorizationRevisionRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12y\n" +
 	"\x15AuthorizeEvidenceRead\x12..saas.accounts.v1.AuthorizeEvidenceReadRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12z\n" +
-	"\x10ConsumeSingleUse\x124.saas.accounts.v1.ConsumeSingleUseWorkContextRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xca\x01\n" +
+	"\x10ConsumeSingleUse\x124.saas.accounts.v1.ConsumeSingleUseWorkContextRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\x95\x01\n" +
+	"\x16AdmitWorkloadOperation\x12/.saas.accounts.v1.AdmitWorkloadOperationRequest\x1a0.saas.accounts.v1.AdmitWorkloadOperationResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xca\x01\n" +
 	"\tStartTask\x12-.saas.accounts.v1.StartTaskWorkContextRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"i\xc2\xf3\x18D\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
 	"\x1esaas.work_context.task_started\x10\x02@\x01H\x05P\x03X\x04`\x01x\x02\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/work-contexts:task\x12\x86\x01\n" +
@@ -1377,7 +1414,9 @@ var file_saas_accounts_v1_work_contexts_proto_goTypes = []any{
 	(*AuthorizeEvidenceReadRequest)(nil),        // 11: saas.accounts.v1.AuthorizeEvidenceReadRequest
 	(*ConsumeSingleUseWorkContextRequest)(nil),  // 12: saas.accounts.v1.ConsumeSingleUseWorkContextRequest
 	(*timestamppb.Timestamp)(nil),               // 13: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),                       // 14: google.protobuf.Empty
+	(*AdmitWorkloadOperationRequest)(nil),       // 14: saas.accounts.v1.AdmitWorkloadOperationRequest
+	(*emptypb.Empty)(nil),                       // 15: google.protobuf.Empty
+	(*AdmitWorkloadOperationResponse)(nil),      // 16: saas.accounts.v1.AdmitWorkloadOperationResponse
 }
 var file_saas_accounts_v1_work_contexts_proto_depIdxs = []int32{
 	1,  // 0: saas.accounts.v1.StartTaskWorkContextRequest.authority_scopes:type_name -> saas.accounts.v1.WorkContextScope
@@ -1398,23 +1437,25 @@ var file_saas_accounts_v1_work_contexts_proto_depIdxs = []int32{
 	10, // 15: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:input_type -> saas.accounts.v1.CheckAuthorizationRevisionRequest
 	11, // 16: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:input_type -> saas.accounts.v1.AuthorizeEvidenceReadRequest
 	12, // 17: saas.accounts.v1.WorkContextService.ConsumeSingleUse:input_type -> saas.accounts.v1.ConsumeSingleUseWorkContextRequest
-	2,  // 18: saas.accounts.v1.WorkContextService.StartTask:input_type -> saas.accounts.v1.StartTaskWorkContextRequest
-	3,  // 19: saas.accounts.v1.WorkContextService.StartInstallationTask:input_type -> saas.accounts.v1.StartInstallationTaskRequest
-	4,  // 20: saas.accounts.v1.WorkContextService.StartRootSession:input_type -> saas.accounts.v1.StartRootSessionWorkContextRequest
-	5,  // 21: saas.accounts.v1.WorkContextService.ExchangeAudience:input_type -> saas.accounts.v1.ExchangeWorkContextAudienceRequest
-	6,  // 22: saas.accounts.v1.WorkContextService.StartChildSession:input_type -> saas.accounts.v1.StartChildSessionWorkContextRequest
-	7,  // 23: saas.accounts.v1.WorkContextService.RenewWorkContext:input_type -> saas.accounts.v1.RenewWorkContextRequest
-	14, // 24: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:output_type -> google.protobuf.Empty
-	14, // 25: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:output_type -> google.protobuf.Empty
-	14, // 26: saas.accounts.v1.WorkContextService.ConsumeSingleUse:output_type -> google.protobuf.Empty
-	8,  // 27: saas.accounts.v1.WorkContextService.StartTask:output_type -> saas.accounts.v1.IssuedWorkContext
-	8,  // 28: saas.accounts.v1.WorkContextService.StartInstallationTask:output_type -> saas.accounts.v1.IssuedWorkContext
-	8,  // 29: saas.accounts.v1.WorkContextService.StartRootSession:output_type -> saas.accounts.v1.IssuedWorkContext
-	8,  // 30: saas.accounts.v1.WorkContextService.ExchangeAudience:output_type -> saas.accounts.v1.IssuedWorkContext
-	8,  // 31: saas.accounts.v1.WorkContextService.StartChildSession:output_type -> saas.accounts.v1.IssuedWorkContext
-	8,  // 32: saas.accounts.v1.WorkContextService.RenewWorkContext:output_type -> saas.accounts.v1.IssuedWorkContext
-	24, // [24:33] is the sub-list for method output_type
-	15, // [15:24] is the sub-list for method input_type
+	14, // 18: saas.accounts.v1.WorkContextService.AdmitWorkloadOperation:input_type -> saas.accounts.v1.AdmitWorkloadOperationRequest
+	2,  // 19: saas.accounts.v1.WorkContextService.StartTask:input_type -> saas.accounts.v1.StartTaskWorkContextRequest
+	3,  // 20: saas.accounts.v1.WorkContextService.StartInstallationTask:input_type -> saas.accounts.v1.StartInstallationTaskRequest
+	4,  // 21: saas.accounts.v1.WorkContextService.StartRootSession:input_type -> saas.accounts.v1.StartRootSessionWorkContextRequest
+	5,  // 22: saas.accounts.v1.WorkContextService.ExchangeAudience:input_type -> saas.accounts.v1.ExchangeWorkContextAudienceRequest
+	6,  // 23: saas.accounts.v1.WorkContextService.StartChildSession:input_type -> saas.accounts.v1.StartChildSessionWorkContextRequest
+	7,  // 24: saas.accounts.v1.WorkContextService.RenewWorkContext:input_type -> saas.accounts.v1.RenewWorkContextRequest
+	15, // 25: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:output_type -> google.protobuf.Empty
+	15, // 26: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:output_type -> google.protobuf.Empty
+	15, // 27: saas.accounts.v1.WorkContextService.ConsumeSingleUse:output_type -> google.protobuf.Empty
+	16, // 28: saas.accounts.v1.WorkContextService.AdmitWorkloadOperation:output_type -> saas.accounts.v1.AdmitWorkloadOperationResponse
+	8,  // 29: saas.accounts.v1.WorkContextService.StartTask:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 30: saas.accounts.v1.WorkContextService.StartInstallationTask:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 31: saas.accounts.v1.WorkContextService.StartRootSession:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 32: saas.accounts.v1.WorkContextService.ExchangeAudience:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 33: saas.accounts.v1.WorkContextService.StartChildSession:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 34: saas.accounts.v1.WorkContextService.RenewWorkContext:output_type -> saas.accounts.v1.IssuedWorkContext
+	25, // [25:35] is the sub-list for method output_type
+	15, // [15:25] is the sub-list for method input_type
 	15, // [15:15] is the sub-list for extension type_name
 	15, // [15:15] is the sub-list for extension extendee
 	0,  // [0:15] is the sub-list for field type_name
@@ -1425,6 +1466,7 @@ func file_saas_accounts_v1_work_contexts_proto_init() {
 	if File_saas_accounts_v1_work_contexts_proto != nil {
 		return
 	}
+	file_saas_accounts_v1_workload_operation_admission_proto_init()
 	file_saas_accounts_v1_work_contexts_proto_msgTypes[1].OneofWrappers = []any{}
 	file_saas_accounts_v1_work_contexts_proto_msgTypes[2].OneofWrappers = []any{}
 	file_saas_accounts_v1_work_contexts_proto_msgTypes[6].OneofWrappers = []any{}

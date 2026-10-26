@@ -378,6 +378,107 @@ message AddSourceResponse {
   Datasource datasource = 1;
 }
 
+// UpdateSourceRequest changes what an already-connected source fetches, in
+// place: its branch and its path and file-type filters. Nothing else about a
+// source is mutable here — the repository, the provider, the collection it
+// writes into and its credential are each the identity of something a consumer
+// already holds, and changing one of those is a different source.
+//
+// Every field is a WHOLE-FIELD REPLACEMENT, not a patch: the source is left
+// fetching exactly what this request names, so an empty `paths` ingests the
+// whole repository and an empty `file_extensions` admits every file type,
+// exactly as they mean on connect. A repeated proto3 field cannot tell "not
+// sent" from "sent empty", so a request that meant to leave a filter alone
+// must repeat it; naming that here is what keeps a clearing from reading as an
+// omission, and an omission from being silently preserved.
+//
+// Because every field is a whole-field replacement, every request asserts the
+// source's complete scope — so one is accepted only against the scope its
+// author was actually shown. `expected` carries that scope back, and a request
+// whose expectation no longer matches the stored row is REFUSED rather than
+// applied: without it, a form opened while the source read one way and saved
+// after someone else narrowed it would silently restore the wider scope and
+// re-ingest everything the other person had just excluded.
+message UpdateSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string id = 2 [(buf.validate.field).string.uuid = true];
+  // Git ref (branch) to pull. Empty resolves to the repository default branch,
+  // as on connect. A branch the source's own credential cannot read is refused
+  // before anything is written.
+  string branch = 3 [(buf.validate.field).string.max_len = 255];
+  // Repository-relative path prefixes to ingest. Empty ingests the whole repo.
+  repeated string paths = 4 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {
+      string: {
+        min_len: 1
+        max_len: 512
+      }
+    }
+  }];
+  // Case-insensitive file suffixes, e.g. [".md", ".mdx"]. Empty admits every
+  // file type within paths.
+  repeated string file_extensions = 5 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: {
+      string: {
+        min_len: 2
+        max_len: 33
+        pattern: "^\\.[A-Za-z0-9][A-Za-z0-9._-]*$"
+      }
+    }
+  }];
+  // The scope the caller was shown, as it read it. Required: an unconditional
+  // whole-field replacement is exactly how one editor's save erases another's,
+  // so there is no "just apply it" mode to fall back to.
+  //
+  // It is the scope and not the row's `updated_at` because `updated_at` moves
+  // on every successful sync, which would refuse a perfectly good edit for the
+  // sole reason that the source had reconciled since the form was opened. What
+  // an editor needs guarded is what they were looking at.
+  SourceFetchScope expected = 6 [(buf.validate.field).required = true];
+}
+
+// SourceFetchScope is what a source fetches — the three values UpdateSource
+// replaces — carried on its own so a request can state the scope it expects to
+// be replacing as well as the one it wants.
+//
+// Its bounds are deliberately looser than the mutable fields': an expectation
+// is only ever compared against the stored row, never stored, so holding it to
+// today's shape would make a source that predates that shape impossible to
+// edit at all. Size is still bounded, because the comparison reads the whole
+// thing.
+message SourceFetchScope {
+  string branch = 1 [(buf.validate.field).string.max_len = 255];
+  repeated string paths = 2 [(buf.validate.field).repeated = {
+    max_items: 64
+    items: {
+      string: {
+        min_len: 1
+        max_len: 512
+      }
+    }
+  }];
+  repeated string file_extensions = 3 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: {
+      string: {
+        min_len: 1
+        max_len: 33
+      }
+    }
+  }];
+}
+
+message UpdateSourceResponse {
+  Datasource datasource = 1;
+  // The sync enqueued because the update moved what the source fetches, which
+  // for a consumer is a new snapshot of the collection. Empty when the request
+  // changed nothing, which is the only case where no sync runs: every mutable
+  // field here selects content, so any real change re-snapshots the source.
+  string job_id = 2;
+}
+
 // DatasourceConfigField describes one non-secret config input a provider needs,
 // so the UI can render the connect form from the catalog rather than hardcoding
 // it per provider.
@@ -610,6 +711,11 @@ enum SourceSyncTrigger {
   SOURCE_SYNC_TRIGGER_SCHEDULED = 2;
   // A webhook delivery from the provider.
   SOURCE_SYNC_TRIGGER_WEBHOOK = 3;
+  // The source was reconfigured — its branch or its path/file-type filters
+  // changed — so this sync re-snapshots it at the new scope. It is the one
+  // trigger that tells a reader the change set is large because the source
+  // moved rather than because the repository did.
+  SOURCE_SYNC_TRIGGER_RECONFIGURED = 4;
 }
 
 // SourceSyncChanges counts the change set a sync compiled, relative to the
@@ -1279,6 +1385,10 @@ message InvokeSourceOperationRequest {
   string operation = 3 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9_]{0,63}$"];
   string input_json = 4 [(buf.validate.field).string.max_bytes = 65536];
   string effect_id = 5 [(buf.validate.field).string.max_bytes = 128];
+  // Optional for legacy callers. A caller that admitted a declaration supplies
+  // its canonical digest; a replacement is refused before provider dispatch.
+  // This precondition participates in the receipt request fingerprint.
+  optional string expected_declaration_digest = 6 [(buf.validate.field).string.pattern = "^(sha256:[0-9a-f]{64})?$"];
 }
 // SourceOperationReceipt contains only the committed result and safe metadata.
 message SourceOperationReceipt {
@@ -1573,6 +1683,32 @@ service DatasourceService {
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
       rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
       request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // UpdateSource changes what an already-connected source fetches — its branch
+  // and its path and file-type filters — keeping its identity, its credential,
+  // its sync history and the collection it writes into. A change that moves
+  // what is fetched enqueues a sync, whose progress reports the reconfigured
+  // trigger so a reader can tell a re-snapshot from an ordinary one.
+  rpc UpdateSource(UpdateSourceRequest) returns (UpdateSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.datasource.source.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };

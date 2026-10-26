@@ -125,7 +125,7 @@ func TestInstallationFenceHoldsThroughPlacement(t *testing.T) {
 func TestSharedInstallationMintSelectsOnlyConsentingOrganization(t *testing.T) {
 	s, live, caller := dynamicInstallationFixture()
 	grant := s.ModulePrincipals()[caller.PrincipalID]
-	grant.Workload = ModuleWorkload{Namespace: "example", ServiceAccount: "example", Container: "app"}
+	grant.Workloads = []ModuleWorkload{ModuleWorkload{Namespace: "example", ServiceAccount: "example", Container: "app"}}
 	binding := grant.OperationAudiences["operate"]
 	binding.HeadlessScopes = cloneOperationScopes(binding.InvokeScopes)
 	grant.OperationAudiences["operate"] = binding

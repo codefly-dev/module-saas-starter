@@ -242,14 +242,11 @@ connector credential, MFA secret and WebAuthn credential. A product must reach
 that Vault by name rather than inherit whichever one the composition happened to
 render.
 
-**A cell on a cloud key service needs this only for the signing key.** Selecting
-`KEY_SERVICE_BACKEND=kms` in the `key-service` group moves the envelope key and
-the keyed hash to the cell's cloud key-management service — non-exportable keys,
-reached with the workload's own cloud identity, with key names and no credential
-in the configuration. The signing key cannot move there yet, so a hosted cell
-still declares this kind for that one key; `module/KEY_ROTATION.md`, "Why `kms`
-cannot hold the signing key yet", says what has to change upstream first. When it
-does, a cell selecting `kms` for both families declares no `cell-vault` at all.
+**A cell with no Vault at all declares `key-service: kms` instead** (the next
+section). This kind is for a cell that has a Vault and wants the product to use
+*that* one. A cell whose keys live in its cloud key-management service —
+`KEY_SERVICE_BACKEND=kms` with `KEY_SERVICE_SIGNING_BACKEND=kms-wrapped` — has
+no Vault for this kind to point at, and declaring both is refused.
 
 ```yaml
 managed-services:
@@ -361,9 +358,9 @@ that path manages key metadata, so the signing-key read succeeds while every
 encrypt call answers 403. Creating the key belongs to the Vault service's own
 provisioning, not to this role.
 
-**A cell that would rather run this module's Vault** keeps it in its in-cluster
-inventory and declares nothing here. The vault agent then renders the durable
-shape — `vault server` with integrated raft storage on a retained
+**A cell that would rather run this module's Vault** declares `key-service:
+vault` and no handoff here. The vault agent then renders the durable shape —
+`vault server` with integrated raft storage on a retained
 PersistentVolumeClaim, auto-unsealed by the seal the environment supplies — for
 every deployed profile; the in-memory `vault server -dev` shape is reachable only
 from the ephemeral local-apply render. That durable server refuses to start
@@ -371,6 +368,170 @@ without an auto-unseal seal, so the seal must be supplied as the vault service's
 own per-service configuration
 ([../services/vault/configurations/aws/vault.env](../services/vault/configurations/aws/vault.env)).
 Its listener is plaintext too, so the same mesh assertion admits it.
+
+## Composing no Vault
+
+Two declarations answer this, at two grains. Use the first today.
+
+### Whole composition: leave `vault` out of `services:`
+
+A composition whose keys live in a cloud key service in **every** environment
+composes no Vault by leaving the service out of its own `module.codefly.yaml`:
+
+```yaml
+services:
+    - name: accounts
+    - name: auth-gateway
+    - name: cache
+    - name: frontend
+    - name: marketing
+    - name: policy-log
+    - name: store
+    - name: telemetry
+    # no `vault`: KEY_SERVICE_BACKEND=kms with
+    # KEY_SERVICE_SIGNING_BACKEND=kms-wrapped reads none
+```
+
+The service tree is not copied, accounts' `vault` service-dependency is pruned,
+and no environment schedules one. Leaving the service out is also how a
+composition **selects** the cloud key service today — it is the only half of the
+selection the CLI parses — so the `vault` **configuration group** goes with the
+selection, and nothing is left answering for `VAULT_AUTH_METHOD` and the AppRole
+credential of a Vault that is not there.
+
+The group follows the **selection**, not the service: a cell whose Vault is the
+cell's own (the `cell-vault` handoff above) renders no Vault of this module's and
+keeps every key in the group, because that is how it reaches the Vault it
+selected.
+
+### Per environment: `key-service`
+
+A composition that wants the Vault in its local environment and not on its cell
+states the selection per environment, in the same vocabulary
+`KEY_SERVICE_BACKEND` uses in the `key-service` configuration group:
+
+```yaml
+environments:
+  - name: gke
+    cluster:
+      kind: gke
+    namespace: identity
+    key-service: kms
+```
+
+| Value | What this module composes |
+| --- | --- |
+| `vault`, or unset | the `vault` service in-cluster, unless `managed-services.vault` names the cell's own |
+| `kms` | **no Vault**: no StatefulSet, no PVC, no seal, no token, and no egress to one |
+
+> **This field cannot be written yet.** `workspace.codefly.yaml`'s environment
+> block is parsed by the CLI's own `pkg/environments.Environment`, strictly and
+> recursively, and that type carries no extension seam — core's
+> `resources.Environment` has an inline `Extensions map[string]YAMLValue` for
+> host-owned keys, but the CLI does not use it here. Against codefly 0.1.181 the
+> line is rejected with `field key-service not found in type
+> environments.Environment`, which fails the whole workspace load and so every
+> environment's run, not only the one carrying it. The same gap already makes
+> the `auth-mode` and `egress-namespace` keys of the `cell-vault` handoff above
+> undeclarable, which is why `workspace.codefly.yaml` here keeps its
+> `managed-services` example commented out.
+>
+> The module-agent side is complete and tested. What is left is the CLI's field,
+> and then one line here: an unstated selection on a deployed environment
+> becomes a refusal naming both values, exactly as
+> `keyservice.selectedBackend` already refuses the same unstated fact at boot.
+> Until then an unstated selection keeps today's behaviour — it composes the
+> Vault — which is why the whole-composition route above is the one to use now.
+
+A local environment runs this module's own Vault over loopback with a token, so
+it needs no line in either case.
+
+### Neither route reaches a composition that pins a release
+
+Both routes are declarations in the **consumer's own** files: the `services:`
+list of its `module.codefly.yaml`, or the `key-service:` line on an environment
+in its `workspace.codefly.yaml`. A composition that pins a published release of
+this module gets the fixed module package and keeps whatever its own composition
+file says — and that file still composes `vault` until somebody edits it. So
+upgrading the pin alone changes nothing about the Vault: the first route needs
+one edit in the consumer, and the second needs the CLI field above before it can
+be written at all.
+
+What this means in practice for a cell on the cloud key service:
+
+| | |
+| --- | --- |
+| Available by editing the composition | drop `vault` from `services:` — the group, the StatefulSet, the PVC, the seal and the egress all go |
+| Available only after the CLI field lands | keeping the Vault locally while the cell composes none, i.e. `key-service:` per environment |
+| Not available by moving the pin | anything: a pinned consumer's composition file is its own, and the module cannot edit it |
+
+Until the composition is edited, a pinned cell on `KEY_SERVICE_BACKEND=kms`
+still renders the `vault` workload, and accounts still reads nothing from it.
+That is the remaining half of issue #1128, and it is the consumer's edit (or the
+CLI's field) rather than this module's.
+
+### Why it is declared here and not read from the group
+
+The decision, its two rejected alternatives and what the CLI owes are recorded
+in [ADR 0009](../docs/adr/0009-which-plane-decides-whether-a-vault-is-composed.md).
+
+accounts selects its backend at runtime from the `key-service` group, and on
+`KEY_SERVICE_BACKEND=kms` with `KEY_SERVICE_SIGNING_BACKEND=kms-wrapped` it
+opens no Vault connection at all: the signing key is a ciphertext in
+configuration that a Cloud KMS key unwraps at boot, and the envelope key and
+keyed hash are cloud resources read by name. The **inventory**, though, is
+decided before any process exists — what is rendered, scheduled, and given a
+volume. Those two planes had no declaration in common, so a cell on cloud KMS
+still got a `vault` StatefulSet: scheduled, refusing to start without the
+auto-unseal seal a cell on cloud KMS is forbidden to hold, crash-looping as a
+permanently degraded workload that nothing read.
+
+The renderer could have read the group's `.env` instead. It must not. A group's
+values are the configuration plane's to deliver per environment, the renderer has
+never read one, and a file that may legitimately be absent would make the render
+fall back to composing a Vault — which is the failure itself. Nor can a profile
+directory carry it: core reads each configuration directory from the first
+profile in the chain that directory holds, **and from that one alone**, so
+creating `configurations/<cell>/` to hold one key would stop every other
+workspace-level group for that environment resolving through the profile it
+resolves through today.
+
+So the fact is declared where the inventory is decided, and the two planes are
+kept honest by refusing the contradictions rather than by guessing:
+`key-service: kms` beside a `vault` managed service is refused, because the
+selection says there is no Vault and the handoff says there is one.
+
+### What `kms` takes away
+
+- the `vault` service leaves that environment's in-cluster inventory;
+- every dependency **edge** to it is withdrawn with it — no ingress policy, no
+  egress policy, no mesh allow. Before this existed a dependency could only be
+  in-cluster or managed, so the renderer refused outright ("has no in-cluster
+  service or managed handoff") and the only way to render was to schedule a
+  Vault;
+- a `vault` managed service is refused, because nothing remains for a handoff to
+  point at.
+
+What it does **not** change on its own is the `vault` configuration group, and
+the reason is a difference in grain. The group is declared in one service
+manifest for the whole composition, while the selection is per environment, so
+the module agent withdraws the group only when **no** environment selects the
+backend it reaches (`compositionSelectsVault`). A composition that selects the
+cloud key service everywhere loses the group; one that keeps this module's Vault
+for its local environment keeps the group everywhere, and its `kms` environments
+supply nothing into it: accounts reads no key of it on that selection —
+`VAULT_KEY_CUSTODY` is gated on the signing backend being `vault`, and the
+address, auth method and AppRole credential are read only by the Vault
+connection, which is never opened. Expressing "this group only in these
+environments" is not something a module manifest can say today.
+
+The one case that matters is the mismatch, and accounts refuses it at boot
+rather than letting it surface as a missing value: a hosted boot that selects the
+vault backend for either family while the group carries nothing is refused by
+name, saying that the group is not declared and that the selection requires it
+(`requireVaultGroup`). Before that check the first key read answered for the
+whole group — `VAULT_KEY_CUSTODY`'s refusal told an operator to put a seeding
+command into a group that was not there.
 
 The installed Starter topology includes an independently deployable marketing
 service. Local hosts and production domains belong to the consumer's

@@ -64,13 +64,12 @@ func derivedBoundary(t *testing.T, seed, orgID string) string {
 // from the verified credential and from nowhere else.
 type solutionBoundaryAuthorityFake struct {
 	workContextAuthorityFake
-	seeds          map[string]string
-	errs           map[string]error
-	publisher      string
-	backendStopped bool
-	seedsErr       error
-	asked          []string
-	seedsAsked     int
+	seeds      map[string]string
+	errs       map[string]error
+	publisher  string
+	seedsErr   error
+	asked      []string
+	seedsAsked int
 }
 
 func (f *solutionBoundaryAuthorityFake) SolutionRuntimeBoundarySeed(
@@ -84,16 +83,7 @@ func (f *solutionBoundaryAuthorityFake) SolutionRuntimeBoundarySeed(
 	if !ok {
 		return business.SolutionBoundarySeed{}, business.ErrSolutionRegistrationNotFound
 	}
-	missing := ""
-	if f.backendStopped {
-		missing = "backend_revision and backend_upstream"
-	}
-	return business.SolutionBoundarySeed{
-		BindingID:          seed,
-		MissingBackendHalf: missing,
-		Publisher:          f.publisher,
-		BackendServing:     !f.backendStopped,
-	}, nil
+	return business.SolutionBoundarySeed{BindingID: seed, Publisher: f.publisher}, nil
 }
 
 // SolutionRuntimeBoundarySeeds answers the collision check. It returns every
@@ -354,9 +344,7 @@ func TestOrdinaryMintsAreUnchangedByTheBoundary(t *testing.T) {
 			Tenant:         renewOrgID,
 			PrincipalID:    renewOwnerID,
 			InstallationID: testInstallation("runtime.operations"),
-			Execution:      business.ExecutionIdentity{Running: business.RunningDigest(testBuildFor(renewOwnerID).ImageDigest), Incarnation: 1},
 		}
-		server.seals.(*sealAnswersFake).approve(renewOwnerID, testBuildFor(renewOwnerID))
 		_, moduleFirst, err := server.StartModuleTask(context.Background(), module)
 		require.NoError(t, err)
 		_, moduleSecond, err := server.StartModuleTask(context.Background(), module)
@@ -612,22 +600,6 @@ func TestSolutionScopedMintRefusesAForeignPublisher(t *testing.T) {
 	require.Contains(t, status.Convert(err).Message(), "another publisher")
 }
 
-// The backend half is the half that mints. One whose lease lapsed is a
-// deployment that stopped renewing, and the gateway has already stopped routing
-// to it, so minting its boundary hands out authority for a solution nothing can
-// reach.
-func TestSolutionScopedMintRefusesANonServingBackend(t *testing.T) {
-	solutionBoundaryService(t)
-	server, authority := newSolutionBoundaryServer(t)
-	authority.backendStopped = true
-	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA, boundaryPublisher)
-	require.NoError(t, err)
-
-	_, err = server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
-	require.Equal(t, codes.FailedPrecondition, status.Code(err))
-	require.Contains(t, status.Convert(err).Message(), "not serving")
-}
-
 // The collision check compares strings, so what spellings can reach it matters.
 //
 // uuid.Parse accepts a braced, unhyphenated or URN form of the same value, and
@@ -708,7 +680,7 @@ func TestNamingABindingIDAsATaskIDIsRefused(t *testing.T) {
 // operator to look for a lease that no longer exists.
 func TestTheSealedClaimIsTheBindingIDsDerivationAndTheRefusalNamesTheMissingHalf(t *testing.T) {
 	solutionBoundaryService(t)
-	server, authority := newSolutionBoundaryServer(t)
+	server, _ := newSolutionBoundaryServer(t)
 
 	ctx, err := accountsauth.WithVerifiedSolution(boundaryCaller(), boundarySolutionA, boundaryPublisher)
 	require.NoError(t, err)
@@ -723,15 +695,4 @@ func TestTheSealedClaimIsTheBindingIDsDerivationAndTheRefusalNamesTheMissingHalf
 		"the sealed claim must be the BINDING ID's derivation")
 	require.NotEqual(t, boundarySeedA, issued.GetTaskId(),
 		"the binding id itself is the input, never the sealed value")
-
-	// The backend half stops being delivered: no lease lapses, the declaration
-	// simply no longer carries it.
-	authority.backendStopped = true
-	_, err = server.StartTask(ctx, boundaryMintRequest("runtime.tasks"))
-	require.Equal(t, codes.FailedPrecondition, status.Code(err))
-	message := status.Convert(err).Message()
-	require.Contains(t, message, "not serving")
-	require.Contains(t, message, "backend_revision")
-	require.Contains(t, message, "backend_upstream")
-	require.NotContains(t, message, "lease", "a lapsed lease is not why a declaration is absent")
 }

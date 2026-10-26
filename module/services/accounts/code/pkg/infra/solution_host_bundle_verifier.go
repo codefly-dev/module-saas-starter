@@ -39,6 +39,7 @@ var ErrSolutionHostTrustUnavailable = errors.New("solution host trust policy una
 type solutionHostBundleVerifierWithPolicy interface {
 	// Verifier is unavailable until a local policy has proven its cluster.
 	Verifier() (*solutionhost.Verifier, error)
+	VerifyAuthority(document, envelope []byte) (string, error)
 
 	// SignerDomains maps each attested signer identity to the ownership domains
 	// it may deliver under, in the shape core's Host takes.
@@ -52,6 +53,11 @@ type solutionHostBundleVerifierWithPolicy interface {
 	// refuses a local profile. A deployed policy is bound to no cluster and this
 	// does nothing. Until it succeeds a local policy admits no carrier.
 	ProveLocalCluster(ctx context.Context, cluster SolutionHostClusterAuthority) error
+
+	// ProveNativeRun binds a LOCAL policy written for a native run to the run
+	// whose anchor fingerprint this host was started under, and refuses any
+	// other policy.
+	ProveNativeRun(anchorFingerprint string) error
 }
 
 // SolutionHostTrustAnchorPath is where the verification policy is read from,

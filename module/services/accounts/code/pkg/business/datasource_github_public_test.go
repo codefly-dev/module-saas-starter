@@ -446,15 +446,28 @@ func TestReconnect_RefusedWhenTheRepositoryIsNoLongerPublic(t *testing.T) {
 
 // A source that holds a credential is never reconnected by reaffirming it: the
 // person who reconnects must supply the replacement.
-func TestReconnect_CredentialedSourceNeedsAReplacement(t *testing.T) {
+// A source that holds a credential REAFFIRMS it rather than demanding a
+// replacement for a secret this host already keeps.
+//
+// This test required the opposite until the refusal was measured on a
+// validation cell: a module's delegation ceiling moving — one action more —
+// invalidates every delegation recorded under the old one, and this reconnect
+// is the only remedy the product offers. Demanding a PAT here turned a routine
+// module upgrade into "every person who connected a source must find their
+// token again", with the credential sitting in the row the whole time.
+//
+// The race the old refusal guarded is closed by the row lock the reconnect
+// already takes: inside it the credential ref cannot move, so whatever it is
+// when the delegation is recorded is what the delegation covers.
+func TestReconnect_CredentialedSourceReaffirmsItsSavedCredential(t *testing.T) {
 	h := newPublicHarness(t, &fakeGitHub{defaultBranch: "main", commit: "HEAD", public: true})
 	source := h.publicSource(t)
 	_, err := h.svc.ReconnectDatasourceSource(context.Background(), "actor-1", testOrg, source.ID, "ghp_new")
 	require.NoError(t, err)
 
+	// No replacement: the saved credential is reaffirmed and a sync is queued.
 	_, err = h.svc.ReconnectDatasourceSource(context.Background(), "actor-1", testOrg, source.ID, "")
-	require.Equal(t, codes.FailedPrecondition, status.Code(err), "err = %v", err)
-	require.Contains(t, status.Convert(err).Message(), "saved credential")
+	require.NoError(t, err, "a source holding a credential must reconnect without being asked for it again")
 }
 
 // The sync-time half of the public-repository check. Connecting already refuses

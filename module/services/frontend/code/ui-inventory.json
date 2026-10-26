@@ -4,6 +4,16 @@
   "status": "Implementation in progress; story coverage and closure evidence incomplete",
   "families": [
     {
+      "source": "packages/codefly-ui/src/playground/index.tsx",
+      "imports": ["react", "../content/index.js", "../layout/index.js"],
+      "owner": "@codefly-dev/ui/playground",
+      "disposition": "already canonical",
+      "reason": "Shared scenario frame and operation evidence composed from layout and content primitives.",
+      "stories": [{"file": "packages/codefly-ui/stories/playground.stories.tsx", "export": "FixtureScenario"}],
+      "coverage": "Owner fixture and Chromium light/dark desktop/mobile checks: navigation, refusals, log expansion, theme initialization and overflow.",
+      "remaining": "Live backend calls, external skins and screen-reader qualification."
+    },
+    {
       "source": "packages/codefly-ui/src/board/board.tsx",
       "imports": [
         "@dnd-kit/core",
@@ -1044,7 +1054,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -1057,6 +1067,24 @@
       ],
       "coverage": "owner stories and unit tests; browser/skin verification pending",
       "remaining": "Verify explorer rendering and the tone fills under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/qr-code.tsx",
+      "imports": [
+        "qrcode.react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "A scannable code on a plate that stays light in both modes and is sized in absolute rem: a QR reader may refuse an inverted code, and a density skin rescaling --spacing would take a spacing-sized plate below the pixels-per-module a camera needs, so neither contrast nor edge is the skin's to re-decide here. The quiet zone is the specified four modules and rides inside the SVG.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "QRCodes"
+        }
+      ],
+      "coverage": "owner stories and unit tests; browser/skin verification pending",
+      "remaining": "Scan a rendered code with a real authenticator app, and confirm the plate under external skins."
     },
     {
       "source": "packages/codefly-ui/src/layout/radio-group.tsx",
@@ -1468,6 +1496,41 @@
       "remaining": "Verify explorer rendering and the metric type slots under external skins."
     },
     {
+      "source": "packages/saas-ui/src/datasources/api-source-card.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@tanstack/react-query",
+        "react",
+        "./api-source.js",
+        "./directory.js",
+        "./errors.js",
+        "./credential-mode.js",
+        "./gateway.js",
+        "./queries.js",
+        "./types.js",
+        "./util.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "One API a person connects over OAuth, in one card: the api counterpart of DeclaredSourceCard. The surface fixes the base URL and the person supplies only the sign-in; the card creates the person's own authorization-code source when they have none, declares its operations if given, and links it.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ApiSourceSetUp"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ApiSourceSignInNeeded"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ApiSourceConnected"
+        }
+      ],
+      "coverage": "owner story; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins, and walk the sign-in against a composed host with a real OAuth provider."
+    },
+    {
       "source": "packages/saas-ui/src/datasources/collection-access.tsx",
       "imports": [
         "@tanstack/react-query",
@@ -1509,6 +1572,30 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/saas-ui/src/datasources/connect-source.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@tanstack/react-query",
+        "react",
+        "./types.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Catalog-driven provider connection: the host descriptor supplies fields and admission; credentials live only for the operation.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "CatalogProviders"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "RefusedProvider"
+        }
+      ],
+      "coverage": "Owner previews and DOM interaction tests cover admitting, refusing, catalog removal and credential cleanup.",
+      "remaining": "Live external-provider and browser visual qualification under external skins."
+    },
+    {
       "source": "packages/saas-ui/src/datasources/credential-mode.tsx",
       "imports": [
         "@codefly-dev/ui/layout",
@@ -1537,7 +1624,8 @@
         "./types.js",
         "./util.js",
         "./sync-progress.js",
-        "./sync-progress-model.js"
+        "./sync-progress-model.js",
+        "./connect-source.js"
       ],
       "owner": "@codefly-dev/saas-ui",
       "disposition": "already canonical",
@@ -1562,6 +1650,14 @@
         {
           "file": "packages/saas-ui/stories/datasources.stories.tsx",
           "export": "Degraded"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "CatalogProviders"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "RefusedProvider"
         }
       ],
       "coverage": "owner stories; browser/skin verification pending",
@@ -1609,6 +1705,7 @@
         "@codefly-dev/ui/layout",
         "@tanstack/react-query",
         "react",
+        "./api-source.js",
         "./types.js"
       ],
       "owner": "@codefly-dev/saas-ui",
@@ -1616,7 +1713,30 @@
       "reason": "Owner package implementation.",
       "stories": [],
       "coverage": "missing",
-      "remaining": "Add owner stories for the account link, the group bindings and the pending and verified domains, then verify under external skins."
+      "remaining": "Add owner stories for the account link (GitHub and a single api source), the group bindings and the pending and verified domains, then verify under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/datasources/edit-source-form.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react",
+        "react-hook-form",
+        "./credential-mode.js",
+        "./schema.js",
+        "@codefly-dev/ui/layout",
+        "./types.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "EditSource"
+        }
+      ],
+      "coverage": "owner story; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
       "source": "packages/saas-ui/src/datasources/source-execution-access.tsx",
@@ -2457,6 +2577,19 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/admin/platform/module-authority/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/module-authority"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/admin/platform/organizations/page.tsx",
       "imports": [
         "@/features/platform/ui/platform-organizations-page"
@@ -2550,6 +2683,20 @@
       "source": "src/app/admin/sessions/page.tsx",
       "imports": [
         "@/features/platform/ui/sessions-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/solutions/[installationId]/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/solution-installations",
+        "@/gen/saas/accounts/v1/frontend_catalog"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
@@ -4138,6 +4285,28 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/module-authority/ui/module-authority-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@connectrpc/connect",
+        "react",
+        "sonner",
+        "@/gen/saas/accounts/v1/platform_admin_pb",
+        "@/shared/lib/read-outcome",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../model/draft",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the module authority workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/notifications/ui/notification-banner.tsx",
       "imports": [
         "@tanstack/react-query",
@@ -4842,6 +5011,31 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/solution-installations/ui/installation-setup-page.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "react",
+        "sonner",
+        "@/components/empty-state",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../model/installations",
+        "../model/readiness",
+        "../service/mutations",
+        "../service/queries",
+        "./grant-team-dialog",
+        "./solution-installations-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the solution-installations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/solution-installations/ui/solution-installations-page.tsx",
       "imports": [
         "lucide-react",
@@ -5448,6 +5642,7 @@
     }
   ],
   "publicEntrypoints": {
+    "@codefly-dev/ui/playground": "packages/codefly-ui/src/playground/index.tsx",
     "@codefly-dev/ui": "packages/codefly-ui/src/index.ts",
     "@codefly-dev/ui/plugin-host": "packages/codefly-ui/src/plugin-host/index.ts",
     "@codefly-dev/ui/plugin-host/runtime": "packages/codefly-ui/src/plugin-host/runtime.ts",

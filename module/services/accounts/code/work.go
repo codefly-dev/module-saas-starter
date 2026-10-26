@@ -24,6 +24,7 @@ import (
 	"accounts/pkg/jobs"
 	"accounts/pkg/keyservice"
 	"accounts/pkg/membership"
+	"accounts/pkg/meshtransport"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
 	"accounts/pkg/redisstate"
@@ -39,8 +40,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codefly-dev/core/resources"
 	"github.com/codefly-dev/core/wool"
-	wooltel "github.com/codefly-dev/core/wool/otel"
+	"github.com/codefly-dev/core/workloadidentity/native"
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -51,7 +54,24 @@ func init() {
 	WithWork(doWork)
 }
 
-func doWork(ctx context.Context) (Clean, error) {
+func doWork(ctx context.Context) (clean Clean, err error) {
+	var otelMetricProvider *otelMetrics
+	// SDK Init owns tracing. Stop telemetry exporters on startup errors too,
+	// before a normal cleanup function can be returned.
+	defer func() {
+		if err != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if otelMetricProvider != nil {
+				_ = otelMetricProvider.Shutdown(shutdownCtx)
+			}
+			_ = codefly.ShutdownTelemetry(shutdownCtx)
+		}
+	}()
+	// `app diagnose …` answers and exits; it never starts the service.
+	if code, ran := runRequestedDiagnostic(os.Args[1:]); ran {
+		os.Exit(code)
+	}
 	// Configuration this process cannot run without is checked before any
 	// dependency is touched. It used to be checked deep in the startup, after
 	// the database and Vault were already up, which meant a missing value cost
@@ -85,42 +105,13 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	// When external observability is configured, OpenTelemetry always targets
-	// the in-graph collector. Codefly owns its host and port; the accounts
-	// process never reads or hardcodes a collector address.
-	var otelProvider *wooltel.Provider
-	var otelMetricProvider *otelMetrics
-	if observabilityEnabled() {
-		collectorNetwork, err := codefly.For(ctx).
-			Service("telemetry").
-			Endpoint("grpc").
-			API("grpc").
-			ResolveNetworkInstance()
-		if err != nil {
-			return nil, fmt.Errorf("resolve telemetry collector through Codefly: %w", err)
-		}
-		p, oerr := wooltel.Enable(
-			wooltel.WithServiceName("saas-starter-api"),
-			wooltel.WithEndpoint(collectorNetwork.Host),
-			wooltel.WithInsecure(),
-		)
+	if otlpEndpointConfigured() {
+		metricProvider, oerr := enableOTELMetrics(ctx)
 		if oerr != nil {
-			return nil, fmt.Errorf("configure OTEL tracing: %w", oerr)
+			w.Warn("OTEL metrics exporter could not be built; service continues without metrics export", wool.ErrField(oerr))
+		} else {
+			otelMetricProvider = metricProvider
 		}
-		otelProvider = p
-		w.Info("OTEL enabled",
-			wool.Field("endpoint", collectorNetwork.Host),
-			wool.Field("service.name", "saas-starter-api"))
-		metricProvider, oerr := enableOTELMetrics(ctx, "saas-starter-api", collectorNetwork.Host)
-		if oerr != nil {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = otelProvider.Shutdown(shutdownCtx)
-			cancel()
-			return nil, fmt.Errorf("configure OTEL metrics: %w", oerr)
-		}
-		otelMetricProvider = metricProvider
-		// codefly:gateway-route-exempt the OTEL scrape endpoint; the collector reaches it over the mesh and it must never be public
-		adapters.RegisterHTTPRoute("/metrics", otelMetricProvider.Handler())
 	}
 
 	store, err := infra.NewPostgresStore(ctx)
@@ -131,6 +122,18 @@ func doWork(ctx context.Context) (Clean, error) {
 	service, err := business.NewService(store)
 	if err != nil {
 		return nil, err
+	}
+	frontendSource, err := frontendpayload.Configure(ctx, codefly.For(ctx), codefly.IsLocal(), infra.InCluster())
+	if err != nil {
+		return nil, err
+	}
+	service.SetFrontendArtifactSource(frontendSource)
+	if value := workspaceEnv("federation", "FRONTEND_LAZY_LOAD_WINDOW"); value != "" {
+		window, err := time.ParseDuration(value)
+		if err != nil || window <= 0 {
+			return nil, fmt.Errorf("federation/FRONTEND_LAZY_LOAD_WINDOW must be a positive duration")
+		}
+		service.SetFrontendLazyLoadWindow(window)
 	}
 	effectReceipts, closeEffectReceipts, err := store.NewEffectReceipts()
 	if err != nil {
@@ -183,10 +186,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	jobStore := infra.NewPostgresJobStore(jobWorkerPool)
 	// Durable job-operations metrics are enabled only when OTEL metrics are, i.e.
-	// otelMetricProvider != nil (observabilityEnabled()). With observability off
-	// the global meter is a no-op, so building the monitor would poll the job
-	// store every interval to feed instruments nothing can read; keep it nil and
-	// let the Start/Shutdown nil-checks below skip it entirely.
+	// otelMetricProvider != nil (the cell has a collector). Without one the global
+	// meter is a no-op, so building the monitor would poll the job store every
+	// interval to feed instruments nothing can read; keep it nil and let the
+	// Start/Shutdown nil-checks below skip it entirely.
 	jobOperationsMonitor, err := newDurableJobMetricsMonitor(otelMetricProvider != nil, jobStore)
 	if err != nil {
 		return nil, fmt.Errorf("configure durable job metrics: %w", err)
@@ -494,19 +497,19 @@ func doWork(ctx context.Context) (Clean, error) {
 	)
 	// NO MODULE OR SOLUTION SECRET IS READ HERE (#1056). A module proves which
 	// module it is with its pod's projected ServiceAccount token, which
-	// BindExecution reviews and holds against the build the authority document
-	// approves; MODULE_IDENTITY_SECRETS, MODULE_REGISTRATION_SECRETS and
+	// BindExecution reviews and holds against the workloads its applied module
+	// manifest lists; MODULE_IDENTITY_SECRETS, MODULE_REGISTRATION_SECRETS and
 	// SOLUTION_REGISTRATION_SECRETS are deleted with both registration mints.
-	// Execution binding is wired with delivery below, because its approved
-	// builds come from delivered authority: a host with no delivery mints for no
+	// Execution binding is wired with delivery below, because the workloads
+	// come from delivered manifests: a host with no delivery mints for no
 	// module.
 
-	// Declared solution presence (issue #952). Delivery POSTs one signed
-	// SolutionHostBinding carrier per solution instance to the delivery
-	// endpoint; this host verifies it on receipt and persists it, and the
-	// reconciler reads its desired set from that durable inbox on every pass,
-	// asks Core whether each document may be applied, and reconciles what it
-	// admits into the durable declaration registry.
+	// Declared module and solution presence (issue #952). Delivery POSTs one
+	// signed module manifest carrier per instance to the delivery endpoint;
+	// this host verifies, authorises and admits it on receipt and persists it,
+	// and the reconciler reads its desired set from that durable inbox on every
+	// pass, asks Core whether each manifest may be applied, and reconciles what
+	// it admits into the durable declaration registry.
 	//
 	// Unset SOLUTION_HOST_COORDINATE leaves the whole surface off — no
 	// reconciler and no delivery endpoint — and nothing on this host is
@@ -786,8 +789,16 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
-	entitlementChecker := business.NewDefaultEntitlementChecker(store)
-	service.SetEntitlementChecker(entitlementChecker)
+	// A deployment sells plans exactly when it takes payment for them. One that
+	// does not enforces no plan limit: the default plan's seats, keys and meters
+	// describe nothing anyone bought. The value is validated below, where the
+	// billing provider is wired.
+	billingProvider := strings.ToLower(strings.TrimSpace(os.Getenv("BILLING_PROVIDER")))
+	planPolicy := business.PlanPolicyForBillingProvider(billingProvider)
+	if planPolicy == business.NoPlansSold {
+		w.Info("plan limits are not enforced: this deployment sells no plans (BILLING_PROVIDER is not stripe)")
+	}
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store, planPolicy))
 
 	// Redis wiring. accounts declares the `cache` dependency, and one client on
 	// it carries two different things:
@@ -990,7 +1001,6 @@ func doWork(ctx context.Context) (Clean, error) {
 	// forwarded identity headers.
 	var stripeWebhookWorker *jobs.Worker
 	var billingWorkerPool interface{ Close() }
-	billingProvider := strings.ToLower(strings.TrimSpace(os.Getenv("BILLING_PROVIDER")))
 	switch billingProvider {
 	case "", "disabled":
 		if os.Getenv("STRIPE_API_KEY") != "" || os.Getenv("STRIPE_WEBHOOK_SECRET") != "" {
@@ -1285,10 +1295,20 @@ func doWork(ctx context.Context) (Clean, error) {
 	}()
 
 	if selectedFixture != "" {
-		err = fixtures.Seed(ctx, service, selectedFixture)
+		installations, err := fixtures.SeedWithInstallations(ctx, service, selectedFixture)
 		if err != nil {
 			retentionCancel()
 			return nil, err
+		}
+		// A declared installation names a target the composition delivers
+		// after this boot, so it is performed after each delivery pass. A host
+		// with no delivery surface offers no target to install.
+		switch {
+		case installations == nil:
+		case solutionHostBindingReconciler != nil:
+			solutionHostBindingReconciler.AfterEachPass(installations.Converge)
+		default:
+			w.Warn("the fixture declares installations and this host has no delivery surface (no SOLUTION_HOST_COORDINATE), so no target is offered and none is installed")
 		}
 	}
 	if stripeWebhookWorker != nil {
@@ -1433,15 +1453,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		sw.Info("closing store")
 		store.Close()
 		sw.Info("store closed")
-		if otelProvider != nil {
-			sw.Info("flushing OTEL provider")
-			// Bounded shutdown — exporter has its own flush window
-			// (otlptrace's batcher). 5s is a sensible cap.
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := otelProvider.Shutdown(shutdownCtx); err != nil {
-				sw.Warn("OTEL shutdown failed", wool.ErrField(err))
-			}
+		traceShutdownCtx, cancelTraceShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelTraceShutdown()
+		if err := codefly.ShutdownTelemetry(traceShutdownCtx); err != nil {
+			sw.Warn("OTEL shutdown failed", wool.ErrField(err))
 		}
 		if otelMetricProvider != nil {
 			sw.Info("flushing OTEL metrics provider")
@@ -1858,13 +1873,12 @@ func configuredSolutionHostBindingReconciler(
 	coordinate := strings.TrimSpace(workspaceEnv("federation", "SOLUTION_HOST_COORDINATE"))
 	if coordinate == "" {
 		// NO DECLARED-PRESENCE SURFACE ALSO MEANS NO EXECUTION BINDING, and
-		// that is the coherent answer rather than an oversight. The approved
-		// build is read from delivered authority documents, and a host with no
-		// coordinate has no delivery endpoint to receive one — so it approves
-		// nothing, `SetExecutionBinding` is never called, and `BindExecution`
-		// answers ErrExecutionUnbound for every caller. A module cannot mint
-		// here, which is the fail-closed direction: the alternative is a host
-		// that cannot establish what anyone is running and mints anyway.
+		// that is the coherent answer rather than an oversight. A module's
+		// workloads are read from delivered manifests, and a host with no
+		// coordinate has no delivery endpoint to receive one — so
+		// `SetExecutionBinding` is never called, and `BindExecution` answers
+		// ErrExecutionUnbound for every caller. A module cannot mint here,
+		// which is the fail-closed direction.
 		return nil, nil
 	}
 	// The ownership domains this host accepts delivery from. Required with the
@@ -1943,63 +1957,96 @@ func configuredSolutionHostBindingReconciler(
 		}
 		interval = parsed
 	}
-	// The ONLY way a document reaches this host is the delivery endpoint, so a
-	// host that cannot review a carrier's credential has no input at all.
-	// Saying so at boot beats a reconciler that polls an inbox nothing can ever
-	// write to.
-	kubernetes, err := infra.NewKubernetesClient()
+	// WHO HANDS OVER A MANIFEST, WHO READS APPLIED STATE, AND WHICH WORKLOAD
+	// A MINTING PROCESS IS — answered by the environment's one mechanism. A
+	// native `codefly run` names its anchor (CODEFLY_NATIVE_IDENTITY_ANCHOR) and
+	// signs each process it started a credential of core's native mechanism;
+	// core refuses that anchor inside a pod. Everywhere else the cluster's API
+	// server reviews projected tokens.
+	nativeAttester, err := native.LoadAttester()
 	if err != nil {
-		return nil, fmt.Errorf("the declared-presence surface has no input: a delivered carrier is authorised by TokenReview, and this host cannot reach its api server: %w", err)
-	}
-	// A LOCAL PROFILE IS PROVEN AGAINST THIS CLUSTER BEFORE ANYTHING IS
-	// ADMITTED, and a host that cannot prove it does not start (issue #1063).
-	//
-	// A verification policy that declares itself local admits a developer's
-	// own identity, and it is bound to ONE cluster by that cluster's
-	// certificate authority. The proof uses only what the kubelet puts in this
-	// pod: the projected CA bundle must be exactly the pinned certificate, and
-	// the API server reached under that certificate alone must authenticate
-	// this pod's own token. On success the pinned, redirect-refusing transport
-	// becomes THIS client's for the life of the process, so the TokenReviews
-	// and pod reads wired below run under the same binding. A host in any other
-	// cluster fails here, by name. A deployed policy is bound to no cluster and
-	// this does nothing.
-	//
-	// Not left to this call alone: until it succeeds the verifier itself
-	// refuses every carrier under a local policy, so a boot path that forgot to
-	// ask would refuse developers, never admit them somewhere else.
-	if err := verifier.ProveLocalCluster(context.Background(), kubernetes); err != nil {
 		return nil, err
+	}
+	var (
+		carrier    business.SolutionDeliveryCarrierAuthorizer
+		reviewer   business.ExecutionReviewer
+		namespaces business.ModuleNamespaceRule
+	)
+	// The module this host was composed as. Its namespace's `delivery`
+	// account carries the host's own module envelope, under either profile.
+	hostModule := strings.TrimSpace(os.Getenv(resources.ModulePrefix))
+	if nativeAttester != nil {
+		// The local profile is bound to THIS run's anchor, and until that is
+		// proven the verifier admits no carrier. A native run's namespace is its
+		// module: the bare rule.
+		if err := verifier.ProveNativeRun(nativeAttester.Anchor().Fingerprint()); err != nil {
+			return nil, err
+		}
+		identity := infra.NewNativeWorkloadIdentity(nativeAttester)
+		namespaces = business.NativeModuleNamespaceRule()
+		carrier, reviewer = identity, identity
+	} else {
+		// A host that cannot review a carrier's credential has no input at all;
+		// saying so at boot beats a reconciler polling an inbox nothing writes.
+		kubernetes, err := infra.NewKubernetesClient()
+		if err != nil {
+			return nil, fmt.Errorf("the declared-presence surface has no input: a delivered carrier is authorised by TokenReview, and this host cannot reach its api server: %w", err)
+		}
+		// A LOCAL PROFILE IS PROVEN AGAINST THIS CLUSTER BEFORE ANYTHING IS
+		// ADMITTED, and a host that cannot prove it does not start (issue
+		// #1063): the projected CA bundle must be exactly the pinned
+		// certificate, and the API server reached under it alone must
+		// authenticate this pod's own token. A deployed policy is bound to no
+		// cluster and this does nothing; until it succeeds the verifier refuses
+		// every carrier under a local policy.
+		if err := verifier.ProveLocalCluster(context.Background(), kubernetes); err != nil {
+			return nil, err
+		}
+		// THE CELL'S NAMESPACE RULE, read off this host's own placement: the
+		// namespace it runs in and the module it was composed as. A host that
+		// cannot read its own placement refuses to boot rather than authorise
+		// against a guess.
+		hostNamespace, err := kubernetes.Namespace()
+		if err != nil {
+			return nil, err
+		}
+		if namespaces, err = business.NewModuleNamespaceRule(hostNamespace, hostModule); err != nil {
+			return nil, err
+		}
+		carrier, reviewer = infra.NewSolutionDeliveryCarrierCheck(kubernetes), kubernetes
 	}
 	keyVerifier, err := verifier.Verifier()
 	if err != nil {
 		return nil, err
 	}
-	service.SetSolutionDelivery(keyVerifier, store, infra.NewSolutionDeliveryCarrierCheck(kubernetes), domainsBySigner)
+	service.SetModuleNamespaceRule(namespaces)
+	service.SetSolutionDelivery(keyVerifier, store, carrier)
 	service.SetSolutionDeliveryCoordinate(coordinate)
+	service.SetAuthorityDocumentVerifier(verifier.VerifyAuthority)
+	service.SetModuleEnvelopeDeliveryHost(hostModule)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
 	// the gateway because a solution runtime is an independently deployed
 	// workload that must not reach accounts' internal listener. A delivery Job
-	// is not that: it runs in-cluster as one of two known service accounts, so
-	// routing it through the edge would put accounts-audience tokens across the
-	// perimeter for no gain.
+	// is not that: it runs in-cluster as its module's `delivery` service
+	// account, so routing it through the edge would put accounts-audience
+	// tokens across the perimeter for no gain.
 	//
 	// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
 	adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
 
-	// The AUTHORITY CEILING is the module envelope a platform super_admin
-	// writes at runtime, read by every pass and every activation from the
-	// store — never a file read once here, and never out of a delivered
-	// document, because a document must never carry its own ceiling.
+	// The AUTHORITY CEILING is the applied, signed module manifest: what the
+	// composition delivers, verified against the pinned release keys, is what
+	// a module holds, so a composition runs with no hand-written authority.
+	// Where a platform super_admin has written a module envelope it narrows
+	// that ceiling; every pass reads it from the store — never a file read once
+	// here.
 	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
-		Source:          business.NewDeliveredSolutionHostBindings(service),
-		Verifier:        keyVerifier,
-		Coordinate:      coordinate,
-		Domains:         domains,
-		DomainsBySigner: domainsBySigner,
-		Interval:        interval,
-		Envelopes:       service,
+		Source:     business.NewDeliveredSolutionHostBindings(service),
+		Verifier:   keyVerifier,
+		Coordinate: coordinate,
+		Interval:   interval,
+		Envelopes:  service,
 	})
 	if err != nil {
 		return nil, err
@@ -2007,31 +2054,16 @@ func configuredSolutionHostBindingReconciler(
 	// A delivery or an envelope write asks for a pass now, so what it changes
 	// is in force within one pass instead of one interval.
 	service.SetModuleRegistryPassTrigger(reconciler.Trigger)
+	service.SetCompositionReconcile(reconciler.RunOnce)
 
-	// EXECUTION-BOUND MINTING, wired here because this is where both of its
-	// independent sources exist.
-	//
-	// THIS IS THE LINE THAT WAS MISSING. `BindExecution`, the three digest
-	// types, the monotonicity guard and the TokenReview client were all built,
-	// guarded and unit-tested, and `SetExecutionBinding` was called from
-	// nowhere — so on a running host the reviewer was nil, `BindExecution`
-	// answered ErrExecutionUnbound for every caller, and the whole mechanism was
-	// unreachable. A check nothing calls is indistinguishable from a check that
-	// passes, which is why this is wired rather than merely available.
-	//
-	// THE TWO SOURCES ARE DELIBERATELY DIFFERENT ONES, and that is the entire
-	// design. The reviewer is the Kubernetes API, keyed by a pod UID that came
-	// from a TokenReview of a token the caller could not forge: it answers what
-	// the caller IS RUNNING. The authority answers what THIS HOST APPROVES, read
-	// from signed documents the caller has no influence over. Filling both sides
-	// from one source compares a value to itself and passes for every caller,
-	// including the superseded pod the check exists to refuse.
-	//
-	// It is the SAME client that reviews a delivery carrier, which is right
-	// rather than merely convenient: one api server, one in-cluster credential,
-	// one place a lost credential stops both halves at once instead of leaving
-	// one of them silently answering.
-	service.SetExecutionBinding(kubernetes, reconciler.ApprovedBuilds())
+	// EXECUTION-BOUND MINTING, wired here because this is where its inputs
+	// exist: the reviewer is the environment's mechanism (a TokenReview of a
+	// token the caller could not forge and the pod it names, or natively the
+	// run's anchor and what the launcher vouches for), and the workloads it is
+	// held against come from the manifests this reconciler applies. It is the
+	// SAME mechanism that authorises a delivery carrier: one source, one place
+	// a lost credential stops both halves.
+	service.SetExecutionBinding(reviewer)
 	return reconciler, nil
 }
 
@@ -2042,13 +2074,9 @@ func workspaceEnv(configuration, key string) string {
 	return os.Getenv(key)
 }
 
-func observabilityEnabled() bool {
-	return strings.TrimSpace(workspaceEnv("observability", "OTEL_EXPORTER_OTLP_ENDPOINT")) != ""
-}
-
 // newDurableJobMetricsMonitor builds the durable job-operations metrics monitor
 // only when OTEL metrics are enabled (metricsEnabled mirrors a non-nil
-// otelMetricProvider, i.e. observabilityEnabled()). When metrics are disabled the
+// otelMetricProvider, i.e. the cell has a collector). When metrics are disabled the
 // global meter is a no-op, so a monitor would poll the job store every interval
 // only to record into instruments nothing can read; returning a nil monitor lets
 // the caller's Start/Shutdown nil-checks skip that background work entirely.
@@ -2677,8 +2705,16 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 	if err := configureLocalEgress(isLocal, infra.InCluster()); err != nil {
 		return err
 	}
+	if err := configureMeshEgress(codefly.For(ctx)); err != nil {
+		return err
+	}
 	selection, err := keyservice.Selection(ctx, isLocal)
 	if err != nil {
+		return err
+	}
+	// Before requireKeyCustody, so an absent GROUP is reported as itself rather
+	// than as the first key read out of it.
+	if err := requireVaultGroup(selection, isLocal); err != nil {
 		return err
 	}
 	if err := requireKeyCustody(selection.SigningBackend, isLocal); err != nil {
@@ -2738,6 +2774,42 @@ func configureLocalEgress(isLocal, inCluster bool) error {
 	default:
 		return fmt.Errorf("datasource-oauth/local_egress: %w", err)
 	}
+}
+
+// configureMeshEgress installs the mesh egress admission every guarded egress
+// path applies, or refuses to start on one it cannot install.
+//
+// On a cell whose ambient mesh resolves each declared egress host to an
+// address it allocated (240.240.0.0/16 by default), those addresses are not
+// public, so without this every guarded path refuses the hosts the cell exists
+// to reach. Three values:
+//
+//   - internal-transport/mesh-protected, the mesh assertion the group already
+//     carries. Without it nothing is admitted: declared hosts are inert, and a
+//     mesh egress range refuses startup;
+//   - egress/HOSTS: the hosts the environment's egress declaration gives this
+//     service, as `host:port`, which Codefly generates and delivers;
+//   - internal-transport/mesh-egress-range: the CIDR prefixes the mesh
+//     allocates from, inside 240.0.0.0/4 or 2001:2::/48; 240.240.0.0/16 when
+//     empty.
+func configureMeshEgress(source meshtransport.Source) error {
+	meshed, err := meshtransport.Protected(source)
+	if err != nil {
+		return err
+	}
+	// Literal groups and keys, so the configuration-dependency gate sees the reads.
+	hosts, _ := source.WorkspaceValue("egress", "HOSTS")
+	ranges, _ := source.WorkspaceValue("internal-transport", "mesh-egress-range")
+	if err := auth.ConfigureMeshEgress(meshed, hosts, ranges); err != nil {
+		return fmt.Errorf("egress/HOSTS, internal-transport/mesh-egress-range: %w", err)
+	}
+	if meshed && strings.TrimSpace(hosts) != "" {
+		wool.Get(context.Background()).In("configureMeshEgress").Info(
+			"guarded egress admits these declared hosts at the mesh's egress addresses",
+			wool.Field("egress/HOSTS", hosts),
+			wool.Field("internal-transport/mesh-egress-range", ranges))
+	}
+	return nil
 }
 
 // requireApplicationBaseURL refuses to start a deployed runtime without the
@@ -2802,6 +2874,46 @@ func requireApplicationBaseURL(isLocal bool) error {
 			"what binds an OAuth redirect, the authenticator relying-party origin and every emailed link")
 	}
 	return nil
+}
+
+// requireVaultGroup refuses to start when the key service this deployment
+// selected is REACHED THROUGH the `vault` configuration group and that group
+// carries nothing.
+//
+// WHY IT IS A REFUSAL OF ITS OWN, AND FIRST. Whether the group is declared at
+// all is a fact about the composition rather than a missing value: the module
+// agent declares it while a Vault is selected and withdraws it with the
+// selection (gitops.go, regenerateServiceManifests), so when it is gone every
+// key in it reads empty at once. Without this check the first key anything
+// happens to read answers for the whole group — VAULT_KEY_CUSTODY below, whose
+// refusal tells an operator to put a seeding command into a group that is not
+// there — and the deployment is sent to fix the wrong thing. On the cloud key
+// service the same emptiness is correct, and its reason is the selection:
+// `vault group not declared: key service backend is kms`.
+//
+// Both families are asked, because either one selecting Vault needs the
+// binding: KEY_SERVICE_BACKEND=vault seals stored credentials through Transit,
+// and KEY_SERVICE_SIGNING_BACKEND=vault reads the signing key from KV.
+//
+// The tell is the group's own non-secret keys, not VAULT_ADDR alone:
+// VAULT_AUTH_METHOD has a shipped default (`token`), so a delivered group is
+// never entirely empty, while a withdrawn one has no key at all. A group that
+// is declared and carries nothing is the same refusal for the same reason,
+// which is why the message says "carries no values" rather than asserting
+// which of the two happened.
+func requireVaultGroup(selection keyservice.Selected, isLocal bool) error {
+	if isLocal {
+		return nil
+	}
+	if selection.Backend != keyservice.BackendVault && selection.SigningBackend != keyservice.BackendVault {
+		return nil
+	}
+	if strings.TrimSpace(workspaceEnv("vault", "VAULT_AUTH_METHOD")) != "" ||
+		strings.TrimSpace(workspaceEnv("vault", "VAULT_ADDR")) != "" {
+		return nil
+	}
+	return fmt.Errorf("vault: the `vault` configuration group carries no values, but the key service backend is %s/%s=vault: VAULT_ADDR, VAULT_AUTH_METHOD, VAULT_APPROLE_MOUNT and the AppRole credential in its secret half are how that backend is reached, and a composition declares the group only while a Vault is selected — so either select %s=kms with %s=kms-wrapped in the `key-service` configuration group, or compose the `vault` service in this composition's module.codefly.yaml `services:` (declaring it a managed service of kind cell-vault when the cell runs its own Vault) so the group is delivered with it",
+		keyservice.BackendKey, keyservice.SigningBackendKey, keyservice.BackendKey, keyservice.SigningBackendKey)
 }
 
 // requireKeyCustody refuses to start outside the local environment without the

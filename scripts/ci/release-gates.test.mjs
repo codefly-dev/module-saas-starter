@@ -60,21 +60,41 @@ test("dependency remediation dispatches CI after new and updated PRs, and propag
       fi
     }
   `;
-  for (const existing of ["", "123"]) {
-    for (const changed of [false, true]) {
-      for (const dispatchStatus of [0, 17]) {
-        const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", stubs + script], {
-          encoding: "utf8",
-          env: { ...process.env, DIFF_STATUS: changed ? "1" : "0", EXISTING_PR: existing, DISPATCH_STATUS: String(dispatchStatus) },
-        });
-        assert.equal(result.status, changed ? dispatchStatus : 0, result.stderr);
-        const lines = result.stdout.trim().split("\n");
-        const dispatch = "gh workflow run ci.yml --ref chore/dep-audit-remediation";
-        assert.equal(lines.filter(line => line === dispatch).length, changed ? 1 : 0);
-        assert.equal(lines.some(line => line.startsWith("gh pr create ")), changed && !existing);
-        if (changed) {
-          assert.ok(lines.indexOf("git push --force origin chore/dep-audit-remediation") < lines.indexOf(dispatch));
-          if (!existing) assert.ok(lines.findIndex(line => line.startsWith("gh pr create ")) < lines.indexOf(dispatch));
+  // The token dimension is the one that cost six days of silent failure: with no
+  // DEPS_COMBINE_TOKEN, `gh pr create` is refused outright by the organisation, and
+  // the job must still push, still dispatch CI, and still fail — because by then the
+  // working tree holds the remediated lockfiles, so a passing step would let the
+  // residual audit gate report a clean audit and take the whole run green with an
+  // advisory sitting on a branch nobody is looking at.
+  for (const havePrToken of ["true", ""]) {
+    for (const existing of ["", "123"]) {
+      for (const changed of [false, true]) {
+        for (const dispatchStatus of [0, 17]) {
+          const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", stubs + script], {
+            encoding: "utf8",
+            env: {
+              ...process.env,
+              DIFF_STATUS: changed ? "1" : "0",
+              EXISTING_PR: existing,
+              DISPATCH_STATUS: String(dispatchStatus),
+              HAVE_PR_TOKEN: havePrToken,
+            },
+          });
+          const refused = changed && !existing && havePrToken !== "true";
+          const expected = !changed ? 0 : dispatchStatus || (refused ? 1 : 0);
+          assert.equal(result.status, expected, result.stderr);
+          const lines = result.stdout.trim().split("\n");
+          const dispatch = "gh workflow run ci.yml --ref chore/dep-audit-remediation";
+          assert.equal(lines.filter(line => line === dispatch).length, changed ? 1 : 0);
+          assert.equal(lines.some(line => line.startsWith("gh pr create ")), changed && !existing && havePrToken === "true");
+          // A refusal has to name its remedy, not just redden the badge.
+          assert.equal(lines.some(line => line.includes("::error::") && line.includes("DEPS_COMBINE_TOKEN")), refused);
+          if (changed) {
+            assert.ok(lines.indexOf("git push --force origin chore/dep-audit-remediation") < lines.indexOf(dispatch));
+            if (!existing && havePrToken === "true") {
+              assert.ok(lines.findIndex(line => line.startsWith("gh pr create ")) < lines.indexOf(dispatch));
+            }
+          }
         }
       }
     }

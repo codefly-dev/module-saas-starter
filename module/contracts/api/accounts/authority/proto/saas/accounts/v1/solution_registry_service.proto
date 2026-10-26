@@ -41,4 +41,18 @@ service SolutionRegistryService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
+  // Read one retained frontend on a live target, without granting API access.
+  rpc GetRetainedSolutionFrontend(GetRetainedSolutionFrontendRequest) returns (GetRetainedSolutionFrontendResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
 }

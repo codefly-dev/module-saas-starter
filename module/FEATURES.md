@@ -49,8 +49,8 @@ the auth-gateway in front so this code path isn't reached.
 | Test infra   | Playwright e2e against the real stack via `withDependencies` |
 
 Everything is orchestrated by Codefly: `codefly run service --fixture
-dev-admin` resolves the module's service graph and brings up all eight
-services—Postgres + Vault + Redis + object storage + telemetry + Accounts +
+dev-admin` resolves the module's service graph and brings up its
+services—Postgres + Vault + Redis + object storage + Accounts +
 the private auth gateway + frontend—with seed data in one command. Marketing
 remains a separate runtime and may be started, deployed, rolled back, or
 disabled without changing the authenticated product.
@@ -146,6 +146,59 @@ Required Codefly `identity` configuration keys:
 
 Missing issuer, client id, or client secret fails startup with a precise error
 rather than at first login.
+
+### Certifying the client credential
+
+Startup proves the configuration is complete, not that the provider accepts
+it: a wrong client secret still boots, and `BeginOAuth` still answers, because
+neither touches the token endpoint. The accounts binary answers that question
+on demand, from inside its own container:
+
+```bash
+./app diagnose token-exchange    # in the accounts container, from its working directory
+```
+
+It builds the provider stack exactly as the service does — same configuration
+groups, same secret selection, same discovery — and exchanges a sentinel
+authorization code through that stack's own exchanger, so it exercises the
+endpoint, request shape and credential a real login uses. RFC 6749 orders
+client authentication before the grant but does not bind a provider to it, so a
+provider that refused only the code is certified against a **negative control**:
+the same exchange presenting a random secret of the real one's shape (its prefix,
+length and character classes) must be refused as a client. Each run is
+therefore one deliberately failed client authentication at the provider, which
+a provider that alerts on or rate-limits those will see. It prints one JSON
+line and exits without starting the service:
+
+```json
+{"check":"token-exchange","verdict":"client-accepted","provider":"workos","status":400,"error":"invalid_grant","control":"client-rejected"}
+```
+
+| `verdict`         | Meaning |
+|-------------------|---------|
+| `client-accepted` | The provider refused only the sentinel code (400 `invalid_grant`) and refused a random secret as a client (`control: client-rejected`): it accepts this client's credential. Client authentication only — not redirect registration, PKCE, or the validation of the token a real code returns. |
+| `client-rejected` | The provider refused the client (`invalid_client`, or 401): every login fails at the exchange. Fix the client secret. A 401 from a proxy in the path reads the same. |
+| `unproven`        | The provider refused only the code, but answered the random secret alike (`control` says how), so its answer does not show it authenticating the client. |
+| `unclassified`    | The provider answered with nothing that proves either; `status` and `error` say what it did answer. |
+| `no-answer`       | No HTTP answer: DNS, connect or timeout. |
+| `not-configured`  | The configuration does not build a provider stack (the service would refuse to start); nothing was sent. |
+| `no-code-flow`    | The configured provider performs no code exchange (fixture, `header-jwt`). |
+
+The output is the whole disclosure: the verdicts, the HTTP status and the OAuth
+`error` code, which is passed on only when it has a registered code's shape.
+Never the credential, never the provider's response body — from the moment the
+diagnostic takes over, the process's stdout and stderr point at the null
+device, so not even a log line the exchanger writes reaches the caller. (A line
+the generated entry point logs before that, such as an unresolved endpoint, can
+precede the result; a caller reads the result line, not the whole output.) It
+grants nothing a caller who can exec into the container does not already hold,
+and the image gains no HTTP client.
+
+A binary that predates the diagnostic ignores its arguments and would start a
+second service, so a caller that cannot know the image's version must not run
+it on a guess: the sentinel code, `token-exchange-probe-sentinel`, is a string
+constant in every binary that carries the diagnostic, and finding it in the
+binary (`grep -qF`) is how to tell without executing anything.
 
 ### Token lifecycle
 
@@ -280,7 +333,7 @@ their next owning change.
 | Organizations                | ✅    | Create (gated by `ORGANIZATION_CREATION`) / get / list / rename and change slug / delete (archive: credentials and grants revoked, members removed, history kept) |
 | Members + roles              | ✅    | owner / admin / member (built-in roles); role changed inline from the members table |
 | Teams within orgs            | ✅    | Create / list members; team admins                                     |
-| Invitations                  | 🟡    | Hashed seven-day credential, member/admin roles, email/auth handoff, acceptance, resend cooldown, revoke, queued delivery state, and an accept link handed to the administrator (`CreateInvitation`, `IssueInvitationLink`) so an invitation never depends on email; provider delivery projection and scheduled reminders are not included |
+| Invitations                  | 🟡    | Hashed seven-day credential, member/admin roles, email/auth handoff, acceptance, resend cooldown, revoke, queued delivery state, and an accept link handed to the administrator (`CreateInvitation`, `IssueInvitationLink`) so an invitation never depends on email; a second invitation to an address with a pending one, or to an existing member, is refused as `AlreadyExists`, accepting never rewrites an existing member's role, and acceptance serializes with deleting the organization (administration lock, then membership) and admits nobody into an archived one; provider delivery projection and scheduled reminders are not included |
 | Org branding                 | 🟡    | Logo + name stored; update RPC missing                                 |
 | Transfer ownership           | ❌    | No explicit RPC; only role reassignment                                |
 | Leave org                    | ✅    | `LeaveOrganization`; the sole member and the last administrator of a shared organization are refused |
@@ -312,7 +365,16 @@ plaintext appears only in the transactional delivery command and the initial
 email URL; it is never returned from `CreateInvitation`. The frontend captures
 the query credential into a short-lived HttpOnly, SameSite cookie, immediately
 redirects to a redacted URL, sets `no-referrer`, and clears the cookie after
-acceptance. Acceptance always re-resolves the authenticated primary email and
+acceptance. **Acceptance does not depend on that cookie outliving the
+sign-in.** The cookie lives fifteen minutes, which a sign-up, an MFA enrolment
+or a passkey ceremony outlasts, so `InspectInvitation` reports the
+invitation's own id and the page sends the person back through
+`/invitations/accept?id=…` — the same path an in-app invitation notification
+uses. The id is no credential: accepting by it requires a signed-in account
+whose primary email matches the invitation's, exactly as `InspectInvitationById`
+does. A request that reaches the acceptance route with neither credential is
+refused as a link that timed out in this browser, never as an invalid
+invitation. Acceptance always re-resolves the authenticated primary email and
 performs the membership/status transition in one tenant transaction. Ordinary
 invitations allow only `member` or `admin`; ownership transfer remains a
 separate, unimplemented high-assurance operation.
@@ -411,6 +473,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Webhooks (system view) | ✅    | List + delete from admin                                           |
 | Time-bound impersonation | ✅  | Access tokens are capped at five minutes by default                 |
 | Audit log viewer       | ✅    | Same UI as user-facing log, super-admin sees all orgs              |
+| Data sources           | ✅    | Connect a repository, edit what a connected source fetches in place (branch, paths, file types — `UpdateSource`, #1181), reconcile, reconnect, remove; collection read grants beside it |
 
 ### Compliance & legal
 
@@ -495,8 +558,8 @@ extraction contracts.
 |----------------|--------|-----------------------------------------------------------------|
 | Structured logs| ✅    | `wool` everywhere; user/org/action context auto-attached         |
 | Audit trail    | ✅    | Separate from app logs; queryable                                |
-| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and an in-graph OTLP gateway |
-| Tracing        | ✅    | Accounts resolves the Codefly collector endpoint and exports OTLP for the designated SigNoz backend |
+| Metrics        | ✅    | Job-worker OTel instruments, durable queue projections, and Go runtime and request metrics pushed over OTLP to the HTTPS operations intake |
+| Tracing        | ✅    | Accounts and auth-gateway export OTLP to the HTTPS operations intake, whose address the platform delivers as `OTEL_EXPORTER_OTLP_ENDPOINT`, for the designated SigNoz backend |
 | Error tracking | ✅    | Explicit fail-closed Sentry mode for server/browser errors; trace sampling is fixed at zero |
 | Dashboards     | 🟡    | Versioned provider-neutral business dashboard pack; [SigNoz provisioning remains unsupported pending a pinned service qualification](SIGNOZ_PROVISIONING.md) |
 
@@ -553,6 +616,12 @@ the pre-existing opt-in rule, which refuses an ENROLLED member without recent
 evidence. So an enrolled org admin who has not stepped up recently is now refused on
 `AssignRole`, `RevokeRole`, `GrantScope`, `RevokeScope`, the role CRUD and
 `CreateAgentPrincipal`, where before this change nothing asked. That is intended —
+with one exemption: a `GrantScope` of a role whose every permission is a `read`
+(a collection shared with a member or a team) asks for no factor, because the
+subject gains nothing the factor protects; what is exempted is what the store says
+the role grants, never its name, and an unknown role is gated like any other
+(`roleGrantsOnlyReads`). When the gate does refuse, the frontend answers with a
+step-up (`step_up=1&next=<here>` on the sign-in page), not a bare error —
 granting authority inside a tenant is not an ordinary tenant mutation, whoever does
 it — and it is stated here because an operator reading only the paragraph above would
 not predict the refusal. An admin who has enrolled nothing is still admitted, so no
@@ -648,7 +717,7 @@ _All previously-open gaps closed 2026-04-25._
 - ✅ **Cache invalidation on member-remove** — confirmed correct on a closer read. `CacheInvalidator.InvalidateMembership` calls `cache.Delete` against shared Redis, so all api instances see the change immediately. The 30s TTL is safety net, not staleness window.
 - ✅ **OAuth `state` not validated server-side** — added `auth.OAuthStateSigner` (HMAC-SHA256, key derived from the JWT private key with a domain label, 10-min TTL). `BeginOAuth(provider, redirect_uri) → state` mints a server-signed token bound to provider + redirect URI. `Authenticate` requires and re-verifies it; mismatch returns the canonical `ErrInvalidOAuthState` without an oracle. The frontend fails closed if state cannot be minted. At ingress, frontend derives the exact callback origin from the real request and authenticates it to auth-gateway with Codefly's internal service credential; auth-gateway carries it across the gateway-token boundary. `IDENTITY_ALLOWED_REDIRECT_URIS` is only an optional fallback for intentional direct access.
 - ✅ **PKCE for OAuth code flow** — FE now generates a 64-byte `code_verifier` per sign-in, computes SHA-256 `code_challenge`, and includes both in the authorize URL. `code_verifier` rides through `Authenticate` to `Exchanger.Exchange`, which forwards it as the standard `code_verifier` form parameter to the provider's token endpoint. Belt-and-suspenders alongside the existing `client_secret` flow — recommended even for confidential clients per OAuth 2.1.
-- ✅ **Connect error code translation** — handlers return `status.Error(codes.X, ...)` (gRPC) but Connect-Go didn't recognize the wrapper, defaulting every error to `CodeUnknown` → HTTP 500. Added `translateGRPCError` in the Connect `unary` adapter mapping all 16 gRPC codes to their Connect equivalents. Without this, the auth-boundary tests showed Bob's `PermissionDenied` as 500 instead of 403, masking the real behaviour.
+- ✅ **Every refusal names its reason, in the response and the log** — handlers return `status.Error(codes.X, ...)` (gRPC); `translateGRPCError` in the Connect adapter maps the code to its Connect equivalent and carries the status's own message and details, so the wire message is the reason (`mfa_required`, "seats quota exhausted: used 5 of 5"), never grpc-go's `rpc error: code = … desc = …` rendering. An error that is not a status goes through one seam (`refusalStatus`, `pkg/adapters/refusals.go`): a known business refusal travels under its code with its own sentence — a duplicate pending invitation or an existing member as `AlreadyExists`, an insufficient platform role as `PermissionDenied`, a missing justification as `InvalidArgument`, a precondition (administrator continuity, an inactive impersonation target, no email delivery, no verified public origin to build a link from, an unreachable policy log) as `FailedPrecondition`, a quota as `ResourceExhausted` — and anything else is `Internal` with a fixed sentence, its chain (a constraint name, a query, a call path) withheld from the caller. One interceptor on the Connect chain and on each gRPC server logs every refused call — procedure, code, the reason sent and, for a fault, the withheld cause; DEBUG for an unauthenticated or rate-limited call and the auth interceptor's own revocation-list outage (so an anonymous flood is no WARN stream), WARN for any other refusal by the caller, ERROR for the host's fault; the trace id stamped from the request's span; no request body. The portal's `refusalMessage` shows the host's sentence for `InvalidArgument`, `NotFound`, `AlreadyExists`, `PermissionDenied`, `FailedPrecondition`, `ResourceExhausted` and `Unauthenticated`, answers `mfa_required` with the passkey step-up, and keeps the screen's own fallback for every other code; `refusalToast` uses it.
 - ✅ **Rate limiting per org / API key** — `cache.RateLimiter` (Redis-backed fixed-window) + Connect/gRPC interceptors. Key derivation: API-key id > org id > user id. Default 1000 req/min, configurable. Returns `ResourceExhausted` (gRPC 8 / HTTP 429) with `Retry-After` and `X-RateLimit-*` headers; nil-receiver / nil-cache / zero-limit all degrade to allow-all so an unconfigured Redis can't mass-reject. 5 unit tests cover budget exhaustion, per-key isolation, and graceful degradation.
 - ✅ **Cmd-K command palette** — global cmd/ctrl+K dialog at the dashboard root. Its generated navigation projection is shared with the sidebar/plugin registry and role-gated (admin / super_admin / personal); async user search uses Connect-ES (200ms debounce, super_admin only — server-gated, not just UI). E2E specs cover hotkey, role visibility, and navigation. Built on the existing cmdk + shadcn primitives (zero new deps).
 
@@ -672,7 +741,7 @@ Environment variables consumed by the api:
 | `VAULT_ADDR`, `VAULT_TOKEN`    | Signing-key storage; falls back to ephemeral key in dev     |
 | Codefly `application` configuration | Canonical product origin, `ORGANIZATION_CREATION` (`open` default, `platform_admin`, `disabled`), and optional one-time bootstrap admin email |
 | Codefly `identity` configuration | Required provider adapter, browser endpoints, client credentials, token validation, and exact redirect allowlist; see `LOCAL_DOGFOODING.md` |
-| `BILLING_PROVIDER`             | Explicit `disabled` (default) or `stripe` adapter            |
+| `BILLING_PROVIDER`             | Explicit `disabled` (default) or `stripe` adapter. Also whether the deployment sells plans: only `stripe` enforces plan limits; `disabled` resolves every entitlement as unlimited ([USAGE_METERING.md](./USAGE_METERING.md#only-a-deployment-that-sells-plans-enforces-them)) |
 | `STRIPE_API_KEY`               | Required in Stripe mode; test/live scope is operator-owned   |
 | `STRIPE_WEBHOOK_SECRET`        | Required in Stripe mode; exact-body webhook verification     |
 | Codefly `email` configuration  | `EMAIL_PROVIDER` (`resend`, `disabled`, or `log` — the log sink only in the `local` environment, and the default only there; outside it an unset provider refuses to boot), `EMAIL_FROM` (required for a deployed `resend`), `RESEND_API_BASE`; secrets `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET` (both required in Resend mode). Read only through the group, never the process environment |
@@ -687,20 +756,38 @@ Environment variables consumed by the api:
 | `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
-| `OBSERVABILITY_EXPORTER`       | Required in-graph collector output: `debug` or `otlphttp`; the collector refuses to start when it is unset |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`  | External OTLP/HTTP destination used only by the collector    |
-| `OTEL_EXPORTER_OTLP_HEADERS`   | Secret external collector headers                            |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`  | The OTLP/gRPC target in the process environment: the operations intake's HTTPS OTLP/gRPC address, delivered from the environment's optional `telemetry:` declaration to every service. Unset means nothing is exported over OTLP; `https://` uses TLS, while `http://` is available for local plaintext receivers |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
 | `TURNSTILE_SECRET_KEY`         | Server-only Siteverify credential                            |
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
-When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the accounts service and the
-auth-gateway export unsampled request and Go runtime metrics through the in-graph
-OpenTelemetry collector. The auth-gateway covers both its HTTP gateway and gRPC ext_authz
-authorization service. Prometheus can alternatively scrape `/metrics` on each
-service's private REST endpoint; neither route is a module or public interface
-endpoint.
+The SDK's `Init` enables tracing when `OTEL_EXPORTER_OTLP_ENDPOINT` is
+present, and `ShutdownTelemetry` flushes traces on service shutdown. Services
+with no endpoint export nothing, including native `local` runs. Invalid exporter
+configuration is logged without stopping the service. Accounts and auth-gateway
+also install an OTLP metrics provider for unsampled request and Go runtime
+metrics; no scrape endpoint is served.
+
+Delivery uses OpenTelemetry process variables, not a module configuration group.
+The environment's optional `telemetry:` declaration is the platform delivery
+contract. [CLI #1097](https://github.com/codefly-dev/cli/pull/1097) supplies the
+standard endpoint, service identity and resource variables to every service;
+services that do not instrument telemetry can ignore them. The endpoint names
+the HTTPS operations intake, rather than a collector deployed by this module.
+`OTEL_SERVICE_NAME` selects trace identity, falling back to the SDK's
+`module/service` identity.
+Metrics also consume `OTEL_RESOURCE_ATTRIBUTES`. Core currently forwards only
+`service.name` and `library.name` to traces, so arbitrary resource attributes
+are not yet attached to trace exports.
+
+| Build or reuse | Verified implementation | Decision |
+| --- | --- | --- |
+| Environment delivery (user choice, 2026-10-21) | Merged [CLI #1097](https://github.com/codefly-dev/cli/pull/1097) environment telemetry injection; operations intake owned by infrastructure | Reuse every-service standard OTEL delivery; remove the overlapping scoped in-cell carrier. Released CLI v0.1.197 includes both this delivery and the squash-merged lifecycle implementation. |
+| Tracing lifecycle and identity | Released SDK v0.4.1 [Init / ShutdownTelemetry](https://github.com/codefly-dev/sdk-go/blob/v0.4.1/codefly.go#L66), using Core wool/otel | Reuse SDK lifecycle; remove per-service tracing bootstrap and its duplicate tests. |
+| Endpoint declaration validation | Core [Endpoint](https://github.com/codefly-dev/core/blob/v0.18.0/resources/endpoint.go#L134) / [InterfaceEndpoint](https://github.com/codefly-dev/core/blob/v0.18.0/resources/module.go#L69) YAML decoders | Reuse the Core decoders before projecting deployment fields. |
+| Metrics export and runtime instruments | OpenTelemetry OTLP metrics exporter and runtime instrumentation v0.71.0; Core/SDK provide no metrics bootstrap | Keep service wiring with the standard exporter. The services remain separate Go modules; no additional shared framework is introduced. |
+| GC activity instruments | Runtime v0.71.0 default instruments omit cycle count and cumulative GC pause CPU time; deprecated pause instruments measure wall time instead | Retain existing `go.gc.cycle.count` and `go.gc.pause.cpu_time` callbacks and their export assertions. |
 
 Frontend browser configuration. The server reads each value from its Codefly group per
 request (`identity`, `legal`, `product-features`, `product-analytics`, `error-tracking`,

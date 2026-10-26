@@ -38,19 +38,21 @@ import {
 	viewerAdministersOrganization,
 } from "../solution/viewer.js";
 import { CollectionGrants } from "./collection-access.js";
+import { ConnectSource, useDatasourceCatalog } from "./connect-source.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
+import { EditSourceForm } from "./edit-source-form.js";
 import { messageOf } from "./errors.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import { readAppSetupReturn, scrubAppSetupReturn } from "./github-app-setup.js";
 import {
 	useAccessibleScopes,
-	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
 	useReconcileSource,
+	useUpdateSource,
 } from "./queries.js";
 import type { AdmittedReconcilePass } from "./reconcile-passes.js";
-import type { ConnectGitHubValues } from "./schema.js";
+import type { ConnectGitHubValues, EditSourceValues } from "./schema.js";
 import { SourceSyncProgress, useSourceSync } from "./sync-progress.js";
 import type {
 	AccessibleScopeView,
@@ -219,6 +221,7 @@ function DatasourcesPanelView({
 	const [executionSource, setExecutionSource] = useState<DatasourceView | null>(
 		null,
 	);
+	const [editing, setEditing] = useState<DatasourceView | null>(null);
 	const [reconnecting, setReconnecting] = useState<DatasourceView | null>(null);
 	const [reconnectPending, setReconnectPending] = useState(false);
 	const [reconnectError, setReconnectError] = useState<string>();
@@ -226,6 +229,7 @@ function DatasourcesPanelView({
 	const completeAppSetup = client.completeGitHubAppSetup?.bind(client);
 	const migrateToApp = client.migrateGitHubSourceToApp?.bind(client);
 	const reconnectSource = client.reconnectSource?.bind(client);
+	const canEditSource = !!client.updateSource;
 
 	// The return leg, captured once during the first render: the redirect's
 	// parameters are a property of the URL the page loaded with, so the value has
@@ -322,13 +326,19 @@ function DatasourcesPanelView({
 						: collection.label === justConnected.label,
 				)
 			: undefined;
-	const addMutation = useAddGitHubSource(client);
+	const [connectPending, setConnectPending] = useState(false);
+	const [connectError, setConnectError] = useState<string>();
 	const reconcileMutation = useReconcileSource(client);
 	const deleteMutation = useDeleteSource(client);
+	const updateMutation = useUpdateSource(client);
 
-	const handleConnect = (values: ConnectGitHubValues) => {
-		addMutation.mutate(
-			{
+	const handleConnect = async (values: ConnectGitHubValues) => {
+		setConnectPending(true);
+		setConnectError(undefined);
+		try {
+			// The app-install return uses the existing exported form. Keep its
+			// credentials out of the mutation cache too.
+			await client.addGitHubSource({
 				orgId,
 				repo: values.repo,
 				paths: parsePaths(values.paths),
@@ -338,29 +348,30 @@ function DatasourcesPanelView({
 				branch: values.branch ?? "",
 				targetCollection: values.targetCollection,
 				boundaryNodeId: values.boundaryNodeId || undefined,
-				// Neither the App nor a public repository sends a token: the host
-				// resolves the installation, or confirms with GitHub that the
-				// repository is public. A public source takes no webhook either, so
-				// a secret typed on another path before switching is not sent.
 				accessToken:
 					values.method === "app" || values.method === "public"
 						? undefined
 						: values.accessToken,
 				webhookSecret:
 					values.method === "public" ? "" : (values.webhookSecret ?? ""),
-			},
-			{
-				onSuccess: () => {
-					setConnectedRepos((prev) => new Set(prev).add(values.repo));
-					setShowConnect(false);
-					setJustConnected({
-						repo: values.repo,
-						nodeId: values.boundaryNodeId || undefined,
-						label: values.targetCollection,
-					});
-				},
-			},
-		);
+			});
+			setConnectedRepos((prev) => new Set(prev).add(values.repo));
+			setShowConnect(false);
+			setJustConnected({
+				repo: values.repo,
+				nodeId: values.boundaryNodeId || undefined,
+				label: values.targetCollection,
+			});
+			void list.refetch();
+			if (client.listAccessibleScopes) void scopes.refetch();
+			if (client.listCollections) void collections.refetch();
+		} catch {
+			setConnectError(
+				"Could not connect the source. Check its fields and access, then enter the credential again to retry.",
+			);
+		} finally {
+			setConnectPending(false);
+		}
 	};
 
 	// Redeeming is the host's to refuse, so the panel does not ask on behalf of a
@@ -368,7 +379,16 @@ function DatasourcesPanelView({
 	// so an authority that only arrives after the first paint still redeems the
 	// return leg the page loaded with.
 	const appSetupClaimed = !!appSetupReturn && appSetupReturn.orgId === orgId;
-	const appSetupActive = appSetupClaimed && canManage;
+	const catalog = useDatasourceCatalog(client, orgId);
+	const appSetupAdmitted =
+		!catalog.isError &&
+		catalog.data?.some(
+			(provider) =>
+				provider.acceptsNewSources &&
+				!provider.unsupportedReason &&
+				provider.supportsOrganizationAppSetup,
+		);
+	const appSetupActive = appSetupClaimed && canManage && !!appSetupAdmitted;
 	// A return leg nobody on this screen can redeem. The capture and the scrub ran
 	// regardless of authority, so the installation stands on the provider's side
 	// while its single-use state is spent: saying nothing would leave an ordinary
@@ -492,6 +512,64 @@ function DatasourcesPanelView({
 		}
 	};
 
+	// Editing a source replaces what it fetches, so the notice reports what the
+	// host answered: the sync it queued because the scope moved, or that nothing
+	// changed. The second is not a failure and must not read as one — a person
+	// who reopened the dialog and saved it unchanged is owed that sentence, not
+	// a "sync queued" for a sync that never ran.
+	const handleEdit = async (values: EditSourceValues) => {
+		if (!editing) return;
+		const source = editing;
+		setSyncNotice(null);
+		setActionError(null);
+		try {
+			const jobId = await updateMutation.mutateAsync({
+				orgId,
+				id: source.id,
+				branch: values.branch ?? "",
+				paths: parsePaths(values.paths),
+				fileExtensions: parsePaths(values.fileExtensions).map((value) =>
+					value.toLowerCase(),
+				),
+				// The scope this dialog was seeded from — the same object the form
+				// read its defaults out of, which is what the person was looking at
+				// while they typed. The host refuses the save if the source no
+				// longer holds it, so a dialog left open across someone else's
+				// change cannot silently undo it.
+				expected: {
+					branch: source.branch,
+					paths: source.paths,
+					fileExtensions: source.fileExtensions ?? [],
+				},
+			});
+			setEditing(null);
+			setSyncNotice(
+				jobId
+					? {
+							title: "Sync queued",
+							body: `${source.repo} now fetches the scope you saved. The re-snapshot is queued; open History for ingestion results.`,
+						}
+					: {
+							title: "Nothing changed",
+							body: `${source.repo} already fetched exactly that, so no sync was queued.`,
+						},
+			);
+			if (jobId) onSyncEnqueued?.(jobId);
+			await list.refetch();
+		} catch {
+			// The dialog stays open and shows the host's refusal — an unreadable
+			// branch is a correctable mistake, and closing it would discard what
+			// the person typed.
+			//
+			// The list is refreshed anyway: one of the refusals is "the source
+			// changed after you opened this", and the remedy the message gives is
+			// to reopen the form. Reopening it over a stale row would seed the
+			// same expectation and be refused again, so the row behind the dialog
+			// has to be current before they can act on what they were told.
+			await list.refetch();
+		}
+	};
+
 	const handleDelete = (source: DatasourceView) => {
 		const ok = window.confirm(
 			`Delete the data source for ${source.repo}?\n\n` +
@@ -533,16 +611,71 @@ function DatasourcesPanelView({
 					<div>
 						<h3 className="type-section-title">Sources</h3>
 						<p className="type-body text-muted-foreground">
-							Repositories this organization ingests from.
+							Sources this organization ingests from.
 						</p>
 					</div>
-					{canManage && (
-						<Button type="button" onClick={() => setShowConnect(true)}>
-							Connect GitHub
-						</Button>
-					)}
 				</div>
 
+				{canManage && (
+					<ConnectSource
+						key={orgId}
+						client={client}
+						orgId={orgId}
+						appSetup={
+							appSetupReturn &&
+							(showConnect ? (
+								<ConnectGitHubForm
+									// Both legs or neither: an install the panel cannot redeem on the
+									// way back strands the tenant on a completed GitHub install with
+									// nothing to show for it.
+									onBeginAppSetup={
+										beginAppSetup && completeAppSetup
+											? handleBeginAppSetup
+											: undefined
+									}
+									appRepositories={appRepositories}
+									appSetupPhase={appSetupPhase}
+									appSetupError={appSetupError}
+									collections={collections.isError ? [] : collections.data}
+									readableNodeIds={
+										scopes.isSuccess && !scopes.isError
+											? [...boundaries.keys()]
+											: undefined
+									}
+									collectionError={collections.isError}
+									onSubmit={handleConnect}
+									onCancel={() => setShowConnect(false)}
+									isPending={connectPending}
+									errorMessage={connectError}
+								/>
+							) : (
+								<Button onClick={() => setShowConnect(true)}>
+									Choose another repository
+								</Button>
+							))
+						}
+						onBeginAppSetup={
+							beginAppSetup && completeAppSetup
+								? handleBeginAppSetup
+								: undefined
+						}
+						onConnected={(boundary) => {
+							setJustConnected({
+								repo: "Source",
+								label: boundary.targetCollection,
+								nodeId: boundary.boundaryNodeId,
+							});
+							void list.refetch();
+							if (client.listCollections) void collections.refetch();
+							if (client.listAccessibleScopes) void scopes.refetch();
+						}}
+					/>
+				)}
+				{beginError && !showConnect && (
+					<p role="alert" className="type-body text-destructive">
+						{beginError}
+					</p>
+				)}
 				{scopes.isError ? (
 					<p role="alert" className="type-body text-destructive">
 						Couldn’t verify collection permissions. This does not mean there is
@@ -668,18 +801,9 @@ function DatasourcesPanelView({
 					<div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center">
 						<p className="type-emphasis">No data sources connected.</p>
 						{canManage ? (
-							<>
-								<p className="type-body text-muted-foreground">
-									Connect a GitHub repository to start ingesting.
-								</p>
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => setShowConnect(true)}
-								>
-									Connect a repository
-								</Button>
-							</>
+							<p className="type-body text-muted-foreground">
+								Choose a provider above to start ingesting.
+							</p>
 						) : (
 							<p className="type-body text-muted-foreground">
 								An organization administrator connects the repositories this
@@ -692,6 +816,14 @@ function DatasourcesPanelView({
 						canManage={canManage}
 						onActivity={client.listActivity ? setActivitySource : undefined}
 						onExecution={renderSourceExecution ? setExecutionSource : undefined}
+						onEdit={
+							canEditSource
+								? (source) => {
+										updateMutation.reset();
+										setEditing(source);
+									}
+								: undefined
+						}
 						onReconnect={
 							reconnectSource
 								? (source) => {
@@ -853,29 +985,16 @@ function DatasourcesPanelView({
 					}}
 				/>
 			)}
-			{canManage && showConnect && (
-				<ConnectGitHubForm
-					// Both legs or neither: an install the panel cannot redeem on the
-					// way back strands the tenant on a completed GitHub install with
-					// nothing to show for it.
-					onBeginAppSetup={
-						beginAppSetup && completeAppSetup ? handleBeginAppSetup : undefined
-					}
-					appRepositories={appRepositories}
-					appSetupPhase={appSetupPhase}
-					appSetupError={appSetupError}
-					collections={collections.isError ? [] : collections.data}
-					readableNodeIds={
-						scopes.isSuccess && !scopes.isError
-							? [...boundaries.keys()]
-							: undefined
-					}
-					collectionError={collections.isError}
-					onSubmit={handleConnect}
-					onCancel={() => setShowConnect(false)}
-					isPending={addMutation.isPending}
+			{canManage && editing && canEditSource && (
+				<EditSourceForm
+					source={editing}
+					onSubmit={handleEdit}
+					onCancel={() => {
+						if (!updateMutation.isPending) setEditing(null);
+					}}
+					isPending={updateMutation.isPending}
 					errorMessage={
-						addMutation.isError ? messageOf(addMutation.error) : undefined
+						updateMutation.isError ? messageOf(updateMutation.error) : undefined
 					}
 				/>
 			)}
@@ -1049,6 +1168,7 @@ const wrapClass = "min-w-32 whitespace-normal";
 
 function SourcesTable({
 	canManage,
+	onEdit,
 	sources,
 	boundaries,
 	permissionsResolved,
@@ -1072,6 +1192,12 @@ function SourcesTable({
 	migratingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
 	onDelete: (source: DatasourceView) => void;
+	/**
+	 * Opens the edit dialog for a source. Absent when the client cannot edit one,
+	 * which drops the control rather than offering a dialog whose save would be
+	 * refused by a client that has no such call.
+	 */
+	onEdit?: (source: DatasourceView) => void;
 	onActivity?: (source: DatasourceView) => void;
 	/** Present only when a consumer handed the panel an execution view. */
 	onExecution?: (source: DatasourceView) => void;
@@ -1220,6 +1346,11 @@ function SourcesTable({
 													align="end"
 													className="w-auto min-w-44"
 												>
+													{onEdit && source.provider === "github" && (
+														<DropdownMenuItem onClick={() => onEdit(source)}>
+															Edit
+														</DropdownMenuItem>
+													)}
 													{onReconnect && source.provider === "github" && (
 														<DropdownMenuItem
 															onClick={() => onReconnect(source)}

@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"accounts/pkg/auth"
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"slices"
@@ -22,23 +23,11 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalCredential(ctx); err != nil {
+	claims, err := authenticateModuleViewer(ctx, req.GetViewerWorkContextToken())
+	if err != nil {
 		return nil, err
 	}
 	authority := WorkContextSingleton()
-	if !authority.configured() {
-		return nil, status.Error(codes.Unavailable, "Work Context authority is not configured")
-	}
-	md, _ := metadata.FromIncomingContext(ctx)
-	values := md.Get(workContextHeader)
-	if len(values) != 1 {
-		return nil, status.Error(codes.Unauthenticated, "one viewer Work Context is required")
-	}
-	verified, err := authority.readBack(ctx, values[0])
-	if err != nil {
-		return nil, refusedReadBack(ctx, err, status.Error(codes.Unauthenticated, "invalid viewer Work Context"))
-	}
-	claims := verified.Context()
 	declared, err := service.ModuleContentResources(claims.GetAudience())
 	if err != nil || !slices.Contains(declared, req.ResourceType) {
 		return nil, status.Error(codes.PermissionDenied, "declared resource scope required")
@@ -49,14 +38,23 @@ func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Cont
 	if !workContextGrants(claims, req.ResourceType, req.Action, req.ResourceId) {
 		return nil, status.Error(codes.PermissionDenied, "record scope required")
 	}
-	if len(claims.GetActorChain()) > 0 && authority.journal == nil {
+	if len(claims.GetActorChain()) > 0 && authority.journal == nil && !business.NamesInstalledContentRead(claims.GetOperationBinding().GetBindingId()) {
 		return nil, status.Error(codes.Unavailable, "actor chain authority is not configured")
 	}
 	ctx = auth.WithVerifiedDatabaseIdentity(ctx, claims.GetOwnerPrincipalId(), claims.GetTenantId())
+	installedRead := business.NamesInstalledContentRead(claims.GetOperationBinding().GetBindingId())
+	if installedRead {
+		if err := authority.requireInstalledBinding(ctx, claims); err != nil {
+			return nil, err
+		}
+	}
 	subjects := []string{claims.GetOwnerPrincipalId()}
 	for _, actor := range claims.GetActorChain() {
-		if !slices.Contains(subjects, actor.GetPrincipalId()) {
-			subjects = append(subjects, actor.GetPrincipalId())
+		if installedRead {
+			continue
+		}
+		if subject := storedPrincipal(actor.GetPrincipalId()); !slices.Contains(subjects, subject) {
+			subjects = append(subjects, subject)
 		}
 	}
 	current := func(ctx context.Context) error {

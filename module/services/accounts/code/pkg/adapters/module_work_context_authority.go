@@ -137,14 +137,14 @@ func (s *WorkContextAuthorityServer) resolveWorkContextAuthority(
 		return s.answerSeal(ctx, tenant, claims, question.Seal)
 	case *gen.ModuleResolveWorkContextAuthorityRequest_PrincipalEpoch:
 		return s.answerPrincipalEpoch(ctx, tenant, claims, question.PrincipalEpoch)
-	case *gen.ModuleResolveWorkContextAuthorityRequest_ApprovedBuild:
-		return s.answerApprovedBuild(ctx, tenant, claims, question.ApprovedBuild)
 	case *gen.ModuleResolveWorkContextAuthorityRequest_OperationBinding:
 		return s.answerOperationBinding(ctx, tenant, claims, question.OperationBinding)
 	case *gen.ModuleResolveWorkContextAuthorityRequest_AuthorizationRevision:
 		return s.answerAuthorizationRevision(ctx, tenant, claims, question.AuthorizationRevision)
 	case *gen.ModuleResolveWorkContextAuthorityRequest_ApprovalGrant:
 		return s.answerApprovalGrant(ctx, tenant, claims, question.ApprovalGrant)
+	case *gen.ModuleResolveWorkContextAuthorityRequest_ApprovedBuild:
+		return s.answerApprovedBuild(question.ApprovedBuild)
 	default:
 		// Unreachable while the schema requires the oneof, and answered rather
 		// than panicked on: a question this host does not understand is a
@@ -277,36 +277,6 @@ func (s *WorkContextAuthorityServer) answerPrincipalEpoch(
 	}), nil
 }
 
-func (s *WorkContextAuthorityServer) answerApprovedBuild(
-	ctx context.Context, tenant string, claims *basev0.WorkContextV1, question *gen.WorkContextApprovedBuildQuestion,
-) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
-	if !slices.Contains(chainPrincipals(claims), question.GetPrincipalId()) {
-		return nil, status.Error(codes.InvalidArgument, errUnaddressedWorkContextAuthority)
-	}
-	seals, _, _ := s.moduleAuthoritySources(tenant, question.GetPrincipalId())
-	digest, incarnation, err := seals.ApprovedBuild(ctx, question.GetPrincipalId())
-	switch {
-	// BEARS NO EXECUTION is the answer for a person's session, and it is not a
-	// failure. It stays distinct from an unknown principal, which the source
-	// refuses: answering "bears none" for an identity the host never heard of
-	// would hand a service principal a credential nothing can revoke by
-	// replacing its build.
-	case errors.Is(err, workcontext.ErrNoApprovedBuild):
-		return approvedBuildAnswer(&gen.WorkContextApprovedBuildAnswer{
-			State:       gen.WorkContextApprovedBuildState_WORK_CONTEXT_APPROVED_BUILD_STATE_BEARS_NO_EXECUTION,
-			PrincipalId: question.GetPrincipalId(),
-		}), nil
-	case err != nil:
-		return nil, unansweredWorkContextAuthority(ctx, "approved build", err)
-	}
-	return approvedBuildAnswer(&gen.WorkContextApprovedBuildAnswer{
-		State:            gen.WorkContextApprovedBuildState_WORK_CONTEXT_APPROVED_BUILD_STATE_APPROVED,
-		PrincipalId:      question.GetPrincipalId(),
-		ImageDigest:      digest,
-		BuildIncarnation: incarnation,
-	}), nil
-}
-
 func (s *WorkContextAuthorityServer) answerOperationBinding(
 	ctx context.Context, tenant string, claims *basev0.WorkContextV1, question *gen.WorkContextOperationBindingQuestion,
 ) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
@@ -329,6 +299,16 @@ func (s *WorkContextAuthorityServer) answerOperationBinding(
 	case err != nil:
 		return nil, unansweredWorkContextAuthority(ctx, "operation binding", err)
 	}
+	// The binding sealed is the last hop's; every hop above it is held to the
+	// binding and scope set it went through, so a binding narrowed upstream
+	// revokes what a callee verifies here too, not only on this host's Check.
+	revoked := live.Revoked
+	if err := s.requireModuleChainStands(ctx, claims); err != nil {
+		if status.Code(err) != codes.PermissionDenied {
+			return nil, unansweredWorkContextAuthority(ctx, "operation binding", err)
+		}
+		revoked = true
+	}
 	return operationBindingAnswer(&gen.WorkContextOperationBindingAnswer{
 		State:          gen.WorkContextOperationBindingState_WORK_CONTEXT_OPERATION_BINDING_STATE_RESOLVED,
 		BindingId:      live.ID,
@@ -336,7 +316,7 @@ func (s *WorkContextAuthorityServer) answerOperationBinding(
 		InstallationId: live.InstallationID,
 		Revision:       live.Revision,
 		Incarnation:    live.Incarnation,
-		Revoked:        live.Revoked,
+		Revoked:        revoked,
 	}), nil
 }
 
@@ -417,12 +397,6 @@ func principalEpochAnswer(answer *gen.WorkContextPrincipalEpochAnswer) *gen.Modu
 	}
 }
 
-func approvedBuildAnswer(answer *gen.WorkContextApprovedBuildAnswer) *gen.ModuleResolveWorkContextAuthorityResponse {
-	return &gen.ModuleResolveWorkContextAuthorityResponse{
-		Answer: &gen.ModuleResolveWorkContextAuthorityResponse_ApprovedBuild{ApprovedBuild: answer},
-	}
-}
-
 func operationBindingAnswer(answer *gen.WorkContextOperationBindingAnswer) *gen.ModuleResolveWorkContextAuthorityResponse {
 	return &gen.ModuleResolveWorkContextAuthorityResponse{
 		Answer: &gen.ModuleResolveWorkContextAuthorityResponse_OperationBinding{OperationBinding: answer},
@@ -453,7 +427,6 @@ func decidedWorkContextAuthority(err error) bool {
 		business.ErrSourceDelegationContextStale,
 		business.ErrNoOperationBinding,
 		business.ErrUnknownExecutionPrincipal,
-		business.ErrExecutionNotApproved,
 	} {
 		if errors.Is(err, decided) {
 			return true
@@ -489,4 +462,45 @@ func unansweredWorkContextAuthority(ctx context.Context, question string, err er
 		return status.Error(codes.FailedPrecondition, errRefusedWorkContextAuthority)
 	}
 	return status.Error(codes.Unavailable, errUnansweredWorkContextAuthority)
+}
+
+// answerApprovedBuild answers the one question this host no longer has a record
+// behind: which execution it APPROVES for a principal.
+//
+// core carried an approved-build seal until v0.19.6 removed the concept — a
+// capability is no longer verified against the image its holder runs — so this
+// host approves no build for anybody, and `bears no execution` is the true
+// answer for every principal rather than a stand-in for one.
+//
+// It is answered rather than left to the switch's default because a consumer
+// still built against a core that asks is not wrong to ask. Falling through
+// gave it "no work context authority question was asked", which core reports as
+// the PARENT failing to verify — so a module one core version behind refused
+// every call with an error naming the caller's authority and never the skew.
+//
+// Measured on a validation cell: every chat route refused, for every person,
+// for hours, with "caller does not hold the required authority". Nothing was
+// wrong with anyone's authority; two repositories disagreed about whether a
+// question exists.
+//
+// `bears no execution` is also the SAFE answer, which is why it can be given
+// without a record: core's check reads it as "this principal bears no
+// execution the issuer approves", and a capability that nonetheless carries one
+// is REVOKED rather than admitted (checkExecutionAgainst). So a caller that
+// seals an execution still fails closed; only a caller that seals none — which
+// is every capability this host now mints — proceeds.
+func (s *WorkContextAuthorityServer) answerApprovedBuild(
+	question *gen.WorkContextApprovedBuildQuestion,
+) (*gen.ModuleResolveWorkContextAuthorityResponse, error) {
+	if question.GetPrincipalId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "approved build question names no principal")
+	}
+	return &gen.ModuleResolveWorkContextAuthorityResponse{
+		Answer: &gen.ModuleResolveWorkContextAuthorityResponse_ApprovedBuild{
+			ApprovedBuild: &gen.WorkContextApprovedBuildAnswer{
+				State:       gen.WorkContextApprovedBuildState_WORK_CONTEXT_APPROVED_BUILD_STATE_BEARS_NO_EXECUTION,
+				PrincipalId: question.GetPrincipalId(),
+			},
+		},
+	}, nil
 }

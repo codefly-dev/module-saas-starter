@@ -41,7 +41,6 @@ const workContextDefaultTTL = 5 * time.Minute
 type workContextSealAnswers interface {
 	WorkContextSeal(ctx context.Context, orgID, principalID, installationID string) (string, uint64, error)
 	WorkContextPrincipalEpoch(ctx context.Context, orgID, principalID string) (uint64, error)
-	WorkContextApprovedBuild(ctx context.Context, orgID, principalID string) (string, uint64, error)
 	WorkContextRevision(ctx context.Context, orgID, ownerID string) (uint64, error)
 	WorkContextAudienceInstallation(ctx context.Context, orgID, audience string) (string, error)
 	WorkContextOperationBinding(ctx context.Context, orgID, bindingID string) (business.WorkContextOperationBinding, error)
@@ -57,6 +56,10 @@ type workContextSealAnswers interface {
 type hostSealSource struct {
 	answers workContextSealAnswers
 	tenant  string
+	// owner is the owner of the capability being minted or checked, on the
+	// same terms as the tenant. It decides one thing: how a module's installed
+	// operation binding names the module it is granted to (OperationBinding).
+	owner string
 }
 
 func (s hostSealSource) Seal(ctx context.Context, principalID, installationID string) (workcontext.Seal, error) {
@@ -78,17 +81,6 @@ func (s hostSealSource) PrincipalEpoch(ctx context.Context, principalID string) 
 	return epoch, err
 }
 
-// ApprovedBuild translates the host's "bears no execution" into core's sentinel,
-// and nothing else into it: every other error, a module principal with no
-// approved build included, stays a refusal.
-func (s hostSealSource) ApprovedBuild(ctx context.Context, principalID string) (string, uint64, error) {
-	digest, incarnation, err := s.answers.WorkContextApprovedBuild(ctx, s.tenant, principalID)
-	if errors.Is(err, business.ErrBearsNoExecution) {
-		return "", 0, workcontext.ErrNoApprovedBuild
-	}
-	return digest, incarnation, err
-}
-
 // OperationBinding resolves one operation binding by its id, exactly: today the
 // only kind is a source delegation used by one module
 // (business.SourceDelegationBindingID). The binding's principal and installation
@@ -105,9 +97,30 @@ func (s hostSealSource) OperationBinding(ctx context.Context, bindingID string) 
 		return workcontext.OperationBinding{}, err
 	}
 	return workcontext.OperationBinding{
-		ID: live.ID, PrincipalID: live.PrincipalID, InstallationID: live.InstallationID,
+		ID: live.ID, PrincipalID: s.grantee(live), InstallationID: live.InstallationID,
 		Revision: live.Revision, Incarnation: live.Incarnation, Revoked: live.Revoked,
 	}, nil
+}
+
+// grantee is the principal a binding is granted to, spelled as the capability
+// names the module exercising it, and core holds the exercising principal to it
+// by equality.
+//
+// A module's installed operation binding is exercised two ways, and each names
+// the module one way only. A hop through it, which a person's or an
+// installation's capability carries, names its actor by the module's NAME, as
+// the host interface states an actor; that is the answer. The module's own
+// headless context (StartModuleOperationTask) is OWNED by the module, and its
+// owner is the module's registry id, the spelling the consumer contract
+// (CheckAuthorizationRevision) types an owner in; that context is answered in
+// its owner's spelling, exactly when the owner is this binding's module.
+// Another module, by either spelling, matches neither answer and is refused by
+// core; so is a hop naming this module by its registry id.
+func (s hostSealSource) grantee(live business.WorkContextOperationBinding) string {
+	if live.ModuleRegistryID != "" && s.owner == live.ModuleRegistryID {
+		return s.owner
+	}
+	return live.PrincipalID
 }
 
 var _ workcontext.SealSource = hostSealSource{}
@@ -184,7 +197,7 @@ func (noApprovalGrants) Grant(context.Context, string) (*workcontext.Grant, erro
 func (s *WorkContextAuthorityServer) moduleAuthoritySources(
 	tenant, owner string,
 ) (workcontext.SealSource, workcontext.RevisionSource, workcontext.GrantSource) {
-	return hostSealSource{answers: s.seals, tenant: tenant},
+	return hostSealSource{answers: s.seals, tenant: tenant, owner: owner},
 		ownerRevisions{answers: s.seals, owner: owner},
 		noApprovalGrants{}
 }
@@ -196,7 +209,7 @@ func (s *WorkContextAuthorityServer) coreAuthority(tenant, owner string) *workco
 		KeyID:     s.keyID,
 		Key:       s.key,
 		Revisions: ownerRevisions{answers: s.seals, owner: owner},
-		Seals:     hostSealSource{answers: s.seals, tenant: tenant},
+		Seals:     hostSealSource{answers: s.seals, tenant: tenant, owner: owner},
 		MaxTTL:    workcontext.DefaultMaxTTL,
 		Now:       s.now,
 	}
@@ -212,7 +225,7 @@ func (s *WorkContextAuthorityServer) coreVerifier(tenant, owner, audience string
 		Revisions: ownerRevisions{answers: s.seals, owner: owner},
 		Replay:    tenantReplay{store: s.replay, tenant: tenant},
 		Grants:    noApprovalGrants{},
-		Seals:     hostSealSource{answers: s.seals, tenant: tenant},
+		Seals:     hostSealSource{answers: s.seals, tenant: tenant, owner: owner},
 		Now:       s.now,
 	}
 }
@@ -289,6 +302,24 @@ func (s *WorkContextAuthorityServer) readBack(ctx context.Context, encoded strin
 		workcontext.ReadBackCheck{Audience: claims.GetAudience(), Grants: noApprovalGrants{}})
 }
 
+// readBackFor is readBack for a question whose subject names the audience the
+// capability must have been minted for, rather than taking it from the
+// capability: the gateway's bearer-less arm asks about the alias its route
+// resolved, and a capability addressed anywhere else is not the one it asks
+// about. Every other check, and the untouched replay store, are readBack's.
+func (s *WorkContextAuthorityServer) readBackFor(ctx context.Context, encoded, audience string) (*workcontext.ReadBackCapability, error) {
+	if !s.configured() {
+		return nil, ErrWorkContextAuthorityUnconfigured
+	}
+	decoded, err := workcontext.Decode(encoded)
+	if err != nil {
+		return nil, err
+	}
+	claims := decoded.Context()
+	return s.coreAuthority(claims.GetTenantId(), claims.GetOwnerPrincipalId()).ReadBack(ctx, encoded,
+		workcontext.ReadBackCheck{Audience: audience, Grants: noApprovalGrants{}})
+}
+
 // delegationHop is one actor hop a mint appends after the owner's session.
 type delegationHop struct {
 	PrincipalID   string
@@ -296,10 +327,6 @@ type delegationHop struct {
 	AgentID       string
 	DelegationID  string
 	GrantedScopes []*basev0.WorkScopeV1
-	// Execution is what this hop's principal is running, when it bears an
-	// execution — a module principal, attested from its authenticated workload.
-	// Empty for a person or a registered agent, which bear none.
-	Execution workcontext.Execution
 	// OperationBindingID is the unit of authority this hop exercises, when it
 	// exercises one; its revision and incarnation are read live by core.
 	OperationBindingID string
@@ -316,8 +343,14 @@ type mintRequest struct {
 	// Never a caller-named value — see core's ChildInput.SessionID for why a
 	// pairing on the session holds only while that is true.
 	Session string
-	Replay  string
-	TTL     time.Duration
+	// DerivedFrom is the session of a verified capability this chain is
+	// re-derived from (a child re-built from its parent's owner). The
+	// capability the last hop is derived from carries it, so the one returned
+	// descends from that parent (its parent_session_id), as a caller holding the
+	// parent checks. Like Session, only ever the issuer's own value.
+	DerivedFrom string
+	Replay      string
+	TTL         time.Duration
 }
 
 // mint issues a capability through core's Authority.
@@ -345,6 +378,9 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 		return authority.Start(ctx, start)
 	}
 	start.SessionID = ""
+	if len(request.Hops) == 1 {
+		start.SessionID = request.DerivedFrom
+	}
 	start.ReplayPolicy = workcontext.ReplayIdempotent
 	start.TTL = ttl
 	token, _, err := authority.Start(ctx, start)
@@ -366,10 +402,12 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 			Audience:      start.Audience,
 			ReplayPolicy:  workcontext.ReplayIdempotent,
 			TTL:           ttl,
-			Execution:     hop.Execution,
 			// A hop naming none carries its parent's, which for the owner's
 			// session is none.
 			OperationBindingID: hop.OperationBindingID,
+		}
+		if i == len(request.Hops)-2 {
+			child.SessionID = request.DerivedFrom
 		}
 		if i == len(request.Hops)-1 {
 			child.SessionID = request.Session
@@ -389,14 +427,26 @@ func (s *WorkContextAuthorityServer) mint(ctx context.Context, request mintReque
 // expressed on core, which derives only by adding a hop and never extends a
 // window: the capability is minted afresh from its owner, and every hop is
 // re-derived and re-checked against live state rather than copied.
-//
-// lastExecution attests the last hop's execution when that hop's principal bears
-// one; earlier hops cannot be attested by the caller and must bear none, so a
-// chain with a module principal anywhere but last is refused by core.
+// remint re-issues a parent for another audience. exercised is the operation
+// binding the exchanging MODULE runs under, and the principal it belongs to:
+// a hop that names its binding is a hop a verifier can confirm from that
+// binding alone, which is the one rule every module hop follows. It is stamped
+// only on that module's own hop — an agent hop carries no operation binding,
+// and core refuses one that does. Empty keeps the parent's, which is how an
+// owner's own session carries none.
+// moduleBindingSeal is the binding a module exercises on its own hop.
+type moduleBindingSeal struct {
+	PrincipalID string
+	BindingID   string
+}
+
 func (s *WorkContextAuthorityServer) remint(
 	ctx context.Context, parent *basev0.WorkContextV1, audience, replay string, ttl time.Duration,
-	attenuated []*basev0.WorkScopeV1, lastExecution workcontext.Execution, session string,
+	attenuated []*basev0.WorkScopeV1, session string, exercised moduleBindingSeal,
 ) (string, *basev0.WorkContextV1, error) {
+	if business.NamesInstalledBinding(parent.GetOperationBinding().GetBindingId()) {
+		return "", nil, status.Error(codes.PermissionDenied, "installed binding child cannot be reminted")
+	}
 	// The seal follows the owner. A person's capability is sealed to the
 	// organization's installation of the audience it addresses — what an
 	// uninstall revokes — so a capability re-derived for an audience, renewed
@@ -431,7 +481,6 @@ func (s *WorkContextAuthorityServer) remint(
 		if attenuated != nil {
 			start.AuthorityScopes = attenuated
 		}
-		start.Execution = lastExecution
 		return s.mint(ctx, mintRequest{Start: start, Session: session, Replay: replay, TTL: ttl})
 	}
 	hops := make([]delegationHop, 0, len(chain))
@@ -448,8 +497,10 @@ func (s *WorkContextAuthorityServer) remint(
 	if attenuated != nil {
 		last.GrantedScopes = attenuated
 	}
-	last.Execution = lastExecution
 	last.OperationBindingID = parent.GetOperationBinding().GetBindingId()
+	if exercised.BindingID != "" && exercised.PrincipalID != "" && last.PrincipalID == exercised.PrincipalID {
+		last.OperationBindingID = exercised.BindingID
+	}
 	return s.mint(ctx, mintRequest{Start: start, Hops: hops, Session: session, Replay: replay, TTL: ttl})
 }
 

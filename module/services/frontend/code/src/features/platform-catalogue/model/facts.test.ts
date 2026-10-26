@@ -365,11 +365,11 @@ describe("registrationView", () => {
 			registrationView(
 				entry({
 					registration: create(SolutionRegistrationSchema, {
-						status: SolutionRegistrationStatus.INCOMPATIBLE,
+						status: SolutionRegistrationStatus.PENDING,
 					}),
 				}),
 			),
-		).toMatchObject({ text: "Incompatible", tone: "danger" });
+		).toMatchObject({ text: "Pending", tone: "warning" });
 	});
 });
 

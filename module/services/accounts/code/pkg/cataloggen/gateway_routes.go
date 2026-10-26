@@ -65,7 +65,7 @@ func BuildGatewayRouteCatalog(serviceDocument, bindingDocument []byte, documents
 	routes := &catalogv1.GatewayRouteCatalog{SchemaVersion: gatewayRouteSchemaVersion}
 	for _, method := range serviceCatalog.GetMethods() {
 		exposure := method.GetPolicy().GetExposure()
-		if exposure == policyv1.Exposure_EXPOSURE_INTERNAL {
+		if exposure == policyv1.Exposure_EXPOSURE_INTERNAL || business.ServedInClusterOnly(method.GetProcedure()) {
 			continue
 		}
 		if exposure != policyv1.Exposure_EXPOSURE_PUBLIC && exposure != policyv1.Exposure_EXPOSURE_AUTHENTICATED {
@@ -85,6 +85,15 @@ func BuildGatewayRouteCatalog(serviceDocument, bindingDocument []byte, documents
 				Source:           catalogv1.GatewayRouteSource_GATEWAY_ROUTE_SOURCE_DESCRIPTOR,
 			}
 			routes.Routes = append(routes.Routes, canonical)
+			if !strings.HasPrefix(method.GetProcedure(), "/"+serviceCatalog.GetApiPackage()+".") {
+				// An implemented interface's procedure is served under its own
+				// package, over Connect and gRPC only: it has no compatibility
+				// alias in the API package and no REST route on this host's
+				// public surface. Its google.api.http mapping is the interface's,
+				// for an implementation that serves one; RenderPublicOpenAPI
+				// drops it for the same reason.
+				continue
+			}
 			for _, alias := range bindings.CompatibilityAliases {
 				if alias.Protocol != "connect" || alias.FromPackage != serviceCatalog.GetApiPackage() {
 					continue
@@ -252,6 +261,9 @@ func ValidateGatewayRouteCatalog(catalog *catalogv1.GatewayRouteCatalog) error {
 			return fmt.Errorf("duplicate gateway match %q for %q and %q", matchKey, previous, route.GetProcedure())
 		}
 		seenMatches[matchKey] = route.GetProcedure()
+		if business.ServedInClusterOnly(route.GetProcedure()) {
+			return fmt.Errorf("gateway route %q routes %s, which is served in-cluster only and never at the edge", route.GetPath(), route.GetProcedure())
+		}
 		if route.GetExposure() != policyv1.Exposure_EXPOSURE_PUBLIC && route.GetExposure() != policyv1.Exposure_EXPOSURE_AUTHENTICATED {
 			return fmt.Errorf("gateway route %q has non-public-edge exposure %s", route.GetPath(), route.GetExposure())
 		}

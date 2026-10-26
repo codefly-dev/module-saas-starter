@@ -8,6 +8,9 @@ import (
 	"regexp"
 	"strings"
 
+	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
+
+	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	"google.golang.org/grpc/codes"
 )
 
@@ -15,6 +18,10 @@ import (
 // request uses the ordinary identity pipeline and per-viewer admission.
 
 const solutionPrefix = "/solutions/"
+
+const frontendVersionHeader = "X-Codefly-Frontend-Version"
+
+var frontendVersionPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 const (
 	solutionServicePrefix = "solution:"
@@ -88,7 +95,14 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// read further down this handler is what let a replacement binding be
 	// admitted on its own installation while the bearer went to its
 	// predecessor's address.
-	routing, resolution := g.solutions.resolveRouting(r.Context(), id)
+	surface := solutionSurface
+	if publicPath, public := solutionPublicUpstreamPath(r.Method, path); public {
+		surface = frontendSurface
+		if r.Header.Get(frontendVersionHeader) != "" && strings.HasPrefix(publicPath, "/assets/") {
+			surface = retainedFrontendSurface
+		}
+	}
+	routing, resolution := g.solutions.resolveRoutingOfKind(r.Context(), id, surface)
 	switch resolution {
 	case solutionUnregistered:
 		httpError(w, http.StatusBadGateway, "solution not registered")
@@ -102,18 +116,21 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, http.StatusServiceUnavailable, "solution registration not active")
 		return true
 	case solutionWrongKind:
-		// The alias is declared, and not as a SOLUTION — a module, or a record
-		// whose kind this gateway cannot read. Same answer and same code as a
-		// record nothing declared, for the same reason: from this surface it is
-		// not a solution this host declares, and no later read changes that. A
-		// module is reached at /v1/<alias>/*, which is where its own refusal is
-		// worded.
+		// No declaration admits this record on the requested surface. This is
+		// a final refusal, independent of the record's availability status.
+		w.Header().Set(solutionEntitlementRefusalHeader, refusalNotEntitled)
 		httpError(w, http.StatusForbidden, "solution is not declared on this host")
 		return true
 	case solutionRegistryUnavailable:
 		// No snapshot has ever loaded, so this replica cannot tell an
 		// unregistered solution from a registered one. Fail closed and say so.
 		httpError(w, http.StatusServiceUnavailable, "solution registry unavailable")
+		return true
+	case solutionRegistryStale:
+		// A snapshot loaded, and the registry has not confirmed it within the
+		// revocation lease: a withdrawal applied since would be invisible here,
+		// so nothing is routed on it.
+		httpError(w, http.StatusServiceUnavailable, "solution registry snapshot is stale")
 		return true
 	}
 
@@ -161,6 +178,21 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// unauthenticated flood of this proxy is still capped. Leaving it on bare
 	// proxyTo would make it the one unmetered public proxy in the gateway (#513).
 	if publicPath, ok := solutionPublicUpstreamPath(r.Method, path); ok {
+		if (routing.FrontendRequiresPreparation || r.Header.Get(frontendVersionHeader) != "") && (publicPath == "/assets" || strings.HasPrefix(publicPath, "/assets/")) {
+			stripAllIdentityHeaders(r)
+			removePersonsSessionCredential(r.Header)
+			g.serveFrontendBundle(w, r, routing, publicPath)
+			return true
+		}
+		if routing.Upstream == nil {
+			httpError(w, http.StatusServiceUnavailable, "solution backend is unavailable")
+			return true
+		}
+		if requested := r.Header.Get(frontendVersionHeader); requested != "" && requested != routing.AssetVersion {
+			w.Header().Set("Cache-Control", "no-store")
+			httpError(w, http.StatusGone, "frontend generation is no longer served")
+			return true
+		}
 		if routing.TargetID == "" {
 			// Presence nothing declared. This fetch carries no credential, so
 			// there is no VIEWER to ask the authority about — but there is still
@@ -190,10 +222,9 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		// strictly worse exposure than the authenticated path's.
 		removePersonsSessionCredential(r.Header)
 		entry := &RouteEntry{
-			Service:          "solution:" + id,
-			WorkloadSPIFFEID: routing.WorkloadSPIFFEID,
-			UpstreamPath:     publicPath,
-			RateLimitClass:   edgeRateLimitClassPublic,
+			Service:        "solution:" + id,
+			UpstreamPath:   publicPath,
+			RateLimitClass: edgeRateLimitClassPublic,
 		}
 		g.rateLimitThenProxy(w, r, routing.Upstream, entry)
 		return true
@@ -303,11 +334,10 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 		class = edgeRateLimitClassStandardWrite
 	}
 	entry := &RouteEntry{
-		Service:          "solution:" + id,
-		WorkloadSPIFFEID: routing.WorkloadSPIFFEID,
-		UpstreamPath:     "/" + path,
-		Protected:        true,
-		RateLimitClass:   class,
+		Service:        "solution:" + id,
+		UpstreamPath:   "/" + path,
+		Protected:      true,
+		RateLimitClass: class,
 	}
 	// Metered FIRST, and the admission check runs inside the budget.
 	//
@@ -391,18 +421,31 @@ func solutionPublicUpstreamPath(method, subPath string) (string, bool) {
 }
 
 // solutionRegistryProjection is what the gateway publishes about the registry.
-// It is a deliberate projection, not the record: the upstream URL stays inside
+// It is a deliberate projection, not the record: a resolved address stays inside
 // this process, because the only component that routes to it is this one.
 type solutionRegistryProjection struct {
 	Revision  int64                            `json:"revision"`
 	Solutions []solutionRegistrationProjection `json:"solutions"`
 }
 
+// frontendAssetVersion is an opaque cache identity for one applied generation.
+// It is not authority: both the page read and the gateway compare it against
+// admitted current or retained history. A rollback gets a new identity, as does alias reuse.
+func frontendAssetVersion(record *accountsv1.SolutionRegistration) string {
+	declared := record.GetDeclared()
+	if declared == nil {
+		return ""
+	}
+	return frontendpayload.AssetVersion(declared.GetBindingId(), declared.GetTargetId(), declared.GetGeneration(), declared.GetRelease())
+}
+
 type solutionRegistrationProjection struct {
-	ID        string `json:"id"`
-	Publisher string `json:"publisher"`
-	Revision  int64  `json:"revision"`
-	Status    string `json:"status"`
+	AssetVersion string `json:"assetVersion,omitempty"`
+	Kind         string `json:"kind,omitempty"`
+	ID           string `json:"id"`
+	Publisher    string `json:"publisher"`
+	Revision     int64  `json:"revision"`
+	Status       string `json:"status"`
 	// TargetID is the immutable solution target this record is declared under —
 	// the identity an installation names, and therefore the key a consumer joins
 	// its entitlements against. Empty for a record nothing declared, which no
@@ -413,9 +456,11 @@ type solutionRegistrationProjection struct {
 	// so a replacement solution inherited the predecessor's menu entry and its
 	// team exposure. The alias stays in the projection because it is what a URL
 	// is built from; it is no longer what anything is authorised by.
-	TargetID     string  `json:"targetId,omitempty"`
-	ServiceAlias string  `json:"serviceAlias,omitempty"`
-	Manifest     *string `json:"manifest,omitempty"`
+	TargetID string `json:"targetId,omitempty"`
+	// Manifest is the document the frontend renders the solution's page from:
+	// the frontend block of the applied presence plus the host's own constants
+	// (solutionManifest). Absent until the presence declares one.
+	Manifest *string `json:"manifest,omitempty"`
 }
 
 // handleSolutionRegistrySnapshot serves this replica's view of the registry to
@@ -443,15 +488,21 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 	}
 	for _, record := range records {
 		projection := solutionRegistrationProjection{
-			ID:           record.GetSolutionId(),
-			Publisher:    record.GetPublisher(),
-			Revision:     record.GetRevision(),
-			Status:       solutionRegistryStatusLabel(record),
-			TargetID:     record.GetDeclared().GetTargetId(),
-			ServiceAlias: record.GetBackend().GetServiceAlias(),
+			ID:        record.GetSolutionId(),
+			Publisher: record.GetPublisher(),
+			Revision:  record.GetRevision(),
+			Status:    solutionRegistryStatusLabel(record),
+			TargetID:  record.GetDeclared().GetTargetId(),
 		}
-		if manifest := record.GetFrontend().GetManifest(); manifest != "" {
+		switch {
+		case declaredModuleKind(record):
+			projection.Kind = "module"
+		case declaredSolutionKind(record):
+			projection.Kind = "solution"
+		}
+		if manifest, ok := solutionManifest(record, g.solutions.frontendPrepared(record)); ok {
 			projection.Manifest = &manifest
+			projection.AssetVersion = frontendAssetVersion(record)
 		}
 		out.Solutions = append(out.Solutions, projection)
 	}
@@ -529,7 +580,7 @@ func (g *Gateway) confineResourceMintToItsConsumer(w http.ResponseWriter, r *htt
 	switch resolution {
 	case solutionRoutable:
 		// Resolved to one declared binding. Admission below.
-	case solutionRegistryUnavailable:
+	case solutionRegistryUnavailable, solutionRegistryStale:
 		// Undecidable, and a mint is never issued on an unanswered question.
 		httpError(w, http.StatusServiceUnavailable,
 			"the solution registry could not be read, so this token's consumer "+

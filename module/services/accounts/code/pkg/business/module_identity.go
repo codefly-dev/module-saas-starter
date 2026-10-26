@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
@@ -63,6 +64,9 @@ type ModuleWorkContextAuthority struct {
 	// its ServiceAccount, the image it is running and the approved build's
 	// incarnation. Every mint carries one; there is no unbound module identity.
 	Execution ExecutionIdentity
+	// TTL, when set, is the lifetime the caller asked for: it shortens the
+	// mint's window and never lengthens it past the mint's own ceiling.
+	TTL time.Duration
 
 	// The immutable registry used for the entire mint, including its release fence.
 	snapshot *installedModuleRegistry
@@ -136,8 +140,19 @@ func (s *Service) authorizeModuleIdentity(
 			return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, wrapStatus(codes.Unavailable, ErrModuleRegistryStale,
 				"principal %s: a document was delivered after the registry was derived", principalID)
 		}
-		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, fmt.Errorf("%w: %s is not a declared module principal",
-			ErrModuleIdentityDenied, prefix)
+		reason := "the module registry holds no entry for it"
+		switch {
+		case snapshot == nil || (len(snapshot.registry) == 0 && snapshot.envelopeRevision == 0):
+			reason = "the module registry is empty and was derived from no module envelope"
+		case len(snapshot.registry) == 0:
+			reason = "the module registry is empty"
+		}
+		err := fmt.Errorf("%w: %s is not a declared module principal: %s", ErrModuleIdentityDenied, prefix, reason)
+		// The caller hears only the denial (see ErrModuleIdentityDenied), so
+		// the reason is said here or nowhere.
+		wool.Get(ctx).In("ModuleAuthorizeWorkContext").Warn(
+			"module identity refused", wool.Field("prefix", prefix), wool.ErrField(err))
+		return ModuleWorkContextAuthority{}, ModulePrincipalGrant{}, err
 	}
 	execution, err := s.BindExecution(ctx, snapshot, principalID, serviceAccountToken)
 	if err != nil {
@@ -254,14 +269,24 @@ func (s *Service) RecordModuleWorkContextMint(
 // auditFields is the execution as a mint record carries it.
 func (e ExecutionIdentity) auditFields() map[string]any {
 	return map[string]any{
-		"namespace":         e.Namespace,
-		"service_account":   e.ServiceAccount,
-		"pod":               e.PodName,
-		"pod_uid":           e.PodUID,
-		"container":         e.ContainerName,
-		"running_digest":    string(e.Running),
-		"build_incarnation": int64(e.Incarnation),
+		"namespace":       e.Namespace,
+		"service_account": e.ServiceAccount,
+		"pod":             e.PodName,
+		"pod_uid":         e.PodUID,
+		"container":       e.ContainerName,
 	}
+}
+
+// IssuedIn reports whether a capability of this principal's own — its module
+// mint, its headless context, its installation's issue — may be issued in
+// orgID: a principal pinned to a tenant is issued in that tenant only, whatever
+// cross_tenant says, and an unpinned one in the organisation the work names.
+// cross_tenant lets a principal's installed authority serve installations in
+// other organisations (moduleAvailableToOrganization); it never moves where
+// the principal itself is issued. This is the one statement of the pin rule;
+// the mint below and the host interface's installation issue both read it.
+func (g ModulePrincipalGrant) IssuedIn(orgID string) bool {
+	return orgID != "" && (g.Tenant == "" || g.Tenant == orgID)
 }
 
 // A shared principal selects consent, not authority: execution still proves the
@@ -281,13 +306,13 @@ func moduleMintOrganization(grant ModulePrincipalGrant, requested []string) (str
 		}
 	}
 	if grant.Tenant != "" {
-		if org != "" && org != grant.Tenant {
+		if org != "" && !grant.IssuedIn(org) {
 			return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "requested organization differs from pinned tenant")
 		}
 		return grant.Tenant, nil
 	}
-	if !grant.CrossTenant || org == "" {
-		return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "shared mint requires cross_tenant and an organization")
+	if org == "" || (!grant.CrossTenant && grant.PresenceGeneration == 0) {
+		return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "a shared workload must name the organization of the work item and have a delivered principal or cross_tenant grant")
 	}
 	return org, nil
 }

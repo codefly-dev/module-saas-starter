@@ -21,8 +21,16 @@ import (
 // HeadlessScopes is the separate, optional grant for work no person is present
 // for (MintModuleOperationContext). It is never derived from InvokeScopes: a
 // binding that declares none cannot be minted headless at all, and one that
-// declares some is bounded by InvokeScopes, so the module acting alone can never
-// do more with an audience than it could on a person's behalf.
+// declares some beside InvokeScopes is bounded by them, so the module acting
+// alone can never do more with an audience than it could on a person's behalf.
+//
+// A binding may also be HEADLESS-ONLY: no InvokeScopes at all, only
+// HeadlessScopes (issue #1156). That is background work no person ever asks
+// for — recording evidence, exporting spans, embedding — so it holds no
+// person-invocable authority, and it has neither LookupScopes nor
+// SourceDelegationScopes, both of which act on a person's behalf and are bounded
+// by the invoke grant it does not have. Every person-delegated exchange refuses
+// it by name (errOperationAudienceHeadlessOnly); only the headless mint uses it.
 //
 // SourceDelegationScopes is the third, equally separate grant: what a datasource
 // source's sync may do when a person connected the source and so delegated it
@@ -30,7 +38,17 @@ import (
 // binding the one a connect records a delegation for; at most one binding of a
 // module may declare it, and like HeadlessScopes it is bounded by InvokeScopes,
 // because the context it yields acts on that person's behalf.
+const DelegationModeContentRead = "content_read"
+
+// DelegationModeModuleActor issues the person's child with the exchanging
+// module as its one actor hop, so the callee sees who acts for the person.
+const DelegationModeModuleActor = "module_actor"
+
+// DelegationMode is host-owned: content_read requires an authentic installed
+// module child and live personal visibility; module_actor requires the same
+// installed child for any invoke scope. Empty preserves ordinary exchanges.
 type ModuleOperationAudience struct {
+	DelegationMode         string                 `json:"delegation_mode,omitempty"`
 	Audience               string                 `json:"audience"`
 	InvokeScopes           []ModuleOperationScope `json:"invoke_scopes"`
 	LookupScopes           []ModuleOperationScope `json:"lookup_scopes"`
@@ -142,14 +160,65 @@ func selfAdmittingBinding(binding ModuleOperationAudience) bool {
 	return binding.HeadlessScopes != nil || binding.SourceDelegationScopes != nil
 }
 
+// headlessOnly reports whether a binding grants nothing on a person's behalf:
+// no invoke scopes, only headless ones. validateOperationAudiences is what holds
+// such a binding to having no lookup and no source-delegation scopes either.
+func (b ModuleOperationAudience) headlessOnly() bool {
+	return b.InvokeScopes == nil && b.HeadlessScopes != nil
+}
+
+// errOperationAudienceHeadlessOnly is the refusal every person-delegated
+// exchange gives a headless-only binding: it was granted no invoke, so there is
+// nothing it may do as the asking person, and saying so beats signing a
+// capability that carries no scope.
+func errOperationAudienceHeadlessOnly(bindingID string) error {
+	return status.Errorf(codes.PermissionDenied,
+		"operation audience binding %q is headless-only: it was granted no invoke scope, so it never acts on a person's behalf", bindingID)
+}
+
 func validateOperationAudiences(prefix string, bindings map[string]ModuleOperationAudience) error {
 	if len(bindings) > 32 {
 		return fmt.Errorf("module operation audience bindings exceed limit")
 	}
 	for id, binding := range bindings {
 		if !validOperationValue(id, 128) || !validOperationValue(binding.Audience, 512) ||
-			(binding.Audience == prefix && !selfAdmittingBinding(binding)) ||
-			!validOperationScopes(binding.InvokeScopes, false) {
+			(binding.Audience == prefix && !selfAdmittingBinding(binding)) {
+			return fmt.Errorf("invalid installed module operation audience binding")
+		}
+		// The module capability surface's own audience is reserved: a context
+		// addressed to it is read as a module identity, so no binding may name it.
+		if binding.Audience == ModuleCapabilitiesAudience {
+			return fmt.Errorf("invalid installed module operation audience binding %q: %q is this host's module capability surface and is never a binding's audience", id, ModuleCapabilitiesAudience)
+		}
+		if binding.DelegationMode != "" {
+			if _, known := installedBindingPrefixes[binding.DelegationMode]; !known || len(binding.InvokeScopes) == 0 || binding.HeadlessScopes != nil || binding.SourceDelegationScopes != nil {
+				return fmt.Errorf("invalid installed delegation mode")
+			}
+			for _, scope := range binding.InvokeScopes {
+				if binding.DelegationMode != DelegationModeContentRead {
+					break
+				}
+				if len(scope.Actions) != 1 || scope.Actions[0] != "read" {
+					return fmt.Errorf("content-read delegation grants only read")
+				}
+			}
+		}
+		// HEADLESS-ONLY: absent invoke is whole only beside headless scopes, and
+		// then it carries nothing a person's exchange could redeem — no lookup and
+		// no source delegation, both of which act as that person and so are
+		// bounded by an invoke grant this binding does not have. An empty invoke
+		// list stays a misconfiguration rather than a second spelling of absent.
+		if binding.InvokeScopes == nil {
+			if binding.HeadlessScopes == nil {
+				return fmt.Errorf("invalid installed module operation audience binding: it grants neither invoke nor headless scopes")
+			}
+			if !validOperationScopes(binding.HeadlessScopes, false) ||
+				binding.LookupScopes != nil || binding.SourceDelegationScopes != nil {
+				return fmt.Errorf("invalid installed module operation audience binding: one with no invoke scopes is headless-only and declares only headless scopes")
+			}
+			continue
+		}
+		if !validOperationScopes(binding.InvokeScopes, false) {
 			return fmt.Errorf("invalid installed module operation audience binding")
 		}
 		// Lookup is OPTIONAL, like headless: a binding that declares only invoke
@@ -191,6 +260,10 @@ func validateOperationAudiences(prefix string, bindings map[string]ModuleOperati
 // ctx is a parameter because this path RE-READS live authority, and a function
 // that took none could not. It had none, which is why it was one of the paths
 // deciding on the declared ceiling alone.
+//
+// It resolves the binding a person-delegated exchange redeems, so it — and
+// ModuleOperationAudienceForDelegation — refuses a headless-only binding by
+// name: nothing that binding was granted may be done as the asking person.
 func (s *Service) ModuleOperationAudience(ctx context.Context, caller ModuleCaller, tenant, parentAudience, bindingID string) (ModuleOperationAudience, error) {
 	ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
 	if fenceErr != nil {
@@ -211,6 +284,9 @@ func (s *Service) ModuleOperationAudience(ctx context.Context, caller ModuleCall
 	binding, ok := grant.OperationAudiences[bindingID]
 	if !ok || validateOperationAudiences(grant.Prefix, map[string]ModuleOperationAudience{bindingID: binding}) != nil {
 		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "installed operation audience required")
+	}
+	if binding.headlessOnly() {
+		return ModuleOperationAudience{}, errOperationAudienceHeadlessOnly(bindingID)
 	}
 	return binding, nil
 }
@@ -242,6 +318,9 @@ func (s *Service) ModuleOperationAudienceForDelegation(ctx context.Context, call
 	binding, ok := grant.OperationAudiences[bindingID]
 	if !ok || validateOperationAudiences(grant.Prefix, map[string]ModuleOperationAudience{bindingID: binding}) != nil {
 		return ModuleOperationAudience{}, status.Error(codes.PermissionDenied, "installed operation audience required")
+	}
+	if binding.headlessOnly() {
+		return ModuleOperationAudience{}, errOperationAudienceHeadlessOnly(bindingID)
 	}
 	return binding, nil
 }

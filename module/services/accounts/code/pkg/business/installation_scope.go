@@ -3,6 +3,7 @@ package business
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -13,7 +14,14 @@ import (
 // A nil scope on an INSTALL request means the full current ceiling; the store
 // always persists the resulting explicit scope, never a wildcard or a default.
 type InstallationScope struct {
-	Capabilities       bool                                `json:"capabilities"`
+	Capabilities bool `json:"capabilities"`
+	// Follows marks a scope that narrows nothing: the installation holds its
+	// module's grant (envelope ∩ manifest) as it moves. A module install records
+	// it only while an administrative envelope sets that grant; a person who
+	// narrows writes the axes out and clears it. With no envelope an install
+	// records the consented snapshot, so a later manifest generation that widens
+	// the ceiling reaches no organisation until its administrator takes it.
+	Follows            bool                                `json:"follows,omitempty"`
 	Queues             []string                            `json:"queues,omitempty"`
 	Namespaces         []string                            `json:"namespaces,omitempty"`
 	ExternalNamespaces []string                            `json:"external_namespaces,omitempty"`
@@ -26,8 +34,8 @@ type InstallationScope struct {
 // FullInstallationScope copies the delivered authority already bounded by the
 // envelope. No identity, workload, tenancy or cross_tenant field is installable.
 func FullInstallationScope(g ModulePrincipalGrant) InstallationScope {
-	s := InstallationScope{true, g.Queues, g.Namespaces, g.ExternalNamespaces, g.Resources,
-		g.ReadAudiences, g.OperationAudiences, g.ArtifactPolicies}
+	s := InstallationScope{Capabilities: true, Queues: g.Queues, Namespaces: g.Namespaces, ExternalNamespaces: g.ExternalNamespaces, Resources: g.Resources,
+		ReadAudiences: g.ReadAudiences, OperationAudiences: g.OperationAudiences, ArtifactPolicies: g.ArtifactPolicies}
 	raw, _ := json.Marshal(s)
 	var out InstallationScope
 	_ = json.Unmarshal(raw, &out)
@@ -91,7 +99,43 @@ func readOperationScopes(scopes []ModuleReadScope) []ModuleOperationScope {
 // intersectInstallationScope never mutates the registry snapshot. Bindings,
 // actions AND resource IDs remain bounded even if the envelope shrank after an
 // installation was written. Empty intersections remove the binding altogether.
+// ResolveInstallationScope spells a following scope out as the grant it
+// follows, so a narrowing is checked against what the installation holds today.
+func ResolveInstallationScope(scope, full InstallationScope) InstallationScope {
+	if scope.Follows {
+		return full
+	}
+	return scope
+}
+
+// ErrModuleInstallationConsentRequired reports an installation that follows its
+// module's grant on a host with no administrative envelope: it was consented
+// while an envelope set the grant (or before the signed manifest became the
+// ceiling), so its organisation never consented to what the manifest alone now
+// asks for.
+var ErrModuleInstallationConsentRequired = errors.New("this installation follows an administrative envelope this host does not have, so its organisation has not consented to the signed manifest's ceiling; an organization owner or admin must call host.installation.v1.InstallationService/Install again with this module as target (or saas.accounts.v1.InstallationService/InstallSolution with its target_id) with approval.target_id and generation from ListAvailableSolutions, expected_revision from the installation listing, and a fresh operation_id to approve that reviewed ceiling")
+
+// ModuleInstallationConsentRequiredReason is the google.rpc.ErrorInfo reason a
+// capability refused for ErrModuleInstallationConsentRequired carries: an
+// administrator's to resolve, never a fact about the caller.
+const ModuleInstallationConsentRequiredReason = "INSTALLATION_CONSENT_REQUIRED"
+
+// consentedGrant is what an installation holds of grant under this registry:
+// the grant intersected with what the organisation consented to. A following
+// installation holds the grant itself only while an envelope sets it; with no
+// envelope it holds nothing until an administrator installs again, so a
+// signed generation's widening never reaches it unapproved.
+func (r *installedModuleRegistry) consentedGrant(g ModulePrincipalGrant, consent InstallationScope) (ModulePrincipalGrant, error) {
+	if consent.Follows && (r == nil || r.envelopeRevision == 0) {
+		return ModulePrincipalGrant{}, ErrModuleInstallationConsentRequired
+	}
+	return intersectInstallationScope(g, consent), nil
+}
+
 func intersectInstallationScope(g ModulePrincipalGrant, consent InstallationScope) ModulePrincipalGrant {
+	if consent.Follows {
+		return g
+	}
 	out := g
 	out.Queues = keepDeclared(g.Queues, consent.Queues)
 	out.Namespaces = keepDeclared(g.Namespaces, consent.Namespaces)
@@ -106,11 +150,15 @@ func intersectInstallationScope(g ModulePrincipalGrant, consent InstallationScop
 		if !ok || installed.Audience != binding.Audience {
 			continue
 		}
-		binding.InvokeScopes = intersectOperationScopes(binding.InvokeScopes, installed.InvokeScopes)
+		// A binding granted headless-only stays headless-only: it survives on
+		// its consented headless scopes. One granted invoke survives only on
+		// invoke, as before — consent never turns it into a headless-only one.
+		headlessOnly := binding.headlessOnly()
+		binding.InvokeScopes = nilIfEmpty(intersectOperationScopes(binding.InvokeScopes, installed.InvokeScopes))
 		binding.LookupScopes = nilIfEmpty(intersectOperationScopes(binding.LookupScopes, installed.LookupScopes))
 		binding.HeadlessScopes = nilIfEmpty(intersectOperationScopes(binding.HeadlessScopes, installed.HeadlessScopes))
 		binding.SourceDelegationScopes = nilIfEmpty(intersectOperationScopes(binding.SourceDelegationScopes, installed.SourceDelegationScopes))
-		if len(binding.InvokeScopes) > 0 {
+		if len(binding.InvokeScopes) > 0 || headlessOnly && binding.HeadlessScopes != nil {
 			out.OperationAudiences[id] = binding
 		}
 	}

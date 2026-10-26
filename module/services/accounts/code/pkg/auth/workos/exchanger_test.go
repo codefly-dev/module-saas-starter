@@ -213,3 +213,48 @@ func TestExchangeDoesNotLeakProviderErrorBody(t *testing.T) {
 	require.ErrorContains(t, err, "http 401")
 	require.NotContains(t, err.Error(), "do-not-leak")
 }
+
+func TestExchangeRefusalCarriesStatusAndCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"provider-detail-xyz"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	exchanger, err := workosauth.NewExchanger(workosauth.Config{
+		TokenURL:     server.URL,
+		ClientID:     "client_123",
+		ClientSecret: "secret_123",
+		Validator:    &validator{claims: &auth.Claims{}},
+	})
+	require.NoError(t, err)
+
+	_, err = exchanger.Exchange(context.Background(), "code", "https://app/callback", "")
+	var refused *auth.TokenEndpointError
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, auth.TokenEndpointError{Status: http.StatusBadRequest, Code: "invalid_grant"}, *refused)
+	require.NotContains(t, err.Error(), "provider-detail-xyz")
+}
+
+func TestWithClientSecretChangesOnlyTheSecret(t *testing.T) {
+	var got []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		got = append(got, body["client_id"]+"/"+body["client_secret"]+"/"+body["code"])
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	exchanger, err := workosauth.NewExchanger(workosauth.Config{
+		TokenURL: server.URL, ClientID: "client_123", ClientSecret: "real",
+		Validator: &validator{claims: &auth.Claims{}},
+	})
+	require.NoError(t, err)
+	control, err := exchanger.WithClientSecretFrom(func(configured string) (string, error) { return configured + "-control", nil })
+	require.NoError(t, err)
+	_, _ = control.Exchange(context.Background(), "c", "", "")
+	_, _ = exchanger.Exchange(context.Background(), "c", "", "")
+	require.Equal(t, []string{"client_123/real-control/c", "client_123/real/c"}, got, "the control leaves the original untouched")
+}

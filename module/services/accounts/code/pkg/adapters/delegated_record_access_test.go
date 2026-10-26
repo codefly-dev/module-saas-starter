@@ -48,8 +48,8 @@ func (s *exactRecordStore) CheckAccess(ctx context.Context, subject string, kind
 	return subject != s.deny && kind == gen.SubjectKind_SUBJECT_KIND_PRINCIPAL && resource == "rows" && id == "record-a" && action == "read", "", nil
 }
 func exactRequest(token, id string) *connect.Request[gen.CheckWorkContextRecordAccessRequest] {
-	r := connect.NewRequest(&gen.CheckWorkContextRecordAccessRequest{ResourceType: "rows", ResourceId: id, Action: "read"})
-	r.Header().Set(workContextHeader, token)
+	r := connect.NewRequest(&gen.CheckWorkContextRecordAccessRequest{ResourceType: "rows", ResourceId: id, Action: "read", ViewerWorkContextToken: token})
+	r.Header().Set(workContextHeader, callingModuleTokenFor(token))
 	r.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
 	return r
 }
@@ -124,13 +124,17 @@ func TestExactRecordOracleRefusesModuleIdentityCapability(t *testing.T) {
 	// The same identity re-minted at the module's own prefix, so the declared
 	// vocabulary gate passes and only the empty scope set can refuse it.
 	prefixed, _ := mintTestCapability(t, workContextSingleton, testCapability{Audience: "rows", Tenant: readOrg, Owner: module,
-		OwnerKind: business.PrincipalKindService, Task: "019f6bf7-3333-7333-8333-333333333333", Session: "019f6bf7-4444-7444-8444-444444444444",
-		Execution: testBuildFor(module)})
+		OwnerKind: business.PrincipalKindService, Task: "019f6bf7-3333-7333-8333-333333333333", Session: "019f6bf7-4444-7444-8444-444444444444"})
 	for _, capability := range []struct{ name, token, refusal string }{
-		{"module-capability audience", identity, "declared resource scope required"},
+		// The module presenting its own identity as the viewer: that capability
+		// is addressed to the module-capability audience, not to the module.
+		{"module-capability audience", identity, errViewerNotAddressedToCaller},
 		{"module's own prefix", prefixed, "record scope required"},
 	} {
-		out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(capability.token, "record-a"))
+		request := connect.NewRequest(&gen.CheckWorkContextRecordAccessRequest{ResourceType: "rows", ResourceId: "record-a", Action: "read", ViewerWorkContextToken: capability.token})
+		request.Header().Set(workContextHeader, identity)
+		request.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
+		out, err := client.CheckWorkContextRecordAccess(context.Background(), request)
 		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), capability.name)
 		require.ErrorContains(t, err, capability.refusal, capability.name)
 		require.Nil(t, out, capability.name)
@@ -230,7 +234,7 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	require.NoError(t, err)
 	require.True(t, out.Msg.Allowed)
 	require.Equal(t, []string{readOwner, "actor-1", "actor-2"}, store.subjects, "the parent's hops are intersected, not inherited from the owner the exchange acted for")
-	require.Equal(t, []string{"hop-1", "hop-2"}, journal.ids)
+	require.Subset(t, journal.ids, []string{"hop-1", "hop-2"}, "every hop's own journal row is asked about")
 
 	// The binding seals record-a while the parent is kind-wide, so the exchanged
 	// context must be refused for record-b before any grant is read. Presenting the
@@ -303,7 +307,7 @@ func TestExactRecordOracleChecksSignedActorChainRevocation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, out.Msg.Allowed)
 	require.Equal(t, []string{readOwner, "actor-1", "actor-2"}, store.subjects)
-	require.Equal(t, []string{"hop-1", "hop-2"}, journal.ids)
+	require.Subset(t, journal.ids, []string{"hop-1", "hop-2"}, "every hop's own journal row is asked about")
 	store.deny = "actor-1"
 	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(token, "record-a"))
 	require.NoError(t, err)

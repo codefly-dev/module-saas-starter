@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
@@ -486,6 +487,63 @@ func requireVisibleRole(ctx context.Context, executor QueryExecutor, roleID stri
 	return nil
 }
 
+// requireNotDerivedRole refuses a role THIS HOST derived from a solution's
+// declared consumption (derived_module_access.go, migration 42).
+//
+// Such a role exists only to be granted at ONE node, to ONE subject, by the
+// derivation, with the grant that caused it named — so that a person's own
+// direct reach into a module a solution reaches is exactly what the solution
+// declared, and never what the administrator's role would have permitted there.
+// Every other way of conferring it breaks that property, so every other way
+// refuses it: an organisation-wide assignment, a per-record share, and a
+// hand-written scope grant (GrantScope, which refuses a derived role with no
+// cause). ListRoles hides it so none of these is ever offered.
+func requireNotDerivedRole(ctx context.Context, executor QueryExecutor, roleID string) error {
+	derivedFrom, err := derivedRoleProvenance(ctx, executor, roleID)
+	if errors.Is(err, errNoSuchRole) {
+		return status.Errorf(codes.FailedPrecondition, "role %q is not a role in this org", roleID)
+	}
+	if err != nil {
+		return err
+	}
+	if derivedFrom != "" {
+		return status.Errorf(codes.FailedPrecondition,
+			"role %q is derived by this host from %s: it is conferred only by the grant of the solution "+
+				"that caused it, at the reached module's own authority root, and never by hand",
+			roleID, derivedFrom)
+	}
+	return nil
+}
+
+// requireNotDerivedRoleOrSolutionRoot is requireNotDerivedRole, except for a
+// solution's role (business.SolutionRoleOrganization): an installation of the
+// solution holds it as its standing role, and the teams the installation is
+// exposed to hold it there, so it is granted at a solution's authority-root
+// node in the organisation it was derived for, and nowhere else.
+func requireNotDerivedRoleOrSolutionRoot(ctx context.Context, executor QueryExecutor, grant *gen.ScopeGrant) error {
+	provenance, err := derivedRoleProvenance(ctx, executor, grant.RoleId)
+	if err != nil || provenance == "" {
+		return requireNotDerivedRole(ctx, executor, grant.RoleId)
+	}
+	org, isSolutionRole := business.SolutionRoleOrganization(provenance)
+	if !isSolutionRole {
+		return requireNotDerivedRole(ctx, executor, grant.RoleId)
+	}
+	var solutionRoot bool
+	if err := executor.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM scope_nodes WHERE org_id = $1::uuid AND scope_path = $2::ltree AND kind = 'solution')`,
+		grant.OrgId, grant.ScopePath,
+	).Scan(&solutionRoot); err != nil {
+		return err
+	}
+	if org != grant.OrgId || !solutionRoot {
+		return status.Errorf(codes.FailedPrecondition,
+			"role %q is a solution's role derived by this host from %s: it is granted only at that solution's authority root in its own organization",
+			grant.RoleId, provenance)
+	}
+	return nil
+}
+
 // RegisterScopeNode inserts a node into the org's scope tree, or places a
 // product record at a node when ResourceType/ResourceId are set. node.Id and
 // node.OrgId are set by the caller.
@@ -552,6 +610,16 @@ func (s *PostgresStore) GrantScope(ctx context.Context, grant *gen.ScopeGrant) e
 	if err := requireVisibleRole(ctx, executor, grant.RoleId); err != nil {
 		return w.Wrapf(err, "failed to validate role")
 	}
+	// A derived role is granted only BY the derivation, which names the grant
+	// that caused it. Every grant in this host goes through this statement —
+	// GrantScope's RPC, grantScopeTx, the exposure grant and the derivation
+	// itself — so the guard sits here rather than at one caller: a hand-written
+	// grant of a derived role, by any path, is refused.
+	if grant.DerivedFromGrantId == "" {
+		if err := requireNotDerivedRoleOrSolutionRoot(ctx, executor, grant); err != nil {
+			return w.Wrapf(err, "failed to validate role")
+		}
+	}
 
 	var exists bool
 	if err := executor.QueryRow(ctx,
@@ -564,27 +632,44 @@ func (s *PostgresStore) GrantScope(ctx context.Context, grant *gen.ScopeGrant) e
 		return status.Errorf(codes.FailedPrecondition, "scope %q is not a registered node", grant.ScopePath)
 	}
 
-	var grantedBy, expiresAt any
+	var grantedBy, expiresAt, derivedFrom any
 	if grant.GrantedBy != "" {
 		grantedBy = grant.GrantedBy
 	}
 	if grant.ExpiresAt != nil {
 		expiresAt = grant.ExpiresAt.AsTime()
 	}
+	if grant.DerivedFromGrantId != "" {
+		derivedFrom = grant.DerivedFromGrantId
+	}
 
 	// Idempotent on the natural key: re-granting the same (subject, scope, role)
 	// refreshes granted_by/expiry instead of raising a unique violation, matching
 	// AssignRole's ON CONFLICT behavior. RETURNING id echoes the existing row's
 	// id on conflict so the returned grant reflects what is actually stored.
+	//
+	// The cause never moves. A row's derived_from_grant_id is written once and
+	// the conflict update keeps it only when the incoming cause is the same, so
+	// re-granting a solution is idempotent on (cause, node, role) while a grant
+	// can never acquire a cause it did not have — which would make an
+	// administrator's own grant vanish with someone else's revocation — or lose
+	// the one it has, which would leave it alive after its cause went.
 	var createdAt time.Time
 	err = executor.QueryRow(ctx, `
-		INSERT INTO scope_grants (id, org_id, subject_id, subject_kind, scope_path, role_id, granted_by, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5::ltree, $6, $7, $8, NOW())
+		INSERT INTO scope_grants (id, org_id, subject_id, subject_kind, scope_path, role_id, granted_by, expires_at, derived_from_grant_id, created_at)
+		VALUES ($1, $2, $3, $4, $5::ltree, $6, $7, $8, $9, NOW())
 		ON CONFLICT (org_id, subject_id, subject_kind, scope_path, role_id)
 		DO UPDATE SET granted_by = EXCLUDED.granted_by, expires_at = EXCLUDED.expires_at
+		WHERE scope_grants.derived_from_grant_id IS NOT DISTINCT FROM EXCLUDED.derived_from_grant_id
 		RETURNING id, created_at`,
-		grant.Id, grant.OrgId, grant.SubjectId, kind, grant.ScopePath, grant.RoleId, grantedBy, expiresAt,
+		grant.Id, grant.OrgId, grant.SubjectId, kind, grant.ScopePath, grant.RoleId, grantedBy, expiresAt, derivedFrom,
 	).Scan(&grant.Id, &createdAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return status.Errorf(codes.FailedPrecondition,
+			"a grant of role %q to %s at %q already exists with a different cause: a scope grant never changes "+
+				"what caused it, because a revocation of that cause is what removes it",
+			grant.RoleId, grant.SubjectId, grant.ScopePath)
+	}
 	if err != nil {
 		return w.Wrapf(err, "failed to grant scope")
 	}
@@ -624,6 +709,12 @@ func (s *PostgresStore) ShareRecord(ctx context.Context, share *gen.RecordShare)
 		return err
 	}
 	if err := requireVisibleRole(ctx, executor, share.RoleId); err != nil {
+		return w.Wrapf(err, "failed to validate role")
+	}
+	// A per-record share is the third way to confer a role, and a derived role
+	// conferred this way would reach a module's records with no installation
+	// grant and no cause — the same hole AssignRole closes, in the other table.
+	if err := requireNotDerivedRole(ctx, executor, share.RoleId); err != nil {
 		return w.Wrapf(err, "failed to validate role")
 	}
 	var grantedBy, expiresAt any
@@ -741,6 +832,7 @@ func (s *PostgresStore) ListShares(ctx context.Context, orgID, resourceType, res
 // any columns a caller selects ahead of them.
 const labelledGrantColumns = `g.id, g.subject_id, g.subject_kind, g.scope_path::text, g.role_id,
    COALESCE(g.granted_by::text, ''), g.expires_at, g.created_at,
+   COALESCE(g.derived_from_grant_id::text, ''),
    COALESCE(t.name, p.display_name, g.subject_id::text), r.name,
    COALESCE(a.display_name, g.granted_by::text, 'Unknown actor')`
 
@@ -756,7 +848,7 @@ func scanLabelledGrant(row rowScanner, orgID string, leading ...any) (*gen.Colle
 	var expires *time.Time
 	var created time.Time
 	dest := append(leading, &g.Id, &g.SubjectId, &kind, &g.ScopePath, &g.RoleId, &g.GrantedBy,
-		&expires, &created, &view.SubjectLabel, &view.RoleName, &view.ActorLabel)
+		&expires, &created, &g.DerivedFromGrantId, &view.SubjectLabel, &view.RoleName, &view.ActorLabel)
 	if err := row.Scan(dest...); err != nil {
 		return nil, err
 	}

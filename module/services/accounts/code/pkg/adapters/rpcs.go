@@ -29,9 +29,20 @@ func WithService(s *business.Service) {
 
 func quotaStatusError(err error) error {
 	if errors.Is(err, business.ErrEntitlementQuotaExceeded) {
-		return status.Error(codes.ResourceExhausted, err.Error())
+		return quotaRefusal(err)
 	}
 	return err
+}
+
+// quotaRefusal carries the quota's own sentence ("seats quota exhausted: used
+// 5 of 5"), never the wrapped chain: the message is shown to the person who hit
+// the limit, and the internal call path is not theirs to read.
+func quotaRefusal(err error) error {
+	var quota *business.EntitlementQuotaError
+	if errors.As(err, &quota) {
+		return status.Error(codes.ResourceExhausted, quota.Error())
+	}
+	return status.Error(codes.ResourceExhausted, business.ErrEntitlementQuotaExceeded.Error())
 }
 
 // orgMembershipStatusError maps the administrative-continuity invariant to a
@@ -59,25 +70,11 @@ func userStatusError(err error) error {
 	return err
 }
 
+// invitationStatusError maps the refusals an invitation can meet to their
+// codes, and a fault to the fixed sentence with its cause kept for the log
+// (refusalError) — sanitized here, not only by the interceptor after it.
 func invitationStatusError(err error) error {
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, business.ErrOrgAdminContinuity):
-		return status.Error(codes.FailedPrecondition, business.ErrOrgAdminContinuity.Error())
-	case errors.Is(err, business.ErrInvitationUnavailable):
-		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, business.ErrInvitationEmailMismatch):
-		return status.Error(codes.PermissionDenied, err.Error())
-	case errors.Is(err, business.ErrInvitationEmailUnverified):
-		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.Is(err, business.ErrInvitationExpired):
-		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.Is(err, business.ErrEntitlementQuotaExceeded):
-		return status.Error(codes.ResourceExhausted, err.Error())
-	default:
-		return status.Error(codes.Internal, "invitation operation failed")
-	}
+	return refusalError(err)
 }
 
 func jobOperationStatusError(err error) error {
@@ -812,10 +809,49 @@ func (s *PermServer) GrantScope(ctx context.Context, req *gen.GrantScopeRequest)
 	// mutation: a factor check the write has already passed is not a check.
 	// requireMFA is fail-closed for a privileged actor, so an unenrolled platform
 	// role or organization owner is refused rather than admitted.
-	if err := requireMFA(ctx, actorID); err != nil {
+	//
+	// A role that grants only reads — a collection's read access handed to a
+	// member or a team — grants no privilege the factor exists to protect: the
+	// subject can change nothing, and the grant is revoked by the same
+	// administrator without a factor. Gating it left an administrator sharing a
+	// collection fifteen minutes after signing in with a refusal nothing on
+	// the page could act on. The role is read in the grant's organization, so
+	// what is exempted is what the store says the role grants, not the name.
+	readOnly, err := roleGrantsOnlyReads(ctx, req.OrgId, req.RoleId)
+	if err != nil {
 		return nil, err
 	}
+	if !readOnly {
+		if err := requireMFA(ctx, actorID); err != nil {
+			return nil, err
+		}
+	}
 	return service.GrantScope(ctx, actorID, req)
+}
+
+// roleGrantsOnlyReads reports whether every permission of the role is a read.
+// An unknown role is not read-only: the grant itself refuses it, after the
+// factor gate has had its say, so a guess here can never widen anything.
+func roleGrantsOnlyReads(ctx context.Context, orgID, roleID string) (bool, error) {
+	listed, err := service.ListRoles(ctx, &gen.ListRolesRequest{OrgId: orgID})
+	if err != nil {
+		return false, err
+	}
+	for _, role := range listed.GetRoles() {
+		if role.GetId() != roleID {
+			continue
+		}
+		if len(role.GetPermissions()) == 0 {
+			return false, nil
+		}
+		for _, permission := range role.GetPermissions() {
+			if permission.GetAction() != "read" {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *PermServer) RevokeScope(ctx context.Context, req *gen.RevokeScopeRequest) (*emptypb.Empty, error) {
@@ -1592,7 +1628,7 @@ func (s *InvitationServer) CreateInvitation(ctx context.Context, req *gen.Create
 		return nil, err
 	}
 	response, err := service.CreateInvitation(ctx, actorID, req)
-	return response, quotaStatusError(err)
+	return response, invitationStatusError(err)
 }
 
 func (s *InvitationServer) InspectInvitation(ctx context.Context, req *gen.InspectInvitationRequest) (*gen.InvitationSummary, error) {

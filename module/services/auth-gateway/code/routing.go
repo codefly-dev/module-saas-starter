@@ -39,7 +39,6 @@ type RouteExtension struct {
 
 // RouteEntry is the internal representation used by the gateway.
 type RouteEntry struct {
-	WorkloadSPIFFEID            string             // declared TLS peer for a solution upstream
 	Service                     string             // upstream service name (from directory path)
 	Method                      string             // HTTP method
 	Path                        string             // public HTTP path (may contain {param} segments)
@@ -50,6 +49,7 @@ type RouteEntry struct {
 	RateLimitBackendFailClosed  bool               // preserve the security budget when the limiter backend fails
 	AuthenticationFactorAttempt bool               // use the dedicated per-client-IP login-factor budget
 	PolicySHA256                string             // stable fingerprint of the complete method policy
+	staticUpstreamError         bool               // answer an upstream failure with a static body, never the dial error
 	artifactUpstream            *routeArtifactUpstream
 	artifactExposure            edgeExposure
 	hasArtifactExposure         bool

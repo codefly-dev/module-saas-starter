@@ -32,8 +32,11 @@ var ErrModuleOperationContextRefused = errors.New("module operation binding is n
 type ModuleOperationContextAuthority struct {
 	ModuleWorkContextAuthority
 	BindingID string
-	Audience  string
-	Scopes    []ModuleOperationScope
+	// ModulePrefix is the module's registration prefix, which the sealed
+	// binding id names (ModuleOperationBindingID).
+	ModulePrefix string
+	Audience     string
+	Scopes       []ModuleOperationScope
 	// Revision is the authorization revision the capability is sealed with:
 	// ModuleOperationContextRevision of the module's declared grant at mint.
 	Revision uint64
@@ -99,6 +102,7 @@ func (s *Service) ModuleAuthorizeOperationContext(
 	return ModuleOperationContextAuthority{
 		ModuleWorkContextAuthority: identity,
 		BindingID:                  bindingID,
+		ModulePrefix:               grant.Prefix,
 		Audience:                   binding.Audience,
 		Scopes:                     scopes,
 		Revision:                   ModuleOperationContextRevision(grant),

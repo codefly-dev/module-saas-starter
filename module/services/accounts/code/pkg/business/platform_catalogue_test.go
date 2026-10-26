@@ -241,7 +241,7 @@ func TestExecutionInventoryContractRequiresAContainer(t *testing.T) {
 // The read boundary withholds an affirmative verdict whose evidence is not
 // beside it. judgeCatalogueObserved is the only author of a verdict and applies
 // the same rule, so nothing should reach this check — but the states are filled
-// from records that do not exist yet (applied presence, the signed approval,
+// from records that do not exist yet (the signed approval,
 // cluster observation), and a filler that set a value case without re-judging
 // would otherwise publish a green cell. The boundary fails closed instead.
 func TestCatalogueReadBoundaryWithholdsUnsupportedAffirmativeVerdict(t *testing.T) {
@@ -422,7 +422,7 @@ func TestProjectPlatformCatalogue(t *testing.T) {
 		require.Equal(t, notRecorded, e.GetWithdrawing().GetCredentialRevocationStateGap().GetReason(), e.GetName())
 		require.Equal(t, notObserved, e.GetRetired().GetRetirementStateGap().GetReason(), e.GetName())
 		require.Equal(t, notRecorded, e.GetBuildSizeGap().GetReason(), e.GetName())
-		require.Contains(t, e.GetBuildSizeGap().GetDetail(), "codefly-dev/core#708")
+		require.Contains(t, e.GetBuildSizeGap().GetDetail(), "module manifest carries no build size")
 	}
 
 	module := byName["alpha"]
@@ -461,6 +461,23 @@ func TestProjectPlatformCatalogue(t *testing.T) {
 
 	withTombstones := projectPlatformCatalogue(modules, registrations, installations, true, now)
 	require.Contains(t, catalogueEntryNames(withTombstones), "CATALOGUE_ENTRY_KIND_SOLUTION:retired")
+}
+
+func TestCatalogueSharedModuleRetainsItsKindAndIndependentInstallations(t *testing.T) {
+	const binding = "acme.test.shared-module"
+	registration := &SolutionRegistration{SolutionID: "shared-module", Declared: &SolutionDeclaredBinding{
+		BindingID: binding, TargetID: "shared-module-target", Kind: SolutionDeclaredKindModule,
+	}}
+	entries := projectPlatformCatalogue(ModulePrincipalRegistry{
+		ModulePrincipalID("different-principal"): {Prefix: "different-principal", PresenceBinding: binding},
+	}, []*SolutionRegistration{registration}, []*CatalogueInstallationRecord{
+		catalogueTestInstallation("one", "shared-module", "Acme", "example/shared:1.0.0"),
+		catalogueTestInstallation("two", "shared-module", "ExampleCorp", "example/shared:1.0.0"),
+	}, false, time.Now())
+	require.Len(t, entries, 1, "the same deployment must not acquire a second catalogue row from its principal")
+	require.Equal(t, gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_MODULE, entries[0].Entry.Kind)
+	require.Len(t, entries[0].Entry.Installations, 2)
+	require.Same(t, registration, entries[0].Registration)
 }
 
 func TestParseAgentRelease(t *testing.T) {

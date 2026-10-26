@@ -12,6 +12,10 @@ import (
 	"time"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
+	"github.com/codefly-dev/core/wool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // A source delegation is the record that a person, by connecting a datasource
@@ -86,10 +90,15 @@ type SourceDelegation struct {
 	ModulePrefix  string
 	BindingID     string
 	BindingDigest string
-	CreatedAt     time.Time
-	RevokedAt     *time.Time
-	RevokedReason string
-	RevokedBy     string
+	// ConsentedAudience and ConsentedScopes are what the person actually
+	// agreed to, recorded at connect time. Empty on a row written before they
+	// existed, which keeps exactly the digest rule it was written under.
+	ConsentedAudience string
+	ConsentedScopes   []ModuleOperationScope
+	CreatedAt         time.Time
+	RevokedAt         *time.Time
+	RevokedReason     string
+	RevokedBy         string
 }
 
 // Active reports whether the delegation has not been revoked.
@@ -163,6 +172,12 @@ var (
 	// ErrSourceDelegationInvalid: the delegation does not exist or belongs to
 	// another module. The two are deliberately indistinguishable.
 	ErrSourceDelegationInvalid = errors.New("source delegation is not usable by this module")
+	// ErrSourceDelegationBindingUnavailable: the delegation's binding is not
+	// visible in the view this call resolved — the organisation's consent does
+	// not carry it, or the registry was replaced mid-call. Transient and
+	// RETRYABLE, and deliberately not a revocation: see
+	// sourceDelegationBindingUnavailable.
+	ErrSourceDelegationBindingUnavailable = errors.New("source delegation binding is not available right now")
 	// ErrSourceDelegationNotFound: an administrator named a delegation that is
 	// not in their organization.
 	ErrSourceDelegationNotFound = errors.New("source delegation not found")
@@ -208,17 +223,85 @@ func (g ModulePrincipalGrant) sourceDelegationBinding() (string, ModuleOperation
 	return "", ModuleOperationAudience{}, false
 }
 
+// sourceDelegationBindingState is why a delegation's binding could not be used,
+// because the two reasons have opposite consequences and conflating them
+// destroys grants.
+type sourceDelegationBindingState int
+
+const (
+	// sourceDelegationBindingOK: the binding is declared and unchanged.
+	sourceDelegationBindingOK sourceDelegationBindingState = iota
+	// sourceDelegationBindingChanged: the module still declares this binding
+	// and it is DIFFERENT — the audience or the scopes the person delegated
+	// have moved. That is a durable fact about the declaration, so the
+	// delegation no longer describes anything and is revoked.
+	sourceDelegationBindingChanged
+	// sourceDelegationBindingUnavailable: the binding is not in THIS VIEW at
+	// all. A view is narrowed by the organisation's installation consent and is
+	// derived from a registry that is replaced on every reconcile pass, so its
+	// absence says nothing durable about what the person delegated: an
+	// administrator editing consent, a pass in flight, or a registry briefly
+	// empty behind its envelope fence all produce it.
+	//
+	// A delegation is a fact about a PERSON and a SOURCE. Revoking it because a
+	// derived view momentarily does not show the binding destroys that fact to
+	// report a condition that may be gone a second later — and it did: on
+	// a deployed cell, a delegation was revoked as "binding_changed" NINE SECONDS
+	// after being recorded, with a binding digest identical to the one stored,
+	// because the recording read the raw registry and the mint read the
+	// consent-narrowed one. The call is refused; the row is left alone.
+	sourceDelegationBindingUnavailable
+)
+
 // currentSourceDelegationBinding resolves the binding a delegation names as the
-// module declares it now, refusing one that is gone, invalid, no longer
-// accepting delegations, or changed in audience or scopes.
-func (g ModulePrincipalGrant) currentSourceDelegationBinding(delegation *SourceDelegation) (ModuleOperationAudience, bool) {
+// module declares it now, and says which kind of failure it hit: a binding that
+// CHANGED is durable and revokes, a binding this view cannot see is transient
+// and only refuses.
+func (g ModulePrincipalGrant) currentSourceDelegationBinding(delegation *SourceDelegation) (ModuleOperationAudience, sourceDelegationBindingState) {
 	binding, declared := g.OperationAudiences[delegation.BindingID]
-	if !declared || binding.SourceDelegationScopes == nil ||
-		validateOperationAudiences(g.Prefix, map[string]ModuleOperationAudience{delegation.BindingID: binding}) != nil ||
-		SourceDelegationBindingDigest(binding) != delegation.BindingDigest {
-		return ModuleOperationAudience{}, false
+	if !declared || binding.SourceDelegationScopes == nil {
+		// Not offered here. Either the module no longer asks for it, or this
+		// organisation's consent does not carry it, or this view is empty —
+		// and nothing at this point can tell those apart, so none of them may
+		// revoke.
+		return ModuleOperationAudience{}, sourceDelegationBindingUnavailable
 	}
-	return binding, true
+	if validateOperationAudiences(g.Prefix, map[string]ModuleOperationAudience{delegation.BindingID: binding}) != nil {
+		// Declared and unusable: a deployment defect, not a statement about
+		// the person's grant.
+		return ModuleOperationAudience{}, sourceDelegationBindingUnavailable
+	}
+	if SourceDelegationBindingDigest(binding) == delegation.BindingDigest {
+		return binding, sourceDelegationBindingOK
+	}
+	// The binding moved. That is not by itself a reason to revoke.
+	//
+	// The digest covers the WHOLE binding, so comparing it alone revoked on
+	// every edit to what the module asks for — including a NARROWING, which
+	// can never need consent because it is strictly less authority. A module
+	// asking for one action more therefore re-authorized every person who had
+	// ever connected a source, and the only remedy this product offers is a
+	// reconnect. One module upgrade meant everybody reconnects.
+	//
+	// Consent is about one question: is the binding now asking for MORE than
+	// this person agreed to? Same or narrower is honoured — at the NARROWER
+	// set, which is the live binding, so the person never gets more than they
+	// agreed to and never less than the module still asks for. Wider revokes,
+	// exactly as before.
+	if delegation.ConsentedAudience == "" && delegation.ConsentedScopes == nil {
+		// Recorded before consent was kept. Nothing to compare against, so the
+		// old rule stands rather than being guessed around.
+		return ModuleOperationAudience{}, sourceDelegationBindingChanged
+	}
+	if binding.Audience != delegation.ConsentedAudience {
+		// A different destination is a different delegation, whatever the
+		// scopes say.
+		return ModuleOperationAudience{}, sourceDelegationBindingChanged
+	}
+	if !operationScopesSubset(binding.SourceDelegationScopes, delegation.ConsentedScopes) {
+		return ModuleOperationAudience{}, sourceDelegationBindingChanged
+	}
+	return binding, sourceDelegationBindingOK
 }
 
 // SourceDelegationTarget is one module binding a connect in an organization
@@ -300,6 +383,19 @@ func (s *Service) recordSourceDelegationsTx(
 ) (int, error) {
 	targets := s.declaredModules().SourceDelegationTargets()
 	if len(targets) == 0 {
+		// ZERO TARGETS IS TWO DIFFERENT ANSWERS, and reporting success for both
+		// is issue #1165. "No composed module accepts a source delegation" is a
+		// legitimate deployment and recording nothing is right. "The module that
+		// does accept one is missing from the registry because the envelope
+		// withheld its binding" is a deployment defect, and recording nothing
+		// there is how a person who reconnects a source is told, by the very
+		// next sync, to connect or reconnect it — the thing they just did.
+		//
+		// So the refusal is on the fact that distinguishes them: what the
+		// applied manifests asked for and the pass could not grant.
+		if err := s.refuseWithheldSourceDelegationAuthority(ctx); err != nil {
+			return 0, err
+		}
 		return 0, nil
 	}
 	role, err := s.store.SourceDelegationMemberRole(ctx, orgID, actorID)
@@ -340,6 +436,9 @@ func (s *Service) recordSourceDelegationsTx(
 			ModulePrefix:  target.Prefix,
 			BindingID:     target.BindingID,
 			BindingDigest: SourceDelegationBindingDigest(target.Binding),
+			// Kept beside the digest so a later narrowing is honoured.
+			ConsentedAudience: target.Binding.Audience,
+			ConsentedScopes:   cloneOperationScopes(target.Binding.SourceDelegationScopes),
 		}
 		if err := s.store.InsertSourceDelegation(ctx, delegation); err != nil {
 			return recorded, fmt.Errorf("record source delegation: %w", err)
@@ -354,10 +453,56 @@ func (s *Service) recordSourceDelegationsTx(
 }
 
 // recordSourceDelegationsOnConnectTx is the connect and reconnect call, whose
-// callers do not read the count.
+// callers do not read the count: a connect that recorded nothing it should have
+// recorded is refused inside recordSourceDelegationsTx, so the count is no
+// longer the one fact a caller here would have to act on.
 func (s *Service) recordSourceDelegationsOnConnectTx(ctx context.Context, actorID, orgID, sourceID string) error {
 	_, err := s.recordSourceDelegationsTx(ctx, actorID, orgID, sourceID, sourceDelegationReplace)
 	return err
+}
+
+// refuseWithheldSourceDelegationAuthority refuses a connect, reconnect or
+// backfill that would record no delegation because the module registry is
+// INCOMPLETE, rather than because this deployment composes no module that
+// accepts one.
+//
+// Two facts make it incomplete, and both are read from the pass that derived
+// the registry rather than re-derived here:
+//
+//   - the pass could not grant an operation binding an applied manifest asked
+//     for. This host cannot tell whether that binding was the one carrying
+//     `source_delegation_scopes` — it is the ENVELOPE that says so, and the
+//     envelope is what withheld it — so the refusal names every withheld
+//     binding and leaves the operator to fix the one that matters;
+//   - the registry is fenced: a newer envelope revision is committed than the
+//     one it was derived from, so it serves nothing and "no target" is not an
+//     answer about this host's modules at all.
+//
+// It is a refusal and not a warning because the alternative is the transaction
+// that shipped: the credential written, the success event emitted, no delegation
+// recorded, and nobody told. Rolling the connect back leaves the person
+// something to retry once an administrator has fixed the envelope.
+func (s *Service) refuseWithheldSourceDelegationAuthority(ctx context.Context) error {
+	withheld := s.withheldModuleBindings()
+	if len(withheld) == 0 && !s.moduleRegistryFenced() {
+		return nil
+	}
+	reason := "the module registry was derived from an envelope revision older than the one now committed, so it grants nothing"
+	if len(withheld) > 0 {
+		named := make([]string, 0, len(withheld))
+		for _, omission := range withheld {
+			named = append(named, fmt.Sprintf("%s/%s (%s)", omission.Prefix, omission.BindingID, omission.Reason))
+		}
+		reason = "the module envelope withheld operation bindings the applied module manifests ask for: " + strings.Join(named, ", ")
+	}
+	wool.Get(ctx).In("business.source_delegation").Error(
+		"refusing a connect that would record no source delegation while module authority is withheld",
+		wool.Field("reason", reason))
+	return status.Error(codes.FailedPrecondition,
+		"This source cannot be connected yet: no composed module can be delegated its sync, because "+reason+
+			". Connecting would record no delegation and every sync would then refuse with \"the source has no active "+
+			"delegation to this module; a person must connect or reconnect it\". A platform administrator fixes it by "+
+			"allowing the withheld binding in the module envelope (PlatformAdminService.PutModuleEnvelope); then connect again.")
 }
 
 // revokeSourceDelegationsTx revokes every active delegation the filter matches,
@@ -644,10 +789,13 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 			return err
 		}
 		delegating := delegator.Grant
-		granted, current := delegating.currentSourceDelegationBinding(delegation)
-		if !current {
+		granted, state := delegating.currentSourceDelegationBinding(delegation)
+		switch state {
+		case sourceDelegationBindingChanged:
 			revokeAs, stale = SourceDelegationBindingChanged, delegation
 			return nil
+		case sourceDelegationBindingUnavailable:
+			return ErrSourceDelegationBindingUnavailable
 		}
 		// The audience link, and the whole reason a reference is safe to hold.
 		// Refused as invalid rather than as a different code, so a module that
@@ -659,6 +807,17 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 		binding, installed := grant.OperationAudiences[bindingID]
 		if !installed || validateOperationAudiences(grant.Prefix, map[string]ModuleOperationAudience{bindingID: binding}) != nil {
 			return ErrSourceDelegationInvalid
+		}
+		// Installed delegation modes require a human root and the exact installed
+		// binding lifetime. A source reference seals a different authority and
+		// cannot be substituted, even when its scopes happen to overlap.
+		if binding.DelegationMode != "" {
+			return ErrSourceDelegationInvalid
+		}
+		// A person delegated this work, and a headless-only binding was granted
+		// nothing it may do as a person: refused by name, before any scope is read.
+		if binding.headlessOnly() {
+			return errOperationAudienceHeadlessOnly(bindingID)
 		}
 		// What this call may do: the caller's own binding, for invoking or for
 		// recovering a receipt, and never more than the person delegated.
@@ -688,14 +847,12 @@ func (s *Service) AuthorizeDelegationReferenceExchange(
 		// audience the delegation's binding names — so its hop attests the build
 		// its own pod is running, and the delegation is the operation binding the
 		// hop exercises (business.SourceDelegationBindingID), read live by every
-		// verifier. The caller authenticated with its module Work Context, whose
-		// seal names the build its pod was bound to at that mint and which core
-		// has just held against the approved build again.
+		// verifier. The caller authenticated with its module Work Context.
 		authority = SourceOperationContextAuthority{
 			ModuleWorkContextAuthority: ModuleWorkContextAuthority{
 				PrincipalID: caller.PrincipalID, Tenant: delegation.OrgID,
 				InstallationID: callerAuthority.InstallationID, InstallationRevision: callerAuthority.InstallationRevision,
-				ProducerEpoch: callerAuthority.ProducerEpoch, Execution: caller.SealedExecution(),
+				ProducerEpoch: callerAuthority.ProducerEpoch,
 			},
 			ModulePrefix:     grant.Prefix,
 			OwnerPrincipalID: delegation.PrincipalID,
@@ -785,10 +942,13 @@ func (s *Service) authorizeSourceDelegation(
 			return err
 		}
 		grant = installed.Grant
-		binding, current := grant.currentSourceDelegationBinding(delegation)
-		if !current {
+		binding, state := grant.currentSourceDelegationBinding(delegation)
+		switch state {
+		case sourceDelegationBindingChanged:
 			revokeAs, stale = SourceDelegationBindingChanged, delegation
 			return nil
+		case sourceDelegationBindingUnavailable:
+			return ErrSourceDelegationBindingUnavailable
 		}
 		facts, err := s.store.SourceDelegationFacts(ctx, delegation.OrgID, delegation.PrincipalID, delegation.SourceID)
 		if err != nil {
@@ -895,18 +1055,21 @@ func (s *Service) confirmSourceDelegationBinding(
 	defer releaseAuthority()
 
 	delegationID, usedBy, ok := parseSourceDelegationBindingID(bindingID)
-	if !ok || ModulePrincipalID(usedBy) != actorPrincipalID {
-		return nil, ErrSourceDelegationContextStale
+	if !ok {
+		return nil, staleBecause(ctx, "the binding id is not a source delegation's")
+	}
+	if ModulePrincipalID(usedBy) != actorPrincipalID {
+		return nil, staleBecause(ctx, "the binding id was sealed by another module than the one presenting it")
 	}
 	live, err := s.WorkContextOperationBinding(ctx, orgID, bindingID)
 	switch {
 	case errors.Is(err, ErrNoOperationBinding), errors.Is(err, ErrSourceDelegationContextStale),
 		errors.Is(err, ErrModuleInstallationInactive):
-		return nil, ErrSourceDelegationContextStale
+		return nil, staleBecause(ctx, "the issuer's records no longer entitle this module to that binding: "+err.Error())
 	case err != nil:
 		return nil, err
 	case live.Revoked:
-		return nil, ErrSourceDelegationContextStale
+		return nil, staleBecause(ctx, "the operation binding is revoked")
 	}
 	var delegation *SourceDelegation
 	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
@@ -914,8 +1077,13 @@ func (s *Service) confirmSourceDelegationBinding(
 		if err != nil {
 			return err
 		}
-		if found == nil || !found.Active() || found.PrincipalID != ownerPrincipalID {
-			return ErrSourceDelegationContextStale
+		switch {
+		case found == nil:
+			return staleBecause(ctx, "no delegation of that id exists in this tenant")
+		case !found.Active():
+			return staleBecause(ctx, "the delegation is revoked")
+		case found.PrincipalID != ownerPrincipalID:
+			return staleBecause(ctx, "the delegation belongs to a different person than the context names as owner")
 		}
 		snapshot := s.moduleRegistrySnapshot()
 		delegator, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, snapshot,
@@ -923,21 +1091,29 @@ func (s *Service) confirmSourceDelegationBinding(
 		if err != nil {
 			return err
 		}
-		granted, current := delegator.Grant.currentSourceDelegationBinding(found)
-		if !current {
-			return ErrSourceDelegationContextStale
+		granted, state := delegator.Grant.currentSourceDelegationBinding(found)
+		switch state {
+		case sourceDelegationBindingChanged:
+			return staleBecause(ctx, "the declaration behind this delegation changed since it was recorded")
+		case sourceDelegationBindingUnavailable:
+			return ErrSourceDelegationBindingUnavailable
 		}
 		for _, subject := range subjects {
 			if !operationScopesSubset(subject.Scopes, granted.SourceDelegationScopes) {
-				return ErrSourceDelegationContextStale
+				return staleBecause(ctx, "a presented subject carries scopes the delegation's binding does not grant")
 			}
 		}
 		facts, err := s.store.SourceDelegationFacts(ctx, orgID, ownerPrincipalID, found.SourceID)
 		if err != nil {
 			return err
 		}
-		if facts.revocation() != "" || facts.EffectiveRevision() != revision {
-			return ErrSourceDelegationContextStale
+		if reason := facts.revocation(); reason != "" {
+			return staleBecause(ctx, "the delegation's facts revoke it: "+reason)
+		}
+		if facts.EffectiveRevision() != revision {
+			return staleBecause(ctx, fmt.Sprintf(
+				"the person's authorization revision is %d and the context was sealed at %d",
+				facts.EffectiveRevision(), revision))
 		}
 		delegation = found
 		return nil
@@ -1006,12 +1182,40 @@ func (s *Service) CheckSourceDelegationContextRevision(
 	for _, subject := range subjects[min(1, len(subjects)):] {
 		actors = append(actors, subject.PrincipalID)
 	}
-	_, ok, err := s.sourceDelegationShape(ctx, orgID, ownerPrincipalID, actors)
+	grant, ok, err := s.sourceDelegationShape(ctx, orgID, ownerPrincipalID, actors)
 	if err != nil {
 		return true, err
 	}
 	if !ok {
 		return false, nil
+	}
+	// A context whose binding is not a delegation's is DECLINED, so the
+	// ordinary module-operation checks run on it: a module calling an owner
+	// under its own installed binding has this same shape, with no delegation
+	// involved anywhere, and refusing it here is what denied the runtime's
+	// every such call. A module may hold both — a delegation for a person's
+	// source and its own binding for the operations it runs for that same
+	// person — so the pair existing is NOT the discriminator. Refusing on that
+	// would deny exactly the traffic the decline exists for.
+	//
+	// What is refused is the pair whose delegation has been REVOKED. Only then
+	// does declining admit something: a delegation's hop scopes are built as a
+	// subset of exactly the module's own binding's invoke scopes, so the
+	// module-hop check passes by construction, and a caller could keep using a
+	// revoked delegation indefinitely by naming its module's binding instead
+	// of the delegation's. After a revocation, every context of that pair that
+	// does not name a delegation is refused rather than re-routed; while the
+	// delegation stands, the module-hop check confirms authority the
+	// delegation grants anyway.
+	if !namesASourceDelegation(bindingID) {
+		revoked, err := s.personHasRevokedDelegationTo(ctx, orgID, ownerPrincipalID, grant.Prefix)
+		if err != nil {
+			return true, err
+		}
+		if !revoked {
+			return false, nil
+		}
+		return true, ErrSourceDelegationContextStale
 	}
 	if len(subjects) != 2 || subjects[0].PrincipalID != ownerPrincipalID {
 		return true, ErrSourceDelegationContextStale
@@ -1021,6 +1225,49 @@ func (s *Service) CheckSourceDelegationContextRevision(
 		return true, err
 	}
 	return true, nil
+}
+
+// personHasRevokedDelegationTo reports whether this person has a REVOKED
+// delegation of any source to this module in this organization — the one state
+// in which declining a non-delegation binding admits something, because a
+// revoked delegation is what a caller would want to keep using by naming
+// another binding. An active delegation is not reported: a module legitimately
+// holds both a delegation and its own installed binding for the same person,
+// and refusing that pair would deny the operation calls the decline exists to
+// allow.
+//
+// modulePrefix is the actor's, as the registry snapshot that claimed the shape
+// reported it: a delegation records the module's PREFIX while a context's hop
+// names its PRINCIPAL, and comparing the two spellings would match nothing and
+// quietly admit every lie.
+//
+// It reads the organization's delegations rather than one row, because the
+// question is about the pair and a context names no source. An organization
+// holds a handful of delegations and this runs only for the shape that could
+// be a delegation's and did not name one, so an ordinary module-operation
+// context pays one org-scoped read and the lie pays a refusal.
+func (s *Service) personHasRevokedDelegationTo(ctx context.Context, orgID, ownerPrincipalID, modulePrefix string) (bool, error) {
+	if orgID == "" || ownerPrincipalID == "" || modulePrefix == "" {
+		return false, nil
+	}
+	// Read inside the organization's transaction: source_delegations is
+	// tenant-scoped, so an unscoped read returns nothing and would report
+	// "never delegated" about every pair.
+	var delegations []*SourceDelegation
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		list, err := s.store.ListSourceDelegations(ctx, orgID, "", true)
+		delegations = list
+		return err
+	}); err != nil {
+		return false, err
+	}
+	for _, delegation := range delegations {
+		if delegation != nil && !delegation.Active() &&
+			delegation.PrincipalID == ownerPrincipalID && delegation.ModulePrefix == modulePrefix {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // SourceDelegationHop is one actor hop of a verified Work Context, as the
@@ -1063,9 +1310,25 @@ func (s *Service) ConfirmSourceDelegationParent(
 	if !ok {
 		return false, nil, nil
 	}
+	// Here the binding comes from the PARENT ITSELF, which is signed: a parent
+	// that names no delegation was minted naming none, and an orchestrator
+	// executing work a person started presents exactly that — same subjects,
+	// no delegation anywhere. So the binding alone decides, and its absence is
+	// a fact rather than an omission.
+	//
+	// This is NOT the rule in CheckSourceDelegationContextRevision, where the
+	// binding arrives as a field of the CALLER's request: there a missing
+	// binding could be an omission, and treating it as "not a delegation"
+	// would confirm a narrowed delegation against a broader installation, so
+	// it stays refused. Same question, two sources of the same fact, and the
+	// trust in each is what differs.
+	if !namesASourceDelegation(bindingID) {
+		return false, nil, nil
+	}
 	if len(hops) != 1 || hops[0].DelegationID == "" {
 		return true, nil, ErrSourceDelegationContextStale
 	}
+
 	subjects := []ModuleOperationRevisionSubject{
 		{PrincipalID: ownerPrincipalID, Scopes: ownerScopes},
 		{PrincipalID: hops[0].PrincipalID, Scopes: hops[0].Scopes},
@@ -1079,4 +1342,23 @@ func (s *Service) ConfirmSourceDelegationParent(
 		return true, nil, ErrSourceDelegationContextStale
 	}
 	return true, delegation, nil
+}
+
+// staleBecause is ErrSourceDelegationContextStale with the branch that reached
+// it named in the operator's log.
+//
+// Eight independent conditions answered with one sentinel, and a consumer that
+// retried every one of them identically. On a cell this is the difference
+// between an operator reconnecting a source, writing an envelope, or reading a
+// contract — and nothing told them which. A staging night went into recovering
+// one of these by elimination.
+//
+// The ERROR is unchanged, deliberately: the sentinel is what the wire contract
+// and every errors.Is branch key on, and a consumer must keep reading a stale
+// context as stale. Only the log gains the reason, and it names conditions
+// rather than any person's identifiers.
+func staleBecause(ctx context.Context, because string) error {
+	wool.Get(ctx).In("confirmSourceDelegationBinding").Warn(
+		"a source delegation context was refused", wool.Field("because", because))
+	return ErrSourceDelegationContextStale
 }

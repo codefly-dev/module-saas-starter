@@ -133,6 +133,11 @@ function isLoopbackOrigin(origin: string): boolean {
  * accounts reads for the links it mints, so the origin that binds a sign-in
  * redirect, an authenticator's relying party and an emailed link is one value in
  * one place.
+ *
+ * Read below as a literal `workspaceConfiguration("application", "APP_BASE_URL")`
+ * so module/tools/workspace_configuration_dependencies_test.go can hold the
+ * `application` group to this service's manifest: an undeclared group is never
+ * delivered, and this read then returns nothing on every deployed cell.
  */
 const PUBLIC_ORIGIN_CONFIGURATION = "application/APP_BASE_URL";
 
@@ -181,8 +186,9 @@ export function resolveVerifiedPublicOrigin(
 function resolvePublicOrigin(
 	runtime: CodeflyRuntimeReader,
 ): string | undefined {
-	const [group, key] = PUBLIC_ORIGIN_CONFIGURATION.split("/");
-	const configured = runtime.workspaceConfiguration(group, key)?.trim();
+	const configured = runtime
+		.workspaceConfiguration("application", "APP_BASE_URL")
+		?.trim();
 	if (configured) {
 		const origin = canonicalOrigin(configured);
 		if (!origin) {
@@ -196,12 +202,6 @@ function resolvePublicOrigin(
 
 	const endpointOrigin = ownEndpointOrigin(runtime);
 
-	// A render that carries a real ingress host is operator configuration too, so
-	// it answers when nothing is pinned.
-	if (endpointOrigin && !isLoopbackOrigin(endpointOrigin)) {
-		return endpointOrigin;
-	}
-
 	// A loopback own endpoint is correct in local development — the browser
 	// reaches that same host — and is the render's placeholder everywhere else.
 	// Only the build tells those apart, and nothing a caller sends does.
@@ -209,9 +209,47 @@ function resolvePublicOrigin(
 		return endpointOrigin;
 	}
 
+	// On a deployed build the own endpoint answers only when the render carries a
+	// real ingress host: HTTPS, and neither loopback nor cluster-internal. A
+	// cluster-internal address (`frontend.<namespace>.svc.cluster.local`) is what
+	// the SDK reports for this workload inside a cell; no browser reaches it, and
+	// accounts refuses it against its configured origin. Presenting it turned an
+	// undelivered APP_BASE_URL into an opaque "invalid trusted public origin" at
+	// accounts, so it is refused here, by name.
+	const unusable = endpointOrigin
+		? unusableDeployedEndpoint(endpointOrigin)
+		: "no single own HTTP endpoint was discovered";
+	if (endpointOrigin && !unusable) {
+		return endpointOrigin;
+	}
+
 	console.error(
-		`${PUBLIC_ORIGIN_CONFIGURATION} is not set and this deployment's own endpoint renders as a loopback placeholder, so there is no verified public origin; set it to this cell's public origin. Sign-in and the solution proxy are refused until then, rather than binding them to a host taken from the request.`,
+		`${PUBLIC_ORIGIN_CONFIGURATION} is not set on this deployed build and its own endpoint cannot stand in for it: ${unusable}. Expected ${PUBLIC_ORIGIN_CONFIGURATION} to carry this cell's public https origin (the frontend must declare the "application" workspace configuration group for it to be delivered). Sign-in and the solution proxy are refused until then, rather than binding them to a host taken from the request.`,
 	);
+	return undefined;
+}
+
+/**
+ * Why a deployed build's own endpoint cannot be its public origin, or undefined
+ * when it can.
+ */
+function unusableDeployedEndpoint(origin: string): string | undefined {
+	if (isLoopbackOrigin(origin)) {
+		return `${origin} is the render's loopback placeholder`;
+	}
+	const host = new URL(origin).hostname.toLowerCase().replace(/\.$/, "");
+	if (
+		host.endsWith(".svc") ||
+		host.endsWith(".cluster.local") ||
+		// A single-label name is a service name resolved by the cluster's DNS; an
+		// IPv6 literal (bracketed) has no labels and is judged by scheme below.
+		(!host.startsWith("[") && !host.includes("."))
+	) {
+		return `${origin} is a cluster-internal address, which no browser reaches`;
+	}
+	if (new URL(origin).protocol !== "https:") {
+		return `${origin} is not https, and a non-loopback public origin must be`;
+	}
 	return undefined;
 }
 

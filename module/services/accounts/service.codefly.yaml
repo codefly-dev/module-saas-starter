@@ -10,8 +10,9 @@ agent:
     # codefly whose host support reaches v4 — see scripts/ci/install-codefly.sh.
     # 0.1.53 additionally carries core v0.15.2 and the fix that lets a scaffolded
     # service resolve its own address (service-go-grpc#165).
-    # 0.1.54 builds with Go 1.27.2, including the GO-2026-6613 fix.
-    version: 0.1.54
+    # 0.1.58 builds with Go 1.27.3, including the GO-2026-6613 and GO-2026-6809
+    # fixes.
+    version: 0.1.58
     publisher: codefly.dev
 service-dependencies:
     - name: cache
@@ -21,20 +22,26 @@ service-dependencies:
     - name: store
       endpoints:
         - name: tcp
-    - name: telemetry
-      endpoints:
-        - name: grpc
     - name: vault
       endpoints:
         - name: http
 workspace-configuration-dependencies:
     - abuse-protection
     - application
+    - artifact-cache
     - billing
     - datasource-keys
     - datasource-oauth
+    # Codefly-owned: HOSTS, generated from the environment's egress
+    # declaration, admitted by guarded egress on a meshed cell (code/work.go,
+    # configureMeshEgress). No authored file.
+    - egress
     - email
     - federation
+    # The roles a composing workspace's people hold at the modules it composes,
+    # added to the selected fixture (fixtures/workspace_grants.go): a document,
+    # fixture-grants.yaml (the default grants nothing).
+    - fixture-grants
     - gateway-trust
     - github-app
     - identity
@@ -42,7 +49,6 @@ workspace-configuration-dependencies:
     - internal-auth
     - internal-transport
     - key-service
-    - observability
     - product-analytics
     - security
     - vault

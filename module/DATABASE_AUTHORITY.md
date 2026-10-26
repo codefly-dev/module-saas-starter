@@ -526,7 +526,7 @@ executable inventory and this table in the same change.
 | Scope | Relations | Required database boundary |
 |---|---|---|
 | `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `identity_providers`, `module_envelopes`, `plan_entitlements`, `plans`, `platform_admins`, `policy_log_commits`, `policy_log_cursor`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
-| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `codefly_effect_receipts`, `datasource_operation_attempts`, `datasource_oauth_consumed_states`, `datasource_source_operations`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `executable_artifact_approvals`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_key_bindings`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
+| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `codefly_effect_receipts`, `datasource_operation_attempts`, `datasource_oauth_consumed_states`, `datasource_source_operations`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `executable_artifact_approvals`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `module_delegations`, `org_generic_settings`, `org_identity_providers`, `org_key_bindings`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `client_authorization_codes`, `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `resource_follows`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
 | `job` | `job_messages` | Enabled and forced RLS with at least one policy; no request relation grant — function-only scoped enqueue plus exact job-worker grants |
@@ -587,6 +587,51 @@ policies too: a non-superuser owner-level `pg_dump` or `COPY` of a partition,
 attached or detached, now needs a `BYPASSRLS` role to read every row, which the
 partition offload planned in
 [ADR 0006](./docs/adr/0006-audit-sink-and-retention-tiers.md) has to provision.
+
+## A retention sweep's predicate must match a usable index, and its cascade children must carry one
+
+`RunRetention`'s row deletes (`DeleteOldSessions`, `DeleteOldNotifications`,
+`DeleteOldWebhookDeliveries`, `DeleteExpiredAuthenticationCeremonies`,
+`pkg/infra/postgres_retention.go`) are bulk `DELETE ... WHERE <column> < $1`
+statements over tables sized by production traffic, run on every tick. Two
+unindexed-by-construction gaps make a sweep like this quadratic rather than a
+missing index being merely slow, and migration
+`48_retention_index_gaps` (#1253) is the one-time catch-up; a new sweep or a new
+cascade from a bulk-deleted table has to carry its own index from the start:
+
+- **The sweep's `WHERE` must name a column a usable index leads with.** This
+  failed two distinct ways before #1253. A *partial* index's own predicate does
+  not count unless the sweep repeats it: `mfa_login_transactions`,
+  `webauthn_ceremonies` and `client_authorization_codes` each carry
+  `(expires_at) WHERE consumed_at IS NULL`, which serves "find live rows," the
+  opposite set from "find rows old enough to delete," while all three sweeps
+  filter `expires_at` alone — so the planner falls back to a sequential scan
+  however selective the sweep's predicate is. Separately, an index that merely
+  *leads* with another column is no better: `sessions`, `notifications` and
+  `webhook_deliveries` are swept on `created_at` while their indexes lead with
+  `expires_at`, `user_id` and `subscription_id`. Migration 48 adds a
+  `created_at` index to each of those three; they are structural and were not
+  measured on their own.
+- **Every `ON DELETE CASCADE` child column a bulk-deleted parent can reach needs
+  its own index.** The cascade trigger fires once per deleted parent row and,
+  with no index on the child's FK column, sequentially scans the child table
+  each time: cost is `rows_deleted x child_table_size`, so it is invisible at
+  seed scale and degrades on its own as the child grows. Measured:
+  `DELETE FROM mfa_login_transactions WHERE expires_at < $1` (1,001 rows)
+  cascading into the unindexed `webauthn_ceremonies.mfa_login_transaction_id`
+  ran 20,199ms, 56ms after adding the index (359x) — the trigger still fired
+  1,001 times either way, it just stopped sequentially scanning to do it. The
+  second measured case has the same shape: `DELETE FROM sessions WHERE
+  created_at < $1` (1,001 rows) ran 15,697ms cascading into the unindexed
+  `client_authorization_codes.session_id`, 38ms once that one column was
+  indexed (418x) — measured with `sessions.created_at` still unindexed and the
+  sweep still sequentially scanning the parent, which is what establishes the
+  cascade rather than the sweep's own scan as the cost.
+
+A migration above the frontier that adds either shape — a new retention
+predicate or a new `ON DELETE CASCADE` reachable from a table a retention sweep
+or an admin bulk-delete (e.g. role deletion) targets — adds the matching index
+in the same migration, not as a follow-up once it is measured slow.
 
 ## Audit retention drops a partition by its recorded range, under lock
 

@@ -317,13 +317,25 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 		var err error
 		ctx, err = auth.WithVerifiedPublicOrigin(ctx, forwardedPublicOrigin)
 		if err != nil {
+			// The reason names the forwarded and configured origins; the caller
+			// keeps the generic answer.
+			wool.Get(ctx).In("grpcPolicyInterceptor").Warn("trusted public origin refused", wool.ErrField(err))
 			return ctx, status.Error(codes.PermissionDenied, "invalid trusted public origin")
+		}
+	}
+	if trustedForwarded {
+		if presenter := firstMetadataValue(md, "x-codefly-workload-presenter"); presenter != "" {
+			if _, err := business.ParseKubernetesSPIFFEID(presenter); err != nil {
+				return ctx, status.Error(codes.PermissionDenied, "invalid trusted workload presenter")
+			}
+			ctx = business.WithVerifiedWorkloadPresenter(ctx, presenter)
 		}
 	}
 	// Gateway credentials prove trust at this adapter boundary; application
 	// handlers must not receive or reuse the raw capabilities.
 	md = md.Copy()
 	md.Delete("x-codefly-gateway-token")
+	md.Delete("x-codefly-workload-presenter")
 	md.Delete("x-codefly-public-origin")
 	ctx = metadata.NewIncomingContext(ctx, md)
 	policy, classified := business.LookupRPCPolicy(fullMethod)
@@ -334,8 +346,19 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 		if policy.Tier != business.RPCPolicyInternal || !business.IsModuleAuthorityProcedure(fullMethod) {
 			return ctx, status.Error(codes.PermissionDenied, "RPC is not exposed on the module authority endpoint")
 		}
-		if !validInternalToken(firstMetadataValue(md, "x-codefly-internal-token")) {
-			return ctx, status.Error(codes.PermissionDenied, "internal service credential required")
+		// Default deny: every method served here requires the calling module's
+		// own Work Context, verified before any handler runs, so a method that
+		// forgets to identify its caller is still never served open. The one
+		// exception is the explicit allowlist of workload mints, which prove the
+		// module from the workload credential the request carries. The handler
+		// then holds the module to its grant. No shared perimeter credential is
+		// asked: a token every workload holds names no module.
+		if business.ModuleAuthorityAuthenticatesInRequest(fullMethod) {
+			return ctx, nil
+		}
+		if _, err := moduleCaller(ctx); err != nil {
+			st := status.Convert(err)
+			return ctx, status.Errorf(st.Code(), "the module authority endpoint answers only an authenticated module: %s", st.Message())
 		}
 		return ctx, nil
 	}
@@ -353,6 +376,12 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 		return ctx, status.Error(codes.PermissionDenied, "internal RPC is not exposed on the tenant listener")
 	}
 	if policy.Tier == business.RPCPolicyPublic {
+		return ctx, nil
+	}
+	if business.ShapeAuthenticated(fullMethod) && len(md.Get("authorization")) == 0 && !(trustedForwarded && hasForwardedIdentity(md)) {
+		// A call carrying no credential at all: the request's shape
+		// authenticates (business.ShapeAuthenticated). A forwarded identity or a
+		// bearer is admitted as on every other method.
 		return ctx, nil
 	}
 
@@ -381,7 +410,7 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	if err != nil {
 		if errors.Is(err, auth.ErrRevocationUnavailable) {
 			wool.Get(ctx).In("grpcPolicyInterceptor").Warn("revocation list unavailable, denying (fail-closed)", wool.ErrField(err))
-			return ctx, status.Error(codes.Unavailable, "authorization temporarily unavailable")
+			return ctx, status.Error(codes.Unavailable, authorizationUnavailableMessage)
 		}
 		wool.Get(ctx).In("grpcPolicyInterceptor").Debug("VerifyAccess failed", wool.ErrField(err))
 		return ctx, status.Error(codes.Unauthenticated, "invalid or expired access token")

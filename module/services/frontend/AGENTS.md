@@ -5,15 +5,67 @@ The authenticated product, behind auth-gateway. Architecture is in
 and [../../FRONTEND_PLUGINS.md](../../FRONTEND_PLUGINS.md). This file covers the
 solution read projections and the published client kit.
 
-## Reading declared solutions
+## Reading declared modules and solutions
 
 `src/solutions/registry.ts` validates the gateway's durable registry snapshot and
 caches it for five seconds. It exposes reads only. An expired snapshot is dropped
 when a refresh fails, so callers receive unavailable instead of stale authority.
 The manifest includes navigation, frontend loading information, backend alias,
 compatibility requirements and optional dashboard, surfaces and source metadata.
+Both kinds use this reader, the `/s/<id>` page and the same federation loader.
+The gateway stamps `kind` from the applied declaration; a remote manifest cannot
+choose its routing kind. A shared module has one deployment, while each
+organisation installs it and grants team access independently through the same
+target-based entitlement projection. The organization administration destination
+is labelled "Modules & solutions" and retains `/admin/solutions`; its empty
+state directs an administrator to the platform operator when nothing is available.
+Each installed row links to `/admin/solutions/<installation id>`, that
+installation's setup page: what it is and whether it is READY (the host's
+`InstallationReadiness`, which is not the record's health), the unmet conditions
+with who clears each and the act that does, and the teams a grant reaches there.
+It reads the same `ListOrganizationInstallations` the row came from and selects
+its own installation out of it, so the page can never disagree with the row that
+linked to it. Granting a team a solution CARRIES, in the same act, the access the
+solution declares it consumes on every module it reaches: the page states the set
+before anyone grants, and after a grant it shows what was carried and — in the
+host's own words, from the grant's own response — any module where nothing could
+be carried. There is no per-module grant step for a person to perform
+([MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md#a-grant-of-a-solution-carries-the-module-access-it-declares-it-consumes)).
+The platform catalogue explains the delivery prerequisite. Headless components
+contribute no page.
+For a module page, relative data requests through the injected `apiBase` reach
+`/v1/<alias>/<suffix>`; for a solution they reach `/solutions/<alias>/<suffix>`.
+Public GET/HEAD assets use the common `/solutions/<alias>/assets` surface for
+both kinds. Platform Connect procedures still reach the gateway root.
+
 These declarations grant no access to content. The solution page reads the full
 manifest in process; browser projections carry only the fields described below.
+
+Solution groups are optional presentation metadata (`id`, `title`, `order`),
+stamped from the solution's applied declaration. The member navigation first
+filters each solution by installation and entitlement, then groups the visible
+items. Home and sidebar share that grouping and the live navigation poll; empty
+groups disappear. A group has no install, grant or consent action. The platform
+catalogue also groups headless solutions and refreshes every 15 seconds while
+open; modules remain outside solution groups.
+Rename, reorder and membership changes preserve solution links and access.
+
+The gateway stamps an opaque `assetVersion` from the applied binding, target,
+generation and release. Browser assets use
+`/api/solutions/<id>/versions/<assetVersion>/proxy/assets/...`; the manifest,
+remote entry and relative chunks share that directory. The surfaces projection uses the
+page's asset version for both modules and solutions, including relative imports.
+Remote builds must use `publicPath: "auto"` and relative asset paths.
+The gateway serves a historical version only while its admitted history and
+live target permit it; unknown or expired versions receive 410. This is a cache
+identity, not an access credential. The shared
+viewer navigation poll carries it, removes withdrawn pages and refreshes an open
+page when the version changes. The old remote is unmounted during the change,
+and a previous loading failure cannot poison the new generation.
+
+This does not by itself make a rolling backend serve immutable assets: delivery
+must also bind the resolved endpoint and packaged frontend to the same build.
+The browser cache tests do not qualify that producer/deployment boundary.
 
 ## Three projections, deliberately separate
 
@@ -22,7 +74,7 @@ caller's organization installed and the caller's teams were granted, not the
 deployment-wide registered set.
 
 - `GET /api/solutions` is **authenticated** and returns the navigation
-  projection — `{id, nav, available}` per entitled solution and nothing else. It is
+  projection — `{id, nav, available, assetVersion, group?}` per entitled component. It is
   what the sidebar polls (through `authedFetch`, so a lapsed access token is
   exchanged and retried rather than emptying the menu). It answers `401` to an
   unauthenticated caller and `503` when the registry or the authority cannot be
@@ -337,3 +389,9 @@ entry cancels the read reporting the refusal and strands recovery, clearing it
 restarts every active read of it so a standing 403 never settles, and
 `setQueryData(key, undefined)` is a documented no-op. Recovery is then exactly
 one thing — a read that succeeds.
+
+Versioned GET/HEAD asset requests reach the gateway even if the current page is
+headless or absent from the advertised manifest. The gateway owns historical
+version admission and live target checks; the proxy validates the version shape,
+forwards it from a fresh header set and preserves its Cache-Control and errors.
+Historical identities never open data routes or grant organisation access.

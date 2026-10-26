@@ -1,4 +1,4 @@
-import { getEndpoints } from "codefly";
+import { gatewayBase } from "@/lib/gateway-endpoint";
 
 import {
 	resolveCodeflyGatewayContext,
@@ -15,7 +15,7 @@ const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
 const MAX_RESUME_BYTES = 1024;
 
 interface RouteContext {
-	params: Promise<{ id: string; path?: string[] }>;
+	params: Promise<{ id: string; path?: string[]; version?: string }>;
 }
 
 // This route forwards the caller's cookies to the gateway under a trusted
@@ -55,25 +55,11 @@ function sameOrigin(request: Request, hostOrigin: string | undefined): boolean {
  * here would send a solution's platform procedure to a different URL than the
  * byte-identical call issued from a host page, against the same composition.
  */
-function gatewayBase(): string | null {
-	const endpoint = getEndpoints().find(
-		(candidate) =>
-			candidate.service === "auth-gateway" && candidate.name === "rest",
-	);
-	if (!endpoint?.address) {
-		return null;
-	}
-	try {
-		return new URL(endpoint.address).toString().replace(/\/$/, "");
-	} catch {
-		return null;
-	}
-}
 
 /**
  * Generic solution proxy. Forwards a browser request to the API gateway's
- * root for platform Connect procedures or its runtime solution passthrough
- * (/solutions/{alias}/…) for other paths, attaching the first-party
+ * root for platform Connect procedures, /v1/{alias}/… for module data, or
+ * /solutions/{alias}/… for solution data and shared assets, attaching first-party
  * trust headers and carrying the caller's identity (bearer and/or session
  * cookie). The browser never reaches a solution service directly, and this route
  * names no specific solution — it only resolves whatever registered at runtime.
@@ -82,7 +68,7 @@ async function handler(
 	request: Request,
 	context: RouteContext,
 ): Promise<Response> {
-	const { id, path } = await context.params;
+	const { id, path, version } = await context.params;
 
 	// The origin is resolved on its own, not off the trust context: a deployment
 	// missing the internal token is a different condition from one with no verified
@@ -104,15 +90,28 @@ async function handler(
 		return new Response("invalid event cursor", { status: 400 });
 	}
 
-	const solution = await findSolution(id);
+	// A retained asset remains routable when the current generation is
+	// headless. The gateway owns target liveness and retained admission.
+	const retainedAsset = version !== undefined &&
+		(request.method === "GET" || request.method === "HEAD") && path?.[0] === "assets";
+	const solution = retainedAsset ? null : await findSolution(id);
 	// Distinguish a solution that is not registered from a registry this
 	// replica cannot read: the first is permanent for the caller, the second is
 	// worth retrying.
 	if (solution === "unavailable") {
 		return new Response("solution registry unavailable", { status: 503 });
 	}
-	if (!solution) {
+	if (!solution && !retainedAsset) {
 		return new Response("solution not registered", { status: 404 });
+	}
+	if (
+		version !== undefined &&
+		(!/^[a-f0-9]{64}$/.test(version) || (!retainedAsset && version !== solution?.assetVersion))
+	) {
+		return new Response("frontend generation is no longer served", {
+			status: 410,
+			headers: { "cache-control": "no-store" },
+		});
 	}
 	const base = gatewayBase();
 	if (!base) {
@@ -125,11 +124,23 @@ async function handler(
 		/^saas\.[A-Za-z_][A-Za-z0-9_]*\.v1\.[A-Za-z_][A-Za-z0-9_]*\/[A-Za-z_][A-Za-z0-9_]*$/.test(
 			suffix,
 		);
+	// Both kinds use the same page and asset loader. A module's data requests
+	// stay on the module gateway surface, preserving its audience and checks.
+	// The gateway independently restricts the common asset route to public
+	// GET/HEAD paths; this choice grants no exemption here.
+	const publicAsset =
+		(request.method === "GET" || request.method === "HEAD") &&
+		/^(?:assets|\.well-known)(?:\/|$)/.test(suffix);
+	const routePrefix =
+		solution?.kind === "module" && !publicAsset ? "v1" : "solutions";
 	const target = platformProcedure
 		? `${base}/${suffix}${search}`
-		: `${base}/solutions/${encodeURIComponent(solution.backend.serviceAlias)}/${suffix}${search}`;
+		: `${base}/${routePrefix}/${encodeURIComponent((solution?.backend.serviceAlias ?? id))}/${suffix}${search}`;
 
 	const headers = new Headers();
+	// Accounts-backed retained history at the gateway decides asset admission.
+	// Forward the requested identity without relabelling it as the current version.
+	if (version !== undefined) headers.set("X-Codefly-Frontend-Version", version);
 	// First-party trust headers, resolved server-side from Codefly config — the
 	// gateway rejects solution traffic that lacks them even with a valid user
 	// identity. Set from a fresh Headers so a caller can never spoof them.
@@ -201,13 +212,17 @@ async function handler(
 		// from an unresolvable endpoint above so an operator can tell "no gateway
 		// configured" from "gateway down".
 		console.error(
-			`solution proxy: gateway unreachable solution=${id} alias=${solution.backend.serviceAlias} path=${suffix} method=${request.method}`,
+			`solution proxy: gateway unreachable solution=${id} alias=${(solution?.backend.serviceAlias ?? id)} path=${suffix} method=${request.method}`,
 			err,
 		);
 		return new Response("solution gateway unreachable", { status: 502 });
 	}
 
 	const responseHeaders = new Headers();
+ if (retainedAsset) {
+  responseHeaders.set("cache-control", upstream.headers.get("cache-control") ?? "no-store");
+  responseHeaders.set("x-content-type-options", "nosniff");
+ }
 	const upstreamContentType = upstream.headers.get("content-type");
 	if (upstreamContentType) {
 		responseHeaders.set("content-type", upstreamContentType);
@@ -307,6 +322,7 @@ function errorCategory(status: number): string {
 export {
 	handler as DELETE,
 	handler as GET,
+	handler as HEAD,
 	handler as PATCH,
 	handler as POST,
 	handler as PUT,

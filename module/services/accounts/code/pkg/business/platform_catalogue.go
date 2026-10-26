@@ -57,15 +57,15 @@ type PlatformCatalogue struct {
 }
 
 const (
-	catalogueNoDeclaration   = "This host holds no applied presence document for this entry, which is what records what the composition declares."
-	catalogueNoApplication   = "This host has applied no presence generation for this entry."
+	catalogueNoDeclaration   = "This host holds no applied module manifest for this entry, which is what records what the composition declares."
+	catalogueNoApplication   = "This host has applied no module manifest generation for this entry."
 	catalogueNoApproval      = "This host holds no approval record: signed platform approval of the execution inventory, bound to target and ownership scope, has not been built yet."
 	catalogueNotObserved     = "This host reads no observed cluster state, so what runs is unknown — never assumed to match."
 	catalogueNoVerdict       = "There is no approval record to judge the observed execution against."
 	catalogueNoWithdrawal    = "This host holds no withdrawal record; withdrawal is a change to the approval record, which does not exist yet."
 	catalogueNoRevocation    = "This host holds no credential-revocation record for this entry."
 	catalogueNoRetirement    = "No retirement controller reports to this host; without stop or fence evidence nothing is reported as retired."
-	catalogueNoBuildSize     = "Build size is the presence document's build_size section (codefly-dev/core#708), computed at build by the CLI; this host holds no presence document for this entry."
+	catalogueNoBuildSize     = "A module manifest carries no build size, and this host counts none itself."
 	catalogueModulePublisher = "A composed module is known by its principal prefix alone; the composition records no publisher."
 	catalogueUnregistered    = "No registration exists under this identifier; it is named only by its installations."
 	catalogueNoRevision      = "Installations carry no revision of their own on this host."
@@ -169,7 +169,16 @@ func projectPlatformCatalogue(
 	now time.Time,
 ) []*PlatformCatalogueEntry {
 	var moduleEntries []*PlatformCatalogueEntry
+	declaredModules := make(map[string]bool)
+	for _, registration := range registrations {
+		if declared := registration.Declared; declared != nil && declared.Kind == SolutionDeclaredKindModule {
+			declaredModules[declared.BindingID] = true
+		}
+	}
 	for _, grant := range modules {
+		if grant.PresenceBinding != "" && declaredModules[grant.PresenceBinding] {
+			continue // The applied registry row also carries its installations.
+		}
 		entry := newCatalogueEntry(gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_MODULE, grant.Prefix, now)
 		entry.PublisherValue = &gen.CatalogueEntry_PublisherGap{PublisherGap: catalogueGap(gen.CatalogueGapReason_CATALOGUE_GAP_REASON_NOT_RECORDED, catalogueModulePublisher)}
 		moduleEntries = append(moduleEntries, &PlatformCatalogueEntry{Entry: entry})
@@ -217,16 +226,23 @@ func projectPlatformCatalogue(
 			continue
 		}
 		row := solution(registration.SolutionID)
+		if registration.Declared != nil && registration.Declared.Kind == SolutionDeclaredKindModule {
+			row.Entry.Kind = gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_MODULE
+		}
 		row.Registration = registration
 		row.Entry.PublisherValue = &gen.CatalogueEntry_Publisher{Publisher: registration.Publisher}
 	}
 
 	byName := func(a, b *PlatformCatalogueEntry) int { return strings.Compare(a.Entry.Name, b.Entry.Name) }
-	slices.SortFunc(moduleEntries, byName)
 	solutionEntries := make([]*PlatformCatalogueEntry, 0, len(solutions))
 	for _, row := range solutions {
-		solutionEntries = append(solutionEntries, row)
+		if row.Entry.Kind == gen.CatalogueEntryKind_CATALOGUE_ENTRY_KIND_MODULE {
+			moduleEntries = append(moduleEntries, row)
+		} else {
+			solutionEntries = append(solutionEntries, row)
+		}
 	}
+	slices.SortFunc(moduleEntries, byName)
 	slices.SortFunc(solutionEntries, byName)
 	return append(moduleEntries, solutionEntries...)
 }

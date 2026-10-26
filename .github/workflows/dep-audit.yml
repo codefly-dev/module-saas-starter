@@ -6,6 +6,22 @@ name: Dependency audit auto-remediation
 # runs the same `npm audit` policy the release gate enforces, remediates what
 # it safely can into a rolling pull request, and fails loudly when an advisory
 # needs manual attention — so tags cut from an already-remediated tree.
+#
+# It needs a token that can open a pull request. The remediation half works with
+# GITHUB_TOKEN, but `gh pr create` does not: this organisation has "Allow GitHub
+# Actions to create and approve pull requests" turned off, so the call fails with
+# `GitHub Actions is not permitted to create or approve pull requests`. That is
+# the same constraint combine-deps.yml documents, and the same DEPS_COMBINE_TOKEN
+# answers it — see that file's header for why the setting is not simply turned on.
+#
+# Until this was fixed the failure was silent in the worst way. The job remediated
+# correctly and force-pushed the branch, then died on `gh pr create` — which sits
+# BEFORE the `gh workflow run` line, so the pushed head never even got CI, and no
+# pull request existed to make the fix visible. Six consecutive daily runs failed
+# that way with three critical advisories already remediated on the branch; the
+# pull request had to be opened by hand (#1228). So: push and trigger CI first,
+# treat a create refusal as loud but non-fatal, and let the residual audit gate
+# below decide the run's verdict.
 
 on:
   schedule:
@@ -29,10 +45,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # DEPS_COMBINE_TOKEN is a PAT (or GitHub App token) with `repo` scope, shared
+      # with combine-deps.yml. An empty secret is falsy, so this degrades to
+      # GITHUB_TOKEN: everything except opening the pull request still works.
+      GH_TOKEN: ${{ secrets.DEPS_COMBINE_TOKEN || secrets.GITHUB_TOKEN }}
+      HAVE_PR_TOKEN: ${{ secrets.DEPS_COMBINE_TOKEN != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          token: ${{ secrets.DEPS_COMBINE_TOKEN || secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Remediate transitive advisories in the lockfiles
@@ -62,16 +84,40 @@ jobs:
           git switch -C "$branch"
           git commit -am "chore(deps): remediate transitive security advisories"
           git push --force origin "$branch"
-          if [[ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]]; then
+
+          # A create refusal must not abort the step: the dispatch below is what
+          # gives the pushed head its CI, and the contract test pins the dispatch
+          # to run after a new or updated pull request. So record the outcome and
+          # carry on.
+          create_status=0
+          if [[ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]]; then
+            echo "Remediation pull request is already open; branch updated in place."
+          elif [[ "$HAVE_PR_TOKEN" == "true" ]]; then
             gh pr create \
               --base main \
               --head "$branch" \
               --title "chore(deps): auto-remediate transitive security advisories (#406)" \
-              --body "Automated \`npm audit fix --package-lock-only --omit=dev\` remediation of newly-published advisories against the pinned dependency tree. Review the lockfile diff and let the release gate confirm the audit is clean before merging."
+              --body "Automated \`npm audit fix --package-lock-only --omit=dev\` remediation of newly-published advisories against the pinned dependency tree. Review the lockfile diff and let the release gate confirm the audit is clean before merging." || create_status=$?
+          else
+            echo "::error::Remediated advisories are pushed to '$branch' but no pull request could be opened."
+            echo "::error::GITHUB_TOKEN cannot create one: Actions is not permitted to create pull requests in this organisation."
+            echo "::error::Add DEPS_COMBINE_TOKEN as an organisation secret (a PAT with 'repo' scope); combine-deps.yml needs the same one."
+            echo "::error::Until then, open the pull request by hand: gh pr create --base main --head $branch"
+            create_status=1
           fi
+
           # GITHUB_TOKEN suppresses push/pull_request workflow triggers, but
           # workflow_dispatch runs CI on the pushed head for new and updated PRs.
+          # Unconditional: with a PAT the push raises its own event too, so that
+          # head may get two runs — preferred over a head with none.
           gh workflow run ci.yml --ref "$branch"
+
+          # Reached only when the dispatch succeeded; -e has already propagated a
+          # dispatch failure. A pull request that could not be opened is a failure
+          # of this job: by now the working tree holds the REMEDIATED lockfiles, so
+          # the residual gate below would report a clean audit and the run would go
+          # green with an advisory on a branch nobody is looking at.
+          exit "$create_status"
       - name: Fail if high-severity advisories remain after auto-fix
         shell: bash
         run: |

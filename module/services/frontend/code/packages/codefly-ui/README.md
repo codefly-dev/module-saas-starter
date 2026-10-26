@@ -32,8 +32,8 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   `Tabs`) and the shadcn primitives promoted into the kit as their single sealed
   home (issue #451) — actions (`Button`), forms (`Input`, `Textarea`, `Label`,
   `Checkbox`, `Switch`, `Select`), data display (`Badge`, `Chip`, `List`,
-  `DescriptionList`, `Avatar`, `Table`, `Skeleton`, `Separator`), feedback
-  (`Banner`, `EmptyState`, `ErrorState`) and overlays (`Dialog`, `AlertDialog`, `Notice`, `Tooltip`,
+  `DescriptionList`, `Avatar`, `Table`, `Skeleton`, `Separator`, `QRCode`),
+  feedback (`Banner`, `EmptyState`, `ErrorState`) and overlays (`Dialog`, `AlertDialog`, `Notice`, `Tooltip`,
   `DropdownMenu`); `dashboard` is `<Dashboard>`, charts, `fromDashboardData`; `chat`
   is `<Chat>`. React only: no plugin runtime, no host context.
   `<Dashboard>` paints with the **metric tier** — `StatTile`/`KPIRow` for scalar
@@ -128,6 +128,11 @@ solution measured where it had to reach past the kit.
 - **`<Banner tone>`.** `neutral` (the default) is the product speaking and keeps
   the original look; the status tones add a glyph each. `danger` is
   `role="alert"`, the rest `role="status"`.
+- **`<Banner>` without a `title`** is a one-sentence status about the region
+  beside it: `children` becomes the primary text, at the title's weight, and the
+  tone keeps its glyph. It is still a live region, announced when it appears —
+  so a hint that only describes a control belongs in `Field`'s `description`,
+  and one that describes a page in muted text, not in a banner.
 - **`<EmptyState reference>`.** "The source card above says where this stands"
   is a pointer, not an explanation (`description`) and not something to press
   (`children`).
@@ -145,6 +150,7 @@ solution measured where it had to reach past the kit.
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, `DashboardWidget`, `DashboardSectionHeader`, metric tiles + charts, `SortableGrid`/`SortableBoard`, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 | `@codefly-dev/ui/content`         | `Content`, `Markdown`, `JsonView`, `CodeBlock`, `TextBlock` (React-only) |
+| `@codefly-dev/ui/playground` | `PlaygroundShell`, `PlaygroundThemeToggle`, `CapabilityGuide`, `ScenarioSteps`/`Step`, `OperationLog` (React-only) |
 | `@codefly-dev/ui/board`           | `Board` (React-only)                                |
 | `@codefly-dev/ui/dashboard-catalog.json` | The dashboard components as an A2UI catalog — the exact document a consumer freezes |
 | `@codefly-dev/ui/dashboard-data.schema.json` | The data model those catalog bindings resolve against |
@@ -162,7 +168,7 @@ The plugin peers are published alongside the kit under `@codefly-dev` and are
 required. GitHub Packages omits `peerDependenciesMeta` from version metadata;
 marking unpublished peers optional therefore does not make a registry install
 work. Normal npm resolution now installs a complete published peer graph.
-The `./layout`, `./dashboard`, `./chat`, `./content`, `./board` and `./lifecycle`
+The `./layout`, `./dashboard`, `./chat`, `./content`, `./board`, `./playground` and `./lifecycle`
 entry points still do not import the plugin runtime; installing its peers does
 not bundle them into those presentation entry points.
 
@@ -728,3 +734,53 @@ Version 0.12.3 refreshes the default preview palette from appearance contract 2.
 Version 0.12.4 also makes destructive/danger Badge text mix 30% toward the active
 foreground, retaining its status hue while meeting small-text contrast on its
 tinted background in the tested default and supplied light/dark skins.
+
+## A playground page supplies the work; the shell supplies the frame
+
+`@codefly-dev/ui/playground` (since 0.12.16) extracts the shared sidebar, page
+header and composition footer into `PlaygroundShell`. Pass
+`title`, `moduleName`, `composition`, `scenarios`, `active` and `onSelect`; the
+shell closes mobile navigation after selection. Pages own scenario selection,
+transport, authorization, fixture data and actions, passed through children,
+`actions` and `notices`. The shell fetches nothing and grants no access.
+
+`CapabilityGuide` takes every public capability, including gaps: `demonstrated`,
+`reachable` (not demonstrated), or `unreachable`. The latter two require a
+`reason`. `ScenarioSteps` contains ordered `Step` children with an `operation`,
+`request`, optional `response`, and `state` (`pending`, `running`, `done`,
+`failed`); failures require `refusal` text. Responses use the kit's `JsonView`.
+`OperationLog` takes entries with unique call IDs in invocation order, including
+repeated operations. Supply only payloads appropriate for the viewer to inspect
+and copy. These are displays of caller-owned results, not an execution engine.
+
+The shell's optional `theme={{ mode, onModeChange }}` renders the kit's
+`PlaygroundThemeToggle`. It is a stateless light/dark button: the caller supplies
+the current mode and applies the requested mode through its theme owner. The kit
+never reads or changes the document palette. A host with its own control can
+omit `theme` and pass `actions={<ThemeControl />}` instead. Theme initialization,
+transitions and persistence remain with the caller. The host-free preview harness
+initializes the palette before rendering, imports `@codefly-dev/ui/preview.css`
+once, and applies the kit control's callback; no host application code is loaded.
+
+`className` overrides the shell's layout gutters (default `p-6`); use `p-0` inside
+an already padded host shell. `description` supplies the header fallback when
+there is no selected scenario description. Empty navigation displays a message;
+the composition caption stays in the page body, visible with navigation closed,
+and adds no footer landmark. The shell does not change how consumer content wraps.
+
+`CapabilityGuide`, `ScenarioSteps` and `OperationLog` each accept `title` and
+`emptyState` overrides. Empty steps render that message instead of an empty list.
+Pass `labels` to the shell, theme control, guide, step or log to override their
+navigation, composition, theme, capability/operation status and exchange copy;
+for example, `labels={{ failed: "Refused", request: "Input", response: "Output",
+noResponse: "Waiting for output" }}` on a step or log. Each component receives
+its own labels; the shell does not inject copy into consumer children. The log
+shows a call's status once, in its disclosure heading, and retains refusal or
+outcome text in the expanded body.
+
+The fixture is `stories/playground.stories.tsx`; run
+`node scripts/test-playground-browser.mjs` from the frontend code directory
+to exercise it in the existing package preview harness and capture screenshots.
+Browser checks cover each evidence export standalone and inside the shell,
+including long operation/capability names, refusal text, keyboard navigation,
+consumer wrapping, and a locally scrolling wide table at phone width.

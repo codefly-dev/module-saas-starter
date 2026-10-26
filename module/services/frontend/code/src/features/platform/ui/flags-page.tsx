@@ -15,8 +15,13 @@ import { useFeatureFlags } from "../service/queries";
 
 const col = createColumnHelper<FeatureFlag>();
 
+// The rows when there is no answer. TanStack Table resets the page on every new
+// `data` array and that reset re-renders this page, so a fresh `[]` per render
+// would re-render it forever while the read is refused or disabled.
+const NO_FLAGS: FeatureFlag[] = [];
+
 export function FlagsPage() {
-	const { data: flags = [], isLoading } = useFeatureFlags();
+	const { data: flags = NO_FLAGS, isLoading } = useFeatureFlags();
 
 	const columns = useMemo(
 		() => [

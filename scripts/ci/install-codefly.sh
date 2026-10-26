@@ -2,8 +2,18 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.185}"
+version="${CODEFLY_VERSION:-0.1.215}"
+source_revision=""
 case "${version}" in
+  source-8de0f6674550fb040f03bc6cb2530116878c8c6b)
+    # Host-interface candidate: exports every explicitly served proto package.
+    source_revision="${version#source-}"
+    ;;
+  source-5234ce248b092edf1138a16ec4140dfbc8745522)
+    # Lifecycle candidate: recognises CLI-owned artifact-cache in every CI
+    # phase. Qualify exact owner source without requiring a release first.
+    source_revision="${version#source-}"
+    ;;
   0.1.145)
     checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
     ;;
@@ -57,6 +67,29 @@ case "${version}" in
     # Previous generator pin; retained for explicit historical qualifications.
     checksum=6e7666ef095815a77c10fb1644c69e17b0e8869476c18713bfaa496971b5c45f
     ;;
+  0.1.197)
+    # Includes the merged lifecycle/artifact-cache changes (cli#994) and
+    # environment-wide standard OTEL delivery (cli#1097).
+    checksum=f426ca8ad8c13be4a8aba63c3618a866cb35462a9eb08def2a59b4d9b8290827
+    ;;
+  0.1.213)
+    # Carries cli#1128 (source 8de0f667, squash-merged) and cli#1158: the
+    # hop-routes producer, which resolves the authority interface dependency.
+    # Digest of the downloaded Linux amd64 archive; matches checksums.txt.
+    checksum=e144417e595aa4e98937e01e5c2ce15123ae962fbe446479e8cd82e70ff7536a
+    ;;
+  0.1.215)
+    # cli#1173: --services narrows generated library descriptors and facades.
+    # Published checksums.txt, Linux amd64 archive.
+    checksum=02fee236eb8bee468254a73a88259df0329da71a55977aa0e71b5c1cabd01471
+    ;;
+  0.1.214)
+    # Carries cli#1166 (buf-module client proto sources; generate proto --path
+    # over multi-input templates) and cli#1162 (namespaced TypeScript client
+    # barrel exports), so the generated libraries regenerate from a release.
+    # Digest of the downloaded Linux amd64 archive; matches checksums.txt.
+    checksum=4916b4926ff801c42bc5a7734ff9b254e6537d441f00aad59766c4ac4f76244c
+    ;;
   0.1.185)
     # Released Core v0.18.0 and cli#947: scope-slot delivery, endpoint-served
     # Runnable derivation, and CLI-owned module contracts.codefly.yaml.
@@ -72,6 +105,19 @@ esac
 if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
   echo 'The CI Codefly installer requires Linux x64' >&2
   exit 1
+fi
+
+if [[ -n "${source_revision}" ]]; then
+  if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+    echo 'A host release requires a qualified released Codefly pin, not a source candidate' >&2
+    exit 1
+  fi
+  install -d "${RUNNER_TEMP}/codefly-bin"
+  GOWORK=off GOBIN="${RUNNER_TEMP}/codefly-bin" go install \
+    -ldflags "-X github.com/codefly-dev/cli/pkg/cliupdate.version=${version}" \
+    "github.com/codefly-dev/cli/cmd/codefly@${source_revision}"
+  echo "${RUNNER_TEMP}/codefly-bin" >> "${GITHUB_PATH}"
+  exit 0
 fi
 
 archive="codefly_${version}_linux_amd64.tar.gz"

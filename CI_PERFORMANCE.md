@@ -4,6 +4,15 @@ Target: less than five minutes from workflow creation to the successful release
 gate on an ordinary code change, with every existing check retained. Publication
 steps are additional. Queue time counts toward the target.
 
+The lifecycle candidate currently builds the exact CLI commit selected in
+`scripts/ci/install-codefly.sh` through its canonical Go installation entrypoint.
+Every job uses this same pin, including the planner. Released 0.1.185 cannot
+validate the new CLI-owned artifact-cache group; shipping a dummy default would
+conflict with render ownership. Source compilation adds cold-cache time and
+is development qualification only. The installer rejects release tags until a
+qualified released CLI replaces this candidate. Released archive selections
+still verify the paired checksum and retain their retry behavior.
+
 ## Measured baseline
 
 Two successful runs sampled on 2026-09-11 UTC:
@@ -195,3 +204,12 @@ commands. `node scripts/ci/release-gates.mjs check` validates publication
 dependencies and action pins. `actionlint .github/workflows/ci.yml` validates
 the provider workflow. Full hosted CI has run with these changes; see
 "Hosted result" above.
+
+### Configuration-sensitive test isolation
+
+Gateway configuration tests run with the same workspace values as their CI
+service. A fallback test that clears a process value must also reload the SDK
+configuration snapshot, then restore it after its environment cleanup. Otherwise
+an earlier test can leave the runner's default in the snapshot and mask the
+fallback under test. `TestConfiguredAuthenticationAttemptLimit` exercises this
+under the runner's configured default as well as a plain local `go test` run.

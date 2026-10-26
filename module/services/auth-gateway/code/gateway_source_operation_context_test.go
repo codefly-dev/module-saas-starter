@@ -97,7 +97,7 @@ func newSourceOperationContextHarness(t *testing.T) (*Gateway, *fakeAccountsSour
 }
 
 func sourceOperationContextRequest(body, token, internal string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, moduleSourceOperationContextPath, strings.NewReader(body))
+	req := onWorkloadEndpoint(httptest.NewRequest(http.MethodPost, moduleSourceOperationContextPath, strings.NewReader(body)))
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -258,7 +258,7 @@ func TestGateway_ModuleSourceOperationContext_ReasonsAreTheWireContract(t *testi
 func TestGateway_ModuleSourceOperationContext_MethodNotAllowed(t *testing.T) {
 	gw, mint := newSourceOperationContextHarness(t)
 
-	req := httptest.NewRequest(http.MethodGet, moduleSourceOperationContextPath, nil)
+	req := onWorkloadEndpoint(httptest.NewRequest(http.MethodGet, moduleSourceOperationContextPath, nil))
 	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)

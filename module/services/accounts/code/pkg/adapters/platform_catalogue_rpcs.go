@@ -57,10 +57,6 @@ func catalogueRegistrationProto(record *business.SolutionRegistration) *gen.Solu
 	if out.Frontend != nil {
 		out.Frontend.Manifest = ""
 	}
-	if out.Backend != nil {
-		out.Backend.Upstream = ""
-		out.Backend.ServiceAlias = ""
-	}
 	return out
 }
 

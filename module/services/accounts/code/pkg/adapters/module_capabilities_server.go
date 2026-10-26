@@ -25,6 +25,29 @@ import (
 // business.Service, which enforces the per-principal grant.
 type ModuleCapabilitiesServer struct {
 	gen.UnsafeModuleCapabilitiesServiceServer
+	// ask narrows one mint below what the module is entitled to. It is set
+	// only on a per-call copy (askingModuleCapabilities), never on the shared
+	// server, whose mints are the whole entitlement.
+	ask *moduleMintAsk
+}
+
+// moduleMintAsk is what a caller asked of one module mint: a lifetime, which
+// only shortens the window, and for an operation context a narrowing of the
+// resolved authority, which only narrows it or refuses.
+type moduleMintAsk struct {
+	ttl    time.Duration
+	narrow func(business.ModuleOperationContextAuthority) (business.ModuleOperationContextAuthority, error)
+}
+
+// askingModuleCapabilities is base for one mint narrowed by ask; base itself
+// is never changed.
+func askingModuleCapabilities(base *ModuleCapabilitiesServer, ask moduleMintAsk) *ModuleCapabilitiesServer {
+	asking := ModuleCapabilitiesServer{}
+	if base != nil {
+		asking = *base
+	}
+	asking.ask = &ask
+	return &asking
 }
 
 // moduleCapabilitiesSingleton is shared between the raw-gRPC internal listener
@@ -44,8 +67,8 @@ func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
 		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
 	}
 	values := md.Get(workContextHeader)
-	if len(values) == 0 || values[0] == "" {
-		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
+	if len(values) != 1 || values[0] == "" {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "exactly one module work context required")
 	}
 	return WorkContextSingleton().VerifyModuleWorkContext(ctx, values[0])
 }
@@ -71,24 +94,6 @@ func moduleIdentityError(err error, denied codes.Code, message string) error {
 	return nil
 }
 
-// moduleMintWorkloadPeer imports the attestation for the shared BindExecution
-// check. An empty or ambiguous attestation is present and fails that check;
-// absence preserves the plain module endpoint.
-func moduleMintWorkloadPeer(ctx context.Context) context.Context {
-	// This RPC is on the internal tier. The gateway creates this attestation
-	// from its verified TLS connection, never from an HTTP request header.
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if peers := md.Get("x-codefly-workload-spiffe-id"); len(peers) != 0 {
-			peer := ""
-			if len(peers) == 1 {
-				peer = peers[0]
-			}
-			ctx = business.WithWorkloadPeer(ctx, peer)
-		}
-	}
-	return ctx
-}
-
 // MintModuleWorkContext issues that Work Context. It takes none itself — this
 // is where a module obtains its identity — so it authenticates with the pod's
 // projected ServiceAccount token: accounts reviews it, reads the pod it names
@@ -105,25 +110,15 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	ctx = moduleMintWorkloadPeer(ctx)
-	// The dynamic half first, on identity alone: the proven workload reports
-	// where it serves, installed or not, so the host can reach it with the
-	// install step that makes the mint below possible.
-	if err := service.ModuleReportUpstream(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetUpstream(), req.GetManifest()); err != nil {
-		if errors.Is(err, business.ErrModuleUpstreamRefused) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-		if mapped := moduleIdentityError(err, codes.PermissionDenied, "module work context denied"); mapped != nil {
-			return nil, mapped
-		}
-		return nil, err
-	}
 	authority, err := service.ModuleAuthorizeWorkContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetOrganizationId())
 	if err != nil {
 		if mapped := moduleIdentityError(err, codes.PermissionDenied, "module work context denied"); mapped != nil {
 			return nil, mapped
 		}
 		return nil, err
+	}
+	if s.ask != nil {
+		authority.TTL = s.ask.ttl
 	}
 	// The declared tenant is checked against the database before anything is
 	// signed. Everything upstream validates its *form* only, and the capability
@@ -145,7 +140,7 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			return nil, status.Error(codes.FailedPrecondition, err.Error())
 		}
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	// The record is written only once the capability exists, and the capability is
 	// withheld when the record cannot be committed.
@@ -186,7 +181,6 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	ctx = moduleMintWorkloadPeer(ctx)
 	authority, err := service.ModuleAuthorizeOperationContext(ctx, req.GetPrefix(), req.GetServiceAccountToken(), req.GetBinding(), req.GetOrganizationId())
 	if err != nil {
 		if mapped := moduleIdentityError(err, codes.Unauthenticated, "module operation context denied"); mapped != nil {
@@ -196,6 +190,13 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 			return nil, status.Error(codes.PermissionDenied, "operation binding is not mintable without a person present")
 		}
 		return nil, err
+	}
+	// A caller's ask narrows what the binding grants, or refuses by name;
+	// it never widens it.
+	if s.ask != nil && s.ask.narrow != nil {
+		if authority, err = s.ask.narrow(authority); err != nil {
+			return nil, err
+		}
 	}
 	// The same tenant existence check MintModuleWorkContext runs: the capability
 	// seals the tenant, and nothing downstream would notice one that is not there.
@@ -210,7 +211,7 @@ func (s *ModuleCapabilitiesServer) MintModuleOperationContext(ctx context.Contex
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			return nil, status.Error(codes.FailedPrecondition, err.Error())
 		}
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	// Written once the capability exists; withheld when it cannot be committed.
 	if err := service.RecordModuleOperationContextMint(ctx, req.GetPrefix(), authority); err != nil {

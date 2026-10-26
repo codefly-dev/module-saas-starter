@@ -1,16 +1,16 @@
 {
   "schema": "codefly/module-api-contracts/v1",
-  "package": "codefly/saas-starter",
-  "version": "0.1.0",
+  "package": "local",
+  "version": "0.0.0",
   "endpoints": [
     {
       "service": "accounts",
-      "endpoint": "connect",
-      "api": "connect",
+      "endpoint": "authority",
+      "api": "grpc",
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:a0fb4ae81270a9648d4d119f5b7c87dff9ce0aaf0fc8e3de0a6213ec32aa70da",
+      "digest": "sha256:30bfd77c270428933734b6ae35f5cca165db62fbe181c3f7717a663b1aa0ed73",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -45,6 +45,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
             "/saas.accounts.v1.ModuleCapabilitiesService/RevokeExecutableArtifact",
             "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
             "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"

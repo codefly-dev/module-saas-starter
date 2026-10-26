@@ -22,40 +22,36 @@ import (
 )
 
 // The delivery endpoint, END TO END: the real HTTP handler, the real
-// TokenReview carrier check, the real Postgres inbox, and the real reconciler
-// reading that inbox.
-//
-// WHY THIS FILE EXISTS RATHER THAN MORE HANDLER TESTS. The handler tests beside
-// `solution_delivery_http.go` wire the service's whole delivery half out of
-// fakes: a fake verifier, a fake inbox, a fake carrier authorizer. That is the
-// right shape for the response-code table and the wrong shape for everything
-// else, because a fake standing in for the thing under test proves the caller
-// and never the thing. Three defects survived that suite:
-//
-//   - both paths verified with the PRESENCE reader, so an authority document
-//     could not be delivered at all and a presence document POSTed to
-//     /authority was stored as kind=authority;
-//   - a tombstone declares no workload and therefore no namespace, so the
-//     carrier check refused it and REMOVAL THROUGH THE API WAS IMPOSSIBLE;
-//   - nothing read the inbox, because the reconciler's source was the mount.
-//
-// None of the three is visible when the inbox and the carrier check are fakes.
-// So these drive the real ones.
-//
-// Signing and verification use real platform-key envelopes. The remaining
-// doubles model the cluster API and the external policy log, while persistence
-// and reconciliation exercise the production path.
+// TokenReview carrier check against a fake API server, the real Postgres inbox,
+// and the real reconciler reading that inbox. The handler tests beside
+// solution_delivery_http.go fake the inbox and the carrier check; these do
+// not, so a manifest that cannot actually be delivered, applied and withdrawn
+// through the API fails here.
 
-// The signer identity this host attests delivery as for the fixtures. It is
-// core's own, because the shipped documents are written against it.
-const productionPathSigner = solutionhost.FixtureDeliveredBy
+// productionPathSigner is the pinned key these tests sign with, and
+// productionPathForeignSigner a key pinned for another ownership domain.
+const (
+	productionPathSigner        = "example-release"
+	productionPathForeignSigner = "globex-release"
+	productionPathForeignDomain = "globex"
+)
 
-// deliveryWriter is the one service account that delivers, for either kind.
-const deliveryWriterAccount = "delivery"
+// productionPathDomain is the ownership domain this file's manifests are
+// delivered under, and productionPathCoordinate the host they target.
+const (
+	productionPathDomain     = "acme"
+	productionPathCoordinate = "acme/test/eu-west-1"
+)
 
-// authorityWriterNamespace is the authority half's fixed writer namespace, as
-// the carrier check requires it.
-const authorityWriterNamespace = "platform-authority"
+// The host these tests stand in for runs as module "saas" in
+// "platform-acme-test-saas", so a module's namespace is
+// "platform-acme-test-<module>" by the cell's rule.
+const (
+	productionPathHostNamespace = "platform-acme-test-saas"
+	productionPathHostModule    = "saas"
+)
+
+func productionPathNamespace(module string) string { return "platform-acme-test-" + module }
 
 // productionPathDelivery is the whole receiving side, assembled from the real
 // pieces.
@@ -63,17 +59,16 @@ type productionPathDelivery struct {
 	service *business.Service
 	handler http.Handler
 
-	// callerNamespace is the namespace the fake API SERVER authenticates the
-	// caller in. A fake api server rather than a fake carrier check: the
-	// namespace comparison, the service-account comparison and the audience on
-	// the review are all real, and a fake check would let every one of them go
-	// untested while looking identical.
+	// callerNamespace and callerAccount are what the fake API SERVER
+	// authenticates the caller as. A fake api server rather than a fake carrier
+	// check: the namespace and account comparisons are real.
 	callerNamespace string
+	callerAccount   string
 }
 
 func newProductionPathDelivery(t *testing.T) *productionPathDelivery {
 	t.Helper()
-	delivery := &productionPathDelivery{callerNamespace: authorityWriterNamespace}
+	delivery := &productionPathDelivery{callerAccount: "delivery"}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/apis/authentication.k8s.io/v1/tokenreviews" {
 			http.NotFound(w, r)
@@ -83,7 +78,7 @@ func newProductionPathDelivery(t *testing.T) *productionPathDelivery {
 			"authenticated": true,
 			"audiences":     []string{"accounts"},
 			"user": map[string]any{
-				"username": "system:serviceaccount:" + delivery.callerNamespace + ":" + deliveryWriterAccount,
+				"username": "system:serviceaccount:" + delivery.callerNamespace + ":" + delivery.callerAccount,
 			},
 		}}
 		w.Header().Set("Content-Type", "application/json")
@@ -93,268 +88,187 @@ func newProductionPathDelivery(t *testing.T) *productionPathDelivery {
 
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
-	// A WITHDRAWAL IS A NARROWING OF AUTHORITY, so the apply that closes an
-	// installable target must be witnessed by the external policy log before it
-	// takes effect. A service with no log cannot withdraw at all — which is the
-	// correct production behaviour and not a configuration a test should assert
-	// against, so the double below stands in for the warehouse. It is the LOG
-	// that is doubled, not the protocol: the receipts and the cursor go to the
-	// real Postgres store.
+	// A withdrawal is a narrowing of authority, witnessed by the external
+	// policy log before it takes effect; the double stands in for the log
+	// only, and the receipts go to the real store.
 	service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
-	service.SetSolutionDelivery(
-		deliverytest.Verifier(t, map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}}),
-		testStore,
-		infra.NewSolutionDeliveryCarrierCheck(infra.NewKubernetesClientForTest(t, server)),
-		map[string][]string{
-			productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain},
-		},
-	)
+	service.SetSolutionDelivery(productionVerifier(t), testStore,
+		infra.NewSolutionDeliveryCarrierCheck(infra.NewKubernetesClientForTest(t, server)))
+	service.SetSolutionDeliveryCoordinate(productionPathCoordinate)
+	rule, err := business.NewModuleNamespaceRule(productionPathHostNamespace, productionPathHostModule)
+	require.NoError(t, err)
+	service.SetModuleNamespaceRule(rule)
 	delivery.service = service
 	delivery.handler = adapters.NewSolutionDeliveryHTTPHandler(service)
 	return delivery
 }
 
-// post delivers one carrier to one kind's path, as the Job does.
-func (d *productionPathDelivery) post(
-	t *testing.T, kind business.SolutionDeliveryKind, body []byte,
-) *httptest.ResponseRecorder {
+// post delivers one carrier, as the Job does.
+func (d *productionPathDelivery) post(t *testing.T, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
-	request := httptest.NewRequest(http.MethodPost,
-		adapters.SolutionDeliveryPrefix+string(kind), strings.NewReader(string(body)))
+	request := httptest.NewRequest(http.MethodPost, adapters.SolutionDeliveryManifestPath, strings.NewReader(string(body)))
 	request.Header.Set("Authorization", "Bearer projected-delivery-token")
 	recorder := httptest.NewRecorder()
 	d.handler.ServeHTTP(recorder, request)
 	return recorder
 }
 
-// inbox reads the newest delivered generation per document for one kind,
-// through the store method the reconciler itself reads with.
-func inbox(t *testing.T, kind business.SolutionDeliveryKind) map[string]*business.SolutionDeliveryRecord {
+// deliver posts manifest as the delivery account of its module's namespace.
+func (d *productionPathDelivery) deliver(t *testing.T, manifest *solutionhost.ModuleManifest) *httptest.ResponseRecorder {
 	t.Helper()
-	var records []*business.SolutionDeliveryRecord
-	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		var err error
-		records, err = testStore.ListNewestDeliveredDocuments(ctx, kind)
-		return err
-	}))
-	byID := make(map[string]*business.SolutionDeliveryRecord, len(records))
-	for _, record := range records {
-		byID[record.DocumentID] = record
-	}
-	return byID
+	d.callerNamespace, d.callerAccount = productionPathNamespace(manifest.Alias), "delivery"
+	return d.post(t, productionPathCarrier(t, manifest))
 }
 
-// ---------------------------------------------------------------------------
-// The two kinds are two readers
-// ---------------------------------------------------------------------------
-
-// CORE'S OWN SIGNED FIXTURES, one per kind, through the real handler: each is
-// accepted on its own path and refused on the other's.
-//
-// The fixtures are the point. A document this repository writes for itself
-// agrees with this repository's reading of the schema by construction; core's
-// are the bytes the renderer produces and the three repositories share. And the
-// cross-kind half is what the inverted dispatch could not do: before it, the
-// genuine authority fixture was REFUSED at /authority with "schema not
-// supported", while the presence fixture POSTed to /authority was accepted and
-// filed as kind=authority.
-//
-// The refusal is asserted as 400 rather than merely "an error". The bytes are
-// wrong, not the signer: a 403 would send an operator to look at a signing
-// identity that signed the document perfectly well and was simply sent to the
-// wrong path.
-func TestSignedFixturesAreAcceptedOnTheirOwnKindAndRefusedOnTheOther(t *testing.T) {
-	presence := signedFixture(t, "presence")
-	authority := signedFixture(t, "authority")
-
-	delivery := newProductionPathDelivery(t)
-
-	// The presence fixture's workloads declare namespace alpha-region-a-01, and
-	// the carrier must authenticate there.
-	delivery.callerNamespace = fixturePresenceNamespace
-	accepted := delivery.post(t, business.SolutionDeliveryPresence, presence)
-	requireDelivered(t, accepted)
-	presenceRow := inbox(t, business.SolutionDeliveryPresence)[solutionhost.FixtureBindingID]
-	require.NotNil(t, presenceRow, "the presence fixture is not in the inbox under its binding id")
-	require.Equal(t, uint64(4), presenceRow.Generation)
-	require.Equal(t, solutionhost.FixtureDomain, presenceRow.OwnershipDomain)
-	require.Equal(t, productionPathSigner, presenceRow.SignerIdentity)
-
-	delivery.callerNamespace = authorityWriterNamespace
-	accepted = delivery.post(t, business.SolutionDeliveryAuthority, authority)
-	requireDelivered(t, accepted)
-	authorityRow := inbox(t, business.SolutionDeliveryAuthority)[fixtureAuthorityID]
-	require.NotNil(t, authorityRow,
-		"the authority fixture is not in the inbox: an authority document could not be delivered at all")
-	require.Equal(t, uint64(2), authorityRow.Generation)
-	require.Equal(t, fixtureAuthorityID, authorityRow.DocumentID,
-		"an authority row is keyed by its OWN id, never by the presence binding it is granted over")
-
-	// Now each on the other's path.
-	refused := delivery.post(t, business.SolutionDeliveryAuthority, presence)
-	require.Equal(t, http.StatusBadRequest, refused.Code,
-		"a presence document POSTed to /authority is wrong BYTES for that path, not a wrong signer")
-	require.NotContains(t, inbox(t, business.SolutionDeliveryAuthority), solutionhost.FixtureBindingID,
-		"a presence document was filed as kind=authority")
-
-	delivery.callerNamespace = fixturePresenceNamespace
-	refused = delivery.post(t, business.SolutionDeliveryPresence, authority)
-	require.Equal(t, http.StatusBadRequest, refused.Code,
-		"an authority document POSTed to /presence is wrong BYTES for that path")
-	require.NotContains(t, inbox(t, business.SolutionDeliveryPresence), fixtureAuthorityID,
-		"an authority document was filed as kind=presence")
-}
-
-// fixturePresenceNamespace is the namespace core's valid presence fixture
-// declares through its workload's SPIFFE ID, which is what its carrier is
-// authorised against.
-const fixturePresenceNamespace = "alpha-region-a-01"
-
-// fixtureAuthorityID is the authority id core's valid authority fixture
-// declares. It is deliberately NOT FixtureBindingID: an authority document is
-// identified by its own id and granted over a binding, and conflating the two
-// is what let a withdrawal be reinstated by renaming.
-const fixtureAuthorityID = "alpha-region-a-01-authority"
-
-// signedFixture returns one of core's shipped signed carriers by name, through
-// FixturesOf so a fixture that is renamed or dropped fails here rather than
-// silently stopping being exercised.
-func signedFixture(t *testing.T, name string) []byte {
+// observe reads the applied state as the protected observer.
+func (d *productionPathDelivery) observe(t *testing.T, binding string, want int) *business.SolutionDeliveryApplied {
 	t.Helper()
-	for _, fixture := range solutionhost.FixturesOf(solutionhost.DocumentTypeSigned) {
-		if fixture.Name == name {
-			require.Equal(t, solutionhost.OutcomeAccepted, fixture.Outcome,
-				"this test drives the ACCEPTED fixtures; %q is now expected to be rejected", name)
-			return fixture.Document
-		}
+	namespace, account := d.callerNamespace, d.callerAccount
+	d.callerNamespace, d.callerAccount = "istio-presenter", "endpoint-publisher"
+	defer func() { d.callerNamespace, d.callerAccount = namespace, account }()
+	r := httptest.NewRequest(http.MethodGet, adapters.SolutionDeliveryPrefix+"applied/"+binding, nil)
+	r.Header.Set("Authorization", "Bearer projected-observer-token")
+	w := httptest.NewRecorder()
+	d.handler.ServeHTTP(w, r)
+	require.Equal(t, want, w.Code, w.Body.String())
+	if want != http.StatusOK {
+		return nil
 	}
-	t.Fatalf("core ships no signed fixture named %q", name)
-	return nil
+	var applied business.SolutionDeliveryApplied
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &applied))
+	return &applied
 }
 
-// requireDelivered accepts 202 and 200 and nothing else.
-//
-// Both are success and the difference is whether anything changed. The inbox is
-// append-only with no DELETE grant, so a fixture whose binding id and
-// generation are fixed is 202 the first time this package's database sees it and
-// 200 on every run after — and a test that demanded 202 would pass once and then
-// fail forever for a reason that has nothing to do with the behaviour.
+// requireDelivered accepts a 200 receipt: "accepted" the first time this
+// package's database sees a generation, "replayed" after.
 func requireDelivered(t *testing.T, recorder *httptest.ResponseRecorder) {
 	t.Helper()
-	if recorder.Code != http.StatusAccepted && recorder.Code != http.StatusOK {
-		t.Fatalf("delivery was refused with %d: %s", recorder.Code, recorder.Body.String())
-	}
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 }
 
-// ---------------------------------------------------------------------------
-// Removal through the API, end to end
-// ---------------------------------------------------------------------------
-
-// productionPathDomain is the ownership domain this file's own documents are
-// delivered under, and productionPathCoordinate the host they target.
-const (
-	productionPathDomain     = "acme"
-	productionPathCoordinate = "acme/test/eu-west-1"
-)
-
-// A TOMBSTONE IS ACCEPTED AND THE BINDING IS REMOVED, through the real endpoint
-// and the real inbox.
-//
-// This is the defect that made the delivery API unable to express the one thing
-// the whole design rests on. Removal is a GENERATION — nothing deletes from the
-// inbox and nothing deletes a binding — and a tombstone declares absence, so it
-// carries no workload and therefore no workload namespace. The carrier check
-// authorised a presence carrier against the namespaces the document's own
-// workloads declare and refused the empty set by name, so every tombstone was
-// 403 and a binding delivered through this endpoint could never be withdrawn
-// through it.
-//
-// The fix is not to relax the check. It is to authorise the carrier against the
-// namespace this host LAST APPLIED for that binding: its own recorded state,
-// from a generation it already verified and admitted, rather than anything the
-// arriving document asserts.
-//
-// The whole lifecycle is driven here because each half alone is satisfiable
-// without the other: a tombstone accepted but never reconciled leaves the
-// solution serving, and a reconcile that withdraws without the POST having been
-// accepted is the state the fake-sourced tests were already in.
-func TestTombstoneIsAcceptedAndWithdrawsTheRegistrationEndToEnd(t *testing.T) {
-	solutionID := uniqueAlias("rm")
-	namespace := "ns-" + solutionID
-	present := productionPathBinding(t, solutionID, namespace, 1)
-
+// A MANIFEST IS DELIVERED, APPLIED AND WITHDRAWN, through the real endpoint,
+// the real inbox and the real reconciler.
+func TestAManifestIsDeliveredAppliedAndWithdrawnEndToEnd(t *testing.T) {
+	solutionID := uniqueAlias("e2e")
+	present := productionPathManifest(t, solutionID, 1)
 	delivery := newProductionPathDelivery(t)
-	delivery.callerNamespace = namespace
-	requireDelivered(t, delivery.post(t, business.SolutionDeliveryPresence,
-		productionPathCarrier(t, present)))
+	delivery.observe(t, present.Binding, http.StatusNotFound)
+
+	recorder := delivery.deliver(t, present)
+	requireDelivered(t, recorder)
+	var receipt struct {
+		Disposition string `json:"disposition"`
+		Generation  uint64 `json:"generation"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &receipt))
+	require.Equal(t, "accepted", receipt.Disposition)
+	require.Equal(t, uint64(1), receipt.Generation)
+	delivery.observe(t, present.Binding, http.StatusNotFound) // received is not applied
 
 	reconciler := newProductionPathReconciler(t, delivery.service)
 	require.NoError(t, reconciler.RunOnce(testCtx))
-
 	applied := productionPathBindingRecord(t, delivery.service, present.Binding)
 	require.NotNil(t, applied.Applied, "the delivered generation was never applied from the inbox")
 	require.Equal(t, uint64(1), applied.Applied.Generation)
 	require.Equal(t, solutionID, applied.Applied.SolutionID)
-	require.False(t, applied.Applied.Removed)
+	digest, err := present.Digest()
+	require.NoError(t, err)
+	observed := delivery.observe(t, present.Binding, http.StatusOK)
+	require.Equal(t, digest, observed.Digest)
+	require.Equal(t, present.Host, observed.Host)
+	require.Nil(t, observed.Pending)
+	require.NotNil(t, registrationOf(t, delivery.service, solutionID))
 
-	// THE POST THAT WAS IMPOSSIBLE. The tombstone declares no workload, so its
-	// carrier is authorised against the namespace generation 1 applied.
-	tombstone := productionPathTombstone(t, present, 2)
-	receipt := delivery.post(t, business.SolutionDeliveryPresence, productionPathCarrier(t, tombstone))
-	if receipt.Code == http.StatusForbidden {
-		t.Fatalf("the tombstone's carrier was refused, so removal through the API is impossible: %s",
-			receipt.Body.String())
-	}
-	requireDelivered(t, receipt)
+	// Delivering the same generation again is a replay; an older or rewritten
+	// one is a conflict.
+	replay := delivery.deliver(t, present)
+	requireDelivered(t, replay)
+	require.Contains(t, replay.Body.String(), `"replayed"`)
+	rewritten := productionPathManifest(t, solutionID, 1)
+	rewritten.Release.Version = "9.9.9"
+	require.Equal(t, http.StatusConflict, delivery.deliver(t, rewritten).Code)
 
-	// The inbox's desired set is the NEWEST generation per document, so the
-	// tombstone supersedes generation 1 without anything being deleted.
-	row := inbox(t, business.SolutionDeliveryPresence)[present.Binding]
-	require.NotNil(t, row)
-	require.Equal(t, uint64(2), row.Generation)
-
+	// THE WITHDRAWAL, carried by the delivery account of the module it
+	// withdraws.
+	withdrawal := productionPathWithdrawal(t, present, 2)
+	requireDelivered(t, delivery.deliver(t, withdrawal))
+	require.False(t, delivery.observe(t, present.Binding, http.StatusOK).Removed, "received is not applied")
 	require.NoError(t, reconciler.RunOnce(testCtx))
 	withdrawn := productionPathBindingRecord(t, delivery.service, present.Binding)
-	require.NotNil(t, withdrawn.Applied)
-	require.Equal(t, uint64(2), withdrawn.Applied.Generation)
-	require.True(t, withdrawn.Applied.Removed, "the tombstone generation did not apply")
-	require.Equal(t, solutionID, withdrawn.Applied.SolutionID,
-		"a tombstone keeps the key it withdrew, so the removal stays attributable")
+	require.True(t, withdrawn.Applied.Removed, "the withdrawal did not apply")
+	require.Equal(t, solutionID, withdrawn.Applied.SolutionID, "a withdrawal keeps the key it withdrew")
+	require.True(t, delivery.observe(t, present.Binding, http.StatusOK).Removed)
+	require.NotNil(t, registrationOf(t, delivery.service, solutionID).TombstonedAt,
+		"the registration is still live after the binding was withdrawn")
 
-	// And the registry record the solution was served under is tombstoned, which
-	// is what actually takes it out of service.
-	registrations, _, err := delivery.service.ListSolutionRegistrations(testCtx, true)
-	require.NoError(t, err)
-	for _, registration := range registrations {
-		if registration.SolutionID == solutionID {
-			require.NotNil(t, registration.TombstonedAt,
-				"the registration is still live after the binding was withdrawn")
-		}
+	// A replay after a restart is carried from the same namespace and nowhere
+	// else, and the binding never comes back.
+	restarted := newProductionPathDelivery(t)
+	requireDelivered(t, restarted.deliver(t, withdrawal))
+	restarted.callerNamespace = productionPathNamespace("unrelated")
+	require.Equal(t, http.StatusForbidden, restarted.post(t, productionPathCarrier(t, withdrawal)).Code)
+	revived := productionPathManifest(t, solutionID, 3)
+	require.Equal(t, http.StatusConflict, restarted.deliver(t, revived).Code)
+}
+
+// The carrier is the `delivery` account of the manifest's module namespace by
+// the cell's rule, and nothing else: another account in that namespace,
+// another module's delivery account, and the bare module namespace are each
+// refused, and nothing reaches the inbox.
+func TestOnlyTheModulesDeliveryAccountCarriesItsManifest(t *testing.T) {
+	manifest := productionPathManifest(t, uniqueAlias("carrier"), 1)
+	delivery := newProductionPathDelivery(t)
+	for name, caller := range map[string][2]string{
+		"another account":           {productionPathNamespace(manifest.Alias), "default"},
+		"another module's delivery": {productionPathNamespace("billing"), "delivery"},
+		"the bare module namespace": {manifest.Alias, "delivery"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			delivery.callerNamespace, delivery.callerAccount = caller[0], caller[1]
+			recorder := delivery.post(t, productionPathCarrier(t, manifest))
+			require.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+			require.Contains(t, recorder.Body.String(), productionPathNamespace(manifest.Alias)+"/delivery")
+		})
+	}
+	var newest []*business.SolutionDeliveryRecord
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		newest, err = testStore.ListNewestDeliveredDocuments(ctx)
+		return err
+	}))
+	for _, record := range newest {
+		require.NotEqual(t, manifest.Binding, record.Binding, "a refused carrier reached the inbox")
 	}
 }
 
-// newProductionPathReconciler builds the reconciler over the DURABLE INBOX,
+func registrationOf(t *testing.T, service *business.Service, solutionID string) *business.SolutionRegistration {
+	t.Helper()
+	registrations, _, err := service.ListSolutionRegistrations(testCtx, true)
+	require.NoError(t, err)
+	for _, registration := range registrations {
+		if registration.SolutionID == solutionID {
+			return registration
+		}
+	}
+	return nil
+}
+
+// newProductionPathReconciler builds the reconciler over the durable inbox,
 // which is the only source there is.
-func newProductionPathReconciler(
-	t *testing.T, service *business.Service,
-) *business.SolutionHostBindingReconciler {
+func newProductionPathReconciler(t *testing.T, service *business.Service) *business.SolutionHostBindingReconciler {
 	t.Helper()
 	reconciler, err := business.NewSolutionHostBindingReconciler(service,
 		business.SolutionHostBindingReconcilerConfig{
-			Source:          business.NewDeliveredSolutionHostBindings(service),
-			Verifier:        deliverytest.Verifier(t, map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}}),
-			Coordinate:      productionPathCoordinate,
-			Domains:         []string{productionPathDomain},
-			DomainsBySigner: map[string][]string{productionPathSigner: {productionPathDomain}},
-			Interval:        time.Minute,
+			Source:     business.NewDeliveredSolutionHostBindings(service),
+			Verifier:   productionVerifier(t),
+			Coordinate: productionPathCoordinate,
+			Interval:   time.Minute,
 		})
 	require.NoError(t, err)
 	return reconciler
 }
 
-func productionPathBindingRecord(
-	t *testing.T, service *business.Service, bindingID string,
-) *business.SolutionHostBindingRecord {
+func productionPathBindingRecord(t *testing.T, service *business.Service, bindingID string) *business.SolutionHostBindingRecord {
 	t.Helper()
 	records, err := service.ListSolutionHostBindings(testCtx)
 	require.NoError(t, err)
@@ -367,123 +281,70 @@ func productionPathBindingRecord(
 	return nil
 }
 
-// productionPathBinding is a present generation for one solution on this test
-// host, with its workload in namespace.
-func productionPathBinding(
-	t *testing.T, solutionID, namespace string, generation uint64,
-) *solutionhost.SolutionHostBinding {
+// productionPathManifest is a live manifest for one module on this test host:
+// one workload, one routed endpoint.
+func productionPathManifest(t *testing.T, alias string, generation uint64) *solutionhost.ModuleManifest {
 	t.Helper()
-	document := &solutionhost.SolutionHostBinding{
-		Schema:           solutionhost.SchemaPresenceV1,
-		Kind:             solutionhost.KindSolution,
-		Binding:          "acme.test." + solutionID,
-		Generation:       generation,
-		OwnershipDomain:  productionPathDomain,
-		EnvelopeRevision: solutionhost.FixtureEnvelopeRevision,
-		Host: solutionhost.HostTarget{
-			Coordinate: productionPathCoordinate, Component: "saas-host",
-		},
-		Release: solutionhost.Release{
-			Publisher: "acme", Name: solutionID, Version: "1.4.0",
-			Digest: solutionhost.ReleaseDigest(fixtureDigest("release/" + solutionID)),
-		},
-		Routes: []solutionhost.Route{{Alias: solutionID, Surface: solutionhost.SurfaceBackend}},
-		Artifacts: []solutionhost.Artifact{{
-			Surface: solutionhost.SurfaceBackend, Name: "api",
-			Release: "acme/" + solutionID + "@1.4.0",
-			Digest:  solutionhost.RenderedDigest(fixtureDigest("rendered/" + solutionID)),
-		}},
-		Workloads: []solutionhost.Workload{{
-			Name: "api", Artifact: "api", Container: "api",
-			Image: solutionhost.Image{
-				Repository: "registry.example/acme/" + solutionID,
-				Digest:     solutionhost.ImageDigest(fixtureDigest("image/" + solutionID)),
-			},
-			// The namespace the carrier is authorised against reaches the host
-			// through this SPIFFE ID and nowhere else, which is what keeps it
-			// inside the signed bytes.
-			Identity: solutionhost.WorkloadIdentity{
-				Audience: "https://test.acme.example/solutions",
-				Subject:  "system:serviceaccount:" + namespace + ":api",
-				SPIFFEID: "spiffe://acme.test/ns/" + namespace + "/sa/api",
-			},
-			NonAuthenticating: &[]string{"telemetry-sidecar"},
-		}},
+	manifest := &solutionhost.ModuleManifest{
+		Schema: solutionhost.SchemaModuleManifestV1, Binding: "acme.test." + alias, Alias: alias,
+		Kind: solutionhost.KindSolution, Generation: generation,
+		Host:      solutionhost.HostTarget{Coordinate: productionPathCoordinate, Domain: productionPathDomain},
+		Release:   solutionhost.Release{Publisher: "acme", Name: alias, Version: "1.4.0"},
+		Workloads: []solutionhost.Workload{{Service: "api", Container: "api"}},
+		Endpoints: []solutionhost.Endpoint{{Name: "rest", Service: "api", API: "rest", Address: "http://api." + productionPathNamespace(alias) + ".svc.cluster.local:8080"}},
 	}
-	require.NoError(t, document.Validate(), "the fixture must be a valid binding")
-	return document
+	require.NoError(t, manifest.Validate(), "the fixture must be a valid manifest")
+	return manifest
 }
 
-// productionPathTombstone is the withdrawal of one binding: a higher generation
-// that declares nothing at all.
-func productionPathTombstone(
-	t *testing.T, document *solutionhost.SolutionHostBinding, generation uint64,
-) *solutionhost.SolutionHostBinding {
+// productionPathWithdrawal is the withdrawal of a manifest at generation.
+func productionPathWithdrawal(t *testing.T, manifest *solutionhost.ModuleManifest, generation uint64) *solutionhost.ModuleManifest {
 	t.Helper()
-	removed := *document
-	removed.Generation = generation
-	removed.Routes, removed.Artifacts, removed.Workloads = nil, nil, nil
-	removed.Modules, removed.Endpoints = nil, nil
-	removed.Removed = true
-	require.NoError(t, removed.Validate(), "the tombstone must be a valid binding")
+	removed := *manifest
+	removed.Generation, removed.Removed = generation, true
+	removed.Workloads, removed.Endpoints, removed.Authority, removed.Frontend, removed.Group = nil, nil, nil, nil, nil
+	require.NoError(t, removed.Validate(), "the withdrawal must be a valid manifest")
 	return &removed
 }
 
-// productionPathCarrier wraps a document in the carrier delivery POSTs: the
-// CANONICAL bytes, which are the signing input, plus a bundle over them.
-func productionPathCarrier(t *testing.T, document *solutionhost.SolutionHostBinding) []byte {
+// productionPathCarrier is the carrier delivery POSTs: the canonical bytes,
+// which are the signing input, and a DSSE envelope over them.
+func productionPathCarrier(t *testing.T, manifest *solutionhost.ModuleManifest) []byte {
 	t.Helper()
-	canonical, err := solutionhost.SignedPayload(document)
+	payload, err := solutionhost.SignedPayload(manifest)
 	require.NoError(t, err)
-	return deliverytest.Carrier(t, canonical, productionPathSigner)
+	return deliverytest.Carrier(t, payload, productionPathSigner)
 }
 
 // productionPathPolicyLog witnesses a narrowing, so a withdrawal can take
-// effect.
-//
-// It is deliberately a RECORDING double rather than a no-op that fabricates a
-// receipt out of nothing: the operation id is what the host's idempotency rests
-// on, so a log that answered the same receipt for every entry would let the
-// protocol pass while recording nothing distinguishable.
+// effect. A RECORDING double: the operation id is what the host's idempotency
+// rests on, so it is honoured.
 type productionPathPolicyLog struct {
 	mu       sync.Mutex
 	sequence uint64
 	records  []*business.PolicyLogRecord
 }
 
-func (l *productionPathPolicyLog) Append(
-	_ context.Context, entry *business.PolicyLogEntry,
-) (*business.PolicyLogReceipt, error) {
+func (l *productionPathPolicyLog) Append(_ context.Context, entry *business.PolicyLogEntry) (*business.PolicyLogReceipt, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	// Idempotent on the operation id, which the interface requires of a real
-	// log: a retry returns the original receipt rather than appending again.
 	for _, record := range l.records {
 		if record.OperationID == entry.OperationID {
-			return &business.PolicyLogReceipt{
-				Receipt: record.Receipt, Sequence: record.Sequence, AppendedAt: record.LoggedAt,
-			}, nil
+			return &business.PolicyLogReceipt{Receipt: record.Receipt, Sequence: record.Sequence, AppendedAt: record.LoggedAt}, nil
 		}
 	}
 	l.sequence++
 	receipt := &business.PolicyLogReceipt{
-		Receipt:    "delivery-test-receipt-" + entry.OperationID,
-		Sequence:   l.sequence,
-		AppendedAt: time.Now().UTC(),
+		Receipt: "delivery-test-receipt-" + entry.OperationID, Sequence: l.sequence, AppendedAt: time.Now().UTC(),
 	}
 	copied := *entry
 	l.records = append(l.records, &business.PolicyLogRecord{
-		PolicyLogEntry: copied,
-		Receipt:        receipt.Receipt,
-		Sequence:       receipt.Sequence,
-		LoggedAt:       receipt.AppendedAt,
+		PolicyLogEntry: copied, Receipt: receipt.Receipt, Sequence: receipt.Sequence, LoggedAt: receipt.AppendedAt,
 	})
 	return receipt, nil
 }
 
-func (l *productionPathPolicyLog) Entries(
-	_ context.Context, after uint64, _ int,
-) ([]*business.PolicyLogRecord, error) {
+func (l *productionPathPolicyLog) Entries(_ context.Context, after uint64, _ int) ([]*business.PolicyLogRecord, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	var out []*business.PolicyLogRecord
@@ -495,21 +356,9 @@ func (l *productionPathPolicyLog) Entries(
 	return out, nil
 }
 
-// wireNarrowingPolicyLog gives a test service the protocol's two halves, so a
-// narrowing can actually happen.
-//
-// WHY EVERY SERVICE IN THIS PACKAGE THAT NARROWS NEEDS THIS. A narrowing of
-// authority must be appended to the witness and receipted before it takes
-// effect, and `WithPolicyLoggedNarrowing` REFUSES on a host with no log — which
-// is the settled fail-closed decision, not an oversight. So a test service built
-// without one cannot revoke a principal, remove a member, revoke a delegation or
-// archive an organisation at all, and a test that performs one is exercising a
-// configuration production is deliberately not meant to have.
-//
-// The REAL postgres store is the local half, so the receipt still has to commit
-// in the same transaction as the narrowing; only the external log is a double.
-// That keeps the atomicity these tests are mostly about under test rather than
-// stubbing it away.
+// wireNarrowingPolicyLog gives a test service the policy log's two halves, so
+// a narrowing can actually happen: WithPolicyLoggedNarrowing refuses on a host
+// with no log, by design.
 func wireNarrowingPolicyLog(service *business.Service) *business.Service {
 	service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
 	return service
@@ -517,5 +366,93 @@ func wireNarrowingPolicyLog(service *business.Service) *business.Service {
 
 func productionVerifier(t *testing.T) *solutionhost.Verifier {
 	t.Helper()
-	return deliverytest.Verifier(t, map[string][]string{productionPathSigner: {solutionhost.FixtureDomain, productionPathDomain}})
+	return deliverytest.Verifier(t, map[string][]string{
+		productionPathSigner:        {productionPathDomain},
+		productionPathForeignSigner: {productionPathForeignDomain},
+	})
+}
+
+// THE HOST'S OWN RULES ARE ENFORCED AT DELIVERY, through the real endpoint:
+// a second manifest for a workload a delivered binding holds is a 409 naming
+// that binding, a foreign domain's claim on a held principal is a 403, and an
+// endpoint that is not its workload's in-cluster Service is a 422. Nothing
+// refused reaches the inbox.
+func TestTheHostsRulesAreEnforcedAtDelivery(t *testing.T) {
+	d := newProductionPathDelivery(t)
+
+	holder := productionPathManifest(t, "ruleheld", 1)
+	holder.Authority = &solutionhost.Authority{Principal: "ruleheld"}
+	requireDelivered(t, d.deliver(t, holder))
+
+	second := productionPathManifest(t, "ruleheld", 1)
+	second.Binding = "acme.test.ruleheld-second"
+	recorder := d.deliver(t, second)
+	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
+	require.Contains(t, recorder.Body.String(), `held by binding \"acme.test.ruleheld\"`)
+
+	// One principal is one live binding within a domain too.
+	samePrincipal := productionPathManifest(t, "ruleshared", 1)
+	samePrincipal.Authority = &solutionhost.Authority{Principal: "ruleheld"}
+	recorder = d.deliver(t, samePrincipal)
+	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
+	require.Contains(t, recorder.Body.String(), `principal \"ruleheld\" is held by binding \"acme.test.ruleheld\"`)
+
+	foreign := productionPathManifest(t, "ruleforeign", 1)
+	foreign.Binding, foreign.Host.Domain, foreign.Release.Publisher = "globex.test.ruleforeign", productionPathForeignDomain, "globex"
+	foreign.Authority = &solutionhost.Authority{Principal: "ruleheld"}
+	payload, err := solutionhost.SignedPayload(foreign)
+	require.NoError(t, err)
+	d.callerNamespace, d.callerAccount = productionPathNamespace(foreign.Alias), "delivery"
+	recorder = d.post(t, deliverytest.Carrier(t, payload, productionPathForeignSigner))
+	require.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+	require.Contains(t, recorder.Body.String(), `principal \"ruleheld\" is held by binding \"acme.test.ruleheld\"`)
+
+	for _, address := range []string{
+		"http://169.254.169.254:80",
+		"http://api." + productionPathNamespace("another") + ".svc.cluster.local:8080",
+	} {
+		escaping := productionPathManifest(t, "ruleaddress", 1)
+		escaping.Endpoints[0].Address = address
+		recorder = d.deliver(t, escaping)
+		require.Equal(t, http.StatusUnprocessableEntity, recorder.Code, address+": "+recorder.Body.String())
+	}
+}
+
+// A BINDING KEEPS ITS DOMAIN WHEN ITS LIVE STATE IS GONE. Migration 41 cleared
+// every live binding's applied manifest and kept the domain it applied under
+// (first_domain); until the owner redelivers, another pinned domain's
+// manifest for that binding id is refused, and the owner's is not. A binding
+// the host applies records its domain the same way.
+func TestABindingAwaitingRedeliveryKeepsItsDomain(t *testing.T) {
+	d := newProductionPathDelivery(t)
+	const binding = "acme.test.ruletakeover"
+	// The state migration 41 leaves: no applied manifest, the domain kept.
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.SaveSolutionHostBinding(ctx, &business.SolutionHostBindingRecord{
+			BindingID: binding, HostCoordinate: productionPathCoordinate, Domain: productionPathDomain, UpdatedAt: time.Now().UTC(),
+		})
+	}))
+
+	takeover := productionPathManifest(t, "ruletakeover", 1)
+	takeover.Binding, takeover.Host.Domain, takeover.Release.Publisher = binding, productionPathForeignDomain, "globex"
+	payload, err := solutionhost.SignedPayload(takeover)
+	require.NoError(t, err)
+	d.callerNamespace, d.callerAccount = productionPathNamespace(takeover.Alias), "delivery"
+	recorder := d.post(t, deliverytest.Carrier(t, payload, productionPathForeignSigner))
+	require.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
+	require.Contains(t, recorder.Body.String(), `binding \"acme.test.ruletakeover\" belongs to ownership domain \"acme\"`)
+
+	owner := productionPathManifest(t, "ruletakeover", 1)
+	owner.Binding = binding
+	requireDelivered(t, d.deliver(t, owner))
+	require.NoError(t, newProductionPathReconciler(t, d.service).RunOnce(testCtx))
+	record := productionPathBindingRecord(t, d.service, binding)
+	require.NotNil(t, record.Applied, record.PendingReason)
+	require.Equal(t, productionPathDomain, record.Domain)
+
+	fresh := productionPathManifest(t, "ruledomainrecorded", 1)
+	requireDelivered(t, d.deliver(t, fresh))
+	require.NoError(t, newProductionPathReconciler(t, d.service).RunOnce(testCtx))
+	require.Equal(t, productionPathDomain, productionPathBindingRecord(t, d.service, fresh.Binding).Domain,
+		"an applied binding records the domain it applied under")
 }

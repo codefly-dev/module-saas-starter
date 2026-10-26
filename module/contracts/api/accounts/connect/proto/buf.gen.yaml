@@ -4,6 +4,7 @@ inputs:
   - directory: .
     paths:
       - saas
+      - host
 managed:
   enabled: true
   disable:

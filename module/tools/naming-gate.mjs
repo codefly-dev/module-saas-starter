@@ -79,11 +79,22 @@ const PRUNE_DIRS = new Set([
 const SKIP_FILE = (rel) =>
   /(?:^|\/)tools\/naming-terms\.json$/.test(rel) || // digests only, by construction
   /(?:^|\/)package-lock\.json$/.test(rel) ||
+  // The service catalog is generated: every string in it is a proto identifier
+  // (the protos are scanned as text) or a description from pkg/business
+  // (scanned as Go, and restated in AUTHZ_MATRIX.md, also scanned). The same
+  // reasoning as the descriptor skip below; and it crossed MAX_BYTES at 40
+  // services, which no split of a generated file should decide.
+  /(?:^|\/)generated\/service-catalog\.json$/.test(rel) ||
   /\.(?:png|jpe?g|gif|webp|avif|ico|icns|pdf|zip|gz|tgz|bz2|xz|woff2?|ttf|otf|eot|mp4|webm|wasm|so|dylib|dll|exe|bin|binpb|node)$/i.test(rel) ||
   rel.endsWith(".tsbuildinfo") ||
   rel.endsWith(".DS_Store");
 
-const MAX_BYTES = 512 * 1024;
+// The cap bounds what one text file costs to read, not what the gate covers: a file over it is
+// reported, never skipped. It sits above the largest generated text the tree carries (the
+// accounts service catalog, which grows by about 1.7 KB per RPC and crossed 512 KiB with
+// AdmitWorkloadOperation), so a generated file outgrowing the cap is a red gate to raise it
+// again, not a reason to allowlist a file every RPC description reaches.
+const MAX_BYTES = 1024 * 1024;
 
 // A slug is an identifier-ish run: a hyphenated repository name, a dotted hostname, an email
 // address, an UPPER_SNAKE constant, a camelCase identifier. Splitting it on separators yields
@@ -308,7 +319,8 @@ export function namingErrors(moduleRoot = MODULE_ROOT, scanRoot = canonicalScanR
     // gate is declining to read, and a reader of a green run has to be able to see that.
     if (statSync(abs).size > MAX_BYTES) {
       errors.push(
-        `${rel}: too large to scan (over ${MAX_BYTES} bytes) — split it, or allowlist it in ` +
+        `${rel}: too large to scan (over ${MAX_BYTES} bytes): split it; for generated text that ` +
+          "grew, raise MAX_BYTES in tools/naming-gate.mjs; or allowlist it in " +
           "tools/naming-allowlist.json with a reason and a ticket",
       );
       continue;

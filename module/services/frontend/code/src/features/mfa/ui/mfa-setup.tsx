@@ -3,19 +3,22 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import {
 	Button,
+	DelayedLoading,
 	Dialog,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	ErrorState,
 	Input,
 	Label,
+	QRCode,
 } from "@/shared/ui";
 import { type VerifyTOTPValues, verifyTOTPSchema } from "../model/schemas";
 import { mfaMutations } from "../service/mutations";
@@ -34,6 +37,10 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 	const [secret, setSecret] = useState<string | null>(null);
 	const [backupCodes, setBackupCodes] = useState<string[]>([]);
 	const [copied, setCopied] = useState(false);
+	// SetupTOTP is not idempotent: each call writes another unverified device
+	// row with another secret. So the session effect below runs its body once per
+	// opening, and this is the latch that holds it to once.
+	const requested = useRef(false);
 
 	const form = useForm<VerifyTOTPValues>({
 		resolver: zodResolver(verifyTOTPSchema),
@@ -46,8 +53,12 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 			setProvisioningUri(data.provisioningUri);
 			setSecret(data.secret);
 		},
-		onError: () => toast.error("Failed to initialize MFA setup"),
+		// No toast: the QR step renders the failure where the code would have
+		// been, with the retry beside it. A toast on top of that is the same news
+		// twice, and it is the copy that disappears before the reader acts on it.
 	});
+	const startSetup = setupMutation.mutate;
+	const resetSetup = setupMutation.reset;
 
 	const verifyMutation = useMutation({
 		mutationFn: (code: string) => mfaMutations.verifyTOTP(code),
@@ -62,21 +73,42 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 	});
 
 	const handleOpen = (isOpen: boolean) => {
-		if (!isOpen) {
-			onClose();
-			// Reset state on close
-			setStep("qr");
-			setProvisioningUri(null);
-			setSecret(null);
-			setBackupCodes([]);
-			form.reset();
-		}
+		if (!isOpen) onClose();
 	};
 
-	// Start setup when dialog opens
-	if (open && !provisioningUri && !setupMutation.isPending) {
-		setupMutation.mutate();
-	}
+	// `open` becoming true IS the start of a session, and this is the only place
+	// that decides what a session starts with.
+	//
+	// The resets used to live in `handleOpen`, which Base UI calls only for a
+	// close the reader performed — so a parent that honours the `open` prop by
+	// flipping it never reached them, and reopening showed the previous session's
+	// QR code, or its one-time backup codes, with no new request made. Resetting
+	// on close instead of on open would also wipe the dialog's content out from
+	// under its closing animation.
+	//
+	// The request itself used to be made *during render*, guarded by
+	// `!provisioningUri && !setupMutation.isPending`. That guard holds while a
+	// request is in flight and then stops holding: a failure left both of them
+	// false, so the next render asked again, and the re-render that answer caused
+	// asked again. Measured against a failing endpoint, that was 11,200 SetupTOTP
+	// calls in under a second — 11,200 unverified device rows — under a dialog
+	// that showed the reader nothing but a wait. An effect cannot spin like that,
+	// and the failure below now has a retry the reader presses instead.
+	useEffect(() => {
+		if (!open) {
+			requested.current = false;
+			return;
+		}
+		if (requested.current) return;
+		requested.current = true;
+		setStep("qr");
+		setProvisioningUri(null);
+		setSecret(null);
+		setBackupCodes([]);
+		form.reset();
+		resetSetup();
+		startSetup();
+	}, [open, startSetup, resetSetup, form]);
 
 	const copySecret = () => {
 		if (secret) {
@@ -99,41 +131,61 @@ export function MFASetup({ open, onClose }: MFASetupProps) {
 							</DialogDescription>
 						</DialogHeader>
 						<div className="space-y-4">
-							{provisioningUri ? (
-								<>
-									<div className="flex justify-center rounded-lg border bg-white p-4">
-										{/* QR code rendered via provisioning URI */}
-										<div className="flex h-48 w-48 items-center justify-center border-2 border-dashed text-xs text-muted-foreground">
-											QR Code
-											<br />
-											{/* In production: use a QR library like qrcode.react */}
-										</div>
+							{/* One box of the same height for all three states, so the
+							    dialog does not resize under the reader when the code
+							    arrives or the request fails. Absolute, like the plate it
+							    reserves room for — `min-h-56` is a `--spacing` multiple, so
+							    a density skin would move the reservation and leave the jump
+							    it exists to prevent. */}
+							<div className="flex min-h-[14rem] items-center justify-center">
+								{provisioningUri ? (
+									<QRCode
+										value={provisioningUri}
+										label="Scan this code with your authenticator app to add this account. The same secret is written out below the code."
+										size="lg"
+									/>
+								) : setupMutation.isError ? (
+									<div className="space-y-3">
+										<ErrorState
+											title="We could not prepare your authenticator code"
+											detail="Two-factor authentication is not enabled yet. Try again, or close this and come back to it."
+										/>
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={() => startSetup()}
+											disabled={setupMutation.isPending}
+										>
+											Try again
+										</Button>
 									</div>
-									{secret && (
-										<div className="space-y-1">
-											<Label>Or enter this code manually:</Label>
-											<div className="flex items-center gap-2">
-												<code className="flex-1 rounded bg-muted px-3 py-2 font-mono text-sm tracking-widest">
-													{secret}
-												</code>
-												<Button
-													variant="outline"
-													size="sm"
-													onClick={copySecret}
-												>
-													{copied ? (
-														<Check className="h-4 w-4" />
-													) : (
-														<Copy className="h-4 w-4" />
-													)}
-												</Button>
-											</div>
-										</div>
-									)}
-								</>
-							) : (
-								<div className="flex h-48 items-center justify-center">
-									<p className="text-sm text-muted-foreground">Loading...</p>
+								) : (
+									<DelayedLoading
+										active
+										label="Preparing your authenticator code"
+									/>
+								)}
+							</div>
+							{secret && (
+								<div className="space-y-1">
+									<Label>Or enter this code manually:</Label>
+									<div className="flex items-center gap-2">
+										<code className="flex-1 rounded bg-muted px-3 py-2 font-mono text-sm break-all tracking-widest">
+											{secret}
+										</code>
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={copySecret}
+											aria-label="Copy the setup code"
+										>
+											{copied ? (
+												<Check className="h-4 w-4" />
+											) : (
+												<Copy className="h-4 w-4" />
+											)}
+										</Button>
+									</div>
 								</div>
 							)}
 						</div>

@@ -3,6 +3,7 @@ package infra
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 
@@ -18,155 +19,128 @@ import (
 // and no DELETE. An inbox that can be edited is not a record of what was
 // received, so a correction is a new generation rather than a rewrite. Every
 // method assumes the caller opened a WithControlPlane transaction.
+//
+// It holds one kind of document, the module manifest (migration 41): the row's
+// document_id is the manifest's binding.
 
-const solutionDeliveryColumns = `kind, document_id, generation, content_hash,
-	payload, bundle, signer_identity, ownership_domain, received_at`
+// solutionDeliveryManifestKind is the one kind the inbox holds.
+const solutionDeliveryManifestKind = "manifest"
+
+const solutionDeliveryColumns = `document_id, generation, content_hash,
+	payload, bundle, signer_identity, ownership_domain, received_at, authority_document, authority_envelope`
 
 // RecordDeliveredDocument inserts one received carrier, and reports whether the
 // row was new.
 //
-// Idempotency is the whole of this method. The unique index on
-// (kind, document_id, generation) means a second delivery at the same generation
-// collides, and the collision has two meanings that must NOT be conflated:
+// The unique index on (kind, document_id, generation) means a second delivery
+// at the same generation collides, and the collision has two meanings that
+// must NOT be conflated:
 //
 //   - the same bytes again — a retry, or a re-sync of an unchanged tree. Writes
-//     nothing, reports not-inserted, and the caller answers 200.
-//   - DIFFERENT bytes at a generation already delivered — a rewrite of a
-//     delivered generation, which publish never produces. Refused as
-//     ErrSolutionDeliveryRewritten, and the caller answers 409 so an operator
-//     sees it as the hand-edited delivery tree it is.
+//     nothing and reports not-inserted.
+//   - DIFFERENT bytes at a generation already delivered — a rewrite, which
+//     publish never produces. Refused as ErrSolutionDeliveryConflict.
 //
-// `ON CONFLICT DO NOTHING` alone could not tell those apart: it reports no row
-// written for both, and the second case would then read as a successful replay
-// while the host kept serving different bytes than delivery believes it sent.
-// So the conflict is resolved by reading the stored content hash back.
+// `ON CONFLICT DO NOTHING` alone could not tell those apart, so the stored row
+// is read back and compared.
 func (s *PostgresStore) RecordDeliveredDocument(
 	ctx context.Context, record *business.SolutionDeliveryRecord,
 ) (bool, error) {
 	executor := s.getQueryExecutor(ctx)
 
 	var storedHash string
-	var storedPayload []byte
+	var storedPayload, storedAuthority []byte
 	err := executor.QueryRow(ctx, `
-		INSERT INTO public.solution_delivery_documents (`+solutionDeliveryColumns+`)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO public.solution_delivery_documents (kind, `+solutionDeliveryColumns+`)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (kind, document_id, generation) DO NOTHING
-		RETURNING content_hash, payload`,
-		string(record.Kind), record.DocumentID, int64(record.Generation), record.ContentHash,
-		record.Payload, record.Bundle, record.SignerIdentity, record.OwnershipDomain, record.ReceivedAt,
-	).Scan(&storedHash, &storedPayload)
+		RETURNING content_hash, payload, authority_document`,
+		solutionDeliveryManifestKind, record.Binding, int64(record.Generation), record.ContentHash, //nolint:gosec // a manifest generation is a small positive counter
+		record.Payload, record.Envelope, record.SignerIdentity, record.OwnershipDomain, record.ReceivedAt, record.AuthorityDocument, record.AuthorityEnvelope,
+	).Scan(&storedHash, &storedPayload, &storedAuthority)
 	if err == nil {
 		return true, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return false, err
 	}
-
-	// The insert was a no-op, so this generation already exists. Which of the
-	// two meanings it has depends on the bytes.
 	if err := executor.QueryRow(ctx, `
-		SELECT content_hash, payload FROM public.solution_delivery_documents
+		SELECT content_hash, payload, authority_document FROM public.solution_delivery_documents
 		 WHERE kind = $1 AND document_id = $2 AND generation = $3`,
-		string(record.Kind), record.DocumentID, int64(record.Generation),
-	).Scan(&storedHash, &storedPayload); err != nil {
+		solutionDeliveryManifestKind, record.Binding, int64(record.Generation), //nolint:gosec // a manifest generation is a small positive counter
+	).Scan(&storedHash, &storedPayload, &storedAuthority); err != nil {
 		return false, err
 	}
-	// The hash is compared AND the bytes are, rather than the hash alone. The
-	// hash is what the schema constrains and what an index could be built on,
-	// but it is also a value a writer supplies: comparing the payload as well
-	// means a collision cannot be talked past by sending a matching hash with
-	// different content.
-	if storedHash == record.ContentHash && bytes.Equal(storedPayload, record.Payload) {
+	if storedHash == record.ContentHash && bytes.Equal(storedPayload, record.Payload) && bytes.Equal(storedAuthority, record.AuthorityDocument) && (storedAuthority == nil) == (record.AuthorityDocument == nil) {
 		return false, nil
 	}
-	return false, fmt.Errorf("%w: %s %s generation %d was delivered as %s and is now offered as %s",
-		business.ErrSolutionDeliveryRewritten,
-		record.Kind, record.DocumentID, record.Generation, storedHash, record.ContentHash)
+	return false, fmt.Errorf("%w: binding %s generation %d differs: manifest digest stored=%s offered=%s; payload digest stored=sha256:%x offered=sha256:%x; authority document digest stored=sha256:%x (present=%t) offered=sha256:%x (present=%t)",
+		business.ErrSolutionDeliveryConflict, record.Binding, record.Generation, storedHash, record.ContentHash,
+		sha256.Sum256(storedPayload), sha256.Sum256(record.Payload),
+		sha256.Sum256(storedAuthority), storedAuthority != nil, sha256.Sum256(record.AuthorityDocument), record.AuthorityDocument != nil)
 }
 
-// ListNewestDeliveredDocuments returns the newest generation per document for
-// one kind: the desired set.
-//
-// DISTINCT ON over (document_id) ordered by generation DESC, which is the
-// newest-per-key read the index `solution_delivery_documents_newest` exists for.
-// Superseded generations stay in the table — they are the evidence of what was
-// delivered — and are deliberately not returned: the desired set is what
-// delivery wants NOW, and handing the reconciler every generation would make it
-// judge a set containing its own history.
-func (s *PostgresStore) ListNewestDeliveredDocuments(
-	ctx context.Context, kind business.SolutionDeliveryKind,
-) ([]*business.SolutionDeliveryRecord, error) {
+// ListNewestDeliveredDocuments returns the newest delivered generation per
+// binding: the desired set.
+func (s *PostgresStore) ListNewestDeliveredDocuments(ctx context.Context) ([]*business.SolutionDeliveryRecord, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
 		SELECT DISTINCT ON (document_id) `+solutionDeliveryColumns+`
 		  FROM public.solution_delivery_documents
 		 WHERE kind = $1
-		 ORDER BY document_id, generation DESC`, string(kind))
+		 ORDER BY document_id, generation DESC`, solutionDeliveryManifestKind)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	records := []*business.SolutionDeliveryRecord{}
 	for rows.Next() {
-		var (
-			record     business.SolutionDeliveryRecord
-			kindText   string
-			generation int64
-		)
-		if err := rows.Scan(&kindText, &record.DocumentID, &generation, &record.ContentHash,
-			&record.Payload, &record.Bundle, &record.SignerIdentity, &record.OwnershipDomain,
-			&record.ReceivedAt); err != nil {
+		record, err := scanSolutionDelivery(rows)
+		if err != nil {
 			return nil, err
 		}
-		record.Kind = business.SolutionDeliveryKind(kindText)
-		record.Generation = uint64(generation)
-		records = append(records, &record)
+		records = append(records, record)
 	}
 	return records, rows.Err()
 }
 
-// ListDeliveredDocuments returns EVERY delivered generation of one kind, oldest
-// first. The desired set is the newest per document; this is the history, and
-// it is what a withdrawal is read from: a tombstone superseded by a later
-// generation of the same document is still a withdrawal that happened, and the
-// newest-per-document read would hide it.
-func (s *PostgresStore) ListDeliveredDocuments(
-	ctx context.Context, kind business.SolutionDeliveryKind,
-) ([]*business.SolutionDeliveryRecord, error) {
-	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
-		SELECT `+solutionDeliveryColumns+`
-		  FROM public.solution_delivery_documents
-		 WHERE kind = $1
-		 ORDER BY document_id, generation`, string(kind))
-	if err != nil {
+// ReadDeliveredDocument reads the exact inbox generation selected by applied
+// state, or nil. Absence is not permission to use a newer or older delivery.
+func (s *PostgresStore) ReadDeliveredDocument(
+	ctx context.Context, binding string, generation uint64,
+) (*business.SolutionDeliveryRecord, error) {
+	if generation == 0 || generation > uint64(1<<63-1) {
+		return nil, fmt.Errorf("delivery generation is outside the stored range")
+	}
+	record, err := scanSolutionDelivery(s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT `+solutionDeliveryColumns+` FROM public.solution_delivery_documents
+		 WHERE kind = $1 AND document_id = $2 AND generation = $3`,
+		solutionDeliveryManifestKind, binding, int64(generation))) //nolint:gosec // range CHECKed above
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return record, err
+}
+
+func scanSolutionDelivery(row pgx.Row) (*business.SolutionDeliveryRecord, error) {
+	var (
+		record     business.SolutionDeliveryRecord
+		generation int64
+	)
+	if err := row.Scan(&record.Binding, &generation, &record.ContentHash,
+		&record.Payload, &record.Envelope, &record.SignerIdentity, &record.OwnershipDomain,
+		&record.ReceivedAt, &record.AuthorityDocument, &record.AuthorityEnvelope); err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	records := []*business.SolutionDeliveryRecord{}
-	for rows.Next() {
-		var (
-			record     business.SolutionDeliveryRecord
-			kindText   string
-			generation int64
-		)
-		if err := rows.Scan(&kindText, &record.DocumentID, &generation, &record.ContentHash,
-			&record.Payload, &record.Bundle, &record.SignerIdentity, &record.OwnershipDomain,
-			&record.ReceivedAt); err != nil {
-			return nil, err
-		}
-		record.Kind = business.SolutionDeliveryKind(kindText)
-		record.Generation = uint64(generation) //nolint:gosec // CHECKed positive
-		records = append(records, &record)
-	}
-	return records, rows.Err()
+	record.Generation = uint64(generation) //nolint:gosec // CHECKed positive
+	return &record, nil
 }
 
 var _ business.SolutionDeliveryStore = (*PostgresStore)(nil)
 
-// CountDeliveredDocuments is how many documents the inbox holds, of every kind.
+// CountDeliveredDocuments is how many manifests the inbox holds.
 //
 // The inbox is append-only — a generation is inserted once and never rewritten
-// or removed — so the count only grows, and it grows exactly when a document a
+// or removed — so the count only grows, and it grows exactly when a manifest a
 // registry pass has not read yet arrives. That makes it the marker a registry
 // snapshot is compared with: see business.Service.deliveredSince.
 func (s *PostgresStore) CountDeliveredDocuments(ctx context.Context) (uint64, error) {
@@ -175,14 +149,14 @@ func (s *PostgresStore) CountDeliveredDocuments(ctx context.Context) (uint64, er
 		`SELECT count(*) FROM public.solution_delivery_documents`).Scan(&count); err != nil {
 		return 0, err
 	}
-	return uint64(count), nil
+	return uint64(count), nil //nolint:gosec // a count is non-negative
 }
 
-// CountUnappliedPresence is how many presence documents the inbox holds at a
-// generation newer than the one their binding has applied, and that the host
-// has not refused. Each is a declaration the binding reconciler has yet to
-// apply: until it has, the registry cannot hold the principal it declares.
-func (s *PostgresStore) CountUnappliedPresence(ctx context.Context) (uint64, error) {
+// CountUnappliedManifests is how many bindings hold a delivered manifest newer
+// than the generation they applied, that the host has not refused. Each is a
+// declaration the reconciler has yet to apply: until it has, the registry
+// cannot hold the principal it declares.
+func (s *PostgresStore) CountUnappliedManifests(ctx context.Context) (uint64, error) {
 	var count int64
 	if err := s.getQueryExecutor(ctx).QueryRow(ctx, `
 		SELECT count(*)
@@ -193,8 +167,10 @@ func (s *PostgresStore) CountUnappliedPresence(ctx context.Context) (uint64, err
 		  LEFT JOIN public.solution_host_bindings binding ON binding.binding_id = newest.document_id
 		 WHERE COALESCE(binding.applied_generation, 0) < newest.generation
 		   AND binding.pending_reason IS NULL`,
-		string(business.SolutionDeliveryPresence)).Scan(&count); err != nil {
+		solutionDeliveryManifestKind).Scan(&count); err != nil {
 		return 0, err
 	}
-	return uint64(count), nil
+	return uint64(count), nil //nolint:gosec // a count is non-negative
 }
+
+var _ business.SolutionDeliveryCounter = (*PostgresStore)(nil)

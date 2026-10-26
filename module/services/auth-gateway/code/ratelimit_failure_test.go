@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/stretchr/testify/require"
 )
 
@@ -104,11 +105,16 @@ func TestAuthenticationFactorAttemptComesFromGeneratedPolicy(t *testing.T) {
 }
 
 func TestConfiguredAuthenticationAttemptLimit(t *testing.T) {
+	// The CI runner supplies this setting before earlier tests load the SDK
+	// snapshot. Own both the environment and snapshot for the fallback cases,
+	// and restore the snapshot after Setenv restores the runner's values.
+	t.Cleanup(func() { require.NoError(t, codefly.LoadEnvironmentVariables()) })
 	const configurationKey = "CODEFLY__WORKSPACE_CONFIGURATION__SECURITY__MFA_COMPLETION_RATE_LIMIT_PER_MINUTE"
 	const secretKey = "CODEFLY__WORKSPACE_SECRET_CONFIGURATION__SECURITY__MFA_COMPLETION_RATE_LIMIT_PER_MINUTE"
 	t.Setenv(configurationKey, "")
 	t.Setenv(secretKey, "")
 	t.Setenv("MFA_COMPLETION_RATE_LIMIT_PER_MINUTE", "")
+	require.NoError(t, codefly.LoadEnvironmentVariables())
 	limit, err := configuredAuthenticationAttemptLimit()
 	require.NoError(t, err)
 	require.Equal(t, 10, limit)

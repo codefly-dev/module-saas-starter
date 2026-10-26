@@ -184,7 +184,7 @@ func TestCurrentInstallationDelegationCurrentChecks(t *testing.T) {
 		return e
 	}
 	require.NoError(t, invoke())
-	require.Equal(t, []string{"hop-1"}, journal.ids)
+	require.Subset(t, journal.ids, []string{"hop-1"}, "every hop's own journal row is asked about")
 	before := store.reads
 	journal.revoked = "hop-1"
 	require.Error(t, invoke())

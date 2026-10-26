@@ -116,6 +116,26 @@ try {
 	dependencies.esbuild = JSON.parse(
 		await readFile(new URL("node_modules/esbuild/package.json", root), "utf8"),
 	).version;
+	// The PUBLIC half of the tree is held to what this host proved, not to
+	// whatever the public registry serves today. The plugin peers must still be
+	// DISCOVERED by npm (that is the proof: no workspace links, no file:
+	// dependencies, peerDependenciesMeta omitted as GitHub Packages omits it) —
+	// but their own public dependencies are pinned through `overrides` to the
+	// versions in this host's lockfile. Without that, a stranger's new major
+	// (`@hookform/resolvers@6` arrived with optional `@typeschema/*` peers that
+	// conflict with each other) turned this required gate red on every pull
+	// request while the host itself, locked at 3.x, was unaffected — a verdict
+	// about the public registry's afternoon, not about the published plugin.
+	const hostLock = JSON.parse(await readFile(new URL("package-lock.json", root), "utf8"));
+	const overrides = {};
+	for (const manifest of manifests.values()) {
+		for (const peer of Object.keys(manifest.peerDependencies ?? {})) {
+			const locked = hostLock.packages?.[`node_modules/${peer}`]?.version;
+			if (!peer.startsWith("@codefly-dev/") && locked && !(peer in dependencies)) {
+				overrides[peer] = locked;
+			}
+		}
+	}
 	await writeFile(
 		join(temporary, "package.json"),
 		JSON.stringify({
@@ -123,6 +143,7 @@ try {
 			private: true,
 			type: "module",
 			dependencies,
+			overrides,
 		}),
 	);
 	await writeFile(
@@ -148,8 +169,34 @@ import { createTaskTracker, mountIsolated } from "@codefly-dev/ui/lifecycle";
 import { resolveSkin } from "@codefly-dev/ui/skin";
 import { PluginRuntimeProvider, usePluginRuntime } from "@codefly-dev/ui/plugin-host/runtime";
 import { PluginRuntimeProvider as DirectProvider, usePluginRuntime as directHook } from "@codefly-dev/saas-plugin-react/runtime";
-import { ConnectGitHubForm } from "@codefly-dev/saas-ui";
+import { ConnectGitHubForm, connectGitHubSchema, editSourceSchema, type ConnectGitHubValues, type EditSourceValues, type DatasourceClient, type DatasourcesPanelProps } from "@codefly-dev/saas-ui";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import type { Resolver } from "react-hook-form";
+// The pre-catalog consumer still compiles, with neither new client method nor prop.
+const legacyClient: DatasourceClient = {listSources:async()=>[],addGitHubSource:async()=>{},reconcileSource:async(_o,_i,effectId)=>({effectId,status:"committed",jobId:"example-job"}),lookupReconcileSource:async()=>undefined,deleteSource:async()=>{}};
+const injected: DatasourcesPanelProps = {client:legacyClient,orgId:"example-org"};
+const bound: DatasourcesPanelProps = {gateway:{apiBase:"/api",getAccessToken:()=>null},orgId:"example-org"};
+void injected; void bound;
 import { DirectoryService } from "@codefly-dev/saas-sdk";
+import { PlaygroundShell, PlaygroundThemeToggle, CapabilityGuide, ScenarioSteps, Step, OperationLog } from "@codefly-dev/ui/playground";
+const schema: z.ZodType<ConnectGitHubValues> = connectGitHubSchema;
+const connection: ConnectGitHubValues = schema.parse({ method: "public", repo: "Acme/example", targetCollection: "example" });
+const scope: EditSourceValues = editSourceSchema.parse({ paths: "docs/", fileExtensions: ".md" });
+if (connection.accessToken !== undefined || scope.paths !== "docs/") throw new Error("Schema output changed");
+const resolveConnection: Resolver<ConnectGitHubValues> = zodResolver(connectGitHubSchema);
+const resolveScope: Resolver<EditSourceValues> = zodResolver(editSourceSchema);
+async function proveSchemaValidation() {
+ const options = { fields: {}, shouldUseNativeValidation: false };
+ const accepted = await resolveConnection(connection, undefined, options);
+ if (Object.keys(accepted.errors).length) throw new Error("Public connection rejected");
+ const refused = await resolveConnection({ ...connection, method: "pat" }, undefined, options);
+ if (refused.errors.accessToken?.message !== "Access token is required") throw new Error("Missing token field error");
+ const bounded = await resolveScope({ paths: Array.from({ length: 65 }, (_, i) => "path" + i).join(",") }, undefined, options);
+ if (!bounded.errors.paths) throw new Error("Oversized scope accepted");
+ console.log("Registry consumer schema types and form validation passed");
+}
+void proveSchemaValidation();
 for (const value of [Disclosure, Accordion, Breadcrumb, Tree, RadioGroup, Surface, Timeline, ViewportOverlay, createTaskTracker, mountIsolated, resolveSkin, ConnectGitHubForm, DirectoryService]) {
  if (!value) throw new Error("Missing public export");
 }
@@ -161,6 +208,14 @@ function Consumer() {
 }
 const html = renderToStaticMarkup(createElement(PluginRuntimeProvider, { runtime, children: createElement(Consumer) }));
 if (!html.includes("Registry verified")) throw new Error("Published control did not render");
+const playground = renderToStaticMarkup(createElement(PlaygroundShell, { title: "Example playground", moduleName: "Example Module", composition: "Example Composition", scenarios: [], active: "", onSelect() {}, children: [
+ createElement(CapabilityGuide, { key: "guide", capabilities: [] }),
+ createElement(ScenarioSteps, { key: "steps", children: createElement(Step, { title: "Read", operation: "Example.Read", request: {}, response: null, state: "done" }) }),
+ createElement(OperationLog, { key: "log", entries: [] }),
+] }));
+if (!playground.includes("Example playground") || !playground.includes("Example.Read response")) throw new Error("Registry playground did not render");
+const theme = renderToStaticMarkup(createElement(PlaygroundThemeToggle, { mode: "dark", onModeChange() {} }));
+if (!theme.includes("Light mode")) throw new Error("Registry theme control did not render");
 console.log("Registry declarations, public exports, SSR and shared plugin context passed");
 `,
 	);

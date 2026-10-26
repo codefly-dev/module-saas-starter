@@ -29,7 +29,15 @@ import {
 import { hostRefusal, roleOptionLabel } from "../model/installations";
 import { type GrantTeamValues, grantTeamSchema } from "../model/schemas";
 
-/** The host resolves the grant's scope; the page owns its eventual result. */
+/**
+ * The host resolves the grant's scope; the page owns its eventual result.
+ *
+ * One grant, one act. A solution that reaches modules on the asking person's
+ * session must CARRY that access from its own grant — the host's job, from the
+ * solution's declaration — and never a second step a person performs per module.
+ * This dialog therefore offers no per-module choice: see the "Who may reach it?"
+ * section of the setup page, which states what the host does not yet carry.
+ */
 export function GrantTeamDialog({
 	orgId,
 	solution,

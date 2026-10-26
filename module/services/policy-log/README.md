@@ -5,16 +5,16 @@ append → signed receipt → commit-with-receipt in the caller. It assigns the
 global sequence, owns the signing key, and records the committed prefix in its
 own object store. A warehouse insert is only a mirror of that evidence.
 
-**Implementation status:** the witness, GCS adapter, fixed-path key loader,
+**Implementation status:** the witness, GCS adapter, delivered-secret key parser,
 warehouse writer, transport-independent service, protobuf projection, gRPC
 server and runnable binary are implemented and tested. The service is declared
 in the module inventory and has its own private endpoint, service account, and
 deployment declaration.
 
-What is still missing is **delivery**, not code: the `policy-log` configuration
-group ships no local default, so no environment here can boot this service, and
-the signing key's fixed path exists on no development machine. Both refusals are
-deliberate — see [Transport](#transport) for what that means for `codefly run`.
+Native composition remains incomplete. The `policy-log` group has no provisioned
+bucket, mirror or persistent signing key, and Accounts has no verified witness
+client. Native caller authentication, retained local storage and bootstrap remain
+owner work. Supplying a key alone does not qualify this service or revocation.
 No generated code was hand-written: the required no-change Codefly
 proto-generation check ran and came back byte-identical on two sibling services,
 and this service's own tree regenerates reproducibly. The host's client is
@@ -39,8 +39,8 @@ rewriting an existing sequence, or restoring the head from a database backup
 would defeat the trust boundary and are not recovery procedures. Provision
 versioning and deletion protection outside the workload's administrative reach.
 
-The runtime exposes no delete, reset, unconditional overwrite, alternate key
-path, insecure warehouse transport, or emulator option. The GCS constructor
+The runtime exposes no delete, reset, unconditional overwrite, ambient signing-key
+source, insecure warehouse transport, or emulator option. The GCS constructor
 refuses a storage emulator setting. The warehouse uses its own mandatory bearer
 credential over HTTPS and refuses redirects.
 
@@ -56,8 +56,8 @@ or any service dependency fails it.
 [service.codefly.yaml](service.codefly.yaml) uses the same `go-grpc` agent and
 Codefly-allocated endpoint convention as the other Go services. Its `policy-log`
 configuration group is delivered by composition; no default bucket, warehouse
-credential, endpoint, or development bypass ships here. The fixed signing key
-is a file projection, never a group setting. The service has no accounts or
+credential, endpoint, or development bypass ships here. The persistent signing key
+is a secret value in that group, never a file projection. The service has no accounts or
 store dependency and is not a public or module-visible interface export.
 
 ## Contract
@@ -135,17 +135,19 @@ freshness and reachability policy.
 
 ### Public key delivery
 
-[identity.SigningKeyPath](code/identity/signing_key.go) is the single literal
-fixed path. The loader takes no path argument, consults no environment override,
-and never generates a key. Delivery provides exactly one PEM-encoded PKCS#8
-Ed25519 private key, a regular file of at most 4096 bytes with no group or world
-access, readable by the service UID. A missing, malformed, exposed, or wrong
-algorithm key refuses startup. Projected-file symlinks are acceptable when the
-opened target satisfies those checks.
+[identity.ParseSigningKey](code/identity/signing_key.go) validates the
+`policy-log/POLICY_LOG_SIGNING_KEY` value read through Codefly's dedicated
+`WorkspaceSecret` accessor. The value is canonical standard base64 of exactly
+one canonical PKCS#8 DER Ed25519 private key, bounded to 4096 encoded bytes.
+Missing, malformed, concatenated, noncanonical or wrong-algorithm values refuse
+startup without exposing the value. No path, ambient environment fallback or
+boot-time key generation is supported.
 
-The host receives `policy_log_public_key.json` under its existing trust-anchor
-directory. Composition delivers that public document; this service must never
-write the host's trust anchor. The schema matches `Keys`:
+Composition must provision this identity once in persistent secret custody and
+redeliver the same value after restart. It must separately deliver the public
+pin to Accounts as configuration, without giving Accounts the witness's secret
+group. Provisioning, pin delivery and the Accounts client remain unwired.
+The public document's schema matches `Keys`:
 
 ```json
 {
@@ -198,8 +200,8 @@ and the detail goes to this service's own failure reporter instead.
 
 [code/main.go](code/main.go) is the binary. Every construction happens **before**
 `net.Listen`, in this order, and any failure is fatal: resolve the whole
-configuration group, read the Codefly-allocated port, load the fixed-path
-signing key, open the bucket, build the warehouse writer, start the mirror
+configuration group, read the Codefly-allocated port, parse the delivered signing-key
+secret, open the bucket, build the warehouse writer, start the mirror
 worker, then `witness.Open`, which verifies the entire committed chain under
 that key. A witness that accepted an append it could not sign, store, or verify
 the history of would be worse than one that is down, because the caller would
@@ -210,11 +212,10 @@ commit against it.
 from nowhere else. There is no process-environment fallback, no default bucket
 and no development bypass, so an ambient value cannot make this service witness
 somewhere nobody provisioned — and the refusal names the missing keys, never the
-delivered values, because one of the three is a credential. The consequence is
-that **`codefly run` cannot start this service on a workstation**: the group
-ships no local default and the fixed key path exists on no development machine.
-That is the posture the trust domain requires, not an oversight; a local harness
-for it would be a development bypass by another name.
+delivered values, because one of the three is a credential. The native composition cannot yet start this service with its empty group.
+Local execution must use the same signing and verification protocol with durable
+custody independent of Accounts; missing native storage and bootstrap are owner
+tooling gaps, not a reason to create a host-private log or fake receipts.
 
 The listener registers the four witness operations and nothing else — no
 reflection service and no health service — because its surface is the whole of
@@ -321,7 +322,7 @@ The witness tests independently encode the hashes and signatures and exercise
 two appender instances over one generation-aware fake. The GCS adapter tests
 intercept the official client's HTTP requests and verify its preconditions,
 single-attempt failures, immutable entry names, bounded reads, and cancellation.
-They do not contact GCS. Key tests refuse absent and invalid fixed-path keys;
+They do not contact GCS. Key tests refuse absent, malformed, concatenated and wrong-algorithm secret values;
 service tests prove that a failed head write never offers an entry to the mirror
 and a failed mirror cannot decide whether a receipt exists.
 
@@ -340,7 +341,7 @@ Not exercised, by name: real GCS, deployed IAM and retention policy, the
 container build, `codefly ci run`, `codefly run` and the Codefly service graph,
 a deployed mesh policy, and a running host client. **Nothing here has been
 deployed or booted** — the binary's own startup path (`codefly.Init`, the
-injected port, the fixed-path key, the GCS client, `witness.Open` against a real
+injected port, the delivered signing-key secret, the GCS client, `witness.Open` against a real
 bucket) is covered by no test and has never executed. The signature of
 `resolveSettings` is tested; its one caller's use of `WorkspaceValue` is not.
 

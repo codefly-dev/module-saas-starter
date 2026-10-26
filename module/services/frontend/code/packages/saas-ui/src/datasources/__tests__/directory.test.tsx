@@ -142,6 +142,24 @@ describe("DatasourceAccountLinks", () => {
 		expect(window.location.search).toBe("");
 	});
 
+	it("reports a sign-in the provider refused, and clears it from the address bar", async () => {
+		window.history.replaceState(
+			null,
+			"",
+			"/settings?tab=links&state=dl.abc&error=access_denied&error_description=no",
+		);
+		const client = baseClient({
+			listMyAccountLinks: vi.fn(async () => []),
+			completeAccountLink: vi.fn(),
+		});
+		renderWithClient(<DatasourceAccountLinks client={client} orgId="org-1" />);
+		expect(
+			await screen.findByText(/sign-in at github did not finish \(access_denied\)/i),
+		).toBeTruthy();
+		expect(client.completeAccountLink).not.toHaveBeenCalled();
+		expect(window.location.search).toBe("?tab=links");
+	});
+
 	it("leaves another flow's return alone", async () => {
 		// A GitHub App setup return carries a state that is not a link's.
 		window.history.replaceState(null, "", "/settings?state=setup&code=xyz");
@@ -155,6 +173,161 @@ describe("DatasourceAccountLinks", () => {
 		).toBeTruthy();
 		expect(client.completeAccountLink).not.toHaveBeenCalled();
 		expect(window.location.search).toBe("?state=setup&code=xyz");
+	});
+});
+
+describe("DatasourceAccountLinks for one source", () => {
+	const sourceLink: AccountLinkView = {
+		id: "l2",
+		userId: "u1",
+		connector: "api",
+		providerAccountId: "source:ds-api",
+		providerAccountLogin: "Connected API",
+	};
+
+	it("begins the sign-in with the source it authorizes", async () => {
+		const assign = vi.fn();
+		vi.stubGlobal("location", { ...window.location, assign });
+		const beforeLink = vi.fn(async () => {});
+		const client = baseClient({
+			listMyAccountLinks: vi.fn(async () => []),
+			beginAccountLink: vi.fn(async () => ({
+				authorizeUrl: "https://provider.example.com/authorize",
+				state: "dl.x",
+			})),
+		});
+		renderWithClient(
+			<DatasourceAccountLinks
+				client={client}
+				orgId="org-1"
+				connector="api"
+				providerName="Example API"
+				sourceId="ds-api"
+				beforeLink={beforeLink}
+			/>,
+		);
+		expect(await screen.findByText(/you have not signed in yet/i)).toBeTruthy();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Sign in to Example API" }),
+		);
+		await waitFor(() =>
+			expect(assign).toHaveBeenCalledWith(
+				"https://provider.example.com/authorize",
+			),
+		);
+		expect(beforeLink).toHaveBeenCalledTimes(1);
+		expect(client.beginAccountLink).toHaveBeenCalledWith(
+			"org-1",
+			"api",
+			`${window.location.origin}${window.location.pathname}`,
+			"ds-api",
+		);
+	});
+
+	it("does not begin a sign-in its preparation refused", async () => {
+		const assign = vi.fn();
+		vi.stubGlobal("location", { ...window.location, assign });
+		const client = baseClient({
+			listMyAccountLinks: vi.fn(async () => []),
+			beginAccountLink: vi.fn(),
+		});
+		renderWithClient(
+			<DatasourceAccountLinks
+				client={client}
+				orgId="org-1"
+				connector="api"
+				providerName="Example API"
+				sourceId="ds-api"
+				beforeLink={async () => {
+					throw new Error("organization administrator required");
+				}}
+			/>,
+		);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Sign in to Example API" }),
+		);
+		expect(
+			await screen.findByText(/needs the administrator or owner role/i),
+		).toBeTruthy();
+		expect(client.beginAccountLink).not.toHaveBeenCalled();
+		expect(assign).not.toHaveBeenCalled();
+	});
+
+	it("lists only that source's sign-in, and offers no unlink that would leave it authorized", async () => {
+		const client = baseClient({
+			listMyAccountLinks: vi.fn(async () => [
+				{
+					id: "l1",
+					userId: "u1",
+					connector: "github",
+					providerAccountId: "1001",
+					providerAccountLogin: "jane",
+				},
+				{ ...sourceLink, id: "l3", providerAccountId: "source:other" },
+				sourceLink,
+			]),
+			beginAccountLink: vi.fn(),
+			deleteAccountLink: vi.fn(),
+		});
+		renderWithClient(
+			<DatasourceAccountLinks
+				client={client}
+				orgId="org-1"
+				connector="api"
+				providerName="Example API"
+				sourceId="ds-api"
+			/>,
+		);
+		expect(await screen.findByText(/^Signed in\./)).toBeTruthy();
+		expect(screen.queryByText("jane")).toBeNull();
+		expect(screen.queryByRole("button", { name: /unlink/i })).toBeNull();
+		expect(screen.getByRole("button", { name: "Sign in again" })).toBeTruthy();
+	});
+
+	it("does not count another source's sign-in as this one's", async () => {
+		const client = baseClient({
+			listMyAccountLinks: vi.fn(async () => [
+				{ ...sourceLink, providerAccountId: "source:other" },
+			]),
+			beginAccountLink: vi.fn(),
+		});
+		renderWithClient(
+			<DatasourceAccountLinks
+				client={client}
+				orgId="org-1"
+				connector="api"
+				providerName="Example API"
+				sourceId="ds-api"
+			/>,
+		);
+		expect(await screen.findByText(/you have not signed in yet/i)).toBeTruthy();
+	});
+
+	it("completes the provider's return and says the source is signed in", async () => {
+		window.history.replaceState(null, "", "/connect?state=dl.abc&code=xyz");
+		const client = baseClient({
+			listMyAccountLinks: vi.fn(async () => [sourceLink]),
+			completeAccountLink: vi.fn(async () => sourceLink),
+		});
+		renderWithClient(
+			<DatasourceAccountLinks
+				client={client}
+				orgId="org-1"
+				connector="api"
+				providerName="Example API"
+				sourceId="ds-api"
+			/>,
+		);
+		expect(
+			await screen.findByText("Signed in to Example API."),
+		).toBeTruthy();
+		expect(client.completeAccountLink).toHaveBeenCalledTimes(1);
+		expect(client.completeAccountLink).toHaveBeenCalledWith(
+			"org-1",
+			"dl.abc",
+			"xyz",
+		);
+		expect(window.location.search).toBe("");
 	});
 });
 

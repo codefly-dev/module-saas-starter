@@ -511,7 +511,7 @@ func (s *Service) SourceTriggerIdentities(ctx context.Context, orgID, sourceID s
 			BoundOrg:    delegation.OrgID,
 		})
 		if authErr == nil && authority != nil {
-			if binding, current := authority.Grant.currentSourceDelegationBinding(delegation); current {
+			if binding, state := authority.Grant.currentSourceDelegationBinding(delegation); state == sourceDelegationBindingOK {
 				reference.Audience = binding.Audience
 				reference.Scopes = operationScopeGrants(binding.SourceDelegationScopes)
 			}
@@ -625,7 +625,9 @@ func (s *Service) DelegateSourceTriggers(ctx context.Context, actorID, orgID, so
 	// the registry it will record from, inside the transaction, and records
 	// nothing when the answer is none; asking it here as well would be a
 	// second answer that can disagree with the first. The caller then reads
-	// the empty reference list as the deployment's answer.
+	// the empty reference list as the deployment's answer — unless that
+	// registry is incomplete, which that function refuses rather than reports
+	// as nothing to do (issue #1165).
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		source, err := s.store.GetDatasourceSource(ctx, orgID, sourceID)
 		if err != nil {

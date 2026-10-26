@@ -30,6 +30,20 @@ var (
 	ErrInvitationEmailMismatch   = errors.New("sign in with the email address that received this invitation")
 	ErrInvitationEmailUnverified = errors.New("verify your email address before accepting this invitation")
 	ErrInvitationExpired         = errors.New("invitation expired; ask the inviter to send a new one")
+	// ErrInvitationAlreadyPending refuses a second invitation to an address
+	// that already holds a live one in the organization. The store's partial
+	// unique index is what decides it, so two concurrent invitations cannot
+	// both pass; the sentence points at the invitation that already exists.
+	ErrInvitationAlreadyPending = errors.New("this address already has a pending invitation; find it in the invitations list to copy its link or resend it")
+	// ErrAlreadyMember refuses an invitation addressed to, or accepted by,
+	// someone who already belongs to the organization. A membership's role
+	// changes through the role-change path, which carries its own checks and
+	// audit; an invitation is never a second way to promote or demote.
+	ErrAlreadyMember = errors.New("this person is already a member of the organization; change their role from the members list instead")
+	// ErrInvitationDeliveryUnavailable and ErrWaitlistDeliveryUnavailable
+	// refuse a send on a deployment that delivers no email.
+	ErrInvitationDeliveryUnavailable = errors.New("invitation delivery is unavailable: this deployment sends no email; copy the invitation's link instead")
+	ErrWaitlistDeliveryUnavailable   = errors.New("waitlist invitation delivery is unavailable: this deployment sends no email")
 )
 
 type Invitation struct {
@@ -118,11 +132,20 @@ func (s *Service) CreateInvitation(
 		if err := s.store.ExpirePendingInvitations(ctx, req.OrgId); err != nil {
 			return w.Wrapf(err, "cannot expire stale invitations")
 		}
+		if invitee != nil {
+			member, err := s.store.OrgMemberExists(ctx, req.OrgId, invitee.Uuid)
+			if err != nil {
+				return w.Wrapf(err, "cannot check existing membership")
+			}
+			if member {
+				return ErrAlreadyMember
+			}
+		}
 		quota, err := s.cardinalityQuotaInTx(ctx, req.OrgId, EntitlementSeats)
 		if err != nil {
 			return w.Wrapf(err, "cannot check seat quota")
 		}
-		if err := quota.RequireAvailable(); err != nil {
+		if err := admitCardinality(ctx, req.OrgId, quota); err != nil {
 			return err
 		}
 		if org, err := s.store.GetOrganization(ctx, req.OrgId); err == nil && org != nil {
@@ -281,6 +304,7 @@ func (s *Service) summarizeInvitation(
 		}
 	}
 	return &gen.InvitationSummary{
+		Id:        inv.ID,
 		Status:    invitationStatusFromString(inv.Status),
 		Role:      invitationRoleFromString(inv.Role),
 		EmailHint: maskEmail(inv.Email),
@@ -351,6 +375,19 @@ func (s *Service) AcceptInvitation(
 	var org *gen.Organization
 	alreadyAccepted := false
 	if txErr := s.store.As(Identity{UserID: userID, OrgID: inv.OrgID}).Within(ctx, func(ctx context.Context) error {
+		// The administration lock comes first, in the documented order
+		// (administration, then membership), so acceptance serializes with
+		// deleting the organization: deletion holds it while it removes the
+		// roster and revokes pending invitations, and an acceptance that ran
+		// beside it could commit a membership into an archived organization.
+		if err := s.store.LockOrgAdministration(ctx, inv.OrgID); err != nil {
+			return w.Wrapf(err, "cannot lock organization administration")
+		}
+		if current, err := s.store.GetOrganization(ctx, inv.OrgID); err != nil {
+			return w.Wrapf(err, "cannot read organization")
+		} else if current == nil || current.ArchivedAt != nil {
+			return ErrInvitationUnavailable
+		}
 		fresh, lockErr := s.store.GetInvitationByID(ctx, inv.ID)
 		if lockErr != nil {
 			return lockErr
@@ -364,11 +401,24 @@ func (s *Service) AcceptInvitation(
 			if fresh.Status != "pending" || time.Now().After(fresh.ExpiresAt) {
 				return ErrInvitationUnavailable
 			}
-			// The invitation's role is authoritative and overwrites any
-			// membership the accepting user already holds, so redemption is a
-			// demotion path like any other.
-			if err := s.requireOrgAdminContinuity(ctx, inv.OrgID, userID, inv.Role); err != nil {
-				return err
+			// A member's role is never rewritten by redeeming an invitation:
+			// the invitation may name a lower role (a silent demotion) or a
+			// higher one (a promotion that skips the role-change path), and
+			// neither is what accepting means. Refuse, and leave the role
+			// where the role-change path last put it. The pair lock keeps a
+			// concurrent direct add from landing between the check and the
+			// write. A non-member holds no administrative authority, so
+			// admitting one cannot break administrator continuity; the
+			// administration lock above is for deletion, not continuity.
+			if err := s.store.LockOrgMembership(ctx, inv.OrgID, userID); err != nil {
+				return w.Wrapf(err, "cannot lock org membership")
+			}
+			member, err := s.store.OrgMemberExists(ctx, inv.OrgID, userID)
+			if err != nil {
+				return w.Wrapf(err, "cannot check existing membership")
+			}
+			if member {
+				return ErrAlreadyMember
 			}
 			if err := s.store.AddOrgMember(ctx, inv.OrgID, userID, inv.Role); err != nil {
 				return w.Wrapf(err, "cannot add member to organization")
@@ -452,7 +502,7 @@ func (s *Service) ResendInvitation(
 ) (*gen.Invitation, error) {
 	w := wool.Get(ctx).In("ResendInvitation")
 	if s.emailOutbox == nil {
-		return nil, w.NewError("invitation delivery is unavailable")
+		return nil, ErrInvitationDeliveryUnavailable
 	}
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if idempotencyKey == "" || len(idempotencyKey) > 255 {

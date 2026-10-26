@@ -1,6 +1,8 @@
 import "server-only";
 
-import { getEndpoints, getWorkspaceSecret } from "codefly";
+import { getWorkspaceSecret } from "codefly";
+
+import { gatewayOrigin } from "@/lib/gateway-endpoint";
 
 /**
  * What the calling viewer may use (issue #949).
@@ -127,18 +129,6 @@ const ENTITLEMENTS_READ_TIMEOUT_MS = 12_000;
  * client-controlled host is an SSRF sink. Same rule, same reason, as the registry
  * snapshot read in registry.ts.
  */
-function gatewayOrigin(): string | null {
-	const endpoint = getEndpoints().find(
-		(candidate) =>
-			candidate.service === "auth-gateway" && candidate.name === "rest",
-	);
-	if (!endpoint?.address) return null;
-	try {
-		return new URL(endpoint.address).origin;
-	} catch {
-		return null;
-	}
-}
 
 function internalToken(): string | null {
 	const token = getWorkspaceSecret(

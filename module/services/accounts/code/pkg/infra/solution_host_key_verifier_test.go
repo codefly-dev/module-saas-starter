@@ -21,17 +21,24 @@ func acceptedPolicy(t *testing.T) *infra.SolutionHostVerificationPolicy {
 	t.Helper()
 	return &infra.SolutionHostVerificationPolicy{Signers: []infra.SolutionHostSigner{{
 		Name: "release label", Kind: solutionhost.KeyKindRelease, KeyID: "example-release-v1",
-		PublicKey: deliverytest.PublicKey(t, "example-release-v1"), Domains: []string{solutionhost.FixtureDomain},
+		PublicKey: deliverytest.PublicKey(t, "example-release-v1"), Domains: []string{verifierTestDomain},
 	}}}
 }
 
+// verifierTestDomain is the ownership domain the verifier tests' keys are
+// pinned for and their manifest speaks for.
+const verifierTestDomain = "acme"
+
 func bindingPayload(t *testing.T) []byte {
 	t.Helper()
-	raw, err := solutionhost.FixtureDocument(solutionhost.DocumentTypePresence, "valid")
-	require.NoError(t, err)
-	document, err := solutionhost.Parse(raw)
-	require.NoError(t, err)
-	payload, err := solutionhost.SignedPayload(document)
+	manifest := &solutionhost.ModuleManifest{
+		Schema: solutionhost.SchemaModuleManifestV1, Binding: "acme.test.verifier", Alias: "verifier",
+		Kind: solutionhost.KindModule, Generation: 4,
+		Host:      solutionhost.HostTarget{Coordinate: "acme-test", Domain: verifierTestDomain},
+		Release:   solutionhost.Release{Publisher: "acme", Name: "verifier", Version: "1.0.0"},
+		Workloads: []solutionhost.Workload{{Service: "verifier", Container: "verifier"}},
+	}
+	payload, err := solutionhost.SignedPayload(manifest)
 	require.NoError(t, err)
 	return payload
 }
@@ -45,17 +52,17 @@ func TestPinnedKeysVerifyDeliveryOffline(t *testing.T) {
 	accepted := deliverytest.Carrier(t, payload, policy.Signers[0].KeyID)
 	delivered, err := verifyPresence(t, verifier, accepted)
 	require.NoError(t, err)
-	require.Equal(t, policy.Signers[0].KeyID, delivered.DeliveredBy())
+	require.Equal(t, policy.Signers[0].KeyID, delivered.Signer().KeyID)
 	require.Equal(t, solutionhost.KeyKindRelease, delivered.Signer().Kind)
 	require.Equal(t, payload, delivered.Payload())
-	require.Equal(t, map[string][]string{policy.Signers[0].KeyID: {solutionhost.FixtureDomain}}, verifier.SignerDomains())
+	require.Equal(t, map[string][]string{policy.Signers[0].KeyID: {verifierTestDomain}}, verifier.SignerDomains())
 
 	for name, change := range map[string]func(*solutionhost.Signed){
 		"tampered document": func(s *solutionhost.Signed) {
 			s.Document = bytes.Replace(s.Document, []byte(`"generation":4`), []byte(`"generation":5`), 1)
 		},
 		"tampered payload type": func(s *solutionhost.Signed) {
-			s.Envelope = bytes.Replace(s.Envelope, []byte(solutionhost.PayloadTypePresence), []byte(solutionhost.PayloadTypeAuthority), 1)
+			s.Envelope = bytes.Replace(s.Envelope, []byte("application/vnd.codefly.module-manifest+json"), []byte("application/vnd.codefly.other+json"), 1)
 		},
 		"two signatures": func(s *solutionhost.Signed) {
 			var envelope map[string]json.RawMessage
@@ -215,7 +222,7 @@ func TestLocalKeyRequiresSuccessfulClusterProof(t *testing.T) {
 	require.NoError(t, verifier.ProveLocalCluster(context.Background(), accepted))
 	delivered, err := verifyPresence(t, verifier, carrier)
 	require.NoError(t, err)
-	require.Equal(t, "example-developer", delivered.DeliveredBy())
+	require.Equal(t, "example-developer", delivered.Signer().KeyID)
 	require.Equal(t, solutionhost.KeyKindPerson, delivered.Signer().Kind)
 	// The same bytes are still refused by an ordinary deployed policy.
 	_, err = verifyPresence(t, verifierFor(t, acceptedPolicy(t)), carrier)

@@ -54,33 +54,27 @@ import (
 // worker needs to service every tenant's deliveries on its queue. Tenant is the
 // org a single-tenant module is bound to, which its minted Work Context carries;
 // a cross-tenant module names the tenant per mint instead.
-// ModuleWorkload is the Kubernetes identity this principal's pods run as, and
-// the container within them that runs its image.
+// ModuleWorkload is one Kubernetes identity this principal's pods run as, and
+// the container within them that authenticates. It is the applied manifest's
+// (service, container) spelled by the cell's rule: the namespace is the
+// module's, the ServiceAccount the service's.
 //
 // WHY THE DECLARATION HOLDS THIS AT ALL. Execution binding is unconditional, so
 // `BindExecution` is the only thing authenticating a module mint — and it takes
 // the principal as an INPUT. On its own that leaves the principal a bare claim:
 // a module presenting its own perfectly valid service-account token could name
-// ANOTHER module's prefix, and the check would then compare that other
-// principal's approved build against this caller's running image. Two modules
-// built from one image are interchangeable, and a shared base image makes the
-// hole wider than that. The shared secret used to bind the prefix to the
-// caller; removing it without this would have removed the binding.
+// ANOTHER module's prefix and be minted that module's authority. The shared
+// secret used to bind the prefix to the caller; removing it without this would
+// have removed the binding.
 //
 // So the declaration says which workload a principal IS, the TokenReview says
 // which workload the caller is, and a mismatch is a refusal. The prefix becomes
 // a claim the host can check rather than one it has to believe.
 //
-// THE CONTAINER IS DECLARED, NOT CHOSEN. It was a caller-supplied argument, and
-// that is the last degree of freedom the caller had over its own identity: a
-// pod's containers do not all run the same image, so naming a sibling picks
-// which image the approval is tested against. Reading it from the declaration
-// means nothing about the identity is the caller's to pick — the prefix is
-// checked, the pod comes from the token, the container comes from here, the
-// running image comes from the pod's status, and the approval comes from a
-// signed document.
+// THE CONTAINER IS DECLARED, NOT CHOSEN. Reading it from the manifest means
+// nothing about the identity is the caller's to pick — the prefix is checked,
+// the pod comes from the token, and the container comes from here.
 type ModuleWorkload struct {
-	SPIFFEID       string `json:"spiffe_id"`
 	ServiceAccount string `json:"service_account"`
 	Namespace      string `json:"namespace"`
 	Container      string `json:"container"`
@@ -149,6 +143,7 @@ func (w ModuleWorkload) validateForm(prefix string) error {
 
 type ModulePrincipalGrant struct {
 	// PresenceBinding is the durable registry key proven by delivered authority.
+	PresenceGeneration uint64                              `json:"-"`
 	PresenceBinding    string                              `json:"presence_binding,omitempty"`
 	ArtifactPolicies   map[string]ExecutableArtifactPolicy `json:"artifact_policies"`
 	ReadAudiences      map[string]ModuleReadAudience       `json:"read_audiences"`
@@ -168,10 +163,11 @@ type ModulePrincipalGrant struct {
 	CrossTenant        bool
 	Tenant             string
 
-	// Workload is the Kubernetes identity this principal runs as. Required:
-	// see ModuleWorkload for why a principal without one cannot be
-	// authenticated at all.
-	Workload ModuleWorkload
+	// Workloads are the Kubernetes identities this principal runs as: every
+	// workload its applied manifest lists. At least one is required: see
+	// ModuleWorkload for why a principal without one cannot be authenticated
+	// at all.
+	Workloads []ModuleWorkload
 }
 
 func (g ModulePrincipalGrant) allowsQueue(queue string) bool {
@@ -292,6 +288,39 @@ func ModulePrincipalID(prefix string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/module-principal/"+prefix)).String()
 }
 
+// RegistryIDOf resolves the principal a capability names to the registry id of
+// the declared module it is, and reports false for every other principal.
+//
+// A module is named by its NAME wherever the host interface states it: the
+// actor of a hop, the owner of a headless operation context, the principal an
+// installed operation binding (<organisation>/<module>/<binding>) is granted
+// to. The registry id (ModulePrincipalID) is this host's storage identity and
+// is still what the capabilities the interface does not issue carry, so it
+// resolves too. The two never overlap: a module name never parses as a UUID
+// (ValidateModulePrincipalGrant refuses one), so a principal spelled as an id
+// is looked up as an id and nothing else, and a name only as the entry
+// declared under exactly that name.
+func (r ModulePrincipalRegistry) RegistryIDOf(principal string) (string, bool) {
+	if principal == "" {
+		return "", false
+	}
+	id := moduleRegistryKey(principal)
+	grant, declared := r[id]
+	if !declared || (id != principal && grant.Prefix != principal) {
+		return "", false
+	}
+	return id, true
+}
+
+// moduleRegistryKey is the registry key a principal is looked up under: itself
+// when it is spelled as an id, the id its name derives otherwise.
+func moduleRegistryKey(principal string) string {
+	if _, err := uuid.Parse(principal); err == nil {
+		return principal
+	}
+	return ModulePrincipalID(principal)
+}
+
 // canonicalModuleTenant parses a principal's tenant and returns its canonical
 // spelling.
 //
@@ -395,20 +424,38 @@ func validateModulePrincipalCeiling(prefix string, grant ModulePrincipalGrant) e
 // and saying so here names the entry instead of leaving every one of its calls
 // refused as "denied".
 func ValidateModulePrincipalGrant(prefix string, grant ModulePrincipalGrant) error {
+	// A module's name is the principal every capability it exercises names it
+	// by, beside the person and agent ids those capabilities carry, which are
+	// UUIDs. A name spelled as one would collide with them (RegistryIDOf).
+	if _, err := uuid.Parse(prefix); err == nil {
+		return fmt.Errorf("module principal %q is named as an id: a module's name is its principal in every capability it exercises, so it must never read as a principal id", prefix)
+	}
+	if slices.Contains(grant.Queues, InstallationStepQueue) {
+		return fmt.Errorf("principal %q asks for host-only queue %q", prefix, InstallationStepQueue)
+	}
+
 	if grant.Prefix != prefix {
 		return fmt.Errorf("module principal %q carries prefix %q", prefix, grant.Prefix)
 	}
 	if err := validateModulePrincipalCeiling(prefix, grant); err != nil {
 		return err
 	}
-	if !grant.Workload.declared() {
+	if len(grant.Workloads) == 0 {
 		return fmt.Errorf(
 			"module principal %q must declare its workload identity (service_account, namespace, container): "+
 				"execution binding is unconditional, so without it the host cannot tell this principal's pods "+
 				"from any other caller holding a valid token",
 			prefix)
 	}
-	return grant.Workload.validateForm(prefix)
+	for _, workload := range grant.Workloads {
+		if !workload.declared() {
+			return fmt.Errorf("module principal %q declares a workload missing its service_account, namespace or container", prefix)
+		}
+		if err := workload.validateForm(prefix); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ModuleCaller is the authenticated module service principal, as the RPC adapter
@@ -559,8 +606,8 @@ func moduleRefusal(code codes.Code, reason, message string) error {
 // of the caller's own AUTHORITY stays Unauthenticated or PermissionDenied — an
 // identity it cannot prove, a principal no composition registered, a tenant it
 // is not bound to — held apart from a malformed request (InvalidArgument) and
-// from an operational condition of this host, which answers FailedPrecondition
-// under a reason of its own (ModuleLiveAuthorityUnavailableReason). So a
+// from an operational condition of this host, which answers Unavailable under
+// a reason of its own (ModuleLiveAuthorityUnavailableReason). So a
 // consumer driving this surface from a journal can tell a departed person —
 // final for that person, and nothing the module may retry its way out of —
 // from a composition this host does not admit as a module principal, which is
@@ -789,7 +836,7 @@ func moduleJobError(w *wool.Wool, err error) error {
 	case errors.Is(err, jobs.ErrJobNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, jobs.ErrTransactionRequired):
-		return status.Error(codes.Internal, err.Error())
+		return status.Error(codes.Internal, jobs.ErrTransactionRequired.Error())
 	}
 	return w.Wrap(err)
 }
@@ -1089,24 +1136,27 @@ func (s *Service) ModuleCancelApproval(ctx context.Context, caller ModuleCaller,
 }
 
 // moduleApprovalError maps approval-engine errors onto gRPC codes by their typed
-// StoreError. An untyped error is an internal fault, NOT bad client input: the
-// previous blanket InvalidArgument told a module its request was malformed even
-// when the database failed, so it would retry the same request forever.
+// StoreError, under the store's own sentence rather than the wrapped chain. An
+// untyped error is an internal fault, NOT bad client input: the previous
+// blanket InvalidArgument told a module its request was malformed even when the
+// database failed, so it would retry the same request forever. A fault is
+// returned as it came: the adapters' refusal seam sends it as Internal with a
+// fixed sentence and logs the cause, which a status built here would lose.
 func moduleApprovalError(err error) error {
 	var se *StoreError
 	if errors.As(err, &se) {
 		switch se.StoreErrorType {
 		case ErrTypeValidation:
-			return status.Error(codes.InvalidArgument, err.Error())
+			return status.Error(codes.InvalidArgument, se.Error())
 		case ErrTypeNotFound:
-			return status.Error(codes.NotFound, err.Error())
+			return status.Error(codes.NotFound, se.Error())
 		case ErrTypeConflict:
-			return status.Error(codes.FailedPrecondition, err.Error())
+			return status.Error(codes.FailedPrecondition, se.Error())
 		case ErrTypePermission:
-			return status.Error(codes.PermissionDenied, err.Error())
+			return status.Error(codes.PermissionDenied, se.Error())
 		}
 	}
-	return status.Error(codes.Internal, err.Error())
+	return err
 }
 
 // enqueueApprovalResume appends the resume outbox job for an approved request.
