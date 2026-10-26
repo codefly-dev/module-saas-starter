@@ -33,6 +33,8 @@ const hopOwner = "33333333-3333-4333-8333-333333333333"
 type holdingAuthority struct {
 	workContextAuthorityFake
 	held map[string]bool
+	// standing is what an installation's standing grants admit.
+	standing map[string]bool
 }
 
 func (f *holdingAuthority) ResolveWorkContextAuthority(ctx context.Context, org, owner, actor string, permissions []business.WorkContextPermission) (*business.WorkContextAuthorityFacts, error) {
@@ -42,6 +44,17 @@ func (f *holdingAuthority) ResolveWorkContextAuthority(ctx context.Context, org,
 		}
 	}
 	return f.workContextAuthorityFake.ResolveWorkContextAuthority(ctx, org, owner, actor, permissions)
+}
+
+// ResolveInstallationAuthority holds an installation's agent to exactly the
+// kind:action pairs standing names, as its standing grants would.
+func (f *holdingAuthority) ResolveInstallationAuthority(ctx context.Context, org, installation string, permissions []business.WorkContextPermission) (*business.InstallationAuthorityFacts, error) {
+	for _, p := range permissions {
+		if !f.standing[p.ResourceKind+":"+p.Action] {
+			return nil, business.NewStoreError(errors.New("agent standing grant does not authorize "+p.ResourceKind+":"+p.Action), business.ErrTypePermission)
+		}
+	}
+	return f.workContextAuthorityFake.ResolveInstallationAuthority(ctx, org, installation, permissions)
 }
 
 type hopFixture struct {
@@ -219,4 +232,70 @@ func TestAHopOnATokenAddressedElsewhereIsRefusedUnspent(t *testing.T) {
 	requireRefused(t, err, codes.PermissionDenied, "tools hops only on a token addressed to it")
 	_, err = f.issuer.verifyFor(context.Background(), parent, "documents")
 	require.NoError(t, err)
+}
+
+const (
+	hopAgent             = "44444444-4444-4444-8444-444444444444"
+	hopAgentIdentifier   = "acme.example/assistant:1.0.0"
+	hopAgentInstallation = "55555555-5555-4555-8555-555555555555"
+)
+
+// installationOwned makes f's installation, whose agent is hopAgent, admit
+// standing, and mints that agent's own capability at tools carrying scopes.
+func (f hopFixture) installationOwned(t *testing.T, standing []string, scopes ...*basev0.WorkScopeV1) (string, *basev0.WorkContextV1) {
+	t.Helper()
+	f.holding.standing = map[string]bool{}
+	for _, s := range standing {
+		f.holding.standing[s] = true
+	}
+	f.holding.installationFcts = &business.InstallationAuthorityFacts{OwnerPrincipalID: hopOwner, OrganizationRevision: 12,
+		Actor: &business.Principal{ID: hopAgent, Kind: business.PrincipalKindAgent, AgentIdentifier: hopAgentIdentifier}}
+	f.holding.installations = map[string]business.InstallationIdentity{hopAgentInstallation: {OrgID: moduleWorkContextTenant, Status: "active"}}
+	f.holding.agents = map[string]string{hopAgent: hopAgentInstallation}
+	return mintTestCapability(t, f.issuer, testCapability{Audience: "tools", Tenant: moduleWorkContextTenant, Owner: hopAgent,
+		OwnerKind: business.PrincipalKindAgent, OwnerAgent: hopAgentIdentifier, Scopes: scopes})
+}
+
+// Rule A for an installation: a hop below a capability its agent owns carries
+// what the installation's standing grants admit within the binding (read here,
+// since they do not admit invoke), whatever any person holds. The child stays
+// owned by the agent, is actored by the module and verifies; a second hop
+// keeps the owner; an ask beyond the standing grants is refused, and so is
+// every hop once the installation no longer stands.
+func TestAHopFromAnInstallationOwnedParentInheritsTheInstallationsStandingGrants(t *testing.T) {
+	// The person-owned path would grant invoke: the agent's must not borrow it.
+	f := newHopFixture(t, "example-records:invoke", "example-records:read", "tool.items:read")
+	parent, parentClaims := f.installationOwned(t, []string{"tool.items:read", "example-records:read"}, hopScope("tool.items", []string{"read"}))
+
+	out, err := f.hop(parent, f.tool, "records", "documents")
+	require.NoError(t, err)
+	wc := claims(t, out)
+	require.Equal(t, hopAgent, wc.GetOwnerPrincipalId())
+	require.Equal(t, business.PrincipalKindAgent, wc.GetOwnerPrincipalKind())
+	require.Equal(t, hopAgentIdentifier, wc.GetOwnerAgentId())
+	require.Equal(t, parentClaims.GetTaskId(), wc.GetTaskId())
+	require.Equal(t, parentClaims.GetSessionId(), wc.GetParentSessionId())
+	require.Len(t, wc.GetActorChain(), 1)
+	require.Equal(t, business.ModulePrincipalID("tools"), wc.GetActorChain()[0].GetPrincipalId())
+	requireScopes(t, []*basev0.WorkScopeV1{hopScope("example-records", []string{"read"})}, wc.GetActorChain()[0].GetGrantedScopes())
+	_, err = f.server.Check(context.Background(), &authorityv1.CheckRequest{Token: out.GetToken(), Audience: "documents"})
+	require.NoError(t, err)
+
+	// Down the chain: documents hops back to tools; the owner is still the agent.
+	f.holding.standing["tool.items:read"] = true
+	back, err := f.hop(out.GetToken(), f.docs, "items", "tools")
+	require.NoError(t, err)
+	require.Equal(t, hopAgent, claims(t, back).GetOwnerPrincipalId())
+	require.Len(t, claims(t, back).GetActorChain(), 2)
+
+	_, err = f.hop(parent, f.tool, "records", "documents", ask("example-records", []string{"invoke"}))
+	requireRefused(t, err, codes.PermissionDenied, "widens")
+
+	delete(f.holding.standing, "example-records:read")
+	_, err = f.hop(parent, f.tool, "records", "documents")
+	requireRefused(t, err, codes.PermissionDenied, "holds nothing")
+
+	f.holding.agents = nil
+	_, err = f.hop(parent, f.tool, "records", "documents")
+	requireRefused(t, err, codes.PermissionDenied, "acts for no active installation")
 }

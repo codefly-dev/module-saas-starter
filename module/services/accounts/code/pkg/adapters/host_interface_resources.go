@@ -36,6 +36,13 @@ func (s *HostAuthorityServer) ListResources(ctx context.Context, req *authorityv
 		return nil, interfaceStatus(err)
 	}
 	wc := capability.Context()
+	// An installation's agent owns its capability by its installation's
+	// standing, re-read here as Check re-reads it.
+	if wc.GetOwnerPrincipalKind() == business.PrincipalKindAgent {
+		if _, _, err := s.workContexts.requireInstallationStands(ctx, wc); err != nil {
+			return nil, err
+		}
+	}
 	effective := effectiveScopes(wc)
 	held, whole, ids := false, false, []string{}
 	for _, scope := range effective {

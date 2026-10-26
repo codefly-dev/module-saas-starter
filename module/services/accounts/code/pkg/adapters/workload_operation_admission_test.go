@@ -258,6 +258,14 @@ func workloadOperationRows() []admissionRow {
 				require.NoError(t, err)
 				return server, installTaskRequest().GetAudience(), issued.GetToken()
 			}},
+		// An installation acting for itself: owned by its agent, still no workload's.
+		{"host interface installation issue", "", business.PrincipalKindAgent, person,
+			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
+				server, _, solution, _ := installationIssueFixture(t)
+				out, err := server.Issue(context.Background(), installationIssue(notesInstallation, solution, ""))
+				require.NoError(t, err)
+				return server.workContexts, "notes.test", out.GetToken()
+			}},
 		{"installation step", "", human, person,
 			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
 				server := newInstallationMintServer(t, healthyInstallationFacts(), nil)
@@ -463,7 +471,7 @@ var mintEntrypointRows = map[string][]string{
 	"(*WorkContextAuthorityServer).StartChildSession":        {"StartChildSession"},
 	"(*WorkContextAuthorityServer).exchangeInstalledBinding": {"operation exchange, content_read, invoke", "operation exchange, module_actor, invoke"},
 	"(*WorkContextAuthorityServer).startSourceOperation":     {"source-operation context", "operation exchange, source delegation reference", "operation exchange, source delegation parent"},
-	"(*WorkContextAuthorityServer).mintInstallationTask":     {"installation task", "installation step"},
+	"(*WorkContextAuthorityServer).mintInstallationTask":     {"installation task", "installation step", "host interface installation issue"},
 	"(*WorkContextAuthorityServer).StartModuleTask":          {"module identity", "installer token route"},
 	"(*WorkContextAuthorityServer).StartModuleOperationTask": {"module operation context", "module operation context for its own module"},
 	"(*WorkContextAuthorityServer).mintBindingHop":           {"host interface binding hop"},

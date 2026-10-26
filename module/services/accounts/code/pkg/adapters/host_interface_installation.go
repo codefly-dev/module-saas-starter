@@ -22,7 +22,9 @@ import (
 // what it asked, not even whether the ask is well formed; only then is the
 // installation held to the solution's own, and the audience to the
 // composition. Every refusal comes before the mint and names its reason; the
-// authority is then the installation's own, through the host's headless mint.
+// authority is then the installation's own, through the host's headless mint,
+// and the capability is owned by the installation's agent: no person is acting
+// (host_interface_installation_owned.go).
 func (s *HostAuthorityServer) forInstallation(ctx context.Context, installationID string, req *authorityv1.IssueRequest, scopes []*gen.WorkContextScope, ttl int32) (*gen.IssuedWorkContext, error) {
 	credential := req.GetActor().GetCredential()
 	if credential == "" {
@@ -80,7 +82,7 @@ func (s *HostAuthorityServer) forInstallation(ctx context.Context, installationI
 	if err := Validate(mint); err != nil {
 		return nil, err
 	}
-	return s.workContexts.startInstallationTask(ctx, mint)
+	return s.workContexts.startInstallationTask(ctx, mint, ownedByAgent)
 }
 
 // installationOrganization is the organisation an installation's work runs in:
@@ -118,17 +120,12 @@ func (s *WorkContextAuthorityServer) installationHoldings(ctx context.Context, o
 	for _, kind := range kinds {
 		var actions []string
 		for _, action := range slices.Compact(slices.Sorted(slices.Values(append(candidateActions(kind, audience, nil), authority.RoleActions(kind)...)))) {
-			permissions, _, err := workContextScopes([]*gen.WorkContextScope{{ResourceKind: kind, Actions: []string{action}}}, mintContentReads(audience))
+			admitted, err := s.installationAdmits(ctx, orgID, installationID, audience, &gen.WorkContextScope{ResourceKind: kind, Actions: []string{action}})
 			if err != nil {
-				return nil, status.Error(codes.Internal, err.Error())
-			}
-			_, err = s.resolveInstallationAuthority(ctx, orgID, installationID, permissions)
-			switch status.Code(err) {
-			case codes.OK:
-				actions = append(actions, action)
-			case codes.PermissionDenied:
-			default:
 				return nil, err
+			}
+			if admitted {
+				actions = append(actions, action)
 			}
 		}
 		if len(actions) > 0 {

@@ -206,7 +206,9 @@ type testCapability struct {
 	Owner    string
 	// OwnerKind defaults to human.
 	OwnerKind string
-	Task      string
+	// OwnerAgent is the agent identifier an agent owner carries.
+	OwnerAgent string
+	Task       string
 	// Session is the issuer-bound session; empty mints a fresh one.
 	Session string
 	// Replay defaults to idempotent.
@@ -243,6 +245,7 @@ func tryMintTestCapability(server *WorkContextAuthorityServer, c testCapability)
 			TenantID:           c.Tenant,
 			OwnerPrincipalID:   c.Owner,
 			OwnerPrincipalKind: c.OwnerKind,
+			OwnerAgentID:       c.OwnerAgent,
 			OrganizationID:     c.Tenant,
 			TaskID:             c.Task,
 			Audience:           c.Audience,

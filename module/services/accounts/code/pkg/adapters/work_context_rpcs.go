@@ -903,8 +903,24 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err := requireInternalCredential(ctx); err != nil {
 		return nil, err
 	}
-	return s.startInstallationTask(ctx, req)
+	return s.startInstallationTask(ctx, req, ownedByOwnerOfRecord)
 }
+
+// installationOwnership is whom an installation's capability names as its
+// owner. The two shapes carry the same authority (the agent's standing grants
+// within its ceiling) and differ in attribution only.
+type installationOwnership int
+
+const (
+	// ownedByOwnerOfRecord: the installation's human owner of record owns it
+	// and its agent is the sole actor. The internal headless mint and the
+	// install step: work a person put in motion and answers for.
+	ownedByOwnerOfRecord installationOwnership = iota
+	// ownedByAgent: the installation's agent owns it and nothing acts below
+	// it. An installation acting for itself behind the host interface: no
+	// person is acting, so naming one would misattribute the action.
+	ownedByAgent
+)
 
 // startInstallationTask is the headless mint once its caller is authenticated:
 // the internal credential on StartInstallationTask, the installed solution's
@@ -912,6 +928,7 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 func (s *WorkContextAuthorityServer) startInstallationTask(
 	ctx context.Context,
 	req *gen.StartInstallationTaskRequest,
+	owner installationOwnership,
 ) (*gen.IssuedWorkContext, error) {
 	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
 		return nil, err
@@ -938,12 +955,12 @@ func (s *WorkContextAuthorityServer) startInstallationTask(
 	if err != nil {
 		return nil, err
 	}
-	return s.signInstallationTask(ctx, req, facts, scopes)
+	return s.signInstallationTask(ctx, req, facts, scopes, owner)
 }
 
 // Shared by the ordinary headless mint and the leased install step. Only the
 // latter resolves pending consent; neither path changes ordinary use admission.
-func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1) (*gen.IssuedWorkContext, error) {
+func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1, owner installationOwnership) (*gen.IssuedWorkContext, error) {
 	// An installation context is always agent-actored; a nil actor means the store
 	// broke its contract (a healthy resolve always names the agent). Fail closed
 	// rather than mint an unattributed token.
@@ -959,7 +976,7 @@ func (s *WorkContextAuthorityServer) signInstallationTask(ctx context.Context, r
 	if err := enforceActorCeiling(ctx, facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}
-	return s.mintInstallationTask(ctx, req, facts, scopes)
+	return s.mintInstallationTask(ctx, req, facts, scopes, owner)
 }
 
 // InstallationStepResourceKind and InstallationStepAction name the one scope
@@ -1012,36 +1029,48 @@ func (s *WorkContextAuthorityServer) signInstallationStep(ctx context.Context, r
 		ResourceIds:  []string{req.GetInstallationId()},
 	})
 	sort.SliceStable(step, func(i, j int) bool { return step[i].GetResourceKind() < step[j].GetResourceKind() })
-	return s.mintInstallationTask(ctx, req, facts, step)
+	return s.mintInstallationTask(ctx, req, facts, step, ownedByOwnerOfRecord)
 }
 
 // mintInstallationTask signs resolved, ceiling-checked installation authority.
-func (s *WorkContextAuthorityServer) mintInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1) (*gen.IssuedWorkContext, error) {
-	// Sealed to the installation the authority is drawn from, owned by its owner
-	// of record and actored by its agent. The session is a fresh one: this
-	// caller holds a service credential, not a session, and a session id a
-	// caller names is never signed (see callerSession).
-	token, signed, err := s.mint(ctx, mintRequest{
-		Start: workcontext.StartInput{
-			TenantID:           req.GetOrgId(),
-			OwnerPrincipalID:   facts.OwnerPrincipalID,
-			OwnerPrincipalKind: business.PrincipalKindHuman,
-			OrganizationID:     req.GetOrgId(),
-			TaskID:             req.GetTaskId(),
-			Audience:           req.GetAudience(),
-			AuthorityScopes:    scopes,
-			AttributionTeamIDs: facts.AttributionTeamIDs,
-			WorkspaceID:        req.GetWorkspaceId(),
-			ProjectID:          req.GetProjectId(),
-			InstallationID:     req.GetInstallationId(),
-		},
-		Hops: []delegationHop{{
+func (s *WorkContextAuthorityServer) mintInstallationTask(ctx context.Context, req *gen.StartInstallationTaskRequest, facts *business.InstallationAuthorityFacts, scopes []*basev0.WorkScopeV1, owner installationOwnership) (*gen.IssuedWorkContext, error) {
+	// Sealed to the installation the authority is drawn from. The session is a
+	// fresh one: this caller holds a service credential, not a session, and a
+	// session id a caller names is never signed (see callerSession).
+	start := workcontext.StartInput{
+		TenantID:        req.GetOrgId(),
+		OrganizationID:  req.GetOrgId(),
+		TaskID:          req.GetTaskId(),
+		Audience:        req.GetAudience(),
+		AuthorityScopes: scopes,
+		WorkspaceID:     req.GetWorkspaceId(),
+		ProjectID:       req.GetProjectId(),
+		InstallationID:  req.GetInstallationId(),
+	}
+	var hops []delegationHop
+	switch owner {
+	case ownedByAgent:
+		// Owned by its agent, with nothing acting below it and no person's
+		// teams to attribute it to: the installation is the one acting.
+		if facts.Actor.Kind != business.PrincipalKindAgent || facts.Actor.AgentIdentifier == "" {
+			return nil, status.Error(codes.Internal, "installation authority resolved an actor that is not an identified agent")
+		}
+		start.OwnerPrincipalID, start.OwnerPrincipalKind, start.OwnerAgentID = facts.Actor.ID, business.PrincipalKindAgent, facts.Actor.AgentIdentifier
+	default:
+		// Owned by its owner of record and actored by its agent.
+		start.OwnerPrincipalID, start.OwnerPrincipalKind = facts.OwnerPrincipalID, business.PrincipalKindHuman
+		start.AttributionTeamIDs = facts.AttributionTeamIDs
+		hops = []delegationHop{{
 			PrincipalID:   facts.Actor.ID,
 			PrincipalKind: facts.Actor.Kind,
 			AgentID:       facts.Actor.AgentIdentifier,
 			DelegationID:  uuid.NewString(),
 			GrantedScopes: cloneWorkScopes(scopes),
-		}},
+		}}
+	}
+	token, signed, err := s.mint(ctx, mintRequest{
+		Start:  start,
+		Hops:   hops,
 		Replay: workContextReplayPolicy(req.GetReplayPolicy()),
 		TTL:    workContextTTL(req.GetTtlSeconds()),
 	})

@@ -86,6 +86,14 @@ func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckR
 	if err != nil {
 		return nil, interfaceStatus(err)
 	}
+	// An installation's agent owns its capability by its installation's
+	// standing, which core's seal and revision do not wholly carry (a
+	// standing grant narrowed moves neither), so it is re-read here.
+	if verified.Context().GetOwnerPrincipalKind() == business.PrincipalKindAgent {
+		if _, _, err := s.workContexts.requireInstallationStands(ctx, verified.Context()); err != nil {
+			return nil, interfaceStatus(err)
+		}
+	}
 	// The capability is sound. A named method is then held to what the
 	// audience module's delivery declares for it, against what the call's
 	// current actor holds (the last hop's grant on a delegated capability, never
@@ -705,7 +713,10 @@ func interfaceStatus(err error) error {
 	switch {
 	case errors.Is(err, accountsauth.ErrUnknownIdentity):
 		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, workcontext.ErrRevoked), errors.Is(err, workcontext.ErrNoSeal):
+	case errors.Is(err, workcontext.ErrRevoked), errors.Is(err, workcontext.ErrNoSeal),
+		// The issuer looked and its owner no longer stands: a person who left,
+		// an installation revoked under its agent. A decision, not an outage.
+		errors.Is(err, business.ErrWorkContextPrincipalUnknown), errors.Is(err, business.ErrWorkContextSealUnheld):
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, workcontext.ErrInvalid), errors.Is(err, workcontext.ErrNotACoreToken), errors.Is(err, workcontext.ErrReplayed):
 		return status.Error(codes.Unauthenticated, err.Error())

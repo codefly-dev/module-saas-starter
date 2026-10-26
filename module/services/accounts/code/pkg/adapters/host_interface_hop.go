@@ -21,6 +21,10 @@ package adapters
 // resources named) stays narrowed. No hop below it gets back what a hop above
 // it gave up, so the child carries every narrowing in its own authority scopes
 // for the next hop to be held to.
+//
+// The owner is a person or an installation's agent. For an agent the "current
+// grants" are its installation's standing grants, read live
+// (installationHeldThrough), and the child stays the agent's.
 
 import (
 	"context"
@@ -50,8 +54,8 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 	tenant, owner := claims.GetTenantId(), claims.GetOwnerPrincipalId()
 	actor := business.ModulePrincipalID(prefix)
 	bindingID := req.GetOperationBindingId()
-	if claims.GetOwnerPrincipalKind() != business.PrincipalKindHuman {
-		return nil, status.Errorf(codes.PermissionDenied, "a hop through a binding inherits its owner's current grants, which this host reads for a person; this context is owned by a %s", claims.GetOwnerPrincipalKind())
+	if kind := claims.GetOwnerPrincipalKind(); kind != business.PrincipalKindHuman && kind != business.PrincipalKindAgent {
+		return nil, status.Errorf(codes.PermissionDenied, "a hop through a binding inherits its owner's current grants, which this host reads for a person or an installation's agent; this context is owned by a %s", kind)
 	}
 	// The binding as installed in this organisation: an installation narrows
 	// its declaration, and a headless-only binding does nothing as a person.
@@ -63,28 +67,16 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 	if err != nil {
 		return nil, err
 	}
-	// The owner's authority is re-read as the owner: the parent token is what
-	// proves the owner here.
-	ctx = accountsauth.WithVerifiedDatabaseIdentity(ctx, owner, tenant)
-	decided, err := s.solutionParentStands(ctx, claims)
+	// Rule A for either owner: a person's current grants, or the standing
+	// grants of the installation whose agent owns the parent.
+	var held []*basev0.WorkScopeV1
+	if claims.GetOwnerPrincipalKind() == business.PrincipalKindAgent {
+		held, err = s.workContexts.installationHeldThrough(ctx, claims, req.GetAudience(), through)
+	} else {
+		held, err = s.personHeldThrough(ctx, claims, prefix, req.GetAudience(), through)
+	}
 	if err != nil {
 		return nil, err
-	}
-	if !decided {
-		if err := s.workContexts.requireParentStands(ctx, claims); err != nil {
-			return nil, err
-		}
-	}
-	// A solution's roles decide what the owner holds through it; otherwise
-	// the organisation's roles, by the check every mint makes.
-	held, decided, err := s.solutionHoldsThrough(ctx, claims, prefix, req.GetAudience(), through)
-	if err != nil {
-		return nil, err
-	}
-	if !decided {
-		if held, err = s.workContexts.ownerHoldsThrough(ctx, tenant, owner, req.GetAudience(), through); err != nil {
-			return nil, err
-		}
 	}
 	if len(held) == 0 {
 		return nil, status.Errorf(codes.PermissionDenied, "%s holds nothing at %s through operation binding %q", owner, req.GetAudience(), bindingID)
@@ -120,6 +112,30 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 	// kind stays dropped down the chain (rule A: a narrowing is never recovered).
 	carried := narrowed.deny(held, scopes).outside(scopes)
 	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, carried, workContextTTL(ttl))
+}
+
+// personHeldThrough is what a person who owns parent holds at audience within
+// through: a solution's roles decide it where they apply, the organisation's
+// roles otherwise, once the parent is shown to still stand.
+func (s *HostAuthorityServer) personHeldThrough(ctx context.Context, parent *basev0.WorkContextV1, prefix, audience string, through []*basev0.WorkScopeV1) ([]*basev0.WorkScopeV1, error) {
+	tenant, owner := parent.GetTenantId(), parent.GetOwnerPrincipalId()
+	// The owner's authority is re-read as the owner: the parent token is what
+	// proves the owner here.
+	ctx = accountsauth.WithVerifiedDatabaseIdentity(ctx, owner, tenant)
+	decided, err := s.solutionParentStands(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	if !decided {
+		if err := s.workContexts.requireParentStands(ctx, parent); err != nil {
+			return nil, err
+		}
+	}
+	held, decided, err := s.solutionHoldsThrough(ctx, parent, prefix, audience, through)
+	if err != nil || decided {
+		return held, err
+	}
+	return s.workContexts.ownerHoldsThrough(ctx, tenant, owner, audience, through)
 }
 
 // requireDeclaredHopBinding refuses, before the parent is verified (and so
