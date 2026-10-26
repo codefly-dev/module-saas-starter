@@ -1009,9 +1009,9 @@ With the installation-owner work above (rebased onto `acf1593c`), the
 shared suite reports **43 of 45 shared cases passing** (45/47 with the two
 harness cases). "a module tool binding carries the person's solution role",
 "an installation owner survives successive module actors" and the first
-subcase of "child target projection" are green. Still red: the delegation
-case and the child-projection delegation subcase (`Delegate` is
-unimplemented).
+subcase of "child target projection" are green. The delegation case and the
+child-projection delegation subcase followed with delegations, below: the
+suite now passes 45 of 45.
 
 ## Delegations to a module (2026-10-26)
 
@@ -1019,10 +1019,23 @@ unimplemented).
 served. A delegation is a row of `module_delegations` (migration 48: tenant
 scoped, forced RLS, revoked once and never deleted, its grant immutable).
 
+- **Made by the person, in their own right.** `Delegate` and `RevokeDelegation`
+  refuse, by name, a resource-confined credential, an identity acting on
+  someone's behalf (`X-Act`, or a delegated request identity), an impersonated
+  session and any credential that is not an interactive session: the
+  credentials every other person mint holds back. The gateway already refuses a
+  resource-bound token at these procedures (ext_authz admits one only at its own
+  solution, at a declared module route paired with its capability, and at the
+  Work Context mint), so the host's refusal is the second layer, not the only one.
 - **Bounded by the grantor.** `Delegate` holds each delegated action to what
   the signed-in person holds now, at the module or at an audience one of its
   bindings reaches, by the check every mint makes; beyond that is
-  `PermissionDenied` (`delegates what they do not hold`).
+  `PermissionDenied` (`delegates what they do not hold`). A purpose past 1024
+  characters is `InvalidArgument` by name.
+- **Fail closed.** A host that cannot witness a revocation (no policy log is
+  wired) records no delegation: `Delegate` is `FailedPrecondition`, "this host
+  cannot witness a revocation, so it records no delegation". A delegation is
+  therefore never a standing grant that nothing could end.
 - **Issue from a delegation** proves the actor's workload, which must be the
   delegation's module (anyone else: `NotFound`), refuses a revoked delegation
   by name, and issues the module's one hop through the binding it names, for
@@ -1030,25 +1043,34 @@ scoped, forced RLS, revoked once and never deleted, its grant immutable).
   grantor's current grants through the binding, cut to what was delegated.
   Every later hop of that chain is cut to the delegation again, re-read from the
   store (a revoked or mismatched one refuses the hop), so a kind or a resource
-  the person did not delegate is never recovered below it.
-- **Revocation is immediate.** Only the grantor may revoke (anyone else is told
-  there is none). The row is stamped under the policy log like every other
-  narrowing, and the stamp advances the grantor's authorization revision in the
-  same statement, so every capability issued from it fails its next `Check`
-  and a child of one is refused. Its module reads it as ended through
-  `GetDelegation`, which, like `Issue`, admits a bearer-less call whose actor
-  credential authenticates it (`business.ShapeAuthenticated`).
-- **The chain names the module.** A stored delegation is confirmed against the
-  hop that acts under it by the module's name, as a hop now names its actor.
-- **Evidence.** Suite pinned at authority `3222e991`, rebased onto the hop
-  actor by name (`ce44fc05`): **45 of 45 shared cases pass** (48/48 with the
-  three harness cases; the new one is "a delegation is bounded by its grantor
-  and ends with its revocation"). "a delegation issues as its grantor through
-  its module, until revoked" and "a narrowed delegation parent stays narrowed
-  down two hops" are green.
-- **Not done.** No audit event records a delegation or its revocation (a new
-  event type moves the event catalog); production wires no policy log, so a
-  deployed host refuses a revocation as it refuses every other narrowing.
+  the person did not delegate is never recovered below it. The chain confirms a
+  stored delegation against the hop acting under it by the module's name.
+- **Revocation is immediate and scoped to the delegation.** Its grantor or an
+  administrator of the organisation may revoke it (anyone else is told there is
+  none). The row is stamped under the policy log like every other narrowing.
+  Every hop of a chain under a delegation is sealed to
+  `<organisation>/<module>/<binding>@<delegation>`
+  (`business.DelegatedOperationBindingID`); the binding answer reads the
+  delegation live, so a revoked one revokes the binding for exactly those
+  capabilities, at every verifier, and nothing else the grantor holds moves.
+  Its module reads it as ended through `GetDelegation`, which, like `Issue`,
+  admits a bearer-less call whose actor credential authenticates it
+  (`business.ShapeAuthenticated`).
+- **Audited.** `saas.module_delegation.granted` and
+  `saas.module_delegation.revoked` are registered (delegation, grantor, module,
+  scopes; the revoker on a revocation), emitted in the transaction that writes
+  the row, and declared as the two procedures' audit events; the events
+  contribution, event catalog, AsyncAPI and communication documents are
+  regenerated.
+- **Evidence.** Suite pinned at authority `3222e991`: **45 of 45 shared cases
+  pass** (48/48 with the three harness cases). The harness case "a delegation is
+  bounded by its grantor and ends with its revocation" covers the bounds, a
+  revocation that leaves the grantor's own capability standing, an
+  administrator's revocation, the purpose bound and the refusal with no policy
+  log; `TestADelegationRefusesACredentialThatIsNotThePersonsOwn` covers each
+  refused credential.
+- **Production.** Production wires no policy log, so a deployed host refuses
+  `Delegate` until one is wired, as it refuses every narrowing.
 
 ## Review r93: chains, pins and the signed manifest (2026-10-26)
 
