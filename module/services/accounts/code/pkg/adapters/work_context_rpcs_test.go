@@ -336,7 +336,11 @@ func TestWorkContextAuthorityConfigurationFailsClosed(t *testing.T) {
 	require.False(t, server.configured())
 }
 
-func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactFacts(t *testing.T) {
+// The two read oracles answer only a module that proves itself with its own
+// module Work Context, and then project exactly the facts the request names.
+// The refusals for an unproven caller are covered beside requireCallingModule.
+func TestWorkContextReadOraclesRequireTheCallingModuleAndProjectExactFacts(t *testing.T) {
+	installModuleWorkContextService(t, documentsPrincipals)
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	fake := &workContextConsumerAuthorityFake{}
@@ -374,13 +378,8 @@ func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactF
 	_, err = server.CheckAuthorizationRevision(context.Background(), revisionRequest)
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 
-	SetInternalToken("consumer-authority-test-token")
-	t.Cleanup(func() { SetInternalToken("") })
-	internalContext := metadata.NewIncomingContext(
-		context.Background(),
-		metadata.Pairs("x-codefly-internal-token", "consumer-authority-test-token"),
-	)
-	_, err = server.CheckAuthorizationRevision(internalContext, revisionRequest)
+	moduleContext := callingModuleContext(t, server, business.ModulePrincipalID("documents"), moduleWorkContextTenant)
+	_, err = server.CheckAuthorizationRevision(moduleContext, revisionRequest)
 	require.NoError(t, err)
 	require.Equal(t, orgID, fake.revisionOrg)
 	require.Equal(t, ownerID, fake.revisionOwner)
@@ -391,16 +390,16 @@ func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactF
 	require.Equal(t, ownerID, fake.verifiedUser)
 
 	fake.revisionErr = business.ErrWorkContextAuthorizationStale
-	_, err = server.CheckAuthorizationRevision(internalContext, revisionRequest)
+	_, err = server.CheckAuthorizationRevision(moduleContext, revisionRequest)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	fake.revisionErr = errors.New("database unavailable")
-	_, err = server.CheckAuthorizationRevision(internalContext, revisionRequest)
+	_, err = server.CheckAuthorizationRevision(moduleContext, revisionRequest)
 	require.Equal(t, codes.Internal, status.Code(err))
 
 	fake.revisionErr = nil
 	callerID := "019fec91-1000-7000-8000-000000000004"
 	taskID := "task:one"
-	_, err = server.AuthorizeEvidenceRead(internalContext, &gen.AuthorizeEvidenceReadRequest{
+	_, err = server.AuthorizeEvidenceRead(moduleContext, &gen.AuthorizeEvidenceReadRequest{
 		OrgId:             orgID,
 		CallerPrincipalId: callerID,
 		OwnerPrincipalId:  &ownerID,
@@ -414,7 +413,7 @@ func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactF
 	require.Equal(t, callerID, fake.verifiedUser)
 
 	fake.readErr = business.ErrEvidenceReadDenied
-	_, err = server.AuthorizeEvidenceRead(internalContext, &gen.AuthorizeEvidenceReadRequest{
+	_, err = server.AuthorizeEvidenceRead(moduleContext, &gen.AuthorizeEvidenceReadRequest{
 		OrgId:             orgID,
 		CallerPrincipalId: callerID,
 		OwnerPrincipalId:  &ownerID,

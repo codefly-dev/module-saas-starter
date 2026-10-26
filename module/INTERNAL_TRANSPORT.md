@@ -185,9 +185,9 @@ its own, and it is the internal tier **narrowed**:
   the module capability surface, which authenticates the calling module from its
   verified Work Context (or, for `MintSourceOperationContext`, its workload
   credential) and authorizes it against the grant its composition declared; or one of two read-only authority oracles
-  (`CheckAuthorizationRevision`, `AuthorizeEvidenceRead`), which authorize on
-  the perimeter credential alone and answer one bit about a capability the
-  consumer already holds. Every other method is refused on this listener,
+  (`CheckAuthorizationRevision`, `AuthorizeEvidenceRead`), which authenticate
+  the calling module from its own module Work Context the same way and answer
+  one bit about a capability the consumer already holds. Every other method is refused on this listener,
   whatever credential it carries: a module's own Work Context and operation
   context mints (the authority interface's Issue serves them), the gateway's registries and
   validators, the generic permission oracles, principal administration, and
@@ -200,14 +200,13 @@ its own, and it is the internal tier **narrowed**:
   `AlreadyExists` on its own valid token, or fill the replay table for tenants it
   has no relationship with. Each joins the endpoint once it decides on a
   credential bound to the consuming module.
-- **The capability surface asks no perimeter credential.** Each of its
-  methods proves the calling module itself — from its verified Work Context, or
-  for the one workload mint (`MintSourceOperationContext`) from the pod's
-  workload credential, reviewed and bound to its build — and decides on the
-  module's declared grant; a shared token would name no module and add nothing.
-  Its refusal names what the caller did not prove. Only the two read-only
-  oracles, which name no caller, still need the internal credential
-  (`business.ModuleAuthorityAuthenticatesCaller`).
+- **The endpoint asks no perimeter credential.** Every method on it proves
+  the calling module itself — from its verified module Work Context, or for the
+  one workload mint (`MintSourceOperationContext`) from the pod's workload
+  credential, reviewed and bound to its build — and holds it to the module's
+  current grant; a shared token would name no module and add nothing. The two
+  read-only oracles do the same: a call presenting no module Work Context, or
+  only the internal token, is refused `Unauthenticated` with the reason named.
 - **Transport is unchanged**: h2c, resolved rather than configured:
 
 ```go

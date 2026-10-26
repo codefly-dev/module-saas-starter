@@ -100,8 +100,8 @@ func TestModuleAuthorityValidationRefusesACallerUnboundProcedure(t *testing.T) {
 // authority interface's.
 func TestModuleAuthorityServesTheSourceDelegationMint(t *testing.T) {
 	const mint = "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext"
-	if !IsModuleAuthorityProcedure(mint) || !ModuleAuthorityAuthenticatesCaller(mint) {
-		t.Fatalf("%s must be served on the %q endpoint, authenticating its caller", mint, ModuleAuthorityEndpoint)
+	if !IsModuleAuthorityProcedure(mint) {
+		t.Fatalf("%s must be served on the %q endpoint", mint, ModuleAuthorityEndpoint)
 	}
 }
 

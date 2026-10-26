@@ -1107,9 +1107,10 @@ widens what every composed module can reach, so
 `business.ValidateModuleAuthorityProcedures` runs in the catalog and deployment
 generators and refuses an entry that is neither on the capability surface that
 authenticates the calling module from its Work Context nor one of the two
-declared read-only oracles. A method that authorizes on the shared perimeter
-credential alone and mutates state therefore cannot reach every composed module
-through a one-line edit to the list.
+declared read-only oracles, which authenticate the calling module the same way.
+A method that proves no caller, or mutates state for a tenant the request
+names, therefore cannot reach every composed module through a one-line edit to
+the list.
 
 `cmd/connect-registration` also generates
 `generated/api-contract-surfaces.json`, selected by the module's CLI-owned

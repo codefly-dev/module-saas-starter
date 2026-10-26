@@ -129,7 +129,9 @@ func (s *WorkContextAuthorityServer) Configure(config WorkContextAuthorityConfig
 // orchestrator makes to an owner it executes an operation for.
 //
 // Every refusal is PermissionDenied: a consumer must read a changed or forged
-// context as denied, never as an authority outage it may retry.
+// context as denied, never as an authority outage it may retry. The asking
+// module proves itself first (requireCallingModule); an unidentified caller is
+// Unauthenticated, which a consumer reads as its own composition's fault.
 func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	ctx context.Context,
 	req *gen.CheckAuthorizationRevisionRequest,
@@ -137,7 +139,7 @@ func (s *WorkContextAuthorityServer) CheckAuthorizationRevision(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalCredential(ctx); err != nil {
+	if err := s.requireCallingModule(ctx); err != nil {
 		return nil, err
 	}
 	if len(req.GetSubjects()) == 0 ||
@@ -294,6 +296,9 @@ func checkModuleOperationContextRevision(ctx context.Context, req *gen.CheckAuth
 	return true, nil
 }
 
+// AuthorizeEvidenceRead answers whether the caller principal may read the
+// evidence of the (owner, task, session) the request names. The asking module
+// proves itself (requireCallingModule) before anything is read.
 func (s *WorkContextAuthorityServer) AuthorizeEvidenceRead(
 	ctx context.Context,
 	req *gen.AuthorizeEvidenceReadRequest,
@@ -301,7 +306,7 @@ func (s *WorkContextAuthorityServer) AuthorizeEvidenceRead(
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
-	if err := requireInternalCredential(ctx); err != nil {
+	if err := s.requireCallingModule(ctx); err != nil {
 		return nil, err
 	}
 	if s == nil || s.consumer == nil {

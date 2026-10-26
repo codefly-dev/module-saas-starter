@@ -214,33 +214,21 @@ func TestInternalListenerOnlyAdmitsInternalRPCWithCredential(t *testing.T) {
 
 // The module authority endpoint is the internal tier narrowed to what a
 // composed module may call: a host-only internal method and a tenant method
-// never pass. The module capability surface proves the calling module itself,
-// so it passes with no perimeter credential and its handler refuses an
-// unproven caller by name; only the read-only oracles, which name no caller,
-// still need the credential.
+// never pass, whatever credential they carry. Every method served there proves
+// the calling module itself — the read oracles included — so the endpoint asks
+// no perimeter credential and a call carrying none reaches its handler, which
+// refuses an unproven caller by name.
 func TestModuleAuthorityListenerAdmitsOnlyTheModuleSurface(t *testing.T) {
 	previousToken := internalToken
 	SetInternalToken("test-internal-token")
 	t.Cleanup(func() { SetInternalToken(previousToken) })
 
 	policy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureModule}
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "test-internal-token"))
+	withToken := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "test-internal-token"))
 
 	for _, method := range business.ModuleAuthorityProcedures() {
-		_, err := policy.authorize(ctx, method)
-		require.NoError(t, err, method)
-		_, err = policy.authorize(context.Background(), method)
-		if business.ModuleAuthorityAuthenticatesCaller(method) {
-			require.NoError(t, err, "%s proves its caller itself; no perimeter credential is asked", method)
-		} else {
-			require.Equal(t, codes.PermissionDenied, status.Code(err), method)
-		}
-	}
-	for _, oracle := range []string{
-		"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
-		"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
-	} {
-		require.False(t, business.ModuleAuthorityAuthenticatesCaller(oracle), oracle)
+		_, err := policy.authorize(context.Background(), method)
+		require.NoError(t, err, "%s proves its caller itself; no perimeter credential is asked", method)
 	}
 	for _, method := range []string{
 		"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
@@ -249,12 +237,12 @@ func TestModuleAuthorityListenerAdmitsOnlyTheModuleSurface(t *testing.T) {
 		"/saas.accounts.v1.UsageService/ConsumeUsage",
 		"/saas.accounts.v1.UserService/GetSelf",
 		// Internal-tier, and on the same service as the two admitted oracles,
-		// but it authorizes on the shared perimeter credential alone and writes
-		// a replay claim for the org the request names.
+		// but it proves no caller and writes a replay claim for the org the
+		// request names.
 		"/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
 	} {
-		_, err := policy.authorize(ctx, method)
-		require.Equal(t, codes.PermissionDenied, status.Code(err), method)
+		_, err := policy.authorize(withToken, method)
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%s must stay off the endpoint even with the internal token", method)
 	}
 }
 

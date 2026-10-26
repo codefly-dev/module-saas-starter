@@ -45,11 +45,12 @@ var moduleAuthorityWorkloadMints = map[string]struct{}{
 }
 
 // moduleAuthorityReadOracles are the only procedures admitted on the endpoint
-// that do NOT authenticate the caller: they authorize on the perimeter
-// credential alone and answer about the principals and tenant the request
-// names. Every entry must therefore be READ-ONLY, because the perimeter
-// credential is shared by every composed module, so a write here is a write any
-// module may make for any tenant.
+// that are not on the capability service. Each authenticates the calling
+// module exactly as the capability surface does — its module Work Context,
+// verified and held to its current grant — and then answers about principals
+// and a tenant the REQUEST names. Every entry must therefore be READ-ONLY:
+// any installed module may ask, so a write here is a write any module may make
+// for any tenant.
 //
 // Each entry, and why it is admissible in spite of that:
 //
@@ -61,9 +62,8 @@ var moduleAuthorityWorkloadMints = map[string]struct{}{
 //
 // Both remain authority oracles over request-named principals, which is a real
 // residual property and the reason the set is this small and explicit rather
-// than "the WorkContextService consumer seams". Binding them to the calling
-// module's own Work Context would remove it; until then nothing may be added
-// here that writes.
+// than "the WorkContextService consumer seams"; nothing may be added here that
+// writes.
 var moduleAuthorityReadOracles = map[string]struct{}{
 	"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead":      {},
 	"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision": {},
@@ -71,16 +71,15 @@ var moduleAuthorityReadOracles = map[string]struct{}{
 
 // moduleAuthorityProcedures is the least-privilege subset of the internal tier
 // a composed module may call on ModuleAuthorityEndpoint. Every entry is an
-// EXPOSURE_INTERNAL method, and every entry either
+// EXPOSURE_INTERNAL method that authenticates the calling module itself — from
+// its signed module Work Context, or for a workload mint from its workload
+// credential — so the endpoint asks no perimeter credential of any of them.
+// Every entry additionally either
 //
-//   - authenticates the calling module itself — from a signed Work Context, or
-//     for a workload mint from its workload credential — and authorizes it
-//     against the grant its composition declared (the module principal
-//     registry). The whole module capability surface does this, and the
-//     endpoint asks no perimeter credential of it
-//     (ModuleAuthorityAuthenticatesCaller); or
-//   - is one of the read-only oracles named in moduleAuthorityReadOracles, on
-//     the perimeter credential until each is bound to the calling module.
+//   - authorizes the module against the grant its composition declared (the
+//     module principal registry) — the whole module capability surface does
+//     this; or
+//   - is one of the read-only oracles named in moduleAuthorityReadOracles.
 //
 // Deliberately absent, and reachable only on the private listener:
 //
@@ -169,35 +168,20 @@ func IsModuleAuthorityProcedure(fullMethod string) bool {
 	return ok
 }
 
-// ModuleAuthorityAuthenticatesCaller reports whether fullMethod, served on
-// ModuleAuthorityEndpoint, proves the calling module itself, so the endpoint
-// admits it with no perimeter credential and the method's own refusal names
-// what the caller failed to prove. The read-only oracles do not, and keep the
-// perimeter credential.
-func ModuleAuthorityAuthenticatesCaller(fullMethod string) bool {
-	if !strings.HasPrefix(fullMethod, "/") {
-		fullMethod = "/" + fullMethod
-	}
-	if _, oracle := moduleAuthorityReadOracles[fullMethod]; oracle {
-		return false
-	}
-	return IsModuleAuthorityProcedure(fullMethod) && strings.HasPrefix(fullMethod, moduleAuthorityCapabilityService)
-}
-
 // ValidateModuleAuthorityProcedures holds the module surface to the internal
 // tier. Every entry must
 //
 //  1. name a classified EXPOSURE_INTERNAL method, and
 //  2. either belong to the capability surface that authenticates the calling
-//     module from a signed Work Context — excluding its Mint* methods, which
-//     authenticate with the module's secret and are the gateway's to broker —
-//     or be one of the explicitly justified read-only oracles.
+//     module from a signed Work Context — excluding its Mint* methods, other
+//     than the declared workload mints — or be one of the explicitly justified
+//     read-only oracles, which authenticate the calling module the same way.
 //
 // It runs in the catalog and deployment generators, so a stale or widened entry
 // fails generation rather than rendering a policy that admits nothing or too
-// much. Rule 2 is what keeps a method that authorizes on the shared perimeter
-// credential alone and mutates state from reaching every composed module by way
-// of a one-line edit to the list above.
+// much. Rule 2 is what keeps a method that does not prove its caller, or that
+// mutates state for a tenant the request names, from reaching every composed
+// module by way of a one-line edit to the list above.
 func ValidateModuleAuthorityProcedures() error {
 	seen := make(map[string]bool, len(moduleAuthorityProcedures))
 	for _, procedure := range moduleAuthorityProcedures {
@@ -216,7 +200,7 @@ func ValidateModuleAuthorityProcedures() error {
 			continue
 		}
 		if !strings.HasPrefix(procedure, moduleAuthorityCapabilityService) {
-			return fmt.Errorf("module authority procedure %s neither authenticates the calling module from its Work Context (it is not on %s) nor is a declared read-only oracle; a method that authorizes on the shared perimeter credential alone must not be served on the %q endpoint", procedure, strings.TrimSuffix(strings.TrimPrefix(moduleAuthorityCapabilityService, "/"), "/"), ModuleAuthorityEndpoint)
+			return fmt.Errorf("module authority procedure %s neither authenticates the calling module from its Work Context (it is not on %s) nor is a declared read-only oracle; a method that does not prove its calling module must not be served on the %q endpoint", procedure, strings.TrimSuffix(strings.TrimPrefix(moduleAuthorityCapabilityService, "/"), "/"), ModuleAuthorityEndpoint)
 		}
 		if _, workloadMint := moduleAuthorityWorkloadMints[procedure]; strings.HasPrefix(policy.Method, "Mint") && !workloadMint {
 			return fmt.Errorf("module authority procedure %s mints a module's own capability, which the authority interface's Issue serves; it must not be served on the %q endpoint", procedure, ModuleAuthorityEndpoint)
