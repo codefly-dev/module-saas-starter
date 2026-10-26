@@ -83,6 +83,13 @@ type WorkContextAuthorityStore interface {
 	// grants nothing: an issuer holds the acting workload to that principal and
 	// requires the installation active.
 	WorkContextInstallationIdentity(ctx context.Context, installationID string) (InstallationIdentity, error)
+	// WorkContextAgentInstallation answers the one active installation in
+	// orgID whose agent is agentPrincipalID: the installation a capability
+	// that agent owns acts for, wherever that capability is sealed.
+	// ErrTypeNotFound when there is none (or more than one, which names no
+	// installation). It grants nothing: the issuer re-resolves that
+	// installation's authority before it relies on it.
+	WorkContextAgentInstallation(ctx context.Context, orgID, agentPrincipalID string) (string, error)
 }
 
 // InstallationIdentity is whose one solution installation is.

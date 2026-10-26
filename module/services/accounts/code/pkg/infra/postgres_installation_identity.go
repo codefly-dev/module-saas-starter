@@ -25,3 +25,22 @@ func (s *PostgresStore) WorkContextInstallationIdentity(ctx context.Context, id 
 	}
 	return out, err
 }
+
+// WorkContextAgentInstallation answers the active installation whose agent is
+// agentPrincipalID in orgID, on the same snapshot. An agent is created for
+// one installation; two active ones naming it answer neither.
+func (s *PostgresStore) WorkContextAgentInstallation(ctx context.Context, orgID, agentPrincipalID string) (string, error) {
+	var ids []string
+	err := s.sealRead(ctx, func(ctx context.Context, q QueryExecutor) error {
+		return q.QueryRow(ctx, `SELECT COALESCE(array_agg(id::text ORDER BY id), ARRAY[]::text[])
+			FROM public.installations
+			WHERE org_id::text = $1 AND agent_principal_id::text = $2 AND status = 'active'`, orgID, agentPrincipalID).Scan(&ids)
+	})
+	if err != nil {
+		return "", fmt.Errorf("read the agent's installation: %w", err)
+	}
+	if len(ids) != 1 {
+		return "", business.NewStoreError(fmt.Errorf("agent %s is the agent of %d active installations in organization %s, not one", agentPrincipalID, len(ids), orgID), business.ErrTypeNotFound)
+	}
+	return ids[0], nil
+}

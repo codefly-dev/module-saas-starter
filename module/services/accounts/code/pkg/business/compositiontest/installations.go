@@ -42,30 +42,32 @@ func (c *ComposedModuleInstallations) composedModuleOf(orgID, installationID str
 	return "", false
 }
 
-// WorkContextHeldInstallation: a member of the organisation holds every composed
+// WorkContextHeldInstallation: whoever stands in the organisation (a member, or
+// the live agent of one of its active installations) holds every composed
 // module's installation, as they hold the organisation's own installations.
 func (c *ComposedModuleInstallations) WorkContextHeldInstallation(ctx context.Context, orgID, principalID, installationID string) (uint64, error) {
 	if _, composed := c.composedModuleOf(orgID, installationID); !composed {
 		return c.seals.WorkContextHeldInstallation(ctx, orgID, principalID, installationID)
 	}
-	members, ok := c.seals.(SealMembershipReader)
+	standing, ok := c.seals.(SealStandingReader)
 	if !ok {
-		return 0, errors.New("the seal store answers no membership, so no composed installation can be held")
+		return 0, errors.New("the seal store answers no standing, so no composed installation can be held")
 	}
-	member, err := members.WorkContextOrgMember(ctx, orgID, principalID)
+	stands, err := standing.WorkContextOrgStanding(ctx, orgID, principalID)
 	if err != nil {
 		return 0, err
 	}
-	if !member {
+	if !stands {
 		return 0, business.ErrWorkContextSealUnheld
 	}
 	return 1, nil
 }
 
-// SealMembershipReader answers membership on the seal reads' own snapshot, so a
-// composed installation can be sealed with no tenant identity on the call.
-type SealMembershipReader interface {
-	WorkContextOrgMember(ctx context.Context, orgID, principalID string) (bool, error)
+// SealStandingReader answers standing in the organisation on the seal reads'
+// own snapshot, so a composed installation can be sealed with no tenant
+// identity on the call.
+type SealStandingReader interface {
+	WorkContextOrgStanding(ctx context.Context, orgID, principalID string) (bool, error)
 }
 
 // WorkContextPrincipalEpoch is the wrapped store's answer.

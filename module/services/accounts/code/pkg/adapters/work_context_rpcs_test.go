@@ -30,6 +30,8 @@ type workContextAuthorityFake struct {
 	installationErr  error
 	// installations answers whose each solution installation is, by id.
 	installations map[string]business.InstallationIdentity
+	// agents answers the installation each agent principal acts for.
+	agents map[string]string
 }
 
 func (f *workContextAuthorityFake) WorkContextInstallationIdentity(_ context.Context, id string) (business.InstallationIdentity, error) {
@@ -37,6 +39,15 @@ func (f *workContextAuthorityFake) WorkContextInstallationIdentity(_ context.Con
 		return found, nil
 	}
 	return business.InstallationIdentity{}, business.NewStoreError(fmt.Errorf("installation %q does not exist", id), business.ErrTypeNotFound)
+}
+
+// WorkContextAgentInstallation answers the installation agents names for
+// agent while installations holds it active in org.
+func (f *workContextAuthorityFake) WorkContextAgentInstallation(_ context.Context, org, agent string) (string, error) {
+	if id, ok := f.agents[agent]; ok && f.installations[id].OrgID == org && f.installations[id].Status == "active" {
+		return id, nil
+	}
+	return "", business.NewStoreError(fmt.Errorf("agent %s acts for no active installation", agent), business.ErrTypeNotFound)
 }
 
 // ResolveWorkContextAuthority answers the configured facts, except for an owner
