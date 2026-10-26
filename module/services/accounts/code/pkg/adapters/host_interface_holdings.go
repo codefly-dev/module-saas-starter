@@ -141,3 +141,80 @@ func (s *WorkContextAuthorityServer) ownerHoldsThrough(ctx context.Context, orgI
 	}
 	return held, nil
 }
+
+// personHeldOfAsk is an ask met with what the person holds at the audience, by
+// the check every mint makes, action by action: a kind-wide action they hold
+// is kept; one they hold only on named resources is kept on those; an ask
+// naming resources keeps the ones they hold and drops the rest. An asked
+// action they hold on nothing it names is beyond them, and the ask is refused
+// naming it, as the interface refuses an ask beyond what the owner holds: the
+// intersection narrows resources, never actions, and never comes back empty.
+func (s *WorkContextAuthorityServer) personHeldOfAsk(ctx context.Context, orgID, audience string, asked []*gen.WorkContextScope) ([]*gen.WorkContextScope, error) {
+	ownerID, err := s.authorizeOwner(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	_, scopedGrants := s.authority.(scopedResourceReader)
+	var out []*gen.WorkContextScope
+	keep := func(kind, action string, ids []string) {
+		for _, kept := range out {
+			if kept.GetResourceKind() == kind && slices.Equal(kept.GetResourceIds(), ids) {
+				if !slices.Contains(kept.Actions, action) {
+					kept.Actions = append(kept.Actions, action)
+				}
+				return
+			}
+		}
+		out = append(out, &gen.WorkContextScope{ResourceKind: kind, Actions: []string{action}, ResourceIds: ids})
+	}
+	for _, scope := range asked {
+		kind := scope.GetResourceKind()
+		for _, action := range scope.GetActions() {
+			if len(scope.GetResourceIds()) == 0 {
+				holds, err := s.personHolds(ctx, orgID, ownerID, audience, &gen.WorkContextScope{ResourceKind: kind, Actions: []string{action}})
+				if err != nil {
+					return nil, err
+				}
+				if holds {
+					keep(kind, action, nil)
+					continue
+				}
+				var ids []string
+				if scopedGrants {
+					if _, ids, err = s.ownerResourceGrants(ctx, orgID, ownerID, kind, action); err != nil {
+						return nil, err
+					}
+				}
+				if len(ids) == 0 {
+					return nil, beyondTheOwner(audience, kind, action)
+				}
+				keep(kind, action, ids)
+				continue
+			}
+			var ids []string
+			for _, id := range scope.GetResourceIds() {
+				holds, err := s.personHolds(ctx, orgID, ownerID, audience, &gen.WorkContextScope{ResourceKind: kind, Actions: []string{action}, ResourceIds: []string{id}})
+				if err != nil {
+					return nil, err
+				}
+				if holds && !slices.Contains(ids, id) {
+					ids = append(ids, id)
+				}
+			}
+			if len(ids) == 0 {
+				return nil, beyondTheOwner(audience, kind, action)
+			}
+			keep(kind, action, ids)
+		}
+	}
+	for _, scope := range out {
+		slices.Sort(scope.Actions)
+		slices.Sort(scope.ResourceIds)
+	}
+	return out, nil
+}
+
+// beyondTheOwner names an asked action the person holds on nothing it names.
+func beyondTheOwner(audience, kind, action string) error {
+	return status.Errorf(codes.PermissionDenied, "asked beyond what the owner holds at %s: %s:%s is held on none of what the ask names", audience, kind, action)
+}

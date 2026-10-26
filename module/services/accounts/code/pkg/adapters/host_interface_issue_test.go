@@ -280,25 +280,33 @@ func TestAnIssueAtTheParentsAudienceRenewsIt(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A kind the parent was narrowed to nothing of cannot be carried to a child,
-// so no child is issued from that parent: the grandchild would otherwise get
-// the owner's whole grant on it back. Core signs no such parent today (a hop
-// may not grant what its authority does not), so the rule is held at the unit.
-func TestAParentNarrowedToNothingOfAKindIsNamed(t *testing.T) {
+// A kind the chain narrowed to nothing stays dropped: it is carried as a
+// denial, a scope naming the kind and no action, and no later hop gets any of
+// it back; a kind narrowed to two actions on different resources keeps each
+// action's own resources; a kind the chain never named is not limited.
+func TestAKindTheChainDroppedStaysDropped(t *testing.T) {
 	n := parentNarrowings(&basev0.WorkContextV1{
-		AuthorityScopes: []*basev0.WorkScopeV1{hopScope("tool.items", []string{"read"})},
-		ActorChain:      []*basev0.WorkActorV1{{GrantedScopes: []*basev0.WorkScopeV1{hopScope("tool.items", []string{"write"})}}},
+		AuthorityScopes: []*basev0.WorkScopeV1{
+			hopScope("tool.items", []string{"read"}), {ResourceKind: "datasets"},
+			hopScope("profiles", []string{"read"}, "a"), hopScope("profiles", []string{"invoke"}, "b"),
+		},
+		ActorChain: []*basev0.WorkActorV1{{GrantedScopes: []*basev0.WorkScopeV1{hopScope("tool.items", []string{"write"})}}},
 	})
-	require.Equal(t, []string{"tool.items"}, n.toNothing())
-	require.Empty(t, n.keep([]*basev0.WorkScopeV1{hopScope("tool.items", []string{"read"})}))
+	require.Empty(t, n.keep([]*basev0.WorkScopeV1{hopScope("tool.items", []string{"read"})}), "read and write meet in nothing")
+	require.Empty(t, n.keep([]*basev0.WorkScopeV1{hopScope("datasets", []string{"read"})}), "a denied kind gives nothing back")
+	require.Equal(t, []*basev0.WorkScopeV1{hopScope("profiles", []string{"read"}, "a")},
+		n.keep([]*basev0.WorkScopeV1{hopScope("profiles", []string{"invoke", "read"}, "a")}), "each action keeps its own resources")
+	require.Len(t, n.keep([]*basev0.WorkScopeV1{hopScope("unnamed", []string{"read"})}), 1, "a kind never named is not limited")
 
-	f := newHopFixture(t, "tool.items:read", "example-records:read")
-	_, _, err := tryMintTestCapability(f.issuer, testCapability{
-		Audience: "tools", Tenant: moduleWorkContextTenant, Owner: hopOwner,
-		Scopes: []*basev0.WorkScopeV1{hopScope("tool.items", []string{"read"})},
-		Actors: []delegationHop{agentHop("actor-1", uuid.NewString(), hopScope("tool.items", []string{"write"}))},
-	})
-	require.ErrorContains(t, err, "widens authority", "core still refuses to sign such a parent")
+	carried := n.outside([]*basev0.WorkScopeV1{hopScope("example-records", []string{"read"})})
+	require.Contains(t, carried, &basev0.WorkScopeV1{ResourceKind: "datasets"}, "the denial is carried")
+	require.Contains(t, carried, &basev0.WorkScopeV1{ResourceKind: "tool.items"}, "a kind narrowed to nothing is carried as a denial")
+	require.Contains(t, carried, hopScope("profiles", []string{"read"}, "a"))
+	require.Contains(t, carried, hopScope("profiles", []string{"invoke"}, "b"))
+
+	denied := n.deny([]*basev0.WorkScopeV1{hopScope("example-records", []string{"read"}), hopScope("records.types", []string{"read"})},
+		[]*basev0.WorkScopeV1{hopScope("example-records", []string{"read"})})
+	require.Empty(t, denied.keep([]*basev0.WorkScopeV1{hopScope("records.types", []string{"read"})}), "a held kind the grant left out is dropped")
 }
 
 // The hop's mint runs the structural audience rule every mint runs.
@@ -308,4 +316,14 @@ func TestAHopMintRefusesTheModuleCapabilitySurface(t *testing.T) {
 	_, err := f.issuer.mintBindingHop(context.Background(), parent, "tools", "records", ModuleWorkContextAudience,
 		[]*basev0.WorkScopeV1{hopScope("example-records", []string{"read"})}, nil, time.Minute)
 	requireRefused(t, err, codes.PermissionDenied, "module capability surface")
+}
+
+// A person's root names, as a denial, every kind of the audience its ask left
+// out; a kind it carries is never denied, and nothing is denied without the
+// interface's mark.
+func TestARootDeniesTheAudienceKindsItsAskLeftOut(t *testing.T) {
+	ctx := withDroppedKinds(context.Background(), []string{"datasets", "profiles"})
+	carried := []*basev0.WorkScopeV1{hopScope("profiles", []string{"read"}, "a")}
+	require.Equal(t, []*basev0.WorkScopeV1{{ResourceKind: "datasets"}}, droppedKindScopes(ctx, carried))
+	require.Empty(t, droppedKindScopes(context.Background(), carried))
 }

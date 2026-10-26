@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
@@ -10,7 +11,9 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"accounts/pkg/auth"
+	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // scopedAuthority is holdingAuthority whose owner also holds grants limited to
@@ -108,4 +111,53 @@ func TestAnEmptyAskCarriesResourceLimitedGrantsOnTheirResources(t *testing.T) {
 	withHopMember(t)
 	_, err = none.issuer.personHoldings(caller, moduleWorkContextTenant, "documents")
 	requireRefused(t, err, codes.PermissionDenied, "the owner holds nothing at this audience")
+}
+
+// An ask is met with what the person holds: an id they do not hold is dropped,
+// a kind-wide ask they hold only on named resources keeps those; an asked
+// action they hold on none of what it names is refused by name, even beside
+// one they hold.
+func TestAnAskIsMetWithWhatThePersonHolds(t *testing.T) {
+	f := resourceFixture(t, map[string][]string{"example-records:read": {"a", "b"}})
+	f.holding.held["example-records:read"] = false
+	withHopMember(t)
+	f.issuer.authority = idHoldingAuthority{scopedAuthority: f.issuer.authority.(scopedAuthority), ids: map[string]bool{"example-records:read:a": true, "example-records:read:b": true}}
+	caller := stampVerifiedIdentity(context.Background(), hopOwner, moduleWorkContextTenant, auth.Assurance{})
+	held, err := f.issuer.personHeldOfAsk(caller, moduleWorkContextTenant, "documents", []*gen.WorkContextScope{
+		{ResourceKind: "example-records", Actions: []string{"read"}, ResourceIds: []string{"a", "z"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"a"}, held[0].GetResourceIds(), "the unheld id is dropped")
+
+	held, err = f.issuer.personHeldOfAsk(caller, moduleWorkContextTenant, "documents", []*gen.WorkContextScope{{ResourceKind: "example-records", Actions: []string{"read"}}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"a", "b"}, held[0].GetResourceIds(), "a kind-wide ask keeps the held resources")
+
+	_, err = f.issuer.personHeldOfAsk(caller, moduleWorkContextTenant, "documents", []*gen.WorkContextScope{
+		{ResourceKind: "example-records", Actions: []string{"read", "write"}, ResourceIds: []string{"a"}},
+	})
+	requireRefused(t, err, codes.PermissionDenied, "beyond what the owner holds at documents: example-records:write")
+	_, err = f.issuer.personHeldOfAsk(caller, moduleWorkContextTenant, "documents", []*gen.WorkContextScope{
+		{ResourceKind: "example-records", Actions: []string{"read"}, ResourceIds: []string{"z"}},
+	})
+	requireRefused(t, err, codes.PermissionDenied, "held on none of what the ask names")
+}
+
+// idHoldingAuthority holds the owner to the kind:action:id triples it names
+// for a permission naming a resource.
+type idHoldingAuthority struct {
+	scopedAuthority
+	ids map[string]bool
+}
+
+func (f idHoldingAuthority) ResolveWorkContextAuthority(ctx context.Context, org, owner, actor string, permissions []business.WorkContextPermission) (*business.WorkContextAuthorityFacts, error) {
+	for _, p := range permissions {
+		if p.ResourceID != "" && f.ids[p.ResourceKind+":"+p.Action+":"+p.ResourceID] {
+			continue
+		}
+		if !f.holdingAuthority.held[p.ResourceKind+":"+p.Action] {
+			return nil, business.NewStoreError(errors.New(p.ResourceKind+":"+p.Action+" is not held"), business.ErrTypePermission)
+		}
+	}
+	return f.holdingAuthority.workContextAuthorityFake.ResolveWorkContextAuthority(ctx, org, owner, actor, permissions)
 }

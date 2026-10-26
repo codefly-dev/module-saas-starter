@@ -27,7 +27,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -36,7 +35,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 
 	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -92,12 +90,6 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 		return nil, status.Errorf(codes.PermissionDenied, "%s holds nothing at %s through operation binding %q", owner, req.GetAudience(), bindingID)
 	}
 	narrowed := parentNarrowings(claims)
-	// A kind the parent was narrowed to nothing of cannot be carried: a scope
-	// with no action is not one core signs, and a child that dropped the kind
-	// would hand the next hop the owner's whole grant on it back. Refused.
-	if gone := narrowed.toNothing(); len(gone) > 0 {
-		return nil, status.Errorf(codes.PermissionDenied, "the parent was narrowed to nothing of %s, which a child cannot carry; no hop is issued from it", strings.Join(gone, ", "))
-	}
 	ceiling := narrowed.keep(held)
 	if len(ceiling) == 0 {
 		return nil, status.Errorf(codes.PermissionDenied, "the parent was narrowed away from everything %s holds at %s through operation binding %q", owner, req.GetAudience(), bindingID)
@@ -122,7 +114,12 @@ func (s *HostAuthorityServer) bindingHop(ctx context.Context, prefix string, par
 	if err != nil {
 		return nil, err
 	}
-	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, narrowed.outside(scopes), workContextTTL(ttl))
+	// What the child carries beside its grant, so the next hop is held to it:
+	// every narrowing of a kind it does not name, and a denial of each kind the
+	// owner holds through the binding that the child was not granted, so that
+	// kind stays dropped down the chain (rule A: a narrowing is never recovered).
+	carried := narrowed.deny(held, scopes).outside(scopes)
+	return s.workContexts.mintBindingHop(ctx, claims, prefix, bindingID, req.GetAudience(), scopes, carried, workContextTTL(ttl))
 }
 
 // requireDeclaredHopBinding refuses, before the parent is verified (and so
@@ -240,83 +237,6 @@ func (s *WorkContextAuthorityServer) mintBindingHop(
 		return nil, err
 	}
 	return issuedWorkContext(token, signed), nil
-}
-
-// narrowings is, per resource kind, the least a parent carries of it across
-// every scope set it holds (its authority scopes and each hop's grant), each
-// set read as core reads it: the first scope of a kind. A kind mapped to nil
-// was narrowed to nothing. A kind the parent does not carry at all is no
-// narrowing: that is how a chain crosses into an audience whose kinds the
-// parent never named.
-type narrowings map[string]*basev0.WorkScopeV1
-
-func parentNarrowings(parent *basev0.WorkContextV1) narrowings {
-	sets := [][]*basev0.WorkScopeV1{parent.GetAuthorityScopes()}
-	for _, hop := range parent.GetActorChain() {
-		sets = append(sets, hop.GetGrantedScopes())
-	}
-	out := narrowings{}
-	for _, set := range sets {
-		seen := map[string]bool{}
-		for _, scope := range set {
-			kind := scope.GetResourceKind()
-			if seen[kind] {
-				continue
-			}
-			seen[kind] = true
-			if bound, ok := out[kind]; ok {
-				out[kind] = intersectScope(bound, scope)
-			} else {
-				out[kind] = proto.CloneOf(scope)
-			}
-		}
-	}
-	return out
-}
-
-// toNothing is every kind the parent was narrowed to nothing of, sorted.
-func (n narrowings) toNothing() []string {
-	var out []string
-	for kind, bound := range n {
-		if bound == nil {
-			out = append(out, kind)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// keep is scopes with each kind the parent narrowed held to that narrowing.
-func (n narrowings) keep(scopes []*basev0.WorkScopeV1) []*basev0.WorkScopeV1 {
-	var out []*basev0.WorkScopeV1
-	for _, scope := range scopes {
-		bound, narrowed := n[scope.GetResourceKind()]
-		if !narrowed {
-			out = append(out, scope)
-			continue
-		}
-		if kept := intersectScope(bound, scope); kept != nil {
-			out = append(out, kept)
-		}
-	}
-	return out
-}
-
-// outside is the narrowing of every kind scopes does not name, by kind: what
-// the child carries so the next hop is held to it too.
-func (n narrowings) outside(scopes []*basev0.WorkScopeV1) []*basev0.WorkScopeV1 {
-	named := map[string]bool{}
-	for _, scope := range scopes {
-		named[scope.GetResourceKind()] = true
-	}
-	var out []*basev0.WorkScopeV1
-	for kind, bound := range n {
-		if bound != nil && !named[kind] {
-			out = append(out, proto.CloneOf(bound))
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].GetResourceKind() < out[j].GetResourceKind() })
-	return out
 }
 
 // intersectScope is what both scopes of one kind allow: the actions in both,

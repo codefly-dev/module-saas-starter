@@ -247,6 +247,15 @@ func (s *HostAuthorityServer) personIssue(ctx context.Context, identity accounts
 		if scopes, err = s.workContexts.personHoldings(ctx, identity.OrgID.String(), req.GetAudience()); err != nil {
 			return nil, interfaceStatus(err)
 		}
+	} else if len(scopes) > 0 {
+		// An ask is met with what the person holds: what they do not hold of it
+		// is dropped, and an ask of which they hold nothing is refused.
+		if scopes, err = s.workContexts.personHeldOfAsk(ctx, identity.OrgID.String(), req.GetAudience(), scopes); err != nil {
+			return nil, interfaceStatus(err)
+		}
+		// Every kind of the audience the ask left out is dropped for the whole
+		// chain below this capability, not merely absent from it.
+		ctx = withDroppedKinds(ctx, droppedAudienceKinds(req.GetAudience(), scopes))
 	}
 	// A fresh task per issue: the interface names no task, the host requires
 	// one as the identity tuple's third element.
