@@ -551,12 +551,99 @@ func scanCoreInstallation(row pgx.Row) (domain.Installation, error) {
 	return inst, nil
 }
 
+// A module's installation is accounts' own record (public.installations,
+// kind 'module'): an administrator's consent within the module envelope,
+// retired by an uninstall or by a ceiling that no longer allows the
+// organization, all in accounts' own transactions. The core is configured with
+// HostInstallsModules, so it reads those records as its installations, live,
+// and writes a module's only to raise its revision when a redelivery narrows
+// the module; the raise is kept beside the record
+// (authority_core_module_revisions). authority_core_installations holds the
+// solutions' installations, which the core decides.
+
+// hostModules maps the principal accounts records a module's installation
+// under (business.ModulePrincipalID of its name) to every composed module.
+func (t coreTx) hostModules() (map[uuid.UUID]string, error) {
+	rows, err := t.q.Query(t.ctx, `SELECT name FROM public.authority_core_modules WHERE kind <> 'solution'`)
+	if err != nil {
+		return nil, err
+	}
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]string, len(names))
+	for _, name := range names {
+		principal, err := uuid.Parse(business.ModulePrincipalID(name))
+		if err != nil {
+			return nil, err
+		}
+		out[principal] = name
+	}
+	return out, nil
+}
+
+// moduleInstallations are accounts' module installation records of composed
+// modules matching where (with its arguments from $2), as the core reads them.
+func (t coreTx) moduleInstallations(where string, args ...any) ([]domain.Installation, error) {
+	modules, err := t.hostModules()
+	if err != nil || len(modules) == 0 {
+		return nil, err
+	}
+	principals := make([]uuid.UUID, 0, len(modules))
+	for principal := range modules {
+		principals = append(principals, principal)
+	}
+	rows, err := t.q.Query(t.ctx, `
+		SELECT i.id, i.org_id, i.registry_principal_id, i.status, i.revision + COALESCE(r.raised, 0)
+		  FROM public.installations i
+		  LEFT JOIN public.authority_core_module_revisions r ON r.installation_id = i.id
+		 WHERE i.kind = 'module' AND i.registry_principal_id = ANY($1)`+where+`
+		 ORDER BY i.id`, append([]any{principals}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Installation, error) {
+		var id, org, principal uuid.UUID
+		var status string
+		var revision int64
+		if err := row.Scan(&id, &org, &principal, &status, &revision); err != nil {
+			return domain.Installation{}, err
+		}
+		return domain.Installation{ID: id.String(), Organization: org.String(), Target: modules[principal],
+			Status: moduleInstallationStatus(status), Revision: uint64(revision), Owned: map[string][]string{}}, nil
+	})
+}
+
+// moduleInstallationStatus is how the core reads accounts' lifecycle: only an
+// active installation is one; consent awaiting its install step, or one that
+// failed it, is pending.
+func moduleInstallationStatus(status string) domain.Status {
+	switch status {
+	case "active":
+		return domain.Active
+	case "revoked":
+		return domain.Revoked
+	default:
+		return domain.Pending
+	}
+}
+
 func (t coreTx) Installation(id string) (domain.Installation, error) {
 	inst, err := scanCoreInstallation(t.q.QueryRow(t.ctx, `SELECT `+coreInstallationColumns+` FROM public.authority_core_installations WHERE id = $1`, id))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Installation{}, coreMissing("installation", id)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return inst, err
 	}
-	return inst, err
+	if native, ok := asUUID(id); ok {
+		found, err := t.moduleInstallations(` AND i.id = $2`, native)
+		if err != nil {
+			return domain.Installation{}, err
+		}
+		if len(found) == 1 {
+			return found[0], nil
+		}
+	}
+	return domain.Installation{}, coreMissing("installation", id)
 }
 
 func (t coreTx) InstallationByPrincipal(principal string) (domain.Installation, error) {
@@ -570,26 +657,46 @@ func (t coreTx) InstallationByPrincipal(principal string) (domain.Installation, 
 	return inst, err
 }
 
+// Installations are the solutions' installations the core decided and the
+// module installations accounts holds now (a retired one is read by its id).
 func (t coreTx) Installations(organization string) ([]domain.Installation, error) {
+	// A module's row the core wrote before accounts held its modules' records
+	// is not an installation any more.
+	const solutions = `SELECT ` + coreInstallationColumns + ` FROM public.authority_core_installations
+		WHERE target NOT IN (SELECT name FROM public.authority_core_modules WHERE kind <> 'solution')`
 	var rows pgx.Rows
+	var modules []domain.Installation
 	var err error
 	if organization == "" {
-		rows, err = t.q.Query(t.ctx, `SELECT `+coreInstallationColumns+` FROM public.authority_core_installations ORDER BY id`)
+		if modules, err = t.moduleInstallations(` AND i.status <> 'revoked'`); err == nil {
+			rows, err = t.q.Query(t.ctx, solutions+` ORDER BY id`)
+		}
 	} else {
 		org, ok := asUUID(organization)
 		if !ok {
 			return nil, nil
 		}
-		rows, err = t.q.Query(t.ctx, `SELECT `+coreInstallationColumns+` FROM public.authority_core_installations WHERE organization_id = $1 ORDER BY id`, org)
+		if modules, err = t.moduleInstallations(` AND i.status <> 'revoked' AND i.org_id = $2`, org); err == nil {
+			rows, err = t.q.Query(t.ctx, solutions+` AND organization_id = $1 ORDER BY id`, org)
+		}
 	}
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Installation, error) { return scanCoreInstallation(row) })
+	decided, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Installation, error) { return scanCoreInstallation(row) })
+	if err != nil {
+		return nil, err
+	}
+	all := append(decided, modules...)
+	sort.Slice(all, func(a, b int) bool { return all[a].ID < all[b].ID })
+	return all, nil
 }
 
 func (t coreTx) PutInstallation(inst domain.Installation) error {
 	if err := t.mustWrite(); err != nil {
+		return err
+	}
+	if handled, err := t.raiseModuleInstallation(inst); handled || err != nil {
 		return err
 	}
 	org, ok := asUUID(inst.Organization)
@@ -618,6 +725,34 @@ func (t coreTx) PutInstallation(inst domain.Installation) error {
 		       installed_by = EXCLUDED.installed_by, consent = EXCLUDED.consent, owned = EXCLUDED.owned`,
 		inst.ID, org, inst.Target, string(inst.Status), int64(inst.Revision), inst.AgentRole, inst.PrincipalID, inst.InstalledBy, consent, ownedRaw)
 	return err
+}
+
+// raiseModuleInstallation applies the one write the core makes to a module's
+// installation: raising its revision, when a redelivery narrows the module.
+// It reports whether inst is a module's installation at all; any other change
+// to one is refused, because the record is accounts' own.
+func (t coreTx) raiseModuleInstallation(inst domain.Installation) (bool, error) {
+	var kind string
+	err := t.q.QueryRow(t.ctx, `SELECT kind FROM public.authority_core_modules WHERE name = $1`, inst.Target).Scan(&kind)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && kind == domain.KindSolution) {
+		return false, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	current, err := t.Installation(inst.ID)
+	if err != nil {
+		return true, fmt.Errorf("module installation %s is not one accounts holds: %w", inst.ID, err)
+	}
+	if current.Organization != inst.Organization || current.Target != inst.Target || current.Status != inst.Status ||
+		inst.AgentRole != "" || inst.PrincipalID != "" || inst.InstalledBy != "" || len(inst.Owned) > 0 || inst.Revision <= current.Revision {
+		return true, fmt.Errorf("module installation %s is accounts' own record: the authority core only raises its revision", inst.ID)
+	}
+	_, err = t.q.Exec(t.ctx, `
+		INSERT INTO public.authority_core_module_revisions (installation_id, raised) VALUES ($1, $2)
+		ON CONFLICT (installation_id) DO UPDATE SET raised = public.authority_core_module_revisions.raised + EXCLUDED.raised`,
+		inst.ID, int64(inst.Revision-current.Revision))
+	return true, err
 }
 
 func (t coreTx) RoleGrants(installationID string) ([]domain.RoleGrant, error) {

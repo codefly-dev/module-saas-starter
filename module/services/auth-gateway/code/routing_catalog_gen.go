@@ -229,6 +229,7 @@ func generatedCatalogConnectRoutes() []*RouteEntry {
 		{Service: "accounts_connect", Method: "POST", Path: "/host.authority.v1.AuthorityService/Keys", UpstreamPath: "", Procedure: "/host.authority.v1.AuthorityService/Keys"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.authority.v1.AuthorityService/ListResources", UpstreamPath: "", Procedure: "/host.authority.v1.AuthorityService/ListResources"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.authority.v1.AuthorityService/RevokeDelegation", UpstreamPath: "", Procedure: "/host.authority.v1.AuthorityService/RevokeDelegation"},
+		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/Current", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/Current"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/GrantRole", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/GrantRole"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/Install", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/Install"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/List", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/List"},

@@ -186,6 +186,11 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 	if err != nil {
 		return err
 	}
+	// A module's installation is accounts' own record, which Converge's install
+	// made; the core reads it and installs no module itself.
+	if m, err := core.Composed(ctx, row.declared.Target); err == nil && m.Kind != domain.KindSolution {
+		return nil
+	}
 	inst, err := core.InstallAsHost(ctx, row.orgID, row.declared.Target, row.declared.Role, row.ownerID, i.service.AuthorityInstallStep())
 	switch {
 	case errors.Is(err, domain.ErrAlreadyInstalled):

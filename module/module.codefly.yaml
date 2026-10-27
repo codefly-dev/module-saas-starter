@@ -24,9 +24,9 @@ interface:
           # contract the authority gateway implements for a local run. A
           # consumer depends on the interface, never on this service.
           implements:
-              - codefly.dev/authority@0.3.3
+              - codefly.dev/authority@0.3.4
               - codefly.dev/composition@0.2.0
-              - codefly.dev/installation@0.2.0
+              - codefly.dev/installation@0.3.0
               - codefly.dev/session@0.2.0
         - service: auth-gateway
           endpoint: grpc

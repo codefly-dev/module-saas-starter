@@ -114,7 +114,10 @@ func signedInPerson(ctx context.Context, what string) (authority.Person, error) 
 
 // workload is the composed module a workload credential proves, reviewed by
 // the execution reviewer and resolved to the one module whose delivered
-// manifest declares that workload.
+// manifest declares that workload, bound to the organization the module
+// envelope pins it to: a pinned workload is issued nothing elsewhere. A shared
+// one acts only where an administrator installed it (the core reads accounts'
+// installations).
 func workload(ctx context.Context, credential, which string) (authority.Workload, error) {
 	if service == nil {
 		return authority.Workload{}, status.Error(codes.Unavailable, "the execution reviewer is not wired")
@@ -123,7 +126,11 @@ func workload(ctx context.Context, credential, which string) (authority.Workload
 	if err != nil {
 		return authority.Workload{}, credentialRefusal(err, which)
 	}
-	return authority.Workload{Module: module}, nil
+	tenant, err := service.ModuleTenant(ctx, module)
+	if err != nil {
+		return authority.Workload{}, status.Errorf(codes.Unavailable, "the module registry could not be read current: %v", err)
+	}
+	return authority.Workload{Module: module, Organization: tenant}, nil
 }
 
 // HostAuthorityServer serves codefly.dev/authority.
@@ -404,6 +411,29 @@ func (s *HostAuthorityServer) AuthorizeTransfer(ctx context.Context, req *author
 // HostInstallationServer serves codefly.dev/installation.
 type HostInstallationServer struct {
 	installationv1.UnimplementedInstallationServiceServer
+}
+
+// Current reads only the authenticated module's own active installation, in
+// the tenant of a current parent addressed to it: the module proves itself by
+// its workload credential and the core verifies the parent. It needs no
+// session and exposes no roles or grants.
+func (s *HostInstallationServer) Current(ctx context.Context, req *installationv1.CurrentInstallationRequest) (*installationv1.CurrentInstallation, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	// Current answers a module about itself alone, so a credential that proves
+	// no module is refused the read, whatever made it fail to.
+	actor, err := workload(ctx, req.GetActorCredential(), "the actor")
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, status.Convert(err).Message())
+	}
+	inst, err := core.CurrentInstallation(ctx, req.GetParentToken(), actor)
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	return &installationv1.CurrentInstallation{Id: inst.ID, OrganizationId: inst.Organization, Target: inst.Target,
+		Revision: inst.Revision, Namespace: inst.Organization + "." + inst.Target}, nil
 }
 
 // Review reads the exact authority offer an administrator consents to,

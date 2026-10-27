@@ -35,6 +35,7 @@
       "name": "InstallationService",
       "full_name": "host.installation.v1.InstallationService",
       "procedures": [
+        "/host.installation.v1.InstallationService/Current",
         "/host.installation.v1.InstallationService/GrantRole",
         "/host.installation.v1.InstallationService/Install",
         "/host.installation.v1.InstallationService/List",
@@ -1083,6 +1084,49 @@
       },
       "policy_tier": "public",
       "description": "Deliver one module instance's manifest at one generation; the ceiling is the manifest.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/Current",
+      "service": "InstallationService",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "Current",
+      "input_type": "host.installation.v1.CurrentInstallationRequest",
+      "output_type": "host.installation.v1.CurrentInstallation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/installation/v1/installation.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Read the authenticated module's own active installation in the tenant of a current parent addressed to it.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

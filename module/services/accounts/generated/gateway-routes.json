@@ -3572,6 +3572,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/host.installation.v1.InstallationService/Current",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.installation.v1.InstallationService/Current",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/host.installation.v1.InstallationService/GrantRole",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/host.installation.v1.InstallationService/GrantRole",

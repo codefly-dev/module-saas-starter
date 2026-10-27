@@ -66,6 +66,22 @@ CREATE TABLE public.authority_core_installations (
 CREATE INDEX authority_core_installations_organization_idx ON public.authority_core_installations USING btree (organization_id);
 CREATE UNIQUE INDEX authority_core_installations_principal_key ON public.authority_core_installations USING btree (principal_id) WHERE (principal_id <> ''::text);
 
+-- A module's installation is not here: it is accounts' own record
+-- (public.installations, kind 'module'), an administrator's consent within the
+-- module envelope, retired by an uninstall or by a ceiling that no longer
+-- allows the organization. The core reads those records as its installations
+-- (it is configured so that it installs no module itself) and only ever raises
+-- one's revision, when a redelivery narrows the module. accounts' own revision
+-- is lifecycle-owned, so the raise is kept here, beside the record, and the
+-- revision the core reads is the sum.
+CREATE TABLE public.authority_core_module_revisions (
+    installation_id uuid NOT NULL,
+    raised bigint NOT NULL,
+    CONSTRAINT authority_core_module_revisions_pkey PRIMARY KEY (installation_id),
+    CONSTRAINT authority_core_module_revisions_installation_fkey FOREIGN KEY (installation_id) REFERENCES public.installations(id) ON DELETE CASCADE,
+    CONSTRAINT authority_core_module_revisions_raised_check CHECK ((raised > 0))
+);
+
 -- One role on one installation, held by exactly one person or team.
 CREATE TABLE public.authority_core_role_grants (
     installation_id text NOT NULL,
@@ -141,6 +157,7 @@ DROP FUNCTION public.module_delegation_immutable();
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.authority_core_modules TO app_control_plane;
 GRANT SELECT,INSERT,UPDATE ON TABLE public.authority_core_tombstones TO app_control_plane;
 GRANT SELECT,INSERT,UPDATE ON TABLE public.authority_core_installations TO app_control_plane;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.authority_core_module_revisions TO app_control_plane;
 GRANT SELECT,INSERT,DELETE ON TABLE public.authority_core_role_grants TO app_control_plane;
 GRANT SELECT,INSERT,UPDATE ON TABLE public.authority_core_delegations TO app_control_plane;
 GRANT SELECT,INSERT,UPDATE ON TABLE public.authority_core_person_epochs TO app_control_plane;

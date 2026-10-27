@@ -3,27 +3,34 @@ package adapters
 // The conformance fixture: what the shared suite needs from the composing
 // workspace, built through this host's own paths. Modules and solutions are
 // delivered as the CLI delivers them (a signed carrier and the authority's
-// signed document through CompositionService.ApplyManifest) and installed
-// through the fixture's declared installations, which the authority core
-// performs. Only the cluster stands in (executiontest).
+// signed document through CompositionService.ApplyManifest). A solution is
+// installed through the fixture's declared installations, which the authority
+// core performs; a module by each organization's administrator through
+// accounts' own install path (consentModule), which the core reads. Only the
+// cluster stands in (executiontest).
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"accounts/internal/deliverytest"
 	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/infra"
 
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 )
@@ -138,4 +145,85 @@ func teamNamed(t *testing.T, ctx context.Context, svc *business.Service, orgID, 
 	}
 	t.Fatalf("organization %s has no team %q", orgID, name)
 	return ""
+}
+
+// consentModule installs a delivered module at org through accounts' own path,
+// as an administrator does: a role of the organization, the install (which
+// records the administrator's consent within the module envelope) and its
+// install step completed on the durable queue. A module installed there
+// already is left as it is. Nothing writes an installation directly; the
+// authority core reads the one this makes.
+func consentModule(ctx context.Context, svc *business.Service, store *infra.PostgresStore, org, admin, module string) error {
+	available, _, err := svc.ListAvailableSolutions(ctx, org, "", 500)
+	if err != nil {
+		return err
+	}
+	var target *business.AvailableSolutionTarget
+	for _, entry := range available {
+		if entry.RouteAlias == module {
+			target = entry
+		}
+	}
+	if target == nil {
+		return fmt.Errorf("%s is not offered at %s", module, org)
+	}
+	if target.Installed {
+		return nil
+	}
+	role := business.NewIDString()
+	if err := store.WithOrgTx(ctx, org, func(ctx context.Context) error {
+		return store.CreateRole(ctx, &gen.Role{Id: role, OrgId: org, Name: "Use " + module + " " + role[:8], Permissions: []*gen.Permission{{Resource: "solution", Action: "use"}}})
+	}); err != nil {
+		return err
+	}
+	installation, err := svc.InstallSolution(ctx, admin, &business.InstallSolutionParams{
+		OrgID: org, TargetID: target.TargetID, AgentIdentifier: "conformance/" + module + ":0.1.0", RoleID: role,
+	})
+	if err != nil {
+		return err
+	}
+	return completeInstallStep(ctx, store, installation)
+}
+
+// completeInstallStep completes the installation's step on the durable queue,
+// as the install worker would, until the installation is active.
+func completeInstallStep(ctx context.Context, store *infra.PostgresStore, installation *gen.Installation) error {
+	if installation.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_PENDING {
+		return nil
+	}
+	pool, err := infra.NewJobWorkerPool(ctx)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	worker := infra.NewPostgresJobStore(pool)
+	for range 1000 {
+		batch, err := worker.Claim(ctx, &jobsv1.ClaimJobsRequest{Queue: business.InstallationStepQueue, WorkerId: "conformance-install", Limit: 1, LeaseDuration: durationpb.New(time.Minute)})
+		if err != nil {
+			return err
+		}
+		if len(batch.GetJobs()) != 1 {
+			return fmt.Errorf("installation %s: no installation step is enqueued", installation.GetId())
+		}
+		job := batch.GetJobs()[0]
+		if err := worker.Complete(ctx, &jobsv1.CompleteJobRequest{Lease: &jobsv1.JobLeaseReference{JobId: job.GetId(), WorkerId: job.GetLease().GetOwner(), LeaseToken: job.GetLease().GetToken()}}); err != nil {
+			return err
+		}
+		if job.GetAttributes()["installation_step.id"] != installation.GetId() {
+			continue
+		}
+		var current *gen.Installation
+		if err := store.WithOrgTx(ctx, installation.GetOrgId(), func(ctx context.Context) error {
+			var err error
+			current, _, err = store.GetInstallation(ctx, installation.GetOrgId(), installation.GetId())
+			return err
+		}); err != nil {
+			return err
+		}
+		if current.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+			return fmt.Errorf("installation %s is %s after its step: %s", installation.GetId(), current.GetStatus(), current.GetFailureReason())
+		}
+		return nil
+	}
+	return fmt.Errorf("installation %s never completed its step", installation.GetId())
 }

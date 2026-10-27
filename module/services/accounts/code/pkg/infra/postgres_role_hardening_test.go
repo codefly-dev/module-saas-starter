@@ -64,20 +64,22 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"module_envelopes":              {},
 	"datasource_credential_budgets": {}, // platform relation; the control plane meters provider credentials
 	"hop_admission_keys":            {}, // platform relation; the hop's public keys, published by the control plane
+	"hop_admission_proofs":          {}, // platform relation; the registration proofs' nonces, each used once
 	// The authority core's records (migration 56): the core decides across
 	// organizations under the control plane; request traffic has no access.
-	"authority_core_delegations":   {},
-	"authority_core_grant_epochs":  {},
-	"authority_core_installations": {},
-	"authority_core_modules":       {},
-	"authority_core_owner_aware":   {},
-	"authority_core_person_epochs": {},
-	"authority_core_replay":        {},
-	"authority_core_role_grants":   {},
-	"authority_core_tombstones":    {},
-	"job_attempts":                 {},
-	"job_messages":                 {},
-	"job_state_transitions":        {},
+	"authority_core_delegations":      {},
+	"authority_core_grant_epochs":     {},
+	"authority_core_installations":    {},
+	"authority_core_module_revisions": {},
+	"authority_core_modules":          {},
+	"authority_core_owner_aware":      {},
+	"authority_core_person_epochs":    {},
+	"authority_core_replay":           {},
+	"authority_core_role_grants":      {},
+	"authority_core_tombstones":       {},
+	"job_attempts":                    {},
+	"job_messages":                    {},
+	"job_state_transitions":           {},
 
 	// Tenant-scoped relations.
 	"actor_chain_journal":                  {selectRows: true, insertRows: true},
@@ -441,10 +443,10 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// a revision only grows; a role grant is granted and revoked by row,
 			// and a consumed nonce is reclaimed once its capability expired.
 			switch relation {
-			case "authority_core_tombstones", "authority_core_installations", "authority_core_delegations",
+			case "authority_core_tombstones", "authority_core_installations", "authority_core_module_revisions", "authority_core_delegations",
 				"authority_core_person_epochs", "authority_core_grant_epochs", "authority_core_owner_aware":
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
-			case "authority_core_role_grants", "authority_core_replay":
+			case "authority_core_role_grants", "authority_core_replay", "hop_admission_proofs":
 				want = relationPrivileges{selectRows: true, insertRows: true, deleteRows: true}
 			}
 			// solution_targets is never row-deleted either: a CLOSED target is the

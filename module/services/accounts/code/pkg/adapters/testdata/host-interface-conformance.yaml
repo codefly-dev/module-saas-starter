@@ -77,6 +77,15 @@ roles:
     description: Read collection content in explicitly granted collections
     permissions:
       - {resource: example-records, action: read}
+  # The suite's viewer reads example records and directory entries across the
+  # organization: a role scoped to nothing holds the whole kind, where a
+  # collection's or a record's grant holds only what it names.
+  - org: Acme Corp
+    name: Record viewer
+    description: Read every example record and directory entry of the organization
+    permissions:
+      - {resource: example-records, action: read}
+      - {resource: directory.entry, action: read}
   # A record reader holds example records one id at a time (a resource-limited
   # grant): what ListResources answers by grant.
   - org: Acme Corp
@@ -123,6 +132,7 @@ assignments:
   - {org: Acme Corp, role: Principal note reader, email: note-reader@acme.test}
   - {org: Acme Corp, role: Record reader, email: maya@acme.test, scope: conformance-record-a}
   - {org: Acme Corp, role: Collection transfer, email: ivy@acme.test, scope: collection-x}
+  - {org: Acme Corp, role: Record viewer, email: bob@acme.com}
   - {org: Acme Corp, role: Agent user, email: maya@acme.test}
   - {org: Acme Corp, role: Agent user, email: remi@acme.test}
 

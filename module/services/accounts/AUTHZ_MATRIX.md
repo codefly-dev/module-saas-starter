@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **292 RPCs** across **40 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **293 RPCs** across **40 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -20,6 +20,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/host.authority.v1.AuthorityService/RegisterAdmissionKey` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.platform.hop_admission_key_published | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Publish the hop's admission public key in Keys for one lease; only the hop's workload registers one. |
 | `/host.authority.v1.AuthorityService/RevokeDelegation` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.module_delegation.revoked | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | End a delegation; every capability issued from it is refused from then on. |
 | `/host.composition.v1.CompositionService/ApplyManifest` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Deliver one module instance's manifest at one generation; the ceiling is the manifest. |
+| `/host.installation.v1.InstallationService/Current` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Read the authenticated module's own active installation in the tenant of a current parent addressed to it. |
 | `/host.installation.v1.InstallationService/GrantRole` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_granted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a person or a team one of an installed solution's roles. |
 | `/host.installation.v1.InstallationService/Install` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.installation_requested, saas.authority.installation_activated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Install one solution at one organisation under the consent its administrator reviewed; pending until its install step converges. |
 | `/host.installation.v1.InstallationService/List` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List what one organisation has installed. |
@@ -309,4 +310,4 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `org_admin`: 68
 - `org_member`: 57
 - `platform_admin`: 29
-- `public`: 28
+- `public`: 29

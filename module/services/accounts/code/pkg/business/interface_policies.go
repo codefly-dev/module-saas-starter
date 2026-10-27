@@ -208,6 +208,9 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 			p.Audit.Events = append(p.Audit.Events, string(EventAuthorityInstallationActivated))
 			return p
 		}(),
+		// A module authenticates by its workload credential and a current parent
+		// addressed to it; it reads its own installation's metadata and nothing more.
+		"/host.installation.v1.InstallationService/Current":        workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
 		"/host.installation.v1.InstallationService/Review":         read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.installation.v1.InstallationService/GrantRole":      roleChange(EventAuthorityRoleGranted),
 		"/host.installation.v1.InstallationService/RevokeRole":     roleChange(EventAuthorityRoleRevoked),
@@ -288,6 +291,7 @@ var interfaceDescriptions = map[string]string{
 	"AuthorityService/DetachResource":       "Release one deleted resource from the installation that owns it; the kind's serving module asks.",
 	"AuthorityService/AuthorizeTransfer":    "Decide whether an existing resource may join an installed solution's principal, and record it.",
 	"CompositionService/ApplyManifest":      "Deliver one module instance's manifest at one generation; the ceiling is the manifest.",
+	"InstallationService/Current":           "Read the authenticated module's own active installation in the tenant of a current parent addressed to it.",
 	"InstallationService/Install":           "Install one solution at one organisation under the consent its administrator reviewed; pending until its install step converges.",
 	"InstallationService/Review":            "Read the exact authority offer an administrator consents to, without recording consent.",
 	"InstallationService/GrantRole":         "Grant a person or a team one of an installed solution's roles.",

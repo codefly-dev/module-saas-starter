@@ -16,7 +16,6 @@ import (
 	"sync"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
-	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 
 	"accounts/pkg/permissioncatalog"
@@ -55,8 +54,11 @@ func (k staticKeys) PublicKeys(context.Context) (map[string]ed25519.PublicKey, e
 
 // ConfigureAuthorityCore builds the core over this host's store, signing as
 // issuer with key under keyID: the Work Context key, so every verifier pinning
-// Keys verifies what the core issues. Every organization then holds every
-// composed module, whatever order delivery and sign-up came in.
+// Keys verifies what the core issues. A module is installed at an organization
+// only by accounts' own consent (an administrator's install, within the module
+// envelope): the core installs none itself and reads accounts' records live
+// (HostInstallsModules), so an uninstall or a narrowed ceiling ends it there at
+// once.
 func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID string, key ed25519.PrivateKey) error {
 	state := s.authorityCoreState()
 	core, err := s.newAuthorityCore(issuer, keyID, key)
@@ -68,9 +70,6 @@ func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID stri
 	}
 	if err := s.reconcileAuthorityCore(ctx); err != nil {
 		return fmt.Errorf("authority core: compose the applied deliveries: %w", err)
-	}
-	if err := core.ReconcileOrganizations(ctx); err != nil {
-		return fmt.Errorf("authority core: hold the composed modules at every organization: %w", err)
 	}
 	return nil
 }
@@ -87,6 +86,7 @@ func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey)
 	return authority.New(store.AuthorityCore(), authority.Config{
 		Issuer: issuer, KeyID: keyID, Signer: key, Keys: staticKeys{keyID: public},
 		Replay: store.AuthorityCoreReplay(), MaxTTL: workcontext.DefaultMaxTTL, Journal: s.journalAuthority,
+		HostInstallsModules: true,
 	})
 }
 
@@ -116,20 +116,6 @@ func (s *Service) AuthorityInstallStep() authority.InstallStep {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
 	return state.step
-}
-
-// authorityOrganizationAdded holds every composed module at an organization
-// just created. A host whose core is not configured yet holds them when it
-// is (ConfigureAuthorityCore); a failure is logged and healed there too.
-func (s *Service) authorityOrganizationAdded(ctx context.Context, org string) {
-	core, err := s.AuthorityCore()
-	if err != nil {
-		return
-	}
-	if _, err := core.OrganizationAdded(ctx, org); err != nil {
-		wool.Get(ctx).In("authorityOrganizationAdded").Warn("the new organization does not hold the composed modules yet; the next start holds them",
-			wool.Field("organization", org), wool.ErrField(err))
-	}
 }
 
 // MemberPermissions are the contributed permissions every current member of

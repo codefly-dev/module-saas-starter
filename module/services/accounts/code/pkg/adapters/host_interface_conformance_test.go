@@ -68,6 +68,7 @@ const (
 	globexOrganization  = "00000000-0000-7000-8000-0000000000c2"
 	conformanceAlex     = "00000000-0000-7000-8000-0000000000b3"
 	conformanceIvy      = "00000000-0000-7000-8000-0000000000b9"
+	conformanceZoe      = "00000000-0000-7000-8000-0000000000b5"
 )
 
 // TestAccountsPassesTheHostInterfaceConformanceSuite boots accounts over a
@@ -201,7 +202,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	// back; model also binds to itself across both its kinds. conformance-agent
 	// is a module whose tools binding reaches an installed solution;
 	// conformance-idle a declared workload with no active installation.
-	for _, m := range []conformanceModule{
+	modules := []conformanceModule{
 		{alias: "documents", ceilings: []*authorityv1.WorkScopeV1{wireScope("example-records", "invoke", "read", "write", "ingest")},
 			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read"}}}}},
 		{alias: "org-directory", ceilings: []*authorityv1.WorkScopeV1{wireScope("directory.entry", "read")},
@@ -218,13 +219,27 @@ func runHostInterfaceFixture(t *testing.T) {
 			bindings: []solutionhost.AuthorityBinding{{ID: "tools", Audience: "conformance-proposals", Operations: map[string][]string{"invoke": {"conformance-proposals.item:read"}}}}},
 		{alias: "conformance-idle", ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-idle.task", "read")},
 			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:read"}, "headless": {"modelservice.profiles:read"}}}}},
-	} {
+	}
+	for _, m := range modules {
 		deliverModule(t, ctx, conn, signer, m)
 	}
-	// conformance-idle is retired at every organization: a declared workload
-	// with no active installation, as the suite's absent-organization case needs.
-	for _, org := range []string{fixtureOrganization, globexOrganization} {
-		require.NoError(t, core.UninstallAsHost(ctx, org, authority.StableInstallationID(org, "conformance-idle")))
+	// installModule is how a module comes to be installed here: Acme's and
+	// Globex's administrators each install it, through accounts' own path.
+	installModule := func(ctx context.Context, module string) error {
+		if err := consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module); err != nil {
+			return err
+		}
+		return consentModule(ctx, svc, store, globexOrganization, conformanceZoe, module)
+	}
+	// Every module but conformance-idle is installed at both organizations by
+	// their administrators, through accounts' own path: the core installs no
+	// module itself. conformance-idle stays a declared workload with no
+	// installation anywhere, as the suite's absent-organization case needs.
+	for _, m := range modules {
+		if m.alias == "conformance-idle" {
+			continue
+		}
+		require.NoError(t, installModule(ctx, m.alias))
 	}
 
 	// The solutions, delivered as the CLI delivers them, then installed by the
@@ -310,6 +325,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
 		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
 		DeliveryCredential: func(module string) string { return "delivery:" + module },
+		InstallModule:      installModule,
 		ViewerToken:        "dev-bob", AdminToken: "dev-alice",
 		Audience: "documents", ReadKind: "example-records",
 		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
@@ -442,6 +458,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
 		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
 		DeliveryCredential: func(module string) string { return "delivery:" + module },
+		InstallModule:      installModule,
 		HostCoordinate:     "conformance-host", HostDomain: "acme",
 	})
 
@@ -492,6 +509,64 @@ func runHostInterfaceFixture(t *testing.T) {
 	// or what it names; once revoked, by its grantor or an administrator of its
 	// organization, it issues nothing and every capability issued from it fails
 	// its next check. Anyone else learns nothing of it.
+	// A module is installed at an organization only by its administrator's
+	// consent, through accounts' own path: its workload is issued nothing at an
+	// organization that did not install it, nothing past the organization the
+	// module envelope pins it to, and nothing once an administrator uninstalls
+	// it, when what it was issued fails its next check.
+	t.Run("a module workload is issued only where it is installed, within its pin, until uninstalled", func(t *testing.T) {
+		client := authorityv1.NewAuthorityServiceClient(conn)
+		const module = "conformance-consent"
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-consent.task", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"headless": {"modelservice.profiles:read"}}}}})
+		workloadOf := credential(module)
+		issue := func(org string) (*authorityv1.IssueResponse, error) {
+			return client.Issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Workload{Workload: &authorityv1.WorkloadCredential{Credential: workloadOf}},
+				OperationBindingId: "model", Audience: "model", OrganizationId: org})
+		}
+		_, err := issue(fixtureOrganization)
+		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+fixtureOrganization)
+
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		issued, err := issue(fixtureOrganization)
+		require.NoError(t, err, "installed by Acme's administrator")
+		require.Equal(t, fixtureOrganization, issued.GetContext().GetTenantId())
+		_, err = issue(globexOrganization)
+		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+globexOrganization)
+
+		// Pinned to Acme by the module envelope, the workload is issued nothing
+		// at Globex even once Globex installs it.
+		require.NoError(t, consentModule(ctx, svc, store, globexOrganization, conformanceZoe, module))
+		_, err = issue(globexOrganization)
+		require.NoError(t, err, "installed by Globex's administrator")
+		registry := svc.ModulePrincipals()
+		pinned := registry[business.ModulePrincipalID(module)]
+		pinned.Tenant = fixtureOrganization
+		pinnedRegistry := svc.ModulePrincipals()
+		pinnedRegistry[business.ModulePrincipalID(module)] = pinned
+		svc.SetModulePrincipals(pinnedRegistry)
+		_, err = issue(globexOrganization)
+		svc.SetModulePrincipals(registry)
+		requireCode(t, err, codes.PermissionDenied, "is bound to organization "+fixtureOrganization)
+
+		// Acme's administrator uninstalls it: nothing more is issued there, and
+		// what was issued fails its next check.
+		installed, err := core.Installations(ctx, alex, fixtureOrganization)
+		require.NoError(t, err)
+		var id string
+		for _, inst := range installed {
+			if inst.Target == module {
+				id = inst.ID
+			}
+		}
+		require.NotEmpty(t, id)
+		require.NoError(t, svc.UninstallSolution(ctx, conformanceAlex, fixtureOrganization, id))
+		_, err = issue(fixtureOrganization)
+		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+fixtureOrganization)
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "model"})
+		require.Error(t, err, "a capability issued before the uninstall fails its check")
+	})
+
 	t.Run("a delegation is bounded by its grantor and ends with its revocation", func(t *testing.T) {
 		client := authorityv1.NewAuthorityServiceClient(conn)
 		alex, bob, alice := signIn("fixture-alex"), signIn("dev-bob"), signIn("dev-alice")

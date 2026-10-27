@@ -75,6 +75,7 @@
       "name": "InstallationService",
       "fullName": "host.installation.v1.InstallationService",
       "procedures": [
+        "/host.installation.v1.InstallationService/Current",
         "/host.installation.v1.InstallationService/GrantRole",
         "/host.installation.v1.InstallationService/Install",
         "/host.installation.v1.InstallationService/List",

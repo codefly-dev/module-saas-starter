@@ -76,6 +76,9 @@ func (h *hostInstallationConnectHandler) server() *HostInstallationServer {
 func (h *hostInstallationConnectHandler) Install(ctx context.Context, req *connect.Request[installationv1.InstallRequest]) (*connect.Response[installationv1.Installation], error) {
 	return unary(ctx, req, h.server().Install)
 }
+func (h *hostInstallationConnectHandler) Current(ctx context.Context, req *connect.Request[installationv1.CurrentInstallationRequest]) (*connect.Response[installationv1.CurrentInstallation], error) {
+	return unary(ctx, req, h.server().Current)
+}
 func (h *hostInstallationConnectHandler) Review(ctx context.Context, req *connect.Request[installationv1.ReviewRequest]) (*connect.Response[installationv1.ConsentApproval], error) {
 	return unary(ctx, req, h.server().Review)
 }

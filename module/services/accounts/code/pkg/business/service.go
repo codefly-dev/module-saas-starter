@@ -849,7 +849,6 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create default organization")
 	}
-	s.authorityOrganizationAdded(ctx, orgID)
 
 	// Assign admin role to user in their org. The built-in roles are
 	// org_id=NULL — RLS-protected as of Phase 2E, so the read needs
@@ -1072,7 +1071,6 @@ func (s *Service) createOrganization(ctx context.Context, actorID, ownerID strin
 	}); err != nil {
 		return nil, err
 	}
-	s.authorityOrganizationAdded(ctx, org.Id)
 	return &gen.CreateOrganizationResponse{Organization: org}, nil
 }
 
