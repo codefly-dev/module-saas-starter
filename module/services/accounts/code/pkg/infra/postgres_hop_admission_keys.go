@@ -23,12 +23,34 @@ import (
 // already published, and answers whether this call began publishing it. Registrations are serialised by one transaction-scoped
 // advisory lock, so two replicas registering different keys at the bound
 // cannot both pass the count.
-func (s *PostgresStore) RegisterAdmissionKey(ctx context.Context, key business.AdmissionKey, lease time.Duration, max int) (time.Time, bool, error) {
+func (s *PostgresStore) RegisterAdmissionKey(ctx context.Context, key business.AdmissionKey, registration business.AdmissionRegistration, lease time.Duration, max int) (time.Time, bool, error) {
 	q := s.getQueryExecutor(ctx)
 	if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('hop-admission-keys',0))`); err != nil {
 		return time.Time{}, false, err
 	}
 	if _, err := q.Exec(ctx, `DELETE FROM public.hop_admission_keys WHERE expires_at <= now()`); err != nil {
+		return time.Time{}, false, err
+	}
+	if _, err := q.Exec(ctx, `DELETE FROM public.hop_admission_proofs WHERE expires_at <= now()`); err != nil {
+		return time.Time{}, false, err
+	}
+	// The proof's nonce is used once: a second registration carrying it, on
+	// any replica, finds it here.
+	tag, err := q.Exec(ctx, `INSERT INTO public.hop_admission_proofs (nonce, expires_at) VALUES ($1, $2) ON CONFLICT (nonce) DO NOTHING`,
+		registration.Nonce, registration.NonceUntil)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	if tag.RowsAffected() != 1 {
+		return time.Time{}, false, fmt.Errorf("%w: the registration proof was already used: sign a fresh one for each registration", business.ErrAdmissionKeyProof)
+	}
+	// One key per hop instance until its lease lapses.
+	var pinned string
+	switch err := q.QueryRow(ctx, `SELECT key_id FROM public.hop_admission_keys WHERE instance = $1`, registration.Instance).Scan(&pinned); {
+	case err == nil && pinned != key.ID:
+		return time.Time{}, false, fmt.Errorf("%w: hop instance %q holds admission key %s until it lapses; another key (%s) is refused for it until then, and a new key comes from a new hop instance",
+			business.ErrAdmissionKeyPinned, registration.Instance, pinned, key.ID)
+	case err != nil && !errors.Is(err, pgx.ErrNoRows):
 		return time.Time{}, false, err
 	}
 	var (
@@ -50,16 +72,25 @@ func (s *PostgresStore) RegisterAdmissionKey(ctx context.Context, key business.A
 	)
 	// xmax is zero on a row this statement inserted and set on one it updated,
 	// so it tells a first publication from a renewal.
-	err := q.QueryRow(ctx, `
-		INSERT INTO public.hop_admission_keys (key_id, public_key, expires_at)
-		VALUES ($1, $2, now() + make_interval(secs => $3))
-		ON CONFLICT (key_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
+	err = q.QueryRow(ctx, `
+		INSERT INTO public.hop_admission_keys (key_id, public_key, expires_at, instance)
+		VALUES ($1, $2, now() + make_interval(secs => $3), $4)
+		ON CONFLICT (key_id) DO UPDATE SET expires_at = EXCLUDED.expires_at, instance = EXCLUDED.instance
 		 WHERE public.hop_admission_keys.public_key = EXCLUDED.public_key
-		RETURNING expires_at, xmax = 0`, key.ID, []byte(key.PublicKey), lease.Seconds()).Scan(&expires, &published)
+		   AND (public.hop_admission_keys.instance IS NULL OR public.hop_admission_keys.instance = EXCLUDED.instance)
+		RETURNING expires_at, xmax = 0`, key.ID, []byte(key.PublicKey), lease.Seconds(), registration.Instance).Scan(&expires, &published)
 	if errors.Is(err, pgx.ErrNoRows) {
-		// No row means the id is published for another public key: the id is
-		// derived from the key, so this is a collision, never a renewal.
-		return time.Time{}, false, fmt.Errorf("%w: key id %s is published for another public key", business.ErrAdmissionKeyMalformed, key.ID)
+		// No row: the id is published for another public key (the id is
+		// derived from the key, so a collision, never a renewal), or another
+		// hop instance holds this key.
+		var samePublic bool
+		if err := q.QueryRow(ctx, `SELECT public_key = $2 FROM public.hop_admission_keys WHERE key_id = $1`, key.ID, []byte(key.PublicKey)).Scan(&samePublic); err != nil {
+			return time.Time{}, false, err
+		}
+		if !samePublic {
+			return time.Time{}, false, fmt.Errorf("%w: key id %s is published for another public key", business.ErrAdmissionKeyMalformed, key.ID)
+		}
+		return time.Time{}, false, fmt.Errorf("%w: key %s is held by another hop instance until it lapses", business.ErrAdmissionKeyPinned, key.ID)
 	}
 	if err != nil {
 		return time.Time{}, false, err

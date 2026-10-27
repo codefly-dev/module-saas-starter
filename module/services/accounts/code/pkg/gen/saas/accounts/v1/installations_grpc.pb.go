@@ -52,8 +52,8 @@ type InstallationServiceClient interface {
 	// is left in place (inert without a grant or a live agent) so a reinstall reuses
 	// it. Idempotent on an already-revoked installation.
 	UninstallSolution(ctx context.Context, in *UninstallSolutionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	// Narrowing is witnessed in the policy log before commit, then atomically
-	// bumps the installation revision, cancels its org's work and records audit.
+	// A narrowing applies directly: it atomically bumps the installation
+	// revision, cancels its org's work and records audit.
 	NarrowInstallation(ctx context.Context, in *NarrowInstallationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// RetryInstallation runs a failed installation's install step again, at the
 	// same revision. The installation is pending until the solution acknowledges.
@@ -120,9 +120,8 @@ type InstallationServiceClient interface {
 	// ListOrganizationInstallations describes.
 	GrantInstallationToTeam(ctx context.Context, in *GrantInstallationToTeamRequest, opts ...grpc.CallOption) (*GrantInstallationToTeamResponse, error)
 	// RevokeInstallationFromTeam removes one team grant at an installation's
-	// authority-root node. It is a narrowing, so it runs under the policy log
-	// exactly as RevokeScope does: a host that cannot witness the narrowing refuses
-	// it, and says so, rather than revoking unwitnessed. It removes the one grant
+	// authority-root node. It is a narrowing, so it applies directly, with its
+	// audit record in one transaction, exactly as RevokeScope does. It removes the one grant
 	// at the authority root that granted_teams reports; a team that also reaches
 	// the installation from a grant above keeps that reach. Organisation-admin,
 	// with the same platform super administrator exception.
@@ -265,8 +264,8 @@ type InstallationServiceServer interface {
 	// is left in place (inert without a grant or a live agent) so a reinstall reuses
 	// it. Idempotent on an already-revoked installation.
 	UninstallSolution(context.Context, *UninstallSolutionRequest) (*emptypb.Empty, error)
-	// Narrowing is witnessed in the policy log before commit, then atomically
-	// bumps the installation revision, cancels its org's work and records audit.
+	// A narrowing applies directly: it atomically bumps the installation
+	// revision, cancels its org's work and records audit.
 	NarrowInstallation(context.Context, *NarrowInstallationRequest) (*emptypb.Empty, error)
 	// RetryInstallation runs a failed installation's install step again, at the
 	// same revision. The installation is pending until the solution acknowledges.
@@ -333,9 +332,8 @@ type InstallationServiceServer interface {
 	// ListOrganizationInstallations describes.
 	GrantInstallationToTeam(context.Context, *GrantInstallationToTeamRequest) (*GrantInstallationToTeamResponse, error)
 	// RevokeInstallationFromTeam removes one team grant at an installation's
-	// authority-root node. It is a narrowing, so it runs under the policy log
-	// exactly as RevokeScope does: a host that cannot witness the narrowing refuses
-	// it, and says so, rather than revoking unwitnessed. It removes the one grant
+	// authority-root node. It is a narrowing, so it applies directly, with its
+	// audit record in one transaction, exactly as RevokeScope does. It removes the one grant
 	// at the authority root that granted_teams reports; a team that also reaches
 	// the installation from a grant above keeps that reach. Organisation-admin,
 	// with the same platform super administrator exception.

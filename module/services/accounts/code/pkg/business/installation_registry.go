@@ -118,8 +118,10 @@ func consentedInstallationScope(kind string, grant ModulePrincipalGrant, envelop
 
 // NarrowInstallationScope is a human administration act. Authorization belongs
 // at the adapter like InstallSolution; the store compares the expected revision
-// and the old scope under the row lock. Policy receipt, scope/revision and
-// cancellation commit together. A no-op does not advance the revision.
+// and the old scope under the row lock. The scope, the revision, the
+// cancellation of its work and the audit record commit together, and the
+// authority core reads the new consent at its next issue. A no-op does not
+// advance the revision.
 func (s *Service) NarrowInstallationScope(ctx context.Context, actorID, orgID, id string, revision uint64, scope InstallationScope) error {
 	store, ok := s.store.(InstallationScopeStore)
 	if !ok {
@@ -151,18 +153,13 @@ func (s *Service) NarrowInstallationScope(ctx context.Context, actorID, orgID, i
 	if InstallationScopeWithin(current.Scope, scope) {
 		return nil
 	}
-	entry := uninstallPolicyLogEntry(actorID, orgID, id)
-	// The complete resulting scope belongs in the log, never only an increment.
-	raw, _ := json.Marshal(scope)
-	var policy map[string]any
-	if err := json.Unmarshal(raw, &policy); err != nil {
+	// The complete resulting scope is recorded, never only an increment.
+	raw, err := json.Marshal(scope)
+	if err != nil {
 		return err
 	}
-	entry.OperationID = newPolicyLogOperationID("narrow-installation")
-	entry.EnvelopeRevision = snapshot.envelopeRevision
-	entry.Policy = map[string]any{"org_id": orgID, "status": "active", "scope": policy, "revision": revision + 1}
 	actorType := s.actorTypeForCreator(ctx, actorID)
-	return s.WithPolicyLoggedNarrowing(ctx, entry, func(ctx context.Context) error {
+	return s.narrow(ctx, func(ctx context.Context) error {
 		if err := store.NarrowInstallationScope(ctx, orgID, id, revision, scope, snapshot.registry, snapshot.envelopeRevision); err != nil {
 			return err
 		}

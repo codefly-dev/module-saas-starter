@@ -174,7 +174,6 @@ func TestDynamicInstallationDBCancelsOnlyItsOrgAndFencesLeases(t *testing.T) {
 			emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
 			require.NoError(t, err)
 			svc.SetAuditEmitter(emitter)
-			wireNarrowingPolicyLog(svc)
 			if narrow {
 				scope := business.FullInstallationScope(a.grant)
 				scope.Queues = nil

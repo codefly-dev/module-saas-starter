@@ -1,9 +1,9 @@
 package adapters
 
-// What authority 0.3.x adds to the interface: the hop's admission keys
-// (0.3.2, 0.3.3), served; and installation-owned resources (0.3.0), which
-// this host does not record yet, so each of those methods and an
-// owner-selected ask is refused by name rather than read as something wider.
+// The hop's admission keys (codefly.dev/authority 0.3.2 through 0.3.4): the hop
+// registers the key it signs call admissions with under its workload
+// credential, and Keys publishes it apart from the Work Context key. The
+// leased registrations are accounts' own store (hop_admission_keys).
 
 import (
 	"context"
@@ -26,7 +26,7 @@ const (
 
 // admissionKeys registers and publishes the hop's admission keys.
 type admissionKeys interface {
-	RegisterAdmissionKey(ctx context.Context, credential string, public []byte) (business.AdmissionKey, error)
+	RegisterAdmissionKey(ctx context.Context, credential string, public []byte, proof string) (business.AdmissionKey, error)
 	PublishedAdmissionKeys(ctx context.Context) ([]business.AdmissionKey, error)
 }
 
@@ -48,10 +48,10 @@ func (s *HostAuthorityServer) RegisterAdmissionKey(ctx context.Context, req *aut
 	if keys == nil {
 		return nil, status.Error(codes.Unavailable, business.ErrAdmissionKeysUnwired.Error())
 	}
-	key, err := keys.RegisterAdmissionKey(ctx, req.GetActor().GetCredential(), req.GetPublicKey())
+	key, err := keys.RegisterAdmissionKey(ctx, req.GetActor().GetCredential(), req.GetPublicKey(), req.GetProof())
 	switch {
 	case err == nil:
-	case errors.Is(err, business.ErrAdmissionKeyNotTheHop):
+	case errors.Is(err, business.ErrAdmissionKeyNotTheHop), errors.Is(err, business.ErrAdmissionKeyProof), errors.Is(err, business.ErrAdmissionKeyPinned):
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, business.ErrAdmissionKeyMalformed):
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -91,34 +91,4 @@ func admissionKeyToWire(key business.AdmissionKey) *authorityv1.PublicKey {
 	return &authorityv1.PublicKey{
 		KeyId: key.ID, Algorithm: workcontext.Algorithm, PublicKey: []byte(key.PublicKey), Purpose: admissionKeyPurpose,
 	}
-}
-
-// installationOwnedGap names what this host does not do yet.
-const installationOwnedGap = "this host does not record installation-owned resources yet (codefly.dev/authority@0.3.0)"
-
-// AttachResource is refused by name: no installation owns a resource here.
-func (s *HostAuthorityServer) AttachResource(context.Context, *authorityv1.AttachResourceRequest) (*authorityv1.AttachResourceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "AttachResource: "+installationOwnedGap)
-}
-
-// DetachResource is refused by name: no installation owns a resource here.
-func (s *HostAuthorityServer) DetachResource(context.Context, *authorityv1.DetachResourceRequest) (*authorityv1.DetachResourceResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "DetachResource: "+installationOwnedGap)
-}
-
-// AuthorizeTransfer is refused by name: no installation owns a resource here.
-func (s *HostAuthorityServer) AuthorizeTransfer(context.Context, *authorityv1.AuthorizeTransferRequest) (*authorityv1.AuthorizeTransferResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "AuthorizeTransfer: "+installationOwnedGap)
-}
-
-// refuseOwnerSelected refuses an ask naming a resource owner. This host's
-// scopes carry no owner, so honouring the rest of the scope would issue the
-// whole kind where the caller asked for one owner's resources.
-func refuseOwnerSelected(scopes []*authorityv1.WorkScopeV1) error {
-	for _, scope := range scopes {
-		if scope.GetResourceOwnerId() != "" {
-			return status.Errorf(codes.Unimplemented, "a scope on %s selects owner %q: %s", scope.GetResourceKind(), scope.GetResourceOwnerId(), installationOwnedGap)
-		}
-	}
-	return nil
 }

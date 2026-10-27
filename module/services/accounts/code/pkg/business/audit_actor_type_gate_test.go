@@ -40,6 +40,8 @@ var auditActorTypeIndirectSites = map[string]string{
 	"installations.go:uninstallSolutionTx":                         "both callers (UninstallSolution, DeleteOrganization) pass actorTypeForCreator's result, which returns a registered constant on every branch.",
 	"delegated_audience_audit.go:ObserveDelegatedAudienceExchange": "delegatedAudienceActorType returns only registered constants; TestDelegatedAudienceActorTypeSpeaksTheRegisteredVocabulary pins every branch.",
 	"webhooks.go:CreateSubscription":                               "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
+	"authority_core_audit.go:journalAuthority":                     "authorityActor returns ActorTypeUser or ActorTypeSystem on every branch; TestAuthorityChangesAreRecordedAsRegisteredMutations pins it.",
+	"authority_core_audit.go:RecordAuthorityIssue":                 "authorityActor returns ActorTypeUser or ActorTypeSystem on every branch; TestAuthorityChangesAreRecordedAsRegisteredMutations pins it.",
 	"webhooks.go:DeleteSubscription":                               "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 	"webhooks.go:ReplayWebhookDelivery":                            "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 	"webhooks.go:RotateWebhookSecret":                              "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",

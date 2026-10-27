@@ -385,6 +385,18 @@ const (
 	EventInstallationRevoked              EventType = "saas.installation.revoked"
 	EventInstallationOwnershipTransferred EventType = "saas.installation.ownership_transferred"
 
+	// The authority core's changes (authority_core_audit.go), recorded at
+	// platform scope in the core's own transaction, the organization named in
+	// the payload: the core decides across organizations.
+	EventAuthorityInstallationRequested   EventType = "saas.authority.installation_requested"
+	EventAuthorityInstallationActivated   EventType = "saas.authority.installation_activated"
+	EventAuthorityInstallationUninstalled EventType = "saas.authority.installation_uninstalled"
+	EventAuthorityRoleGranted             EventType = "saas.authority.role_granted"
+	EventAuthorityRoleRevoked             EventType = "saas.authority.role_revoked"
+	EventAuthorityResourceAttached        EventType = "saas.authority.resource_attached"
+	EventAuthorityResourceDetached        EventType = "saas.authority.resource_detached"
+	EventAuthorityResourceTransferred     EventType = "saas.authority.resource_transferred"
+
 	EventWorkContextTaskStarted  EventType = "saas.work_context.task_started"
 	EventWorkContextRootSession  EventType = "saas.work_context.root_session_started"
 	EventWorkContextChildSession EventType = "saas.work_context.child_session_started"
@@ -693,6 +705,14 @@ var auditEventCatalog = []AuditEventDefinition{
 		uid("owner_principal_id")),
 	mutation(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
 	mutation(EventRecordShareRevoked, CategoryAccess, "A record share was revoked.", uid("role_id"), uid("subject_id")),
+	mutation(EventAuthorityInstallationRequested, CategoryAccess, "An installation attempt was recorded pending, under the consent it was reviewed with.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationActivated, CategoryAccess, "An installation's install step converged and it became active.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationUninstalled, CategoryAccess, "An installation was uninstalled: its grants cleared and every capability sealed to it ended.", authorityChangeFields()...),
+	mutation(EventAuthorityRoleGranted, CategoryAccess, "A solution role was granted on an installation to a person or a team.", authorityChangeFields()...),
+	mutation(EventAuthorityRoleRevoked, CategoryAccess, "A solution role grant was revoked; its subject's capabilities through the installation ended.", authorityChangeFields()...),
+	mutation(EventAuthorityResourceAttached, CategoryAccess, "A resource created through an installation was attached to it by the kind's serving module.", authorityChangeFields()...),
+	mutation(EventAuthorityResourceDetached, CategoryAccess, "A deleted resource was released from the installation that owned it.", authorityChangeFields()...),
+	mutation(EventAuthorityResourceTransferred, CategoryAccess, "An existing resource joined an installed solution's principal, authorized by a person administering it.", authorityChangeFields()...),
 	mutation(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),
 	mutation(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
 	mutation(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),
@@ -754,7 +774,7 @@ var auditEventCatalog = []AuditEventDefinition{
 
 	mutation(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name")),
 	mutation(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization."),
-	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization."),
+	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization.", uid("user_id")),
 	mutation(EventOrgMemberLeft, CategoryOrganization, "A member left an organization."),
 	mutation(EventOrgUpdated, CategoryOrganization, "An organization was renamed or its slug changed.", str("name"), str("slug")),
 	mutation(EventOrgDeleted, CategoryOrganization, "An organization was deleted: archived, its members removed and its credentials revoked.", str("slug")),
@@ -764,7 +784,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventTeamUpdated, CategoryOrganization, "A team was updated."),
 	mutation(EventTeamDeleted, CategoryOrganization, "A team was deleted."),
 	mutation(EventTeamMemberAdded, CategoryOrganization, "A member was added to a team."),
-	mutation(EventTeamMemberRemoved, CategoryOrganization, "A member was removed from a team."),
+	mutation(EventTeamMemberRemoved, CategoryOrganization, "A member was removed from a team.", uid("user_id")),
 	mutation(EventSSOSetupStarted, CategoryOrganization, "SSO configuration was started."),
 	mutation(EventSSODisabled, CategoryOrganization, "SSO was disabled for an organization."),
 	observation(EventOnboardingStepDone, CategoryOrganization, "An onboarding step was completed.", str("step")),
@@ -1357,4 +1377,13 @@ func (d AuditEventDefinition) payloadJSONSchema() map[string]any {
 		schema["required"] = required
 	}
 	return schema
+}
+
+// authorityChangeFields are the payload of an authority core change: where it
+// happened, who acted, what changed and the change's own details, each
+// present when the change names it.
+func authorityChangeFields() []PayloadField {
+	return optionalFields([]PayloadField{str("organization"), str("actor"), str("subject"), str("target"), str("role"), str("person"), str("team"),
+		str("principal"), str("installed_by"), str("revision"), str("operation"), str("module"), str("purpose"), str("kind"), str("resource"),
+		str("from"), str("to"), str("store")})
 }

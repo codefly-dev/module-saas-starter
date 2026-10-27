@@ -213,8 +213,8 @@ Four distinctions the projections keep:
   and a grant never lands on an installation already uninstalled. The
   write is `GrantScope`'s own body, so it emits the same `scope.granted` event
   and audit record. `RevokeInstallationFromTeam`
-  is `RevokeScope` after the same resolution: a narrowing under the policy log,
-  refused in the host's words when the log cannot witness it.
+  is `RevokeScope` after the same resolution: a narrowing, applied directly
+  with its audit record in one transaction.
   `ListOrganizationInstallations` is the administrator's read of the same state —
   each active installation with its health, installed target, authority-root path
   and the teams granted there or inherited from above. It is org-admin and bound to
@@ -523,9 +523,8 @@ generation's widening waits for that organisation's administrator.
    or below a revision a platform administrator wrote interactively it is
    refused (409) naming that revision, and the composition must state the change
    and deliver above it. Revisions need not be contiguous.
-6. **Write** it through the writer the interactive path uses: a narrowing is
-   witnessed in the policy log (refused, writing nothing, on a host with none),
-   installations the new ceiling no longer allows are revoked, the row and its
+6. **Write** it through the writer the interactive path uses: a narrowing applies
+   directly, installations the new ceiling no longer allows are revoked, the row and its
    `saas.platform.module_envelope_delivered` audit event (actor `system`;
    revision, previous revision, principals, signer, ownership domain, digest)
    commit together, and a registry pass is requested.

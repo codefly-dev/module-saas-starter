@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -88,10 +87,6 @@ func newProductionPathDelivery(t *testing.T) *productionPathDelivery {
 
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
-	// A withdrawal is a narrowing of authority, witnessed by the external
-	// policy log before it takes effect; the double stands in for the log
-	// only, and the receipts go to the real store.
-	service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
 	service.SetSolutionDelivery(productionVerifier(t), testStore,
 		infra.NewSolutionDeliveryCarrierCheck(infra.NewKubernetesClientForTest(t, server)))
 	service.SetSolutionDeliveryCoordinate(productionPathCoordinate)
@@ -314,54 +309,6 @@ func productionPathCarrier(t *testing.T, manifest *solutionhost.ModuleManifest) 
 	payload, err := solutionhost.SignedPayload(manifest)
 	require.NoError(t, err)
 	return deliverytest.Carrier(t, payload, productionPathSigner)
-}
-
-// productionPathPolicyLog witnesses a narrowing, so a withdrawal can take
-// effect. A RECORDING double: the operation id is what the host's idempotency
-// rests on, so it is honoured.
-type productionPathPolicyLog struct {
-	mu       sync.Mutex
-	sequence uint64
-	records  []*business.PolicyLogRecord
-}
-
-func (l *productionPathPolicyLog) Append(_ context.Context, entry *business.PolicyLogEntry) (*business.PolicyLogReceipt, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for _, record := range l.records {
-		if record.OperationID == entry.OperationID {
-			return &business.PolicyLogReceipt{Receipt: record.Receipt, Sequence: record.Sequence, AppendedAt: record.LoggedAt}, nil
-		}
-	}
-	l.sequence++
-	receipt := &business.PolicyLogReceipt{
-		Receipt: "delivery-test-receipt-" + entry.OperationID, Sequence: l.sequence, AppendedAt: time.Now().UTC(),
-	}
-	copied := *entry
-	l.records = append(l.records, &business.PolicyLogRecord{
-		PolicyLogEntry: copied, Receipt: receipt.Receipt, Sequence: receipt.Sequence, LoggedAt: receipt.AppendedAt,
-	})
-	return receipt, nil
-}
-
-func (l *productionPathPolicyLog) Entries(_ context.Context, after uint64, _ int) ([]*business.PolicyLogRecord, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	var out []*business.PolicyLogRecord
-	for _, record := range l.records {
-		if record.Sequence > after {
-			out = append(out, record)
-		}
-	}
-	return out, nil
-}
-
-// wireNarrowingPolicyLog gives a test service the policy log's two halves, so
-// a narrowing can actually happen: WithPolicyLoggedNarrowing refuses on a host
-// with no log, by design.
-func wireNarrowingPolicyLog(service *business.Service) *business.Service {
-	service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
-	return service
 }
 
 func productionVerifier(t *testing.T) *solutionhost.Verifier {

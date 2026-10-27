@@ -36,7 +36,6 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	"accounts/pkg/business/moduleregistrytest"
-	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -224,25 +223,6 @@ func workloadOperationRows() []admissionRow {
 				require.NoError(t, err)
 				return workContextSingleton, "reports", issued.GetToken()
 			}},
-		// A module's hop through its binding on a person's capability (gap 14).
-		{"host interface binding hop", "", human, person,
-			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
-				f := newHopFixture(t, "tool.items:read", "example-records:read")
-				parent, _ := f.parent(t, "tools", hopScope("tool.items", []string{"read"}))
-				out, err := f.hop(parent, f.tool, "records", "documents")
-				require.NoError(t, err)
-				return f.issuer, "documents", out.GetToken()
-			}},
-		// A person's issue at a solution whose roles decide what they hold.
-		{"host interface solution role issue", "", human, person,
-			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
-				issuer, server, _ := hostChildFixture(t)
-				server.roles = fixedSolutionRoles{"documents": {kinds: []string{"documents"}, held: []*basev0.WorkScopeV1{hopScope("documents", []string{"read"})}}}
-				out, err := server.Issue(stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, auth.Assurance{}),
-					&authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "documents"})
-				require.NoError(t, err)
-				return issuer, "documents", out.GetToken()
-			}},
 		// Person-owned unattended work: sealed elsewhere by design, still a person's.
 		{"source-operation context", "ModuleCapabilitiesService/MintSourceOperationContext", human, person,
 			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
@@ -257,14 +237,6 @@ func workloadOperationRows() []admissionRow {
 				issued, err := server.StartInstallationTask(installInternalContext(), installTaskRequest())
 				require.NoError(t, err)
 				return server, installTaskRequest().GetAudience(), issued.GetToken()
-			}},
-		// An installation acting for itself: owned by its agent, still no workload's.
-		{"host interface installation issue", "", business.PrincipalKindAgent, person,
-			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
-				server, _, solution, _ := installationIssueFixture(t)
-				out, err := server.Issue(context.Background(), installationIssue(notesInstallation, solution, ""))
-				require.NoError(t, err)
-				return server.workContexts, "notes.test", out.GetToken()
 			}},
 		{"installation step", "", human, person,
 			func(t *testing.T) (*WorkContextAuthorityServer, string, string) {
@@ -471,11 +443,9 @@ var mintEntrypointRows = map[string][]string{
 	"(*WorkContextAuthorityServer).StartChildSession":        {"StartChildSession"},
 	"(*WorkContextAuthorityServer).exchangeInstalledBinding": {"operation exchange, content_read, invoke", "operation exchange, module_actor, invoke"},
 	"(*WorkContextAuthorityServer).startSourceOperation":     {"source-operation context", "operation exchange, source delegation reference", "operation exchange, source delegation parent"},
-	"(*WorkContextAuthorityServer).mintInstallationTask":     {"installation task", "installation step", "host interface installation issue"},
+	"(*WorkContextAuthorityServer).mintInstallationTask":     {"installation task", "installation step"},
 	"(*WorkContextAuthorityServer).StartModuleTask":          {"module identity", "installer token route"},
 	"(*WorkContextAuthorityServer).StartModuleOperationTask": {"module operation context", "module operation context for its own module"},
-	"(*WorkContextAuthorityServer).mintBindingHop":           {"host interface binding hop"},
-	"(*WorkContextAuthorityServer).startRoleTask":            {"host interface solution role issue"},
 }
 
 // isSigningMethod reports the methods a signing function references: every method

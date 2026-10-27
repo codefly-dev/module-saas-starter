@@ -1,21 +1,24 @@
 package fixtures
 
 import (
-	"accounts/pkg/business"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/wool"
+
+	"accounts/pkg/business"
 )
 
 // fixtureInstallation is one installation a fixture declares: the organisation
 // installing, the target by the name the composition gives it, the role it
 // holds, and the administrator who installs it and is its owner of record. It
 // is the host interface's Install by name, performed by a fixture person, then
-// its GrantToTeam for each team named: the teams whose members hold its role.
+// granted to each team named: the teams whose members hold its role.
 type fixtureInstallation struct {
 	Org    string   `yaml:"org"`
 	Target string   `yaml:"target"`
@@ -79,8 +82,8 @@ type pendingInstallation struct {
 	declared fixtureInstallation
 	orgID    string
 	ownerID  string
-	// teamIDs are the declared teams not exposed yet.
-	teamIDs []string
+	// teamIDs are the declared teams not exposed yet, allTeamIDs every one.
+	teamIDs, allTeamIDs []string
 	// waiting is set once the first pass found the target undelivered, so the
 	// wait is said once rather than at every pass.
 	waiting bool
@@ -107,6 +110,7 @@ func newInstallations(service *business.Service, declared []fixtureInstallation,
 				return nil, fmt.Errorf("installation %s references team %q, which the fixture does not seed in %q", installation.describe(), team, installation.Org)
 			}
 			row.teamIDs = append(row.teamIDs, teamID)
+			row.allTeamIDs = append(row.allTeamIDs, teamID)
 		}
 		installations.pending = append(installations.pending, row)
 	}
@@ -145,6 +149,11 @@ func (i *Installations) Converge(ctx context.Context) error {
 			if installed {
 				w.Info("fixture installation installed", wool.Field("installation", row.declared.describe()), wool.Field("installation_id", installation.GetId()))
 			}
+			// The authority core holds the same installation, which the host
+			// interfaces decide with (coreInstall).
+			if err := i.coreInstall(ctx, row); err != nil {
+				failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
+			}
 			// Each declared team is exposed once the installation admits it (an
 			// installation still pending its install step does not); one not
 			// exposed yet keeps the row for the next pass.
@@ -161,5 +170,66 @@ func (i *Installations) Converge(ctx context.Context) error {
 		}
 	}
 	i.pending = remaining
+	return errors.Join(failures...)
+}
+
+// coreInstall performs the declared installation in the authority core as the
+// host's own setup (InstallAsHost), then grants the installer role to its
+// owner and its role to each declared team (GrantRoleAsHost), as the local
+// authority's fixture does. Each step is idempotent, so a reseed repeats it
+// harmlessly. A host whose core is not configured installs nothing there.
+func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation) error {
+	core, err := i.service.AuthorityCore()
+	if errors.Is(err, business.ErrAuthorityCoreUnconfigured) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	// A module's installation is accounts' own record, which Converge's install
+	// made; the core reads it and installs no module itself.
+	if m, err := core.Composed(ctx, row.declared.Target); err == nil && m.Kind != domain.KindSolution {
+		return nil
+	}
+	inst, err := core.InstallAsHost(ctx, row.orgID, row.declared.Target, row.declared.Role, row.ownerID, i.service.AuthorityInstallStep())
+	switch {
+	case errors.Is(err, domain.ErrAlreadyInstalled):
+		// Installed already: its grants are granted again, idempotently.
+		inst.ID = authority.StableInstallationID(row.orgID, row.declared.Target)
+	case err != nil:
+		return fmt.Errorf("the authority core: %w", err)
+	}
+	grants := []authority.RoleRequest{{Organization: row.orgID, InstallationID: inst.ID, Role: domain.InstallerRole, PersonID: row.ownerID}}
+	for _, teamID := range row.allTeamIDs {
+		grants = append(grants, authority.RoleRequest{Organization: row.orgID, InstallationID: inst.ID, Role: row.declared.Role, TeamID: teamID})
+	}
+	for _, grant := range grants {
+		if _, err := core.GrantRoleAsHost(ctx, grant); err != nil {
+			return fmt.Errorf("the authority core: grant %s: %w", grant.Role, err)
+		}
+	}
+	return nil
+}
+
+// ConvergeAuthority performs every declared installation in the authority core
+// alone, for a host that serves the host interfaces without the product's own
+// installation records (the conformance harness). A target the composition
+// has not delivered yet is waited on.
+func (i *Installations) ConvergeAuthority(ctx context.Context) error {
+	if i == nil {
+		return nil
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	var failures []error
+	for _, row := range i.pending {
+		err := i.coreInstall(ctx, row)
+		if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
+			continue
+		}
+		if err != nil {
+			failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
+		}
+	}
 	return errors.Join(failures...)
 }

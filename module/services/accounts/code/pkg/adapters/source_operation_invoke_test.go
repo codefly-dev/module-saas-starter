@@ -421,7 +421,10 @@ func sourcePreparedBinding(t *testing.T, method, address, source string) *runnab
 	t.Helper()
 	pkg, spec, err := runnable.PackageFromMethod(protoregistry.GlobalFiles, &resources.RunnableLocation{Identity: &resources.RunnableIdentity{Name: "invoke-source", Module: "saas-starter", Workspace: "example", Version: "0.1.0"}, WorkspacePath: t.TempDir(), RelativeToWorkspace: "modules/saas-starter"}, runnable.ServiceOwner{Module: "saas-starter", Service: "accounts", Endpoint: "connect", Agent: &basev0.Agent{Kind: basev0.Agent_SERVICE, Name: "go-grpc", Publisher: "codefly.dev", Version: "0.1.53"}}, method)
 	require.NoError(t, err)
-	require.Nil(t, spec.Tool)
+	// Core derives the operation's tool exposure from the method itself (core
+	// b23dc135, which the authority core requires): the tool calls exactly it.
+	require.NotNil(t, spec.Tool)
+	require.Equal(t, method[strings.LastIndex(method, "/")+1:], spec.Tool.GetName())
 	scoped, err := spec.ResolveScopeSlots([]*runnablev0.ScopeSelection{{Slot: "source", Invoke: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"invoke", "read"}, ResourceIds: []string{source}}}, Lookup: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"read"}, ResourceIds: []string{source}}}}})
 	require.NoError(t, err)
 	encoded, err := runnable.EncodePrepared(&runnablev0.PreparedBinding{Operation: &runnablev0.PreparedOperation{Module: "saas-starter", Service: "accounts", Endpoint: "connect", Spelling: method}, Call: &runnablev0.PreparedCall{Address: address, Route: &runnablev0.PreparedCall_Connect{Connect: &runnablev0.ConnectProcedure{Procedure: method}}}, Contract: pkg.Contract, Policy: scoped.Policy()})

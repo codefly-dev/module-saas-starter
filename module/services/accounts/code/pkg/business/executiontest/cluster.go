@@ -16,7 +16,9 @@ package executiontest
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -80,13 +82,13 @@ func (c *Cluster) Run(workload Workload) string {
 // RunWithAudience is Run with the projected token minted for another audience,
 // the way a pod's token for some other service would be.
 func (c *Cluster) RunWithAudience(workload Workload, audience string) string {
-	return c.run("projected."+random(16), workload, audience)
+	return c.run(projectedToken(audience), workload, audience)
 }
 
 // RunWithLifetime is Run with a projected token valid for lifetime, the way a
 // projection rendered with another expirationSeconds would be.
 func (c *Cluster) RunWithLifetime(workload Workload, lifetime time.Duration) string {
-	token := c.run("projected."+random(16), workload, Audience)
+	token := c.run(projectedToken(Audience), workload, Audience)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	issued := c.tokens[token]
@@ -234,3 +236,13 @@ var _ business.ExecutionReviewer = (*Cluster)(nil)
 
 // NativeDevelopment identifies this in-memory cluster fixture; it models no mesh.
 func (*Cluster) NativeDevelopment() bool { return true }
+
+// projectedToken is shaped as the kubelet's projected token is, a compact JWS
+// whose claims name its audience, so a workload reads the audience it was
+// issued for (a hop's registration proof names it). The fake reviews a token
+// by its exact text and verifies no signature.
+func projectedToken(audience string) string {
+	encode := base64.RawURLEncoding.EncodeToString
+	claims, _ := json.Marshal(map[string]any{"aud": []string{audience}, "jti": random(16)})
+	return encode([]byte(`{"alg":"RS256","typ":"JWT"}`)) + "." + encode(claims) + "." + encode([]byte(random(32)))
+}

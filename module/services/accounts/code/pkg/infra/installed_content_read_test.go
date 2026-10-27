@@ -23,7 +23,7 @@ import (
 )
 
 // Owner integration evidence, not native workload/composition qualification:
-// the harness controls delivery TokenReview, records policy-log writes, and
+// the harness controls delivery TokenReview and
 // supplies test signing/execution bindings. The module credential is created
 // directly by StartModuleTask. Registry, applied generations, installations,
 // human grants and authority reads use migrated PostgreSQL and owner adapters.
@@ -198,7 +198,7 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 		require.Equal(t, gen.WorkContextOperationBindingState_WORK_CONTEXT_OPERATION_BINDING_STATE_RESOLVED, answer.GetOperationBinding().GetState())
 
 		// The ordinary binding remains installed. Removing its content-read mode
-		// is a witnessed restriction, and the callee must receive an explicit
+		// is a restriction, and the callee must receive an explicit
 		// absence for the retained child's old binding, not an authority outage.
 		marked := grants[s.prefix].Grant.OperationAudiences["evidence"]
 		ordinary := marked

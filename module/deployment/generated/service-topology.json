@@ -154,17 +154,6 @@
       ]
     },
     {
-      "name": "policy-log",
-      "endpoints": [
-        {
-          "name": "grpc",
-          "api": "CODEFLY_API_GRPC",
-          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
-          "port": 9090
-        }
-      ]
-    },
-    {
       "name": "store",
       "endpoints": [
         {
@@ -245,12 +234,6 @@
     },
     {
       "service": "object-storage",
-      "ports": [
-        443
-      ]
-    },
-    {
-      "service": "policy-log",
       "ports": [
         443
       ]

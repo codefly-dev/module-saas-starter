@@ -78,11 +78,6 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
 			return nil, err
 		}
-		// The policy log's serving gate. After authorization, so the
-		// refusal reaches only callers this host would have served.
-		if err := enforcePolicyLogServing(ctx); err != nil {
-			return nil, err
-		}
 		shadowPolicyCoverage(ctx, info.FullMethod)
 		return handler(business.WithModuleEnvelopeRevisionMemo(ctx), req)
 	}
@@ -102,9 +97,6 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 			return err
 		}
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
-			return err
-		}
-		if err := enforcePolicyLogServing(ctx); err != nil {
 			return err
 		}
 		shadowPolicyCoverage(ctx, info.FullMethod)

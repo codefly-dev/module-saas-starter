@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codefly-dev/authority/libraries/authority-client/go/stamp"
+
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
@@ -25,12 +27,22 @@ import (
 type memoryAdmissionKeys struct {
 	mu      sync.Mutex
 	keys    map[string]business.AdmissionKey
+	pins    map[string]string // hop instance -> key id
+	nonces  map[string]bool
 	readErr error
 }
 
-func (m *memoryAdmissionKeys) RegisterAdmissionKey(_ context.Context, key business.AdmissionKey, lease time.Duration, max int) (time.Time, bool, error) {
+func (m *memoryAdmissionKeys) RegisterAdmissionKey(_ context.Context, key business.AdmissionKey, registration business.AdmissionRegistration, lease time.Duration, max int) (time.Time, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.nonces[registration.Nonce] {
+		return time.Time{}, false, business.ErrAdmissionKeyProof
+	}
+	if pinned, ok := m.pins[registration.Instance]; ok && pinned != key.ID {
+		return time.Time{}, false, business.ErrAdmissionKeyPinned
+	}
+	m.nonces[registration.Nonce] = true
+	m.pins[registration.Instance] = key.ID
 	_, renewed := m.keys[key.ID]
 	if !renewed && len(m.keys) >= max {
 		return time.Time{}, false, business.ErrAdmissionKeysFull
@@ -71,14 +83,18 @@ func newAdmissionFixture(t *testing.T) admissionFixture {
 	t.Cleanup(func() { service = previous })
 	cluster := executiontest.New()
 	svc.SetExecutionBinding(cluster)
-	store := &memoryAdmissionKeys{keys: map[string]business.AdmissionKey{}}
+	store := &memoryAdmissionKeys{keys: map[string]business.AdmissionKey{}, pins: map[string]string{}, nonces: map[string]bool{}}
 	svc.SetAdmissionKeyStore(store)
 	audit := &recordingAuditEmitter{}
 	svc.SetAuditEmitter(audit)
 	issuer := newCoreTestServer(t, &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 1}}, newSealAnswersFake(1))
 	hop := cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.HopService, Container: "app"})
-	return admissionFixture{server: NewHostAuthorityServer(issuer, nil), store: store, cluster: cluster, audit: audit, hop: hop}
+	return admissionFixture{server: NewHostAuthorityServer(issuer), store: store, cluster: cluster, audit: audit, hop: hop}
 }
+
+// hopSigners are the signers hopPublicKey derived, by hex public key, so a
+// registration proves the key it registers.
+var hopSigners sync.Map
 
 // hopPublicKey is the public key a hop signs with from the seed a label
 // hashes to, as stamp.NewSigner derives it, and its admission key id.
@@ -86,12 +102,27 @@ func hopPublicKey(t *testing.T, label string) (string, []byte) {
 	t.Helper()
 	seed := sha256.Sum256([]byte(label))
 	public := ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
-	return business.AdmissionKeyID(public), []byte(public)
+	signer, err := stamp.NewSigner(hex.EncodeToString(seed[:]))
+	require.NoError(t, err)
+	hopSigners.Store(hex.EncodeToString(public), signer)
+	return stamp.KeyID(public), []byte(public)
 }
 
-// The id this host publishes is the id the hop signs under. The vector is
-// what stamp.NewSigner and stamp.KeyID produce at codefly-dev/authority
-// 49101ae1 for this seed; it pins the restated derivation until it is imported.
+// proofFor is a fresh registration proof of public for credential, addressed
+// to this host, or none for a key no signer derived.
+func proofFor(t *testing.T, credential string, public []byte) string {
+	t.Helper()
+	signer, ok := hopSigners.Load(hex.EncodeToString(public))
+	if !ok || credential == "" {
+		return ""
+	}
+	proof, err := signer.(*stamp.Signer).ProveRegistration(credential, executiontest.Audience, time.Now())
+	require.NoError(t, err)
+	return proof
+}
+
+// The id this host publishes is the id the hop signs under: stamp.KeyID,
+// imported, never restated. The vector pins it against a change underneath.
 func TestAdmissionKeyIDIsTheStampDerivation(t *testing.T) {
 	id, public := hopPublicKey(t, "the-hop")
 	require.Equal(t, "8a97a61f0c78ad0e2aae1d2da082d42f78d0e40004a5b70ee514021aff24de10", hex.EncodeToString(public))
@@ -101,7 +132,7 @@ func TestAdmissionKeyIDIsTheStampDerivation(t *testing.T) {
 func (f admissionFixture) register(t *testing.T, credential string, public []byte) (*authorityv1.RegisterAdmissionKeyResponse, error) {
 	t.Helper()
 	return f.server.RegisterAdmissionKey(t.Context(), &authorityv1.RegisterAdmissionKeyRequest{
-		Actor: &authorityv1.WorkloadCredential{Credential: credential}, PublicKey: public,
+		Actor: &authorityv1.WorkloadCredential{Credential: credential}, PublicKey: public, Proof: proofFor(t, credential, public),
 	})
 }
 
@@ -198,13 +229,17 @@ func TestOnlyTheHopRegistersAnAdmissionKey(t *testing.T) {
 // read as "refuse every admission".
 func TestAdmissionKeyRefusalsAndReadFailuresAreNamed(t *testing.T) {
 	f := newAdmissionFixture(t)
+	// Each key from its own hop instance: an instance holds one key.
+	instance := func() string {
+		return f.cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.HopService, Container: "app"})
+	}
 	for n := range business.MaxAdmissionKeys {
 		_, public := hopPublicKey(t, "key-"+string(rune('a'+n)))
-		_, err := f.register(t, f.hop, public)
+		_, err := f.register(t, instance(), public)
 		require.NoError(t, err)
 	}
 	_, extra := hopPublicKey(t, "one-too-many")
-	_, err := f.register(t, f.hop, extra)
+	_, err := f.register(t, instance(), extra)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err), "%v", err)
 	require.ErrorContains(t, err, business.ErrAdmissionKeysFull.Error())
 
@@ -226,22 +261,40 @@ func TestAnUnwiredAdmissionKeyStoreIsNamed(t *testing.T) {
 	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
 }
 
-// What 0.3.0 adds and this host does not record is refused by name, and an
-// ask selecting an owner is never read as the whole kind.
-func TestInstallationOwnedResourcesAreRefusedByName(t *testing.T) {
+// Interface 0.3.4: a registration proves the key it registers, once, over the
+// credential presented and this host's audience; and a hop instance keeps the
+// one key it registered while its registration holds.
+func TestARegistrationProvesItsKeyOnceAndAHopInstanceKeepsOneKey(t *testing.T) {
 	f := newAdmissionFixture(t)
-	_, err := f.server.AttachResource(t.Context(), &authorityv1.AttachResourceRequest{})
-	require.Equal(t, codes.Unimplemented, status.Code(err))
-	require.ErrorContains(t, err, "installation-owned resources")
-	_, err = f.server.DetachResource(t.Context(), &authorityv1.DetachResourceRequest{})
-	require.Equal(t, codes.Unimplemented, status.Code(err))
-	_, err = f.server.AuthorizeTransfer(t.Context(), &authorityv1.AuthorizeTransferRequest{})
-	require.Equal(t, codes.Unimplemented, status.Code(err))
+	_, public := hopPublicKey(t, "the-hop")
+	_, other := hopPublicKey(t, "another-key")
+	call := func(credential string, key []byte, proof string) error {
+		_, err := f.server.RegisterAdmissionKey(t.Context(), &authorityv1.RegisterAdmissionKeyRequest{
+			Actor: &authorityv1.WorkloadCredential{Credential: credential}, PublicKey: key, Proof: proof})
+		return err
+	}
+	refused := func(err error, reason string) {
+		t.Helper()
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+		require.Contains(t, status.Convert(err).Message(), reason)
+	}
+	refused(call(f.hop, public, ""), "registration proof")
+	refused(call(f.hop, public, proofFor(t, f.hop, other)), "registration proof")
+	signer, _ := hopSigners.Load(hex.EncodeToString(public))
+	elsewhere, err := signer.(*stamp.Signer).ProveRegistration(f.hop, "another-authority", time.Now())
+	require.NoError(t, err)
+	refused(call(f.hop, public, elsewhere), "another authority")
+	stale, err := signer.(*stamp.Signer).ProveRegistration(f.hop, executiontest.Audience, time.Now().Add(-time.Minute))
+	require.NoError(t, err)
+	refused(call(f.hop, public, stale), "stale")
 
-	owned := []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: []string{"read"}, ResourceOwnerId: "principal-1"}}
-	_, err = f.server.Issue(t.Context(), &authorityv1.IssueRequest{
-		As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "documents", Scopes: owned,
-	})
-	require.Equal(t, codes.Unimplemented, status.Code(err), "%v", err)
-	require.ErrorContains(t, err, `selects owner "principal-1"`)
+	proof := proofFor(t, f.hop, public)
+	require.NoError(t, call(f.hop, public, proof))
+	refused(call(f.hop, public, proof), "registration proof")
+	require.NoError(t, call(f.hop, public, proofFor(t, f.hop, public)), "a fresh proof renews the key")
+	refused(call(f.hop, other, proofFor(t, f.hop, other)), "hop instance")
+
+	newInstance := f.cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.HopService, Container: "app"})
+	require.NoError(t, call(newInstance, other, proofFor(t, newInstance, other)), "a new key comes from a new hop instance")
+	require.ElementsMatch(t, []string{stamp.KeyID(public), stamp.KeyID(other)}, f.published(t))
 }

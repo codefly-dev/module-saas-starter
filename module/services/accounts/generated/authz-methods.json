@@ -21,8 +21,10 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.authority.resource_attached"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
         "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
@@ -39,7 +41,7 @@
         "service": "accounts"
       },
       "source_proto": "host/authority/v1/authority.proto",
-      "policy_sha256": "90ea62af2032838dca17493b92a392c82e93bbfc2e6a0ee11af81ee203a46333",
+      "policy_sha256": "b2d609e4b91c10163185e16e046a6226dae5dc348389c972de3fd1aa751a65f4",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -58,8 +60,10 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.authority.resource_transferred"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
         "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
@@ -76,7 +80,7 @@
         "service": "accounts"
       },
       "source_proto": "host/authority/v1/authority.proto",
-      "policy_sha256": "90ea62af2032838dca17493b92a392c82e93bbfc2e6a0ee11af81ee203a46333",
+      "policy_sha256": "6d1b59e7ade14cdc86f238fe6f01fb2405d199cd40e3bb5d6752baa3de9049f1",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -171,8 +175,10 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.authority.resource_detached"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
         "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
@@ -189,7 +195,7 @@
         "service": "accounts"
       },
       "source_proto": "host/authority/v1/authority.proto",
-      "policy_sha256": "90ea62af2032838dca17493b92a392c82e93bbfc2e6a0ee11af81ee203a46333",
+      "policy_sha256": "c68549f47046a8a49dc4984ea824938c1b107e82c5040c5337dca4e861471e57",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
@@ -246,7 +252,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "saas.work_context.task_started"
+            "saas.work_context.task_started",
+            "saas.work_context.child_session_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -265,7 +272,7 @@
         "service": "accounts"
       },
       "source_proto": "host/authority/v1/authority.proto",
-      "policy_sha256": "e434a6f8983ad37edb91c8557f9303e74805913e5709e860b2c0645f283e1c3e",
+      "policy_sha256": "6b0b5e127b9cc3312281207bd4f8b70894ddde6b3d52ceceb21eec92d9a6d0ec",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -458,23 +465,60 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
     },
     {
-      "procedure": "/host.installation.v1.InstallationService/GrantToTeam",
+      "procedure": "/host.installation.v1.InstallationService/Current",
       "full_service": "host.installation.v1.InstallationService",
-      "method": "GrantToTeam",
-      "input_type": "host.installation.v1.GrantToTeamRequest",
+      "method": "Current",
+      "input_type": "host.installation.v1.CurrentInstallationRequest",
+      "output_type": "host.installation.v1.CurrentInstallation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/installation/v1/installation.proto",
+      "policy_sha256": "90ea62af2032838dca17493b92a392c82e93bbfc2e6a0ee11af81ee203a46333",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/GrantRole",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "GrantRole",
+      "input_type": "host.installation.v1.GrantRoleRequest",
       "output_type": "host.installation.v1.Installation",
       "client_streaming": false,
       "server_streaming": false,
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_NONE",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "saas.scope.granted"
+            "saas.authority.role_granted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -487,13 +531,13 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "auth",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
       },
       "source_proto": "host/installation/v1/installation.proto",
-      "policy_sha256": "6913e7f4514f63a3c59e03d2fbc07da1176734ab2cfced6f488740e06497927f",
+      "policy_sha256": "fc01eebe90648f5e096a7d4bbbd8f2aeb3d755bbd808c962352ed78936b12a4a",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -513,7 +557,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "saas.installation.created"
+            "saas.authority.installation_requested",
+            "saas.authority.installation_activated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -532,7 +577,7 @@
         "service": "accounts"
       },
       "source_proto": "host/installation/v1/installation.proto",
-      "policy_sha256": "1bcc0da1738d725ece80382fc7c3ab4b571c0dbfdf4858377ccf3cb355c3640a",
+      "policy_sha256": "9848918817951cb839354fccd74257a45731b1ff0ae86aaa3af89dadc0f32a1b",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
@@ -570,6 +615,119 @@
       },
       "source_proto": "host/installation/v1/installation.proto",
       "policy_sha256": "b387739192840b24f771349cb2cded72d5f7eabd9d56c433b5b5937e6f4e58f0",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/ListRoleGrants",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "ListRoleGrants",
+      "input_type": "host.installation.v1.ListRoleGrantsRequest",
+      "output_type": "host.installation.v1.ListRoleGrantsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/installation/v1/installation.proto",
+      "policy_sha256": "79921072468c5f99274839371a7ac834d857df6e5f0708942165c4b31084de26",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/Review",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "Review",
+      "input_type": "host.installation.v1.ReviewRequest",
+      "output_type": "host.installation.v1.ConsentApproval",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/installation/v1/installation.proto",
+      "policy_sha256": "b387739192840b24f771349cb2cded72d5f7eabd9d56c433b5b5937e6f4e58f0",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/RevokeRole",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "RevokeRole",
+      "input_type": "host.installation.v1.RevokeRoleRequest",
+      "output_type": "host.installation.v1.Installation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.authority.role_revoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/installation/v1/installation.proto",
+      "policy_sha256": "912f1c45666c1a2c3089918be4723973ca4fadf2dc78e5e80253d93499e74c92",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

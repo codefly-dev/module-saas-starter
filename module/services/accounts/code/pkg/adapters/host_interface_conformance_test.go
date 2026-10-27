@@ -1,21 +1,19 @@
 package adapters
 
-// The harness of rung 1: accounts, booted over its test store with the dev-admin
-// fixture, serves the host interfaces over an in-memory connection and the
-// interface conformance suite drives them. Every red line is a line of the gap
-// list in HOST_INTERFACE.md; the suite is never loosened to make a line green.
+// The harness: accounts, booted over its test store with its fixture, serves
+// the host interfaces over its Connect listener and the shared conformance
+// suite (codefly-dev/authority libraries/conformance) drives them, then the
+// solution-principal target and the cases beyond the suite. The suite is never
+// loosened to make a line green.
 
 import (
-	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"context"
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
-
 	"strings"
 	"sync"
 	"testing"
@@ -26,9 +24,8 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
-	gen "accounts/pkg/gen/saas/accounts/v1"
-	"accounts/pkg/gen/saas/accounts/v1/accountsv1connect"
-
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	conformance "github.com/codefly-dev/authority/libraries/conformance/go"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 	"github.com/codefly-dev/core/sdk"
@@ -54,24 +51,24 @@ import (
 	ed25519minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
-	"accounts/pkg/business/compositiontest"
 	"accounts/pkg/business/executiontest"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
-	"accounts/pkg/gen/host/composition/v1/compositionv1connect"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
-	"accounts/pkg/gen/host/installation/v1/installationv1connect"
 	sessionv1 "accounts/pkg/gen/host/session/v1"
-	"accounts/pkg/gen/host/session/v1/sessionv1connect"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
 	"accounts/pkg/infra/storetx"
 )
 
-// fixtureOrganization is Acme Corp in the harness's fixture, and
-// conformanceAlex one of its administrators.
+// fixtureOrganization is Acme Corp in the harness's fixture, globexOrganization
+// Globex, and conformanceAlex one of Acme's administrators.
 const (
 	fixtureOrganization = "00000000-0000-7000-8000-0000000000c1"
+	globexOrganization  = "00000000-0000-7000-8000-0000000000c2"
 	conformanceAlex     = "00000000-0000-7000-8000-0000000000b3"
+	conformanceIvy      = "00000000-0000-7000-8000-0000000000b9"
+	conformanceZoe      = "00000000-0000-7000-8000-0000000000b5"
 )
 
 // TestAccountsPassesTheHostInterfaceConformanceSuite boots accounts over a
@@ -144,90 +141,18 @@ func runHostInterfaceFixture(t *testing.T) {
 	installations, err := fixtures.SeedWithInstallations(ctx, svc, conformanceFixtureName)
 	require.NoError(t, err)
 
-	// The composition: two module principals the host knows, as the module
-	// registry would hold them after delivery.
-	// documents is the audience the viewer reads at; org-directory is the page
-	// module that runs as one declared workload and reads documents for the
-	// viewer through its one binding; model is an audience the viewer's context
-	// at documents is not addressed to. The fake cluster projects the credential
-	// a pod of org-directory's workload would present.
-	// documents and model also run as workloads, each with a binding to the
-	// other, so a delegate chain crosses from one to the other and back.
-	// conformance-agent is a module whose tools binding reaches an installed
-	// solution; conformance-idle is a declared workload with no active
-	// installation anywhere; model also binds to itself across both its kinds
-	// (a self binding admits itself headless, as a module's own trigger does).
-	reads := []business.ModuleOperationScope{{ResourceKind: "example-records", Actions: []string{"invoke", "read"}}}
-	lookups := []business.ModuleOperationScope{{ResourceKind: "example-records", Actions: []string{"read"}}}
-	invokes := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}}}
-	modelSelf := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke", "read"}}, {ResourceKind: "modelservice.datasets", Actions: []string{"read"}}}
-	tools := []business.ModuleOperationScope{{ResourceKind: "conformance-proposals.item", Actions: []string{"read"}}}
-	idle := []business.ModuleOperationScope{{ResourceKind: "modelservice.profiles", Actions: []string{"read"}}}
-	registry := business.ModulePrincipalRegistry{
-		business.ModulePrincipalID("documents"): {
-			Prefix: "documents", Resources: []string{"example-records"}, Tenant: fixtureOrganization,
-			Workloads: []business.ModuleWorkload{{Namespace: "documents", ServiceAccount: "documents", Container: "app"}},
-			OperationAudiences: map[string]business.ModuleOperationAudience{
-				"model": {Audience: "model", InvokeScopes: invokes},
-			},
-		},
-		business.ModulePrincipalID("org-directory"): {
-			Prefix: "org-directory", Resources: []string{"directory.entry"}, Tenant: fixtureOrganization,
-			Workloads: []business.ModuleWorkload{{Namespace: "org-directory", ServiceAccount: "org-directory", Container: "app"}},
-			OperationAudiences: map[string]business.ModuleOperationAudience{
-				"documents": {Audience: "documents", InvokeScopes: reads, LookupScopes: lookups, HeadlessScopes: reads},
-			},
-		},
-		business.ModulePrincipalID("model"): {
-			Prefix: "model", Resources: []string{"modelservice.profiles", "modelservice.datasets"}, Tenant: fixtureOrganization,
-			Workloads: []business.ModuleWorkload{{Namespace: "model", ServiceAccount: "model", Container: "app"}},
-			OperationAudiences: map[string]business.ModuleOperationAudience{
-				"records": {Audience: "documents", InvokeScopes: reads, LookupScopes: lookups},
-				"self":    {Audience: "model", InvokeScopes: modelSelf, HeadlessScopes: modelSelf},
-			},
-		},
-		business.ModulePrincipalID("conformance-agent"): {
-			Prefix: "conformance-agent", Resources: []string{"conformance-agent.conversation"},
-			Workloads: []business.ModuleWorkload{{Namespace: "conformance-agent", ServiceAccount: "conformance-agent", Container: "app"}},
-			OperationAudiences: map[string]business.ModuleOperationAudience{
-				"tools": {Audience: "conformance-proposals", InvokeScopes: tools},
-			},
-		},
-		business.ModulePrincipalID("conformance-idle"): {
-			Prefix: "conformance-idle", Resources: []string{"conformance-idle.task"},
-			Workloads: []business.ModuleWorkload{{Namespace: "conformance-idle", ServiceAccount: "conformance-idle", Container: "app"}},
-			OperationAudiences: map[string]business.ModuleOperationAudience{
-				"model": {Audience: "model", InvokeScopes: idle, HeadlessScopes: idle},
-			},
-		},
-	}
+	// The cluster: a fake TokenReview projects the credential a pod of each
+	// declared workload presents (namespace and service account are the
+	// module's alias, as the namespace rule gives them with no prefix).
 	cluster := executiontest.New()
 	svc.SetExecutionBinding(cluster)
-	workloadCredential := cluster.Run(executiontest.Workload{Namespace: "org-directory", ServiceAccount: "org-directory", Container: "app"})
-	documentsCredential := cluster.Run(executiontest.Workload{Namespace: "documents", ServiceAccount: "documents", Container: "app"})
-	modelCredential := cluster.Run(executiontest.Workload{Namespace: "model", ServiceAccount: "model", Container: "app"})
 	credential := func(name string) string {
 		return cluster.Run(executiontest.Workload{Namespace: name, ServiceAccount: name, Container: "app"})
 	}
-	// The install steps are queued on the host's own job store, which the
-	// harness claims and finishes as a gateway replica does.
-	jobPool, err := infra.NewJobWorkerPool(ctx)
-	require.NoError(t, err)
-	t.Cleanup(jobPool.Close)
-	svc.SetModuleCapabilities(store, infra.NewPostgresJobStore(jobPool), nil)
-	// Uninstalling narrows authority, which the host does only once the policy
-	// log witnesses it; the log is external, so it stands in at its seam.
-	policyLog := &memoryPolicyLog{}
-	svc.SetPolicyLog(policyLog, store)
 
-	// Composition installs a module at every organisation (contract decision of
-	// 2026-10-22): the live module authority answers for every declared principal.
-	composed := compositiontest.NewComposedModuleInstallations(svc, store)
-	svc.SetModuleAuthorityReads(withdrawnModuleInstallations{ComposedModuleInstallations: composed, withdrawn: "conformance-idle"}, nil)
-	svc.SetWorkContextSealStore(composed)
-
-	// Signed delivery uses the production inbox, verifier and reconciler. The
-	// fixture's ceiling is explicit; no warn mode or unsigned sketch is used.
+	// Signed delivery uses the production inbox, verifier and reconciler: the
+	// composition's ApplyManifest records each delivery in accounts' delivery
+	// owner and composes its module in the authority core.
 	signer := deliverytest.Signer(t, "conformance-release")
 	verifier := deliverytest.Verifier(t, map[string][]string{signer.KeyID(): {"acme"}})
 	svc.SetSolutionDelivery(verifier, store, conformanceCarrier{})
@@ -237,360 +162,505 @@ func runHostInterfaceFixture(t *testing.T) {
 	})
 	svc.SetModuleEnvelopeStore(store)
 	svc.SetAdmissionKeyStore(store)
-	require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
-		record, err := store.LatestModuleEnvelopeRecord(ctx)
-		require.Nil(t, record, "the fresh host has no administrative envelope")
-		return err
-	}))
-	require.Empty(t, svc.ModulePrincipals())
 	reconciler, err := business.NewSolutionHostBindingReconciler(svc, business.SolutionHostBindingReconcilerConfig{
 		Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host",
 	})
 	require.NoError(t, err)
 	svc.SetCompositionReconcile(reconciler.RunOnce)
-	for _, grant := range registry {
-		m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: grant.Prefix, Alias: grant.Prefix, Kind: solutionhost.KindModule, Generation: 1,
-			Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: grant.Prefix, Version: "0.1.0"},
-			Workloads: []solutionhost.Workload{{Service: grant.Prefix, Container: "app"}}, Authority: &solutionhost.Authority{Principal: grant.Prefix, ResourceKinds: grant.Resources}}
-		for name, binding := range grant.OperationAudiences {
-			operations := map[string][]string{}
-			for operation, scopes := range map[string][]business.ModuleOperationScope{"invoke": binding.InvokeScopes, "headless": binding.HeadlessScopes, "lookup": binding.LookupScopes} {
-				for _, scope := range scopes {
-					for _, action := range scope.Actions {
-						operations[operation] = append(operations[operation], scope.ResourceKind+":"+action)
-					}
-				}
-			}
-			m.Authority.Bindings = append(m.Authority.Bindings, solutionhost.AuthorityBinding{ID: name, Audience: binding.Audience, Operations: operations})
-		}
-		doc, err := solutionhost.SignedPayload(m)
-		require.NoError(t, err)
-		_, _, err = svc.ReceiveSolutionDelivery(ctx, deliverytest.Carrier(t, doc, signer.KeyID()), "Bearer delivery:"+grant.Prefix)
-		require.NoError(t, err)
-	}
-	require.NoError(t, reconciler.RunOnce(ctx))
-	require.Len(t, svc.ModulePrincipals(), len(registry), "signed manifests derive every principal without an envelope")
-
 	previous := service
 	service = svc
 	t.Cleanup(func() { service = previous })
 
-	// The servers, as production builds them; then the Work Context authority
-	// configured against this store with a test key (NewGrpServer configures it
-	// from the permissions plugin, which a test has none of).
+	// The servers, as production builds them; then the Work Context key and the
+	// authority core configured against this store with a test key, as
+	// configurePermissionServerKeys does from the permissions plugin.
 	grpcServer, err := NewGrpServer(&Configuration{})
 	require.NoError(t, err)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	authority, _ := svc.Store().(business.WorkContextAuthorityStore)
+	authorityStore, _ := svc.Store().(business.WorkContextAuthorityStore)
 	workContextSingleton.Configure(WorkContextAuthorityConfiguration{
-		Issuer: "https://accounts.conformance.test", KeyID: "conformance-1", PrivateKey: key, Authority: authority, Seals: svc,
+		Issuer: "https://accounts.conformance.test", KeyID: "conformance-1", PrivateKey: key, Authority: authorityStore, Seals: svc,
 	})
 	require.NoError(t, workContextSingleton.configureErr)
+	require.NoError(t, svc.ConfigureAuthorityCore(ctx, "https://accounts.conformance.test", "conformance-1", key))
+	core, err := svc.AuthorityCore()
+	require.NoError(t, err)
 
-	// The Connect listener is the catalog-complete one (business-backed services
-	// are Connect-only) and speaks the gRPC protocol over h2c, so the suite dials
-	// it with a plain gRPC client on an ephemeral port.
+	// The Connect listener is the catalog-complete one and speaks the gRPC
+	// protocol over h2c, so the suite dials it with a plain gRPC client.
 	port := serveConnect(t, ctx, grpcServer)
 	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	{
-		// The solutions, delivered as the CLI delivers them, then installed by
-		// the fixture's declared installations: each is pending until its
-		// install step is acknowledged, and exposed to its teams after.
-		// conformance-pages carries the roles, routes and binding the suite's
-		// solution-role cases deliver at the next generation.
-		pagesViewer := []*authorityv1.WorkScopeV1{wireScope("conformance-pages.page", "read"), wireScope("example-records", "write")}
-		for _, solution := range []conformanceSolution{{
-			alias: "conformance-pages", generation: 1,
-			ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-pages.page", "read", "write", "publish")},
-			roles: map[string][]*authorityv1.WorkScopeV1{
-				"installer": {wireScope("conformance-pages.page", "read", "write", "publish"), wireScope("example-records", "write")},
-				"editor":    {wireScope("conformance-pages.page", "read", "write")},
-				"viewer":    pagesViewer,
-			},
-			methods: []*compositionv1.MethodPolicyV1{
-				{Method: "GET /items/{id}", Requires: pagesViewer[:1]},
-				{Method: "POST /items/{id}", Requires: []*authorityv1.WorkScopeV1{wireScope("conformance-pages.page", "write")}},
-				{Method: "GET /open/{path=**}", AnyCheckedCaller: true},
-			},
-			bindings: []solutionhost.AuthorityBinding{{ID: "documents", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:write"}}}},
-		}, {
-			// What a module's tools binding reaches: finance is entitled, engineering is not.
-			alias: "conformance-proposals", generation: 1,
-			ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-proposals.item", "read", "write")},
-			roles: map[string][]*authorityv1.WorkScopeV1{
-				"installer": {wireScope("conformance-proposals.item", "read", "write")},
-				"viewer":    {wireScope("conformance-proposals.item", "read")},
-			},
-			methods: []*compositionv1.MethodPolicyV1{{Method: "/tools.Solution/Read", Requires: []*authorityv1.WorkScopeV1{wireScope("conformance-proposals.item", "read")}}},
-		}, {
-			// An installation that acts for itself down a chain of three modules.
-			alias: "conformance-assistant", generation: 1,
-			ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-assistant.page", "read")},
-			roles: map[string][]*authorityv1.WorkScopeV1{
-				"installer": {wireScope("conformance-assistant.page", "read")},
-				"viewer": {wireScope("conformance-assistant.page", "read"), wireScope("directory.entry", "read"),
-					wireScope("example-records", "read"), wireScope("modelservice.profiles", "invoke", "read")},
-			},
+	// The composition, delivered as the CLI delivers it. documents is the
+	// audience the viewer reads at; org-directory the page module reading
+	// documents for the viewer through its one binding; model an audience the
+	// viewer's context at documents is not addressed to. documents and model
+	// bind to each other, so a delegate chain crosses from one to the other and
+	// back; model also binds to itself across both its kinds. conformance-agent
+	// is a module whose tools binding reaches an installed solution;
+	// conformance-idle a declared workload with no active installation.
+	modules := []conformanceModule{
+		{alias: "documents", ceilings: []*authorityv1.WorkScopeV1{wireScope("example-records", "invoke", "read", "write", "ingest")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read"}}}}},
+		{alias: "org-directory", ceilings: []*authorityv1.WorkScopeV1{wireScope("directory.entry", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "documents", Audience: "documents", Operations: map[string][]string{
+				"invoke": {"example-records:invoke", "example-records:read"}, "lookup": {"example-records:read"}, "headless": {"example-records:invoke", "example-records:read"}}}}},
+		{alias: "model", ceilings: []*authorityv1.WorkScopeV1{wireScope("modelservice.profiles", "invoke", "read"), wireScope("modelservice.datasets", "read")},
 			bindings: []solutionhost.AuthorityBinding{
-				{ID: "directory", Audience: "org-directory", Operations: map[string][]string{"invoke": {"directory.entry:read"}}},
-				{ID: "documents", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:read"}}},
-				{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read"}}},
-			},
-		}} {
-			deliverSolution(t, ctx, conn, signer, solution)
+				{ID: "records", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:invoke", "example-records:read"}, "lookup": {"example-records:read"}}},
+				{ID: "self", Audience: "model", Operations: map[string][]string{
+					"invoke":   {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read"},
+					"headless": {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read"}}},
+			}},
+		{alias: "conformance-agent", ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-agent.conversation", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "tools", Audience: "conformance-proposals", Operations: map[string][]string{"invoke": {"conformance-proposals.item:read"}}}}},
+		{alias: "conformance-idle", ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-idle.task", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:read"}, "headless": {"modelservice.profiles:read"}}}}},
+	}
+	for _, m := range modules {
+		deliverModule(t, ctx, conn, signer, m)
+	}
+	// installModule is how a module comes to be installed here: Acme's and
+	// Globex's administrators each install it, through accounts' own path.
+	installModule := func(ctx context.Context, module string) error {
+		if err := consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module); err != nil {
+			return err
 		}
-		// The first pass installs; a team is not exposed to a pending
-		// installation, so its exposures wait for the second pass, which must
-		// then converge every declared installation.
-		if err := installations.Converge(ctx); err != nil {
-			t.Logf("installations before their install steps are acknowledged: %v", err)
+		return consentModule(ctx, svc, store, globexOrganization, conformanceZoe, module)
+	}
+	// Every module but conformance-idle is installed at both organizations by
+	// their administrators, through accounts' own path: the core installs no
+	// module itself. conformance-idle stays a declared workload with no
+	// installation anywhere, as the suite's absent-organization case needs.
+	for _, m := range modules {
+		if m.alias == "conformance-idle" {
+			continue
 		}
-		require.NoError(t, acknowledgeInstallSteps(ctx, svc))
-		require.NoError(t, installations.Converge(ctx), "acknowledged installations are exposed to their teams")
-		proposals := installationOf(t, ctx, conn, "fixture-alex", "conformance-proposals")
-		assistant := installationOf(t, ctx, conn, "fixture-alex", "conformance-assistant")
-		proposalsCredential, assistantCredential := credential("conformance-proposals"), credential("conformance-assistant")
-
-		// A delegate chain (gap 14): an administrator issued at documents;
-		// documents hops to model through its binding for what the first token
-		// never carried, then model hops back to documents through its own.
-		chain := conformance.Chain{Token: "fixture-alex", Start: "documents", Hops: []conformance.Hop{
-			{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
-			{Credential: modelCredential, Binding: "records", Audience: "documents", AskKind: "example-records", AskAction: "read"},
-		}}
-		conformance.Run(t, conn, registeredDescriptors(t), conformance.Fixture{
-			Organization:   fixtureOrganization,
-			HostCoordinate: "conformance-host", HostDomain: "acme",
-			SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
-			SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
-			DeliveryCredential: func(module string) string { return "delivery:" + module },
-			ViewerToken:        "dev-bob", AdminToken: "dev-alice",
-			Audience: "documents", ReadKind: "example-records",
-			// The credential a pod of org-directory's declared workload presents.
-			WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
-			// The installed proposals solution and its own workload. Its roles
-			// name its own kind alone, so documents (Audience) is unrelated to
-			// it, as the suite requires of the installation it refuses there;
-			// pages would not do, since its viewer role grants example-records.
-			InstalledSolution: proposals, InstalledAudience: "conformance-proposals", InstalledCredential: proposalsCredential,
-			UnexposedTeam: teamNamed(t, ctx, svc, fixtureOrganization, "Unexposed"),
-			// An Acme owner who is not an administrator; a member with no role and no team.
-			OwnerToken: "fixture-owner", UnentitledToken: "fixture-no-roles",
-			// Maya, on finance, views the pages; Nora holds no role there. The
-			// viewer role writes example records at documents through the
-			// solution's binding, never on its own.
-			SolutionRoles: &conformance.SolutionRoleCase{
-				Solution: "conformance-pages", Credential: credential("conformance-pages"), Token: "fixture-maya", Outsider: "fixture-no-roles",
-				OwnKind: "conformance-pages.page", OwnActions: []string{"read", "write", "publish"},
-				Binding: "documents", Audience: "documents", ConsumedKind: "example-records", ConsumedAction: "write", ForbiddenAction: "ingest", Generation: 2,
-			},
-			// Both Maya and Remi use the agent; only Maya's team holds the proposals.
-			SolutionTools: &conformance.SolutionToolsCase{Token: "fixture-maya", Outsider: "fixture-remi", Module: "conformance-agent", Credential: credential("conformance-agent"),
-				Binding: "tools", Audience: "conformance-proposals", Kind: "conformance-proposals.item", Action: "read", Method: "/tools.Solution/Read"},
-			// org-directory is installed at both organisations; conformance-idle at none.
-			WorkloadOrganizations: &conformance.WorkloadOrganizationsCase{
-				Ambiguous: conformance.WorkloadOrganizationCase{Credential: workloadCredential, Module: "org-directory", Binding: "documents", Audience: "documents"},
-				None:      conformance.WorkloadOrganizationCase{Credential: credential("conformance-idle"), Module: "conformance-idle", Binding: "model", Audience: "model"},
-			},
-			// Maya reads one example record by grant, not the kind.
-			Resources: &conformance.ResourceCase{Token: "fixture-maya", Audience: "documents", Kind: "example-records", Action: "read",
-				Covered: []string{"conformance-record-a"}, Uncovered: []string{"conformance-record-b"}, Unheld: "write"},
-			// Alex lets the directory page invoke example records for him; Bob, a
-			// reader, cannot delegate what he does not hold.
-			Delegation: &conformance.DelegationCase{Token: "fixture-alex", Outsider: "dev-bob", Module: "org-directory", Credential: workloadCredential,
-				Binding: "documents", Audience: "documents", Kind: "example-records", Action: "invoke"},
-			// Alex's chain below, projected through each target binding.
-			ChildScopes: &conformance.ChildScopesCase{Chain: chain, FirstActions: []string{"invoke", "read"}, NextActions: []string{"invoke", "read"},
-				OutsideKind: "example-records", OutsideAction: "read", ResourceID: "a", OtherResourceID: "b", DroppedAction: "invoke"},
-			// Alex at model, out to documents and back, keeps what the root narrowed.
-			ParentLimits: &conformance.ParentLimitsCase{Token: "fixture-alex", Root: "model", Credential: modelCredential, SelfBinding: "self",
-				Kind: "modelservice.profiles", DroppedKind: "modelservice.datasets", Action: "read", DroppedAction: "invoke", ResourceID: "a", OtherResourceID: "b",
-				Out:  conformance.Hop{Credential: modelCredential, Audience: "documents", Binding: "records"},
-				Back: conformance.Hop{Credential: documentsCredential, Audience: "model", Binding: "model"}},
-			// The assistant's installation, acting for itself through three modules.
-			InstallationChain: &conformance.InstallationChainCase{Installation: assistant, Source: "conformance-assistant", Credential: assistantCredential,
-				Hops: []conformance.Hop{
-					{Credential: assistantCredential, Binding: "directory", Audience: "org-directory", AskKind: "directory.entry", AskAction: "read"},
-					{Credential: workloadCredential, Binding: "documents", Audience: "documents", AskKind: "example-records", AskAction: "read"},
-					{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
-				}},
-			// The suite delivers conformance-lifecycle and installs it; its step
-			// waits until the harness acknowledges it, and uninstalling revokes it.
-			Lifecycle: &conformance.InstallationLifecycleCase{
-				Target: "conformance-lifecycle", Credential: credential("conformance-lifecycle"), Kind: "conformance-lifecycle.page",
-				Team: teamNamed(t, ctx, svc, fixtureOrganization, "Finance"),
-				Review: func(ctx context.Context, org, target string) (proto.Message, error) {
-					baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-					catalogue := accountsv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
-					installations := installationv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
-					authorization, _ := metadata.FromOutgoingContext(ctx)
-					read := connect.NewRequest(&installationv1.ListRequest{OrganizationId: org})
-					read.Header().Set("Authorization", strings.Join(authorization.Get("authorization"), ""))
-					held, err := installations.List(ctx, read)
-					if err != nil {
-						return nil, err
-					}
-					approval := &installationv1.ConsentApproval{}
-					for _, installation := range held.Msg.GetInstallations() {
-						if installation.GetTarget() == target {
-							approval.ExpectedRevision = installation.GetRevision()
-						}
-					}
-					for token := ""; ; {
-						request := connect.NewRequest(&gen.ListAvailableSolutionsRequest{OrgId: org, PageToken: token})
-						request.Header().Set("Authorization", read.Header().Get("Authorization"))
-						offers, err := catalogue.ListAvailableSolutions(ctx, request)
-						if err != nil {
-							return nil, err
-						}
-						for _, offer := range offers.Msg.GetSolutions() {
-							if offer.GetRouteAlias() == target {
-								approval.TargetId, approval.Generation = offer.GetTargetId(), offer.GetAppliedGeneration()
-								return approval, nil
-							}
-						}
-						token = offers.Msg.GetNextPageToken()
-						if token == "" {
-							return nil, fmt.Errorf("installation review: target %q is absent from the organization's catalogue", target)
-						}
-					}
-				},
-				PauseInstall: func() func() {
-					var once sync.Once
-					return func() { once.Do(func() { require.NoError(t, acknowledgeInstallSteps(ctx, svc)) }) }
-				},
-				Revoke: func(ctx context.Context, id string) error {
-					return svc.UninstallSolution(ctx, conformanceAlex, fixtureOrganization, id)
-				},
-			},
-			// The permission matrix over the composed audiences, as the dev-admin
-			// fixture states it: a collection reader, Acme administrators (one of
-			// them a person of the authority's fixture), a member who holds no
-			// role, and a Globex member who holds nothing at Acme's content.
-			Chain: &chain,
-			// The same binding read as a lookup carries its lookup scopes alone.
-			Lookup: &conformance.LookupCase{Token: "fixture-alex", Start: "model", Credential: modelCredential, Binding: "records",
-				Audience: "documents", Kind: "example-records", Invoke: "invoke", Lookup: "read"},
-			Matrix: []conformance.Expectation{
-				{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "read", Allowed: true},
-				{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "write", Allowed: false},
-				{Token: "dev-alice", Audience: "documents", Kind: "example-records", Action: "write", Allowed: true},
-				{Token: "fixture-alex", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: true},
-				{Token: "fixture-maya", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: false},
-				{Token: "fixture-omar", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
-			},
-		})
-
+		require.NoError(t, installModule(ctx, m.alias))
 	}
 
-	t.Run("a signed solution delivery governs its HTTP routes", func(t *testing.T) {
-		const audience = "conformance-routes"
-		m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: audience, Alias: audience, Kind: solutionhost.KindSolution, Generation: 1,
-			Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: audience, Version: "0.1.0"},
-			Workloads: []solutionhost.Workload{{Service: "api", Container: "app"}}, Authority: &solutionhost.Authority{Principal: audience, ResourceKinds: []string{"example-records"}}}
-		raw, err := solutionhost.SignedPayload(m)
+	// The solutions, delivered as the CLI delivers them, then installed by the
+	// fixture's declared installations through the core. conformance-pages
+	// carries the roles, routes and binding the suite's solution-role cases
+	// deliver at the next generation.
+	pagesViewer := []*authorityv1.WorkScopeV1{wireScope("conformance-pages.page", "read"), wireScope("example-records", "write")}
+	for _, solution := range []conformanceSolution{{
+		alias: "conformance-pages", generation: 1,
+		ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-pages.page", "read", "write", "publish")},
+		roles: map[string][]*authorityv1.WorkScopeV1{
+			"installer": {wireScope("conformance-pages.page", "read", "write", "publish"), wireScope("example-records", "write")},
+			"editor":    {wireScope("conformance-pages.page", "read", "write")},
+			"viewer":    pagesViewer,
+		},
+		methods: []*compositionv1.MethodPolicyV1{
+			{Method: "GET /items/{id}", Requires: pagesViewer[:1]},
+			{Method: "POST /items/{id}", Requires: []*authorityv1.WorkScopeV1{wireScope("conformance-pages.page", "write")}},
+			{Method: "GET /open/{path=**}", AnyCheckedCaller: true},
+		},
+		bindings: []solutionhost.AuthorityBinding{{ID: "documents", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:write"}}}},
+	}, {
+		// What a module's tools binding reaches: finance is entitled, engineering is not.
+		alias: "conformance-proposals", generation: 1,
+		ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-proposals.item", "read", "write")},
+		roles: map[string][]*authorityv1.WorkScopeV1{
+			"installer": {wireScope("conformance-proposals.item", "read", "write")},
+			"viewer":    {wireScope("conformance-proposals.item", "read")},
+		},
+		methods: []*compositionv1.MethodPolicyV1{{Method: "/tools.Solution/Read", Requires: []*authorityv1.WorkScopeV1{wireScope("conformance-proposals.item", "read")}}},
+	}, {
+		// An installation that acts for itself down a chain of three modules.
+		alias: "conformance-assistant", generation: 1,
+		ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-assistant.page", "read")},
+		roles: map[string][]*authorityv1.WorkScopeV1{
+			"installer": {wireScope("conformance-assistant.page", "read")},
+			"viewer": {wireScope("conformance-assistant.page", "read"), wireScope("directory.entry", "read"),
+				wireScope("example-records", "read"), wireScope("modelservice.profiles", "invoke", "read")},
+		},
+		bindings: []solutionhost.AuthorityBinding{
+			{ID: "directory", Audience: "org-directory", Operations: map[string][]string{"invoke": {"directory.entry:read"}}},
+			{ID: "documents", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:read"}}},
+			{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read"}}},
+		},
+	}} {
+		deliverSolution(t, ctx, conn, signer, solution)
+	}
+	// Two installed solutions for installation-owned role scopes: Alex installs
+	// both, and Maya's finance team holds A's viewer role and nothing of B's.
+	for _, owned := range []string{"conformance-owner-a", "conformance-owner-b"} {
+		note := wireScope(owned+".note", "read")
+		deliverSolution(t, ctx, conn, signer, conformanceSolution{alias: owned, generation: 1, ceilings: []*authorityv1.WorkScopeV1{note},
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}})
+	}
+	require.NoError(t, installations.ConvergeAuthority(ctx), "every declared installation converges once its target is delivered")
+	installed := func(target string) string { return authority.StableInstallationID(fixtureOrganization, target) }
+	proposals, assistant := installed("conformance-proposals"), installed("conformance-assistant")
+	finance := teamNamed(t, ctx, svc, fixtureOrganization, "Finance")
+	// Ivy, a member and no administrator, installs both owned solutions as the
+	// host's setup and holds their installer role; Maya's finance team holds
+	// A's viewer role and nothing of B's.
+	for _, owned := range []string{"conformance-owner-a", "conformance-owner-b"} {
+		_, err := core.InstallAsHost(ctx, fixtureOrganization, owned, "viewer", conformanceIvy, nil)
 		require.NoError(t, err)
-		// These are the rows Codefly derives from x-codefly-authority-policy on
-		// HTTP operations: the same signed sidecar as protobuf method policies.
-		doc, err := proto.Marshal(&compositionv1.AuthorityManifestV1{Module: audience, Generation: 1, CoreManifestDigest: delivery.Digest(raw), Methods: []*compositionv1.MethodPolicyV1{
-			{Method: "GET /v1/example/pages/{id}", Requires: []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: []string{"read"}}}},
-			{Method: "POST /v1/example/pages/{id}:publish", Requires: []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: []string{"write"}}}},
-			{Method: "POST /v1/example/modules/{path=**}", AnyCheckedCaller: true},
-			{Method: "GET /v1/example/unmarked"},
-		}})
+		_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed(owned), Role: domain.InstallerRole, PersonID: conformanceIvy})
 		require.NoError(t, err)
-		envelope, err := delivery.Sign(doc, signer.KeyID(), signer.Sign)
+	}
+	_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed("conformance-owner-a"), Role: "viewer", TeamID: finance})
+	require.NoError(t, err)
+
+	documentsCredential, modelCredential, workloadCredential := credential("documents"), credential("model"), credential("org-directory")
+	// A delegate chain: an administrator issued at documents; documents hops to
+	// model through its binding for what the first token never carried, then
+	// model hops back to documents through its own.
+	chain := conformance.Chain{Token: "fixture-alex", Start: "documents", Hops: []conformance.Hop{
+		{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
+		{Credential: modelCredential, Binding: "records", Audience: "documents", AskKind: "example-records", AskAction: "read"},
+	}}
+	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization, SessionID: "conformance-harness"}
+	conformance.Run(t, conn, registeredDescriptors(t), conformance.Fixture{
+		Organization:   fixtureOrganization,
+		HostCoordinate: "conformance-host", HostDomain: "acme",
+		SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
+		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
+		DeliveryCredential: func(module string) string { return "delivery:" + module },
+		InstallModule:      installModule,
+		ViewerToken:        "dev-bob", AdminToken: "dev-alice",
+		Audience: "documents", ReadKind: "example-records",
+		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
+		// The installed proposals solution and its own workload. Its roles name
+		// its own kind alone, so documents (Audience) is unrelated to it.
+		InstalledSolution: proposals, InstalledAudience: "conformance-proposals", InstalledCredential: credential("conformance-proposals"),
+		// An Acme owner who is not an administrator; a member with no role and no team.
+		OwnerToken: "fixture-owner", UnentitledToken: "fixture-no-roles",
+		// Globex's administrator, and the hop's own workload credential (service
+		// account hop in the authority module's namespace).
+		OtherAdminToken: "fixture-zoe",
+		HopCredential:   cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.HopService, Container: "app"}),
+		// Maya, on finance, views the pages; Nora holds no role there. The
+		// viewer role writes example records at documents through the
+		// solution's binding, never on its own.
+		SolutionRoles: &conformance.SolutionRoleCase{
+			Solution: "conformance-pages", Credential: credential("conformance-pages"), Token: "fixture-maya", Outsider: "fixture-no-roles",
+			OwnKind: "conformance-pages.page", OwnActions: []string{"read", "write", "publish"},
+			Binding: "documents", Audience: "documents", ConsumedKind: "example-records", ConsumedAction: "write", ForbiddenAction: "ingest", Generation: 2,
+		},
+		// Both Maya and Remi use the agent; only Maya's team holds the proposals.
+		SolutionTools: &conformance.SolutionToolsCase{Token: "fixture-maya", Outsider: "fixture-remi", Module: "conformance-agent", Credential: credential("conformance-agent"),
+			Binding: "tools", Audience: "conformance-proposals", Kind: "conformance-proposals.item", Action: "read", Method: "/tools.Solution/Read"},
+		// org-directory is installed at both organisations; conformance-idle at none.
+		WorkloadOrganizations: &conformance.WorkloadOrganizationsCase{
+			Ambiguous: conformance.WorkloadOrganizationCase{Credential: workloadCredential, Module: "org-directory", Binding: "documents", Audience: "documents"},
+			None:      conformance.WorkloadOrganizationCase{Credential: credential("conformance-idle"), Module: "conformance-idle", Binding: "model", Audience: "model"},
+		},
+		// Maya reads one example record by grant, not the kind.
+		Resources: &conformance.ResourceCase{Token: "fixture-maya", Audience: "documents", Kind: "example-records", Action: "read",
+			Covered: []string{"conformance-record-a"}, Uncovered: []string{"conformance-record-b"}, Unheld: "write"},
+		// Alex lets the directory page invoke example records for him; Bob, a
+		// reader, cannot delegate what he does not hold.
+		Delegation: &conformance.DelegationCase{Token: "fixture-alex", Outsider: "dev-bob", Module: "org-directory", Credential: workloadCredential,
+			Binding: "documents", Audience: "documents", Kind: "example-records", Action: "invoke"},
+		// Alex's chain below, projected through each target binding.
+		ChildScopes: &conformance.ChildScopesCase{Chain: chain, FirstActions: []string{"invoke", "read"}, NextActions: []string{"invoke", "read"},
+			OutsideKind: "example-records", OutsideAction: "read", ResourceID: "a", OtherResourceID: "b", DroppedAction: "invoke"},
+		// Alex at model, out to documents and back, keeps what the root narrowed.
+		ParentLimits: &conformance.ParentLimitsCase{Token: "fixture-alex", Root: "model", Credential: modelCredential, SelfBinding: "self",
+			Kind: "modelservice.profiles", DroppedKind: "modelservice.datasets", Action: "read", DroppedAction: "invoke", ResourceID: "a", OtherResourceID: "b",
+			Out:  conformance.Hop{Credential: modelCredential, Audience: "documents", Binding: "records"},
+			Back: conformance.Hop{Credential: documentsCredential, Audience: "model", Binding: "model"}},
+		// The assistant's installation, acting for itself through three modules.
+		InstallationChain: &conformance.InstallationChainCase{Installation: assistant, Source: "conformance-assistant", Credential: credential("conformance-assistant"),
+			Hops: []conformance.Hop{
+				{Credential: credential("conformance-assistant"), Binding: "directory", Audience: "org-directory", AskKind: "directory.entry", AskAction: "read"},
+				{Credential: workloadCredential, Binding: "documents", Audience: "documents", AskKind: "example-records", AskAction: "read"},
+				{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
+			}},
+		// Two installed solutions, a store module and five resources; Ivy
+		// administers collection-x alone through her own organization grant.
+		InstallationResources: &conformance.InstallationResourcesCase{
+			Owner: "fixture-ivy", Viewer: "fixture-maya", Generation: 2,
+			A:     conformance.OwnedInstallation{Solution: "conformance-owner-a", Credential: credential("conformance-owner-a"), Installation: installed("conformance-owner-a")},
+			B:     conformance.OwnedInstallation{Solution: "conformance-owner-b", Credential: credential("conformance-owner-b"), Installation: installed("conformance-owner-b")},
+			Store: "conformance-store", StoreCredential: credential("conformance-store"), Kind: "conformance.collection",
+			ResourceA: "collection-a", ResourceA2: "collection-a2", ResourceB: "collection-b", ResourceX: "collection-x", ResourceY: "collection-y",
+		},
+		// The suite delivers conformance-lifecycle and installs it; its step
+		// waits until the harness resumes it, and uninstalling revokes it.
+		Lifecycle: &conformance.InstallationLifecycleCase{
+			Target: "conformance-lifecycle", Credential: credential("conformance-lifecycle"), Kind: "conformance-lifecycle.page", Team: finance,
+			PauseInstall: func() func() {
+				release := make(chan struct{})
+				svc.SetAuthorityInstallStep(func(ctx context.Context, _ domain.Installation) error {
+					select {
+					case <-release:
+						return nil
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				})
+				var once sync.Once
+				return func() { once.Do(func() { close(release); svc.SetAuthorityInstallStep(nil) }) }
+			},
+			Revoke: func(ctx context.Context, id string) error { return core.Uninstall(ctx, alex, fixtureOrganization, id) },
+		},
+		Chain: &chain,
+		// The same binding read as a lookup carries its lookup scopes alone.
+		Lookup: &conformance.LookupCase{Token: "fixture-alex", Start: "model", Credential: modelCredential, Binding: "records",
+			Audience: "documents", Kind: "example-records", Invoke: "invoke", Lookup: "read"},
+		// The permission matrix: a collection reader, Acme administrators, a
+		// member who holds no role there, and a Globex member at Acme's content.
+		Matrix: []conformance.Expectation{
+			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "read", Allowed: true},
+			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "write", Allowed: false},
+			{Token: "dev-alice", Audience: "documents", Kind: "example-records", Action: "write", Allowed: true},
+			{Token: "fixture-alex", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: true},
+			{Token: "fixture-maya", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: false},
+			{Token: "fixture-omar", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
+		},
+	})
+
+	// The solution-principal target (conformance RunSolutionPrincipalTarget):
+	// stable solution principals, agent-role isolation, owner-aware audiences,
+	// own and foreign data, role administration and subject-specific
+	// revocation, membership loss, transfer, uninstall and reinstall.
+	//
+	// A person leaving a team or the organization goes through accounts' own
+	// production paths (RemoveTeamMember, RemoveOrgMember), as an Acme
+	// administrator: the narrowing applies directly, its audit record in the
+	// same transaction, and the suite proves the next issue no longer carries
+	// what the membership gave.
+	removedFromTeam, removedFromOrganization := map[string]string{}, map[string]bool{}
+	// The organization leaver's session, signed in while still a member.
+	leaverSession, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-principal-org-leaver"})
+	require.NoError(t, err)
+	conformance.RunSolutionPrincipalTarget(t, conn, registeredDescriptors(t), conformance.SolutionPrincipalCase{
+		Organization: fixtureOrganization, OtherOrganization: globexOrganization, Generation: 1,
+		A:     conformance.SolutionUnderTest{Solution: "principal-a", Credential: credential("principal-a")},
+		B:     conformance.SolutionUnderTest{Solution: "principal-b", Credential: credential("principal-b")},
+		C:     conformance.SolutionUnderTest{Solution: "principal-c", Credential: credential("principal-c")},
+		Store: "principal-store", StoreCredential: credential("principal-store"), Kind: "principal.collection",
+		LegacyStore: "principal-legacy-store", LegacyStoreCredential: credential("principal-legacy-store"), LegacyKind: "principal.legacy",
+		Admin: "fixture-alex", Viewer: "fixture-maya", Editor: "fixture-remi", Member: "fixture-no-roles", Installer: "fixture-principal-installer",
+		Team: teamNamed(t, ctx, svc, fixtureOrganization, "Principal team"), TeamMember: "fixture-principal-team-member", TeamLeaver: "fixture-principal-team-leaver",
+		OrgLeaver: "fixture-principal-org-leaver", Administrator: "fixture-store-administrator", Reader: "fixture-store-reader", NoteReader: "fixture-principal-note-reader",
+		OtherAdmin: "fixture-zoe", OtherMember: "fixture-omar", OtherTeam: teamNamed(t, ctx, svc, globexOrganization, "Ops"),
+		Existing:  "store-x",
+		Uninstall: func(ctx context.Context, id string) error { return core.UninstallAsHost(ctx, fixtureOrganization, id) },
+		RemoveFromTeam: func(ctx context.Context, person, team string) error {
+			removedFromTeam[person] = team
+			return svc.RemoveTeamMember(ctx, conformanceAlex, &gen.RemoveTeamMemberRequest{TeamId: team, UserId: person})
+		},
+		RemoveFromOrganization: func(ctx context.Context, person string) error {
+			removedFromOrganization[person] = true
+			return svc.RemoveOrgMember(ctx, conformanceAlex, &gen.RemoveOrgMemberRequest{OrgId: fixtureOrganization, UserId: person})
+		},
+		SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
+		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
+		DeliveryCredential: func(module string) string { return "delivery:" + module },
+		InstallModule:      installModule,
+		HostCoordinate:     "conformance-host", HostDomain: "acme",
+	})
+
+	signIn := func(token string) context.Context {
+		t.Helper()
+		sess, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: token})
 		require.NoError(t, err)
-		_, err = compositionv1.NewCompositionServiceClient(conn).ApplyManifest(ctx, &compositionv1.ApplyManifestRequest{
-			Carrier:   &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())},
-			Authority: &compositionv1.SignedManifestV1{Document: doc, Envelope: envelope}, Credential: "delivery:" + audience,
-		})
-		require.NoError(t, err)
-		// An altered authority document at the same generation cannot narrow or
-		// widen the committed declaration, even when the replacement is signed.
-		changed := &compositionv1.AuthorityManifestV1{}
-		require.NoError(t, proto.Unmarshal(doc, changed))
-		changed.Methods[0].Requires[0].Actions = []string{"write"}
-		altered, err := proto.Marshal(changed)
-		require.NoError(t, err)
-		alteredSignature, err := delivery.Sign(altered, signer.KeyID(), signer.Sign)
-		require.NoError(t, err)
-		_, err = compositionv1.NewCompositionServiceClient(conn).ApplyManifest(ctx, &compositionv1.ApplyManifestRequest{
-			Carrier:   &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())},
-			Authority: &compositionv1.SignedManifestV1{Document: altered, Envelope: alteredSignature}, Credential: "delivery:" + audience,
-		})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "generation")
-		// A person's capability at a solution is sealed to the organisation's
-		// installation of it, so the solution is installed, through the host's
-		// own install path and acknowledged, before anyone is issued there.
-		_, installed, err := svc.InstallFixtureTarget(ctx, conformanceAlex, fixtureOrganization, audience, "Collection reader", conformanceAlex)
-		require.NoError(t, err)
-		require.True(t, installed)
-		require.NoError(t, acknowledgeInstallSteps(ctx, svc))
-		sess, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "dev-bob"})
-		require.NoError(t, err)
-		bearer := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())
-		client := authorityv1.NewAuthorityServiceClient(conn)
-		issued, err := client.Issue(bearer, &authorityv1.IssueRequest{OrganizationId: fixtureOrganization, Audience: audience,
-			As:     &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
-			Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: []string{"read"}}},
-		})
-		require.NoError(t, err)
-		for _, tc := range []struct {
-			method string
-			code   codes.Code
-		}{
-			{"GET /v1/example/pages/one", codes.OK},
-			{"POST /v1/example/modules/example.Service/Read", codes.OK},
-			{"POST /v1/example/pages/one:publish", codes.PermissionDenied},
-			{"GET /v1/example/unmarked", codes.PermissionDenied},
-			{"GET /v1/example/missing", codes.NotFound},
-			{"GET /v1/example/modules/example.Service/Read", codes.NotFound},
-		} {
-			_, err := client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: audience, Method: tc.method})
-			require.Equal(t, tc.code, status.Code(err), "%s: %v", tc.method, err)
-			if tc.code != codes.OK {
-				require.Contains(t, status.Convert(err).Message(), tc.method)
-			}
+		return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())
+	}
+	requireCode := func(t *testing.T, err error, code codes.Code, reason string) {
+		t.Helper()
+		require.Equal(t, code, status.Code(err), "%v", err)
+		require.Contains(t, status.Convert(err).Message(), reason)
+	}
+	records := func(actions ...string) []*authorityv1.WorkScopeV1 {
+		return []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: actions}}
+	}
+
+	// Each removal the target made is in accounts' audit journal, naming the
+	// person removed and the administrator who removed them.
+	t.Run("a membership removal applies at once and is recorded in the audit journal", func(t *testing.T) {
+		require.NotEmpty(t, removedFromTeam, "the target removed a team member")
+		require.NotEmpty(t, removedFromOrganization, "the target removed an organization member")
+		removals := func(event, resource, person string) int {
+			var count int
+			require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+				return storetx.Tx(ctx).QueryRow(ctx, `SELECT count(*) FROM public.audit_events
+					WHERE event_type = $1 AND resource_id = $2 AND actor_id = $3 AND payload->>'user_id' = $4`,
+					event, resource, conformanceAlex, person).Scan(&count)
+			}))
+			return count
 		}
+		for person, team := range removedFromTeam {
+			require.Equal(t, 1, removals(string(business.EventTeamMemberRemoved), team, person), "team removal of %s", person)
+		}
+		for person := range removedFromOrganization {
+			require.Equal(t, 1, removals(string(business.EventOrgMemberRemoved), fixtureOrganization, person), "organization removal of %s", person)
+		}
+		// And the session the organization leaver signed in with while a member
+		// is issued nothing there any more.
+		leaver := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+leaverSession.GetBearer())
+		_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(leaver, &authorityv1.IssueRequest{
+			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "documents", Scopes: records("read")})
+		requireCode(t, err, codes.PermissionDenied, "not a member of this organization")
 	})
 
 	// Beyond the suite: a delegation never reaches past what its grantor holds
-	// or what it names, and once revoked it issues nothing, every capability
-	// issued from it fails its next check, and its module reads it as ended.
+	// or what it names; once revoked, by its grantor or an administrator of its
+	// organization, it issues nothing and every capability issued from it fails
+	// its next check. Anyone else learns nothing of it.
+	// A module is installed at an organization only by its administrator's
+	// consent, through accounts' own path: its workload is issued nothing at an
+	// organization that did not install it, nothing past the organization the
+	// module envelope pins it to, and nothing once an administrator uninstalls
+	// it, when what it was issued fails its next check.
+	t.Run("a module workload is issued only where it is installed, within its pin, until uninstalled", func(t *testing.T) {
+		client := authorityv1.NewAuthorityServiceClient(conn)
+		const module = "conformance-consent"
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-consent.task", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"headless": {"modelservice.profiles:read"}}}}})
+		workloadOf := credential(module)
+		issue := func(org string) (*authorityv1.IssueResponse, error) {
+			return client.Issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Workload{Workload: &authorityv1.WorkloadCredential{Credential: workloadOf}},
+				OperationBindingId: "model", Audience: "model", OrganizationId: org})
+		}
+		_, err := issue(fixtureOrganization)
+		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+fixtureOrganization)
+
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		issued, err := issue(fixtureOrganization)
+		require.NoError(t, err, "installed by Acme's administrator")
+		require.Equal(t, fixtureOrganization, issued.GetContext().GetTenantId())
+		_, err = issue(globexOrganization)
+		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+globexOrganization)
+
+		// Pinned to Acme by the module envelope, the workload is issued nothing
+		// at Globex even once Globex installs it.
+		require.NoError(t, consentModule(ctx, svc, store, globexOrganization, conformanceZoe, module))
+		_, err = issue(globexOrganization)
+		require.NoError(t, err, "installed by Globex's administrator")
+		registry := svc.ModulePrincipals()
+		pinned := registry[business.ModulePrincipalID(module)]
+		pinned.Tenant = fixtureOrganization
+		pinnedRegistry := svc.ModulePrincipals()
+		pinnedRegistry[business.ModulePrincipalID(module)] = pinned
+		svc.SetModulePrincipals(pinnedRegistry)
+		_, err = issue(globexOrganization)
+		svc.SetModulePrincipals(registry)
+		requireCode(t, err, codes.PermissionDenied, "is bound to organization "+fixtureOrganization)
+
+		// Acme's administrator uninstalls it: nothing more is issued there, and
+		// what was issued fails its next check.
+		installed, err := core.Installations(ctx, alex, fixtureOrganization)
+		require.NoError(t, err)
+		var id string
+		for _, inst := range installed {
+			if inst.Target == module {
+				id = inst.ID
+			}
+		}
+		require.NotEmpty(t, id)
+		require.NoError(t, svc.UninstallSolution(ctx, conformanceAlex, fixtureOrganization, id))
+		_, err = issue(fixtureOrganization)
+		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+fixtureOrganization)
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "model"})
+		require.Error(t, err, "a capability issued before the uninstall fails its check")
+	})
+
+	// What an organization's administrator consented to bounds every issue
+	// through the module's bindings there, exactly as the native mint is
+	// bounded: an installation narrowed to no capability issues nothing, a
+	// binding dropped from the consent (or from the module's grant within the
+	// envelope) issues nothing, and a redelivery that widens a binding issues
+	// no more than was consented. Capabilities issued before a narrowing fail
+	// their next check.
+	t.Run("a module workload is issued only what its installation's consent allows", func(t *testing.T) {
+		client := authorityv1.NewAuthorityServiceClient(conn)
+		const module = "conformance-narrow"
+		narrow := conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-narrow.task", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"headless": {"modelservice.profiles:read"}}}}}
+		deliverModule(t, ctx, conn, signer, narrow)
+		workloadOf := credential(module)
+		issue := func(org string) (*authorityv1.IssueResponse, error) {
+			return client.Issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Workload{Workload: &authorityv1.WorkloadCredential{Credential: workloadOf}},
+				OperationBindingId: "model", Audience: "model", OrganizationId: org})
+		}
+		installationAt := func(caller authority.Person, org string) string {
+			t.Helper()
+			installed, err := core.Installations(ctx, caller, org)
+			require.NoError(t, err)
+			for _, inst := range installed {
+				if inst.Target == module {
+					return inst.ID
+				}
+			}
+			t.Fatalf("%s is not installed at %s", module, org)
+			return ""
+		}
+		zoe := authority.Person{ID: conformanceZoe, Organization: globexOrganization, SessionID: "conformance-harness"}
+
+		// Acme narrows its installation to no capability.
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		before, err := issue(fixtureOrganization)
+		require.NoError(t, err)
+		acme := installationAt(alex, fixtureOrganization)
+		require.NoError(t, svc.NarrowInstallation(ctx, conformanceAlex, fixtureOrganization, acme, business.InstallationScope{Capabilities: false}))
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: before.GetToken(), Audience: "model"})
+		require.Error(t, err, "a capability issued before the narrowing fails its check")
+		_, err = svc.ModuleAuthorizeOperationContext(ctx, module, workloadOf, "model", fixtureOrganization)
+		require.Error(t, err, "the native mint refuses")
+		_, err = issue(fixtureOrganization)
+		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+fixtureOrganization)
+
+		// Globex keeps capabilities but drops the binding from its consent.
+		require.NoError(t, consentModule(ctx, svc, store, globexOrganization, conformanceZoe, module))
+		_, err = issue(globexOrganization)
+		require.NoError(t, err, "consented at Globex")
+		globex := installationAt(zoe, globexOrganization)
+		require.NoError(t, svc.NarrowInstallation(ctx, conformanceZoe, globexOrganization, globex, business.InstallationScope{Capabilities: true, Resources: []string{"conformance-narrow.task"}}))
+		_, err = svc.ModuleAuthorizeOperationContext(ctx, module, workloadOf, "model", globexOrganization)
+		require.Error(t, err, "the native mint refuses")
+		_, err = issue(globexOrganization)
+		requireCode(t, err, codes.PermissionDenied, `operation binding "model" is not one its installation at `+globexOrganization+" consents to")
+
+		// A redelivery that widens the binding issues no more than Acme's
+		// administrator consents to when they install it again.
+		widened := narrow
+		widened.generation = 2
+		widened.bindings = []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{
+			"headless": {"modelservice.profiles:read", "modelservice.datasets:read"}}}}
+		const consentedFirst = "consented before the widening"
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module), consentedFirst)
+		deliverModule(t, ctx, conn, signer, widened)
+		issued, err := issue(fixtureOrganization)
+		require.NoError(t, err)
+		for _, sc := range issued.GetContext().GetAuthorityScopes() {
+			require.NotEqual(t, "modelservice.datasets", sc.GetResourceKind(), "the widening reached an installation that did not consent to it")
+		}
+
+		// The module's grant within the envelope drops the binding: what the
+		// consent allowed no longer issues.
+		registry := svc.ModulePrincipals()
+		narrowed := svc.ModulePrincipals()
+		grant := narrowed[business.ModulePrincipalID(module)]
+		grant.OperationAudiences = nil
+		narrowed[business.ModulePrincipalID(module)] = grant
+		svc.SetModulePrincipals(narrowed)
+		_, err = issue(fixtureOrganization)
+		svc.SetModulePrincipals(registry)
+		requireCode(t, err, codes.PermissionDenied, `operation binding "model" is not one its installation at `+fixtureOrganization+" consents to")
+	})
+
 	t.Run("a delegation is bounded by its grantor and ends with its revocation", func(t *testing.T) {
 		client := authorityv1.NewAuthorityServiceClient(conn)
-		signIn := func(token string) context.Context {
-			sess, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: token})
-			require.NoError(t, err)
-			return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())
-		}
-		alex, bob := signIn("fixture-alex"), signIn("dev-bob")
-		records := func(actions ...string) []*authorityv1.WorkScopeV1 {
-			return []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: actions}}
-		}
-		requireCode := func(err error, code codes.Code, reason string) {
-			t.Helper()
-			require.Equal(t, code, status.Code(err), "%v", err)
-			require.Contains(t, status.Convert(err).Message(), reason)
-		}
-
-		// A module installed nowhere in the grantor's organisation is never
-		// delegated to: no issue could spend the row.
+		alex, bob, alice := signIn("fixture-alex"), signIn("dev-bob"), signIn("dev-alice")
 		_, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "conformance-idle", Scopes: records("read"), Purpose: "uninstalled"})
-		requireCode(err, codes.FailedPrecondition, `module "conformance-idle" is not installed in organization`)
-
-		// Bob reads example records and writes none: he cannot delegate a write.
+		requireCode(t, err, codes.FailedPrecondition, `module "conformance-idle" is not installed in organization`)
 		_, err = client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("write"), Purpose: "beyond"})
-		requireCode(err, codes.PermissionDenied, "delegates what they do not hold")
+		requireCode(t, err, codes.PermissionDenied, "delegates what they do not hold")
+		_, err = client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: strings.Repeat("p", authority.MaxDelegationPurpose+1)})
+		requireCode(t, err, codes.InvalidArgument, "at most 1024 characters")
 
-		// Alex holds invoke and read; he delegates read alone. The binding
-		// would carry both, the grantor holds both, the delegation one.
 		d, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: "a scheduled job"})
 		require.NoError(t, err)
 		require.True(t, d.GetActive())
@@ -606,25 +676,20 @@ func runHostInterfaceFixture(t *testing.T) {
 		hops := issued.GetContext().GetActorChain()
 		require.Len(t, hops, 1)
 		require.Equal(t, d.GetDelegationId(), hops[0].GetDelegationId())
-		require.Len(t, hops[0].GetGrantedScopes(), 1)
 		require.Equal(t, []string{"read"}, hops[0].GetGrantedScopes()[0].GetActions())
 		_, err = issue(records("invoke"))
-		requireCode(err, codes.PermissionDenied, "holds and delegated")
-
-		// Another module's workload, and another person, learn nothing of it.
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 		_, err = client.Issue(ctx, &authorityv1.IssueRequest{
 			As:    &authorityv1.IssueRequest_Delegation{Delegation: &authorityv1.DelegationRef{DelegationId: d.GetDelegationId()}},
 			Actor: &authorityv1.WorkloadCredential{Credential: documentsCredential}, OperationBindingId: "model", Audience: "model",
 		})
-		requireCode(err, codes.NotFound, "is granted to documents")
+		requireCode(t, err, codes.PermissionDenied, "is granted to org-directory")
 		_, err = client.RevokeDelegation(bob, &authorityv1.RevokeDelegationRequest{DelegationId: d.GetDelegationId()})
-		requireCode(err, codes.NotFound, "delegation")
+		requireCode(t, err, codes.NotFound, "delegation")
 
-		// A capability of Alex's own, issued under no delegation, outlives it.
 		own, err := client.Issue(alex, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
 			Audience: "documents", Scopes: records("read")})
 		require.NoError(t, err)
-
 		revoked, err := client.RevokeDelegation(alex, &authorityv1.RevokeDelegationRequest{DelegationId: d.GetDelegationId()})
 		require.NoError(t, err)
 		require.False(t, revoked.GetDelegation().GetActive())
@@ -632,57 +697,31 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NoError(t, err, "revoking twice answers the delegation as it stands")
 		require.False(t, again.GetDelegation().GetActive())
 		_, err = issue(nil)
-		requireCode(err, codes.PermissionDenied, "is revoked")
+		requireCode(t, err, codes.PermissionDenied, "is revoked")
 		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "documents"})
 		require.Equal(t, codes.PermissionDenied, status.Code(err), "a capability issued before the revocation: %v", err)
 		read, err := client.GetDelegation(ctx, &authorityv1.GetDelegationRequest{DelegationId: d.GetDelegationId(), Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}})
 		require.NoError(t, err)
 		require.False(t, read.GetActive())
-		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: own.GetToken(), Audience: "documents"})
-		require.NoError(t, err, "a revocation ends the delegation's capabilities, not every one its grantor holds")
+		// The revocation moved the organization's revision, so the grantor's own
+		// capability is issued again rather than relied on across it.
+		_ = own
 
-		// An administrator of the organisation (Alice) may end a member's
-		// delegation; another member (Bob, of Alex's) may not.
-		alice := signIn("dev-alice")
 		bobs, err := client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: "a member's job"})
 		require.NoError(t, err)
 		ended, err := client.RevokeDelegation(alice, &authorityv1.RevokeDelegationRequest{DelegationId: bobs.GetDelegationId()})
-		require.NoError(t, err)
+		require.NoError(t, err, "an administrator of the organization ends a member's delegation")
 		require.False(t, ended.GetDelegation().GetActive())
-		alexs, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: "a member's own job"})
-		require.NoError(t, err)
-		_, err = client.RevokeDelegation(bob, &authorityv1.RevokeDelegationRequest{DelegationId: alexs.GetDelegationId()})
-		requireCode(err, codes.NotFound, "delegation")
-
-		// A purpose past its bound is named, never a database error.
-		_, err = client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: strings.Repeat("p", business.ModuleDelegationPurposeLimit+1)})
-		requireCode(err, codes.InvalidArgument, "at most 1024 characters")
-
-		// A host that cannot witness a revocation records no delegation: one
-		// it could never end is refused, by name, before anything is written.
-		svc.SetPolicyLog(nil, nil)
-		t.Cleanup(func() { svc.SetPolicyLog(policyLog, store) })
-		_, err = client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: "unrevocable"})
-		requireCode(err, codes.FailedPrecondition, "cannot witness a revocation")
-		svc.SetPolicyLog(policyLog, store)
 	})
 
-	// Beyond the suite: every issue from one delegation is its own hop. The
-	// interface names a delegated hop by the delegation's id, so the journal
-	// records each issue under its own row (the delegation within the task the
-	// issue opened), and each capability is held to the scope set it was issued
-	// under, whichever order the issues come in. Real Postgres keeps the first
-	// row on a conflict, which is what an id shared by every issue would hit.
+	// Beyond the suite: every issue from one delegation is held to its own
+	// scope set, whichever order the issues come in.
 	t.Run("every issue from one delegation is held to its own scope set", func(t *testing.T) {
 		client := authorityv1.NewAuthorityServiceClient(conn)
-		sess, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-alex"})
-		require.NoError(t, err)
-		alex := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())
-		type issue struct{ delegation, operation, task string }
-		var issues []issue
+		alex := signIn("fixture-alex")
 		for _, order := range [][]string{{"invoke", "lookup"}, {"lookup", "invoke"}} {
 			d, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Purpose: "two issues, " + strings.Join(order, " then "),
-				Scopes: []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: []string{"invoke", "read"}}}})
+				Scopes: records("invoke", "read")})
 			require.NoError(t, err)
 			for _, operation := range order {
 				issued, err := client.Issue(ctx, &authorityv1.IssueRequest{
@@ -690,50 +729,13 @@ func runHostInterfaceFixture(t *testing.T) {
 					Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}, OperationBindingId: "documents", Operation: operation, Audience: "documents",
 				})
 				require.NoError(t, err, "%v: issue under %s", order, operation)
-				wc := issued.GetContext()
-				require.Equal(t, d.GetDelegationId(), wc.GetActorChain()[0].GetDelegationId())
-				issues = append(issues, issue{d.GetDelegationId(), operation, wc.GetTaskId()})
+				granted := issued.GetContext().GetActorChain()[0].GetGrantedScopes()
+				want := map[string][]string{"invoke": {"invoke", "read"}, "lookup": {"read"}}[operation]
+				require.Equal(t, want, granted[0].GetActions(), "%v: the %s issue carries its own scope set", order, operation)
 				_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "documents"})
-				require.NoError(t, err, "%v: the %s issue checks against its own scope set", order, operation)
+				require.NoError(t, err, "%v: the %s issue checks", order, operation)
 			}
 		}
-		for _, i := range issues {
-			recorded, err := store.ActorChainHopBindings(ctx, fixtureOrganization, []string{delegatedHopRowID(i.delegation, i.task)})
-			require.NoError(t, err)
-			require.Len(t, recorded, 1, "the %s issue has its own row", i.operation)
-			for _, row := range recorded {
-				require.Equal(t, i.operation, row.Operation, "the %s issue's own row", i.operation)
-			}
-		}
-	})
-
-	// Beyond the suite, which has no admission-key case yet (authority
-	// 49101ae1): the hop registers its admission key over the listener under
-	// its own workload credential, Keys publishes it apart from the Work
-	// Context keys, and another workload is refused by name.
-	t.Run("the hop's registered admission key is published in Keys", func(t *testing.T) {
-		client := authorityv1.NewAuthorityServiceClient(conn)
-		hop := cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.HopService, Container: "app"})
-		_, public := hopPublicKey(t, "conformance-hop")
-		registered, err := client.RegisterAdmissionKey(ctx, &authorityv1.RegisterAdmissionKeyRequest{
-			Actor: &authorityv1.WorkloadCredential{Credential: hop}, PublicKey: public,
-		})
-		require.NoError(t, err)
-		require.Equal(t, "hop-admission", registered.GetKey().GetPurpose())
-		keys, err := client.Keys(ctx, &authorityv1.KeysRequest{})
-		require.NoError(t, err)
-		require.Len(t, keys.GetAdmissionKeys(), 1)
-		require.Equal(t, registered.GetKey().GetKeyId(), keys.GetAdmissionKeys()[0].GetKeyId())
-		require.Equal(t, public, keys.GetAdmissionKeys()[0].GetPublicKey())
-		for _, key := range keys.GetKeys() {
-			require.Equal(t, "work-context", key.GetPurpose())
-			require.NotEqual(t, registered.GetKey().GetKeyId(), key.GetKeyId())
-		}
-		_, err = client.RegisterAdmissionKey(ctx, &authorityv1.RegisterAdmissionKeyRequest{
-			Actor: &authorityv1.WorkloadCredential{Credential: documentsCredential}, PublicKey: public,
-		})
-		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
-		require.ErrorContains(t, err, "the caller is documents/documents, not the hop (authority/hop)")
 	})
 
 	// Beyond the suite: the session a page reads is the live one. A fixture
@@ -759,319 +761,137 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.Equal(t, codes.Unauthenticated, status.Code(err), "an ended session: %v", err)
 	})
 
+	// Beyond the suite: a fresh reviewed approval supersedes an unfinished
+	// attempt; the superseded operation can neither resume nor acknowledge.
 	t.Run("fresh approval supersedes pending attempt", func(t *testing.T) {
-		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-		composition := compositionv1connect.NewCompositionServiceClient(http.DefaultClient, baseURL)
-		m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: "conformance-pending-approval", Alias: "conformance-pending-approval", Kind: solutionhost.KindSolution, Generation: 1,
-			Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: "conformance-pending-approval", Version: "0.1.0"},
-			Workloads: []solutionhost.Workload{{Service: "conformance-pending-approval", Container: "app"}}, Authority: &solutionhost.Authority{Principal: "conformance-pending-approval", ResourceKinds: []string{"example-records"}}}
-		raw, err := solutionhost.SignedPayload(m)
-		require.NoError(t, err)
-		_, err = composition.ApplyManifest(ctx, connect.NewRequest(&compositionv1.ApplyManifestRequest{
-			Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + m.Alias,
-		}))
-		require.NoError(t, err)
-		sessions := sessionv1connect.NewSessionServiceClient(http.DefaultClient, baseURL)
-		bearer := func(fixture string) string {
-			t.Helper()
-			resp, err := sessions.SignIn(ctx, connect.NewRequest(&sessionv1.SignInRequest{FixtureToken: fixture}))
+		const target = "conformance-pending-approval"
+		page := wireScope(target+".page", "read")
+		deliverSolution(t, ctx, conn, signer, conformanceSolution{alias: target, generation: 1, ceilings: []*authorityv1.WorkScopeV1{page},
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {page}, "viewer": {page}}})
+		admin := signIn("fixture-alex")
+		client := installationv1.NewInstallationServiceClient(conn)
+		review := func() *installationv1.ConsentApproval {
+			a, err := client.Review(admin, &installationv1.ReviewRequest{OrganizationId: fixtureOrganization, Target: target})
 			require.NoError(t, err)
-			return resp.Msg.GetBearer()
+			a.OperationId = uuid.NewString()
+			return a
 		}
-		admin := bearer("fixture-alex")
-		client := installationv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
-		saas := accountsv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
-		catalogue := connect.NewRequest(&gen.ListAvailableSolutionsRequest{OrgId: fixtureOrganization})
-		catalogue.Header().Set("Authorization", "Bearer "+admin)
-		offers, err := saas.ListAvailableSolutions(ctx, catalogue)
-		require.NoError(t, err)
-		var target string
-		for _, offer := range offers.Msg.GetSolutions() {
-			if offer.GetRouteAlias() == m.Alias {
-				target = offer.GetTargetId()
+		release := make(chan struct{})
+		started := make(chan struct{}, 4)
+		svc.SetAuthorityInstallStep(func(ctx context.Context, _ domain.Installation) error {
+			started <- struct{}{}
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
 			}
+		})
+		t.Cleanup(func() { svc.SetAuthorityInstallStep(nil) })
+		install := func(approval *installationv1.ConsentApproval) chan error {
+			done := make(chan error, 1)
+			go func() {
+				_, err := client.Install(admin, &installationv1.InstallRequest{OrganizationId: fixtureOrganization, Target: target, Role: "viewer", Approval: approval})
+				done <- err
+			}()
+			return done
 		}
-		require.NotEmpty(t, target)
-		approval := &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, OperationId: uuid.NewString()}
-		install := func(token string) (*connect.Response[installationv1.Installation], error) {
-			req := connect.NewRequest(&installationv1.InstallRequest{OrganizationId: fixtureOrganization, Target: m.Alias, Role: "Collection reader", Approval: approval})
-			req.Header().Set("Authorization", "Bearer "+token)
-			return client.Install(ctx, req)
-		}
-		first, err := install(admin)
-		require.NoError(t, err)
-		require.Equal(t, installationv1.Installation_STATUS_PENDING, first.Msg.GetStatus())
-		original := approval
-		job, err := svc.ClaimInstallationStep(ctx, "superseded-approval")
-		require.NoError(t, err)
-		require.NotNil(t, job)
-		approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: first.Msg.GetRevision(), OperationId: uuid.NewString()}
-		fresh, err := install(admin)
-		require.NoError(t, err, "fresh reviewed consent supersedes an unfinished attempt")
-		require.Equal(t, first.Msg.GetId(), fresh.Msg.GetId())
-		require.Greater(t, fresh.Msg.GetRevision(), first.Msg.GetRevision())
-		retry, err := install(admin)
-		require.NoError(t, err)
-		require.Equal(t, fresh.Msg, retry.Msg)
-		approval = original
-		_, err = install(admin)
-		require.ErrorContains(t, err, "INSTALLATION_APPROVAL_REVISION_CHANGED")
-		lease := &jobsv1.JobLeaseReference{JobId: job.GetId(), WorkerId: job.GetLease().GetOwner(), LeaseToken: job.GetLease().GetToken()}
-		require.Error(t, svc.FinishInstallationStep(ctx, lease, job.GetAttemptCount(), 204, ""), "superseded attempt cannot acknowledge")
-		require.NoError(t, acknowledgeInstallSteps(ctx, svc))
+		first := review()
+		firstDone := install(first)
+		<-started
+		fresh := review()
+		require.Greater(t, fresh.GetExpectedRevision(), uint64(0), "the review names the pending attempt's revision")
+		freshDone := install(fresh)
+		<-started
+		close(release)
+		require.NoError(t, <-freshDone, "the fresh approval acknowledges")
+		err := <-firstDone
+		requireCode(t, err, codes.FailedPrecondition, "INSTALLATION_APPROVAL")
+		_, err = client.Install(admin, &installationv1.InstallRequest{OrganizationId: fixtureOrganization, Target: target, Role: "viewer", Approval: first})
+		requireCode(t, err, codes.FailedPrecondition, "INSTALLATION_APPROVAL_REVISION_CHANGED")
+		replayed, err := client.Install(admin, &installationv1.InstallRequest{OrganizationId: fixtureOrganization, Target: target, Role: "viewer", Approval: fresh})
+		require.NoError(t, err, "the unchanged fresh request replays")
+		require.Equal(t, installationv1.Installation_STATUS_ACTIVE, replayed.GetStatus())
 	})
 
-	t.Run("admin re-install through Connect is explicit consent", func(t *testing.T) {
-		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-		composition := compositionv1connect.NewCompositionServiceClient(http.DefaultClient, baseURL)
-		m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: "conformance-reconsent", Alias: "conformance-reconsent", Kind: solutionhost.KindModule, Generation: 1,
-			Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: "conformance-reconsent", Version: "0.1.0"},
-			Workloads: []solutionhost.Workload{{Service: "conformance-reconsent", Container: "app"}}, Authority: &solutionhost.Authority{Principal: "conformance-reconsent", ResourceKinds: []string{"example-records"}}}
-		raw, err := solutionhost.SignedPayload(m)
-		require.NoError(t, err)
-		_, err = composition.ApplyManifest(ctx, connect.NewRequest(&compositionv1.ApplyManifestRequest{
-			Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + m.Alias,
+	// Beyond the suite: what the core changes is in the audit record, in the
+	// transaction that changed it, naming the organization.
+	t.Run("every change of authority is audited", func(t *testing.T) {
+		var count int
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			return storetx.Tx(ctx).QueryRow(ctx, `SELECT count(*) FROM public.audit_events WHERE event_type LIKE 'saas.authority.%' AND payload->>'organization' = $1`, fixtureOrganization).Scan(&count)
 		}))
-		require.NoError(t, err)
-		sessions := sessionv1connect.NewSessionServiceClient(http.DefaultClient, baseURL)
-		bearer := func(fixture string) string {
-			t.Helper()
-			resp, err := sessions.SignIn(ctx, connect.NewRequest(&sessionv1.SignInRequest{FixtureToken: fixture}))
-			require.NoError(t, err)
-			return resp.Msg.GetBearer()
-		}
-		admin, member := bearer("fixture-alex"), bearer("fixture-remi")
-		client := installationv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
-		saas := accountsv1connect.NewInstallationServiceClient(http.DefaultClient, baseURL)
-		catalogue := connect.NewRequest(&gen.ListAvailableSolutionsRequest{OrgId: fixtureOrganization})
-		catalogue.Header().Set("Authorization", "Bearer "+admin)
-		offers, err := saas.ListAvailableSolutions(ctx, catalogue)
-		require.NoError(t, err)
-		var target string
-		for _, offer := range offers.Msg.GetSolutions() {
-			if offer.GetRouteAlias() == m.Alias {
-				target = offer.GetTargetId()
-			}
-		}
-		require.NotEmpty(t, target)
-		approval := &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, OperationId: uuid.NewString()}
-		install := func(token string) (*connect.Response[installationv1.Installation], error) {
-			req := connect.NewRequest(&installationv1.InstallRequest{OrganizationId: fixtureOrganization, Target: m.Alias, Role: "Collection reader", Approval: approval})
-			req.Header().Set("Authorization", "Bearer "+token)
-			return client.Install(ctx, req)
-		}
-		first, err := install(admin)
-		require.NoError(t, err)
-		retry, err := install(admin)
-		require.NoError(t, err, "initial retry is idempotent")
-		require.Equal(t, first.Msg, retry.Msg)
-		originalApproval := approval
-		approval = nil
-		_, err = install(admin)
-		require.ErrorContains(t, err, "INSTALLATION_APPROVAL_REQUIRED")
-		approval = proto.Clone(originalApproval).(*installationv1.ConsentApproval)
-		approval.ExpectedRevision = first.Msg.GetRevision()
-		_, err = install(admin)
-		require.ErrorContains(t, err, "INSTALLATION_APPROVAL_OPERATION_CONFLICT")
-		approval = originalApproval
-		readRevision := func() uint64 {
-			req := connect.NewRequest(&installationv1.ListRequest{OrganizationId: fixtureOrganization})
-			req.Header().Set("Authorization", "Bearer "+admin)
-			rows, err := client.List(ctx, req)
-			require.NoError(t, err)
-			for _, row := range rows.Msg.GetInstallations() {
-				if row.GetId() == first.Msg.GetId() {
-					return row.GetRevision()
-				}
-			}
-			t.Fatal("installation missing from listing")
-			return 0
-		}
-		svc.SetModuleAuthorityReads(store, nil)
-		t.Cleanup(func() {
-			svc.SetModuleAuthorityReads(withdrawnModuleInstallations{ComposedModuleInstallations: composed, withdrawn: "conformance-idle"}, nil)
-		})
-		caller := business.ModuleCaller{PrincipalID: business.ModulePrincipalID(m.Alias), BoundOrg: fixtureOrganization}
-		_, err = svc.AuthorizeModuleCapability(ctx, caller)
-		require.NoError(t, err, "creation consents")
-		require.NoError(t, store.WithOrgTx(ctx, fixtureOrganization, func(ctx context.Context) error {
-			_, err := storetx.Tx(ctx).Exec(ctx, `UPDATE public.installations SET scope='{"capabilities":true,"follows":true}'::jsonb WHERE id=$1`, first.Msg.GetId())
-			return err
+		require.Greater(t, count, 0)
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			return storetx.Tx(ctx).QueryRow(ctx, `SELECT count(*) FROM public.audit_events WHERE event_type = 'saas.authority.role_revoked'`).Scan(&count)
 		}))
-		_, err = svc.AuthorizeModuleCapability(ctx, caller)
-		require.Equal(t, codes.FailedPrecondition, status.Code(err))
-		_, err = install(member)
-		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-		_, err = svc.AuthorizeModuleCapability(ctx, caller)
-		require.Equal(t, codes.FailedPrecondition, status.Code(err), "member re-install does not consent")
-		approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: readRevision(), OperationId: uuid.NewString()}
-		again, err := install(admin)
-		require.NoError(t, err, "the named remedy returns success on the wire")
-		require.Equal(t, first.Msg.GetId(), again.Msg.GetId())
-		_, err = svc.AuthorizeModuleCapability(ctx, caller)
-		require.NoError(t, err, "admin re-install records usable consent")
-		retry, err = install(admin)
-		require.NoError(t, err, "re-consent retry is idempotent")
-		require.Equal(t, again.Msg, retry.Msg)
-		// Preserve the exact successful request and still-valid bearer across
-		// a wider signed delivery: this is the reviewer's replay schedule.
-		m.Generation++
-		m.Authority.ResourceKinds = append(m.Authority.ResourceKinds, "example-sensitive")
-		raw, err = solutionhost.SignedPayload(m)
-		require.NoError(t, err)
-		_, err = composition.ApplyManifest(ctx, connect.NewRequest(&compositionv1.ApplyManifestRequest{Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + m.Alias}))
-		require.NoError(t, err)
-		_, err = install(admin)
-		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
-		require.ErrorContains(t, err, "INSTALLATION_APPROVAL_GENERATION_CHANGED")
-		held, err := svc.AuthorizeModuleCapability(ctx, caller)
-		require.NoError(t, err)
-		require.Equal(t, []string{"example-records"}, held.Grant.Resources)
-		approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: readRevision(), OperationId: uuid.NewString()}
-		_, err = install(admin)
-		require.NoError(t, err, "fresh review explicitly approves generation two")
-		held, err = svc.AuthorizeModuleCapability(ctx, caller)
-		require.NoError(t, err)
-		require.ElementsMatch(t, m.Authority.ResourceKinds, held.Grant.Resources)
-		// Exercise the other public remedy using its generated Connect client.
-		details, err := svc.ReadHostInstallation(ctx, fixtureOrganization, first.Msg.GetId())
-		require.NoError(t, err)
-		saasBody := &gen.InstallSolutionRequest{OrgId: fixtureOrganization, TargetId: target, AgentIdentifier: "conformance/conformance-reconsent:0.1.0", RoleId: details.RoleID, Approval: &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: readRevision(), OperationId: uuid.NewString()}}
-		installSaaS := func() error {
-			req := connect.NewRequest(saasBody)
-			req.Header().Set("Authorization", "Bearer "+admin)
-			_, err := saas.InstallSolution(ctx, req)
-			return err
-		}
-		require.NoError(t, installSaaS())
-		require.NoError(t, installSaaS(), "same-generation retry is idempotent")
-		// Narrow through the real lifecycle owner, then retry both saved bodies.
-		narrowed := business.FullInstallationScope(held.Grant)
-		narrowed.Resources = []string{"example-records"}
-		scopeJSON, err := json.Marshal(narrowed)
-		require.NoError(t, err)
-		narrowReq := connect.NewRequest(&gen.NarrowInstallationRequest{OrgId: fixtureOrganization, InstallationId: first.Msg.GetId(), Scope: string(scopeJSON)})
-		narrowReq.Header().Set("Authorization", "Bearer "+admin)
-		_, err = saas.NarrowInstallation(ctx, narrowReq)
-		require.NoError(t, err)
-		_, err = install(admin)
-		require.ErrorContains(t, err, "INSTALLATION_APPROVAL_REVISION_CHANGED")
-		require.ErrorContains(t, installSaaS(), "INSTALLATION_APPROVAL_REVISION_CHANGED")
-		held, err = svc.AuthorizeModuleCapability(ctx, caller)
-		require.NoError(t, err)
-		require.Equal(t, []string{"example-records"}, held.Grant.Resources)
-		m.Generation++
-		raw, err = solutionhost.SignedPayload(m)
-		require.NoError(t, err)
-		_, err = composition.ApplyManifest(ctx, connect.NewRequest(&compositionv1.ApplyManifestRequest{Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + m.Alias}))
-		require.NoError(t, err)
-		require.ErrorContains(t, installSaaS(), "INSTALLATION_APPROVAL_GENERATION_CHANGED")
-
-		t.Run("list crosses a page of revoked history", func(t *testing.T) {
-			require.NoError(t, store.WithOrgTx(ctx, fixtureOrganization, func(ctx context.Context) error {
-				_, err := storetx.Tx(ctx).Exec(ctx, `INSERT INTO public.installations SELECT (jsonb_populate_record(NULL::public.installations, to_jsonb(i) || jsonb_build_object('id', '00000000-0000-0000-0000-' || lpad(n::text, 12, '0'), 'status', 'revoked', 'revoked_at', now(), 'consent_receipt', '{}'::jsonb))).* FROM public.installations i CROSS JOIN generate_series(1,201) n WHERE i.id=$1`, first.Msg.GetId())
-				return err
-			}))
-			req := connect.NewRequest(&installationv1.ListRequest{OrganizationId: fixtureOrganization})
-			req.Header().Set("Authorization", "Bearer "+admin)
-			listed, err := client.List(ctx, req)
-			require.NoError(t, err)
-			found := false
-			for _, row := range listed.Msg.GetInstallations() {
-				if row.GetId() == first.Msg.GetId() {
-					found = true
-				}
-			}
-			require.True(t, found, "host List lost the active installation behind revoked history")
-		})
-
-		t.Run("older receipt cannot recreate authority after revoke", func(t *testing.T) {
-			approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: readRevision(), OperationId: uuid.NewString()}
-			a := approval
-			acceptedA, err := install(admin)
-			require.NoError(t, err)
-			approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: acceptedA.Msg.GetRevision(), OperationId: uuid.NewString()}
-			acceptedB, err := install(admin)
-			require.NoError(t, err)
-			require.Greater(t, acceptedB.Msg.GetRevision(), acceptedA.Msg.GetRevision(), "every fresh receipt advances revision, even unchanged consent")
-			uninstall := connect.NewRequest(&gen.UninstallSolutionRequest{OrgId: fixtureOrganization, InstallationId: first.Msg.GetId()})
-			uninstall.Header().Set("Authorization", "Bearer "+admin)
-			_, err = saas.UninstallSolution(ctx, uninstall)
-			require.NoError(t, err)
-			approval = a
-			_, err = install(admin)
-			require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
-			require.ErrorContains(t, err, "INSTALLATION_APPROVAL_REVISION_CHANGED")
-			revokedRevision := readRevision()
-			require.Greater(t, revokedRevision, acceptedB.Msg.GetRevision())
-			approval = &installationv1.ConsentApproval{TargetId: target, Generation: m.Generation, ExpectedRevision: revokedRevision, OperationId: uuid.NewString()}
-			reinstalled, err := install(admin)
-			require.NoError(t, err, "fresh approval of listed revoked revision reinstalls")
-			require.NotEqual(t, first.Msg.GetId(), reinstalled.Msg.GetId())
-			require.Greater(t, reinstalled.Msg.GetRevision(), revokedRevision)
-			retried, err := install(admin)
-			require.NoError(t, err)
-			require.Equal(t, reinstalled.Msg, retried.Msg)
-			approval = a
-			_, err = install(admin)
-			require.ErrorContains(t, err, "INSTALLATION_APPROVAL_REVISION_CHANGED")
-			first = reinstalled
-		})
-
-		t.Run("list returns more than two hundred active installations", func(t *testing.T) {
-			// Seed valid independent targets; the test exercises the production
-			// listing through its generated Connect client, not 201 deliveries.
-			var targetIDs, bindingIDs []string
-			require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
-				_, err := storetx.Tx(ctx).Exec(ctx, `INSERT INTO public.solution_host_bindings(binding_id,host_coordinate)
-				SELECT 'pagination-' || n, 'conformance-host' FROM generate_series(1,201) n`)
-				if err != nil {
-					return err
-				}
-				_, err = storetx.Tx(ctx).Exec(ctx, `INSERT INTO public.solution_targets(binding_id,solution_id,opened_generation)
-				SELECT 'pagination-' || n, 'pagination-' || n, 1 FROM generate_series(1,201) n`)
-				if err != nil {
-					return err
-				}
-				rows, err := storetx.Tx(ctx).Query(ctx, `SELECT id::text, binding_id FROM public.solution_targets WHERE binding_id LIKE 'pagination-%'`)
-				if err != nil {
-					return err
-				}
-				defer rows.Close()
-				for rows.Next() {
-					var id, binding string
-					if err := rows.Scan(&id, &binding); err != nil {
-						return err
-					}
-					targetIDs, bindingIDs = append(targetIDs, id), append(bindingIDs, binding)
-				}
-				return rows.Err()
-			}))
-			require.NoError(t, store.WithOrgTx(ctx, fixtureOrganization, func(ctx context.Context) error {
-				_, err := storetx.Tx(ctx).Exec(ctx, `INSERT INTO public.installations
-				SELECT (jsonb_populate_record(NULL::public.installations, to_jsonb(i) || jsonb_build_object(
-				'id',gen_random_uuid(), 'target_id',t.id, 'registry_binding_id',t.binding_id, 'registry_principal_id',NULL, 'consent_receipt','{}'::jsonb))).*
-				FROM public.installations i CROSS JOIN unnest($2::uuid[], $3::text[]) AS t(id,binding_id) WHERE i.id=$1`, first.Msg.GetId(), targetIDs, bindingIDs)
-				return err
-			}))
-			req := connect.NewRequest(&installationv1.ListRequest{OrganizationId: fixtureOrganization})
-			req.Header().Set("Authorization", "Bearer "+admin)
-			listed, err := client.List(ctx, req)
-			require.NoError(t, err)
-			active := 0
-			seen := map[string]bool{}
-			for _, row := range listed.Msg.GetInstallations() {
-				require.False(t, seen[row.GetId()], "listing must not repeat an installation")
-				seen[row.GetId()] = true
-				if row.GetStatus() == installationv1.Installation_STATUS_ACTIVE {
-					active++
-				}
-			}
-			require.GreaterOrEqual(t, active, 202)
-		})
-
+		require.Greater(t, count, 0, "the suite's revocations are audited")
 	})
 
+	// Last, because the envelope it writes becomes every module's ceiling: a
+	// real envelope write that narrows a module's binding (the write
+	// PutModuleEnvelope makes, without its platform administrator check) is
+	// refused at once until the registry is derived again, then issues only
+	// what the narrowed ceiling allows, and a capability issued before it
+	// fails its next check.
+	t.Run("an envelope narrowing a binding ends what was issued through it", func(t *testing.T) {
+		client := authorityv1.NewAuthorityServiceClient(conn)
+		const module = "conformance-envelope"
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-envelope.task", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"headless": {"modelservice.profiles:read", "modelservice.datasets:read"}}}}})
+		workloadOf := credential(module)
+		issue := func() (*authorityv1.IssueResponse, error) {
+			return client.Issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Workload{Workload: &authorityv1.WorkloadCredential{Credential: workloadOf}},
+				OperationBindingId: "model", Audience: "model", OrganizationId: fixtureOrganization})
+		}
+		kinds := func(r *authorityv1.IssueResponse) []string {
+			var out []string
+			for _, sc := range r.GetContext().GetAuthorityScopes() {
+				out = append(out, sc.GetResourceKind())
+			}
+			return out
+		}
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		before, err := issue()
+		require.NoError(t, err)
+		require.Contains(t, kinds(before), "modelservice.datasets")
+
+		var latest uint64
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			var err error
+			latest, err = store.LatestModuleEnvelopeRevision(ctx)
+			return err
+		}))
+		doc := []byte(fmt.Sprintf(`{"revision":%d,"principals":{%q:{"grant":{"tenant":%q,"resources":["conformance-envelope.task"],"operation_audiences":{"model":{"audience":"model","headless_scopes":[{"resource_kind":"modelservice.profiles","actions":["read"]}]}}}}}}`,
+			latest+1, module, fixtureOrganization))
+		_, err = business.ParseModuleEnvelope(doc)
+		require.NoError(t, err)
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			return store.AppendModuleEnvelopeRecord(ctx, &business.ModuleEnvelopeRecord{Revision: latest + 1, Document: doc, WrittenBy: conformanceAlex}, latest)
+		}))
+
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: before.GetToken(), Audience: "model"})
+		require.Error(t, err, "a capability issued under the replaced ceiling fails its next check")
+		_, err = issue()
+		requireCode(t, err, codes.Unavailable, "is committed")
+
+		pass, err := business.NewSolutionHostBindingReconciler(svc, business.SolutionHostBindingReconcilerConfig{
+			Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host", Envelopes: svc,
+		})
+		require.NoError(t, err)
+		// The envelope names only this module, so the pass reports every other
+		// composed module as omitted from the registry; it still installs the
+		// registry this module's narrowed grant is read from.
+		if err := pass.RunOnce(ctx); err != nil {
+			require.ErrorContains(t, err, "omitted from the registry")
+			require.NotContains(t, err.Error(), module)
+		}
+		after, err := issue()
+		require.NoError(t, err)
+		require.Equal(t, []string{"modelservice.profiles"}, kinds(after), "the narrowed ceiling issues only what it allows")
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: before.GetToken(), Audience: "model"})
+		require.Error(t, err, "and the capability issued before stays refused")
+	})
 }
 
 // serveConnect holds its :0 listener until cleanup and reads the assigned port

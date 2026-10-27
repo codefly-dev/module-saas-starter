@@ -39,6 +39,11 @@ func (s *Service) ApplyComposition(ctx context.Context, req *compositionv1.Apply
 	if s.compositionReconcile == nil {
 		return nil, fmt.Errorf("%w: composition reconciler is not wired", ErrSolutionDeliveryHostState)
 	}
+	// A delivery the authority core would refuse to compose is refused before
+	// anything is recorded, so accounts' record and the core's never part.
+	if err := precheckCoreModule(req); err != nil {
+		return nil, coreDeliveryError(err)
+	}
 	raw, err := solutionhost.MarshalSigned(&solutionhost.Signed{Document: req.GetCarrier().GetDocument(), Envelope: req.GetCarrier().GetEnvelope()})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrSolutionDeliveryMalformed, err)
@@ -72,11 +77,16 @@ func (s *Service) ApplyComposition(ctx context.Context, req *compositionv1.Apply
 		if err != nil {
 			return nil, err
 		}
+		// The applied, verified delivery is what the core composes.
+		ids, err := s.applyCoreModule(ctx, manifest, req.GetCarrier().GetDocument(), req.GetAuthority())
+		if err != nil {
+			return nil, coreDeliveryError(err)
+		}
 		principal := manifest.Alias
 		if manifest.Authority != nil && manifest.Authority.Principal != "" {
 			principal = manifest.Authority.Principal
 		}
-		return &compositionv1.ApplyManifestResponse{Principal: principal, Generation: record.Generation}, nil
+		return &compositionv1.ApplyManifestResponse{Principal: principal, Generation: record.Generation, InstallationIds: ids}, nil
 	}
 	return nil, fmt.Errorf("%w: binding %s has no applied record", ErrSolutionDeliveryHostState, record.Binding)
 }
