@@ -7,6 +7,7 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261026193714-49101ae11a7f
 	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0
 	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261026111022-6870db87da8b
 	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261026193714-49101ae11a7f
@@ -63,7 +64,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cheggaaa/pb/v3 v3.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261026184108-e1966db4fe66 // indirect
 	github.com/codefly-dev/authority/libraries/hop/go v0.0.0-20261026193714-49101ae11a7f // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect

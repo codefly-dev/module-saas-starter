@@ -32,6 +32,9 @@ func TestAnAppliedAuthorityDocumentIsVerifiedOncePerGeneration(t *testing.T) {
 	require.NoError(t, err)
 	d.service.SetCompositionReconcile(reconciler.RunOnce)
 	m := productionPathManifest(t, uniqueAlias("cached-policy"), 1)
+	// A module: the policy pair is what is under test, and a solution would
+	// have to declare its roles (an installer) for the composition to take it.
+	m.Kind = solutionhost.KindModule
 	m.Authority = &solutionhost.Authority{Principal: m.Alias, ResourceKinds: []string{"example"}}
 	d.callerNamespace = productionPathNamespace(m.Alias)
 	apply := func(method string) {

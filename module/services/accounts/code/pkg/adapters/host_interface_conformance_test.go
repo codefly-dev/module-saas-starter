@@ -281,7 +281,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		deliverSolution(t, ctx, conn, signer, conformanceSolution{alias: owned, generation: 1, ceilings: []*authorityv1.WorkScopeV1{note},
 			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}})
 	}
-	require.NoError(t, installations.Converge(ctx), "every declared installation converges once its target is delivered")
+	require.NoError(t, installations.ConvergeAuthority(ctx), "every declared installation converges once its target is delivered")
 	installed := func(target string) string { return authority.StableInstallationID(fixtureOrganization, target) }
 	proposals, assistant := installed("conformance-proposals"), installed("conformance-assistant")
 	finance := teamNamed(t, ctx, svc, fixtureOrganization, "Finance")
@@ -320,6 +320,10 @@ func runHostInterfaceFixture(t *testing.T) {
 		InstalledSolution: proposals, InstalledAudience: "conformance-proposals", InstalledCredential: credential("conformance-proposals"),
 		// An Acme owner who is not an administrator; a member with no role and no team.
 		OwnerToken: "fixture-owner", UnentitledToken: "fixture-no-roles",
+		// Globex's administrator, and the hop's own workload credential (service
+		// account hop in the authority module's namespace).
+		OtherAdminToken: "fixture-zoe",
+		HopCredential:   cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.HopService, Container: "app"}),
 		// Maya, on finance, views the pages; Nora holds no role there. The
 		// viewer role writes example records at documents through the
 		// solution's binding, never on its own.
@@ -506,34 +510,6 @@ func runHostInterfaceFixture(t *testing.T) {
 				require.NoError(t, err, "%v: the %s issue checks", order, operation)
 			}
 		}
-	})
-
-	// Beyond the suite: the hop registers its admission key over the listener
-	// under its own workload credential, Keys publishes it apart from the Work
-	// Context keys, and another workload is refused by name.
-	t.Run("the hop's registered admission key is published in Keys", func(t *testing.T) {
-		client := authorityv1.NewAuthorityServiceClient(conn)
-		hop := cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.HopService, Container: "app"})
-		_, public := hopPublicKey(t, "conformance-hop")
-		registered, err := client.RegisterAdmissionKey(ctx, &authorityv1.RegisterAdmissionKeyRequest{
-			Actor: &authorityv1.WorkloadCredential{Credential: hop}, PublicKey: public,
-		})
-		require.NoError(t, err)
-		require.Equal(t, "hop-admission", registered.GetKey().GetPurpose())
-		keys, err := client.Keys(ctx, &authorityv1.KeysRequest{})
-		require.NoError(t, err)
-		require.Len(t, keys.GetAdmissionKeys(), 1)
-		require.Equal(t, registered.GetKey().GetKeyId(), keys.GetAdmissionKeys()[0].GetKeyId())
-		require.Equal(t, public, keys.GetAdmissionKeys()[0].GetPublicKey())
-		for _, key := range keys.GetKeys() {
-			require.Equal(t, "work-context", key.GetPurpose())
-			require.NotEqual(t, registered.GetKey().GetKeyId(), key.GetKeyId())
-		}
-		_, err = client.RegisterAdmissionKey(ctx, &authorityv1.RegisterAdmissionKeyRequest{
-			Actor: &authorityv1.WorkloadCredential{Credential: documentsCredential}, PublicKey: public,
-		})
-		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
-		require.ErrorContains(t, err, "the caller is documents/documents, not the hop (authority/hop)")
 	})
 
 	// Beyond the suite: the session a page reads is the live one. A fixture

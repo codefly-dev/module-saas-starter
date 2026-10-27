@@ -211,8 +211,10 @@ func TestIntrospection_RPCListMatchesDescriptors(t *testing.T) {
 		}
 		for i := 0; i < file.Services().Len(); i++ {
 			service := file.Services().Get(i)
-			if string(service.FullName()) == "host.installation.v1.InstallableService" {
-				continue // the solution's side of the installation interface; not served here
+			// The solution's side of the installation interface, and the local
+			// authority's setup read beside it: not served here.
+			if name := string(service.FullName()); name == "host.installation.v1.InstallableService" || name == "host.installation.v1.OfferService" {
+				continue
 			}
 			for j := 0; j < service.Methods().Len(); j++ {
 				wanted[string(service.Name())+"/"+string(service.Methods().Get(j).Name())] = struct{}{}
