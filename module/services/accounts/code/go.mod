@@ -8,8 +8,8 @@ require (
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
 	github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261026193714-49101ae11a7f
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0
-	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261026111022-6870db87da8b
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261027011022-8093104c42fc
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261027011022-8093104c42fc
 	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261026193714-49101ae11a7f
 	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261026193714-49101ae11a7f
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
@@ -131,15 +131,3 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	oras.land/oras-go/v2 v2.6.2 // indirect
 )
-
-replace github.com/codefly-dev/authority/libraries/authority-core/go => /private/tmp/claude-501/-Users-antoine--lazybox-v2-github-obin-ai-handbook-context/46685f95-f6a6-435c-84df-6c6c6cf20893/scratchpad/cx/w-saascore/authority/libraries/authority-core/go
-
-replace github.com/codefly-dev/authority/libraries/conformance/go => /private/tmp/claude-501/-Users-antoine--lazybox-v2-github-obin-ai-handbook-context/46685f95-f6a6-435c-84df-6c6c6cf20893/scratchpad/cx/w-saascore/authority/libraries/conformance/go
-
-replace github.com/codefly-dev/authority/libraries/authority-client/go => /private/tmp/claude-501/-Users-antoine--lazybox-v2-github-obin-ai-handbook-context/46685f95-f6a6-435c-84df-6c6c6cf20893/scratchpad/cx/w-saascore/authority/libraries/authority-client/go
-
-replace github.com/codefly-dev/authority/libraries/delivery/go => /private/tmp/claude-501/-Users-antoine--lazybox-v2-github-obin-ai-handbook-context/46685f95-f6a6-435c-84df-6c6c6cf20893/scratchpad/cx/w-saascore/authority/libraries/delivery/go
-
-replace github.com/codefly-dev/authority/libraries/resources/go => /private/tmp/claude-501/-Users-antoine--lazybox-v2-github-obin-ai-handbook-context/46685f95-f6a6-435c-84df-6c6c6cf20893/scratchpad/cx/w-saascore/authority/libraries/resources/go
-
-replace github.com/codefly-dev/authority/libraries/hop/go => /private/tmp/claude-501/-Users-antoine--lazybox-v2-github-obin-ai-handbook-context/46685f95-f6a6-435c-84df-6c6c6cf20893/scratchpad/cx/w-saascore/authority/libraries/hop/go

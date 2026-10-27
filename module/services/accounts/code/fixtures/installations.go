@@ -18,7 +18,7 @@ import (
 // installing, the target by the name the composition gives it, the role it
 // holds, and the administrator who installs it and is its owner of record. It
 // is the host interface's Install by name, performed by a fixture person, then
-// its GrantToTeam for each team named: the teams whose members hold its role.
+// granted to each team named: the teams whose members hold its role.
 type fixtureInstallation struct {
 	Org    string   `yaml:"org"`
 	Target string   `yaml:"target"`
