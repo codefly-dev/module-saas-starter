@@ -3572,9 +3572,9 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
-      "path": "/host.installation.v1.InstallationService/GrantToTeam",
+      "path": "/host.installation.v1.InstallationService/GrantRole",
       "match": "GATEWAY_MATCH_EXACT",
-      "procedure": "/host.installation.v1.InstallationService/GrantToTeam",
+      "procedure": "/host.installation.v1.InstallationService/GrantRole",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -3607,6 +3607,54 @@
       "path": "/host.installation.v1.InstallationService/List",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/host.installation.v1.InstallationService/List",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/host.installation.v1.InstallationService/ListRoleGrants",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.installation.v1.InstallationService/ListRoleGrants",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/host.installation.v1.InstallationService/Review",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.installation.v1.InstallationService/Review",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/host.installation.v1.InstallationService/RevokeRole",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.installation.v1.InstallationService/RevokeRole",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

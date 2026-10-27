@@ -325,14 +325,14 @@ func (t coreTx) grantedRole(role domain.OrgRole, query string, args ...any) (dom
 
 // moduleDocument is a module's declarations as stored.
 type moduleDocument struct {
-	ResourceKinds []storedScope                   `json:"resource_kinds,omitempty"`
-	Bindings      map[string]storedBinding        `json:"bindings,omitempty"`
-	Roles         map[string][]storedScope        `json:"roles,omitempty"`
-	OwnedRoles    map[string][]storedScope        `json:"owned_roles,omitempty"`
-	OwnerAware    bool                            `json:"owner_aware,omitempty"`
-	Methods       map[string]storedMethod         `json:"methods,omitempty"`
-	HasRoles      bool                            `json:"has_roles,omitempty"`
-	HasMethods    bool                            `json:"has_methods,omitempty"`
+	ResourceKinds []storedScope            `json:"resource_kinds,omitempty"`
+	Bindings      map[string]storedBinding `json:"bindings,omitempty"`
+	Roles         map[string][]storedScope `json:"roles,omitempty"`
+	OwnedRoles    map[string][]storedScope `json:"owned_roles,omitempty"`
+	OwnerAware    bool                     `json:"owner_aware,omitempty"`
+	Methods       map[string]storedMethod  `json:"methods,omitempty"`
+	HasRoles      bool                     `json:"has_roles,omitempty"`
+	HasMethods    bool                     `json:"has_methods,omitempty"`
 }
 
 type storedScope struct {
@@ -813,7 +813,9 @@ func (t coreTx) PutDelegation(d domain.Delegation) error {
 
 // AuthorityCoreReplay is core's replay store for the capabilities the core
 // issues: one row per consumed nonce, shared by every replica.
-func (s *PostgresStore) AuthorityCoreReplay() workcontext.ReplayStore { return AuthorityCoreReplay{s: s} }
+func (s *PostgresStore) AuthorityCoreReplay() workcontext.ReplayStore {
+	return AuthorityCoreReplay{s: s}
+}
 
 // AuthorityCoreReplay consumes a nonce once across every replica, judged by
 // the database's clock; an expired consumption is reclaimed by the next one.

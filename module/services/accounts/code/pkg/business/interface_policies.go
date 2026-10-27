@@ -254,9 +254,15 @@ const ServiceAPIPackage = "saas.accounts.v1"
 
 // implementedHere reports whether this service serves a descriptor. Every
 // accounts service is served; of the interface packages, InstallableService is
-// the solution's side of the installation interface and is not served here.
+// the solution's side of the installation interface, and OfferService is the
+// local authority's setup read beside it (codefly.dev/installation declares
+// InstallationService alone), so neither is served here.
 func implementedHere(service protoreflect.ServiceDescriptor) bool {
-	return string(service.FullName()) != "host.installation.v1.InstallableService"
+	switch string(service.FullName()) {
+	case "host.installation.v1.InstallableService", "host.installation.v1.OfferService":
+		return false
+	}
+	return true
 }
 
 // interfacePackage reports whether a proto package is one of the published host

@@ -168,6 +168,86 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Retention:** 30d
 - **Consumers:** _none_
 
+## saas.authority.delegation_granted
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.authority.delegation_revoked
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.authority.installation_activated
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.authority.installation_requested
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.authority.installation_uninstalled
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.authority.resource_attached
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.authority.resource_detached
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.authority.resource_transferred
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.authority.role_granted
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.authority.role_revoked
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
 ## saas.billing.checkout_started
 
 - **Publisher:** saas

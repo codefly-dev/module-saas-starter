@@ -1452,8 +1452,12 @@
       "type": "object"
     },
     "v1ConsentApproval": {
-      "description": "ConsentApproval binds an explicit approval to the state reviewed by the admin.\nObtain target_id and generation from ListAvailableSolutions, and revision from\nthe installation listing (zero means absent). Keep these values and operation_id\nunchanged on retry; a refusal requires a fresh review and operation.",
+      "description": "ConsentApproval binds consent to an immutable target, its reviewed delivery and\nthe installation revision (zero if absent). Review leaves operation_id empty;\nthe caller supplies a fresh UUID and preserves the entire request on retry.",
       "properties": {
+        "digest": {
+          "description": "sha256 digest of the reviewed authority offer.",
+          "type": "string"
+        },
         "expectedRevision": {
           "format": "uint64",
           "type": "string"
@@ -12524,6 +12528,9 @@
     },
     {
       "name": "InstallableService"
+    },
+    {
+      "name": "OfferService"
     },
     {
       "name": "SessionService"

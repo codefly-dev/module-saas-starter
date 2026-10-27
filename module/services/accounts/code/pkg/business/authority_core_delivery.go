@@ -126,4 +126,3 @@ func coreDeliveryError(err error) error {
 	}
 	return fmt.Errorf("%w: %w", ErrSolutionDeliveryUnattested, err)
 }
-

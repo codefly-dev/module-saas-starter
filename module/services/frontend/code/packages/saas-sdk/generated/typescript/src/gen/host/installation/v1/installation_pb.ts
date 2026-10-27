@@ -3,8 +3,10 @@
 /* eslint-disable */
 
 // The installation interface: what is installed at an organisation and who may
-// use it. Three operations on the host, and one the solution implements, the
-// install step the host calls once per installation.
+// use it. An installed solution is a principal of its organisation; its roles
+// are levels on the data that principal owns, and a grant of a role is the
+// access. Operations on the host, and one the solution implements, the install
+// step the host calls once per installation.
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
@@ -14,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file host/installation/v1/installation.proto.
  */
 export const file_host_installation_v1_installation: GenFile = /*@__PURE__*/
-  fileDesc("Cidob3N0L2luc3RhbGxhdGlvbi92MS9pbnN0YWxsYXRpb24ucHJvdG8SFGhvc3QuaW5zdGFsbGF0aW9uLnYxIpkBCg5JbnN0YWxsUmVxdWVzdBIXCg9vcmdhbml6YXRpb25faWQYASABKAkSDgoGdGFyZ2V0GAIgASgJEgwKBHJvbGUYAyABKAkSFwoPb3duZXJfcGVyc29uX2lkGAQgASgJEjcKCGFwcHJvdmFsGAUgASgLMiUuaG9zdC5pbnN0YWxsYXRpb24udjEuQ29uc2VudEFwcHJvdmFsImkKD0NvbnNlbnRBcHByb3ZhbBIRCgl0YXJnZXRfaWQYASABKAkSEgoKZ2VuZXJhdGlvbhgCIAEoBBIZChFleHBlY3RlZF9yZXZpc2lvbhgDIAEoBBIUCgxvcGVyYXRpb25faWQYBCABKAkiVwoSR3JhbnRUb1RlYW1SZXF1ZXN0EhcKD2luc3RhbGxhdGlvbl9pZBgBIAEoCRIPCgd0ZWFtX2lkGAIgASgJEhcKD29yZ2FuaXphdGlvbl9pZBgDIAEoCSImCgtMaXN0UmVxdWVzdBIXCg9vcmdhbml6YXRpb25faWQYASABKAkiSQoMTGlzdFJlc3BvbnNlEjkKDWluc3RhbGxhdGlvbnMYASADKAsyIi5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsYXRpb24ivAIKDEluc3RhbGxhdGlvbhIKCgJpZBgBIAEoCRIXCg9vcmdhbml6YXRpb25faWQYAiABKAkSDgoGdGFyZ2V0GAMgASgJEjkKBnN0YXR1cxgEIAEoDjIpLmhvc3QuaW5zdGFsbGF0aW9uLnYxLkluc3RhbGxhdGlvbi5TdGF0dXMSEAoIcmV2aXNpb24YBSABKAQSDAoEcm9sZRgGIAEoCRIQCgh0ZWFtX2lkcxgHIAMoCRIaChJhZ2VudF9wcmluY2lwYWxfaWQYCCABKAkSEQoJbmFtZXNwYWNlGAkgASgJIlsKBlN0YXR1cxIWChJTVEFUVVNfVU5TUEVDSUZJRUQQABISCg5TVEFUVVNfUEVORElORxABEhEKDVNUQVRVU19BQ1RJVkUQAhISCg5TVEFUVVNfUkVWT0tFRBADIk4KEkluc3RhbGxhdGlvbk5vdGljZRI4CgxpbnN0YWxsYXRpb24YASABKAsyIi5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsYXRpb24iEQoPSW5zdGFsbGF0aW9uQWNrMpYCChNJbnN0YWxsYXRpb25TZXJ2aWNlElMKB0luc3RhbGwSJC5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsUmVxdWVzdBoiLmhvc3QuaW5zdGFsbGF0aW9uLnYxLkluc3RhbGxhdGlvbhJbCgtHcmFudFRvVGVhbRIoLmhvc3QuaW5zdGFsbGF0aW9uLnYxLkdyYW50VG9UZWFtUmVxdWVzdBoiLmhvc3QuaW5zdGFsbGF0aW9uLnYxLkluc3RhbGxhdGlvbhJNCgRMaXN0EiEuaG9zdC5pbnN0YWxsYXRpb24udjEuTGlzdFJlcXVlc3QaIi5ob3N0Lmluc3RhbGxhdGlvbi52MS5MaXN0UmVzcG9uc2UycAoSSW5zdGFsbGFibGVTZXJ2aWNlEloKB0luc3RhbGwSKC5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsYXRpb25Ob3RpY2UaJS5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsYXRpb25BY2tCNVozZ2F0ZXdheS9wa2cvZ2VuL2hvc3QvaW5zdGFsbGF0aW9uL3YxO2luc3RhbGxhdGlvbnYxYgZwcm90bzM");
+  fileDesc("Cidob3N0L2luc3RhbGxhdGlvbi92MS9pbnN0YWxsYXRpb24ucHJvdG8SFGhvc3QuaW5zdGFsbGF0aW9uLnYxIpkBCg5JbnN0YWxsUmVxdWVzdBIXCg9vcmdhbml6YXRpb25faWQYASABKAkSDgoGdGFyZ2V0GAIgASgJEgwKBHJvbGUYAyABKAkSFwoPb3duZXJfcGVyc29uX2lkGAQgASgJEjcKCGFwcHJvdmFsGAUgASgLMiUuaG9zdC5pbnN0YWxsYXRpb24udjEuQ29uc2VudEFwcHJvdmFsIjgKDVJldmlld1JlcXVlc3QSFwoPb3JnYW5pemF0aW9uX2lkGAEgASgJEg4KBnRhcmdldBgCIAEoCSJ5Cg9Db25zZW50QXBwcm92YWwSEQoJdGFyZ2V0X2lkGAEgASgJEhIKCmdlbmVyYXRpb24YAiABKAQSGQoRZXhwZWN0ZWRfcmV2aXNpb24YAyABKAQSFAoMb3BlcmF0aW9uX2lkGAQgASgJEg4KBmRpZ2VzdBgFIAEoCSJ2ChBHcmFudFJvbGVSZXF1ZXN0EhcKD29yZ2FuaXphdGlvbl9pZBgBIAEoCRIXCg9pbnN0YWxsYXRpb25faWQYAiABKAkSDAoEcm9sZRgDIAEoCRIRCglwZXJzb25faWQYBCABKAkSDwoHdGVhbV9pZBgFIAEoCSJ3ChFSZXZva2VSb2xlUmVxdWVzdBIXCg9vcmdhbml6YXRpb25faWQYASABKAkSFwoPaW5zdGFsbGF0aW9uX2lkGAIgASgJEgwKBHJvbGUYAyABKAkSEQoJcGVyc29uX2lkGAQgASgJEg8KB3RlYW1faWQYBSABKAkiSQoVTGlzdFJvbGVHcmFudHNSZXF1ZXN0EhcKD29yZ2FuaXphdGlvbl9pZBgBIAEoCRIXCg9pbnN0YWxsYXRpb25faWQYAiABKAkiSQoWTGlzdFJvbGVHcmFudHNSZXNwb25zZRIvCgZncmFudHMYASADKAsyHy5ob3N0Lmluc3RhbGxhdGlvbi52MS5Sb2xlR3JhbnQiPQoJUm9sZUdyYW50EgwKBHJvbGUYASABKAkSEQoJcGVyc29uX2lkGAIgASgJEg8KB3RlYW1faWQYAyABKAkiJgoLTGlzdFJlcXVlc3QSFwoPb3JnYW5pemF0aW9uX2lkGAEgASgJIkkKDExpc3RSZXNwb25zZRI5Cg1pbnN0YWxsYXRpb25zGAEgAygLMiIuaG9zdC5pbnN0YWxsYXRpb24udjEuSW5zdGFsbGF0aW9uIt0CCgxJbnN0YWxsYXRpb24SCgoCaWQYASABKAkSFwoPb3JnYW5pemF0aW9uX2lkGAIgASgJEg4KBnRhcmdldBgDIAEoCRI5CgZzdGF0dXMYBCABKA4yKS5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsYXRpb24uU3RhdHVzEhAKCHJldmlzaW9uGAUgASgEEgwKBHJvbGUYBiABKAkSEQoJbmFtZXNwYWNlGAkgASgJEhQKDHByaW5jaXBhbF9pZBgKIAEoCRINCgVyb2xlcxgLIAMoCSJbCgZTdGF0dXMSFgoSU1RBVFVTX1VOU1BFQ0lGSUVEEAASEgoOU1RBVFVTX1BFTkRJTkcQARIRCg1TVEFUVVNfQUNUSVZFEAISEgoOU1RBVFVTX1JFVk9LRUQQA0oECAcQCEoECAgQCVIIdGVhbV9pZHNSEmFnZW50X3ByaW5jaXBhbF9pZCJOChJJbnN0YWxsYXRpb25Ob3RpY2USOAoMaW5zdGFsbGF0aW9uGAEgASgLMiIuaG9zdC5pbnN0YWxsYXRpb24udjEuSW5zdGFsbGF0aW9uIhEKD0luc3RhbGxhdGlvbkFjayIsChFMaXN0T2ZmZXJzUmVxdWVzdBIXCg9vcmdhbml6YXRpb25faWQYASABKAkiQQoSTGlzdE9mZmVyc1Jlc3BvbnNlEisKBm9mZmVycxgBIAMoCzIbLmhvc3QuaW5zdGFsbGF0aW9uLnYxLk9mZmVyIisKBU9mZmVyEg4KBnRhcmdldBgBIAEoCRISCgpnZW5lcmF0aW9uGAIgASgEIo8CCg1SZXZpZXdlZE9mZmVyEjcKCGFwcHJvdmFsGAEgASgLMiUuaG9zdC5pbnN0YWxsYXRpb24udjEuQ29uc2VudEFwcHJvdmFsEg4KBnRhcmdldBgCIAEoCRIuCgVyb2xlcxgDIAMoCzIfLmhvc3QuaW5zdGFsbGF0aW9uLnYxLk9mZmVyUm9sZRI4CgxpbnN0YWxsYXRpb24YBCABKAsyIi5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsYXRpb24SMwoHY2VpbGluZxgFIAMoCzIiLmhvc3QuaW5zdGFsbGF0aW9uLnYxLk9mZmVyQmluZGluZxIWCg50b29sc19jb21wb3NlZBgGIAEoCCJhCgxPZmZlckJpbmRpbmcSDwoHYmluZGluZxgBIAEoCRIOCgZtb2R1bGUYAiABKAkSMAoGc2NvcGVzGAMgAygLMiAuaG9zdC5pbnN0YWxsYXRpb24udjEuT2ZmZXJTY29wZSKIAQoJT2ZmZXJSb2xlEgwKBG5hbWUYASABKAkSMAoGc2NvcGVzGAIgAygLMiAuaG9zdC5pbnN0YWxsYXRpb24udjEuT2ZmZXJTY29wZRI7CgxjYXBhYmlsaXRpZXMYAyADKAsyJS5ob3N0Lmluc3RhbGxhdGlvbi52MS5PZmZlckNhcGFiaWxpdHkiYQoKT2ZmZXJTY29wZRIVCg1yZXNvdXJjZV9raW5kGAEgASgJEg8KB2FjdGlvbnMYAiADKAkSFQoNYXR0YWNoZWRfb25seRgDIAEoCBIUCgxyZXNvdXJjZV9pZHMYBCADKAkimAEKD09mZmVyQ2FwYWJpbGl0eRIOCgZtb2R1bGUYASABKAkSEQoJb3BlcmF0aW9uGAIgASgJEjIKCHJlcXVpcmVzGAMgAygLMiAuaG9zdC5pbnN0YWxsYXRpb24udjEuT2ZmZXJTY29wZRIuCgV0b29scxgEIAMoCzIfLmhvc3QuaW5zdGFsbGF0aW9uLnYxLk9mZmVyVG9vbCI5CglPZmZlclRvb2wSDAoEbmFtZRgBIAEoCRIPCgdiaW5kaW5nGAIgASgJEg0KBXdyaXRlGAMgASgIMrAEChNJbnN0YWxsYXRpb25TZXJ2aWNlElMKB0luc3RhbGwSJC5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsUmVxdWVzdBoiLmhvc3QuaW5zdGFsbGF0aW9uLnYxLkluc3RhbGxhdGlvbhJUCgZSZXZpZXcSIy5ob3N0Lmluc3RhbGxhdGlvbi52MS5SZXZpZXdSZXF1ZXN0GiUuaG9zdC5pbnN0YWxsYXRpb24udjEuQ29uc2VudEFwcHJvdmFsElcKCUdyYW50Um9sZRImLmhvc3QuaW5zdGFsbGF0aW9uLnYxLkdyYW50Um9sZVJlcXVlc3QaIi5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsYXRpb24SWQoKUmV2b2tlUm9sZRInLmhvc3QuaW5zdGFsbGF0aW9uLnYxLlJldm9rZVJvbGVSZXF1ZXN0GiIuaG9zdC5pbnN0YWxsYXRpb24udjEuSW5zdGFsbGF0aW9uEmsKDkxpc3RSb2xlR3JhbnRzEisuaG9zdC5pbnN0YWxsYXRpb24udjEuTGlzdFJvbGVHcmFudHNSZXF1ZXN0GiwuaG9zdC5pbnN0YWxsYXRpb24udjEuTGlzdFJvbGVHcmFudHNSZXNwb25zZRJNCgRMaXN0EiEuaG9zdC5pbnN0YWxsYXRpb24udjEuTGlzdFJlcXVlc3QaIi5ob3N0Lmluc3RhbGxhdGlvbi52MS5MaXN0UmVzcG9uc2UycAoSSW5zdGFsbGFibGVTZXJ2aWNlEloKB0luc3RhbGwSKC5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsYXRpb25Ob3RpY2UaJS5ob3N0Lmluc3RhbGxhdGlvbi52MS5JbnN0YWxsYXRpb25BY2syyAEKDE9mZmVyU2VydmljZRJfCgpMaXN0T2ZmZXJzEicuaG9zdC5pbnN0YWxsYXRpb24udjEuTGlzdE9mZmVyc1JlcXVlc3QaKC5ob3N0Lmluc3RhbGxhdGlvbi52MS5MaXN0T2ZmZXJzUmVzcG9uc2USVwoLUmV2aWV3T2ZmZXISIy5ob3N0Lmluc3RhbGxhdGlvbi52MS5SZXZpZXdSZXF1ZXN0GiMuaG9zdC5pbnN0YWxsYXRpb24udjEuUmV2aWV3ZWRPZmZlckI1WjNnYXRld2F5L3BrZy9nZW4vaG9zdC9pbnN0YWxsYXRpb24vdjE7aW5zdGFsbGF0aW9udjFiBnByb3RvMw");
 
 /**
  * InstallRequest asks to install one target at one organisation.
@@ -51,7 +53,7 @@ export type InstallRequest = Message<"host.installation.v1.InstallRequest"> & {
   ownerPersonId: string;
 
   /**
-   * The exact catalogue offer and installation state the administrator approved.
+   * Required: the exact offer reviewed by the administrator; unchanged on retry.
    *
    * @generated from field: host.installation.v1.ConsentApproval approval = 5;
    */
@@ -66,10 +68,33 @@ export const InstallRequestSchema: GenMessage<InstallRequest> = /*@__PURE__*/
   messageDesc(file_host_installation_v1_installation, 0);
 
 /**
- * ConsentApproval binds an explicit approval to the state reviewed by the admin.
- * Obtain target_id and generation from ListAvailableSolutions, and revision from
- * the installation listing (zero means absent). Keep these values and operation_id
- * unchanged on retry; a refusal requires a fresh review and operation.
+ * ReviewRequest names the offer an administrator intends to review.
+ *
+ * @generated from message host.installation.v1.ReviewRequest
+ */
+export type ReviewRequest = Message<"host.installation.v1.ReviewRequest"> & {
+  /**
+   * @generated from field: string organization_id = 1;
+   */
+  organizationId: string;
+
+  /**
+   * @generated from field: string target = 2;
+   */
+  target: string;
+};
+
+/**
+ * Describes the message host.installation.v1.ReviewRequest.
+ * Use `create(ReviewRequestSchema)` to create a new message.
+ */
+export const ReviewRequestSchema: GenMessage<ReviewRequest> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 1);
+
+/**
+ * ConsentApproval binds consent to an immutable target, its reviewed delivery and
+ * the installation revision (zero if absent). Review leaves operation_id empty;
+ * the caller supplies a fresh UUID and preserves the entire request on retry.
  *
  * @generated from message host.installation.v1.ConsentApproval
  */
@@ -93,6 +118,13 @@ export type ConsentApproval = Message<"host.installation.v1.ConsentApproval"> & 
    * @generated from field: string operation_id = 4;
    */
   operationId: string;
+
+  /**
+   * sha256 digest of the reviewed authority offer.
+   *
+   * @generated from field: string digest = 5;
+   */
+  digest: string;
 };
 
 /**
@@ -100,44 +132,192 @@ export type ConsentApproval = Message<"host.installation.v1.ConsentApproval"> & 
  * Use `create(ConsentApprovalSchema)` to create a new message.
  */
 export const ConsentApprovalSchema: GenMessage<ConsentApproval> = /*@__PURE__*/
-  messageDesc(file_host_installation_v1_installation, 1);
+  messageDesc(file_host_installation_v1_installation, 2);
 
 /**
- * GrantToTeamRequest exposes an installation to a team.
+ * GrantRoleRequest grants one role to exactly one person or team.
  *
- * @generated from message host.installation.v1.GrantToTeamRequest
+ * @generated from message host.installation.v1.GrantRoleRequest
  */
-export type GrantToTeamRequest = Message<"host.installation.v1.GrantToTeamRequest"> & {
+export type GrantRoleRequest = Message<"host.installation.v1.GrantRoleRequest"> & {
+  /**
+   * The organization the installation belongs to; a request naming another
+   * organization's installation is refused naming the organization, before
+   * the caller's authority is read.
+   *
+   * @generated from field: string organization_id = 1;
+   */
+  organizationId: string;
+
   /**
    * The installation.
    *
-   * @generated from field: string installation_id = 1;
+   * @generated from field: string installation_id = 2;
    */
   installationId: string;
 
   /**
-   * The team granted the installation's role at its root.
+   * One of the roles the solution declares.
    *
-   * @generated from field: string team_id = 2;
+   * @generated from field: string role = 3;
    */
-  teamId: string;
+  role: string;
 
   /**
-   * The organisation the installation belongs to; a grant is an organisation
-   * administrator's act, and the host checks the actor against it before it
-   * reads the installation. Learned from the second implementation (the host).
+   * The person granted, a member of the organization; exactly one of
+   * person_id and team_id is set.
    *
-   * @generated from field: string organization_id = 3;
+   * @generated from field: string person_id = 4;
    */
-  organizationId: string;
+  personId: string;
+
+  /**
+   * The team granted, a team of the organization.
+   *
+   * @generated from field: string team_id = 5;
+   */
+  teamId: string;
 };
 
 /**
- * Describes the message host.installation.v1.GrantToTeamRequest.
- * Use `create(GrantToTeamRequestSchema)` to create a new message.
+ * Describes the message host.installation.v1.GrantRoleRequest.
+ * Use `create(GrantRoleRequestSchema)` to create a new message.
  */
-export const GrantToTeamRequestSchema: GenMessage<GrantToTeamRequest> = /*@__PURE__*/
-  messageDesc(file_host_installation_v1_installation, 2);
+export const GrantRoleRequestSchema: GenMessage<GrantRoleRequest> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 3);
+
+/**
+ * RevokeRoleRequest ends one grant, named as GrantRole named it.
+ *
+ * @generated from message host.installation.v1.RevokeRoleRequest
+ */
+export type RevokeRoleRequest = Message<"host.installation.v1.RevokeRoleRequest"> & {
+  /**
+   * The organization the installation belongs to.
+   *
+   * @generated from field: string organization_id = 1;
+   */
+  organizationId: string;
+
+  /**
+   * The installation.
+   *
+   * @generated from field: string installation_id = 2;
+   */
+  installationId: string;
+
+  /**
+   * The role.
+   *
+   * @generated from field: string role = 3;
+   */
+  role: string;
+
+  /**
+   * The person; exactly one of person_id and team_id is set.
+   *
+   * @generated from field: string person_id = 4;
+   */
+  personId: string;
+
+  /**
+   * The team.
+   *
+   * @generated from field: string team_id = 5;
+   */
+  teamId: string;
+};
+
+/**
+ * Describes the message host.installation.v1.RevokeRoleRequest.
+ * Use `create(RevokeRoleRequestSchema)` to create a new message.
+ */
+export const RevokeRoleRequestSchema: GenMessage<RevokeRoleRequest> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 4);
+
+/**
+ * ListRoleGrantsRequest names one installation.
+ *
+ * @generated from message host.installation.v1.ListRoleGrantsRequest
+ */
+export type ListRoleGrantsRequest = Message<"host.installation.v1.ListRoleGrantsRequest"> & {
+  /**
+   * The organization the installation belongs to.
+   *
+   * @generated from field: string organization_id = 1;
+   */
+  organizationId: string;
+
+  /**
+   * The installation.
+   *
+   * @generated from field: string installation_id = 2;
+   */
+  installationId: string;
+};
+
+/**
+ * Describes the message host.installation.v1.ListRoleGrantsRequest.
+ * Use `create(ListRoleGrantsRequestSchema)` to create a new message.
+ */
+export const ListRoleGrantsRequestSchema: GenMessage<ListRoleGrantsRequest> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 5);
+
+/**
+ * ListRoleGrantsResponse is every grant on the installation.
+ *
+ * @generated from message host.installation.v1.ListRoleGrantsResponse
+ */
+export type ListRoleGrantsResponse = Message<"host.installation.v1.ListRoleGrantsResponse"> & {
+  /**
+   * The grants.
+   *
+   * @generated from field: repeated host.installation.v1.RoleGrant grants = 1;
+   */
+  grants: RoleGrant[];
+};
+
+/**
+ * Describes the message host.installation.v1.ListRoleGrantsResponse.
+ * Use `create(ListRoleGrantsResponseSchema)` to create a new message.
+ */
+export const ListRoleGrantsResponseSchema: GenMessage<ListRoleGrantsResponse> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 6);
+
+/**
+ * RoleGrant is one role held by one person or team.
+ *
+ * @generated from message host.installation.v1.RoleGrant
+ */
+export type RoleGrant = Message<"host.installation.v1.RoleGrant"> & {
+  /**
+   * The role.
+   *
+   * @generated from field: string role = 1;
+   */
+  role: string;
+
+  /**
+   * The person, when a person holds it.
+   *
+   * @generated from field: string person_id = 2;
+   */
+  personId: string;
+
+  /**
+   * The team, when a team holds it.
+   *
+   * @generated from field: string team_id = 3;
+   */
+  teamId: string;
+};
+
+/**
+ * Describes the message host.installation.v1.RoleGrant.
+ * Use `create(RoleGrantSchema)` to create a new message.
+ */
+export const RoleGrantSchema: GenMessage<RoleGrant> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 7);
 
 /**
  * ListRequest asks for one organisation's installations.
@@ -158,7 +338,7 @@ export type ListRequest = Message<"host.installation.v1.ListRequest"> & {
  * Use `create(ListRequestSchema)` to create a new message.
  */
 export const ListRequestSchema: GenMessage<ListRequest> = /*@__PURE__*/
-  messageDesc(file_host_installation_v1_installation, 3);
+  messageDesc(file_host_installation_v1_installation, 8);
 
 /**
  * ListResponse lists installations.
@@ -179,7 +359,7 @@ export type ListResponse = Message<"host.installation.v1.ListResponse"> & {
  * Use `create(ListResponseSchema)` to create a new message.
  */
 export const ListResponseSchema: GenMessage<ListResponse> = /*@__PURE__*/
-  messageDesc(file_host_installation_v1_installation, 4);
+  messageDesc(file_host_installation_v1_installation, 9);
 
 /**
  * Installation is one organisation's installation of one target.
@@ -223,25 +403,12 @@ export type Installation = Message<"host.installation.v1.Installation"> & {
   revision: bigint;
 
   /**
-   * The role the installation holds.
+   * The role the installation holds when it acts for itself (its agent's
+   * role); no person or team inherits it.
    *
    * @generated from field: string role = 6;
    */
   role: string;
-
-  /**
-   * The teams granted it.
-   *
-   * @generated from field: repeated string team_ids = 7;
-   */
-  teamIds: string[];
-
-  /**
-   * The principal the installation acts as for itself.
-   *
-   * @generated from field: string agent_principal_id = 8;
-   */
-  agentPrincipalId: string;
 
   /**
    * The namespace the installation's own authored content belongs to (an
@@ -252,6 +419,22 @@ export type Installation = Message<"host.installation.v1.Installation"> & {
    * @generated from field: string namespace = 9;
    */
   namespace: string;
+
+  /**
+   * The solution principal: the identity the installation's data is owned by
+   * and the installation acts as for itself, a stable UUID per organization
+   * and target, reused by a reinstall. Empty for a module installation.
+   *
+   * @generated from field: string principal_id = 10;
+   */
+  principalId: string;
+
+  /**
+   * The roles the solution declares, sorted.
+   *
+   * @generated from field: repeated string roles = 11;
+   */
+  roles: string[];
 };
 
 /**
@@ -259,7 +442,7 @@ export type Installation = Message<"host.installation.v1.Installation"> & {
  * Use `create(InstallationSchema)` to create a new message.
  */
 export const InstallationSchema: GenMessage<Installation> = /*@__PURE__*/
-  messageDesc(file_host_installation_v1_installation, 5);
+  messageDesc(file_host_installation_v1_installation, 10);
 
 /**
  * Status is the installation's lifecycle.
@@ -300,7 +483,7 @@ export enum Installation_Status {
  * Describes the enum host.installation.v1.Installation.Status.
  */
 export const Installation_StatusSchema: GenEnum<Installation_Status> = /*@__PURE__*/
-  enumDesc(file_host_installation_v1_installation, 5, 0);
+  enumDesc(file_host_installation_v1_installation, 10, 0);
 
 /**
  * InstallationNotice is what the host hands the solution's install step.
@@ -321,7 +504,7 @@ export type InstallationNotice = Message<"host.installation.v1.InstallationNotic
  * Use `create(InstallationNoticeSchema)` to create a new message.
  */
 export const InstallationNoticeSchema: GenMessage<InstallationNotice> = /*@__PURE__*/
-  messageDesc(file_host_installation_v1_installation, 6);
+  messageDesc(file_host_installation_v1_installation, 11);
 
 /**
  * InstallationAck acknowledges the install step.
@@ -336,7 +519,309 @@ export type InstallationAck = Message<"host.installation.v1.InstallationAck"> & 
  * Use `create(InstallationAckSchema)` to create a new message.
  */
 export const InstallationAckSchema: GenMessage<InstallationAck> = /*@__PURE__*/
-  messageDesc(file_host_installation_v1_installation, 7);
+  messageDesc(file_host_installation_v1_installation, 12);
+
+/**
+ * ListOffersRequest names the organization whose administrator reads.
+ *
+ * @generated from message host.installation.v1.ListOffersRequest
+ */
+export type ListOffersRequest = Message<"host.installation.v1.ListOffersRequest"> & {
+  /**
+   * @generated from field: string organization_id = 1;
+   */
+  organizationId: string;
+};
+
+/**
+ * Describes the message host.installation.v1.ListOffersRequest.
+ * Use `create(ListOffersRequestSchema)` to create a new message.
+ */
+export const ListOffersRequestSchema: GenMessage<ListOffersRequest> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 13);
+
+/**
+ * ListOffersResponse is every delivered solution, by name.
+ *
+ * @generated from message host.installation.v1.ListOffersResponse
+ */
+export type ListOffersResponse = Message<"host.installation.v1.ListOffersResponse"> & {
+  /**
+   * @generated from field: repeated host.installation.v1.Offer offers = 1;
+   */
+  offers: Offer[];
+};
+
+/**
+ * Describes the message host.installation.v1.ListOffersResponse.
+ * Use `create(ListOffersResponseSchema)` to create a new message.
+ */
+export const ListOffersResponseSchema: GenMessage<ListOffersResponse> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 14);
+
+/**
+ * Offer is one delivered solution.
+ *
+ * @generated from message host.installation.v1.Offer
+ */
+export type Offer = Message<"host.installation.v1.Offer"> & {
+  /**
+   * The solution's name in the composition: Install's target.
+   *
+   * @generated from field: string target = 1;
+   */
+  target: string;
+
+  /**
+   * The delivery generation an approval binds.
+   *
+   * @generated from field: uint64 generation = 2;
+   */
+  generation: bigint;
+};
+
+/**
+ * Describes the message host.installation.v1.Offer.
+ * Use `create(OfferSchema)` to create a new message.
+ */
+export const OfferSchema: GenMessage<Offer> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 15);
+
+/**
+ * ReviewedOffer is one solution's authority offer and the consent that names it.
+ *
+ * @generated from message host.installation.v1.ReviewedOffer
+ */
+export type ReviewedOffer = Message<"host.installation.v1.ReviewedOffer"> & {
+  /**
+   * What Install takes, with a fresh operation_id; read with the rest.
+   *
+   * @generated from field: host.installation.v1.ConsentApproval approval = 1;
+   */
+  approval?: ConsentApproval;
+
+  /**
+   * @generated from field: string target = 2;
+   */
+  target: string;
+
+  /**
+   * Each role the solution declares, the installer role included. Every role
+   * scope is confined to this installation: to what it owns, or to the
+   * resources attached to it.
+   *
+   * @generated from field: repeated host.installation.v1.OfferRole roles = 3;
+   */
+  roles: OfferRole[];
+
+  /**
+   * The solution's own installation at the organization; absent before Install.
+   *
+   * @generated from field: host.installation.v1.Installation installation = 4;
+   */
+  installation?: Installation;
+
+  /**
+   * The permission ceiling: each module the solution calls, and the most it
+   * may ask there. No role reaches beyond it.
+   *
+   * @generated from field: repeated host.installation.v1.OfferBinding ceiling = 5;
+   */
+  ceiling: OfferBinding[];
+
+  /**
+   * False when this run delivered no prepared Runnable bindings: no tool is
+   * shown, which says nothing about what a composed binding would expose.
+   *
+   * @generated from field: bool tools_composed = 6;
+   */
+  toolsComposed: boolean;
+};
+
+/**
+ * Describes the message host.installation.v1.ReviewedOffer.
+ * Use `create(ReviewedOfferSchema)` to create a new message.
+ */
+export const ReviewedOfferSchema: GenMessage<ReviewedOffer> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 16);
+
+/**
+ * OfferBinding is one declared call from the solution to a module.
+ *
+ * @generated from message host.installation.v1.OfferBinding
+ */
+export type OfferBinding = Message<"host.installation.v1.OfferBinding"> & {
+  /**
+   * @generated from field: string binding = 1;
+   */
+  binding: string;
+
+  /**
+   * The module called.
+   *
+   * @generated from field: string module = 2;
+   */
+  module: string;
+
+  /**
+   * @generated from field: repeated host.installation.v1.OfferScope scopes = 3;
+   */
+  scopes: OfferScope[];
+};
+
+/**
+ * Describes the message host.installation.v1.OfferBinding.
+ * Use `create(OfferBindingSchema)` to create a new message.
+ */
+export const OfferBindingSchema: GenMessage<OfferBinding> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 17);
+
+/**
+ * OfferRole is one declared role and what a grant of it reaches.
+ *
+ * @generated from message host.installation.v1.OfferRole
+ */
+export type OfferRole = Message<"host.installation.v1.OfferRole"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * The scopes the role declares.
+   *
+   * @generated from field: repeated host.installation.v1.OfferScope scopes = 2;
+   */
+  scopes: OfferScope[];
+
+  /**
+   * Each composed operation the role's scopes cover.
+   *
+   * @generated from field: repeated host.installation.v1.OfferCapability capabilities = 3;
+   */
+  capabilities: OfferCapability[];
+};
+
+/**
+ * Describes the message host.installation.v1.OfferRole.
+ * Use `create(OfferRoleSchema)` to create a new message.
+ */
+export const OfferRoleSchema: GenMessage<OfferRole> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 18);
+
+/**
+ * OfferScope is one declared scope.
+ *
+ * @generated from message host.installation.v1.OfferScope
+ */
+export type OfferScope = Message<"host.installation.v1.OfferScope"> & {
+  /**
+   * @generated from field: string resource_kind = 1;
+   */
+  resourceKind: string;
+
+  /**
+   * @generated from field: repeated string actions = 2;
+   */
+  actions: string[];
+
+  /**
+   * True when the scope reaches only the resources attached to the
+   * installation, listed in resource_ids (none until one is attached); false
+   * when it reaches every resource the installation owns.
+   *
+   * @generated from field: bool attached_only = 3;
+   */
+  attachedOnly: boolean;
+
+  /**
+   * @generated from field: repeated string resource_ids = 4;
+   */
+  resourceIds: string[];
+};
+
+/**
+ * Describes the message host.installation.v1.OfferScope.
+ * Use `create(OfferScopeSchema)` to create a new message.
+ */
+export const OfferScopeSchema: GenMessage<OfferScope> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 19);
+
+/**
+ * OfferCapability is one module operation a role's scopes cover.
+ *
+ * @generated from message host.installation.v1.OfferCapability
+ */
+export type OfferCapability = Message<"host.installation.v1.OfferCapability"> & {
+  /**
+   * @generated from field: string module = 1;
+   */
+  module: string;
+
+  /**
+   * The operation as the module's authority document names it.
+   *
+   * @generated from field: string operation = 2;
+   */
+  operation: string;
+
+  /**
+   * What a call to it must hold.
+   *
+   * @generated from field: repeated host.installation.v1.OfferScope requires = 3;
+   */
+  requires: OfferScope[];
+
+  /**
+   * The tools composed for this operation, from its prepared Runnable
+   * bindings; empty when no binding exposes it as a tool.
+   *
+   * @generated from field: repeated host.installation.v1.OfferTool tools = 4;
+   */
+  tools: OfferTool[];
+};
+
+/**
+ * Describes the message host.installation.v1.OfferCapability.
+ * Use `create(OfferCapabilitySchema)` to create a new message.
+ */
+export const OfferCapabilitySchema: GenMessage<OfferCapability> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 20);
+
+/**
+ * OfferTool is one tool-exposed Runnable of an operation.
+ *
+ * @generated from message host.installation.v1.OfferTool
+ */
+export type OfferTool = Message<"host.installation.v1.OfferTool"> & {
+  /**
+   * The tool's name, as its exposure declares it.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * The prepared binding a caller names to run it.
+   *
+   * @generated from field: string binding = 2;
+   */
+  binding: string;
+
+  /**
+   * True when the tool changes data.
+   *
+   * @generated from field: bool write = 3;
+   */
+  write: boolean;
+};
+
+/**
+ * Describes the message host.installation.v1.OfferTool.
+ * Use `create(OfferToolSchema)` to create a new message.
+ */
+export const OfferToolSchema: GenMessage<OfferTool> = /*@__PURE__*/
+  messageDesc(file_host_installation_v1_installation, 21);
 
 /**
  * InstallationService is implemented by the host and by the local authority.
@@ -356,14 +841,49 @@ export const InstallationService: GenService<{
     output: typeof InstallationSchema;
   },
   /**
-   * GrantToTeam exposes an installation to a team under the installation's role.
+   * Review reads the current offer and installation revision without granting consent.
    *
-   * @generated from rpc host.installation.v1.InstallationService.GrantToTeam
+   * @generated from rpc host.installation.v1.InstallationService.Review
    */
-  grantToTeam: {
+  review: {
     methodKind: "unary";
-    input: typeof GrantToTeamRequestSchema;
+    input: typeof ReviewRequestSchema;
+    output: typeof ConsentApprovalSchema;
+  },
+  /**
+   * GrantRole grants a person or a team one of the solution's roles on the
+   * installation: the access. Idempotent; it leaves existing capabilities
+   * valid. An administrator of the installation's organization, or a holder
+   * of the installer role on that installation, grants.
+   *
+   * @generated from rpc host.installation.v1.InstallationService.GrantRole
+   */
+  grantRole: {
+    methodKind: "unary";
+    input: typeof GrantRoleRequestSchema;
     output: typeof InstallationSchema;
+  },
+  /**
+   * RevokeRole ends one grant; every capability its subject holds from it is
+   * refused at once. Idempotent; the same callers as GrantRole.
+   *
+   * @generated from rpc host.installation.v1.InstallationService.RevokeRole
+   */
+  revokeRole: {
+    methodKind: "unary";
+    input: typeof RevokeRoleRequestSchema;
+    output: typeof InstallationSchema;
+  },
+  /**
+   * ListRoleGrants answers who holds which role on the installation; the same
+   * callers as GrantRole.
+   *
+   * @generated from rpc host.installation.v1.InstallationService.ListRoleGrants
+   */
+  listRoleGrants: {
+    methodKind: "unary";
+    input: typeof ListRoleGrantsRequestSchema;
+    output: typeof ListRoleGrantsResponseSchema;
   },
   /**
    * List answers what one organisation has installed: an administrator's read. A
@@ -399,3 +919,40 @@ export const InstallableService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_host_installation_v1_installation, 1);
+
+/**
+ * OfferService is the local authority's setup read, served beside
+ * InstallationService and not part of codefly.dev/installation: what solutions
+ * this run delivered and, for one, what installing it would grant. A host
+ * answers its own product's reads. It grants nothing; Install, GrantRole and
+ * RevokeRole stay the only changes, each decided by the authority.
+ *
+ * @generated from service host.installation.v1.OfferService
+ */
+export const OfferService: GenService<{
+  /**
+   * ListOffers lists the solutions delivered to this run that an administrator
+   * of the organization may install. A module is installed by composition and
+   * is never offered.
+   *
+   * @generated from rpc host.installation.v1.OfferService.ListOffers
+   */
+  listOffers: {
+    methodKind: "unary";
+    input: typeof ListOffersRequestSchema;
+    output: typeof ListOffersResponseSchema;
+  },
+  /**
+   * ReviewOffer reads one solution's roles, what each grants and the tools
+   * those grants make eligible, with the consent Install takes, from one read
+   * of the authority: the approval names exactly the offer displayed.
+   *
+   * @generated from rpc host.installation.v1.OfferService.ReviewOffer
+   */
+  reviewOffer: {
+    methodKind: "unary";
+    input: typeof ReviewRequestSchema;
+    output: typeof ReviewedOfferSchema;
+  },
+}> = /*@__PURE__*/
+  serviceDesc(file_host_installation_v1_installation, 2);
