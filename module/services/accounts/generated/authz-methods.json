@@ -6,6 +6,121 @@
   },
   "methods": [
     {
+      "procedure": "/host.artifact.v1.ArtifactService/Approve",
+      "full_service": "host.artifact.v1.ArtifactService",
+      "method": "Approve",
+      "input_type": "host.artifact.v1.ArtifactRequest",
+      "output_type": "host.artifact.v1.Approval",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.executable_artifact_decision"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/artifact/v1/artifact.proto",
+      "policy_sha256": "32e170db574f5d3b1c18a114c5355d204c8cc7fc441bdf30f88be6372089847a",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
+    },
+    {
+      "procedure": "/host.artifact.v1.ArtifactService/Authorize",
+      "full_service": "host.artifact.v1.ArtifactService",
+      "method": "Authorize",
+      "input_type": "host.artifact.v1.ArtifactRequest",
+      "output_type": "host.artifact.v1.Approval",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/artifact/v1/artifact.proto",
+      "policy_sha256": "90ea62af2032838dca17493b92a392c82e93bbfc2e6a0ee11af81ee203a46333",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
+    },
+    {
+      "procedure": "/host.artifact.v1.ArtifactService/Revoke",
+      "full_service": "host.artifact.v1.ArtifactService",
+      "method": "Revoke",
+      "input_type": "host.artifact.v1.RevokeRequest",
+      "output_type": "host.artifact.v1.Approval",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.executable_artifact_decision"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "host/artifact/v1/artifact.proto",
+      "policy_sha256": "32e170db574f5d3b1c18a114c5355d204c8cc7fc441bdf30f88be6372089847a",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
+    },
+    {
       "procedure": "/host.authority.v1.AuthorityService/AttachResource",
       "full_service": "host.authority.v1.AuthorityService",
       "method": "AttachResource",

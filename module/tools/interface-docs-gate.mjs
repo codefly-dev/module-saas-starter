@@ -54,6 +54,7 @@ const SERVICE_CONTEXTS = {
   DirectoryService: "tenancy",
   APIKeyService: "identity",
   ApprovalReviewService: "approvals",
+  ArtifactService: "authorization",
   AuditService: "audit",
   AuthService: "identity",
   AuthorityService: "authorization",
