@@ -516,30 +516,65 @@ func requireNotDerivedRole(ctx context.Context, executor QueryExecutor, roleID s
 }
 
 // requireNotDerivedRoleOrSolutionRoot is requireNotDerivedRole, except for a
-// solution's role (business.SolutionRoleOrganization): an installation of the
+// solution's role (business.SolutionRoleOrigin): an installation of the
 // solution holds it as its standing role, and the teams the installation is
-// exposed to hold it there, so it is granted at a solution's authority-root
-// node in the organisation it was derived for, and nowhere else.
+// exposed to hold it there. So it is granted only at the authority-root node of
+// an installation of THAT solution, in the organisation it was derived for —
+// never at another solution's root — and only to a team or an agent principal:
+// a person never holds a solution role directly. The one node no installation
+// names yet is the fresh root an install registers before writing its row, and
+// only the installation's agent principal is granted there.
 func requireNotDerivedRoleOrSolutionRoot(ctx context.Context, executor QueryExecutor, grant *gen.ScopeGrant) error {
 	provenance, err := derivedRoleProvenance(ctx, executor, grant.RoleId)
 	if err != nil || provenance == "" {
 		return requireNotDerivedRole(ctx, executor, grant.RoleId)
 	}
-	org, isSolutionRole := business.SolutionRoleOrganization(provenance)
+	org, target, isSolutionRole := business.SolutionRoleOrigin(provenance)
 	if !isSolutionRole {
 		return requireNotDerivedRole(ctx, executor, grant.RoleId)
 	}
+	refuse := func(why string, args ...any) error {
+		return status.Errorf(codes.FailedPrecondition,
+			"role %q is the role of solution %s, derived by this host from %s: it is granted only at that solution's authority root in its own organization, to a team or its installation's agent; "+why,
+			append([]any{grant.RoleId, target, provenance}, args...)...)
+	}
 	var solutionRoot bool
-	if err := executor.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM scope_nodes WHERE org_id = $1::uuid AND scope_path = $2::ltree AND kind = 'solution')`,
+	var rootOf []string
+	if err := executor.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM scope_nodes WHERE org_id = $1::uuid AND scope_path = $2::ltree AND kind = 'solution'),
+		       COALESCE(ARRAY(SELECT DISTINCT i.target_id::text FROM installations i
+		                      JOIN scope_nodes n ON n.id = i.root_scope_node_id
+		                      WHERE i.org_id = $1::uuid AND n.scope_path = $2::ltree ORDER BY 1), '{}')`,
 		grant.OrgId, grant.ScopePath,
-	).Scan(&solutionRoot); err != nil {
+	).Scan(&solutionRoot, &rootOf); err != nil {
 		return err
 	}
-	if org != grant.OrgId || !solutionRoot {
-		return status.Errorf(codes.FailedPrecondition,
-			"role %q is a solution's role derived by this host from %s: it is granted only at that solution's authority root in its own organization",
-			grant.RoleId, provenance)
+	if org != grant.OrgId {
+		return refuse("it was derived for organization %s, not %s", org, grant.OrgId)
+	}
+	if !solutionRoot {
+		return refuse("%q is not a solution's authority root in organization %s", grant.ScopePath, grant.OrgId)
+	}
+	for _, other := range rootOf {
+		if other != target {
+			return refuse("%q is the authority root of solution %s", grant.ScopePath, other)
+		}
+	}
+	if grant.SubjectKind == gen.SubjectKind_SUBJECT_KIND_TEAM {
+		if len(rootOf) == 0 {
+			return refuse("no installation of it has %q as its root, so no team is granted there", grant.ScopePath)
+		}
+		return nil
+	}
+	var agent bool
+	if err := executor.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM principals WHERE id::text = $1 AND kind = 'agent' AND org_id = $2::uuid)`,
+		grant.SubjectId, grant.OrgId,
+	).Scan(&agent); err != nil {
+		return err
+	}
+	if !agent {
+		return refuse("principal %s is not an agent principal of this organization, and a person never holds a solution role directly", grant.SubjectId)
 	}
 	return nil
 }
