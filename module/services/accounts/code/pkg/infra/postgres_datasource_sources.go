@@ -637,6 +637,32 @@ func (s *PostgresStore) SetDatasourceSourceSynced(ctx context.Context, orgID, id
 	return err
 }
 
+// RecordDatasourceSnapshotSent stamps a sync that sent its closing snapshot:
+// the sync time and the number of objects the snapshot named, which is the
+// host's record of whether the source has files (migration 60).
+func (s *PostgresStore) RecordDatasourceSnapshotSent(ctx context.Context, orgID, id string, syncedAt time.Time, items int) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET last_synced_at = $3, last_snapshot_items = $4, updated_at = NOW()
+		 WHERE org_id = $1 AND id = $2`, orgID, id, syncedAt, items)
+	return err
+}
+
+// DatasourceSourceLastSnapshot reads how many objects the source's last
+// closing snapshot named; known is false when none was ever recorded.
+func (s *PostgresStore) DatasourceSourceLastSnapshot(ctx context.Context, orgID, id string) (int, bool, error) {
+	var items *int
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT last_snapshot_items FROM datasource_sources WHERE org_id = $1 AND id = $2`, orgID, id).Scan(&items)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, business.ErrDatasourceSourceNotFound
+	}
+	if err != nil || items == nil {
+		return 0, false, err
+	}
+	return *items, true, nil
+}
+
 // LockDatasourceSourceCredentialRef reads the credential envelope under a row
 // lock so a refresh-and-rotate cycle (OAuth 2.0) serializes against a concurrent
 // sync of the same source: the second caller blocks here until the first commits,

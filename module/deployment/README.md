@@ -385,6 +385,7 @@ services:
     - name: cache
     - name: frontend
     - name: marketing
+    - name: object-storage
     - name: store
     - name: telemetry
     # no `vault`: KEY_SERVICE_BACKEND=kms with

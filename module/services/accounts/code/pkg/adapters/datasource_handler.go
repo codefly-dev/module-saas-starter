@@ -107,6 +107,10 @@ func (h *datasourceConnectHandler) AddSource(
 			Prefix:      up.Prefix,
 			AccessKeyID: up.AccessKeyId,
 			MaxObjects:  int(up.MaxObjects),
+
+			IncludePatterns: up.IncludePatterns,
+			ExcludePatterns: up.ExcludePatterns,
+			FileExtensions:  up.FileExtensions,
 		}
 	}
 	source, err := h.svc.AddSource(ctx, actorID, input)
@@ -134,6 +138,9 @@ func (h *datasourceConnectHandler) UpdateSource(
 		Branch:         req.Msg.Branch,
 		Paths:          req.Msg.Paths,
 		FileExtensions: req.Msg.FileExtensions,
+
+		IncludePatterns: req.Msg.IncludePatterns,
+		ExcludePatterns: req.Msg.ExcludePatterns,
 	}
 	// The scope the caller was shown. The descriptor marks it required, so an
 	// absent one is already refused before this handler runs; it is mapped
@@ -144,6 +151,9 @@ func (h *datasourceConnectHandler) UpdateSource(
 			Branch:         expected.GetBranch(),
 			Paths:          expected.GetPaths(),
 			FileExtensions: expected.GetFileExtensions(),
+
+			IncludePatterns: expected.GetIncludePatterns(),
+			ExcludePatterns: expected.GetExcludePatterns(),
 		}
 	}
 	source, jobID, err := h.svc.UpdateSource(ctx, actorID, input)
@@ -436,6 +446,10 @@ func datasourceSourceToProto(source *business.DatasourceSource, registry *connec
 			Prefix:      source.Upload.Prefix,
 			AccessKeyId: source.Upload.AccessKeyID,
 			MaxObjects:  uint32(source.Upload.MaxObjects),
+
+			IncludePatterns: source.Upload.IncludePatterns,
+			ExcludePatterns: source.Upload.ExcludePatterns,
+			FileExtensions:  source.Upload.FileExtensions,
 		}
 	}
 	if source.LastSyncedAt != nil {
