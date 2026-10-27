@@ -827,6 +827,71 @@ func runHostInterfaceFixture(t *testing.T) {
 		}))
 		require.Greater(t, count, 0, "the suite's revocations are audited")
 	})
+
+	// Last, because the envelope it writes becomes every module's ceiling: a
+	// real envelope write that narrows a module's binding (the write
+	// PutModuleEnvelope makes, without its platform administrator check) is
+	// refused at once until the registry is derived again, then issues only
+	// what the narrowed ceiling allows, and a capability issued before it
+	// fails its next check.
+	t.Run("an envelope narrowing a binding ends what was issued through it", func(t *testing.T) {
+		client := authorityv1.NewAuthorityServiceClient(conn)
+		const module = "conformance-envelope"
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-envelope.task", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"headless": {"modelservice.profiles:read", "modelservice.datasets:read"}}}}})
+		workloadOf := credential(module)
+		issue := func() (*authorityv1.IssueResponse, error) {
+			return client.Issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Workload{Workload: &authorityv1.WorkloadCredential{Credential: workloadOf}},
+				OperationBindingId: "model", Audience: "model", OrganizationId: fixtureOrganization})
+		}
+		kinds := func(r *authorityv1.IssueResponse) []string {
+			var out []string
+			for _, sc := range r.GetContext().GetAuthorityScopes() {
+				out = append(out, sc.GetResourceKind())
+			}
+			return out
+		}
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		before, err := issue()
+		require.NoError(t, err)
+		require.Contains(t, kinds(before), "modelservice.datasets")
+
+		var latest uint64
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			var err error
+			latest, err = store.LatestModuleEnvelopeRevision(ctx)
+			return err
+		}))
+		doc := []byte(fmt.Sprintf(`{"revision":%d,"principals":{%q:{"grant":{"tenant":%q,"resources":["conformance-envelope.task"],"operation_audiences":{"model":{"audience":"model","headless_scopes":[{"resource_kind":"modelservice.profiles","actions":["read"]}]}}}}}}`,
+			latest+1, module, fixtureOrganization))
+		_, err = business.ParseModuleEnvelope(doc)
+		require.NoError(t, err)
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			return store.AppendModuleEnvelopeRecord(ctx, &business.ModuleEnvelopeRecord{Revision: latest + 1, Document: doc, WrittenBy: conformanceAlex}, latest)
+		}))
+
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: before.GetToken(), Audience: "model"})
+		require.Error(t, err, "a capability issued under the replaced ceiling fails its next check")
+		_, err = issue()
+		requireCode(t, err, codes.Unavailable, "is committed")
+
+		pass, err := business.NewSolutionHostBindingReconciler(svc, business.SolutionHostBindingReconcilerConfig{
+			Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host", Envelopes: svc,
+		})
+		require.NoError(t, err)
+		// The envelope names only this module, so the pass reports every other
+		// composed module as omitted from the registry; it still installs the
+		// registry this module's narrowed grant is read from.
+		if err := pass.RunOnce(ctx); err != nil {
+			require.ErrorContains(t, err, "omitted from the registry")
+			require.NotContains(t, err.Error(), module)
+		}
+		after, err := issue()
+		require.NoError(t, err)
+		require.Equal(t, []string{"modelservice.profiles"}, kinds(after), "the narrowed ceiling issues only what it allows")
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: before.GetToken(), Audience: "model"})
+		require.Error(t, err, "and the capability issued before stays refused")
+	})
 }
 
 // serveConnect holds its :0 listener until cleanup and reads the assigned port

@@ -1076,7 +1076,9 @@ transactions. The core reads those rows live as its installations and installs
 no module itself. Its one write to a module's installation, raising its
 revision when a redelivery narrows the module, is kept beside the row in
 `authority_core_module_revisions`, because `installations.revision` is
-lifecycle-owned.
+lifecycle-owned. The revision the core reads also adds the committed
+envelope revision, so an envelope write ends every capability decided under
+the ceiling it replaced.
 
 The hop's admission keys (migration 55) are pinned one per hop instance
 (`hop_admission_keys.instance`, migration 58), and each registration proof's

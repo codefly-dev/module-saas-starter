@@ -638,8 +638,13 @@ func (t coreTx) moduleInstallations(where string, args ...any) ([]domain.Install
 		if err := row.Scan(&id, &org, &principal, &status, &revision, &consented); err != nil {
 			return record{}, err
 		}
+		// The revision the core seals to and checks moves with everything the
+		// consent's bindings are decided from: accounts' own revision (the
+		// consent, its scope, an uninstall), the core's raise on a narrowing
+		// redelivery, and the committed envelope revision, so an envelope
+		// write ends every capability decided under the ceiling it replaced.
 		return record{inst: domain.Installation{ID: id.String(), Organization: org.String(), Target: modules[principal],
-			Status: moduleInstallationStatus(status), Revision: uint64(revision), Owned: map[string][]string{}}, scope: consented}, nil
+			Status: moduleInstallationStatus(status), Revision: uint64(revision) + envelope, Owned: map[string][]string{}}, scope: consented}, nil
 	})
 	if err != nil {
 		return nil, err
