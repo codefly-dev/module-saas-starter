@@ -52,7 +52,7 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 	// number would be silently wrong, so this is read off the regenerated
 	// generated/authz-methods.json.
 	require.Equal(t, 55, internalCount)   // ApplyManifest now authenticates its signed carrier on the tenant listener
-	require.Equal(t, 25, failClosedCount) // +1: signed composition delivery; +2: the session interface's SignIn and ListFixturePeople are rate-limited as authentication and fail closed; +4: the authority interface's workload-credential calls (RegisterAdmissionKey, AttachResource, DetachResource, AuthorizeTransfer); +1: the installation interface's Current, authenticated by the module's workload credential
+	require.Equal(t, 28, failClosedCount) // +3: the artifact interface's Approve, Authorize and Revoke, authenticated by the module's workload credential; +1: signed composition delivery; +2: the session interface's SignIn and ListFixturePeople are rate-limited as authentication and fail closed; +4: the authority interface's workload-credential calls (RegisterAdmissionKey, AttachResource, DetachResource, AuthorizeTransfer); +1: the installation interface's Current, authenticated by the module's workload credential
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(
 		t,

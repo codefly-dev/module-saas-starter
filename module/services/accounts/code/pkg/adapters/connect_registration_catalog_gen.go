@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	host_artifact_v1connect "accounts/pkg/gen/host/artifact/v1/artifactv1connect"
 	host_authority_v1connect "accounts/pkg/gen/host/authority/v1/authorityv1connect"
 	host_composition_v1connect "accounts/pkg/gen/host/composition/v1/compositionv1connect"
 	host_installation_v1connect "accounts/pkg/gen/host/installation/v1/installationv1connect"
@@ -17,6 +18,7 @@ import (
 // Compile-time assertions keep every configured adapter aligned with the
 // descriptor-generated Connect handler interface.
 var (
+	_ host_artifact_v1connect.ArtifactServiceHandler         = (*hostArtifactConnectHandler)(nil)
 	_ host_authority_v1connect.AuthorityServiceHandler       = (*hostAuthorityConnectHandler)(nil)
 	_ host_composition_v1connect.CompositionServiceHandler   = (*hostCompositionConnectHandler)(nil)
 	_ host_installation_v1connect.InstallationServiceHandler = (*hostInstallationConnectHandler)(nil)
@@ -62,6 +64,7 @@ var (
 // registerCatalogConnectServices registers every catalog service on one mux.
 // Exact procedure paths remain owned by protoc-gen-connect-go.
 func registerCatalogConnectServices(mux *http.ServeMux, server *ConnectServer, options ...connect.HandlerOption) {
+	mux.Handle(host_artifact_v1connect.NewArtifactServiceHandler(&hostArtifactConnectHandler{svc: server.service}, options...))
 	mux.Handle(host_authority_v1connect.NewAuthorityServiceHandler(&hostAuthorityConnectHandler{inner: HostAuthoritySingleton()}, options...))
 	mux.Handle(host_composition_v1connect.NewCompositionServiceHandler(&hostCompositionConnectHandler{inner: HostCompositionSingleton()}, options...))
 	mux.Handle(host_installation_v1connect.NewInstallationServiceHandler(&hostInstallationConnectHandler{svc: server.service}, options...))

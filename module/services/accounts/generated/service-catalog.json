@@ -8,6 +8,15 @@
   "api_version": "0.4.0",
   "services": [
     {
+      "name": "ArtifactService",
+      "full_name": "host.artifact.v1.ArtifactService",
+      "procedures": [
+        "/host.artifact.v1.ArtifactService/Approve",
+        "/host.artifact.v1.ArtifactService/Authorize",
+        "/host.artifact.v1.ArtifactService/Revoke"
+      ]
+    },
+    {
       "name": "AuthorityService",
       "full_name": "host.authority.v1.AuthorityService",
       "procedures": [
@@ -542,6 +551,139 @@
     }
   ],
   "methods": [
+    {
+      "procedure": "/host.artifact.v1.ArtifactService/Approve",
+      "service": "ArtifactService",
+      "full_service": "host.artifact.v1.ArtifactService",
+      "method": "Approve",
+      "input_type": "host.artifact.v1.ArtifactRequest",
+      "output_type": "host.artifact.v1.Approval",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/artifact/v1/artifact.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.executable_artifact_decision"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Record a person's consent to an exact artifact a module runs, for one installation, under one of its installed artifact policies.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.artifact.v1.ArtifactService/Authorize",
+      "service": "ArtifactService",
+      "full_service": "host.artifact.v1.ArtifactService",
+      "method": "Authorize",
+      "input_type": "host.artifact.v1.ArtifactRequest",
+      "output_type": "host.artifact.v1.Approval",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/artifact/v1/artifact.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Answer whether a standing approval covers an artifact for a run, under the policy's run permission.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.artifact.v1.ArtifactService/Revoke",
+      "service": "ArtifactService",
+      "full_service": "host.artifact.v1.ArtifactService",
+      "method": "Revoke",
+      "input_type": "host.artifact.v1.RevokeRequest",
+      "output_type": "host.artifact.v1.Approval",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/artifact/v1/artifact.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.executable_artifact_decision"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Withdraw a person's approval of an artifact, for the person present.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
     {
       "procedure": "/host.authority.v1.AuthorityService/AttachResource",
       "service": "AuthorityService",
@@ -16075,6 +16217,7 @@
     }
   ],
   "interface_packages": [
+    "host.artifact.v1",
     "host.authority.v1",
     "host.composition.v1",
     "host.installation.v1",

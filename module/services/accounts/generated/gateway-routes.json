@@ -3460,6 +3460,54 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/host.artifact.v1.ArtifactService/Approve",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.artifact.v1.ArtifactService/Approve",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/host.artifact.v1.ArtifactService/Authorize",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.artifact.v1.ArtifactService/Authorize",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/host.artifact.v1.ArtifactService/Revoke",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/host.artifact.v1.ArtifactService/Revoke",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_PUBLIC",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/host.authority.v1.AuthorityService/Check",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/host.authority.v1.AuthorityService/Check",
