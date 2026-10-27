@@ -80,6 +80,9 @@ installation page, this host's own unmet conditions. Every fact and refusal on
 the tab is the authority's answer through the host installation interface. The
 solution is named by its target, its registered route alias.
 
+The Setup loading state follows the kit's delay and minimum visible duration,
+including when the authority answers immediately after the indicator appears.
+
 The browser reaches that interface at exactly the procedures the local
 authority's edge serves a browser (`src/lib/host-setup-procedures.ts`):
 InstallationService List, Review, ListRoleGrants, GrantRole, RevokeRole and

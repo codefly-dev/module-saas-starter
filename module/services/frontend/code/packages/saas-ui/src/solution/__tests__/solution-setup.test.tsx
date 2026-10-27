@@ -1,5 +1,6 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -7,7 +8,7 @@ import {
 	waitFor,
 	within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	changeRefusal,
 	exampleOrganization,
@@ -18,7 +19,10 @@ import {
 } from "../../../stories/setup-fixtures.js";
 import { SolutionSetup } from "../index.js";
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 
 const section = (name: string) =>
 	screen
@@ -39,6 +43,40 @@ async function mounted(fixture = setupFixture(), extra = {}) {
 }
 
 describe("Is it ready?", () => {
+	it("keeps an already visible loading indicator for the kit's minimum duration", async () => {
+		vi.useFakeTimers();
+		const fixture = setupFixture();
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const transport = {
+			...fixture.transport,
+			unary: (async (...args: Parameters<typeof fixture.transport.unary>) => {
+				await pending;
+				return fixture.transport.unary(...args);
+			}) as typeof fixture.transport.unary,
+		};
+		render(
+			<SolutionSetup
+				transport={transport}
+				organizationId={exampleOrganization}
+				target={exampleTarget}
+			/>,
+		);
+		expect(screen.queryByRole("status")).toBeNull();
+		await act(() => vi.advanceTimersByTimeAsync(200));
+		expect(screen.getByRole("status")).toBeTruthy();
+		await act(async () => {
+			finish();
+		});
+		expect(screen.getByRole("status")).toBeTruthy();
+		expect(screen.queryByRole("heading", { name: "Is it ready?" })).toBeNull();
+		await act(() => vi.advanceTimersByTimeAsync(300));
+		expect(screen.queryByRole("status")).toBeNull();
+		expect(screen.getByRole("heading", { name: "Is it ready?" })).toBeTruthy();
+	});
+
 	it("states the installation as the authority holds it", async () => {
 		await mounted();
 		const ready = within(section("Is it ready?"));

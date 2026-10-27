@@ -96,11 +96,9 @@ export function SolutionSetup(props: SolutionSetupProps) {
 				.filter(Boolean)
 				.join(" ")}
 		>
-			{state.phase === "loading" ? (
-				quiet ? null : indicator ? (
-					<Spinner label={`Loading the setup of ${props.target}`} />
-				) : null
-			) : (
+			{indicator ? (
+				<Spinner label={`Loading the setup of ${props.target}`} />
+			) : quiet || state.phase === "loading" ? null : (
 				<>
 					<ReadySection
 						target={props.target}
