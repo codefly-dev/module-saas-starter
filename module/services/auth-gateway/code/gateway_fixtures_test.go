@@ -2,13 +2,11 @@ package main
 
 // Fixtures shared by the gateway's tests: a declared module record in the
 // registry (a module may still contribute a page, and the registry projection
-// names its kind), a captured log, and a resource-confined caller.
+// names its kind), and a resource-confined caller.
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
-	"log"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -49,16 +47,6 @@ func declareModule(t *testing.T, gw *Gateway, alias string) *fakeUpstream {
 	registry.mu.Unlock()
 	require.NoError(t, gw.solutions.refresh(context.Background()))
 	return fake
-}
-
-// captureLog sends the standard logger to a buffer for the rest of the test.
-func captureLog(t *testing.T) *bytes.Buffer {
-	t.Helper()
-	var buf bytes.Buffer
-	previous := log.Writer()
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(previous) })
-	return &buf
 }
 
 // confinedCaller is one consumer's credential and the facts a capability has to
@@ -102,14 +90,4 @@ func signConfinedCallerFor(t *testing.T, priv ed25519.PrivateKey, resource, subj
 	require.NoError(t, err)
 	caller.bearer = signed
 	return caller
-}
-
-// mintViewerCapability signs the capability a consumer's runtime mints for a
-// composed module on a person's behalf: the module's own audience, the person as
-// owner, their organization as tenant, their session as the session.
-func mintViewerCapability(
-	t *testing.T, kid string, priv ed25519.PrivateKey, audience, owner, tenant, session string,
-) string {
-	t.Helper()
-	return mintCapability(t, kid, priv, edgeCapability{Audience: audience, Owner: owner, Tenant: tenant, Session: session})
 }

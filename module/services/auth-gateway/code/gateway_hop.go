@@ -13,7 +13,7 @@ package main
 //
 // Two doors reach it:
 //
-//   - hop-grpc and hop-http, the hop's faces, for a composed workload calling a
+//   - the hop endpoint, the hop's faces, for a composed workload calling a
 //     module with a Work Context addressed to it (a module calling another, a
 //     solution's runnable binding). The library asks the authority's Check
 //     whether the method may run for that context, signs the admission and
@@ -33,17 +33,21 @@ package main
 //
 // The composition names the modules in hop/MODULES; Codefly generates
 // hop-routes from their published API catalogs. A run that states no
-// hop/MODULES for this gateway (a local run, where the authority's hop signs)
-// stands no hop here and registers no key, and its module paths stay unexposed.
+// hop/MODULES stands no hop here and registers no key: its module paths stay
+// unexposed and the hop faces refuse every call by name. hop is a workspace
+// group, so a local run that composes the authority module's hop delivers it
+// to this gateway too; the gateway then stands beside that hop with a key of
+// its own, and the authority edge still routes the local browser to the
+// authority's hop.
 
 import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -53,7 +57,10 @@ import (
 	authorityv1 "github.com/codefly-dev/authority/libraries/authority-client/go/gen/host/authority/v1"
 	"github.com/codefly-dev/authority/libraries/authority-client/go/stamp"
 	hop "github.com/codefly-dev/authority/libraries/hop/go"
+	"github.com/codefly-dev/authority/libraries/hop/go/forward"
 	"github.com/codefly-dev/authority/libraries/hop/go/routing"
+	"github.com/codefly-dev/core/wool"
+	codefly "github.com/codefly-dev/sdk-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -280,18 +287,129 @@ func (h *hopRole) clock() time.Time {
 	return time.Now()
 }
 
-// errNoHop is a composition that names no module for this gateway to stand in
-// front of: a local run, whose authority module's hop signs.
-var errNoHop = errors.New("hop/MODULES names no module: this gateway stands no hop")
-
-// hopRegistrationReport logs each change of the registration's outcome: the
-// published key's id and when it lapses, or why it is not published. The id
-// and the reason lead each line, under no label a log redaction reads as a
-// credential's.
-func hopRegistrationReport(key *authorityv1.PublicKey, expires time.Time, err error) {
+// standHop stands this gateway as the hop when the composition names modules
+// for it (hop/MODULES), through the hop library's front door: the faces the
+// hop endpoint serves, and the browser path's in-process
+// face. accounts is the authority interface's connection (its Connect
+// listener, which serves the interface over gRPC too). No hop/MODULES is no
+// hop: nil, and nothing registered. A composition that names modules but whose
+// hop cannot stand is refused, by name, at boot.
+func standHop(ctx context.Context, accounts grpc.ClientConnInterface) (*hopRole, *forward.Front, error) {
+	listed, _, err := codefly.For(ctx).WorkspaceValueIfSet("hop", "MODULES")
 	if err != nil {
-		log.Printf("hop admission not published, so every module refuses the calls this gateway forwards; retrying: %v", err)
-		return
+		return nil, nil, fmt.Errorf("hop/MODULES cannot be read: %w", err)
 	}
-	log.Printf("hop admission %s published, lapsing at %s unless renewed", key.GetKeyId(), expires.UTC().Format(time.RFC3339))
+	modules := hopModules(listed)
+	if len(modules) == 0 {
+		return nil, nil, nil
+	}
+	raw, err := codefly.For(ctx).WorkspaceConfiguration("hop-routes", "ROUTES")
+	if err != nil {
+		return nil, nil, forward.MissingRoutes(err)
+	}
+	routes, err := routing.DecodeRouting(raw)
+	if err != nil {
+		return nil, nil, forward.MissingRoutes(err)
+	}
+	enforcement, _, err := codefly.For(ctx).WorkspaceValueIfSet("hop", "ENFORCEMENT")
+	if err != nil {
+		return nil, nil, fmt.Errorf("hop/ENFORCEMENT cannot be read: %w", err)
+	}
+	// This instance registers its key as the workload the run attests
+	// (module-identity: true).
+	return newHopRole(ctx, hopAuthority{authorityv1.NewAuthorityServiceClient(accounts)}, hop.RunCredential, modules, raw, routes, enforcement)
+}
+
+// hopAuthorityClient is what the hop asks of the authority interface: Check
+// and RegisterAdmissionKey for the front door, Issue for a browser's call.
+type hopAuthorityClient interface {
+	forward.Authority
+	hopIssuer
+}
+
+// hopAuthority is the interface's generated client, as hopAuthorityClient.
+type hopAuthority struct {
+	authorityv1.AuthorityServiceClient
+}
+
+// newHopRole builds the front door and the browser path over it, with a key
+// this instance generates.
+func newHopRole(ctx context.Context, authority hopAuthorityClient, credential func() (string, error),
+	modules []string, raw string, routes *routing.Routing, enforcement string,
+) (*hopRole, *forward.Front, error) {
+	signer, err := newHopSigner()
+	if err != nil {
+		return nil, nil, err
+	}
+	front, err := forward.New(ctx, forward.Config{
+		Signer: signer, Authority: authority, Credential: credential,
+		Modules: modules, Routes: raw, Enforcement: enforcement, Log: wool.Get(ctx).In("hop"),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	log.Printf("hop: standing in front of %s", strings.Join(modules, ", "))
+	return &hopRole{modules: modules, routes: routes, issuer: authority, face: front.Handler}, front, nil
+}
+
+// hopFace is the hop's one face, as the hop endpoint serves it: a gRPC call
+// (HTTP/2, application/grpc) goes to the front door's gRPC face, which carries
+// it to the module as opaque frames; every other request — Connect and HTTP
+// routes — to its HTTP face. One endpoint, because an exported gRPC endpoint
+// must publish a contract of its own, and the hop serves none: it forwards
+// the contracts its modules publish. accounts serves its internal gRPC tier on
+// its REST port the same way.
+func hopFace(grpcFace *grpc.Server, httpFace http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcFace.ServeHTTP(w, r)
+			return
+		}
+		httpFace.ServeHTTP(w, r)
+	})
+}
+
+// serveHop listens on the hop endpoint, as the run allocated it, with the
+// front door's faces over HTTP/1.1 and HTTP/2 without TLS (the mesh carries
+// in-cell transport); with no hop, every call is answered with the reason. It
+// returns what stops it.
+func serveHop(ctx context.Context, front *forward.Front) (func(), error) {
+	at, err := codefly.For(ctx).Endpoint("hop").API("http").ResolveNetworkInstance()
+	if err != nil || at == nil || at.Port == 0 {
+		return nil, fmt.Errorf("hop: the hop endpoint does not resolve: %v", err)
+	}
+	options := []grpc.ServerOption{grpc.UnknownServiceHandler(noHopStream)}
+	var httpFace http.Handler = http.HandlerFunc(noHopHTTP)
+	if front != nil {
+		options, httpFace = front.ServerOptions, front.Handler
+	}
+	grpcFace := grpc.NewServer(options...)
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", at.Port))
+	if err != nil {
+		return nil, fmt.Errorf("hop: listen on the hop endpoint: %w", err)
+	}
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	// No WriteTimeout: a forwarded streaming call holds its response open, as
+	// on the gateway's own listener.
+	server := &http.Server{Handler: hopFace(grpcFace, httpFace), Protocols: protocols,
+		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 1 << 20}
+	go func() { _ = server.Serve(listener) }()
+	log.Printf("hop listening on :%d", at.Port)
+	return func() {
+		drain, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = server.Shutdown(drain)
+		grpcFace.Stop()
+	}, nil
+}
+
+// errNoHop is every call to the hop endpoint of a gateway that stands no hop.
+var errNoHop = status.Error(codes.Unavailable, "this gateway stands no hop: the composition names no module in hop/MODULES")
+
+func noHopStream(any, grpc.ServerStream) error { return errNoHop }
+
+func noHopHTTP(w http.ResponseWriter, _ *http.Request) {
+	httpError(w, http.StatusServiceUnavailable, status.Convert(errNoHop).Message())
 }

@@ -119,7 +119,7 @@ publishes in `hop-routes` is tried only after both catalogs found no route, the
 person is authenticated by ext_authz, the authority issues the person's Work
 Context at that module, and the hop's HTTP face checks the method, signs the
 admission and forwards. Composed workloads reach modules on the gateway's
-`hop-grpc` and `hop-http` endpoints. A run that names no `hop/MODULES` for the
+`hop` endpoint (gRPC, Connect and HTTP). A run that names no `hop/MODULES` for the
 gateway (a local run, where the authority module's edge and hop serve) answers
 a module path as an unexposed one, 404.
 

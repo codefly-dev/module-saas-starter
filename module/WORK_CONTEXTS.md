@@ -676,7 +676,7 @@ A composed module reaches it through the gateway's `POST
 which brokers to accounts exactly as `/modules/_work-context` does.
 
 The minted context is presented to the module through the hop: on a cell, the
-gateway's `hop-grpc` or `hop-http` endpoint, where the authority's `Check`
+gateway's `hop` endpoint, where the authority's `Check`
 decides the method and the hop signs the admission the module verifies. No
 gateway route forwards it to a module directly
 ([GATEWAY_ROUTES.md](./GATEWAY_ROUTES.md#module-rest-routes)).

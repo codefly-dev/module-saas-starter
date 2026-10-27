@@ -69,7 +69,8 @@ origin and whose hop signs. A cell composes no authority module, so this gateway
 authority's hop service is (`codefly-dev/authority` `libraries/hop`). Nothing
 reaches a module directly from this gateway.
 
-- **Its faces**, `hop-grpc` and `hop-http`, serve a composed workload calling a
+- **Its faces**, both on the `hop` endpoint (gRPC over HTTP/2 to the gRPC face,
+  everything else to the HTTP/Connect face), serve a composed workload calling a
   module with a Work Context addressed to it (a module calling another, a
   solution's runnable binding). The library asks the authority's `Check`
   whether the method may run for that context, signs the admission and forwards

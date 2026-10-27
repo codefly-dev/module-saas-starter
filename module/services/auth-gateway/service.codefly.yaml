@@ -9,8 +9,8 @@ description: |
       - workload API gateway: the same handler over plain HTTP on its own
         port, reached by composed workloads inside the cell's mesh; the
         module credential exchanges are served there and nowhere else
-      - the hop in front of every composed module on a cell (hop-grpc,
-        hop-http), and the browser's module calls, each signed with a
+      - the hop in front of every composed module on a cell (hop), and
+        the browser's module calls, each signed with a
         single-use admission the module verifies
 agent:
     kind: codefly:service
@@ -61,16 +61,14 @@ endpoints:
     - name: workload
       api: http
       visibility: internal
-    # The hop's faces, in place of the authority module's hop on a cell: a
-    # module calls another module through them with a Work Context addressed to
-    # it, and the gateway checks the method with the authority, signs a
-    # single-use admission and forwards the call to the exact listener
-    # hop-routes names. hop-grpc carries gRPC; hop-http carries Connect and
-    # HTTP routes.
-    - name: hop-grpc
-      api: grpc
-      visibility: internal
-    - name: hop-http
+    # The hop, in place of the authority module's hop on a cell: a module
+    # calls another module through it with a Work Context addressed to it, and
+    # the gateway checks the method with the authority, signs a single-use
+    # admission and forwards the call to the exact listener hop-routes names.
+    # One endpoint carries both faces: gRPC over HTTP/2 (application/grpc) and
+    # Connect and HTTP routes. An exported gRPC endpoint must publish a
+    # contract of its own, and the hop serves none: it forwards its modules'.
+    - name: hop
       api: http
       visibility: internal
 spec:
