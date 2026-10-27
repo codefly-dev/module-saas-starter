@@ -247,21 +247,38 @@ func assertSecretDefaultIsPlaceholder(t *testing.T, name string) {
 
 func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 	for _, group := range declaredWorkspaceConfigGroups(t) {
-		// The CLI supplies these groups: artifact-cache per native run, egress
-		// from the environment's egress declaration, hop-routes from the
-		// published API catalogs of the modules hop/MODULES names. hop itself
-		// names the composition's modules, which only the composition knows: a
-		// default shipped here would shadow or collide with the composing
-		// workspace's hop group, the one the authority module's hop reads too.
-		// An authored path (even an empty placeholder) conflicts with its owner.
-		if group == "artifact-cache" || group == "egress" || group == "hop" || group == "hop-routes" {
+		// The CLI supplies these groups and refuses an authored one anywhere:
+		// artifact-cache per native run, egress from the environment's egress
+		// declaration, hop-routes from the published API catalogs of the
+		// modules hop/MODULES names.
+		if group == "artifact-cache" || group == "egress" || group == "hop-routes" {
 			for _, directory := range []string{moduleConfigLocalDir, workspaceConfigLocalDir} {
 				for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
 					path := filepath.Join(directory, group+suffix)
 					if _, err := os.Lstat(path); !os.IsNotExist(err) {
-						t.Errorf("CLI- or composition-owned group %s must have no authored default at %s", group, path)
+						t.Errorf("CLI-owned group %s must have no authored default at %s", group, path)
 					}
 				}
+			}
+			continue
+		}
+		// hop names the modules the gateway stands in front of, which only a
+		// composition knows. The module subtree ships no default, because a
+		// base-synced consumer inherits it and it would collide with the hop
+		// group that consumer authors — the same group the authority module's
+		// hop reads. The repo root is this repository's OWN composition, which
+		// composes no module behind a hop, so it states that there rather than
+		// leaving the gateway's declared dependency unresolved.
+		if group == "hop" {
+			for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
+				path := filepath.Join(moduleConfigLocalDir, group+suffix)
+				if _, err := os.Lstat(path); !os.IsNotExist(err) {
+					t.Errorf("composition-owned group %s must have no base-synced default at %s", group, path)
+				}
+			}
+			if _, err := os.Lstat(filepath.Join(workspaceConfigLocalDir, group+".env")); err != nil {
+				t.Errorf("this workspace's own composition must state %s at %s/%s.env: it composes no module behind a hop, and the gateway declares the group",
+					group, workspaceConfigLocalDir, group)
 			}
 			continue
 		}

@@ -72,14 +72,14 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
 
 	require.Len(t, first.Catalog.GetServices(), 7)
-	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 7)
+	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 8)
 	require.Len(t, first.Catalog.GetPublicEgress(), 3)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 13, endpointCount)
+	require.Equal(t, 14, endpointCount)
 	require.Equal(t, 6, dependencyCount)
 	// Accounts REST stays private. Gateway REST is exported for module mints;
 	// solutions resolve its separately exported workload listener.
@@ -734,7 +734,7 @@ func TestDeploymentTopologyAuthorityPortIsAllocatedAtRender(t *testing.T) {
 	for _, service := range artifacts.Catalog.GetServices() {
 		for _, endpoint := range service.GetEndpoints() {
 			if (service.GetName() == "accounts" && endpoint.GetName() == "authority") ||
-				(service.GetName() == "auth-gateway" && (endpoint.GetName() == "rest" || endpoint.GetName() == "workload")) {
+				(service.GetName() == "auth-gateway" && (endpoint.GetName() == "workload" || endpoint.GetName() == "hop")) {
 				require.Zero(t, endpoint.GetPort(), "%s/%s is allocated at render", service.GetName(), endpoint.GetName())
 			} else {
 				require.NotZero(t, endpoint.GetPort(), "%s/%s declares its pod port", service.GetName(), endpoint.GetName())
@@ -766,9 +766,17 @@ func TestDeploymentTopologyPodPortIsTheAllocationUnlessDeclared(t *testing.T) {
 			ports[service.GetName()+"/"+endpoint.GetName()] = endpoint.GetPort()
 		}
 	}
+	// auth-gateway/rest is 8080 and not an allocation: `http` and `rest` share
+	// 8080, and core's rule (network.DeployedEndpointPorts) makes an endpoint
+	// the canonical owner of its API's standard port only when it is the
+	// conventional one. The gateway serves two `http` endpoints now (workload
+	// and hop), and neither is named after its API, so neither contends for
+	// 8080 and `rest` owns it outright. While `workload` was the only `http`
+	// endpoint the two contended, the render decided between them, and this
+	// projection would not guess which — which is what 0 recorded.
 	for endpoint, want := range map[string]uint32{
 		"accounts/connect": 8081, "accounts/grpc": 9090, "accounts/rest": 8080, "accounts/authority": 0,
-		"auth-gateway/grpc": 9090, "auth-gateway/rest": 0, "auth-gateway/workload": 0,
+		"auth-gateway/grpc": 9090, "auth-gateway/rest": 8080, "auth-gateway/workload": 0, "auth-gateway/hop": 0,
 		"cache/read": 6379, "cache/write": 6379, "store/tcp": 5432, "vault/http": 8200,
 		"frontend/http": 3000, "marketing/http": 3000,
 	} {
