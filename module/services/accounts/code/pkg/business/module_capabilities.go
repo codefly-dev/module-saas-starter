@@ -390,6 +390,9 @@ func validateModulePrincipalCeiling(prefix string, grant ModulePrincipalGrant) e
 	if err := validateOperationAudiences(prefix, grant.OperationAudiences); err != nil {
 		return err
 	}
+	if err := validateInstallableGrant(prefix, grant); err != nil {
+		return err
+	}
 	for _, resource := range grant.Resources {
 		if IsHostSealedScopeResource(resource) {
 			return fmt.Errorf(
