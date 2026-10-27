@@ -101,8 +101,17 @@ func (s *PostgresStore) EnsureDerivedRole(ctx context.Context, role business.Der
 	// refused. A role already as declared is therefore read, never written:
 	// only a role that is missing, or whose description or permissions
 	// differ, is touched, and only by what differs.
+	//
+	// The read LOCKS the role row (FOR UPDATE: a row lock, which fires no
+	// trigger and so moves no revision; `app_tenant` may take it because it
+	// holds UPDATE on the description column). Two ensures of the same cause
+	// with different declarations therefore serialize on the row, as the upsert
+	// they replace did: the second reads the permissions the first committed
+	// and ends at its own declaration, last writer wins. Without the lock both
+	// would read before either commits and the role would end at their UNION,
+	// keeping a permission the later declaration dropped.
 	var roleID, description string
-	err := executor.QueryRow(ctx, `SELECT id::text, COALESCE(description, '') FROM roles WHERE derived_from = $1`, role.DerivedFrom).Scan(&roleID, &description)
+	err := executor.QueryRow(ctx, `SELECT id::text, COALESCE(description, '') FROM roles WHERE derived_from = $1 FOR UPDATE`, role.DerivedFrom).Scan(&roleID, &description)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		// The conflict target is the partial unique index on derived_from, so
@@ -163,7 +172,9 @@ func (s *PostgresStore) EnsureDerivedRole(ctx context.Context, role business.Der
 		if held[permission] {
 			continue
 		}
-		if _, err := executor.Exec(ctx, `INSERT INTO role_permissions (role_id, resource, action) VALUES ($1, $2, $3)`,
+		// ON CONFLICT DO NOTHING keeps a permission a racing ensure has
+		// already added from failing this one on the primary key.
+		if _, err := executor.Exec(ctx, `INSERT INTO role_permissions (role_id, resource, action) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
 			roleID, permission[0], permission[1]); err != nil {
 			return "", w.Wrapf(err, "failed to write the derived role's permission %s:%s", permission[0], permission[1])
 		}
