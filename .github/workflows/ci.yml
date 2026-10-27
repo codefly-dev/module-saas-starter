@@ -366,6 +366,26 @@ jobs:
       - name: Qualify the scoped reader, writer and request pools
         run: python3 scripts/qualify-scoped-pools.py --postgres-bin "${{ steps.postgres.outputs.bindir }}"
 
+  # The shared host-interface conformance suite at codefly-dev/authority main,
+  # against accounts: the newest authority that contains accounts' pin, so a
+  # case the suite adds or a rule the authority core changes reaches accounts on
+  # its next pull request, never silently on the next re-pin. The same suite at
+  # the pinned revision runs with accounts' tests in the quality phases.
+  host-interface-conformance:
+    name: Host interface conformance (authority main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: module/services/accounts/code/go.sum
+      - name: Install Codefly
+        run: bash scripts/ci/install-codefly.sh
+      - name: Run the shared suite at authority main against accounts
+        run: bash scripts/ci/host-interface-conformance-main.sh
+
   marketing:
     name: Marketing isolation
     runs-on: ubuntu-latest

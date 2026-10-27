@@ -20,12 +20,12 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/host.authority.v1.AuthorityService/RegisterAdmissionKey` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.platform.hop_admission_key_published | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Publish the hop's admission public key in Keys for one lease; only the hop's workload registers one. |
 | `/host.authority.v1.AuthorityService/RevokeDelegation` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.module_delegation.revoked | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | End a delegation; every capability issued from it is refused from then on. |
 | `/host.composition.v1.CompositionService/ApplyManifest` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Deliver one module instance's manifest at one generation; the ceiling is the manifest. |
-| `/host.installation.v1.InstallationService/GrantRole` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_granted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a person or a team one of an installed solution's roles. |
+| `/host.installation.v1.InstallationService/GrantRole` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_granted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a person or a team one of an installed solution's roles. |
 | `/host.installation.v1.InstallationService/Install` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.installation_requested, saas.authority.installation_activated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Install one solution at one organisation under the consent its administrator reviewed; pending until its install step converges. |
 | `/host.installation.v1.InstallationService/List` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List what one organisation has installed. |
-| `/host.installation.v1.InstallationService/ListRoleGrants` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List who holds which role on one installation. |
+| `/host.installation.v1.InstallationService/ListRoleGrants` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List who holds which role on one installation. |
 | `/host.installation.v1.InstallationService/Review` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read the exact authority offer an administrator consents to, without recording consent. |
-| `/host.installation.v1.InstallationService/RevokeRole` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke one role grant; its subject's capabilities through the installation end. |
+| `/host.installation.v1.InstallationService/RevokeRole` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke one role grant; its subject's capabilities through the installation end. |
 | `/host.session.v1.SessionService/Current` | unary | `GET /v1/session` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Answer the session the caller's bearer belongs to, without the bearer. |
 | `/host.session.v1.SessionService/ListFixturePeople` | unary | `GET /v1/session/fixture-people` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | PUBLIC → SECRET | List the people fixture sign-in admits, in the fixture's order; none where it is not enabled. |
 | `/host.session.v1.SessionService/SignIn` | unary | `POST /v1/session:sign-in` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.auth.login | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Open a session for a fixture person by their fixture token. |
@@ -303,10 +303,10 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 47
+- `auth`: 50
 - `internal`: 55
 - `mfa`: 5
 - `org_admin`: 68
-- `org_member`: 60
+- `org_member`: 57
 - `platform_admin`: 29
 - `public`: 28

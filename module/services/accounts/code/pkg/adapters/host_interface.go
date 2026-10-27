@@ -474,9 +474,6 @@ func (s *HostInstallationServer) change(ctx context.Context, what string, do fun
 	if err != nil {
 		return nil, err
 	}
-	if err := requireOrgMember(ctx, caller.ID, r.Organization); err != nil {
-		return nil, err
-	}
 	inst, err := do(core, ctx, caller, r)
 	if err != nil {
 		return nil, coreStatus(err)
@@ -492,9 +489,6 @@ func (s *HostInstallationServer) ListRoleGrants(ctx context.Context, req *instal
 	}
 	caller, err := signedInPerson(ctx, "list role grants")
 	if err != nil {
-		return nil, err
-	}
-	if err := requireOrgMember(ctx, caller.ID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
 	grants, err := core.ListRoleGrants(ctx, caller, req.GetOrganizationId(), req.GetInstallationId())

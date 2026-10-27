@@ -155,6 +155,11 @@ func (t coreTx) Person(id string) (domain.Person, error) {
 // Member is a person as a member of one organization: their membership role,
 // their teams there, and the organization roles they hold (memberRoles).
 func (t coreTx) Member(organization, id string) (domain.Person, error) {
+	if _, ok := asUUID(id); !ok {
+		// An empty or malformed id names nobody; it must never read as "every
+		// member" below.
+		return domain.Person{}, coreMissing("member of "+organization, id)
+	}
 	people, err := t.members(organization, id)
 	if err != nil {
 		return domain.Person{}, err

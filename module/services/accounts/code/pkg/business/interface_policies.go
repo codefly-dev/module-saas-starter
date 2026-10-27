@@ -130,12 +130,14 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		p.ResponseSensitivity = policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL
 		return p
 	}
-	// A role change is an administrator's or the installation's installer's:
-	// the core decides which, so the floor is a member of the organization.
+	// A role change is an administrator's or the installation's installer's,
+	// at the organization the session was opened at: the core decides both,
+	// answering another organization's installation and an absent one alike,
+	// so the perimeter adds no tenant floor that would answer differently.
 	// The core journals the change in its own transaction.
 	roleChange := func(event EventType) *policyv1.MethodPolicy {
 		p := adminWrite(string(event))
-		p.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_MEMBER
+		p.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE
 		return p
 	}
 	// A workload's call authenticated by the credential in its request, from
@@ -209,7 +211,7 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		"/host.installation.v1.InstallationService/Review":         read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.installation.v1.InstallationService/GrantRole":      roleChange(EventAuthorityRoleGranted),
 		"/host.installation.v1.InstallationService/RevokeRole":     roleChange(EventAuthorityRoleRevoked),
-		"/host.installation.v1.InstallationService/ListRoleGrants": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_MEMBER, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		"/host.installation.v1.InstallationService/ListRoleGrants": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.installation.v1.InstallationService/List":           read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's view is the entitlement listing
 		// Current is the caller's own session: authenticated by the bearer it
 		// describes, organisation-less like the session itself may be.

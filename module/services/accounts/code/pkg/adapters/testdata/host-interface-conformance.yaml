@@ -21,6 +21,18 @@ users:
   # The installer of two solutions who administers one existing collection
   # through her own organization grant, and nothing else: no administrator.
   - {id: 00000000-0000-7000-8000-0000000000b9, email: ivy@acme.test, name: Ivy Installer, role: member, provider: email, provider_id: fixture-ivy}
+  # The solution-principal target's people: two whose own organization grants
+  # reach one existing resource of the store's kind (one administers it, one
+  # reads it), an installer holding nothing yet, two members of a team no
+  # installation is granted to (one leaves it), one who leaves the
+  # organization, and a reader of one solution's notes.
+  - {id: 00000000-0000-7000-8000-0000000000d1, email: store-admin@acme.test, name: Sam Storeadmin, role: member, provider: email, provider_id: fixture-store-administrator}
+  - {id: 00000000-0000-7000-8000-0000000000d2, email: store-reader@acme.test, name: Rita Storereader, role: member, provider: email, provider_id: fixture-store-reader}
+  - {id: 00000000-0000-7000-8000-0000000000d3, email: installer@acme.test, name: Ian Installer, role: member, provider: email, provider_id: fixture-principal-installer}
+  - {id: 00000000-0000-7000-8000-0000000000d4, email: team-member@acme.test, name: Tom Teammember, role: member, provider: email, provider_id: fixture-principal-team-member}
+  - {id: 00000000-0000-7000-8000-0000000000d5, email: team-leaver@acme.test, name: Tess Teamleaver, role: member, provider: email, provider_id: fixture-principal-team-leaver}
+  - {id: 00000000-0000-7000-8000-0000000000d6, email: org-leaver@acme.test, name: Otto Orgleaver, role: member, provider: email, provider_id: fixture-principal-org-leaver}
+  - {id: 00000000-0000-7000-8000-0000000000d7, email: note-reader@acme.test, name: Nina Notereader, role: member, provider: email, provider_id: fixture-principal-note-reader}
 
 organizations:
   - id: 00000000-0000-7000-8000-0000000000c1
@@ -36,6 +48,13 @@ organizations:
       - {email: owner@acme.test, role: owner}
       - {email: no-roles@acme.test, role: member}
       - {email: ivy@acme.test, role: member}
+      - {email: store-admin@acme.test, role: member}
+      - {email: store-reader@acme.test, role: member}
+      - {email: installer@acme.test, role: member}
+      - {email: team-member@acme.test, role: member}
+      - {email: team-leaver@acme.test, role: member}
+      - {email: org-leaver@acme.test, role: member}
+      - {email: note-reader@acme.test, role: member}
   - id: 00000000-0000-7000-8000-0000000000c2
     name: Globex
     owner: zoe@globex.test
@@ -49,6 +68,8 @@ teams:
   # moves the organisation's authority and grants nobody anything.
   - {name: Unexposed, org: Acme Corp, members: []}
   - {name: Ops, org: Globex, members: [zoe@globex.test, omar@globex.test]}
+  # No installation is granted to it until the target grants one.
+  - {name: Principal team, org: Acme Corp, members: [team-member@acme.test, team-leaver@acme.test]}
 
 roles:
   - org: Acme Corp
@@ -80,7 +101,26 @@ roles:
     permissions:
       - {resource: conformance.collection, action: admin}
 
+  - org: Acme Corp
+    name: Principal store admin
+    description: Administer the one existing collection granted to them by id
+    permissions:
+      - {resource: principal.collection, action: admin}
+  - org: Acme Corp
+    name: Principal store reader
+    description: Read the one existing collection granted to them by id
+    permissions:
+      - {resource: principal.collection, action: read}
+  - org: Acme Corp
+    name: Principal note reader
+    description: Read the notes of one solution's principal
+    permissions:
+      - {resource: principal-a.note, action: read}
+
 assignments:
+  - {org: Acme Corp, role: Principal store admin, email: store-admin@acme.test, scope: store-x}
+  - {org: Acme Corp, role: Principal store reader, email: store-reader@acme.test, scope: store-x}
+  - {org: Acme Corp, role: Principal note reader, email: note-reader@acme.test}
   - {org: Acme Corp, role: Record reader, email: maya@acme.test, scope: conformance-record-a}
   - {org: Acme Corp, role: Collection transfer, email: ivy@acme.test, scope: collection-x}
   - {org: Acme Corp, role: Agent user, email: maya@acme.test}

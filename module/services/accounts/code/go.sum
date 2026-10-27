@@ -58,10 +58,10 @@ github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg
 github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
 github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261026193714-49101ae11a7f h1:XIIL76qWDaSv0QWQX7AKgihTQU073x1aM9/QQBE39ls=
 github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261026193714-49101ae11a7f/go.mod h1:4hRjiWuJOKzrEk8AS87pbWCbpiEmhEvQBGQaJo5Hmkg=
-github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261027011022-8093104c42fc h1:5KO+3BbaugCJccu/91X/YLmrftqyeRTNfhyR6Kl+U+Q=
-github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261027011022-8093104c42fc/go.mod h1:kTjeuNl03XSCkH3UhGKuHAKamkIzNsC2RPFu/g0fqSk=
-github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261027011022-8093104c42fc h1:YjOQfqgCs2Zum1NmxMhDkAMJhC/Uo8TCMGaHSYohfRo=
-github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261027011022-8093104c42fc/go.mod h1:8bAZ60XWyJX4HYYJzd6MeWCcR1VcGnkiSDGBeQq7UPo=
+github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261027013053-8846431f503a h1:yskeSAwfiQdxEZhRDyBdKVZ8EQM2+1C56EEo7L3SRzw=
+github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261027013053-8846431f503a/go.mod h1:kTjeuNl03XSCkH3UhGKuHAKamkIzNsC2RPFu/g0fqSk=
+github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261027013053-8846431f503a h1:sSG7YD1uE57L9phUqS/OUZstu81pvMMISRyd4KUKjk4=
+github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261027013053-8846431f503a/go.mod h1:8bAZ60XWyJX4HYYJzd6MeWCcR1VcGnkiSDGBeQq7UPo=
 github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261026193714-49101ae11a7f h1:R3BlevqYzEFWLL6XYmmaaHlwQ6lFerNMtXscadq8INA=
 github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261026193714-49101ae11a7f/go.mod h1:XsOFnO2MQdr37vM3ULa0Uwi8ZWptyVx7hRSUyIdaZ1Q=
 github.com/codefly-dev/authority/libraries/hop/go v0.0.0-20261026193714-49101ae11a7f h1:oobjjGqbBaFjYLPYculFD74BOdN5+UZ6eyYl6mOsT7I=

@@ -406,6 +406,48 @@ func runHostInterfaceFixture(t *testing.T) {
 		},
 	})
 
+	// The solution-principal target (conformance RunSolutionPrincipalTarget):
+	// stable solution principals, agent-role isolation, owner-aware audiences,
+	// own and foreign data, role administration and subject-specific
+	// revocation, membership loss, transfer, uninstall and reinstall.
+	//
+	// Labelled stand-in: a person leaving a team or the organization is
+	// accounts' own membership narrowing, which refuses on a host with no
+	// policy log (B1 in the pull request). The membership rows are removed
+	// directly here, under the control plane, which is what that narrowing
+	// applies; accounts' triggers move the authorization revisions as they do
+	// on that path, and the core reads identity live.
+	removeMember := func(ctx context.Context, query string, args ...any) error {
+		return store.WithControlPlane(ctx, func(ctx context.Context) error {
+			_, err := storetx.Tx(ctx).Exec(ctx, query, args...)
+			return err
+		})
+	}
+	conformance.RunSolutionPrincipalTarget(t, conn, registeredDescriptors(t), conformance.SolutionPrincipalCase{
+		Organization: fixtureOrganization, OtherOrganization: globexOrganization, Generation: 1,
+		A:     conformance.SolutionUnderTest{Solution: "principal-a", Credential: credential("principal-a")},
+		B:     conformance.SolutionUnderTest{Solution: "principal-b", Credential: credential("principal-b")},
+		C:     conformance.SolutionUnderTest{Solution: "principal-c", Credential: credential("principal-c")},
+		Store: "principal-store", StoreCredential: credential("principal-store"), Kind: "principal.collection",
+		LegacyStore: "principal-legacy-store", LegacyStoreCredential: credential("principal-legacy-store"), LegacyKind: "principal.legacy",
+		Admin: "fixture-alex", Viewer: "fixture-maya", Editor: "fixture-remi", Member: "fixture-no-roles", Installer: "fixture-principal-installer",
+		Team: teamNamed(t, ctx, svc, fixtureOrganization, "Principal team"), TeamMember: "fixture-principal-team-member", TeamLeaver: "fixture-principal-team-leaver",
+		OrgLeaver: "fixture-principal-org-leaver", Administrator: "fixture-store-administrator", Reader: "fixture-store-reader", NoteReader: "fixture-principal-note-reader",
+		OtherAdmin: "fixture-zoe", OtherMember: "fixture-omar", OtherTeam: teamNamed(t, ctx, svc, globexOrganization, "Ops"),
+		Existing:  "store-x",
+		Uninstall: func(ctx context.Context, id string) error { return core.UninstallAsHost(ctx, fixtureOrganization, id) },
+		RemoveFromTeam: func(ctx context.Context, person, team string) error {
+			return removeMember(ctx, `DELETE FROM public.team_members WHERE team_id = $1 AND user_id = $2`, team, person)
+		},
+		RemoveFromOrganization: func(ctx context.Context, person string) error {
+			return removeMember(ctx, `DELETE FROM public.organization_members WHERE org_id = $1 AND user_id = $2`, fixtureOrganization, person)
+		},
+		SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
+		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
+		DeliveryCredential: func(module string) string { return "delivery:" + module },
+		HostCoordinate:     "conformance-host", HostDomain: "acme",
+	})
+
 	signIn := func(token string) context.Context {
 		t.Helper()
 		sess, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: token})

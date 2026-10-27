@@ -58,6 +58,13 @@ What accounts adds, and where:
   its test store, its Connect listener on an ephemeral port, modules and
   solutions delivered as the CLI delivers them, no policy log wired (as on a
   deployed host), and the fixture's installations performed through the core.
+- The solution-principal target (`RunSolutionPrincipalTarget`) runs in the same
+  harness. A person leaving a team or the organization is applied to the
+  membership rows directly there, a labelled stand-in for accounts' own
+  membership narrowing, which needs a policy log (below).
+- `.github/workflows/ci.yml` (`host-interface-conformance`) runs the suite at
+  authority main, whenever main contains the pinned revision, on every pull
+  request.
 - The core's store contract (`authority-core/go/storetest`) runs against this
   Postgres store in `pkg/infra/postgres_authority_core_test.go`.
 - The core's own decisions are unit tested in `codefly-dev/authority`.
