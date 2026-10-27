@@ -338,11 +338,16 @@ func journalDataObject(contentType string, data []byte) map[string]any {
 //   - saas.module.operation_context_minted, whose binding_id is one of
 //     deliveryBindings: the headless Work Context a delivery runs under, issued
 //     for one of the caller's delivery bindings.
+//
 //   - saas.module.delegated_audience_exchange, whose binding_id is one of
 //     deliveryBindings: an exchange on one of the caller's delivery bindings.
+//
 //   - saas.module.work_context_minted whose actor is the caller's own module
 //     principal: the caller's own refresh of its Work Context. Another module's
 //     mint is that module's, not the caller's.
+//
+//   - shared Authority task/child-session issues, whose authenticated module
+//     and operation binding are recorded by that issuer, for a delivery binding.
 //
 // Everything else is false, including a row of another type and a record that
 // cannot be read: unmarked work is delivered, never skipped.
@@ -361,9 +366,9 @@ func JournalRowIsDeliveryMachinery(row JournalRow, callerPrincipal string, deliv
 // the audit entry itself.
 func AuditEntryIsDeliveryMachinery(entry AuditEntry, callerPrincipal string, deliveryBindings map[string]struct{}) bool {
 	switch entry.EventType {
-	case EventModuleOperationContextMint, EventDelegatedAudienceExchange:
+	case EventModuleOperationContextMint, EventDelegatedAudienceExchange, EventWorkContextTaskStarted, EventWorkContextChildSession:
 		principal := entry.ActorID
-		if entry.EventType == EventDelegatedAudienceExchange {
+		if entry.EventType != EventModuleOperationContextMint {
 			principal, _ = entry.Payload["module_principal_id"].(string)
 			kind, _ := entry.Payload["binding_kind"].(string)
 			if kind != "operation" {

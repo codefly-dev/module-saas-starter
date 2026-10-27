@@ -347,7 +347,10 @@ Each entry says whether it is `delivery_machinery`, computed here so a caller ne
 parses this module's payloads: the entry the row carries is a
 `saas.module.operation_context_minted` or `saas.module.delegated_audience_exchange`
 on one of the `delivery_bindings` the caller names (both carry `binding_id`), or a
-`saas.module.work_context_minted` for the caller's own module principal. It is the
+`saas.module.work_context_minted` for the caller's own module principal. Shared
+Authority task/child-session issues also carry the authenticated module principal,
+operation binding kind and binding id; only that module's listed delivery bindings
+are marked. Ordinary person issues carry no such metadata. It is the
 caller's own delivery footprint, which delivered as ordinary work would produce more
 of itself.
 

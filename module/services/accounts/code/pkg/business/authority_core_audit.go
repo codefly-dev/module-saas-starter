@@ -111,7 +111,7 @@ func authorityActor(actor string) (id, actorType string) {
 // of the organization it was issued in, before it is handed out: a child hop
 // is a child session, every other shape a task started. An issue whose record
 // cannot be written is refused.
-func (s *Service) RecordAuthorityIssue(ctx context.Context, organization, actor string, child bool, task string) error {
+func (s *Service) RecordAuthorityIssue(ctx context.Context, organization, actor string, child bool, task, modulePrefix, binding string) error {
 	event := EventWorkContextTaskStarted
 	if child {
 		event = EventWorkContextChildSession
@@ -121,6 +121,15 @@ func (s *Service) RecordAuthorityIssue(ctx context.Context, organization, actor 
 		return fmt.Errorf("record %s: organization %q is not one of this host's", event, organization)
 	}
 	return s.store.WithOrgTx(ctx, organization, func(ctx context.Context) error {
-		return s.emitTx(ctx, actorID, actorType, event, "work_context", task, organization)
+		return s.emitTx(ctx, actorID, actorType, event, "work_context", task, organization, authorityIssueAuditPayload(modulePrefix, binding))
 	})
+}
+
+// authorityIssueAuditPayload preserves the authenticated module and the binding
+// the shared core just authorized. An ordinary person's issue carries neither.
+func authorityIssueAuditPayload(modulePrefix, binding string) map[string]any {
+	if modulePrefix == "" || binding == "" {
+		return nil
+	}
+	return map[string]any{"module_principal_id": ModulePrincipalID(modulePrefix), "binding_kind": "operation", "binding_id": binding}
 }

@@ -36,3 +36,19 @@ func TestAuthorityChangesAreRecordedAsRegisteredMutations(t *testing.T) {
 	require.Empty(t, id)
 	require.Equal(t, ActorTypeSystem, actorType)
 }
+
+// The actual shared-issuer payload must be understood by the journal marker;
+// an unmarked delivery issue would make the delivery tail itself forever.
+func TestAuthorityIssuePayloadMarksOnlyItsModulesDeliveryBinding(t *testing.T) {
+	for _, kind := range []EventType{EventWorkContextTaskStarted, EventWorkContextChildSession} {
+		entry := AuditEntry{EventType: kind, Payload: authorityIssueAuditPayload("runtime", "delivery")}
+		bindings := map[string]struct{}{"delivery": {}}
+		require.True(t, AuditEntryIsDeliveryMachinery(entry, ModulePrincipalID("runtime"), bindings))
+		require.False(t, AuditEntryIsDeliveryMachinery(entry, ModulePrincipalID("other"), bindings))
+		require.False(t, AuditEntryIsDeliveryMachinery(entry, ModulePrincipalID("runtime"), map[string]struct{}{"another": {}}))
+		entry.Payload = authorityIssueAuditPayload("", "delivery")
+		require.False(t, AuditEntryIsDeliveryMachinery(entry, ModulePrincipalID("runtime"), bindings))
+		entry.Payload = authorityIssueAuditPayload("runtime", "")
+		require.False(t, AuditEntryIsDeliveryMachinery(entry, ModulePrincipalID("runtime"), bindings))
+	}
+}

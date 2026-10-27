@@ -713,9 +713,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventAuthorityResourceAttached, CategoryAccess, "A resource created through an installation was attached to it by the kind's serving module.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceDetached, CategoryAccess, "A deleted resource was released from the installation that owned it.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceTransferred, CategoryAccess, "An existing resource joined an installed solution's principal, authorized by a person administering it.", authorityChangeFields()...),
-	mutation(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),
+	mutation(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session.", str("module_principal_id"), str("binding_kind"), str("binding_id")),
 	mutation(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
-	mutation(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),
+	mutation(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started.", str("module_principal_id"), str("binding_kind"), str("binding_id")),
 	mutation(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience."),
 	mutation(EventWorkContextRenewed, CategoryAccess, "A delegated actor renewed its Work Context past the signing TTL cap."),
 
