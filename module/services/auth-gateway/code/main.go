@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/codefly-dev/authority/libraries/authority-client/go/host"
 	"github.com/codefly-dev/core/standards"
 	wooltel "github.com/codefly-dev/core/wool/otel"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
@@ -49,13 +50,13 @@ func main() {
 		panic(err.Error())
 	}
 
-	grpcNetwork, err := codefly.For(ctx).API(standards.GRPC).ResolveNetworkInstance()
+	grpcNetwork, err := codefly.For(ctx).Endpoint("grpc").API(standards.GRPC).ResolveNetworkInstance()
 	if err != nil || grpcNetwork == nil || grpcNetwork.Port == 0 {
 		panic(fmt.Sprintf("Codefly gRPC endpoint is unavailable: %v", err))
 	}
 	grpcPort := grpcNetwork.Port
 	var httpPort uint16
-	httpNet, httpNetErr := codefly.For(ctx).API(standards.REST).ResolveNetworkInstance()
+	httpNet, httpNetErr := codefly.For(ctx).Endpoint("rest").API(standards.REST).ResolveNetworkInstance()
 	if httpNetErr != nil || httpNet == nil {
 		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
 	}
@@ -109,6 +110,34 @@ func main() {
 		panic(fmt.Sprintf("cannot connect to internal api at %s: %v", internalAPIAddr, err))
 	}
 	defer func() { _ = internalAPIConn.Close() }()
+
+	// The authority interface accounts implements, on its Connect listener,
+	// which serves the interface over gRPC too: what the hop asks (Check,
+	// RegisterAdmissionKey) and what a browser's module call is issued from
+	// (Issue). Dialled under the same transport rule every module dials it by.
+	if apiConnectNet == nil {
+		panic("accounts' connect endpoint is not available: the hop asks the authority interface there")
+	}
+	authorityTarget, authorityTransport, err := host.Endpoint(ctx, fmt.Sprintf("http://%s:%d", apiConnectNet.Hostname, apiConnectNet.Port))
+	if err != nil {
+		panic(fmt.Sprintf("accounts' authority interface: %v", err))
+	}
+	authorityConn, err := grpc.NewClient(authorityTarget, host.DialOptions(authorityTransport)...)
+	if err != nil {
+		panic(fmt.Sprintf("cannot connect to accounts' authority interface at %s: %v", authorityTarget, err))
+	}
+	defer func() { _ = authorityConn.Close() }()
+	hopRole, front, err := standHop(ctx, authorityConn)
+	if err != nil {
+		panic(fmt.Sprintf("hop: %v", err))
+	}
+	if front != nil {
+		defer front.Close()
+	}
+	stopHop, err := serveHop(ctx, front)
+	if err != nil {
+		panic(err.Error())
+	}
 
 	// Access-token verification keys come from the JWKS accounts publishes on
 	// the endpoint Codefly discovery resolved above, re-read by kid so an
@@ -245,6 +274,7 @@ func main() {
 		// reach this replica without restarting it.
 		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
 		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
+		gateway.hop = hopRole
 		frontendSource, err := frontendpayload.Configure(ctx, codefly.For(ctx), codefly.IsLocal(), os.Getenv("KUBERNETES_SERVICE_HOST") != "")
 		if err != nil {
 			panic(err)
@@ -255,10 +285,6 @@ func main() {
 		// connection. It is not a cache: the answer is per viewer and must not
 		// outlive a revoke, so every request asks.
 		gateway.solutionEntitlements = &accountsSolutionEntitlements{conn: internalAPIConn, internalToken: authz.internalToken}
-		// The issuer's answer to what a bearer-less capability is, over the
-		// same connection, asked per request.
-		gateway.workloadAdmission = &accountsWorkloadAdmission{conn: internalAPIConn, internalToken: authz.internalToken}
-		gateway.requireWorkloadPresenter = !codefly.IsLocal()
 		go gateway.solutions.reconcile(ctx)
 		go gateway.clients.reconcile(ctx)
 		if apiHTTPURL != "" {
@@ -338,6 +364,8 @@ func main() {
 			}
 			drainCancel()
 		}
+
+		stopHop()
 
 		// 2. Gracefully stop gRPC server (finishes in-flight RPCs).
 		log.Println("shutdown: stopping gRPC server...")

@@ -37,6 +37,10 @@ interface:
         - service: auth-gateway
           endpoint: workload
           visibility: internal
+        # The hop on a cell: every module call goes through it.
+        - service: auth-gateway
+          endpoint: hop
+          visibility: internal
         - service: frontend
           endpoint: http
           visibility: public

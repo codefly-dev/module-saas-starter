@@ -248,14 +248,18 @@ func assertSecretDefaultIsPlaceholder(t *testing.T, name string) {
 func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 	for _, group := range declaredWorkspaceConfigGroups(t) {
 		// The CLI supplies these groups: artifact-cache per native run, egress
-		// from the environment's egress declaration. An authored path (even an
-		// empty placeholder) conflicts with its CLI-owned declaration.
-		if group == "artifact-cache" || group == "egress" {
+		// from the environment's egress declaration, hop-routes from the
+		// published API catalogs of the modules hop/MODULES names. hop itself
+		// names the composition's modules, which only the composition knows: a
+		// default shipped here would shadow or collide with the composing
+		// workspace's hop group, the one the authority module's hop reads too.
+		// An authored path (even an empty placeholder) conflicts with its owner.
+		if group == "artifact-cache" || group == "egress" || group == "hop" || group == "hop-routes" {
 			for _, directory := range []string{moduleConfigLocalDir, workspaceConfigLocalDir} {
 				for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
 					path := filepath.Join(directory, group+suffix)
 					if _, err := os.Lstat(path); !os.IsNotExist(err) {
-						t.Errorf("CLI-owned group %s must have no authored default at %s", group, path)
+						t.Errorf("CLI- or composition-owned group %s must have no authored default at %s", group, path)
 					}
 				}
 			}

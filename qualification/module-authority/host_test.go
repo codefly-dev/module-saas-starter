@@ -36,21 +36,6 @@ type host struct {
 	Authority     string
 	InternalToken string
 	Fixture       accountsReady
-	// Flow is the gateway half's module read: the fixture person's confined
-	// credential and the names it was declared under.
-	Flow moduleReadFlow
-}
-
-// moduleReadFlow is the gateway half's announcement of the module read
-// (moduleReadFlowReady in auth-gateway).
-type moduleReadFlow struct {
-	Bearer   string `json:"bearer"`
-	Subject  string `json:"subject"`
-	Org      string `json:"org"`
-	Session  string `json:"session"`
-	Solution string `json:"solution"`
-	Module   string `json:"module"`
-	Header   string `json:"header"`
 }
 
 // accountsReady is the accounts half's announcement
@@ -146,8 +131,7 @@ func bootHost() (*host, error) {
 	gatewayInput, _ := json.Marshal(map[string]string{
 		"internal_token": h.InternalToken, "accounts": h.Fixture.Internal,
 		"connect": h.Fixture.Connect, "gateway_token": gatewayToken,
-		"tenant": h.Fixture.Tenant, "owner": h.Fixture.Owner, "public_base": publicBase,
-		"consumer_installation": h.Fixture.ConsumerInstallation,
+		"public_base": publicBase,
 	})
 	line, err = startHelper(filepath.Join(services, "auth-gateway", "code"), gatewayBin,
 		"TestModuleAuthorityContractGateway", "MODULE_AUTHORITY_CONTRACT_GATEWAY", string(gatewayInput), gatewayReadyPrefix)
@@ -155,9 +139,8 @@ func bootHost() (*host, error) {
 		return nil, fmt.Errorf("gateway half: %w", err)
 	}
 	var gateway struct {
-		Gateway  string         `json:"gateway"`
-		Workload string         `json:"workload"`
-		Flow     moduleReadFlow `json:"flow"`
+		Gateway  string `json:"gateway"`
+		Workload string `json:"workload"`
 	}
 	if err := json.Unmarshal([]byte(line), &gateway); err != nil {
 		return nil, fmt.Errorf("gateway half announced %q: %w", line, err)
@@ -165,7 +148,7 @@ func bootHost() (*host, error) {
 	if gateway.Workload == "" {
 		return nil, fmt.Errorf("gateway half announced no workload endpoint: %q", line)
 	}
-	h.GatewayURL, h.WorkloadURL, h.Flow = gateway.Gateway, gateway.Workload, gateway.Flow
+	h.GatewayURL, h.WorkloadURL = gateway.Gateway, gateway.Workload
 	return h, nil
 }
 

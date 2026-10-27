@@ -14,8 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/codefly-dev/core/workcontext"
-	carrier "github.com/codefly-dev/sdk-go/workcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -37,13 +35,9 @@ import (
 // starts it with MODULE_AUTHORITY_CONTRACT_GATEWAY set, serves until its stdin
 // closes, and otherwise skips.
 //
-// Given accounts' Connect tier, it also serves the module read a confined
-// credential is delivered for (TestTheModuleReadThroughTheRealGatewayIsMintedByTheRealStartTask
-// in the qualification): its accounts_connect upstream and Work Context JWKS
-// are that tier, it forwards the gateway credential accounts trusts, and it
-// declares one solution and one composed module the fixture person is entitled
-// to. The solution and client registries and the entitlements are this
-// package's in-memory ones; the mint, the key set and the edge are real.
+// Given accounts' Connect tier, its accounts_connect upstream is that tier. No
+// module is read through this gateway: a module call goes through the hop
+// (gateway_hop.go), never to the module from here.
 
 const (
 	moduleAuthorityContractGatewayEnv   = "MODULE_AUTHORITY_CONTRACT_GATEWAY"
@@ -55,33 +49,13 @@ type moduleAuthorityContractGatewayInput struct {
 	// Accounts is the host:port of accounts' internal tier, as the accounts
 	// half announced it.
 	Accounts string `json:"accounts"`
-	// Connect is the host:port of accounts' Connect tier and Work Context
-	// JWKS; with it the module read flow is served too.
+	// Connect is the host:port of accounts' Connect tier: the gateway's
+	// accounts_connect upstream.
 	Connect      string `json:"connect"`
 	GatewayToken string `json:"gateway_token"`
-	// Tenant and Owner are the accounts fixture's organization and person:
-	// the confined credential is theirs.
-	Tenant string `json:"tenant"`
-	Owner  string `json:"owner"`
 	// PublicBase is the deployment's public origin; the accounts half is
 	// given the same.
 	PublicBase string `json:"public_base"`
-	// ConsumerInstallation is the solution's installation in Tenant, as the
-	// accounts half records it: the one its entitlement names.
-	ConsumerInstallation string `json:"consumer_installation"`
-}
-
-// moduleReadFlowReady is what the flow needs from this half: the person's
-// confined credential and the facts it carries, and the declared names.
-type moduleReadFlowReady struct {
-	Bearer   string `json:"bearer"`
-	Subject  string `json:"subject"`
-	Org      string `json:"org"`
-	Session  string `json:"session"`
-	Solution string `json:"solution"`
-	Module   string `json:"module"`
-	// Header is the request header a Work Context travels in.
-	Header string `json:"header"`
 }
 
 func TestModuleAuthorityContractGateway(t *testing.T) {
@@ -107,9 +81,8 @@ func TestModuleAuthorityContractGateway(t *testing.T) {
 		t.Setenv("APP_BASE_URL", input.PublicBase)
 	}
 	// Access-token verification is not under test for the module broker; the
-	// key only has to exist. The module read flow signs its confined credential
-	// with it. Everything else runs as in production.
-	public, access, err := ed25519.GenerateKey(rand.Reader)
+	// key only has to exist. Everything else runs as in production.
+	public, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	authz := NewExtAuthz(conn, staticAccessKeys(public))
 	authz.internalToken = input.InternalToken
@@ -155,9 +128,6 @@ func TestModuleAuthorityContractGateway(t *testing.T) {
 		"gateway":  "http://" + listener.Addr().String(),
 		"workload": "http://" + workloadPort.Addr().String(),
 	}
-	if input.Connect != "" {
-		announced["flow"] = serveModuleReadFlow(t, gateway, access, input)
-	}
 	ready, err := json.Marshal(announced)
 	require.NoError(t, err)
 	_, err = fmt.Fprintln(os.Stdout, moduleAuthorityContractGatewayReady+string(ready))
@@ -168,47 +138,5 @@ func TestModuleAuthorityContractGateway(t *testing.T) {
 		if _, err := stdin.ReadByte(); err != nil {
 			return
 		}
-	}
-}
-
-// serveModuleReadFlow points gateway's Work Context edge at accounts' key set,
-// declares the "example" solution and the "documents" module, entitles the
-// fixture organization to both, and signs the fixture person a credential
-// confined to the solution.
-//
-// The module upstream answers with the facts of the capability the edge
-// forwarded to it, decoded by core, so the qualification can hold them to what
-// the credential named: the module's own full verification is pinned in this
-// package (TestMCPModuleReadThroughTheRealGatewayOnCoreWorkContexts) and in
-// accounts (TestStartTaskMintsWhatACoreVerifierReadsForAModule).
-func serveModuleReadFlow(t *testing.T, gateway *Gateway, access ed25519.PrivateKey, input moduleAuthorityContractGatewayInput) moduleReadFlowReady {
-	t.Helper()
-	require.NotEmpty(t, input.Tenant)
-	require.NotEmpty(t, input.Owner)
-	gateway.workContext = newWorkContextVerifier("http://" + input.Connect)
-	registerSolutionUpstream(t, gateway, "example")
-	declareReadingModule(t, gateway, "documents", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		decoded, err := workcontext.Decode(r.Header.Get(carrier.HeaderName))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
-		claims := decoded.Context()
-		w.Header().Set("content-type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"issuer": claims.GetIssuer(), "audience": claims.GetAudience(),
-			"owner": claims.GetOwnerPrincipalId(), "tenant": claims.GetTenantId(),
-			"session": claims.GetSessionId(), "installation": claims.GetSeal().GetInstallationId(),
-		})
-	}))
-	require.NotEmpty(t, input.ConsumerInstallation)
-	gateway.solutionEntitlements = &entitledTo{
-		ids:           []string{fakeSolutionTarget("example"), fakeSolutionTarget("documents")},
-		installations: map[string]string{fakeSolutionTarget("example"): input.ConsumerInstallation},
-	}
-	caller := signConfinedCallerFor(t, access, solutionMCPResource(input.PublicBase, "example"), input.Owner, input.Tenant)
-	return moduleReadFlowReady{
-		Bearer: caller.bearer, Subject: caller.subject, Org: caller.org, Session: caller.session,
-		Solution: "example", Module: "documents", Header: carrier.HeaderName,
 	}
 }

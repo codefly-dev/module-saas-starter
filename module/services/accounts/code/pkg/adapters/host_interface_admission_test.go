@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"testing"
@@ -20,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gopkg.in/yaml.v3"
 )
 
 // memoryAdmissionKeys stands in for the table: the lease semantics against a
@@ -200,9 +203,9 @@ func TestOnlyTheHopRegistersAnAdmissionKey(t *testing.T) {
 		workload executiontest.Workload
 		reason   string
 	}{
-		"another module":        {executiontest.Workload{Namespace: "documents", ServiceAccount: "documents", Container: "app"}, "the caller is documents/documents, not the hop (authority/hop)"},
-		"a hop of another name": {executiontest.Workload{Namespace: "documents", ServiceAccount: "hop", Container: "app"}, "the caller is documents/hop, not the hop (authority/hop)"},
-		"the authority's other": {executiontest.Workload{Namespace: "authority", ServiceAccount: "edge", Container: "app"}, "the caller is authority/edge, not the hop (authority/hop)"},
+		"another module":        {executiontest.Workload{Namespace: "documents", ServiceAccount: "documents", Container: "app"}, "the caller is documents/documents, not a hop (authority/hop)"},
+		"a hop of another name": {executiontest.Workload{Namespace: "documents", ServiceAccount: "hop", Container: "app"}, "the caller is documents/hop, not a hop (authority/hop)"},
+		"the authority's other": {executiontest.Workload{Namespace: "authority", ServiceAccount: "edge", Container: "app"}, "the caller is authority/edge, not a hop (authority/hop)"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := f.register(t, f.cluster.Run(tc.workload), public)
@@ -222,6 +225,55 @@ func TestOnlyTheHopRegistersAnAdmissionKey(t *testing.T) {
 	require.Equal(t, codes.InvalidArgument, status.Code(err), "%v", err)
 	require.ErrorContains(t, err, "16 bytes, not 32")
 	require.Empty(t, f.published(t))
+}
+
+// On a cell no authority module is composed, and this host's own gateway is
+// the hop: its workload, in this host's module's namespace as the cell spells
+// it, registers like the composed hop does. The gateway's service account in
+// any other namespace is refused, and the composed hop stays admitted.
+func TestThisHostsGatewayRegistersAnAdmissionKey(t *testing.T) {
+	f := newAdmissionFixture(t)
+	rule, err := business.NewModuleNamespaceRule("staging-saas-starter", "saas-starter")
+	require.NoError(t, err)
+	service.SetModuleNamespaceRule(rule)
+	service.SetModuleEnvelopeDeliveryHost("saas-starter")
+
+	gateway := f.cluster.Run(executiontest.Workload{Namespace: "staging-saas-starter", ServiceAccount: business.GatewayHopService, Container: "app"})
+	id, public := hopPublicKey(t, "the-gateway")
+	out, err := f.register(t, gateway, public)
+	require.NoError(t, err)
+	require.Equal(t, id, out.GetKey().GetKeyId())
+	require.Equal(t, []string{id}, f.published(t))
+	require.Equal(t, "staging-saas-starter/auth-gateway", f.audit.only(t).Payload["workload"])
+
+	_, impostorKey := hopPublicKey(t, "gateway-elsewhere")
+	elsewhere := f.cluster.Run(executiontest.Workload{Namespace: "staging-documents", ServiceAccount: business.GatewayHopService, Container: "app"})
+	_, err = f.register(t, elsewhere, impostorKey)
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.ErrorContains(t, err, "the caller is staging-documents/auth-gateway, not a hop (staging-authority/hop or staging-saas-starter/auth-gateway)")
+
+	_, hopKey := hopPublicKey(t, "the-composed-hop")
+	hop := f.cluster.Run(executiontest.Workload{Namespace: "staging-authority", ServiceAccount: business.HopService, Container: "app"})
+	_, err = f.register(t, hop, hopKey)
+	require.NoError(t, err)
+}
+
+// The gateway's service account is what its manifest declares: the constant
+// this host admits is pinned to it here, not left to agree by eye.
+func TestGatewayHopServiceIsTheGatewaysDeclaredServiceAccount(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "auth-gateway", "service.codefly.yaml"))
+	require.NoError(t, err)
+	var manifest struct {
+		ModuleIdentity bool `yaml:"module-identity"`
+		Spec           struct {
+			ServiceAccount struct {
+				Name string `yaml:"name"`
+			} `yaml:"service-account"`
+		} `yaml:"spec"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &manifest))
+	require.Equal(t, business.GatewayHopService, manifest.Spec.ServiceAccount.Name)
+	require.True(t, manifest.ModuleIdentity, "the gateway registers under its workload credential, which only module-identity projects")
 }
 
 // The bound is the store's answer, refused by name; an unreadable store fails

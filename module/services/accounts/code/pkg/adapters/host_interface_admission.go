@@ -41,7 +41,7 @@ func (s *HostAuthorityServer) admissionKeys() admissionKeys {
 }
 
 // RegisterAdmissionKey publishes the hop's admission key in Keys until its
-// registration lapses, for the hop alone: the caller proves it is the hop by
+// registration lapses, for a hop alone: the caller proves it is a hop by
 // its workload credential, and any other workload is refused by name.
 func (s *HostAuthorityServer) RegisterAdmissionKey(ctx context.Context, req *authorityv1.RegisterAdmissionKeyRequest) (*authorityv1.RegisterAdmissionKeyResponse, error) {
 	keys := s.admissionKeys()

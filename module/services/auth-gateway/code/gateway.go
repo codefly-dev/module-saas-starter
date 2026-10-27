@@ -45,6 +45,10 @@ type Gateway struct {
 	selfHandler       http.Handler        // handler for "self" routes (health checks)
 	rateLimiter       *RateLimiter
 	requiredUpstreams []string
+	// hop is the hop this gateway stands as in front of every composed module
+	// (gateway_hop.go); nil when the composition names none for it, and then no
+	// module path is served.
+	hop *hopRole
 	// solutions is this replica's view of the durable solution registry: the
 	// authority is accounts, and the cache converges on it (#534).
 	solutions *solutionRegistryCache
@@ -62,14 +66,6 @@ type Gateway struct {
 	// solution a viewer is currently using.
 	solutionEntitlements solutionEntitlementClient
 	workContext          *workContextVerifier
-	// workloadAdmission asks accounts whether a capability on the bearer-less
-	// module arm is a module operation context. Set after construction; nil
-	// answers 503 there and never admits.
-	workloadAdmission workloadAdmissionClient
-	// requireWorkloadPresenter makes the bearer-less arm require the waypoint
-	// presenter the workload listener authenticated. Set outside native
-	// development, where the listener already requires one.
-	requireWorkloadPresenter bool
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -245,11 +241,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	entry := g.matcher.Match(r.Method, r.URL.Path)
 	if entry == nil {
 		// The generated + explicit catalog is the authority and always wins: a
-		// declared module's /v1/<alias>/* surface is tried ONLY once the catalog
-		// has no match, so a declared alias can never shadow a catalog route. An
-		// alias nothing declared falls through to the 404 below, which is what
-		// keeps the surface from being a probe for which modules run here.
-		if g.handleDeclaredModule(w, r) {
+		// module's published routes are tried ONLY once the catalog has no match,
+		// so a module can never shadow a catalog route. A module call goes
+		// through the hop (gateway_hop.go), never to the module directly. A path
+		// no module publishes falls through to the 404 below.
+		if g.serveBrowser(w, r) {
 			return
 		}
 		// NO ROUTE RESOLVED, so the verifier was never called: a forged capability

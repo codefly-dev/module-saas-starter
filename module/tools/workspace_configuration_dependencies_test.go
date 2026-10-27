@@ -216,14 +216,23 @@ func TestEveryWorkspaceGroupReadIsDeclared(t *testing.T) {
 }
 
 // cliOwnedGroups are the workspace configuration groups Codefly itself writes
-// for each run or environment, so a module ships no default for them — the CLI
-// refuses an authored one — and their keys are the CLI's to name.
+// for each run or environment, or that only the composition can state, so a
+// module ships no default for them — the CLI refuses an authored one, or a
+// shipped one would collide with the composition's — and their keys are their
+// owner's to name.
 var cliOwnedGroups = map[string]string{
 	// Its ROOT is the run's actual digest cache directory
 	// (composition.ArtifactCacheDir), not a shipped path.
 	"artifact-cache": "the native run's artifact cache",
 	// HOSTS is generated from the environment's egress declaration.
 	"egress": "the environment's declared egress hosts",
+	// ROUTES is generated from the published API catalogs of the modules
+	// hop/MODULES names; the CLI refuses an authored hop-routes.
+	"hop-routes": "the composed modules' published API catalogs",
+	// MODULES names the composition's modules, which only the composition
+	// knows; the authority module's hop reads the same group, so a default
+	// shipped here would collide with the composing workspace's.
+	"hop": "the composition's hop modules",
 }
 
 // A declared group with no shipped default leaves a composing workspace to
@@ -234,12 +243,13 @@ func TestEveryDeclaredWorkspaceGroupShipsADefault(t *testing.T) {
 	moduleDir := findModuleDir(t)
 	for _, service := range servicesWithManifests(t) {
 		for group := range declaredWorkspaceGroups(t, service) {
-			// The CLI owns these values and refuses authored defaults.
+			// The CLI or the composition owns these values; an authored
+			// default is refused or would collide.
 			if owner, cliOwned := cliOwnedGroups[group]; cliOwned {
 				for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
 					_, err := os.Stat(filepath.Join(moduleDir, "configurations", "local", group+suffix))
 					if !os.IsNotExist(err) {
-						t.Errorf("CLI-owned %s (%s) must have no authored default", group, owner)
+						t.Errorf("%s (%s) must have no authored default", group, owner)
 					}
 				}
 				continue
