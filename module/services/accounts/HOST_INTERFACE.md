@@ -56,15 +56,17 @@ What accounts adds, and where:
   `pkg/adapters/host_interface_conformance_test.go`, with every package's
   dependency tests, at the authority revision `go.mod` pins: accounts booted over
   its test store, its Connect listener on an ephemeral port, modules and
-  solutions delivered as the CLI delivers them, no policy log wired (as on a
-  deployed host), and the fixture's installations performed through the core.
+  solutions delivered as the CLI delivers them, and the fixture's installations
+  performed through the core.
 - The solution-principal target (`RunSolutionPrincipalTarget`) runs in the same
-  harness. A person leaving a team or the organization is applied to the
-  membership rows directly there, a labelled stand-in for accounts' own
-  membership narrowing, which needs a policy log (below).
-- `.github/workflows/ci.yml` (`host-interface-conformance`) runs the suite at
-  authority main, whenever main contains the pinned revision, on every pull
-  request.
+  harness. A person leaving a team or the organization goes through accounts'
+  own production paths (`RemoveTeamMember`, `RemoveOrgMember`): the narrowing
+  applies at once, the next issue no longer carries what the membership gave,
+  and the removal is in the audit journal naming the person removed.
+- `.github/workflows/ci.yml` (`host-interface-conformance`, the required
+  context "Host interface conformance (authority main)" and a release gate)
+  runs the suite at authority main, whenever main contains the pinned revision,
+  on every pull request and merge-queue entry.
 - The core's store contract (`authority-core/go/storetest`) runs against this
   Postgres store in `pkg/infra/postgres_authority_core_test.go`.
 - The core's own decisions are unit tested in `codefly-dev/authority`.
@@ -78,5 +80,6 @@ What accounts adds, and where:
   are accounts' product surface and are not the core's; a fixture installation
   is performed in both.
 - A narrowing of accounts' own RBAC (removing a team member, revoking a scope
-  grant) still requires a policy log, which a deployed host does not wire; the
-  host interfaces' own revocations (role, delegation, uninstall, detach) do not.
+  grant) runs on the control plane with an explicit organisation predicate at
+  each statement, as it did under the former witness; returning the
+  organisation-only ones to the tenant transaction is open.

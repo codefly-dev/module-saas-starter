@@ -151,18 +151,13 @@ func (s *Service) NarrowInstallationScope(ctx context.Context, actorID, orgID, i
 	if InstallationScopeWithin(current.Scope, scope) {
 		return nil
 	}
-	entry := uninstallPolicyLogEntry(actorID, orgID, id)
-	// The complete resulting scope belongs in the log, never only an increment.
-	raw, _ := json.Marshal(scope)
-	var policy map[string]any
-	if err := json.Unmarshal(raw, &policy); err != nil {
+	// The complete resulting scope is recorded, never only an increment.
+	raw, err := json.Marshal(scope)
+	if err != nil {
 		return err
 	}
-	entry.OperationID = newPolicyLogOperationID("narrow-installation")
-	entry.EnvelopeRevision = snapshot.envelopeRevision
-	entry.Policy = map[string]any{"org_id": orgID, "status": "active", "scope": policy, "revision": revision + 1}
 	actorType := s.actorTypeForCreator(ctx, actorID)
-	return s.WithPolicyLoggedNarrowing(ctx, entry, func(ctx context.Context) error {
+	return s.narrow(ctx, func(ctx context.Context) error {
 		if err := store.NarrowInstallationScope(ctx, orgID, id, revision, scope, snapshot.registry, snapshot.envelopeRevision); err != nil {
 			return err
 		}

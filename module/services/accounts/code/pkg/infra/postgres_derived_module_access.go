@@ -142,11 +142,11 @@ func (s *PostgresStore) EnsureDerivedRole(ctx context.Context, role business.Der
 //     team's grant on it, and knows its root as the node id the installation row
 //     carries, so nothing has to resolve a path from a row it just revoked.
 //
-// Ordered so a revocation's policy-log entries and events are in a fixed order
+// Ordered so a revocation's events are in a fixed order
 // rather than the order Postgres happened to return.
 //
 // Every relation is named with orgID explicitly, the cause and the node included.
-// The uninstall path runs this under the policy log's CONTROL-PLANE transaction,
+// The uninstall path runs this under a narrowing's CONTROL-PLANE transaction,
 // where there is no RLS floor to fall back on, and the predicate the tenant
 // policy would have applied has to be in the statement instead.
 func (s *PostgresStore) DerivedScopeGrants(ctx context.Context, orgID, causeGrantID, causeScopeNodeID string) ([]*gen.ScopeGrant, error) {

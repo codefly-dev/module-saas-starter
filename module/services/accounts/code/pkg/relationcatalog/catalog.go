@@ -110,8 +110,6 @@ var authorities = map[string]Authority{
 	"solution_generation_history":   {Scope: ScopeGlobal},
 	"solution_delivery_documents":   {Scope: ScopeGlobal},
 	"module_envelopes":              {Scope: ScopeGlobal},
-	"policy_log_commits":            {Scope: ScopeGlobal},
-	"policy_log_cursor":             {Scope: ScopeGlobal},
 	"datasource_credential_budgets": {Scope: ScopeGlobal},
 	"hop_admission_keys":            {Scope: ScopeGlobal},
 	"authority_core_delegations":    {Scope: ScopeGlobal},

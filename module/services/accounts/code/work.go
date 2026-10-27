@@ -524,45 +524,9 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, fmt.Errorf("configure solution host binding reconciler: %w", err)
 	}
 
-	// The policy log: append → receipt → commit, before authority is narrowed.
-	//
-	// THIS DEPLOYMENT HAS NO LOG TRANSPORT, and that is stated by wiring none
-	// rather than by wiring something that refuses. The difference matters now
-	// that the serving gate is on the request path: a host holding a log it can
-	// never reach never refreshes `reached_at`, so the staleness window closes
-	// and the host stops answering anything — a total outage dressed as
-	// fail-closed. A host holding NO log has nothing unreconciled to honour, so
-	// `MayServe` admits and the host serves.
-	//
-	// What it cannot do is NARROW authority. `WithPolicyLoggedNarrowing` refuses
-	// outright, so uninstalling a solution, closing a withdrawn solution
-	// target, revoking a scope grant and removing a team membership all refuse
-	// with ErrPolicyLogUnreachable until a transport exists. That is the
-	// protocol's own answer — a narrowing nothing witnessed is one a restore
-	// silently undoes — and it is loud rather than silent, below.
-	//
-	// WHY THERE IS NO TRANSPORT. The warehouse the log lives in cannot issue the
-	// receipt the protocol requires. `PolicyLog.Append` must return a token the
-	// LOG minted and a monotonic sequence the LOG assigned, because the receipt
-	// is what separates "the log witnessed this" from "this host decided it". A
-	// BigQuery dataset assigns neither to a writer: the non-job write paths
-	// return no ordinal, ingestion time is not readable until the streaming
-	// buffer flushes, and the writer role deliberately holds no read and no
-	// job-creation permission, so it cannot read its own row back to learn
-	// either. Closing that needs a receipt-issuing appender inside the
-	// warehouse's trust domain, which is infrastructure this service does not
-	// own. Anything else would be this host minting its own receipt — the exact
-	// tautology the protocol exists to prevent.
-	service.SetPolicyLog(nil, nil)
-	w.Warn("no policy log transport is configured: this host SERVES normally and REFUSES every " +
-		"narrowing of authority (solution uninstall, solution-target close, scope-grant revocation, " +
-		"team-membership removal), because a narrowing nothing witnessed is one a restore undoes silently")
-
-	// The serving gate, on the request path. Registered for both transports'
-	// authorization interceptors; with no log wired it admits, which is what
-	// MayServe answers for a host that has narrowed nothing through the
-	// protocol.
-	adapters.RegisterPolicyLogServingGate(service.RequireServing)
+	// A narrowing of authority (removing a member, revoking a grant,
+	// uninstalling, closing a withdrawn target) applies directly, recorded in
+	// the audit journal in the same transaction (business/narrowing.go).
 
 	// Enforcement at use. Every module capability path re-reads the live
 	// installation, producer epoch and binding revision through these, and

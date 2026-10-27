@@ -29,9 +29,7 @@ func auditedService(t *testing.T, emitter business.AuditEmitter) *business.Servi
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
 	service.SetAuditEmitter(emitter)
-	// These tests revoke principals and remove members, which are witnessed
-	// narrowings; see wireNarrowingPolicyLog.
-	return wireNarrowingPolicyLog(service)
+	return service
 }
 
 func countRows(t *testing.T, query string, args ...any) int {

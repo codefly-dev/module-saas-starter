@@ -194,11 +194,6 @@ func (i *connectPolicyInterceptor) WrapUnary(next connect.UnaryFunc) connect.Una
 		if err := enforceCentralPolicy(ctx, req.Spec().Procedure); err != nil {
 			return nil, translateGRPCError(err)
 		}
-		// The policy log's serving gate. After authorization, so the
-		// refusal reaches only callers this host would have served.
-		if err := enforcePolicyLogServing(ctx); err != nil {
-			return nil, translateGRPCError(err)
-		}
 		shadowPolicyCoverage(ctx, req.Spec().Procedure)
 		// One committed module-envelope revision read per unary request,
 		// however many module authority decisions the handler makes.
@@ -223,9 +218,6 @@ func (i *connectPolicyInterceptor) WrapStreamingHandler(next connect.StreamingHa
 			return translateGRPCError(err)
 		}
 		if err := enforceCentralPolicy(ctx, conn.Spec().Procedure); err != nil {
-			return translateGRPCError(err)
-		}
-		if err := enforcePolicyLogServing(ctx); err != nil {
 			return translateGRPCError(err)
 		}
 		shadowPolicyCoverage(ctx, conn.Spec().Procedure)

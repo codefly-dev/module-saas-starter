@@ -6391,7 +6391,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
-      "description": "Remove a team's grant at an installation's authority root, under the policy log.",
+      "description": "Remove a team's grant at an installation's authority root.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

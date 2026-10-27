@@ -49,6 +49,5 @@ services:
     - name: cache
     - name: frontend
     - name: marketing
-    - name: policy-log
     - name: store
     - name: vault

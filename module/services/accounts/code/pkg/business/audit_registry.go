@@ -774,7 +774,7 @@ var auditEventCatalog = []AuditEventDefinition{
 
 	mutation(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name")),
 	mutation(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization."),
-	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization."),
+	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization.", uid("user_id")),
 	mutation(EventOrgMemberLeft, CategoryOrganization, "A member left an organization."),
 	mutation(EventOrgUpdated, CategoryOrganization, "An organization was renamed or its slug changed.", str("name"), str("slug")),
 	mutation(EventOrgDeleted, CategoryOrganization, "An organization was deleted: archived, its members removed and its credentials revoked.", str("slug")),
@@ -784,7 +784,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventTeamUpdated, CategoryOrganization, "A team was updated."),
 	mutation(EventTeamDeleted, CategoryOrganization, "A team was deleted."),
 	mutation(EventTeamMemberAdded, CategoryOrganization, "A member was added to a team."),
-	mutation(EventTeamMemberRemoved, CategoryOrganization, "A member was removed from a team."),
+	mutation(EventTeamMemberRemoved, CategoryOrganization, "A member was removed from a team.", uid("user_id")),
 	mutation(EventSSOSetupStarted, CategoryOrganization, "SSO configuration was started."),
 	mutation(EventSSODisabled, CategoryOrganization, "SSO was disabled for an organization."),
 	observation(EventOnboardingStepDone, CategoryOrganization, "An onboarding step was completed.", str("step")),

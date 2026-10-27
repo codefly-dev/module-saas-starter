@@ -216,8 +216,7 @@ func (h *SolutionDeliveryHTTPHandler) serveApplied(w http.ResponseWriter, r *htt
 //	503 cannot verify        RETRYABLE — the host could not reach the API
 //	                         server, so nothing was checked
 //	503 not completed        RETRYABLE — e.g. the committed envelope moved
-//	                         during admission, or a delivered narrowing found
-//	                         no policy log to witness it (named)
+//	                         during admission
 func solutionDeliveryStatus(err error) (int, string) {
 	switch {
 	case errors.Is(err, business.ErrSolutionDeliveryMalformed):

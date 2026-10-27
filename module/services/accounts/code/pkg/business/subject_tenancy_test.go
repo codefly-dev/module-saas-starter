@@ -168,7 +168,6 @@ func TestDeleteOrganizationAcquiresMembershipLocksBeforeRevocations(t *testing.T
 	lockErr := errors.New("membership lock unavailable")
 	store := &bulkRemovalOrderStore{canonicalTenancyStore: canonicalTenancyStore{t: t, principalKind: PrincipalKindHuman}, lockErr: lockErr}
 	service := &Service{store: store}
-	service.SetPolicyLog(newFakePolicyLog(), newFakePolicyLogStore())
 	err := service.DeleteOrganization(context.Background(), strings.ToUpper(tenancyTestSubject), &gen.DeleteOrganizationRequest{OrgId: strings.ToUpper(tenancyTestOrg), ConfirmSlug: "example"})
 	require.ErrorIs(t, err, lockErr, "bulk membership locks must precede every revocation's trigger locks")
 }
@@ -177,7 +176,6 @@ func TestDeleteOrganizationAcquiresInstallationLocksBeforeTriggerWrites(t *testi
 	lockErr := errors.New("installation lock unavailable")
 	store := &bulkRemovalOrderStore{canonicalTenancyStore: canonicalTenancyStore{t: t, principalKind: PrincipalKindHuman}, installationErr: lockErr}
 	service := &Service{store: store}
-	service.SetPolicyLog(newFakePolicyLog(), newFakePolicyLogStore())
 	err := service.DeleteOrganization(context.Background(), tenancyTestSubject, &gen.DeleteOrganizationRequest{OrgId: tenancyTestOrg, ConfirmSlug: "example"})
 	require.ErrorIs(t, err, lockErr, "the installation batch lock must precede membership deletion and all revocations")
 }

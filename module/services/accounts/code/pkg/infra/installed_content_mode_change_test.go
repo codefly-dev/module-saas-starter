@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestInstalledContentReadModeMigrationRequiresWitnessPostgres(t *testing.T) {
+func TestInstalledContentReadModeChangeAppliesDirectlyPostgres(t *testing.T) {
 	for _, removing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "ordinary to content", true: "content to ordinary"}[removing], func(t *testing.T) {
 			s := newRegistryScenario(t, "modewitness")
@@ -24,7 +24,6 @@ func TestInstalledContentReadModeMigrationRequiresWitnessPostgres(t *testing.T) 
 			current := s.currentRevision(t)
 			_, err := s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, envelopeJSONAt(t, before, current+1))
 			require.NoError(t, err)
-			s.delivery.service.SetPolicyLog(nil, nil)
 			next := envelopeJSONClone(t, before)
 			if removing {
 				delete(binding(next), "delegation_mode")
@@ -32,11 +31,10 @@ func TestInstalledContentReadModeMigrationRequiresWitnessPostgres(t *testing.T) 
 				binding(next)["delegation_mode"] = business.DelegationModeContentRead
 			}
 			_, err = s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current+1, envelopeJSONAt(t, next, current+2))
-			require.Error(t, err)
-			require.ErrorIs(t, err, business.ErrPolicyLogUnreachable)
+			require.NoError(t, err, "a delegation-mode change applies directly")
 			record, err := s.delivery.service.GetModuleEnvelope(testCtx, s.admin)
 			require.NoError(t, err)
-			require.Equal(t, current+1, record.Revision)
+			require.Equal(t, current+2, record.Revision)
 		})
 	}
 }

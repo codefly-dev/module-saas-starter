@@ -156,33 +156,14 @@ func (s *Service) LeaveOrganization(ctx context.Context, userID string, req *gen
 // Authorization (owner, or platform super administrator) is the handler's; the
 // typed slug confirmation is checked here, against the row under the lock.
 //
-// A NARROWING, and the widest one an organization has, so it runs under the
-// policy log: the entry is appended to the external record and receipted BEFORE
-// anything is revoked, and every revocation commits in the same transaction as
-// the receipt's commit. A host that cannot witness the append refuses the
-// deletion rather than performing one a restore could silently undo.
-//
-// ONE WITNESSED OPERATION, NOT ONE PER INSTALLATION — the decision this path
-// forces, and deletedOrganizationPolicyLogEntry carries the reasoning. The
-// short form: everything revoked here is revoked BECAUSE the organization was
-// archived, so the archive is the fact worth recording and the organization is
-// the subject a replay can ask about; an entry per installation would record
-// that same fact several times. The alternative is also not available —
-// WithPolicyLoggedNarrowing cannot nest (each call opens its own
-// WithControlPlane transaction, and tenant_tx.go's no-nesting rule is that the
-// second checks out a second pool connection while the first still holds one),
-// so the per-installation entries could not be appended from inside this
-// transaction at all. That is why the loop below calls uninstallSolutionTx —
-// the same function an operator's uninstall applies inside ITS witnessed
-// operation — rather than UninstallSolution, which would try to witness each
-// installation separately.
-//
-// The transaction is the policy log's control-plane one rather than this
-// organization's, because the receipt lives in a control-plane relation
-// app_tenant holds no grant on, and the receipt and the revocations have to be
-// one transaction or "applied but unwitnessed" becomes reachable. The
-// organization's own scoping is not lost: every statement below names req.OrgId
-// explicitly, which is what the tenant policy would have checked.
+// A NARROWING, and the widest one an organization has. It applies directly
+// (narrow): every revocation and its audit event commit in one control-plane
+// transaction. The loop below calls uninstallSolutionTx — the same function an
+// operator's uninstall applies — inside this one transaction rather than
+// UninstallSolution, which would open a transaction of its own and tenant_tx.go
+// forbids nesting. The organization's own scoping is not lost: every statement
+// below names req.OrgId explicitly, which is what the tenant policy would have
+// checked.
 func (s *Service) DeleteOrganization(ctx context.Context, actorID string, req *gen.DeleteOrganizationRequest) error {
 	orgID, actorID, err := canonicalSubjectTenancyIDs(req.OrgId, actorID)
 	if err != nil {
@@ -191,58 +172,56 @@ func (s *Service) DeleteOrganization(ctx context.Context, actorID string, req *g
 	w := wool.Get(ctx).In("DeleteOrganization")
 	actorType := s.actorTypeForCreator(ctx, actorID)
 	var members []string
-	if err := s.WithPolicyLoggedNarrowing(ctx,
-		deletedOrganizationPolicyLogEntry(actorID, orgID),
-		func(ctx context.Context) error {
-			if err := s.store.LockOrgAdministration(ctx, orgID); err != nil {
-				return w.Wrapf(err, "cannot lock organization administration")
+	if err := s.narrow(ctx, func(ctx context.Context) error {
+		if err := s.store.LockOrgAdministration(ctx, orgID); err != nil {
+			return w.Wrapf(err, "cannot lock organization administration")
+		}
+		org, err := s.store.GetOrganization(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		if org == nil || org.ArchivedAt != nil {
+			return NewStoreError(fmt.Errorf("organization %s not found", orgID), ErrTypeNotFound)
+		}
+		if !strings.EqualFold(strings.TrimSpace(req.ConfirmSlug), org.Slug) {
+			return ErrOrgDeleteConfirmation
+		}
+		// Acquire every membership lock before any revocation can take an
+		// authorization-revision or session lock through its triggers. Lock
+		// only: deleting now would invert standalone uninstall's order of
+		// installation -> standing grant -> authorization revision.
+		if members, err = s.store.LockAllOrgMembers(ctx, orgID); err != nil {
+			return err
+		}
+		// No trigger-producing write may precede the entire batch lock.
+		installations, err := s.store.ActiveInstallationIDs(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		for _, installationID := range installations {
+			if err := s.uninstallSolutionTx(ctx, actorID, actorType, orgID, installationID); err != nil {
+				return w.Wrapf(err, "cannot uninstall %s", installationID)
 			}
-			org, err := s.store.GetOrganization(ctx, orgID)
-			if err != nil {
-				return err
-			}
-			if org == nil || org.ArchivedAt != nil {
-				return NewStoreError(fmt.Errorf("organization %s not found", orgID), ErrTypeNotFound)
-			}
-			if !strings.EqualFold(strings.TrimSpace(req.ConfirmSlug), org.Slug) {
-				return ErrOrgDeleteConfirmation
-			}
-			// Acquire every membership lock before any revocation can take an
-			// authorization-revision or session lock through its triggers. Lock
-			// only: deleting now would invert standalone uninstall's order of
-			// installation -> standing grant -> authorization revision.
-			if members, err = s.store.LockAllOrgMembers(ctx, orgID); err != nil {
-				return err
-			}
-			// No trigger-producing write may precede the entire batch lock.
-			installations, err := s.store.ActiveInstallationIDs(ctx, orgID)
-			if err != nil {
-				return err
-			}
-			for _, installationID := range installations {
-				if err := s.uninstallSolutionTx(ctx, actorID, actorType, orgID, installationID); err != nil {
-					return w.Wrapf(err, "cannot uninstall %s", installationID)
-				}
-			}
-			if _, err := s.store.RemoveLockedOrgMembers(ctx, orgID, members); err != nil {
-				return err
-			}
-			if _, err := s.store.RevokeOrgAPIKeys(ctx, orgID); err != nil {
-				return err
-			}
-			if _, err := s.store.RevokeOrgPendingInvitations(ctx, orgID); err != nil {
-				return err
-			}
-			if err := s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: orgID}, SourceDelegationMemberRemoved); err != nil {
-				return err
-			}
-			if err := s.store.ArchiveOrganization(ctx, orgID, actorID); err != nil {
-				return err
-			}
-			return s.emitTx(ctx, actorID, actorType, EventOrgDeleted, "organization", orgID, orgID, map[string]any{
-				"slug": org.Slug,
-			})
-		}); err != nil {
+		}
+		if _, err := s.store.RemoveLockedOrgMembers(ctx, orgID, members); err != nil {
+			return err
+		}
+		if _, err := s.store.RevokeOrgAPIKeys(ctx, orgID); err != nil {
+			return err
+		}
+		if _, err := s.store.RevokeOrgPendingInvitations(ctx, orgID); err != nil {
+			return err
+		}
+		if err := s.revokeSourceDelegationsTx(ctx, actorID, SourceDelegationFilter{OrgID: orgID}, SourceDelegationMemberRemoved); err != nil {
+			return err
+		}
+		if err := s.store.ArchiveOrganization(ctx, orgID, actorID); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, actorType, EventOrgDeleted, "organization", orgID, orgID, map[string]any{
+			"slug": org.Slug,
+		})
+	}); err != nil {
 		return w.Wrapf(err, "cannot delete organization")
 	}
 	for _, memberID := range members {

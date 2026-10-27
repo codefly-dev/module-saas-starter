@@ -12,8 +12,31 @@ export GOWORK=off
 
 pinned="$(go list -m -f '{{.Version}}' github.com/codefly-dev/authority/libraries/authority-core/go)"
 pinned_sha="${pinned##*-}"
-main_sha="$(git ls-remote https://github.com/codefly-dev/authority.git refs/heads/main | cut -c1-12)"
-status="$(curl -fsS "https://api.github.com/repos/codefly-dev/authority/compare/${pinned_sha}...${main_sha}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')"
+# Ancestry is read from a blobless clone of authority's main, never from the
+# GitHub API: an unauthenticated API call shares a small per-address budget on
+# hosted runners, and a check that fails when that budget runs out is a flake.
+# The clone is retried, because a network failure says nothing about accounts.
+authority="$(mktemp -d)"
+trap 'rm -rf "$authority"' EXIT
+for attempt in 1 2 3; do
+  if git clone -q --bare --filter=blob:none --single-branch --branch main \
+    https://github.com/codefly-dev/authority.git "$authority/main.git"; then
+    break
+  fi
+  rm -rf "$authority/main.git"
+  if [ "$attempt" = 3 ]; then
+    echo "::error::cannot clone codefly-dev/authority main"
+    exit 1
+  fi
+  sleep $((attempt * 10))
+done
+main_sha="$(git -C "$authority/main.git" rev-parse --short=12 HEAD)"
+if git -C "$authority/main.git" merge-base --is-ancestor "$pinned_sha" "$main_sha" 2>/dev/null; then
+  status="ahead"
+  [ "$(git -C "$authority/main.git" rev-parse --short=12 "$pinned_sha")" = "$main_sha" ] && status="identical"
+else
+  status="diverged"
+fi
 echo "authority pinned at ${pinned_sha}; main at ${main_sha}; main is ${status} of the pin"
 if [ "$status" = "ahead" ] || [ "$status" = "identical" ]; then
   for library in authority-core conformance authority-client delivery resources; do

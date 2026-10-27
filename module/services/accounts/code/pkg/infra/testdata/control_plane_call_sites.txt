@@ -88,8 +88,6 @@ pkg/business/module_envelope.go: (*Service).CurrentModuleEnvelope: WithControlPl
 pkg/business/module_envelope.go: (*Service).GetModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).committedModuleEnvelopeRevision: WithControlPlane
 pkg/business/module_envelope.go: (*Service).deliveredSince: WithControlPlane
-pkg/business/module_envelope.go: (*Service).moduleEnvelopeNarrows: WithControlPlane
-pkg/business/module_envelope.go: (*Service).writeModuleEnvelope: WithControlPlane
 pkg/business/module_envelope_delivery.go: (*Service).ReceiveModuleEnvelopeDelivery: WithControlPlane
 pkg/business/module_identity.go: (*Service).RecordModuleWorkContextMint: WithControlPlane
 pkg/business/module_identity.go: (*Service).VerifyModuleTenant: WithControlPlane
@@ -98,6 +96,7 @@ pkg/business/module_manifest_grant.go: (*Service).fenceManifestGenerations: With
 pkg/business/module_operation_context.go: (*Service).RecordModuleOperationContextMint: WithControlPlane
 pkg/business/module_principal_reconcile.go: (*ModulePrincipalReconciler).appliedManifestsVerified: WithControlPlane
 pkg/business/module_principal_reconcile.go: (*ModulePrincipalReconciler).readInputs: WithControlPlaneReadSnapshot
+pkg/business/narrowing.go: (*Service).narrow: WithControlPlane
 pkg/business/notifications.go: (*Service).resolveNotificationUser: WithControlPlane
 pkg/business/onboarding.go: (*Service).organizationConfigured: WithControlPlane
 pkg/business/organization_lifecycle.go: (*Service).GetOrganizationRoster: WithControlPlane
@@ -118,13 +117,7 @@ pkg/business/platform_admin.go: (*Service).StopImpersonation: WithControlPlane
 pkg/business/platform_admin.go: (*Service).SuspendUser: WithControlPlane
 pkg/business/platform_admin.go: (*Service).UnsuspendUser: WithControlPlane
 pkg/business/platform_catalogue.go: (*Service).ListPlatformCatalogue: WithControlPlane
-pkg/business/policy_log.go: (*Service).MayServe: WithControlPlane
-pkg/business/policy_log.go: (*Service).ReconcilePolicyLog: WithControlPlane
-pkg/business/policy_log.go: (*Service).ReconcilePolicyLog: WithControlPlane
-pkg/business/policy_log.go: (*Service).WithPolicyLoggedNarrowing: WithControlPlane
-pkg/business/policy_log.go: (*Service).WithPolicyLoggedNarrowing: WithControlPlane
 pkg/business/principals.go: (*Service).GetPrincipal: As(System())
-pkg/business/principals.go: (*Service).principalOrgID: As(System())
 pkg/business/principals.go: (*Service).withPrincipalScope: As(System())
 pkg/business/principals.go: (*Service).withPrincipalScope: As(System())
 pkg/business/privacy_jobs.go: (*Service).finishPrivacyWorkflow: System()
@@ -155,7 +148,6 @@ pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionGenerationH
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionHostBindings: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).ListSolutionTargets: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).applySolutionHostBinding: WithControlPlane
-pkg/business/solution_host_bindings_apply.go: (*Service).liveSolutionTargetForBinding: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).recordSolutionHostBindingDesired: WithControlPlane
 pkg/business/solution_host_bindings_apply.go: (*Service).recordSolutionHostBindingRefusal: WithControlPlane
 pkg/business/solution_registry.go: (*Service).ListSolutionRegistrations: WithControlPlane

@@ -515,14 +515,12 @@ func (s *Service) RevokePlatformRole(ctx context.Context, actorID string, req *g
 		return w.Wrapf(err, "permission denied")
 	}
 
-	if err := s.WithPolicyLoggedNarrowing(ctx,
-		revokePlatformRolePolicyLogEntry(actorID, req.UserId),
-		func(ctx context.Context) error {
-			if err := s.store.RevokePlatformRole(ctx, req.UserId); err != nil {
-				return err
-			}
-			return s.emitTx(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
-		}); err != nil {
+	if err := s.narrow(ctx, func(ctx context.Context) error {
+		if err := s.store.RevokePlatformRole(ctx, req.UserId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
+	}); err != nil {
 		return w.Wrapf(err, "cannot revoke platform role")
 	}
 	return nil

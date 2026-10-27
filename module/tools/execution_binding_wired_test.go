@@ -27,11 +27,8 @@ import (
 // "wired" from "wireable", and the deletion that unwires it is a one-line
 // change that compiles, passes every test, and silently removes a boundary.
 //
-// WHY NOT-NIL IS PART OF THE RULE. This repository deliberately wires one
-// mechanism with nil arguments — `service.SetPolicyLog(nil, nil)` — and says why
-// in a long comment: a host holding a log it can never reach is worse than a
-// host holding none. So "the setter is called" is not the property; the property
-// is that it is called with real sources. A future edit that reduced
+// WHY NOT-NIL IS PART OF THE RULE. "The setter is called" is not the property;
+// the property is that it is called with real sources. A future edit that reduced
 // SetExecutionBinding to `SetExecutionBinding(nil)` would satisfy a grep
 // for the call and restore the hole exactly.
 func TestExecutionBindingIsWiredInProduction(t *testing.T) {
@@ -76,8 +73,7 @@ func TestExecutionBindingIsWiredInProduction(t *testing.T) {
 					"A nil source makes BindExecution answer ErrExecutionUnbound for every caller, which is the "+
 					"same observable as not wiring it at all — so this reads as enforcement while enforcing "+
 					"nothing.\n\n"+
-					"This repository DOES wire SetPolicyLog(nil, nil) deliberately, and explains why in place. "+
-					"If there is an equivalent argument for leaving execution binding unwired, it belongs in a "+
+					"If there is an argument for leaving execution binding unwired, it belongs in a "+
 					"comment and in this gate, not in a silent nil.",
 					which, fileSet.Position(argument.Pos()))
 			}

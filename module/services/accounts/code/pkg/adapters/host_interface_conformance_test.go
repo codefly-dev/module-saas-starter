@@ -56,6 +56,7 @@ import (
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
 	sessionv1 "accounts/pkg/gen/host/session/v1"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
 	"accounts/pkg/infra/storetx"
 )
@@ -165,9 +166,6 @@ func runHostInterfaceFixture(t *testing.T) {
 	})
 	require.NoError(t, err)
 	svc.SetCompositionReconcile(reconciler.RunOnce)
-	// No policy log is wired, as on a deployed host (work.go): the host
-	// interface revokes through the authority core, which needs none.
-
 	previous := service
 	service = svc
 	t.Cleanup(func() { service = previous })
@@ -411,18 +409,15 @@ func runHostInterfaceFixture(t *testing.T) {
 	// own and foreign data, role administration and subject-specific
 	// revocation, membership loss, transfer, uninstall and reinstall.
 	//
-	// Labelled stand-in: a person leaving a team or the organization is
-	// accounts' own membership narrowing, which refuses on a host with no
-	// policy log (B1 in the pull request). The membership rows are removed
-	// directly here, under the control plane, which is what that narrowing
-	// applies; accounts' triggers move the authorization revisions as they do
-	// on that path, and the core reads identity live.
-	removeMember := func(ctx context.Context, query string, args ...any) error {
-		return store.WithControlPlane(ctx, func(ctx context.Context) error {
-			_, err := storetx.Tx(ctx).Exec(ctx, query, args...)
-			return err
-		})
-	}
+	// A person leaving a team or the organization goes through accounts' own
+	// production paths (RemoveTeamMember, RemoveOrgMember), as an Acme
+	// administrator: the narrowing applies directly, its audit record in the
+	// same transaction, and the suite proves the next issue no longer carries
+	// what the membership gave.
+	removedFromTeam, removedFromOrganization := map[string]string{}, map[string]bool{}
+	// The organization leaver's session, signed in while still a member.
+	leaverSession, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-principal-org-leaver"})
+	require.NoError(t, err)
 	conformance.RunSolutionPrincipalTarget(t, conn, registeredDescriptors(t), conformance.SolutionPrincipalCase{
 		Organization: fixtureOrganization, OtherOrganization: globexOrganization, Generation: 1,
 		A:     conformance.SolutionUnderTest{Solution: "principal-a", Credential: credential("principal-a")},
@@ -437,10 +432,12 @@ func runHostInterfaceFixture(t *testing.T) {
 		Existing:  "store-x",
 		Uninstall: func(ctx context.Context, id string) error { return core.UninstallAsHost(ctx, fixtureOrganization, id) },
 		RemoveFromTeam: func(ctx context.Context, person, team string) error {
-			return removeMember(ctx, `DELETE FROM public.team_members WHERE team_id = $1 AND user_id = $2`, team, person)
+			removedFromTeam[person] = team
+			return svc.RemoveTeamMember(ctx, conformanceAlex, &gen.RemoveTeamMemberRequest{TeamId: team, UserId: person})
 		},
 		RemoveFromOrganization: func(ctx context.Context, person string) error {
-			return removeMember(ctx, `DELETE FROM public.organization_members WHERE org_id = $1 AND user_id = $2`, fixtureOrganization, person)
+			removedFromOrganization[person] = true
+			return svc.RemoveOrgMember(ctx, conformanceAlex, &gen.RemoveOrgMemberRequest{OrgId: fixtureOrganization, UserId: person})
 		},
 		SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
 		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
@@ -462,6 +459,34 @@ func runHostInterfaceFixture(t *testing.T) {
 	records := func(actions ...string) []*authorityv1.WorkScopeV1 {
 		return []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: actions}}
 	}
+
+	// Each removal the target made is in accounts' audit journal, naming the
+	// person removed and the administrator who removed them.
+	t.Run("a membership removal applies at once and is recorded in the audit journal", func(t *testing.T) {
+		require.NotEmpty(t, removedFromTeam, "the target removed a team member")
+		require.NotEmpty(t, removedFromOrganization, "the target removed an organization member")
+		removals := func(event, resource, person string) int {
+			var count int
+			require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+				return storetx.Tx(ctx).QueryRow(ctx, `SELECT count(*) FROM public.audit_events
+					WHERE event_type = $1 AND resource_id = $2 AND actor_id = $3 AND payload->>'user_id' = $4`,
+					event, resource, conformanceAlex, person).Scan(&count)
+			}))
+			return count
+		}
+		for person, team := range removedFromTeam {
+			require.Equal(t, 1, removals(string(business.EventTeamMemberRemoved), team, person), "team removal of %s", person)
+		}
+		for person := range removedFromOrganization {
+			require.Equal(t, 1, removals(string(business.EventOrgMemberRemoved), fixtureOrganization, person), "organization removal of %s", person)
+		}
+		// And the session the organization leaver signed in with while a member
+		// is issued nothing there any more.
+		leaver := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+leaverSession.GetBearer())
+		_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(leaver, &authorityv1.IssueRequest{
+			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "documents", Scopes: records("read")})
+		requireCode(t, err, codes.PermissionDenied, "not a member of this organization")
+	})
 
 	// Beyond the suite: a delegation never reaches past what its grantor holds
 	// or what it names; once revoked, by its grantor or an administrator of its

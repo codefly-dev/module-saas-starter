@@ -61,12 +61,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// The module envelope: the authority ceiling a platform super_admin
 	// writes. Request traffic has no access; the control plane appends a
 	// revision and never edits one.
-	"module_envelopes": {},
-	// The policy log's local half. Request traffic has no access at all: a
-	// receipt is evidence about authority, and the request path neither reads
-	// nor writes it.
-	"policy_log_commits":            {},
-	"policy_log_cursor":             {},
+	"module_envelopes":              {},
 	"datasource_credential_budgets": {}, // platform relation; the control plane meters provider credentials
 	"hop_admission_keys":            {}, // platform relation; the hop's public keys, published by the control plane
 	// The authority core's records (migration 56): the core decides across
@@ -440,14 +435,6 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// revision.
 			if relation == "module_envelopes" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
-			}
-			// policy_log_commits and policy_log_cursor are read, inserted and
-			// updated, never deleted. The commit row is completed by the commit
-			// and the cursor advances — but deleting either would make an
-			// unreconciled gap DISAPPEAR rather than be closed, which is the one
-			// way the fail-closed asymmetry could be defeated locally.
-			if relation == "policy_log_commits" || relation == "policy_log_cursor" {
-				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 			// The authority core's records: an installation, a delegation or a
 			// tombstone is revoked or superseded, never erased, and an epoch or

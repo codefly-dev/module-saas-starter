@@ -203,10 +203,9 @@ func TestGrantInstallationToTeamRefusals(t *testing.T) {
 	require.Empty(t, entitledInstallations(t, w.otherOrg, w.otherAdmin))
 }
 
-// Revoking is a narrowing under the policy log: with a witness it hides the
-// solution from the team again; with none, the host refuses in its own words and
-// the team keeps what it was granted.
-func TestRevokeInstallationFromTeamIsAWitnessedNarrowing(t *testing.T) {
+// Revoking is a narrowing and applies directly: the next read no longer offers
+// the solution to the team, and the revocation is in the audit journal.
+func TestRevokeInstallationFromTeamAppliesDirectly(t *testing.T) {
 	w := newExposureWorld(t)
 	server := &adapters.InstallationServer{}
 	admin := storyCallerContext(testCtx, w.admin, w.org)
@@ -218,19 +217,16 @@ func TestRevokeInstallationFromTeamIsAWitnessedNarrowing(t *testing.T) {
 	}
 	_, err := server.GrantInstallationToTeam(admin, grant)
 	require.NoError(t, err)
+	require.Equal(t, []string{w.installation}, entitledInstallations(t, w.org, w.inTeam))
 
-	testService.SetPolicyLog(nil, nil)
-	t.Cleanup(func() { wirePolicyLogForTests(testService, testStore) })
-	_, err = server.RevokeInstallationFromTeam(admin, revoke)
-	require.Equal(t, codes.FailedPrecondition, status.Code(err))
-	require.Contains(t, status.Convert(err).Message(), "this host has no policy log, so authority cannot be narrowed")
-	require.Equal(t, []string{w.installation}, entitledInstallations(t, w.org, w.inTeam),
-		"an unwitnessed revoke changed nothing")
-
-	wirePolicyLogForTests(testService, testStore)
 	_, err = server.RevokeInstallationFromTeam(admin, revoke)
 	require.NoError(t, err)
 	require.Empty(t, entitledInstallations(t, w.org, w.inTeam), "revoking hides it again")
+	audit, _, _, err := testService.QueryAuditLog(testCtx, business.AuditQuery{
+		OrgID: w.org, EventType: string(business.EventScopeRevoked), PageSize: 10,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, audit, "the revocation is recorded in the audit journal")
 }
 
 // requireARowLockWaiter proves two transactions genuinely contend on a row

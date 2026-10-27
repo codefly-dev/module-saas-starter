@@ -59,8 +59,8 @@ adding a REST-enabled RPC means editing it. Do not go looking for a generator.
 
 ## Go suites
 
-Every Go service here carries **its own `go.mod`** — `accounts`, `auth-gateway`,
-`store` and `policy-log` — and `tools` is another, with **no `go.work`** tying them together. So
+Every Go service here carries **its own `go.mod`** — `accounts`, `auth-gateway`
+and `store` — and `tools` is another, with **no `go.work`** tying them together. So
 `go test ./...` only ever covers the module you run it in, and a service's suite
 is outside whatever you run from the tree root. The canonical repository adds its
 own root module (the module agent, the host, and the generated reference

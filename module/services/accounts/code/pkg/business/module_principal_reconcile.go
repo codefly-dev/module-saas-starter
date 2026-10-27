@@ -37,8 +37,8 @@ import (
 // principal is then in the registry only while the envelope also allows it,
 // and its entry is the envelope's grant intersected with what the manifest asks
 // for — never wider than either (deriveModulePrincipalGrant). Writing the first
-// envelope over granted manifests is therefore a narrowing, witnessed like any
-// other (moduleEnvelopeNarrows).
+// envelope over granted manifests is therefore a narrowing, applied like any
+// other.
 //
 // Either way an entry's workloads are the manifest's, spelled by the cell's
 // rule (namespace from the module, ServiceAccount from the service).

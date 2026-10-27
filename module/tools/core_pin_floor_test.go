@@ -36,7 +36,7 @@ func TestCorePinIsNotAVersionThatDroppedTheWorkThisModuleNeeds(t *testing.T) {
 
 	// Every Go module in the tree that pins core. Discovered rather than listed:
 	// a new service pinning core must be covered without anyone remembering to
-	// add it here, which is how the policy-log service arrived.
+	// add it here.
 	var found []string
 	err := filepath.Walk(moduleDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {

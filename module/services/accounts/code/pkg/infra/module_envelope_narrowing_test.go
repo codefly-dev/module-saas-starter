@@ -39,18 +39,13 @@ func envelopeJSONAt(t *testing.T, doc map[string]any, revision uint64) []byte {
 	return raw
 }
 
-// Only a pure grant skips the policy-log witness: whole principals added, and a
-// kept principal holding at least what it held by the rule an installation's
-// consent is held to its ceiling with. With no policy log wired, a write that
-// needs the witness is refused and writes nothing, so "it landed" is the proof
-// a change was applied unwitnessed.
-//
-// Every refused shape below is a real narrowing that a comparison by "more
-// JSON means more authority" let through: a resource list that appears
-// restricts an audience that was unrestricted, a required kind that appears
-// refuses artifacts that passed, and a tenant that is set removes every other
-// organization. A member added to an allowlist is not one of them: it lands.
-func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
+// Every change to a granted principal applies directly, the narrowings with
+// the pure grants: no witness is asked first. Each narrowing below is a real
+// one — a resource list that appears restricts an audience that was
+// unrestricted, a required kind that appears refuses artifacts that passed, a
+// tenant that is set removes every other organization — and each lands as
+// the next revision.
+func TestAnEnvelopeChangeToAGrantedPrincipalAppliesDirectly(t *testing.T) {
 	s := newRegistryScenario(t, "rvf")
 	digest := "sha256:" + strings.Repeat("ab", 32)
 	base := envelopeJSON(t, s.envelope(t, 1, envelopeOptions{resources: true}))
@@ -78,11 +73,8 @@ func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 
 	current := s.currentRevision(t)
 	_, err := s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, envelopeJSONAt(t, base, current+1))
-	require.NoError(t, err, "the base envelope (witnessed) must be written")
+	require.NoError(t, err, "the base envelope must be written")
 	state := base
-
-	// From here the host has no witness at all.
-	s.delivery.service.SetPolicyLog(nil, nil)
 
 	opAudience := func(doc map[string]any) map[string]any {
 		return grant(doc)["operation_audiences"].(map[string]any)["run"].(map[string]any)
@@ -116,14 +108,14 @@ func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 			_, parseErr := business.ParseModuleEnvelope(raw)
 			require.NoError(t, parseErr, "the document must be a valid envelope")
 			_, err := s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, raw)
-			require.ErrorIs(t, err, business.ErrPolicyLogUnreachable, "the change must need the witness")
-			require.Equal(t, current, s.currentRevision(t), "a refused write must write nothing")
+			require.NoError(t, err, "a narrowing applies directly")
+			require.Equal(t, current+1, s.currentRevision(t))
 		})
 	}
 
 	// The pure grants: a member added to a granted principal's allowlist, and a
 	// whole principal added beside the ones granted.
-	t.Run("a queue added to a granted principal lands with no witness", func(t *testing.T) {
+	t.Run("a queue added to a granted principal lands", func(t *testing.T) {
 		next := envelopeJSONClone(t, state)
 		grant(next)["queues"] = []any{"reports.render", "reports.extra"}
 		current := s.currentRevision(t)
@@ -132,7 +124,7 @@ func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 		require.Equal(t, current+1, s.currentRevision(t))
 		state = next
 	})
-	t.Run("a principal added lands with no witness", func(t *testing.T) {
+	t.Run("a principal added lands", func(t *testing.T) {
 		next := envelopeJSONClone(t, state)
 		next["principals"].(map[string]any)["added-"+s.prefix] = map[string]any{"grant": map[string]any{"cross_tenant": true}}
 		current := s.currentRevision(t)
@@ -141,22 +133,22 @@ func TestAnEnvelopeChangeToAGrantedPrincipalNeedsTheWitness(t *testing.T) {
 		require.Equal(t, current+1, s.currentRevision(t))
 		state = next
 	})
-	t.Run("a principal removed needs the witness", func(t *testing.T) {
+	t.Run("a principal removed lands", func(t *testing.T) {
 		next := envelopeJSONClone(t, state)
 		delete(next["principals"].(map[string]any), "added-"+s.prefix)
 		current := s.currentRevision(t)
 		_, err := s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, envelopeJSONAt(t, next, current+1))
-		require.ErrorIs(t, err, business.ErrPolicyLogUnreachable)
+		require.NoError(t, err)
+		require.Equal(t, current+1, s.currentRevision(t))
 	})
-	s.delivery.service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
 }
 
-// The installation half: an envelope that would take an organization's
-// installation away is a narrowing, and with no witness it is refused and the
-// installation stays as it was. The classification reads installations on the
-// control plane; read anywhere else a row policy hides them all, and the write
-// revoked an active installation unwitnessed.
-func TestAnEnvelopeThatWouldRevokeAnInstallationNeedsTheWitness(t *testing.T) {
+// The installation half: an envelope that takes an organization's
+// installation away applies directly, revokes that installation in the same
+// transaction, and the next capability decision for that organization refuses.
+// The revocation reads installations on the control plane; read anywhere else
+// a row policy hides them all and the installation would survive the ceiling.
+func TestAnEnvelopeThatRevokesAnInstallationAppliesDirectly(t *testing.T) {
 	s := newRegistryScenario(t, "rvi")
 	orgB := seedOrg(t, s.admin)
 	require.NoError(t, testStore.As(business.Identity{OrgID: orgB}).AddOrgMember(testCtx, s.admin, "admin"))
@@ -190,15 +182,17 @@ func TestAnEnvelopeThatWouldRevokeAnInstallationNeedsTheWitness(t *testing.T) {
 	_, err = s.delivery.service.AuthorizeModuleCapability(testCtx, s.caller(orgB))
 	require.NoError(t, err, "org B's installation is usable under the shared tenancy")
 
-	s.delivery.service.SetPolicyLog(nil, nil)
 	pinned := envelopeJSONClone(t, shared)
 	grant(pinned)["tenant"] = s.tenant
 	current = s.currentRevision(t)
 	_, err = s.delivery.service.PutModuleEnvelope(testCtx, s.admin, current, envelopeJSONAt(t, pinned, current+1))
-	require.ErrorIs(t, err, business.ErrPolicyLogUnreachable)
-	require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, status(orgB, active.Id),
-		"an unwitnessed envelope write must not revoke an installation")
-	s.delivery.service.SetPolicyLog(&productionPathPolicyLog{}, testStore)
+	require.NoError(t, err, "the narrowing applies directly")
+	require.Equal(t, current+1, s.currentRevision(t))
+	require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_REVOKED, status(orgB, active.Id),
+		"the ceiling no longer allows org B, so its installation is revoked in the same write")
+	s.pass(t)
+	_, err = s.delivery.service.AuthorizeModuleCapability(testCtx, s.caller(orgB))
+	require.Error(t, err, "org B's next capability decision refuses")
 }
 
 func jsonNumber(value uint64) string {
