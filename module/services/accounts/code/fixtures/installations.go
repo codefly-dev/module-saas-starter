@@ -150,8 +150,13 @@ func (i *Installations) Converge(ctx context.Context) error {
 				w.Info("fixture installation installed", wool.Field("installation", row.declared.describe()), wool.Field("installation_id", installation.GetId()))
 			}
 			// The authority core holds the same installation, which the host
-			// interfaces decide with (coreInstall).
-			if err := i.coreInstall(ctx, row); err != nil {
+			// interfaces decide with (coreInstall). A target the core has not
+			// composed yet keeps the row for the next pass.
+			coreWaits := false
+			switch err := i.coreInstall(ctx, row); {
+			case errors.Is(err, errCoreTargetNotComposed):
+				coreWaits = true
+			case err != nil:
 				failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
 			}
 			// Each declared team is exposed once the installation admits it (an
@@ -164,7 +169,7 @@ func (i *Installations) Converge(ctx context.Context) error {
 					unexposed = append(unexposed, teamID)
 				}
 			}
-			if row.teamIDs = unexposed; len(row.teamIDs) > 0 {
+			if row.teamIDs = unexposed; len(row.teamIDs) > 0 || coreWaits {
 				remaining = append(remaining, row)
 			}
 		}
@@ -172,6 +177,10 @@ func (i *Installations) Converge(ctx context.Context) error {
 	i.pending = remaining
 	return errors.Join(failures...)
 }
+
+// errCoreTargetNotComposed is a declared installation whose target the
+// authority core has not composed yet; the next pass installs it there.
+var errCoreTargetNotComposed = errors.New("the authority core has not composed this target yet")
 
 // coreInstall performs the declared installation in the authority core as the
 // host's own setup (InstallAsHost), then grants the installer role to its
@@ -187,8 +196,17 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 		return err
 	}
 	// A module's installation is accounts' own record, which Converge's install
-	// made; the core reads it and installs no module itself.
-	if m, err := core.Composed(ctx, row.declared.Target); err == nil && m.Kind != domain.KindSolution {
+	// made; the core reads it and installs no module itself. A target the core
+	// has not composed yet is waited on: the pass that applies its delivery
+	// composes it.
+	m, err := core.Composed(ctx, row.declared.Target)
+	if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
+		return fmt.Errorf("%w: %s", errCoreTargetNotComposed, row.declared.Target)
+	}
+	if err != nil {
+		return fmt.Errorf("the authority core: %w", err)
+	}
+	if m.Kind != domain.KindSolution {
 		return nil
 	}
 	inst, err := core.InstallAsHost(ctx, row.orgID, row.declared.Target, row.declared.Role, row.ownerID, i.service.AuthorityInstallStep())
@@ -224,7 +242,7 @@ func (i *Installations) ConvergeAuthority(ctx context.Context) error {
 	var failures []error
 	for _, row := range i.pending {
 		err := i.coreInstall(ctx, row)
-		if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
+		if code, ok := domain.CodeOf(err); errors.Is(err, errCoreTargetNotComposed) || ok && code == domain.NotFound {
 			continue
 		}
 		if err != nil {

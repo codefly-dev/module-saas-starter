@@ -152,3 +152,6 @@ installations:
   - {org: Acme Corp, target: conformance-proposals, role: viewer, owner: alex@acme.test, teams: [Finance]}
   # The assistant solution acts for itself down a chain of modules.
   - {org: Acme Corp, target: conformance-assistant, role: viewer, owner: alex@acme.test}
+  # Delivered only once the host is running, as a composition delivers a
+  # solution after boot: installed at Acme alone, and reached by its finance team.
+  - {org: Acme Corp, target: conformance-late, role: viewer, owner: alex@acme.test, teams: [Finance]}
