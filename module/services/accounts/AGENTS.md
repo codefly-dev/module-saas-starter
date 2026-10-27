@@ -1210,6 +1210,42 @@ prefix leaves the filter where it is.
   envelope connector applies it to the service's listing before the version is
   digested (#1211).
 
+## A datasource provider is compiled in, or resolved from a composed service
+
+The connector registry (`pkg/business/datasource_connectors.go`) is built at
+start with the providers compiled into this host — `github` (conformant), `api`
+and `crawler` (registered non-conformant with their gap). **Object storage is
+not one of them.** It is the first provider resolved from a composed service:
+`datasource_objectstore.go` registers it only once the declared
+`object-storage` dependency resolves to a service that can read a tenant's
+bucket, and holds everything the host does for that provider, so the generic
+catalog, admission and sync paths name no object-storage type.
+
+The resolution reuses what the registry already has — nothing beside it
+decides what a provider is:
+
+- **Registration** goes through `Registry.Register`, so the descriptor is
+  validated and the interface checked exactly as for a compiled-in provider,
+  and the connector is wrapped in `connector.Budgeted`.
+- **The per-credential budget stays host-side.** It meters across every source
+  and replica (`datasource_credential_budgets`), so it is shared state with a
+  tenancy; the composed service never sees it.
+- **The credential is per call** (envelope clause 3). The host decrypts it from
+  the source on each call and puts it on that call's binding; the service
+  neither returns nor stores it.
+- **The conformance suite runs against the provider as registered**
+  (`TestObjectStorageAsRegisteredPassesTheConformanceSuite`): the connector the
+  registry holds once the provider is resolved, on sources connected through
+  `AddSource`, reading their credential and retained listings through the host.
+- **Absent means absent.** A composition that leaves the service out — or
+  `codefly run service … --exclude-dependency saas-starter/object-storage` —
+  has no `upload` entry in `GetDatasourceCatalog`, and a source of it is
+  refused by name, not as an unknown provider.
+
+The four provider constants (`github`, `api`, `crawler`, `upload`) stay until a
+provider contract is published; converting `github`, `api` and `crawler` to
+composed services is not done here.
+
 ## A datasource source is refreshed by three things, and one of them covers every provider
 
 Ranked by latency, a source's content is refreshed by a push (near-live), by a
@@ -1394,14 +1430,16 @@ keeps what is per-source state:
   `GetDatasourceCatalog` reports `accepts_new_sources` and `AddSource` takes a
   new source with its prefix and key filter. That is the whole admin path a
   composed consumer drives — catalog, `AddSource`, sync — with no portal step.
-- **Admission needs a service that can read a bucket.** At start `work.go`
-  wires the composed service through `Service.SetObjectStorage`, which first
-  asks it, unbound, whether it reads a batch (`objectstore.CheckService`) and
-  refuses to wire one that does not. A composition without the service, or with one
-  from before the binding (0.0.18 and earlier; this module pins 0.0.19),
-  leaves object storage unavailable: the catalog says so, `AddSource` refuses
-  with `ErrObjectStorageUnavailable`, and an existing source's sync fails by
-  name.
+- **The provider exists only where its service resolves.** Object storage is
+  not compiled into the registry (see the next section). At start `work.go`
+  resolves the declared `object-storage` dependency and hands it to
+  `Service.SetObjectStorage`, which first asks it, unbound, whether it reads a
+  batch (`objectstore.CheckService`) and only then registers the provider. A
+  composition without the service, or with one from before the binding (0.0.18
+  and earlier; this module pins 0.0.19), has no `upload` provider: the catalog
+  does not list it, `AddSource` refuses with `ErrObjectStorageUnavailable`, an
+  existing source's sync fails with the same error, and the source reports it
+  as its conformance gap.
 - **A sync never empties a source that has files** — a host-owned invariant,
   whatever any service version answers. A closing snapshot with no files
   tombstones every entry mirrored from the source, and a service that wrongly

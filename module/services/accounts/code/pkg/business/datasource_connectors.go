@@ -7,21 +7,21 @@ import (
 
 	"accounts/pkg/datasource/connector"
 	"accounts/pkg/datasource/github"
-	"accounts/pkg/datasource/objectstore"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 // The host's datasource connectors, on the envelope in pkg/datasource/connector.
-// Two are conformant, each passing the conformance suite beside it: GitHub
-// (pkg/datasource/github/connector_conformance_test.go) and object storage,
-// read through the composed object-storage service
-// (pkg/datasource/objectstore/connector_conformance_test.go). The generic API
-// and the crawler still run on their own engines, outside the envelope; they
-// are registered non-conformant with their gap, so their existing sources keep
-// running and new ones are refused until each passes the suite (the owner's
-// settled question 7).
+// Two are conformant: GitHub, compiled in and passing the conformance suite
+// beside it (pkg/datasource/github/connector_conformance_test.go), and object
+// storage, which is not compiled into this registry — it is registered only
+// when the composed object-storage service resolves, and passes the suite as
+// registered (datasource_objectstore.go). The generic API and the crawler
+// still run on their own engines, outside the envelope; they are registered
+// non-conformant with their gap, so their existing sources keep running and
+// new ones are refused until each passes the suite (the owner's settled
+// question 7).
 
 // Why each legacy provider is not on the envelope yet, per connector. What
 // remains for each, clause by clause, and what it already honours, is in
@@ -64,10 +64,12 @@ func (s *Service) newDatasourceConnectorRegistry() *connector.Registry {
 		CredentialModes: []connector.CredentialMode{connector.CredentialNone},
 		Gap:             gapCrawlerDatasource,
 	}))
-	// Object storage reads through the composed object-storage service and
-	// passes the suite over its wire (objectstore/connector_conformance_test.go);
-	// metered like GitHub, per source credential.
-	must(r.Register(connector.Budgeted(objectstore.NewFilesConnector(s.uploadBucketForSource, objectManifests{s.store}), datasourceScheduler{s: s})))
+	// Object storage is not compiled in: it is registered when its composed
+	// service resolves (datasource_objectstore.go), here only if that happened
+	// before this registry was built.
+	if s.newUploadBucket != nil {
+		must(s.registerObjectStorage(r))
+	}
 	return r
 }
 
@@ -124,15 +126,14 @@ func DatasourceConformance(registry *connector.Registry, provider string) (bool,
 		return false, "the datasource connector is not configured"
 	}
 	d, ok := registry.Descriptor(provider)
-	if !ok {
+	switch {
+	case !ok && provider == DatasourceProviderUpload:
+		return false, ErrObjectStorageUnavailable.Error()
+	case !ok:
 		return false, "no connector is registered for this provider"
 	}
 	return d.Conformant, d.Gap
 }
-
-// ErrObjectStorageUnavailable: no composed object-storage service here can read
-// a tenant's bucket, so an object-storage source is neither admitted nor synced.
-var ErrObjectStorageUnavailable = errors.New("object storage is not available here: no composed object-storage service serves a per-call binding with a batched read")
 
 // admitNewDatasource refuses a new source of a provider the registry does not
 // admit, or that nothing composed here can serve, before anything is
@@ -143,14 +144,13 @@ func (s *Service) admitNewDatasource(provider string) error {
 	}
 	err := s.datasourceConnectors.AdmitNewSource(provider)
 	switch {
-	case err == nil && provider == DatasourceProviderUpload && s.newUploadBucket == nil:
-		// Conformant, but nothing here can read a bucket: no object-storage
-		// service is composed, or the one composed predates the per-call
-		// binding and the batched read (work.go asks it at start). A source
-		// admitted now would fail every sync.
-		return status.Error(codes.FailedPrecondition, ErrObjectStorageUnavailable.Error())
 	case err == nil:
 		return nil
+	case errors.Is(err, connector.ErrUnknownConnector) && provider == DatasourceProviderUpload:
+		// Not registered: no object-storage service is composed, or the one
+		// composed predates the per-call binding and the batched read
+		// (SetObjectStorage). The refusal names why, not "unknown".
+		return status.Error(codes.FailedPrecondition, ErrObjectStorageUnavailable.Error())
 	case errors.Is(err, connector.ErrUnknownConnector):
 		return status.Errorf(codes.InvalidArgument, "unknown datasource provider %q", provider)
 	default:
@@ -166,53 +166,9 @@ func connectorSource(source *DatasourceSource) connector.Source {
 	case source.Provider == DatasourceProviderGitHub:
 		src.Config = github.SourceConfig{Repo: source.Repo, Branch: source.Branch, InScope: datasourceFileScope(source)}
 	case source.Provider == DatasourceProviderUpload && source.Upload != nil:
-		cfg := source.Upload
-		src.Config = objectstore.SourceConfig{
-			Endpoint: cfg.Endpoint, Region: cfg.Region, Bucket: cfg.Bucket, Prefix: cfg.Prefix,
-			Scope: objectstore.Scope{InScope: uploadKeyScope(cfg), MaxObjects: cfg.MaxObjects},
-		}
+		src.Config = uploadSourceConfig(source.Upload)
 	}
 	return src
-}
-
-// uploadBucketForSource resolves one object-storage source's Bucket, per call:
-// the host decrypts the source's secret access key and binds it to that call,
-// and the connector never sees it.
-func (s *Service) uploadBucketForSource(ctx context.Context, src connector.Source) (objectstore.Bucket, error) {
-	if s.newUploadBucket == nil {
-		return nil, ErrObjectStorageUnavailable
-	}
-	source, err := s.store.GetDatasourceSourceByID(ctx, src.ID)
-	if err != nil {
-		return nil, err
-	}
-	if source == nil || source.OrgID != src.OrgID || source.Provider != DatasourceProviderUpload || source.Upload == nil {
-		return nil, fmt.Errorf("datasource source %s is not an object-storage source of org %s", src.ID, src.OrgID)
-	}
-	secret, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
-	if err != nil {
-		return nil, fmt.Errorf("decrypt secret access key: %w", err)
-	}
-	cfg, _ := connectorSource(source).Config.(objectstore.SourceConfig)
-	return s.newUploadBucket(cfg, source.Upload.AccessKeyID, secret), nil
-}
-
-// objectManifests retains an object-storage source's listings in the store,
-// inside the source's org transaction.
-type objectManifests struct{ store Store }
-
-func (m objectManifests) Put(ctx context.Context, src connector.Source, version string, items []objectstore.Item) error {
-	return m.store.WithOrgTx(ctx, src.OrgID, func(ctx context.Context) error {
-		return m.store.PutDatasourceObjectManifest(ctx, src.OrgID, src.ID, version, items)
-	})
-}
-
-func (m objectManifests) Get(ctx context.Context, src connector.Source, version string) (items []objectstore.Item, ok bool, err error) {
-	err = m.store.WithOrgTx(ctx, src.OrgID, func(ctx context.Context) error {
-		items, ok, err = m.store.GetDatasourceObjectManifest(ctx, src.OrgID, src.ID, version)
-		return err
-	})
-	return items, ok, err
 }
 
 // githubRemoteForSource resolves the credentialed GitHub client for one source,

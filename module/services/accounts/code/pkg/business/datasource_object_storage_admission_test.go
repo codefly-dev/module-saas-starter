@@ -52,10 +52,10 @@ func composedStorageClient(t *testing.T, binding bool) storagev0.ObjectStorageCl
 // review r1's major 3, pinned where the defect was: with the released 0.0.18
 // composed — a service that answers, but cannot serve a binding — the catalog
 // accepted new object-storage sources and AddSource stored them, and only each
-// sync then failed. Wiring that service is refused, and the refusal is at
-// admission: the catalog does not offer the provider, AddSource refuses by
-// name, and nothing is stored or audited. A service that serves the binding is
-// admitted.
+// sync then failed. Wiring that service is refused and registers nothing, so
+// the refusal is at admission: the catalog does not list the provider,
+// AddSource refuses by name, and nothing is stored or audited. A service that
+// serves the binding registers it.
 func TestObjectStorageIsRefusedAtAdmissionWhenTheComposedServiceCannotServeIt(t *testing.T) {
 	ctx := context.Background()
 	accepts := func(svc *business.Service) bool {
@@ -64,7 +64,6 @@ func TestObjectStorageIsRefusedAtAdmissionWhenTheComposedServiceCannotServeIt(t 
 				return e.AcceptsNewSources
 			}
 		}
-		t.Fatal("object storage is not in the catalog")
 		return false
 	}
 	input := business.AddSourceInput{

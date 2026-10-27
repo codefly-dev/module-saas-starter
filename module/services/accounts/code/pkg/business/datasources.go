@@ -17,13 +17,11 @@ import (
 	"accounts/pkg/datasource/connector"
 	"accounts/pkg/datasource/crawler"
 	"accounts/pkg/datasource/github"
-	"accounts/pkg/datasource/objectstore"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
-	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -614,29 +612,6 @@ func (s *Service) SetDatasourceAPIClientFactory(factory func(cfg APIDatasourceCo
 // built. Tests use it to inject a fake without a live website.
 func (s *Service) SetDatasourceCrawlerClientFactory(factory func(cfg CrawlerDatasourceConfig) CrawlerContentClient) {
 	s.newCrawlerClient = factory
-}
-
-// SetObjectStorage makes the composed object-storage service the store every
-// object-storage source is read through, under a per-call binding of the
-// source's bucket and credential — if, and only if, the service can serve one:
-// it asks first (objectstore.CheckService). A service that cannot — a release
-// from before the binding, such as 0.0.18 — is refused and left unwired, so
-// object storage is unavailable: the catalog does not offer it, AddSource
-// refuses it, and nothing is admitted that every sync would then fail on.
-func (s *Service) SetObjectStorage(ctx context.Context, client storagev0.ObjectStorageClient) error {
-	if err := objectstore.CheckService(ctx, client); err != nil {
-		return err
-	}
-	s.newUploadBucket = func(cfg objectstore.SourceConfig, accessKeyID, secretAccessKey string) objectstore.Bucket {
-		return objectstore.NewServiceBucket(client, cfg, accessKeyID, secretAccessKey)
-	}
-	return nil
-}
-
-// SetDatasourceUploadBucketFactory overrides how an object-storage source's
-// Bucket is built. Tests use it to script a store without the service.
-func (s *Service) SetDatasourceUploadBucketFactory(factory func(cfg objectstore.SourceConfig, accessKeyID, secretAccessKey string) objectstore.Bucket) {
-	s.newUploadBucket = factory
 }
 
 // SetDatasourceOAuth2RefreshFunc overrides how an OAuth 2.0 access token is
@@ -1933,129 +1908,6 @@ func crawlerIngestIdempotencyKey(sourceID, pageURL, contentSHA string) string {
 // fails the sync terminally rather than retrying into the same cap.
 var ErrUploadListingIncomplete = errors.New("upload listing is incomplete; removals were not reconciled")
 
-// runUploadSync mirrors the source's scope into the documents store. It takes a
-// complete snapshot through the object-storage connector — the listing within
-// the source's key filter and object cap, read through the object-storage
-// service — and fetches it in batches, enqueuing an ingest delivery per
-// object, then closes the sync with the complete listing of every object it
-// delivered, so the store tombstones the entries whose objects are gone. Every
-// job of one sync carries one freshly allocated ordinal, which the store ranks
-// the listing against the writes it covers by.
-//
-// The listing is sent only when the sync saw the whole scope and delivered
-// every object in it: a failed listing, one the cap cuts, a fetch failure, or
-// an object too large to deliver ends the sync without one, so a partial view
-// can never delete. An object rewritten or deleted between the listing and its
-// read fails the sync, which the next one lists afresh.
-func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (int, error) {
-	w := wool.Get(ctx).In("runUploadSync")
-	// The registered connector is the metered one: every listing and batched
-	// read spends the source credential's budget, as a GitHub sync does.
-	conn, ok := s.datasourceConnectors.Files(DatasourceProviderUpload)
-	if !ok {
-		return 0, w.NewError("datasource connector is not configured")
-	}
-	if source.Upload == nil {
-		return 0, w.NewError("upload source has no config")
-	}
-	src := connectorSource(source)
-	snapshot, err := conn.Changes(ctx, src, "")
-	if errors.Is(err, objectstore.ErrListingIncomplete) {
-		return 0, w.Wrapf(fmt.Errorf("%w: %w", ErrUploadListingIncomplete, err), "list objects under %q", source.Upload.Prefix)
-	}
-	if err != nil {
-		return 0, w.Wrapf(s.parkRefusedUploadSource(ctx, source, err), "list objects")
-	}
-	// A host-owned invariant, whatever any service version answers: a sync
-	// never closes with a snapshot that empties a source that has files. Such a
-	// snapshot tombstones every entry mirrored from the source, and a store or
-	// service that wrongly answers "empty" — a rewritten scope, a discarded
-	// truncation — is the case that has already happened. Emptying a source is
-	// an explicit operation, not a side effect of a listing.
-	if len(snapshot.Changes) == 0 {
-		held, err := s.uploadSourceMayHoldFiles(ctx, source)
-		if err != nil {
-			return 0, w.Wrapf(err, "read the source's last snapshot")
-		}
-		if held {
-			return 0, w.Wrapf(ErrUploadEmptyListingRefused, "listing under %q", source.Upload.Prefix)
-		}
-	}
-	ordinal, err := s.allocateOrdinal(ctx, source.ID)
-	if err != nil {
-		return 0, w.Wrapf(err, "allocate ordinal")
-	}
-
-	enqueued, oversized := 0, 0
-	delivered := make([]uploadListingFile, 0, len(snapshot.Changes))
-	var batch []connector.FileRef
-	var batchBytes int64
-	flush := func() error {
-		if len(batch) == 0 {
-			return nil
-		}
-		err := conn.FetchFiles(ctx, src, snapshot.To, batch, func(f connector.File, content io.Reader) error {
-			body, err := io.ReadAll(content)
-			if err != nil {
-				return err
-			}
-			fingerprint := uploadFingerprint(f.Provenance.GetItemVersion(), body)
-			if err := s.enqueueUploadIngest(ctx, source, f.Locator, body, f.ContentType, fingerprint, ordinal); err != nil {
-				return w.Wrapf(err, "enqueue %s", f.Locator)
-			}
-			delivered = append(delivered, uploadListingFile{Key: f.Locator, ETag: fingerprint})
-			enqueued++
-			return nil
-		})
-		batch, batchBytes = batch[:0], 0
-		// An object the object-storage service refuses as over its cap is
-		// skipped and the rest of the batch is delivered; like an object over
-		// the ingest limit, it keeps this sync from sending a listing that
-		// would tombstone it.
-		var skipped *objectstore.TooLargeError
-		if errors.As(err, &skipped) {
-			oversized += len(skipped.Keys)
-			return nil
-		}
-		if err != nil {
-			return s.parkRefusedUploadSource(ctx, source, err)
-		}
-		return nil
-	}
-	for _, ch := range snapshot.Changes {
-		// Objects too large for the ingest inbox cannot be delivered and the
-		// consumer holds no credentials to re-fetch them: never read, counted.
-		if ch.Size > maxIngestPayload {
-			oversized++
-			continue
-		}
-		if len(batch) == objectstore.MaxObjectsPerBatch || batchBytes+ch.Size > objectstore.MaxBatchBytes {
-			if err := flush(); err != nil {
-				return enqueued, w.Wrapf(err, "fetch objects")
-			}
-		}
-		batch = append(batch, connector.FileRef{ItemID: ch.Locator, ItemVersion: ch.ItemVersion})
-		batchBytes += ch.Size
-	}
-	if err := flush(); err != nil {
-		return enqueued, w.Wrapf(err, "fetch objects")
-	}
-
-	if oversized > 0 {
-		return enqueued, w.NewError("%d object(s) exceed the ingest payload limit", oversized)
-	}
-	if err := s.enqueueUploadListing(ctx, source, ordinal, delivered); err != nil {
-		return enqueued, w.Wrapf(err, "enqueue listing")
-	}
-
-	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
-		return s.store.RecordDatasourceSnapshotSent(ctx, source.OrgID, source.ID, time.Now().UTC(), len(delivered))
-	}); err != nil {
-		return enqueued, w.Wrapf(err, "record sync time")
-	}
-	return enqueued, nil
-}
-
 // ErrUploadEmptyListingRefused reports an object-storage sync whose listing
 // came back empty for a source that has files. It is refused, not closed: the
 // collection is left as it is, and emptying a source is an explicit operation.
@@ -2080,30 +1932,6 @@ func (s *Service) uploadSourceMayHoldFiles(ctx context.Context, source *Datasour
 		return items > 0, nil
 	}
 	return source.LastSyncedAt != nil, nil
-}
-
-// parkRefusedUploadSource parks an object-storage source a retry cannot fix:
-// the object-storage service's guard refused its endpoint, or its store
-// rejected its access key. The source is degraded with a reason a person can
-// act on — change the endpoint, or connect it again with a valid key — so the
-// reconcile sweep stops retrying it. Any other error is returned as it is. A
-// park that fails returns its own error in place of the refusal, so the job
-// retries and the park is attempted again (parkDatasourceSource).
-func (s *Service) parkRefusedUploadSource(ctx context.Context, source *DatasourceSource, err error) error {
-	var reason DatasourceDegradeReason
-	switch {
-	case errors.Is(err, objectstore.ErrDestinationRefused):
-		reason = ObjectStorageEndpointRefusedDegradeReason()
-	case errors.Is(err, connector.ErrCredentialRefused):
-		reason = ObjectStorageCredentialRejectedDegradeReason()
-	default:
-		return err
-	}
-	if _, perr := s.parkDatasourceSource(ctx, source, reason); perr != nil {
-		wool.Get(ctx).Warn("could not park a refused object-storage source", wool.Field("source_id", source.ID), wool.ErrField(perr))
-		return fmt.Errorf("park the refused object-storage source: %w", perr)
-	}
-	return err
 }
 
 // uploadListingFile is one delivered object in an upload sync's listing: its
@@ -2247,7 +2075,7 @@ func (s *Service) NewDatasourceSyncJobHandler() jobs.Handler {
 		case errors.Is(err, ErrUploadEmptyListingRefused):
 			// The collection is left as it is; a retry would list the same.
 			return jobs.NewProcessingError("datasource.upload_empty_listing_refused", ErrUploadEmptyListingRefused.Error(), false)
-		case errors.Is(err, objectstore.ErrDestinationRefused):
+		case errors.Is(err, ErrUploadDestinationRefused):
 			// The source is parked: its endpoint must change, not be retried.
 			return jobs.NewProcessingError("datasource.upload_destination_refused", "the object-storage service refuses the source's endpoint", false)
 		case errors.Is(err, connector.ErrCredentialRefused):
