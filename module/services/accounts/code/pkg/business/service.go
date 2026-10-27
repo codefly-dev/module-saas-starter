@@ -48,6 +48,7 @@ type Service struct {
 	orgCreationPolicy         OrganizationCreationPolicy
 	audit                     AuditEmitter
 	auditTx                   TxAuditEmitter // set when audit also writes on the caller's tx; required in production
+	auditReads                *AuditService  // selected at startup for list, aggregation and export
 	entitlements              EntitlementChecker
 	membership                MembershipInvalidator
 	slack                     *SlackNotifier // optional: sends critical notifications to Slack
@@ -486,7 +487,14 @@ func NewService(store Store) (*Service, error) {
 		return nil, err
 	}
 	authority, _ := store.(ModuleAuthorityStore)
+	var auditReads *AuditService
+	if store != nil {
+		if auditReads, err = newAuditReads(store); err != nil {
+			return nil, err
+		}
+	}
 	return &Service{
+		auditReads:                auditReads,
 		store:                     store,
 		moduleAuthority:           authority,
 		acquisitionMode:           gen.AcquisitionMode_ACQUISITION_MODE_OPEN_SIGNUP,
@@ -703,6 +711,15 @@ func (s *Service) publicBaseURL(ctx context.Context) string {
 func (s *Service) SetAuditEmitter(a AuditEmitter) {
 	s.audit = a
 	s.auditTx, _ = a.(TxAuditEmitter)
+}
+
+// SetAuditService wires the AuditService startup built: the emitter every audited
+// write goes through and the storage every audit read comes from. It replaces
+// SetAuditEmitter for the process, so the write and the read can never name two
+// different stores.
+func (s *Service) SetAuditService(a *AuditService) {
+	s.SetAuditEmitter(a)
+	s.auditReads = a
 }
 
 // VerifyAuditWiring fails startup when the wired audit emitter cannot write on

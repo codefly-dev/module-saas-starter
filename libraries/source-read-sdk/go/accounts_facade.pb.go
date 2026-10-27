@@ -201,6 +201,14 @@ func (a *ModuleCapabilitiesClient) EmitAuditEvent(ctx context.Context, req *v1.M
 	return resp.Msg, nil
 }
 
+func (a *ModuleCapabilitiesClient) ReadJournal(ctx context.Context, req *v1.ModuleReadJournalRequest) (*v1.ModuleReadJournalResponse, error) {
+	resp, err := a.inner.ReadJournal(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
 func (a *ModuleCapabilitiesClient) DeclareAuditEventTypes(ctx context.Context, req *v1.ModuleDeclareAuditEventTypesRequest) (*v1.ModuleDeclareAuditEventTypesResponse, error) {
 	resp, err := a.inner.DeclareAuditEventTypes(ctx, connect.NewRequest(req))
 	if err != nil {

@@ -29,10 +29,12 @@ func (s *Service) ExportAuditLog(ctx context.Context, orgID, format, actorID, ev
 	var all []AuditEntry
 	pageToken := ""
 	for {
-		// Service.QueryAuditLog wraps in WithOrgTx (or WithControlPlane when
-		// orgID is empty for platform-admin export) so RLS lets the
-		// rows through. Don't use s.store.QueryAuditLog directly here
-		// — that bypasses the wrap and returns zero rows.
+		// Service.QueryAuditLog reads through the AuditService, which scopes the
+		// read to the organization (WithOrgTx, so RLS lets the rows through) or,
+		// when orgID is empty for platform-admin export, to the platform. Don't
+		// use s.store.QueryAuditLog directly here — that bypasses the scope and
+		// returns zero rows — and don't read a storage directly: the export must
+		// come from the same storage the audit was written to.
 		entries, nextToken, _, err := s.QueryAuditLog(ctx, AuditQuery{
 			OrgID: orgID, ActorID: actorID, EventType: eventType, EventTypes: eventTypes,
 			PageSize: 100, PageToken: pageToken,

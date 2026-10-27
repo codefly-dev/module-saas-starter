@@ -6,6 +6,7 @@ import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "codefly/runnable/v0/options.proto";
 import "saas/policy/v1/options.proto";
 
 // ============================================================================
@@ -115,7 +116,11 @@ message AuditMetric {
   // percentile) require a "payload:<key>" field; non-numeric payload values are
   // ignored.
   string field = 2;
-  // percentile ∈ (0,1], used only when op == percentile (0.95 → p95).
+  // percentile ∈ (0,1], used only when op == percentile (0.95 → p95). Only the
+  // Postgres audit backend computes it: the warehouse backend keeps entries
+  // at-least-once and deduplicates them on read, and a percentile over that is not
+  // an exact answer, so a deployment on the warehouse backend refuses a query that
+  // asks for one with InvalidArgument. Every other op is served by both backends.
   double percentile = 3;
   // alias names this metric in the response map. Defaults to "count" for count,
   // else "<op>_<key>".
@@ -238,6 +243,43 @@ message ListAuditEventTypesResponse {
   repeated AuditEventType types = 1;
 }
 
+// DeliverAuditEventsRequest names one range of the platform journal, (from, to],
+// whose audit records the operation appends to the warehouse audit storage. Both
+// ends are positions a ModuleReadJournal page returned; from may instead be the
+// literal "start", meaning before the oldest retained entry, and is never empty so
+// that the first range of a fresh journal has a non-empty value to correlate on.
+// The range ends at a position that is final (below the oldest transaction still
+// running) and holds at most 500 audit records, or it is refused before anything
+// is appended. The effect id is "saas.audit.recorded.v1/<from>", derived by the
+// host: one range, one receipt. A runtime task may carry its own transport
+// effect identity; the range receipt is independent of that task identity.
+message DeliverAuditEventsRequest {
+  string from = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  string to = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+}
+
+message DeliverAuditEventsResponse {
+  string effect_id = 1;
+  // status is "committed" when the range is recorded. An absent lookup
+  // returns NOT_FOUND: absence is inconclusive, never a committed response.
+  string status = 2;
+  // delivered is the number of audit records of the range appended to the
+  // storage; a range with none still commits a receipt.
+  int32 delivered = 3;
+  // The exact committed interval is (from, to]. Retention verifies these
+  // positions against the receipt's effect identity and request digest before
+  // retiring journal rows. Legacy receipts without both positions prove no
+  // coverage; delivered alone never proves an interval.
+  string from = 4;
+  string to = 5;
+}
+
 // AuditService — append-only audit event log
 service AuditService {
   rpc QueryAuditLog(QueryAuditLogRequest) returns (QueryAuditLogResponse) {
@@ -320,6 +362,70 @@ service AuditService {
     option (google.api.http) = {
       post: "/v1/audit-log:export"
       body: "*"
+    };
+  }
+
+  // DeliverAuditEvents appends one range of the journal's audit records to the
+  // warehouse audit storage: the operation module-runtime calls after reading the
+  // range through ReadJournal. It is an operation, not a sweep. It takes each
+  // record's organization from the journal row and never from the caller, emits no
+  // audit of its own, and commits one receipt per range under the installation's
+  // tenant; delivery is at least once, and every read of the storage returns each
+  // entry once by id. Its receipt is read back through LookupDeliverAuditEvents.
+  rpc DeliverAuditEvents(DeliverAuditEventsRequest) returns (DeliverAuditEventsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      // Headless module principals are authorized by their live grant and
+      // saas.audit-delivery scope, not by a human organization membership.
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_INTERNAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (codefly.runnable.v0.operation) = {
+      attempt_timeout: {seconds: 60}
+      total_timeout: {seconds: 600}
+      max_attempts: 3
+      backoff: {seconds: 5}
+      retryable_codes: [
+        "UNAVAILABLE",
+        "RESOURCE_EXHAUSTED",
+        "ABORTED"
+      ]
+      audience: "saas-audit"
+      required_scope_slots: {
+        name: "audit_delivery"
+        required_actions: [
+          "invoke",
+          "read"
+        ]
+        lookup: true
+      }
+      lookup_method: "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents"
+      max_input_bytes: 256
+      max_output_bytes: 1024
+      completion: COMPLETION_CALL
+    };
+  }
+  // LookupDeliverAuditEvents takes the invocation's same {from, to} body and
+  // derives the range receipt identity from from. It never delivers.
+  rpc LookupDeliverAuditEvents(DeliverAuditEventsRequest) returns (DeliverAuditEventsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      // Headless module principals are authorized by their live grant and
+      // saas.audit-delivery scope, not by a human organization membership.
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_INTERNAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
 }

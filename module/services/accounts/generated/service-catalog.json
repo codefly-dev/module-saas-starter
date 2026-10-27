@@ -48,6 +48,7 @@
         "/host.installation.v1.InstallationService/GrantRole",
         "/host.installation.v1.InstallationService/Install",
         "/host.installation.v1.InstallationService/List",
+        "/host.installation.v1.InstallationService/ListHeld",
         "/host.installation.v1.InstallationService/ListRoleGrants",
         "/host.installation.v1.InstallationService/Review",
         "/host.installation.v1.InstallationService/RevokeRole"
@@ -92,8 +93,10 @@
       "full_name": "saas.accounts.v1.AuditService",
       "procedures": [
         "/saas.accounts.v1.AuditService/AggregateAuditLog",
+        "/saas.accounts.v1.AuditService/DeliverAuditEvents",
         "/saas.accounts.v1.AuditService/ExportAuditLog",
         "/saas.accounts.v1.AuditService/ListAuditEventTypes",
+        "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents",
         "/saas.accounts.v1.AuditService/QueryAuditLog"
       ]
     },
@@ -310,6 +313,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
         "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
         "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal",
         "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
         "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
         "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
@@ -1409,6 +1413,49 @@
       }
     },
     {
+      "procedure": "/host.installation.v1.InstallationService/ListHeld",
+      "service": "InstallationService",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "ListHeld",
+      "input_type": "host.installation.v1.ListHeldRequest",
+      "output_type": "host.installation.v1.ListHeldResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/installation/v1/installation.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "List only the signed-in member's current installation roles, including team grants.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/host.installation.v1.InstallationService/ListRoleGrants",
       "service": "InstallationService",
       "full_service": "host.installation.v1.InstallationService",
@@ -2159,6 +2206,49 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.AuditService/DeliverAuditEvents",
+      "service": "AuditService",
+      "full_service": "saas.accounts.v1.AuditService",
+      "method": "DeliverAuditEvents",
+      "input_type": "saas.accounts.v1.DeliverAuditEventsRequest",
+      "output_type": "saas.accounts.v1.DeliverAuditEventsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/audit.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_REQUIRED",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "auth",
+      "description": "Deliver one final audit journal range under the installed module's delivery authority, committing a receipt.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.AuditService/ExportAuditLog",
       "service": "AuditService",
       "full_service": "saas.accounts.v1.AuditService",
@@ -2269,6 +2359,49 @@
       },
       "policy_tier": "auth",
       "description": "List the registered audit event-type catalog for search facets.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents",
+      "service": "AuditService",
+      "full_service": "saas.accounts.v1.AuditService",
+      "method": "LookupDeliverAuditEvents",
+      "input_type": "saas.accounts.v1.DeliverAuditEventsRequest",
+      "output_type": "saas.accounts.v1.DeliverAuditEventsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/audit.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "auth",
+      "description": "Read the receipt of one audit delivery without appending any entries.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8753,6 +8886,49 @@
       },
       "policy_tier": "internal",
       "description": "Publish one domain event to the outbox for the caller's tenant.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ReadJournal",
+      "input_type": "saas.accounts.v1.ModuleReadJournalRequest",
+      "output_type": "saas.accounts.v1.ModuleReadJournalResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Read a page of the cross-tenant journal under a cross-tenant module grant, without enqueueing work.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

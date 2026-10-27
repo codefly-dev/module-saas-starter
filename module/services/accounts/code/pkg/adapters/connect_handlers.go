@@ -35,6 +35,9 @@ func connectCtx(ctx context.Context, h http.Header) context.Context {
 			md.Set(string(key), values...)
 		}
 	}
+	if v := h.Values(workContextHeader); len(v) > 0 {
+		md.Set(workContextHeader, v...)
+	}
 	if v := h.Values("Authorization"); len(v) > 0 {
 		md.Set("authorization", v...)
 	}

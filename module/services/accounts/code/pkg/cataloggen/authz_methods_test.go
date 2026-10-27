@@ -41,18 +41,11 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 			require.Contains(t, method.GetProcedure(), "Complete")
 		}
 	}
-	// Artifact approval/authorization/revocation and current installation lookup
-	// are internal module capabilities, never public caller endpoints; so is the
-	// declared-presence RPC this branch adds. Base 49, main +4, this branch +1;
-	// then -2 when MintModuleRegistration and MintSolutionRegistration were
-	// deleted with their secrets (#1056), and +1 for the live-authority read a
-	// callee's verifier asks (#1107), +1 for the issuer's admission of a
-	// bearer-less module route's capability (AdmitWorkloadOperation), and +1
-	// for the composition interface's ApplyManifest. Picking either side's
-	// number would be silently wrong, so this is read off the regenerated
-	// generated/authz-methods.json.
-	require.Equal(t, 55, internalCount)   // ApplyManifest now authenticates its signed carrier on the tenant listener
-	require.Equal(t, 28, failClosedCount) // +3: the artifact interface's Approve, Authorize and Revoke, authenticated by the module's workload credential; +1: signed composition delivery; +2: the session interface's SignIn and ListFixturePeople are rate-limited as authentication and fail closed; +4: the authority interface's workload-credential calls (RegisterAdmissionKey, AttachResource, DetachResource, AuthorizeTransfer); +1: the installation interface's Current, authenticated by the module's workload credential
+	// ReadJournal extends the existing internal capability catalog.
+	require.Equal(t, 56, internalCount)
+	require.Equal(t, policyv1.Exposure_EXPOSURE_INTERNAL,
+		methodByProcedure(catalog, "/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal").GetPolicy().GetExposure())
+	require.Equal(t, 28, failClosedCount)
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(
 		t,
@@ -184,5 +177,6 @@ func TestImpersonationRestrictionsMatchTheDescriptorsTheInterceptorReads(t *test
 	}
 
 	require.Equal(t, catalogued, enforced)
-	require.Len(t, enforced, 68) // 57 of the API package + Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, Current of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
+	require.Contains(t, enforced, "/host.installation.v1.InstallationService/ListHeld")
+	require.Len(t, enforced, 69) // 57 of the API package + Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, ListHeld, Current of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
 }

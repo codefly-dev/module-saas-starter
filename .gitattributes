@@ -2,12 +2,30 @@
 # Keep normal whitespace checks everywhere else.
 module/services/frontend/code/src/gen/** whitespace=-blank-at-eof
 
-# Generated artifacts changed by the telemetry service removal.
-# Their owning generators remain responsible for the committed outputs.
-module/deployment/generated/** linguist-generated=true
+# Dedicated generator outputs; authored inputs and mixed source directories stay visible.
+module/contracts/api/** linguist-generated=true
 module/contracts/runnables/** linguist-generated=true
+module/deployment/generated/** linguist-generated=true
+module/generated/** linguist-generated=true
+module/services/accounts/builder/** linguist-generated=true
+module/services/accounts/code/external/saas-starter/** linguist-generated=true
+module/services/accounts/code/pkg/gen/** linguist-generated=true
+module/services/accounts/code/python/gen/** linguist-generated=true
+module/services/accounts/generated/** linguist-generated=true
+module/services/auth-gateway/builder/** linguist-generated=true
+module/services/auth-gateway/code/pkg/gen/** linguist-generated=true
+module/services/auth-gateway/code/external/saas-starter/** linguist-generated=true
+module/services/frontend/code/packages/saas-sdk/generated/** linguist-generated=true
+module/services/frontend/code/src/gen/** linguist-generated=true
+module/services/frontend/code/src/generated/** linguist-generated=true
+module/services/frontend/generated/** linguist-generated=true
+module/services/marketing/code/src/generated/** linguist-generated=true
+module/services/policy-log/builder/** linguist-generated=true
+module/services/policy-log/code/pkg/gen/** linguist-generated=true
+module/services/telemetry/builder/** linguist-generated=true
 module/services/telemetry/code/pkg/gen/** linguist-generated=true
 
-# Build recipes emitted by the pinned Go service agent.
-module/services/accounts/builder/** linguist-generated=true
-module/services/auth-gateway/builder/** linguist-generated=true
+# Keep dependency locks reviewable even inside exported generator snapshots.
+**/buf.lock linguist-generated=false
+**/package-lock.json linguist-generated=false
+**/go.sum linguist-generated=false

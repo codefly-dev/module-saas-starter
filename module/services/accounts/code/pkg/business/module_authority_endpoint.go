@@ -134,6 +134,7 @@ var moduleAuthorityProcedures = []string{
 	"/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
 	"/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
 	"/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
+	"/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal",
 	"/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
 	"/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
 	"/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",

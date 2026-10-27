@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:743b63bad9a546f105e994c754d845865e189465e6c72816e5785efe38ab7831",
+      "digest": "sha256:a6dfc46790b2193c93c7952f1f6e57a0825c223fed428bff2adc10c59fa03221",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -41,6 +41,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
             "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",
@@ -66,7 +67,7 @@
       "kind": "protobuf",
       "package": "",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:743b63bad9a546f105e994c754d845865e189465e6c72816e5785efe38ab7831",
+      "digest": "sha256:a6dfc46790b2193c93c7952f1f6e57a0825c223fed428bff2adc10c59fa03221",
       "services": [
         {
           "name": "ArtifactService",
@@ -109,6 +110,7 @@
             "/host.installation.v1.InstallationService/GrantRole",
             "/host.installation.v1.InstallationService/Install",
             "/host.installation.v1.InstallationService/List",
+            "/host.installation.v1.InstallationService/ListHeld",
             "/host.installation.v1.InstallationService/ListRoleGrants",
             "/host.installation.v1.InstallationService/Review",
             "/host.installation.v1.InstallationService/RevokeRole"
@@ -153,8 +155,10 @@
           "fullName": "saas.accounts.v1.AuditService",
           "procedures": [
             "/saas.accounts.v1.AuditService/AggregateAuditLog",
+            "/saas.accounts.v1.AuditService/DeliverAuditEvents",
             "/saas.accounts.v1.AuditService/ExportAuditLog",
             "/saas.accounts.v1.AuditService/ListAuditEventTypes",
+            "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents",
             "/saas.accounts.v1.AuditService/QueryAuditLog"
           ]
         },
@@ -371,6 +375,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
             "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",

@@ -111,3 +111,7 @@ func (h *moduleCapabilitiesConnectHandler) ReplayEvents(ctx context.Context, req
 func (h *moduleCapabilitiesConnectHandler) ResolveWorkContextAuthority(ctx context.Context, req *connect.Request[gen.ModuleResolveWorkContextAuthorityRequest]) (*connect.Response[gen.ModuleResolveWorkContextAuthorityResponse], error) {
 	return unary(ctx, req, h.inner.ResolveWorkContextAuthority)
 }
+
+func (h *moduleCapabilitiesConnectHandler) ReadJournal(ctx context.Context, req *connect.Request[gen.ModuleReadJournalRequest]) (*connect.Response[gen.ModuleReadJournalResponse], error) {
+	return unary(ctx, req, h.inner.ReadJournal)
+}

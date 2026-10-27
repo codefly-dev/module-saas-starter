@@ -202,6 +202,7 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		Organization: req.GetOrganizationId(), Scopes: scopesFromWire(req.GetScopes()), TTL: time.Duration(req.GetTtlSeconds()) * time.Second}
 	var out authority.Issued
 	child := false
+	modulePrefix := ""
 	switch as := req.GetAs().(type) {
 	case *authorityv1.IssueRequest_Person:
 		person, perr := signedInPerson(ctx, "be issued a capability")
@@ -217,18 +218,21 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		if werr != nil {
 			return nil, werr
 		}
+		modulePrefix = w.Module
 		out, err = core.IssueForWorkload(ctx, w, r)
 	case *authorityv1.IssueRequest_Installation:
 		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
 		if werr != nil {
 			return nil, werr
 		}
+		modulePrefix = w.Module
 		out, err = core.IssueForInstallation(ctx, w, as.Installation.GetInstallationId(), r)
 	case *authorityv1.IssueRequest_ParentToken:
 		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
 		if werr != nil {
 			return nil, werr
 		}
+		modulePrefix = w.Module
 		out, err = core.IssueChild(ctx, as.ParentToken, w, r)
 		child = true
 	case *authorityv1.IssueRequest_Delegation:
@@ -236,6 +240,7 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		if werr != nil {
 			return nil, werr
 		}
+		modulePrefix = w.Module
 		out, err = core.IssueForDelegation(ctx, as.Delegation.GetDelegationId(), w, r)
 	default:
 		return nil, status.Error(codes.InvalidArgument, "an issue names whom it is for: a person, a workload, an installation, a parent token or a delegation")
@@ -243,17 +248,17 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	return s.issued(ctx, out, child)
+	return s.issued(ctx, out, child, modulePrefix, req.GetOperationBindingId())
 }
 
 // issued records the issue in the organization it was issued in and answers it.
-func (s *HostAuthorityServer) issued(ctx context.Context, out authority.Issued, child bool) (*authorityv1.IssueResponse, error) {
+func (s *HostAuthorityServer) issued(ctx context.Context, out authority.Issued, child bool, modulePrefix, binding string) (*authorityv1.IssueResponse, error) {
 	wc := out.Context
 	actor := wc.GetOwnerPrincipalId()
 	if chain := wc.GetActorChain(); len(chain) > 0 {
 		actor = chain[len(chain)-1].GetPrincipalId()
 	}
-	if err := service.RecordAuthorityIssue(ctx, wc.GetTenantId(), actor, child, wc.GetTaskId()); err != nil {
+	if err := service.RecordAuthorityIssue(ctx, wc.GetTenantId(), actor, child, wc.GetTaskId(), modulePrefix, binding); err != nil {
 		return nil, status.Errorf(codes.Unavailable, "the issue could not be recorded, so it is not handed out: %v", err)
 	}
 	wire, err := workContextToWire(wc)
@@ -553,6 +558,28 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 	out := &installationv1.ListResponse{}
 	for _, inst := range all {
 		out.Installations = append(out.Installations, installationToWire(core, ctx, inst))
+	}
+	return out, nil
+}
+
+// ListHeld reads the signed-in member's current installation roles through
+// the shared Authority core, including team grants and their live revocation.
+func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installationv1.ListHeldRequest) (*installationv1.ListHeldResponse, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	caller, err := signedInPerson(ctx, "list held installations")
+	if err != nil {
+		return nil, err
+	}
+	held, err := core.HeldInstallations(ctx, caller, req.GetOrganizationId())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	out := &installationv1.ListHeldResponse{}
+	for _, h := range held {
+		out.Installations = append(out.Installations, &installationv1.HeldInstallation{Installation: installationToWire(core, ctx, h.Installation), Roles: h.Roles})
 	}
 	return out, nil
 }

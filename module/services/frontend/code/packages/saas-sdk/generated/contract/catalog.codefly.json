@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "",
       "path": "contract.binpb",
-      "digest": "sha256:da3be80f4ed222b07d24e2b23d5eb797a36b1334fef560b24aeecf2850ac48d6",
+      "digest": "sha256:19a9a6803b93239a67538e6cf6111caa5136f982c44942ba21ac00bf7a05ce95",
       "services": [
         {
           "name": "AccessibleScopeService",
@@ -24,8 +24,10 @@
           "fullName": "saas.accounts.v1.AuditService",
           "procedures": [
             "/saas.accounts.v1.AuditService/AggregateAuditLog",
+            "/saas.accounts.v1.AuditService/DeliverAuditEvents",
             "/saas.accounts.v1.AuditService/ExportAuditLog",
             "/saas.accounts.v1.AuditService/ListAuditEventTypes",
+            "/saas.accounts.v1.AuditService/LookupDeliverAuditEvents",
             "/saas.accounts.v1.AuditService/QueryAuditLog"
           ]
         },

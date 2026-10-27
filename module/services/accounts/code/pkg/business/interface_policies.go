@@ -229,7 +229,9 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		"/host.installation.v1.InstallationService/GrantRole":      roleChange(EventAuthorityRoleGranted),
 		"/host.installation.v1.InstallationService/RevokeRole":     roleChange(EventAuthorityRoleRevoked),
 		"/host.installation.v1.InstallationService/ListRoleGrants": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
-		"/host.installation.v1.InstallationService/List":           read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's view is the entitlement listing
+		"/host.installation.v1.InstallationService/List":           read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's own holdings are ListHeld
+		// The core restricts this read to the signed-in member's own holdings.
+		"/host.installation.v1.InstallationService/ListHeld": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// Current is the caller's own session: authenticated by the bearer it
 		// describes, organisation-less like the session itself may be.
 		"/host.session.v1.SessionService/Current": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
@@ -314,6 +316,7 @@ var interfaceDescriptions = map[string]string{
 	"InstallationService/GrantRole":         "Grant a person or a team one of an installed solution's roles.",
 	"InstallationService/RevokeRole":        "Revoke one role grant; its subject's capabilities through the installation end.",
 	"InstallationService/ListRoleGrants":    "List who holds which role on one installation.",
+	"InstallationService/ListHeld":          "List only the signed-in member's current installation roles, including team grants.",
 	"InstallationService/List":              "List what one organisation has installed.",
 	"AuthorityService/ListResources":        "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",
 	"AuthorityService/Delegate":             "Record a signed-in person's grant to a module, within what they hold.",

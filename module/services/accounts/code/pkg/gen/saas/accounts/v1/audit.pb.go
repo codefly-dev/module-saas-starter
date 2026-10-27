@@ -13,6 +13,7 @@ import (
 	unsafe "unsafe"
 
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
+	_ "github.com/codefly-dev/core/generated/go/codefly/runnable/v0"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -589,7 +590,11 @@ type AuditMetric struct {
 	// percentile) require a "payload:<key>" field; non-numeric payload values are
 	// ignored.
 	Field string `protobuf:"bytes,2,opt,name=field,proto3" json:"field,omitempty"`
-	// percentile ∈ (0,1], used only when op == percentile (0.95 → p95).
+	// percentile ∈ (0,1], used only when op == percentile (0.95 → p95). Only the
+	// Postgres audit backend computes it: the warehouse backend keeps entries
+	// at-least-once and deduplicates them on read, and a percentile over that is not
+	// an exact answer, so a deployment on the warehouse backend refuses a query that
+	// asks for one with InvalidArgument. Every other op is served by both backends.
 	Percentile float64 `protobuf:"fixed64,3,opt,name=percentile,proto3" json:"percentile,omitempty"`
 	// alias names this metric in the response map. Defaults to "count" for count,
 	// else "<op>_<key>".
@@ -1267,11 +1272,157 @@ func (x *ListAuditEventTypesResponse) GetTypes() []*AuditEventType {
 	return nil
 }
 
+// DeliverAuditEventsRequest names one range of the platform journal, (from, to],
+// whose audit records the operation appends to the warehouse audit storage. Both
+// ends are positions a ModuleReadJournal page returned; from may instead be the
+// literal "start", meaning before the oldest retained entry, and is never empty so
+// that the first range of a fresh journal has a non-empty value to correlate on.
+// The range ends at a position that is final (below the oldest transaction still
+// running) and holds at most 500 audit records, or it is refused before anything
+// is appended. The effect id is "saas.audit.recorded.v1/<from>", derived by the
+// host: one range, one receipt. A runtime task may carry its own transport
+// effect identity; the range receipt is independent of that task identity.
+type DeliverAuditEventsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	From          string                 `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
+	To            string                 `protobuf:"bytes,2,opt,name=to,proto3" json:"to,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeliverAuditEventsRequest) Reset() {
+	*x = DeliverAuditEventsRequest{}
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeliverAuditEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeliverAuditEventsRequest) ProtoMessage() {}
+
+func (x *DeliverAuditEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeliverAuditEventsRequest.ProtoReflect.Descriptor instead.
+func (*DeliverAuditEventsRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DeliverAuditEventsRequest) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *DeliverAuditEventsRequest) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
+type DeliverAuditEventsResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	EffectId string                 `protobuf:"bytes,1,opt,name=effect_id,json=effectId,proto3" json:"effect_id,omitempty"`
+	// status is "committed" when the range is recorded. An absent lookup
+	// returns NOT_FOUND: absence is inconclusive, never a committed response.
+	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	// delivered is the number of audit records of the range appended to the
+	// storage; a range with none still commits a receipt.
+	Delivered int32 `protobuf:"varint,3,opt,name=delivered,proto3" json:"delivered,omitempty"`
+	// The exact committed interval is (from, to]. Retention verifies these
+	// positions against the receipt's effect identity and request digest before
+	// retiring journal rows. Legacy receipts without both positions prove no
+	// coverage; delivered alone never proves an interval.
+	From          string `protobuf:"bytes,4,opt,name=from,proto3" json:"from,omitempty"`
+	To            string `protobuf:"bytes,5,opt,name=to,proto3" json:"to,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeliverAuditEventsResponse) Reset() {
+	*x = DeliverAuditEventsResponse{}
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeliverAuditEventsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeliverAuditEventsResponse) ProtoMessage() {}
+
+func (x *DeliverAuditEventsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_audit_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeliverAuditEventsResponse.ProtoReflect.Descriptor instead.
+func (*DeliverAuditEventsResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_audit_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *DeliverAuditEventsResponse) GetEffectId() string {
+	if x != nil {
+		return x.EffectId
+	}
+	return ""
+}
+
+func (x *DeliverAuditEventsResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *DeliverAuditEventsResponse) GetDelivered() int32 {
+	if x != nil {
+		return x.Delivered
+	}
+	return 0
+}
+
+func (x *DeliverAuditEventsResponse) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *DeliverAuditEventsResponse) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
 var File_saas_accounts_v1_audit_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\n" +
-	"\x1csaas/accounts/v1/audit.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xdb\x04\n" +
+	"\x1csaas/accounts/v1/audit.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a!codefly/runnable/v0/options.proto\x1a\x1csaas/policy/v1/options.proto\"\xdb\x04\n" +
 	"\n" +
 	"AuditEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
@@ -1406,7 +1557,16 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x11marks_user_joined\x18\b \x01(\bR\x0fmarksUserJoined\x12)\n" +
 	"\x10webhook_eligible\x18\t \x01(\bR\x0fwebhookEligible\"U\n" +
 	"\x1bListAuditEventTypesResponse\x126\n" +
-	"\x05types\x18\x01 \x03(\v2 .saas.accounts.v1.AuditEventTypeR\x05types2\x9d\x06\n" +
+	"\x05types\x18\x01 \x03(\v2 .saas.accounts.v1.AuditEventTypeR\x05types\"U\n" +
+	"\x19DeliverAuditEventsRequest\x12\x1d\n" +
+	"\x04from\x18\x01 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18@R\x04from\x12\x19\n" +
+	"\x02to\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18@R\x02to\"\x93\x01\n" +
+	"\x1aDeliverAuditEventsResponse\x12\x1b\n" +
+	"\teffect_id\x18\x01 \x01(\tR\beffectId\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1c\n" +
+	"\tdelivered\x18\x03 \x01(\x05R\tdelivered\x12\x12\n" +
+	"\x04from\x18\x04 \x01(\tR\x04from\x12\x0e\n" +
+	"\x02to\x18\x05 \x01(\tR\x02to2\xe9\t\n" +
 	"\fAuditService\x12\xb5\x01\n" +
 	"\rQueryAuditLog\x12&.saas.accounts.v1.QueryAuditLogRequest\x1a'.saas.accounts.v1.QueryAuditLogResponse\"S\xc2\xf3\x18:\b\x02\x10\x03\x1a\n" +
 	"audit:read\"\n" +
@@ -1422,7 +1582,12 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x0eExportAuditLog\x12'.saas.accounts.v1.ExportAuditLogRequest\x1a(.saas.accounts.v1.ExportAuditLogResponse\"]\xc2\xf3\x18:\b\x02\x10\x04\x1a\n" +
 	"audit:read\"\n" +
 	"audit:read*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/audit-log:exportB\xb2\x01\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/audit-log:export\x12\xb7\x02\n" +
+	"\x12DeliverAuditEvents\x12+.saas.accounts.v1.DeliverAuditEventsRequest\x1a,.saas.accounts.v1.DeliverAuditEventsResponse\"\xc5\x01\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x03H\x04P\x02X\x02`\x01\xda\xf3\x18\xa8\x01\n" +
+	"\x02\b<\x12\x03\b\xd8\x04\x18\x03\"\x02\b\x05*\vUNAVAILABLE*\x12RESOURCE_EXHAUSTED*\aABORTED2\n" +
+	"saas-auditJ7/saas.accounts.v1.AuditService/LookupDeliverAuditEventsP\x80\x02X\x80\b`\x01r \n" +
+	"\x0eaudit_delivery\x12\x06invoke\x12\x04read\x18\x01\x12\x8f\x01\n" +
+	"\x18LookupDeliverAuditEvents\x12+.saas.accounts.v1.DeliverAuditEventsRequest\x1a,.saas.accounts.v1.DeliverAuditEventsResponse\"\x18\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x02`\x01B\xb2\x01\n" +
 	"\x14com.saas.accounts.v1B\n" +
 	"AuditProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
@@ -1438,7 +1603,7 @@ func file_saas_accounts_v1_audit_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_audit_proto_rawDescData
 }
 
-var file_saas_accounts_v1_audit_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_saas_accounts_v1_audit_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_saas_accounts_v1_audit_proto_goTypes = []any{
 	(*AuditEvent)(nil),                  // 0: saas.accounts.v1.AuditEvent
 	(*QueryAuditLogRequest)(nil),        // 1: saas.accounts.v1.QueryAuditLogRequest
@@ -1453,41 +1618,47 @@ var file_saas_accounts_v1_audit_proto_goTypes = []any{
 	(*ListAuditEventTypesRequest)(nil),  // 10: saas.accounts.v1.ListAuditEventTypesRequest
 	(*AuditEventType)(nil),              // 11: saas.accounts.v1.AuditEventType
 	(*ListAuditEventTypesResponse)(nil), // 12: saas.accounts.v1.ListAuditEventTypesResponse
-	nil,                                 // 13: saas.accounts.v1.AuditEvent.MetadataEntry
-	nil,                                 // 14: saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntry
-	nil,                                 // 15: saas.accounts.v1.AggregateAuditLogRequest.PayloadContainsEntry
-	nil,                                 // 16: saas.accounts.v1.AuditAggregateBucket.MetricsEntry
-	nil,                                 // 17: saas.accounts.v1.AuditAggregateBucket.SamplesEntry
-	(*timestamppb.Timestamp)(nil),       // 18: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),             // 19: google.protobuf.Struct
+	(*DeliverAuditEventsRequest)(nil),   // 13: saas.accounts.v1.DeliverAuditEventsRequest
+	(*DeliverAuditEventsResponse)(nil),  // 14: saas.accounts.v1.DeliverAuditEventsResponse
+	nil,                                 // 15: saas.accounts.v1.AuditEvent.MetadataEntry
+	nil,                                 // 16: saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntry
+	nil,                                 // 17: saas.accounts.v1.AggregateAuditLogRequest.PayloadContainsEntry
+	nil,                                 // 18: saas.accounts.v1.AuditAggregateBucket.MetricsEntry
+	nil,                                 // 19: saas.accounts.v1.AuditAggregateBucket.SamplesEntry
+	(*timestamppb.Timestamp)(nil),       // 20: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),             // 21: google.protobuf.Struct
 }
 var file_saas_accounts_v1_audit_proto_depIdxs = []int32{
-	13, // 0: saas.accounts.v1.AuditEvent.metadata:type_name -> saas.accounts.v1.AuditEvent.MetadataEntry
-	18, // 1: saas.accounts.v1.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
-	19, // 2: saas.accounts.v1.AuditEvent.payload:type_name -> google.protobuf.Struct
-	18, // 3: saas.accounts.v1.QueryAuditLogRequest.from:type_name -> google.protobuf.Timestamp
-	18, // 4: saas.accounts.v1.QueryAuditLogRequest.to:type_name -> google.protobuf.Timestamp
-	14, // 5: saas.accounts.v1.QueryAuditLogRequest.payload_contains:type_name -> saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntry
+	15, // 0: saas.accounts.v1.AuditEvent.metadata:type_name -> saas.accounts.v1.AuditEvent.MetadataEntry
+	20, // 1: saas.accounts.v1.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
+	21, // 2: saas.accounts.v1.AuditEvent.payload:type_name -> google.protobuf.Struct
+	20, // 3: saas.accounts.v1.QueryAuditLogRequest.from:type_name -> google.protobuf.Timestamp
+	20, // 4: saas.accounts.v1.QueryAuditLogRequest.to:type_name -> google.protobuf.Timestamp
+	16, // 5: saas.accounts.v1.QueryAuditLogRequest.payload_contains:type_name -> saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntry
 	0,  // 6: saas.accounts.v1.QueryAuditLogResponse.events:type_name -> saas.accounts.v1.AuditEvent
-	18, // 7: saas.accounts.v1.AggregateAuditLogRequest.from:type_name -> google.protobuf.Timestamp
-	18, // 8: saas.accounts.v1.AggregateAuditLogRequest.to:type_name -> google.protobuf.Timestamp
+	20, // 7: saas.accounts.v1.AggregateAuditLogRequest.from:type_name -> google.protobuf.Timestamp
+	20, // 8: saas.accounts.v1.AggregateAuditLogRequest.to:type_name -> google.protobuf.Timestamp
 	5,  // 9: saas.accounts.v1.AggregateAuditLogRequest.metrics:type_name -> saas.accounts.v1.AuditMetric
 	6,  // 10: saas.accounts.v1.AggregateAuditLogRequest.derived:type_name -> saas.accounts.v1.AuditDerivedMetric
-	15, // 11: saas.accounts.v1.AggregateAuditLogRequest.payload_contains:type_name -> saas.accounts.v1.AggregateAuditLogRequest.PayloadContainsEntry
-	16, // 12: saas.accounts.v1.AuditAggregateBucket.metrics:type_name -> saas.accounts.v1.AuditAggregateBucket.MetricsEntry
-	17, // 13: saas.accounts.v1.AuditAggregateBucket.samples:type_name -> saas.accounts.v1.AuditAggregateBucket.SamplesEntry
+	17, // 11: saas.accounts.v1.AggregateAuditLogRequest.payload_contains:type_name -> saas.accounts.v1.AggregateAuditLogRequest.PayloadContainsEntry
+	18, // 12: saas.accounts.v1.AuditAggregateBucket.metrics:type_name -> saas.accounts.v1.AuditAggregateBucket.MetricsEntry
+	19, // 13: saas.accounts.v1.AuditAggregateBucket.samples:type_name -> saas.accounts.v1.AuditAggregateBucket.SamplesEntry
 	8,  // 14: saas.accounts.v1.AggregateAuditLogResponse.buckets:type_name -> saas.accounts.v1.AuditAggregateBucket
 	11, // 15: saas.accounts.v1.ListAuditEventTypesResponse.types:type_name -> saas.accounts.v1.AuditEventType
 	1,  // 16: saas.accounts.v1.AuditService.QueryAuditLog:input_type -> saas.accounts.v1.QueryAuditLogRequest
 	7,  // 17: saas.accounts.v1.AuditService.AggregateAuditLog:input_type -> saas.accounts.v1.AggregateAuditLogRequest
 	10, // 18: saas.accounts.v1.AuditService.ListAuditEventTypes:input_type -> saas.accounts.v1.ListAuditEventTypesRequest
 	3,  // 19: saas.accounts.v1.AuditService.ExportAuditLog:input_type -> saas.accounts.v1.ExportAuditLogRequest
-	2,  // 20: saas.accounts.v1.AuditService.QueryAuditLog:output_type -> saas.accounts.v1.QueryAuditLogResponse
-	9,  // 21: saas.accounts.v1.AuditService.AggregateAuditLog:output_type -> saas.accounts.v1.AggregateAuditLogResponse
-	12, // 22: saas.accounts.v1.AuditService.ListAuditEventTypes:output_type -> saas.accounts.v1.ListAuditEventTypesResponse
-	4,  // 23: saas.accounts.v1.AuditService.ExportAuditLog:output_type -> saas.accounts.v1.ExportAuditLogResponse
-	20, // [20:24] is the sub-list for method output_type
-	16, // [16:20] is the sub-list for method input_type
+	13, // 20: saas.accounts.v1.AuditService.DeliverAuditEvents:input_type -> saas.accounts.v1.DeliverAuditEventsRequest
+	13, // 21: saas.accounts.v1.AuditService.LookupDeliverAuditEvents:input_type -> saas.accounts.v1.DeliverAuditEventsRequest
+	2,  // 22: saas.accounts.v1.AuditService.QueryAuditLog:output_type -> saas.accounts.v1.QueryAuditLogResponse
+	9,  // 23: saas.accounts.v1.AuditService.AggregateAuditLog:output_type -> saas.accounts.v1.AggregateAuditLogResponse
+	12, // 24: saas.accounts.v1.AuditService.ListAuditEventTypes:output_type -> saas.accounts.v1.ListAuditEventTypesResponse
+	4,  // 25: saas.accounts.v1.AuditService.ExportAuditLog:output_type -> saas.accounts.v1.ExportAuditLogResponse
+	14, // 26: saas.accounts.v1.AuditService.DeliverAuditEvents:output_type -> saas.accounts.v1.DeliverAuditEventsResponse
+	14, // 27: saas.accounts.v1.AuditService.LookupDeliverAuditEvents:output_type -> saas.accounts.v1.DeliverAuditEventsResponse
+	22, // [22:28] is the sub-list for method output_type
+	16, // [16:22] is the sub-list for method input_type
 	16, // [16:16] is the sub-list for extension type_name
 	16, // [16:16] is the sub-list for extension extendee
 	0,  // [0:16] is the sub-list for field type_name
@@ -1504,7 +1675,7 @@ func file_saas_accounts_v1_audit_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_audit_proto_rawDesc), len(file_saas_accounts_v1_audit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

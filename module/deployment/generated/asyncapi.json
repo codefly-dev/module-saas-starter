@@ -152,6 +152,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.audit.recorded.v1": {
+      "address": "saas.audit.recorded.v1",
+      "title": "saas.audit.recorded.v1",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.audit.recorded.v1"
+        }
+      },
+      "x-visibility": "internal",
+      "x-retention": "30d"
+    },
     "saas.auth.client_authorized": {
       "address": "saas.auth.client_authorized",
       "title": "saas.auth.client_authorized",
@@ -2345,6 +2356,13 @@
       },
       "title": "saas publishes saas.approval.timeout"
     },
+    "send:saas.audit.recorded.v1": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.audit.recorded.v1"
+      },
+      "title": "saas publishes saas.audit.recorded.v1"
+    },
     "send:saas.auth.client_authorized": {
       "action": "send",
       "channel": {
@@ -3765,6 +3783,13 @@
       "saas.approval.timeout": {
         "name": "saas.approval.timeout",
         "title": "saas.approval.timeout",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.audit.recorded.v1": {
+        "name": "saas.audit.recorded.v1",
+        "title": "saas.audit.recorded.v1",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
