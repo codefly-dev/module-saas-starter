@@ -12,8 +12,8 @@ package frontendpayload
 // which carries the same label for the same reason: Codefly has no
 // "this cell's workload identity" dependency kind yet, so there is nothing
 // to resolve a reader through. When one exists this moves below that seam.
-// Another cloud's registry is refused by name here rather than read
-// anonymously.
+// Azure Container Registry uses the pod's federated workload identity through
+// the Azure SDK (azure.go). Registries without a workload reader are refused.
 
 import (
 	"context"
@@ -32,12 +32,15 @@ const workloadMetadataBase = "http://metadata.google.internal/computeMetadata/v1
 
 // NewWorkloadRegistrySource reads a published bundle repository over HTTPS as
 // the pod's own workload identity.
-// Any other registry is refused when the host starts, by name: failing closed
+// Unsupported registries are refused when the host starts, by name: failing closed
 // at boot is visible, where an anonymous read would leave every page pending.
-func NewWorkloadRegistrySource(repository string) (*RegistrySource, error) {
+func NewWorkloadRegistrySource(repository string) (Source, error) {
 	host, _, _ := strings.Cut(repository, "/")
+	if strings.HasSuffix(host, ".azurecr.io") {
+		return newAzureWorkloadSource(repository)
+	}
 	if !strings.HasSuffix(host, ".pkg.dev") {
-		return nil, fmt.Errorf("frontend artifact repository %q is not on a registry this host reads as its workload identity (Artifact Registry)", repository)
+		return nil, fmt.Errorf("frontend artifact repository %q is not on a registry this host reads as its workload identity (Artifact Registry or Azure Container Registry)", repository)
 	}
 	return workloadRegistrySource(repository, &workloadToken{metadataBase: workloadMetadataBase, client: &http.Client{Timeout: 10 * time.Second}, now: time.Now}, nil)
 }
