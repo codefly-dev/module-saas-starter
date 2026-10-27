@@ -102,16 +102,23 @@ func (s *PostgresStore) EnsureDerivedRole(ctx context.Context, role business.Der
 	// only a role that is missing, or whose description or permissions
 	// differ, is touched, and only by what differs.
 	//
-	// The read LOCKS the role row (FOR UPDATE: a row lock, which fires no
-	// trigger and so moves no revision; `app_tenant` may take it because it
-	// holds UPDATE on the description column). Two ensures of the same cause
-	// with different declarations therefore serialize on the row, as the upsert
-	// they replace did: the second reads the permissions the first committed
-	// and ends at its own declaration, last writer wins. Without the lock both
-	// would read before either commits and the role would end at their UNION,
-	// keeping a permission the later declaration dropped.
+	// The read LOCKS the role row (a row lock, which fires no trigger and so
+	// moves no revision; `app_tenant` may take it because it holds UPDATE on
+	// the description column). Two ensures of the same cause with different
+	// declarations therefore serialize on the row, as the upsert they replace
+	// did: the second reads the permissions the first committed and ends at
+	// its own declaration, last writer wins. Without the lock both would read
+	// before either commits and the role would end at their UNION, keeping a
+	// permission the later declaration dropped.
+	//
+	// FOR NO KEY UPDATE, the lock that upsert took, and not FOR UPDATE: every
+	// row that references the role (a grant of it, its permissions) takes FOR
+	// KEY SHARE through its foreign key, which FOR UPDATE conflicts with.
+	// installSolution moves the revision and then writes the standing grant of
+	// the solution role; an ensure of that role holding FOR UPDATE and then
+	// needing the revision row would deadlock with it.
 	var roleID, description string
-	err := executor.QueryRow(ctx, `SELECT id::text, COALESCE(description, '') FROM roles WHERE derived_from = $1 FOR UPDATE`, role.DerivedFrom).Scan(&roleID, &description)
+	err := executor.QueryRow(ctx, `SELECT id::text, COALESCE(description, '') FROM roles WHERE derived_from = $1 FOR NO KEY UPDATE`, role.DerivedFrom).Scan(&roleID, &description)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		// The conflict target is the partial unique index on derived_from, so
@@ -172,9 +179,10 @@ func (s *PostgresStore) EnsureDerivedRole(ctx context.Context, role business.Der
 		if held[permission] {
 			continue
 		}
-		// ON CONFLICT DO NOTHING keeps a permission a racing ensure has
-		// already added from failing this one on the primary key.
-		if _, err := executor.Exec(ctx, `INSERT INTO role_permissions (role_id, resource, action) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		// No ON CONFLICT: under the role lock no other ensure can add a
+		// permission between the read above and this insert, and no other
+		// path writes a derived role's permissions (UpdateRole refuses it).
+		if _, err := executor.Exec(ctx, `INSERT INTO role_permissions (role_id, resource, action) VALUES ($1, $2, $3)`,
 			roleID, permission[0], permission[1]); err != nil {
 			return "", w.Wrapf(err, "failed to write the derived role's permission %s:%s", permission[0], permission[1])
 		}

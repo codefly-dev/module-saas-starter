@@ -152,3 +152,48 @@ func TestRacingEnsuresOfADerivedRoleEndAtTheLastDeclaration(t *testing.T) {
 	require.ElementsMatch(t, []string{"solution:use"}, rolePermissions(t, id),
 		"the later declaration drops doc:write; the role must not end at the union")
 }
+
+// The lock an ensure takes on the role row must not conflict with the lock a row
+// REFERENCING the role takes through its foreign key (FOR KEY SHARE: scope_grants,
+// role_assignments, role_permissions and record_shares all reference roles).
+// installSolution moves the organization's revision (its agent principal) and
+// THEN writes the standing grant of the solution role; an ensure of that role
+// with a changed declaration holds the role row and then needs the revision row.
+// FOR UPDATE conflicts with KEY SHARE and the two deadlock; FOR NO KEY UPDATE,
+// the lock the upsert it replaced took, does not.
+func TestAnEnsureDoesNotDeadlockAWriterThatReferencesTheRole(t *testing.T) {
+	orgID := seedOrg(t, seedUser(t))
+	const cause = "installation=reference-test;role=viewer"
+	id := ensureDerivedRole(t, derivedRole(orgID, cause, "the viewer role", solutionUse))
+
+	movedRevision, reference := make(chan struct{}), make(chan struct{})
+	referencing := make(chan error, 1)
+	go func() {
+		referencing <- testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			// Any authorization write moves the revision and holds its row.
+			if _, err := testStore.EnsureDerivedRole(ctx, derivedRole(orgID, "installation=reference-test;role=other", "another role", solutionUse)); err != nil {
+				return err
+			}
+			close(movedRevision)
+			<-reference
+			_, err := storetx.Tx(ctx).Exec(ctx, `SELECT 1 FROM roles WHERE id = $1 FOR KEY SHARE`, id)
+			return err
+		})
+	}()
+	<-movedRevision
+
+	ensuring := make(chan error, 1)
+	go func() {
+		ensuring <- testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			_, err := testStore.EnsureDerivedRole(ctx, derivedRole(orgID, cause, "the viewer role", solutionUse, docWrite))
+			return err
+		})
+	}()
+	// Let the ensure take the role row and block on the revision row.
+	time.Sleep(300 * time.Millisecond)
+	close(reference)
+
+	require.NoError(t, <-referencing, "the referencing writer")
+	require.NoError(t, <-ensuring, "the ensure")
+	require.ElementsMatch(t, []string{"solution:use", "doc:write"}, rolePermissions(t, id))
+}

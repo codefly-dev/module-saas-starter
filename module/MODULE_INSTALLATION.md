@@ -541,4 +541,7 @@ this replaces.
 applied declaration, which a later generation may move. It is reconciled on the
 NEXT grant or revoke of its cause: re-deriving replaces the role's permission set,
 and a module no longer reached stops being re-derived. Until then, an applied
-generation that narrows a declaration does not narrow the carried grants.
+generation that narrows a declaration does not narrow the carried grants. A
+re-derivation writes only what differs, so one that changes nothing leaves the
+authorization revision where it is; two re-derivations of one cause serialize on
+the role row, and the role ends at the declaration of the one that commits last.
