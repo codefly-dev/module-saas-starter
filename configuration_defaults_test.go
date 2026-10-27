@@ -251,6 +251,18 @@ func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 		// artifact-cache per native run, egress from the environment's egress
 		// declaration, hop-routes from the published API catalogs of the
 		// modules hop/MODULES names.
+		//
+		// For hop-routes this is load-bearing, not tidiness, so do not relax it
+		// as pedantry. The CLI is the single supplier: it writes the routes of
+		// the modules hop/MODULES names, and for a composition that names none
+		// it delivers the group with an empty ROUTES, which is the whole of
+		// "no routes". An authored file here would be a second way to say the
+		// same thing, and the two could disagree — a tree that says "no routes"
+		// while the composition names modules, or routes a composition never
+		// generated. Refusing one keeps exactly one representation, which is
+		// what makes the gateway's single reader safe: it reads hop-routes only
+		// after hop/MODULES named something (code/gateway_hop.go standHop), and
+		// nothing else in this repository reads the group at all.
 		if group == "artifact-cache" || group == "egress" || group == "hop-routes" {
 			for _, directory := range []string{moduleConfigLocalDir, workspaceConfigLocalDir} {
 				for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
