@@ -1156,3 +1156,21 @@ func (s *PostgresStore) InstallationRoleRevision(ctx context.Context, org, id st
 	}
 	return roleID, role, revision, nil
 }
+
+// ActivateInstallationFollowingCore activates accounts' record of an
+// installation whose authority core installation is active: pending its
+// install step, or failed at it, it becomes active, keeping the root scope
+// node it was installed with. It reports whether it changed the row; an
+// active or revoked installation is left as it is. The installation-step
+// projection (record_installation_step) only ever moves a pending row, so a
+// later acknowledgement changes nothing.
+func (s *PostgresStore) ActivateInstallationFollowingCore(ctx context.Context, orgID, installationID string) (bool, error) {
+	tag, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE installations SET status = 'active', failure_reason = NULL
+		 WHERE org_id = $1 AND id::text = $2 AND status IN ('pending', 'failed')`,
+		orgID, installationID)
+	if err != nil {
+		return false, fmt.Errorf("activate installation %s following the authority core: %w", installationID, err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
