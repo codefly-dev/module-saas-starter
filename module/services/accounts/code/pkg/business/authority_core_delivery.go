@@ -138,8 +138,7 @@ func coreDeliveryError(err error) error {
 // reconcileAuthorityCore composes, in the core, every delivery accounts has
 // applied: what a host runs once its core is built, so a module delivered
 // before this host decided through the core, or while its core could not be
-// built, is composed there too. Each is read from the inbox's exact applied
-// generation, the signed documents accounts verified when it took them.
+// built, is composed there too.
 func (s *Service) reconcileAuthorityCore(ctx context.Context) error {
 	if s.deliveryStore == nil {
 		return nil
@@ -150,29 +149,57 @@ func (s *Service) reconcileAuthorityCore(ctx context.Context) error {
 	}
 	var failures []error
 	for _, record := range records {
-		manifest, err := record.AppliedManifest()
-		if err != nil || manifest == nil {
-			continue
-		}
-		var delivered *SolutionDeliveryRecord
-		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			var err error
-			delivered, err = s.deliveryStore.ReadDeliveredDocument(ctx, record.BindingID, record.Applied.Generation)
-			return err
-		}); err != nil {
-			failures = append(failures, fmt.Errorf("binding %s: %w", record.BindingID, err))
-			continue
-		}
-		if delivered == nil {
-			continue
-		}
-		var signed *compositionv1.SignedManifestV1
-		if len(delivered.AuthorityDocument) > 0 {
-			signed = &compositionv1.SignedManifestV1{Document: delivered.AuthorityDocument, Envelope: delivered.AuthorityEnvelope}
-		}
-		if _, err := s.applyCoreModule(ctx, manifest, delivered.Payload, signed); err != nil {
+		if err := s.composeAppliedDelivery(ctx, record); err != nil {
 			failures = append(failures, fmt.Errorf("binding %s: %w", record.BindingID, err))
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// composeAppliedDelivery composes one binding's applied generation in the
+// core, read from the inbox's exact applied generation: the signed documents
+// accounts verified when it took them. Every delivery path reaches the core
+// this way, the composition interface's and the host's delivery endpoint
+// alike, so a solution delivered to a running host is one the core can
+// install. A generation the core already holds changes nothing.
+func (s *Service) composeAppliedDelivery(ctx context.Context, record *SolutionHostBindingRecord) error {
+	if s.deliveryStore == nil || record == nil {
+		return nil
+	}
+	manifest, err := record.AppliedManifest()
+	if err != nil || manifest == nil {
+		return nil
+	}
+	var delivered *SolutionDeliveryRecord
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		delivered, err = s.deliveryStore.ReadDeliveredDocument(ctx, record.BindingID, record.Applied.Generation)
+		return err
+	}); err != nil {
+		return err
+	}
+	if delivered == nil {
+		return nil
+	}
+	var signed *compositionv1.SignedManifestV1
+	if len(delivered.AuthorityDocument) > 0 {
+		signed = &compositionv1.SignedManifestV1{Document: delivered.AuthorityDocument, Envelope: delivered.AuthorityEnvelope}
+	}
+	_, err = s.applyCoreModule(ctx, manifest, delivered.Payload, signed)
+	return err
+}
+
+// composeAppliedBinding composes binding's applied generation in the core,
+// right after a pass applied it.
+func (s *Service) composeAppliedBinding(ctx context.Context, binding string) error {
+	records, err := s.ListSolutionHostBindings(ctx)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		if record.BindingID == binding {
+			return s.composeAppliedDelivery(ctx, record)
+		}
+	}
+	return nil
 }

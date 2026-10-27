@@ -828,6 +828,39 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.Greater(t, count, 0, "the suite's revocations are audited")
 	})
 
+	// A solution the composition delivers once the host is running is composed
+	// in the authority core by the pass that applies it, before the fixture's
+	// installations converge in that same pass: the declared installation is
+	// then the core's too, active at the declaring organization alone, and the
+	// declared team holds its role there.
+	t.Run("a solution delivered to a running host is installed where the fixture declares it", func(t *testing.T) {
+		reconciler.AfterEachPass(installations.Converge)
+		t.Cleanup(func() { reconciler.AfterEachPass(nil) })
+		note := wireScope("conformance-late.note", "read")
+		deliverSolution(t, ctx, conn, signer, conformanceSolution{alias: "conformance-late", generation: 1, ceilings: []*authorityv1.WorkScopeV1{note},
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}})
+		installed := func(caller authority.Person, org string) (domain.Installation, bool) {
+			t.Helper()
+			all, err := core.Installations(ctx, caller, org)
+			require.NoError(t, err)
+			for _, inst := range all {
+				if inst.Target == "conformance-late" {
+					return inst, true
+				}
+			}
+			return domain.Installation{}, false
+		}
+		inst, ok := installed(alex, fixtureOrganization)
+		require.True(t, ok, "the pass that applied the delivery installed it in the core")
+		require.Equal(t, domain.Active, inst.Status)
+		_, ok = installed(authority.Person{ID: conformanceZoe, Organization: globexOrganization, SessionID: "conformance-harness"}, globexOrganization)
+		require.False(t, ok, "and nowhere the fixture does not declare it")
+		grants, err := core.ListRoleGrants(ctx, alex, fixtureOrganization, inst.ID)
+		require.NoError(t, err)
+		finance := teamNamed(t, ctx, svc, fixtureOrganization, "Finance")
+		require.Contains(t, grants, domain.RoleGrant{InstallationID: inst.ID, Role: "viewer", TeamID: finance}, "the declared team holds its role")
+	})
+
 	// Last, because the envelope it writes becomes every module's ceiling: a
 	// real envelope write that narrows a module's binding (the write
 	// PutModuleEnvelope makes, without its platform administrator check) is
