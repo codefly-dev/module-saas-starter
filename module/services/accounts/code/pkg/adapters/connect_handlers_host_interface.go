@@ -16,7 +16,7 @@ import (
 	sessionv1 "accounts/pkg/gen/host/session/v1"
 )
 
-var hostAuthoritySingleton = &HostAuthorityServer{workContexts: workContextSingleton, modules: moduleCapabilitiesSingleton}
+var hostAuthoritySingleton = &HostAuthorityServer{workContexts: workContextSingleton}
 
 // HostAuthoritySingleton serves codefly.dev/authority over the Work Context singleton.
 func HostAuthoritySingleton() *HostAuthorityServer { return hostAuthoritySingleton }
@@ -71,13 +71,22 @@ func (h *hostCompositionConnectHandler) ApplyManifest(ctx context.Context, req *
 type hostInstallationConnectHandler struct{ svc *business.Service }
 
 func (h *hostInstallationConnectHandler) server() *HostInstallationServer {
-	return NewHostInstallationServer(installationSingleton, h.svc)
+	return &HostInstallationServer{}
 }
 func (h *hostInstallationConnectHandler) Install(ctx context.Context, req *connect.Request[installationv1.InstallRequest]) (*connect.Response[installationv1.Installation], error) {
 	return unary(ctx, req, h.server().Install)
 }
-func (h *hostInstallationConnectHandler) GrantToTeam(ctx context.Context, req *connect.Request[installationv1.GrantToTeamRequest]) (*connect.Response[installationv1.Installation], error) {
-	return unary(ctx, req, h.server().GrantToTeam)
+func (h *hostInstallationConnectHandler) Review(ctx context.Context, req *connect.Request[installationv1.ReviewRequest]) (*connect.Response[installationv1.ConsentApproval], error) {
+	return unary(ctx, req, h.server().Review)
+}
+func (h *hostInstallationConnectHandler) GrantRole(ctx context.Context, req *connect.Request[installationv1.GrantRoleRequest]) (*connect.Response[installationv1.Installation], error) {
+	return unary(ctx, req, h.server().GrantRole)
+}
+func (h *hostInstallationConnectHandler) RevokeRole(ctx context.Context, req *connect.Request[installationv1.RevokeRoleRequest]) (*connect.Response[installationv1.Installation], error) {
+	return unary(ctx, req, h.server().RevokeRole)
+}
+func (h *hostInstallationConnectHandler) ListRoleGrants(ctx context.Context, req *connect.Request[installationv1.ListRoleGrantsRequest]) (*connect.Response[installationv1.ListRoleGrantsResponse], error) {
+	return unary(ctx, req, h.server().ListRoleGrants)
 }
 func (h *hostInstallationConnectHandler) List(ctx context.Context, req *connect.Request[installationv1.ListRequest]) (*connect.Response[installationv1.ListResponse], error) {
 	return unary(ctx, req, h.server().List)

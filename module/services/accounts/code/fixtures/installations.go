@@ -1,21 +1,24 @@
 package fixtures
 
 import (
-	"accounts/pkg/business"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/wool"
+
+	"accounts/pkg/business"
 )
 
 // fixtureInstallation is one installation a fixture declares: the organisation
 // installing, the target by the name the composition gives it, the role it
 // holds, and the administrator who installs it and is its owner of record. It
-// is the host interface's Install by name, performed by a fixture person, then
-// its GrantToTeam for each team named: the teams whose members hold its role.
+// is installed by the host's own setup, its owner granted the installer role
+// and each team named granted its role.
 type fixtureInstallation struct {
 	Org    string   `yaml:"org"`
 	Target string   `yaml:"target"`
@@ -64,8 +67,7 @@ func fixtureAdministers(f *fixtureFile, org, email string) bool {
 }
 
 // Installations are a seeded fixture's declared installations, performed
-// through the host's own install path (business.Service.InstallTargetByName)
-// as each installation's owner. A target is installable only once the
+// through the authority core's install path as the host's own setup. A target is installable only once the
 // composition has delivered it to this host, which happens after the seed, so
 // they are converged after every delivery pass rather than at seed time.
 type Installations struct {
@@ -113,13 +115,13 @@ func newInstallations(service *business.Service, declared []fixtureInstallation,
 	return installations, nil
 }
 
-// Converge installs every declared installation whose target this host now
-// offers. The host's own setup is explicit consent: creation records it and a
-// reseed re-consents an existing module at its current ceiling through the same
-// admin install path. A target not delivered yet stays pending for the next
-// pass; any other refusal is returned, naming
-// the installation, and stays pending too. An installation performed or found
-// is not asked again by this process.
+// Converge installs every declared installation whose target the composition
+// has delivered, through the authority core's own install path as trusted host
+// setup (InstallAsHost), then grants the installer role to its owner and its
+// role to each declared team (GrantRoleAsHost), as the local authority's
+// fixture does. A target not delivered yet stays pending for the next pass;
+// any other refusal is returned, naming the installation, and stays pending
+// too. An installation performed is not asked again by this process.
 func (i *Installations) Converge(ctx context.Context) error {
 	if i == nil {
 		return nil
@@ -127,36 +129,35 @@ func (i *Installations) Converge(ctx context.Context) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	w := wool.Get(ctx).In("fixtures.Installations")
+	core, err := i.service.AuthorityCore()
+	if err != nil {
+		return fmt.Errorf("fixture installations: %w", err)
+	}
 	var failures []error
 	remaining := i.pending[:0]
 	for _, row := range i.pending {
-		installation, installed, err := i.service.InstallFixtureTarget(ctx, row.ownerID, row.orgID, row.declared.Target, row.declared.Role, row.ownerID)
-		switch {
-		case errors.Is(err, business.ErrInstallTargetNotPresent):
+		inst, err := core.InstallAsHost(ctx, row.orgID, row.declared.Target, row.declared.Role, row.ownerID, i.service.AuthorityInstallStep())
+		if code, ok := domain.CodeOf(err); ok && code == domain.NotFound && inst.ID == "" {
 			if !row.waiting {
 				w.Info("fixture installation waits for its target to be delivered", wool.Field("installation", row.declared.describe()), wool.ErrField(err))
 				row.waiting = true
 			}
 			remaining = append(remaining, row)
-		case err != nil:
+			continue
+		}
+		if err != nil {
 			failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
 			remaining = append(remaining, row)
-		default:
-			if installed {
-				w.Info("fixture installation installed", wool.Field("installation", row.declared.describe()), wool.Field("installation_id", installation.GetId()))
-			}
-			// Each declared team is exposed once the installation admits it (an
-			// installation still pending its install step does not); one not
-			// exposed yet keeps the row for the next pass.
-			unexposed := row.teamIDs[:0]
-			for _, teamID := range row.teamIDs {
-				if _, err := i.service.ExposeHostInstallation(ctx, row.ownerID, row.orgID, installation.GetId(), teamID); err != nil {
-					failures = append(failures, fmt.Errorf("fixture installation %s: expose to team %s: %w", row.declared.describe(), teamID, err))
-					unexposed = append(unexposed, teamID)
-				}
-			}
-			if row.teamIDs = unexposed; len(row.teamIDs) > 0 {
-				remaining = append(remaining, row)
+			continue
+		}
+		w.Info("fixture installation installed", wool.Field("installation", row.declared.describe()), wool.Field("installation_id", inst.ID))
+		grants := []authority.RoleRequest{{Organization: row.orgID, InstallationID: inst.ID, Role: domain.InstallerRole, PersonID: row.ownerID}}
+		for _, teamID := range row.teamIDs {
+			grants = append(grants, authority.RoleRequest{Organization: row.orgID, InstallationID: inst.ID, Role: row.declared.Role, TeamID: teamID})
+		}
+		for _, grant := range grants {
+			if _, err := core.GrantRoleAsHost(ctx, grant); err != nil {
+				failures = append(failures, fmt.Errorf("fixture installation %s: grant %s: %w", row.declared.describe(), grant.Role, err))
 			}
 		}
 	}

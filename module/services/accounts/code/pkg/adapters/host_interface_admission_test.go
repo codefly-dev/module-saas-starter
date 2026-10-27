@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codefly-dev/authority/libraries/authority-client/go/stamp"
+
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
@@ -77,7 +79,7 @@ func newAdmissionFixture(t *testing.T) admissionFixture {
 	svc.SetAuditEmitter(audit)
 	issuer := newCoreTestServer(t, &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 1}}, newSealAnswersFake(1))
 	hop := cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.HopService, Container: "app"})
-	return admissionFixture{server: NewHostAuthorityServer(issuer, nil), store: store, cluster: cluster, audit: audit, hop: hop}
+	return admissionFixture{server: NewHostAuthorityServer(issuer), store: store, cluster: cluster, audit: audit, hop: hop}
 }
 
 // hopPublicKey is the public key a hop signs with from the seed a label
@@ -86,12 +88,11 @@ func hopPublicKey(t *testing.T, label string) (string, []byte) {
 	t.Helper()
 	seed := sha256.Sum256([]byte(label))
 	public := ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
-	return business.AdmissionKeyID(public), []byte(public)
+	return stamp.KeyID(public), []byte(public)
 }
 
-// The id this host publishes is the id the hop signs under. The vector is
-// what stamp.NewSigner and stamp.KeyID produce at codefly-dev/authority
-// 49101ae1 for this seed; it pins the restated derivation until it is imported.
+// The id this host publishes is the id the hop signs under: stamp.KeyID,
+// imported, never restated. The vector pins it against a change underneath.
 func TestAdmissionKeyIDIsTheStampDerivation(t *testing.T) {
 	id, public := hopPublicKey(t, "the-hop")
 	require.Equal(t, "8a97a61f0c78ad0e2aae1d2da082d42f78d0e40004a5b70ee514021aff24de10", hex.EncodeToString(public))
@@ -224,24 +225,4 @@ func TestAnUnwiredAdmissionKeyStoreIsNamed(t *testing.T) {
 	require.ErrorContains(t, err, business.ErrAdmissionKeysUnwired.Error())
 	_, err = f.server.Keys(t.Context(), &authorityv1.KeysRequest{})
 	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
-}
-
-// What 0.3.0 adds and this host does not record is refused by name, and an
-// ask selecting an owner is never read as the whole kind.
-func TestInstallationOwnedResourcesAreRefusedByName(t *testing.T) {
-	f := newAdmissionFixture(t)
-	_, err := f.server.AttachResource(t.Context(), &authorityv1.AttachResourceRequest{})
-	require.Equal(t, codes.Unimplemented, status.Code(err))
-	require.ErrorContains(t, err, "installation-owned resources")
-	_, err = f.server.DetachResource(t.Context(), &authorityv1.DetachResourceRequest{})
-	require.Equal(t, codes.Unimplemented, status.Code(err))
-	_, err = f.server.AuthorizeTransfer(t.Context(), &authorityv1.AuthorizeTransferRequest{})
-	require.Equal(t, codes.Unimplemented, status.Code(err))
-
-	owned := []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: []string{"read"}, ResourceOwnerId: "principal-1"}}
-	_, err = f.server.Issue(t.Context(), &authorityv1.IssueRequest{
-		As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "documents", Scopes: owned,
-	})
-	require.Equal(t, codes.Unimplemented, status.Code(err), "%v", err)
-	require.ErrorContains(t, err, `selects owner "principal-1"`)
 }

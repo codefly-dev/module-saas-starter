@@ -18,6 +18,9 @@ users:
   # no role and is on no team.
   - {id: 00000000-0000-7000-8000-0000000000b7, email: owner@acme.test, name: Olivia Owner, role: member, provider: email, provider_id: fixture-owner}
   - {id: 00000000-0000-7000-8000-0000000000b8, email: no-roles@acme.test, name: Nora Noroles, role: member, provider: email, provider_id: fixture-no-roles}
+  # The installer of two solutions who administers one existing collection
+  # through her own organization grant, and nothing else: no administrator.
+  - {id: 00000000-0000-7000-8000-0000000000b9, email: ivy@acme.test, name: Ivy Installer, role: member, provider: email, provider_id: fixture-ivy}
 
 organizations:
   - id: 00000000-0000-7000-8000-0000000000c1
@@ -32,6 +35,7 @@ organizations:
       - {email: dev@acme.test, role: admin}
       - {email: owner@acme.test, role: owner}
       - {email: no-roles@acme.test, role: member}
+      - {email: ivy@acme.test, role: member}
   - id: 00000000-0000-7000-8000-0000000000c2
     name: Globex
     owner: zoe@globex.test
@@ -67,8 +71,18 @@ roles:
     permissions:
       - {resource: conformance-agent.conversation, action: read}
 
+  # The transfer seam reads a person's own organization grant on one existing
+  # resource, never a solution's owner-selected scope: Ivy administers
+  # collection-x alone.
+  - org: Acme Corp
+    name: Collection transfer
+    description: Administer the one collection granted to them by id
+    permissions:
+      - {resource: conformance.collection, action: admin}
+
 assignments:
   - {org: Acme Corp, role: Record reader, email: maya@acme.test, scope: conformance-record-a}
+  - {org: Acme Corp, role: Collection transfer, email: ivy@acme.test, scope: collection-x}
   - {org: Acme Corp, role: Agent user, email: maya@acme.test}
   - {org: Acme Corp, role: Agent user, email: remi@acme.test}
 

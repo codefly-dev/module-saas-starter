@@ -3,6 +3,8 @@
 package infra_test
 
 import (
+	"github.com/codefly-dev/authority/libraries/authority-client/go/stamp"
+
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -21,7 +23,7 @@ func admissionKey(t *testing.T, label string) business.AdmissionKey {
 	t.Helper()
 	seed := sha256.Sum256([]byte(label))
 	public := ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
-	return business.AdmissionKey{ID: business.AdmissionKeyID(public), PublicKey: public}
+	return business.AdmissionKey{ID: stamp.KeyID(public), PublicKey: public}
 }
 
 func registerAdmissionKey(store *infra.PostgresStore, key business.AdmissionKey, lease time.Duration, max int) (time.Time, error) {

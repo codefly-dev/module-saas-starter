@@ -15,11 +15,11 @@ package business
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/codefly-dev/authority/libraries/authority-client/go/stamp"
 )
 
 // AdmissionKeyLease is how long a registered admission key stays published
@@ -31,22 +31,6 @@ const AdmissionKeyLease = 2 * time.Minute
 // MaxAdmissionKeys bounds the keys published at once: a rotation needs two,
 // and a few more absorb rotations closer together than one lease.
 const MaxAdmissionKeys = 8
-
-// AdmissionKeyID is the id a hop signs its admissions under, derived from the
-// public key so the same seed always publishes the same entry: "hop-" and the
-// first eight bytes of the key's SHA-256, in hex.
-//
-// Labelled stopgap: this restates stamp.KeyID (codefly-dev/authority
-// libraries/authority-client/go/stamp at 49101ae1), the one derivation the hop
-// signs with, instead of importing it. That revision of the authority client
-// no longer builds with the conformance suite revision this module's harness
-// pins (6870db87, the suite's 0.2 contract), and the suite at 49101ae1 asserts
-// contracts this host does not serve yet. TestAdmissionKeyIDIsTheStampDerivation
-// pins a vector stamp.KeyID produced; import stamp.KeyID once the harness moves.
-func AdmissionKeyID(public ed25519.PublicKey) string {
-	sum := sha256.Sum256(public)
-	return "hop-" + hex.EncodeToString(sum[:8])
-}
 
 // HopModule and HopService name the one workload whose admission keys this
 // host publishes: the hop service of the composition's authority module, the
@@ -77,7 +61,7 @@ var ErrAdmissionKeysUnwired = errors.New("this host has no admission key store w
 
 // AdmissionKey is one published hop admission key.
 type AdmissionKey struct {
-	// ID is AdmissionKeyID of the key: the id the hop signs under.
+	// ID is stamp.KeyID of the key: the id the hop signs under.
 	ID        string
 	PublicKey ed25519.PublicKey
 	// ExpiresAt is when the registration lapses unless renewed.
@@ -119,7 +103,7 @@ func (s *Service) RegisterAdmissionKey(ctx context.Context, credential string, p
 	if s.admissionKeys == nil {
 		return AdmissionKey{}, ErrAdmissionKeysUnwired
 	}
-	key := AdmissionKey{ID: AdmissionKeyID(public), PublicKey: append(ed25519.PublicKey(nil), public...)}
+	key := AdmissionKey{ID: stamp.KeyID(public), PublicKey: append(ed25519.PublicKey(nil), public...)}
 	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		expires, published, err := s.admissionKeys.RegisterAdmissionKey(ctx, key, AdmissionKeyLease, MaxAdmissionKeys)
 		if err != nil {
