@@ -359,16 +359,18 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	// documents module consumes. GITHUB_API_BASE_URL overrides api.github.com for
 	// GitHub Enterprise or tests.
 	service.SetDatasourceConnector(cipher, jobStore, os.Getenv("GITHUB_API_BASE_URL"))
-	// Object-storage sources are read through the composed object-storage
-	// service, under a per-call binding of each source's bucket and credential.
+	// The object-storage datasource provider is resolved from the declared
+	// object-storage dependency, not compiled in: it is registered only when
+	// that service is composed and can read a tenant's bucket under a per-call
+	// binding of the source's bucket and credential.
 	objectStorage, err := dialObjectStorage(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if objectStorage != nil {
 		if err := service.SetObjectStorage(ctx, storagev0.NewObjectStorageClient(objectStorage)); err != nil {
-			// Not a start failure: the host runs, and object storage is refused
-			// by name in the catalog, at AddSource and at sync.
+			// Not a start failure: the host runs without the provider, which
+			// the catalog does not list and AddSource and sync refuse by name.
 			wool.Get(ctx).Warn("the composed object-storage service cannot read a tenant's bucket; object-storage datasources are unavailable", wool.ErrField(err))
 		}
 	}
@@ -3033,7 +3035,7 @@ func registerMembershipCacheHealth(c *membership.Cache) {
 // A deployed cell publishes no such token — it runs the service anonymous and
 // gates callers at the mesh — so an absent token dials without one. A
 // composition that leaves the service out has no endpoint for it: the host
-// then runs without object storage, and an object-storage sync refuses by name.
+// then registers no object-storage provider, and a source of it refuses by name.
 func dialObjectStorage(ctx context.Context) (*grpc.ClientConn, error) {
 	network := codefly.For(ctx).Service("object-storage").Endpoint("grpc").API("grpc").NetworkInstance()
 	if network == nil || network.Address == "" {

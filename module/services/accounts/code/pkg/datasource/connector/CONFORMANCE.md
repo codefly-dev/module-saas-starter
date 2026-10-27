@@ -49,9 +49,16 @@ binding and batched read from #108) — over an in-process fake of the service's
 gRPC API, so every clause is measured on the calls the host makes
 (`objectstore/connector_conformance_test.go`). The host signs, dials and guards
 nothing for a bucket; `client.go`, its own store client, is deleted. It is
-registered through `connector.Budgeted`, metered per provider credential like
-GitHub, and `AdmitNewSource` admits it; the host admits a new source only where
-a composed object-storage service can read a bucket (below).
+**registered through its service, not as a package**: the host's registry is
+built without it, and `pkg/business/datasource_objectstore.go` registers it —
+through `Registry.Register`'s own validation, wrapped in `connector.Budgeted`
+and metered per provider credential like GitHub — only once the composed
+object-storage service resolves and can read a bucket (below). The suite runs
+twice: over the service's wire against the package, and against the connector
+the registry holds once the provider is registered
+(`business/TestObjectStorageAsRegisteredPassesTheConformanceSuite`), on sources
+connected through `AddSource`, with the credential the host decrypts per call
+and the listings it retains.
 
 | Clause | How it is honoured |
 | --- | --- |
@@ -79,11 +86,12 @@ a composed object-storage service can read a bucket (below).
 - **Every call has a deadline**: 30 seconds per listing page or capability
   question, five minutes per batched read. A store that answers and then
   stalls does not hold a sync, and its worker's lease, past it.
-- **Admission needs a service that can read a bucket.** At start the host asks
-  the composed service, unbound, whether it reads a batch; one that does not —
-  the released 0.0.18 agent, or none composed — leaves object storage
-  unavailable: the catalog reports `accepts_new_sources: false` and `AddSource`
-  refuses by name.
+- **Registration needs a service that can read a bucket.** At start the host
+  asks the composed service, unbound, whether it reads a batch; one that does
+  not — the released 0.0.18 agent — or none composed leaves object storage
+  unregistered: the catalog does not list it, `AddSource` refuses it by name
+  (`ErrObjectStorageUnavailable`), and an existing source's sync fails with
+  the same error.
 - **The guard and the caps are the service's.** A non-public endpoint is
   refused there by name (`PERMISSION_DENIED`, reported as the envelope's
   credential refusal: it is the source's configuration to fix either way). A

@@ -13,8 +13,10 @@ behind `auth-gateway`.
 (codefly-dev/service-object-storage). The host keeps no store client of its
 own: accounts reads every object-storage datasource through it, under a
 per-call binding of the source's bucket and credential, and the gateway owns
-the store protocol and the public-destination guard — see
-`accounts/AGENTS.md`.
+the store protocol and the public-destination guard. The object-storage
+datasource provider exists only where this service is composed: accounts
+registers it when the dependency resolves, and a composition that leaves it out
+offers no object-storage sources — see `accounts/AGENTS.md`.
 
 Run the complete local dependency graph from `module/`:
 
