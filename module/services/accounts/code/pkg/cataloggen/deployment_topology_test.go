@@ -766,14 +766,19 @@ func TestDeploymentTopologyPodPortIsTheAllocationUnlessDeclared(t *testing.T) {
 			ports[service.GetName()+"/"+endpoint.GetName()] = endpoint.GetPort()
 		}
 	}
-	// auth-gateway/rest is 8080 and not an allocation: `http` and `rest` share
-	// 8080, and core's rule (network.DeployedEndpointPorts) makes an endpoint
-	// the canonical owner of its API's standard port only when it is the
-	// conventional one. The gateway serves two `http` endpoints now (workload
-	// and hop), and neither is named after its API, so neither contends for
-	// 8080 and `rest` owns it outright. While `workload` was the only `http`
-	// endpoint the two contended, the render decided between them, and this
-	// projection would not guess which — which is what 0 recorded.
+	// auth-gateway/rest is 8080, and that is not a change to what any cell
+	// deploys: core's network.DeployedEndpointPorts already allocates it 8080
+	// without the hop endpoint. `rest` and `http` both standardise on 8080, so
+	// while `workload` was the only `http` endpoint the two contended for it,
+	// and core breaks that tie on API priority — standards.APIS() is
+	// [grpc rest tcp http connect mcp], so REST outranks HTTP and `rest` wins
+	// while `workload` takes a named port. This projection models only the
+	// composition-independent half of that rule, so it refused to pick between
+	// two contenders and recorded 0. A second `http` endpoint makes `workload`
+	// unconventional, the contest disappears, and the projection can state the
+	// port the render was choosing all along. Checked against core directly:
+	// {grpc,rest,workload} allocates rest:8080 workload:46651, and adding
+	// hop:http leaves both and adds hop:7231.
 	for endpoint, want := range map[string]uint32{
 		"accounts/connect": 8081, "accounts/grpc": 9090, "accounts/rest": 8080, "accounts/authority": 0,
 		"auth-gateway/grpc": 9090, "auth-gateway/rest": 8080, "auth-gateway/workload": 0, "auth-gateway/hop": 0,
