@@ -123,6 +123,21 @@ CREATE TABLE public.authority_core_replay (
 
 CREATE INDEX authority_core_replay_retain_until_idx ON public.authority_core_replay USING btree (retain_until);
 
+-- The delegations accounts recorded itself before the core decided them
+-- (migration 51) are the core's now, as they stood: active or revoked. The
+-- capabilities issued under them were sealed to a binding id the core does
+-- not issue, so they end here and are issued again from the same delegation.
+INSERT INTO public.authority_core_delegations (id, organization_id, grantor, module, purpose, scopes, revoked)
+SELECT d.id::text, d.org_id, d.principal_id::text, d.module_prefix, d.purpose,
+       COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+                    'kind', s->>'resource_kind', 'actions', s->'actions', 'ids', s->'resource_ids')))
+                   FROM jsonb_array_elements(d.scopes) AS s), '[]'::jsonb),
+       d.revoked_at IS NOT NULL
+  FROM public.module_delegations d;
+
+DROP TABLE public.module_delegations;
+DROP FUNCTION public.module_delegation_immutable();
+
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.authority_core_modules TO app_control_plane;
 GRANT SELECT,INSERT,UPDATE ON TABLE public.authority_core_tombstones TO app_control_plane;
 GRANT SELECT,INSERT,UPDATE ON TABLE public.authority_core_installations TO app_control_plane;

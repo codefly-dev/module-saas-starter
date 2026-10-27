@@ -201,6 +201,9 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		if perr != nil {
 			return nil, perr
 		}
+		if err := requireOrgMember(ctx, person.ID, person.Organization); err != nil {
+			return nil, err
+		}
 		out, err = core.IssueForPerson(ctx, person, r)
 	case *authorityv1.IssueRequest_Workload:
 		w, werr := workload(ctx, as.Workload.GetCredential(), "workload")
@@ -414,6 +417,9 @@ func (s *HostInstallationServer) Review(ctx context.Context, req *installationv1
 	if err != nil {
 		return nil, err
 	}
+	if err := requireOrgAdmin(ctx, caller.ID, req.GetOrganizationId()); err != nil {
+		return nil, err
+	}
 	a, err := core.Review(ctx, caller, req.GetOrganizationId(), req.GetTarget())
 	if err != nil {
 		return nil, coreStatus(err)
@@ -430,6 +436,9 @@ func (s *HostInstallationServer) Install(ctx context.Context, req *installationv
 	}
 	caller, err := signedInPerson(ctx, "install")
 	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, caller.ID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
 	var approval *domain.ConsentApproval
@@ -465,6 +474,9 @@ func (s *HostInstallationServer) change(ctx context.Context, what string, do fun
 	if err != nil {
 		return nil, err
 	}
+	if err := requireOrgMember(ctx, caller.ID, r.Organization); err != nil {
+		return nil, err
+	}
 	inst, err := do(core, ctx, caller, r)
 	if err != nil {
 		return nil, coreStatus(err)
@@ -480,6 +492,9 @@ func (s *HostInstallationServer) ListRoleGrants(ctx context.Context, req *instal
 	}
 	caller, err := signedInPerson(ctx, "list role grants")
 	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgMember(ctx, caller.ID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
 	grants, err := core.ListRoleGrants(ctx, caller, req.GetOrganizationId(), req.GetInstallationId())
@@ -501,6 +516,9 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 	}
 	caller, err := signedInPerson(ctx, "list installations")
 	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, caller.ID, req.GetOrganizationId()); err != nil {
 		return nil, err
 	}
 	all, err := core.Installations(ctx, caller, req.GetOrganizationId())

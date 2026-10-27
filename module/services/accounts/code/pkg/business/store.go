@@ -267,22 +267,6 @@ type Store interface {
 	GetDatasourceDomain(ctx context.Context, orgID, id string) (*DatasourceDomain, error)
 	MarkDatasourceDomainVerified(ctx context.Context, orgID, id string, at time.Time) error
 
-	// Module delegations (module_delegation.go, migration 51). Tenant-facing
-	// calls run in the organization's transaction; a module's lookup by id runs
-	// under the control plane with an empty orgID.
-	//
-	// InsertModuleDelegation records one active delegation and sets its
-	// creation time.
-	InsertModuleDelegation(ctx context.Context, delegation *ModuleDelegation) error
-	// ModuleDelegations reads the delegations among ids, in orgID, or by id
-	// alone when orgID is empty (control plane only).
-	ModuleDelegations(ctx context.Context, orgID string, ids []string) ([]*ModuleDelegation, error)
-	// RevokeModuleDelegation stamps delegation id in orgID as revoked by
-	// revokedBy, if it is active, and returns it as it then stands, and whether
-	// this call revoked it. grantor, when set, must be the delegation's grantor.
-	// Nil when orgID holds no such delegation.
-	RevokeModuleDelegation(ctx context.Context, orgID, grantor, id, revokedBy string) (*ModuleDelegation, bool, error)
-
 	// Source delegations (source_delegation.go, migration 9). The tenant-facing
 	// calls run inside the organization's transaction; the module-facing mint
 	// and revision check run under the control plane and name the organization

@@ -393,8 +393,6 @@ const (
 	EventAuthorityInstallationUninstalled EventType = "saas.authority.installation_uninstalled"
 	EventAuthorityRoleGranted             EventType = "saas.authority.role_granted"
 	EventAuthorityRoleRevoked             EventType = "saas.authority.role_revoked"
-	EventAuthorityDelegationGranted       EventType = "saas.authority.delegation_granted"
-	EventAuthorityDelegationRevoked       EventType = "saas.authority.delegation_revoked"
 	EventAuthorityResourceAttached        EventType = "saas.authority.resource_attached"
 	EventAuthorityResourceDetached        EventType = "saas.authority.resource_detached"
 	EventAuthorityResourceTransferred     EventType = "saas.authority.resource_transferred"
@@ -712,8 +710,6 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventAuthorityInstallationUninstalled, CategoryAccess, "An installation was uninstalled: its grants cleared and every capability sealed to it ended.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleGranted, CategoryAccess, "A solution role was granted on an installation to a person or a team.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleRevoked, CategoryAccess, "A solution role grant was revoked; its subject's capabilities through the installation ended.", authorityChangeFields()...),
-	mutation(EventAuthorityDelegationGranted, CategoryAccess, "A person delegated to a composed module the right to act for them, within what they hold.", authorityChangeFields()...),
-	mutation(EventAuthorityDelegationRevoked, CategoryAccess, "A delegation to a composed module was revoked by its grantor; every capability from it ended.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceAttached, CategoryAccess, "A resource created through an installation was attached to it by the kind's serving module.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceDetached, CategoryAccess, "A deleted resource was released from the installation that owned it.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceTransferred, CategoryAccess, "An existing resource joined an installed solution's principal, authorized by a person administering it.", authorityChangeFields()...),

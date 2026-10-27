@@ -114,6 +114,15 @@ var authorities = map[string]Authority{
 	"policy_log_cursor":             {Scope: ScopeGlobal},
 	"datasource_credential_budgets": {Scope: ScopeGlobal},
 	"hop_admission_keys":            {Scope: ScopeGlobal},
+	"authority_core_delegations":    {Scope: ScopeGlobal},
+	"authority_core_grant_epochs":   {Scope: ScopeGlobal},
+	"authority_core_installations":  {Scope: ScopeGlobal},
+	"authority_core_modules":        {Scope: ScopeGlobal},
+	"authority_core_owner_aware":    {Scope: ScopeGlobal},
+	"authority_core_person_epochs":  {Scope: ScopeGlobal},
+	"authority_core_replay":         {Scope: ScopeGlobal},
+	"authority_core_role_grants":    {Scope: ScopeGlobal},
+	"authority_core_tombstones":     {Scope: ScopeGlobal},
 
 	// Tenant-scoped relations.
 	"actor_chain_journal": {
@@ -152,10 +161,6 @@ var authorities = map[string]Authority{
 	"source_delegations": {
 		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
 		Notes: "Revoked, never deleted: a delegation keeps its record after the source or the person it names is gone.",
-	},
-	"module_delegations": {
-		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
-		Notes: "Revoked, never deleted: a person's delegation to a module keeps its record after it stopped.",
 	},
 	"github_app_installations": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"delegation_grants":        {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},

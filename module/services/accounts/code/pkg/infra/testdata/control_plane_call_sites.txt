@@ -29,6 +29,7 @@ pkg/auth/pg/session_store.go: (*SessionStore).RotateRefresh: WithControlPlane
 pkg/business/audit.go: (*DurableAuditEmitter).Emit: WithControlPlane
 pkg/business/audit.go: (*Service).AggregateAuditLog: WithControlPlane
 pkg/business/audit.go: (*Service).QueryAuditLog: WithControlPlane
+pkg/business/authority_core_delivery.go: (*Service).reconcileAuthorityCore: WithControlPlane
 pkg/business/authority_delivery.go: (*Service).verifyAppliedAuthorityDocument: WithControlPlane
 pkg/business/connector_credentials.go: (*Service).SourceSigningSecret: WithControlPlane
 pkg/business/current_installation.go: (*Service).ModuleCurrentInstallation: WithControlPlane
@@ -83,7 +84,6 @@ pkg/business/module_capabilities.go: (*Service).ModuleSubscribe: WithControlPlan
 pkg/business/module_capabilities.go: (*Service).ModuleUnsubscribe: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).moduleAuditSubjectIsMemberOf: WithControlPlane
 pkg/business/module_capabilities.go: (*Service).requireTenantMember: WithControlPlane
-pkg/business/module_delegation.go: (*Service).ModuleDelegation: WithControlPlane
 pkg/business/module_envelope.go: (*Service).CurrentModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).GetModuleEnvelope: WithControlPlane
 pkg/business/module_envelope.go: (*Service).committedModuleEnvelopeRevision: WithControlPlane
@@ -185,6 +185,10 @@ pkg/infra/postgres.go: (*PostgresStore).RunInTransaction: txbind.BindRequest
 pkg/infra/postgres_audit_registry.go: (*PostgresStore).DropAuditPartitionsBefore: withControlPlaneTx
 pkg/infra/postgres_auth_bootstrap.go: (*PostgresStore).WithAuthBootstrapTx: withControlPlaneTx
 pkg/infra/postgres_auth_bootstrap.go: (*PostgresStore).WithAuthLookupTx: withControlPlaneTx
+pkg/infra/postgres_authority_core.go: (AuthorityCoreReplay).Consume: withControlPlaneTx
+pkg/infra/postgres_authority_core.go: (AuthorityCoreReplay).PurgeExpiredAuthorityReplays: WithControlPlane
+pkg/infra/postgres_authority_core.go: (AuthorityCoreStore).Read: withControlPlaneTx
+pkg/infra/postgres_authority_core.go: (AuthorityCoreStore).Write: withControlPlaneTx
 pkg/infra/postgres_client_authorization.go: (*PostgresStore).ConsumeClientAuthorizationCode: WithControlPlane
 pkg/infra/postgres_datasource_sources.go: (*PostgresStore).GetDatasourceSourceByID: WithControlPlane
 pkg/infra/postgres_installation_jobs.go: (*PostgresStore).InstallationStepLeaseValid: WithControlPlane

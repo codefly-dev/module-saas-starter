@@ -45,8 +45,6 @@ var published = [...]PublishedEvent{
 	{Type: "saas.auth.mfa_challenge_started", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.auth.organization_switched", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.auth.sso_jit_provisioned", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
-	{Type: "saas.authority.delegation_granted", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
-	{Type: "saas.authority.delegation_revoked", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.authority.installation_activated", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.authority.installation_requested", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.authority.installation_uninstalled", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},

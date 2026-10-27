@@ -168,22 +168,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Retention:** 30d
 - **Consumers:** _none_
 
-## saas.authority.delegation_granted
-
-- **Publisher:** saas
-- **Visibility:** external
-- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Retention:** 30d
-- **Consumers:** _none_
-
-## saas.authority.delegation_revoked
-
-- **Publisher:** saas
-- **Visibility:** external
-- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Retention:** 30d
-- **Consumers:** _none_
-
 ## saas.authority.installation_activated
 
 - **Publisher:** saas

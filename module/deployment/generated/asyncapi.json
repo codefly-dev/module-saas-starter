@@ -229,28 +229,6 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
-    "saas.authority.delegation_granted": {
-      "address": "saas.authority.delegation_granted",
-      "title": "saas.authority.delegation_granted",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.authority.delegation_granted"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
-    "saas.authority.delegation_revoked": {
-      "address": "saas.authority.delegation_revoked",
-      "title": "saas.authority.delegation_revoked",
-      "messages": {
-        "envelope": {
-          "$ref": "#/components/messages/saas.authority.delegation_revoked"
-        }
-      },
-      "x-visibility": "external",
-      "x-retention": "30d"
-    },
     "saas.authority.installation_activated": {
       "address": "saas.authority.installation_activated",
       "title": "saas.authority.installation_activated",
@@ -2416,20 +2394,6 @@
       },
       "title": "saas publishes saas.auth.sso_jit_provisioned"
     },
-    "send:saas.authority.delegation_granted": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.authority.delegation_granted"
-      },
-      "title": "saas publishes saas.authority.delegation_granted"
-    },
-    "send:saas.authority.delegation_revoked": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/saas.authority.delegation_revoked"
-      },
-      "title": "saas publishes saas.authority.delegation_revoked"
-    },
     "send:saas.authority.installation_activated": {
       "action": "send",
       "channel": {
@@ -3850,20 +3814,6 @@
       "saas.auth.sso_jit_provisioned": {
         "name": "saas.auth.sso_jit_provisioned",
         "title": "saas.auth.sso_jit_provisioned",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
-      "saas.authority.delegation_granted": {
-        "name": "saas.authority.delegation_granted",
-        "title": "saas.authority.delegation_granted",
-        "payload": {
-          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
-        }
-      },
-      "saas.authority.delegation_revoked": {
-        "name": "saas.authority.delegation_revoked",
-        "title": "saas.authority.delegation_revoked",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

@@ -8,6 +8,7 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
@@ -15,6 +16,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
+	"github.com/codefly-dev/core/wool"
 	"google.golang.org/protobuf/proto"
 
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
@@ -87,6 +89,12 @@ func precheckCoreModule(req *compositionv1.ApplyManifestRequest) error {
 // generation the core already holds changes nothing.
 func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.ModuleManifest, carrierDocument []byte, signed *compositionv1.SignedManifestV1) ([]string, error) {
 	core, err := s.AuthorityCore()
+	if errors.Is(err, ErrAuthorityCoreUnconfigured) {
+		// A host whose core is not built yet composes this delivery when it is
+		// (ConfigureAuthorityCore reconciles every applied delivery).
+		wool.Get(ctx).In("applyCoreModule").Warn("the authority core is not configured; it composes this delivery when it is", wool.Field("module", manifest.Alias))
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -125,4 +133,46 @@ func coreDeliveryError(err error) error {
 		return fmt.Errorf("%w: %w", ErrSolutionDeliveryConflict, err)
 	}
 	return fmt.Errorf("%w: %w", ErrSolutionDeliveryUnattested, err)
+}
+
+// reconcileAuthorityCore composes, in the core, every delivery accounts has
+// applied: what a host runs once its core is built, so a module delivered
+// before this host decided through the core, or while its core could not be
+// built, is composed there too. Each is read from the inbox's exact applied
+// generation, the signed documents accounts verified when it took them.
+func (s *Service) reconcileAuthorityCore(ctx context.Context) error {
+	if s.deliveryStore == nil {
+		return nil
+	}
+	records, err := s.ListSolutionHostBindings(ctx)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, record := range records {
+		manifest, err := record.AppliedManifest()
+		if err != nil || manifest == nil {
+			continue
+		}
+		var delivered *SolutionDeliveryRecord
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			var err error
+			delivered, err = s.deliveryStore.ReadDeliveredDocument(ctx, record.BindingID, record.Applied.Generation)
+			return err
+		}); err != nil {
+			failures = append(failures, fmt.Errorf("binding %s: %w", record.BindingID, err))
+			continue
+		}
+		if delivered == nil {
+			continue
+		}
+		var signed *compositionv1.SignedManifestV1
+		if len(delivered.AuthorityDocument) > 0 {
+			signed = &compositionv1.SignedManifestV1{Document: delivered.AuthorityDocument, Envelope: delivered.AuthorityEnvelope}
+		}
+		if _, err := s.applyCoreModule(ctx, manifest, delivered.Payload, signed); err != nil {
+			failures = append(failures, fmt.Errorf("binding %s: %w", record.BindingID, err))
+		}
+	}
+	return errors.Join(failures...)
 }

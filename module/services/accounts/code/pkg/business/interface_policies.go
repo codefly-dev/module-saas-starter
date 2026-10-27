@@ -185,8 +185,8 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		"/host.authority.v1.AuthorityService/ListResources": read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// A delegation names no organisation: it is the bearer's, so the floor is
 		// the authenticated caller and the organisation is the session's.
-		"/host.authority.v1.AuthorityService/Delegate":         sessionMint(string(EventAuthorityDelegationGranted)),
-		"/host.authority.v1.AuthorityService/RevokeDelegation": sessionMint(string(EventAuthorityDelegationRevoked)),
+		"/host.authority.v1.AuthorityService/Delegate":         sessionMint(string(EventModuleDelegationGranted)),
+		"/host.authority.v1.AuthorityService/RevokeDelegation": sessionMint(string(EventModuleDelegationRevoked)),
 		"/host.authority.v1.AuthorityService/GetDelegation":    read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// Authentication belongs to signed delivery and its workload credential.
 		// In-cluster only (ServedInClusterOnly): never routed at the gateway.

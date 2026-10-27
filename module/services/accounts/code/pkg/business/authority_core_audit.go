@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
@@ -22,8 +23,8 @@ var authorityEvents = map[domain.EventKind]struct {
 	domain.InstallationUninstalled: {EventAuthorityInstallationUninstalled, "installation"},
 	domain.RoleGranted:             {EventAuthorityRoleGranted, "installation"},
 	domain.RoleRevoked:             {EventAuthorityRoleRevoked, "installation"},
-	domain.DelegationGranted:       {EventAuthorityDelegationGranted, "delegation"},
-	domain.DelegationRevoked:       {EventAuthorityDelegationRevoked, "delegation"},
+	domain.DelegationGranted:       {EventModuleDelegationGranted, "module_delegation"},
+	domain.DelegationRevoked:       {EventModuleDelegationRevoked, "module_delegation"},
 	domain.ResourceAttached:        {EventAuthorityResourceAttached, "installation"},
 	domain.ResourceDetached:        {EventAuthorityResourceDetached, "installation"},
 	domain.ResourceTransferred:     {EventAuthorityResourceTransferred, "installation"},
@@ -46,6 +47,41 @@ func (s *Service) journalAuthority(_ context.Context, tx authority.Tx, e domain.
 	if !ok {
 		return errors.New("the authority core's transaction binds no context to record its audit in")
 	}
+	payload, err := authorityPayload(tx, e)
+	if err != nil {
+		return err
+	}
+	actorID, actorType := authorityActor(e.Actor)
+	if err := s.emitTx(bound.Context(), actorID, actorType, mapped.event, mapped.resource, e.Subject, "", payload); err != nil {
+		return fmt.Errorf("record %s: %w", mapped.event, err)
+	}
+	return nil
+}
+
+// authorityPayload is a change's audit payload. A delegation's is the record of
+// what was delegated, to which module and by whom, as delegations to a module
+// have always been recorded; every other change names where it happened, who
+// acted, what changed and the change's own details.
+func authorityPayload(tx authority.Tx, e domain.Event) (map[string]any, error) {
+	if e.Kind == domain.DelegationGranted || e.Kind == domain.DelegationRevoked {
+		d, err := tx.Delegation(e.Subject)
+		if err != nil {
+			return nil, fmt.Errorf("read delegation %s to record it: %w", e.Subject, err)
+		}
+		scopes := make([]string, 0, len(d.Scopes))
+		for _, sc := range d.Scopes {
+			entry := sc.GetResourceKind() + ":" + strings.Join(sc.GetActions(), ",")
+			if len(sc.GetResourceIds()) > 0 {
+				entry += "[" + strings.Join(sc.GetResourceIds(), ",") + "]"
+			}
+			scopes = append(scopes, entry)
+		}
+		payload := map[string]any{"delegation_id": d.ID, "grantor_id": d.Grantor, "module": d.Module, "scopes": scopes}
+		if e.Kind == domain.DelegationRevoked {
+			payload["revoked_by"] = e.Actor
+		}
+		return payload, nil
+	}
 	payload := map[string]any{"subject": e.Subject}
 	if e.Organization != "" {
 		payload["organization"] = e.Organization
@@ -58,14 +94,17 @@ func (s *Service) journalAuthority(_ context.Context, tx authority.Tx, e domain.
 			payload[key] = value
 		}
 	}
-	actorID, actorType := "", "system"
-	if _, err := uuid.Parse(e.Actor); err == nil {
-		actorID, actorType = e.Actor, "user"
+	return payload, nil
+}
+
+// authorityActor is who an authority change or issue is recorded as: a person
+// (a user id) as themselves, anything else (a module's workload, the host's own
+// setup) as the system, its name kept in the payload.
+func authorityActor(actor string) (id, actorType string) {
+	if _, err := uuid.Parse(actor); err == nil {
+		return actor, ActorTypeUser
 	}
-	if err := s.emitTx(bound.Context(), actorID, actorType, mapped.event, mapped.resource, e.Subject, "", payload); err != nil {
-		return fmt.Errorf("record %s: %w", mapped.event, err)
-	}
-	return nil
+	return "", ActorTypeSystem
 }
 
 // RecordAuthorityIssue records a capability the core issued, in a transaction
@@ -77,10 +116,7 @@ func (s *Service) RecordAuthorityIssue(ctx context.Context, organization, actor 
 	if child {
 		event = EventWorkContextChildSession
 	}
-	actorID, actorType := "", "system"
-	if _, err := uuid.Parse(actor); err == nil {
-		actorID, actorType = actor, "user"
-	}
+	actorID, actorType := authorityActor(actor)
 	if _, err := uuid.Parse(organization); err != nil {
 		return fmt.Errorf("record %s: organization %q is not one of this host's", event, organization)
 	}

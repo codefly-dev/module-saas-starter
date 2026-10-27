@@ -14,6 +14,10 @@ import (
 // nothing can reach.
 var eventsEmittedOutsideRPC = []EventType{
 	EventActivationAchieved,
+	// The authority core journals an uninstall in its own transaction; the
+	// host interfaces declare no uninstall RPC (codefly.dev/installation has
+	// none), so the host's own teardown is its one caller today.
+	EventAuthorityInstallationUninstalled,
 	// The declared-presence reconcile pass emits this: delivery declares a
 	// generation and the host applies it, with no request behind it (#952).
 	EventSolutionHostBindingApplied,

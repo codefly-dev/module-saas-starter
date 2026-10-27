@@ -66,6 +66,9 @@ func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID stri
 	if err != nil {
 		return err
 	}
+	if err := s.reconcileAuthorityCore(ctx); err != nil {
+		return fmt.Errorf("authority core: compose the applied deliveries: %w", err)
+	}
 	if err := core.ReconcileOrganizations(ctx); err != nil {
 		return fmt.Errorf("authority core: hold the composed modules at every organization: %w", err)
 	}
