@@ -11,6 +11,8 @@ import (
 	"github.com/codefly-dev/core/resources"
 	"github.com/codefly-dev/core/runnable"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -25,7 +27,7 @@ func offerScope(kind string, actions ...string) *basev0.WorkScopeV1 {
 
 // preparedTool is one composed operation as `codefly generate
 // runnable-bindings` delivers it, round-tripped through its encoding; an empty
-// tool name is an operation exposed as no tool.
+// tool name uses Core's default exposure.
 func preparedTool(t *testing.T, endpoint, method, tool string, effect runnablev0.ToolExposure_Effect, actions ...string) *runnablev0.PreparedBinding {
 	t.Helper()
 	p := &runnablev0.PreparedBinding{
@@ -69,34 +71,49 @@ func proposalsOffer(approval domain.ConsentApproval) authority.ReviewedOffer {
 // The projection is the local authority's: each role's operations, and the
 // tool-exposed Connect bindings its scopes cover, one tool per name.
 func TestAReviewedOfferShowsEachRolesOperationsAndTools(t *testing.T) {
+	lookupRestricted := preparedTool(t, "connect", offerRead, "private_lookup", runnablev0.ToolExposure_EFFECT_READ_ONLY, "read")
+	lookupRestricted.Policy.LookupScopes = []*basev0.WorkScopeV1{offerScope("proposals.private-outcome", "read")}
+	lookupRestricted.Policy.InvokeScopes = append(lookupRestricted.Policy.InvokeScopes, lookupRestricted.Policy.LookupScopes...)
+	raw, err := runnable.EncodePrepared(lookupRestricted)
+	require.NoError(t, err)
+	lookupRestricted, err = runnable.DecodePrepared(raw)
+	require.NoError(t, err)
 	bindings := map[string]*runnablev0.PreparedBinding{
+		"PROPOSALS__API_CONNECT_LOOKUP":     lookupRestricted,
 		"PROPOSALS__API_CONNECT_READ":       preparedTool(t, "connect", offerRead, "read_item", runnablev0.ToolExposure_EFFECT_READ_ONLY, "read"),
 		"PROPOSALS__API_CONNECT_READ_AGAIN": preparedTool(t, "connect", offerRead, "", runnablev0.ToolExposure_EFFECT_READ_ONLY, "read"),
 		"PROPOSALS__API_ALT_GRPC_READ":      preparedTool(t, "grpc", offerRead, "read_item", runnablev0.ToolExposure_EFFECT_READ_ONLY, "read"),
 		"PROPOSALS__API_CONNECT_WRITE":      preparedTool(t, "connect", offerWrite, "write_item", runnablev0.ToolExposure_EFFECT_MUTATION, "write"),
 	}
 	approval := domain.ConsentApproval{TargetID: "proposals", Generation: 3, Digest: "sha256:offer"}
-	review, err := reviewedOffer(nil, t.Context(), proposalsOffer(approval), bindings)
+	review, err := reviewedOffer(proposalsOffer(approval), bindings)
 	require.NoError(t, err)
 	require.True(t, review.GetToolsComposed())
 	require.Equal(t, "sha256:offer", review.GetApproval().GetDigest())
 	require.Nil(t, review.GetInstallation(), "an uninstalled offer carries no installation")
 
-	tools := map[string]map[string]string{}
+	type toolInfo struct {
+		operation, binding string
+		write              bool
+	}
+	tools := map[string]map[string]toolInfo{}
 	for _, role := range review.GetRoles() {
-		tools[role.GetName()] = map[string]string{}
+		tools[role.GetName()] = map[string]toolInfo{}
 		for _, c := range role.GetCapabilities() {
 			for _, tool := range c.GetTools() {
-				tools[role.GetName()][c.GetOperation()] += tool.GetName() + ":" + tool.GetBinding()
-				if tool.GetWrite() {
-					tools[role.GetName()][c.GetOperation()] += ":write"
-				}
+				require.NotContains(t, tools[role.GetName()], tool.GetName(), "duplicate tool exposure")
+				tools[role.GetName()][tool.GetName()] = toolInfo{c.GetOperation(), tool.GetBinding(), tool.GetWrite()}
 			}
 		}
 	}
-	require.Equal(t, map[string]string{offerRead: "read_item:PROPOSALS__API_CONNECT_READ"}, tools["viewer"],
-		"the viewer reaches Read and its one Connect tool, never Write nor an any-caller operation")
-	require.Equal(t, "write_item:PROPOSALS__API_CONNECT_WRITE:write", tools["editor"][offerWrite])
+	defaultTool, err := runnable.ToolFromPrepared(bindings["PROPOSALS__API_CONNECT_READ_AGAIN"])
+	require.NoError(t, err)
+	require.Equal(t, map[string]toolInfo{
+		"read_item":           {offerRead, "PROPOSALS__API_CONNECT_READ", false},
+		defaultTool.GetName(): {offerRead, "PROPOSALS__API_CONNECT_READ_AGAIN", defaultTool.GetEffect() != runnablev0.ToolExposure_EFFECT_READ_ONLY},
+	}, tools["viewer"], "the viewer sees explicit and default tools, never Write, private lookup, or an any-caller operation")
+	require.Equal(t, toolInfo{offerWrite, "PROPOSALS__API_CONNECT_WRITE", true}, tools["editor"]["write_item"])
+	require.NotContains(t, tools["editor"], "private_lookup")
 
 	require.Len(t, review.GetCeiling(), 1)
 	require.Equal(t, "documents", review.GetCeiling()[0].GetModule())
@@ -106,7 +123,7 @@ func TestAReviewedOfferShowsEachRolesOperationsAndTools(t *testing.T) {
 // A read the core answers without the consent tuple carries none, and a host
 // with no composed bindings says so rather than listing no tool silently.
 func TestAReviewWithoutTheTupleCarriesNone(t *testing.T) {
-	review, err := reviewedOffer(nil, t.Context(), proposalsOffer(domain.ConsentApproval{}), nil)
+	review, err := reviewedOffer(proposalsOffer(domain.ConsentApproval{}), nil)
 	require.NoError(t, err)
 	require.Nil(t, review.GetApproval())
 	require.False(t, review.GetToolsComposed())
@@ -116,4 +133,13 @@ func TestAReviewWithoutTheTupleCarriesNone(t *testing.T) {
 			require.Empty(t, c.GetTools())
 		}
 	}
+}
+
+// A failed shared projection is an authority refusal, not an empty tool list.
+func TestAReviewedOfferPreservesTheSharedProjectionRefusal(t *testing.T) {
+	binding := preparedTool(t, "connect", offerRead, "read_item", runnablev0.ToolExposure_EFFECT_READ_ONLY, "read")
+	binding.Contract = nil
+	_, err := reviewedOffer(proposalsOffer(domain.ConsentApproval{}), map[string]*runnablev0.PreparedBinding{"BROKEN": binding})
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "the composed binding BROKEN is not a valid tool")
 }

@@ -8,7 +8,7 @@ require (
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
 	github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261027154629-b57068f61a0f
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261027154629-b57068f61a0f
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261027203251-0ef857ee3ba5
 	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261027154629-b57068f61a0f
 	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261027154629-b57068f61a0f
 	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261027154629-b57068f61a0f

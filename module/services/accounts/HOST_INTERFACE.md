@@ -58,12 +58,17 @@ What accounts adds, and where:
   core's `ReviewOffer` with no floor of this host's own, so whoever the core
   answers (an administrator with the consent tuple, a member holding a role on
   the active installation without it) is answered here, and every refusal is the
-  core's. The offer is projected into roles → operations → tools and the
-  permission ceiling by a port of the local authority's projection
-  (`pkg/adapters/host_offers.go`), a labelled stopgap until that projection is a
-  shared library. Tools: this host composes no runnable bindings for accounts —
-  declaring the group would have the render grant accounts an authority binding
-  per prepared key — so `tools_composed` is false and the Setup UI says so. The
+  core's. The authority-owned `offers.Project` projects roles → operations →
+  tools and the permission ceiling; `pkg/adapters/host_offers.go` only adapts
+  its result to this host's wire messages, including installation role names from
+  that same reviewed snapshot. Redelivery during conversion cannot replace them
+  with a newer declaration. The local authority uses the same
+  projection (authority #47 and #48, selected at `0ef857ee3ba5`), including
+  Core's default tool exposure when no explicit metadata is declared. Accounts has no production
+  tool-metadata reader, so `tools_composed` is false and the Setup UI reports
+  exposure as unavailable. A read-only delivery remains to be qualified: the
+  CLI treats a `runnable-bindings` consumer as an executor, including network
+  reach; the Setup read must not create execution authority. The
   solution's side, `InstallableService`, is not served here.
 - **artifact** (`host.artifact.v1`): `Approve`, `Authorize`, `Revoke`. A module
   proves itself by its workload credential and presents a parent capability the

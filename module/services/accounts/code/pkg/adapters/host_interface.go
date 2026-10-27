@@ -588,17 +588,23 @@ func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installation
 // installationToWire is an installation as the interface states it, with the
 // roles its solution declares.
 func installationToWire(core *authority.Service, ctx context.Context, i domain.Installation) *installationv1.Installation {
+	var roles []string
+	if m, err := core.Composed(ctx, i.Target); err == nil {
+		for name := range m.Roles {
+			roles = append(roles, name)
+		}
+	}
+	return installationToWireWithRoles(i, roles)
+}
+
+// installationToWireWithRoles converts one snapshot without another authority read.
+func installationToWireWithRoles(i domain.Installation, roles []string) *installationv1.Installation {
 	st := map[domain.Status]installationv1.Installation_Status{
 		domain.Pending: installationv1.Installation_STATUS_PENDING, domain.Active: installationv1.Installation_STATUS_ACTIVE, domain.Revoked: installationv1.Installation_STATUS_REVOKED,
 	}[i.Status]
 	out := &installationv1.Installation{Id: i.ID, OrganizationId: i.Organization, Target: i.Target, Status: st, Revision: i.Revision,
-		Role: i.AgentRole, PrincipalId: i.PrincipalID, Namespace: i.Organization + "." + i.Target}
-	if m, err := core.Composed(ctx, i.Target); err == nil {
-		for name := range m.Roles {
-			out.Roles = append(out.Roles, name)
-		}
-		slices.Sort(out.Roles)
-	}
+		Role: i.AgentRole, PrincipalId: i.PrincipalID, Namespace: i.Organization + "." + i.Target, Roles: slices.Clone(roles)}
+	slices.Sort(out.Roles)
 	return out
 }
 

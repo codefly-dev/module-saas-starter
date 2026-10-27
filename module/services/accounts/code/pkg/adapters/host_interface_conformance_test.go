@@ -612,6 +612,36 @@ func runHostInterfaceFixture(t *testing.T) {
 		}
 	})
 
+	t.Run("reviewed roles remain from the review after redelivery", func(t *testing.T) {
+		const target = "conformance-review-snapshot"
+		scopes := []*authorityv1.WorkScopeV1{wireScope(target+".item", "read")}
+		declared := conformanceSolution{alias: target, generation: 1, ceilings: scopes,
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": scopes, "viewer": scopes}}
+		deliverSolution(t, ctx, conn, signer, declared)
+		_, err := core.InstallAsHost(ctx, fixtureOrganization, target, "viewer", conformanceAlex, nil)
+		require.NoError(t, err)
+		reviewed, err := core.ReviewOffer(ctx, alex, fixtureOrganization, target)
+		require.NoError(t, err)
+
+		// Delivery changes after the consistent read, before its wire mapping.
+		declared.generation = 2
+		declared.roles = map[string][]*authorityv1.WorkScopeV1{"installer": scopes, "viewer": scopes, "later": scopes}
+		deliverSolution(t, ctx, conn, signer, declared)
+		current, err := core.Composed(ctx, target)
+		require.NoError(t, err)
+		require.Contains(t, current.Roles, "later")
+
+		wire, err := reviewedOffer(reviewed, nil)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), wire.GetApproval().GetGeneration())
+		require.Equal(t, []string{"installer", "viewer"}, wire.GetInstallation().GetRoles())
+		var roles []string
+		for _, role := range wire.GetRoles() {
+			roles = append(roles, role.GetName())
+		}
+		require.Equal(t, wire.GetInstallation().GetRoles(), roles)
+	})
+
 	// Beyond the suite: a delegation never reaches past what its grantor holds
 	// or what it names; once revoked, by its grantor or an administrator of its
 	// organization, it issues nothing and every capability issued from it fails
