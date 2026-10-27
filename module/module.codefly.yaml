@@ -31,15 +31,16 @@ interface:
         - service: auth-gateway
           endpoint: grpc
           visibility: internal
+        # The hop on a cell: every module call goes through it. The list is
+        # sorted by service and endpoint: the topology compiler requires it.
+        - service: auth-gateway
+          endpoint: hop
+          visibility: internal
         - service: auth-gateway
           endpoint: rest
           visibility: internal
         - service: auth-gateway
           endpoint: workload
-          visibility: internal
-        # The hop on a cell: every module call goes through it.
-        - service: auth-gateway
-          endpoint: hop
           visibility: internal
         - service: frontend
           endpoint: http
