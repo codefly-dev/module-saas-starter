@@ -326,7 +326,11 @@ func runHostInterfaceFixture(t *testing.T) {
 		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
 		DeliveryCredential: func(module string) string { return "delivery:" + module },
 		InstallModule:      installModule,
-		ViewerToken:        "dev-bob", AdminToken: "dev-alice",
+		// accounts excludes OfferService (interface_policies.go), so the
+		// declaration case compares the reviewed offer on the local authority
+		// alone until accounts serves it; its grants run here as everywhere.
+		ReviewOfferNotServed: "accounts does not serve host.installation.v1.OfferService (excluded in pkg/business/interface_policies.go)",
+		ViewerToken:          "dev-bob", AdminToken: "dev-alice",
 		Audience: "documents", ReadKind: "example-records",
 		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
 		// The installed proposals solution and its own workload. Its roles name
