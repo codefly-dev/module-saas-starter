@@ -288,6 +288,39 @@ func ModulePrincipalID(prefix string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/module-principal/"+prefix)).String()
 }
 
+// RegistryIDOf resolves the principal a capability names to the registry id of
+// the declared module it is, and reports false for every other principal.
+//
+// A module is named by its NAME wherever the host interface states it: the
+// actor of a hop, the owner of a headless operation context, the principal an
+// installed operation binding (<organisation>/<module>/<binding>) is granted
+// to. The registry id (ModulePrincipalID) is this host's storage identity and
+// is still what the capabilities the interface does not issue carry, so it
+// resolves too. The two never overlap: a module name never parses as a UUID
+// (ValidateModulePrincipalGrant refuses one), so a principal spelled as an id
+// is looked up as an id and nothing else, and a name only as the entry
+// declared under exactly that name.
+func (r ModulePrincipalRegistry) RegistryIDOf(principal string) (string, bool) {
+	if principal == "" {
+		return "", false
+	}
+	id := moduleRegistryKey(principal)
+	grant, declared := r[id]
+	if !declared || (id != principal && grant.Prefix != principal) {
+		return "", false
+	}
+	return id, true
+}
+
+// moduleRegistryKey is the registry key a principal is looked up under: itself
+// when it is spelled as an id, the id its name derives otherwise.
+func moduleRegistryKey(principal string) string {
+	if _, err := uuid.Parse(principal); err == nil {
+		return principal
+	}
+	return ModulePrincipalID(principal)
+}
+
 // canonicalModuleTenant parses a principal's tenant and returns its canonical
 // spelling.
 //
@@ -357,6 +390,9 @@ func validateModulePrincipalCeiling(prefix string, grant ModulePrincipalGrant) e
 	if err := validateOperationAudiences(prefix, grant.OperationAudiences); err != nil {
 		return err
 	}
+	if err := validateInstallableGrant(prefix, grant); err != nil {
+		return err
+	}
 	for _, resource := range grant.Resources {
 		if IsHostSealedScopeResource(resource) {
 			return fmt.Errorf(
@@ -391,6 +427,16 @@ func validateModulePrincipalCeiling(prefix string, grant ModulePrincipalGrant) e
 // and saying so here names the entry instead of leaving every one of its calls
 // refused as "denied".
 func ValidateModulePrincipalGrant(prefix string, grant ModulePrincipalGrant) error {
+	// A module's name is the principal every capability it exercises names it
+	// by, beside the person and agent ids those capabilities carry, which are
+	// UUIDs. A name spelled as one would collide with them (RegistryIDOf).
+	if _, err := uuid.Parse(prefix); err == nil {
+		return fmt.Errorf("module principal %q is named as an id: a module's name is its principal in every capability it exercises, so it must never read as a principal id", prefix)
+	}
+	if slices.Contains(grant.Queues, InstallationStepQueue) {
+		return fmt.Errorf("principal %q asks for host-only queue %q", prefix, InstallationStepQueue)
+	}
+
 	if grant.Prefix != prefix {
 		return fmt.Errorf("module principal %q carries prefix %q", prefix, grant.Prefix)
 	}
@@ -563,8 +609,8 @@ func moduleRefusal(code codes.Code, reason, message string) error {
 // of the caller's own AUTHORITY stays Unauthenticated or PermissionDenied — an
 // identity it cannot prove, a principal no composition registered, a tenant it
 // is not bound to — held apart from a malformed request (InvalidArgument) and
-// from an operational condition of this host, which answers FailedPrecondition
-// under a reason of its own (ModuleLiveAuthorityUnavailableReason). So a
+// from an operational condition of this host, which answers Unavailable under
+// a reason of its own (ModuleLiveAuthorityUnavailableReason). So a
 // consumer driving this surface from a journal can tell a departed person —
 // final for that person, and nothing the module may retry its way out of —
 // from a composition this host does not admit as a module principal, which is
@@ -793,7 +839,7 @@ func moduleJobError(w *wool.Wool, err error) error {
 	case errors.Is(err, jobs.ErrJobNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, jobs.ErrTransactionRequired):
-		return status.Error(codes.Internal, err.Error())
+		return status.Error(codes.Internal, jobs.ErrTransactionRequired.Error())
 	}
 	return w.Wrap(err)
 }
@@ -1093,24 +1139,27 @@ func (s *Service) ModuleCancelApproval(ctx context.Context, caller ModuleCaller,
 }
 
 // moduleApprovalError maps approval-engine errors onto gRPC codes by their typed
-// StoreError. An untyped error is an internal fault, NOT bad client input: the
-// previous blanket InvalidArgument told a module its request was malformed even
-// when the database failed, so it would retry the same request forever.
+// StoreError, under the store's own sentence rather than the wrapped chain. An
+// untyped error is an internal fault, NOT bad client input: the previous
+// blanket InvalidArgument told a module its request was malformed even when the
+// database failed, so it would retry the same request forever. A fault is
+// returned as it came: the adapters' refusal seam sends it as Internal with a
+// fixed sentence and logs the cause, which a status built here would lose.
 func moduleApprovalError(err error) error {
 	var se *StoreError
 	if errors.As(err, &se) {
 		switch se.StoreErrorType {
 		case ErrTypeValidation:
-			return status.Error(codes.InvalidArgument, err.Error())
+			return status.Error(codes.InvalidArgument, se.Error())
 		case ErrTypeNotFound:
-			return status.Error(codes.NotFound, err.Error())
+			return status.Error(codes.NotFound, se.Error())
 		case ErrTypeConflict:
-			return status.Error(codes.FailedPrecondition, err.Error())
+			return status.Error(codes.FailedPrecondition, se.Error())
 		case ErrTypePermission:
-			return status.Error(codes.PermissionDenied, err.Error())
+			return status.Error(codes.PermissionDenied, se.Error())
 		}
 	}
-	return status.Error(codes.Internal, err.Error())
+	return err
 }
 
 // enqueueApprovalResume appends the resume outbox job for an approved request.

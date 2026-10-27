@@ -7,7 +7,18 @@ agent:
     # the release that ships the builder fix the content kit needs. 0.0.163 also
     # carries core v0.15.1's NewAPI fix (an endpoint keeps its exposure and
     # location) and the ConfigMap quoting fix.
-    version: 0.0.163
+    #
+    # 0.0.167 is the security floor. The agent pins the framework EXACTLY in
+    # `base/code` and `templates/factory/code`, and its framework gate holds the
+    # lockfile's resolved version equal to the declared one, so no service built
+    # by it can resolve past the agent's pin. Through 0.0.166 that pin was
+    # next 16.3.6, which carries three criticals: unauthenticated RCE in the
+    # Image Optimization API via SVG (GHSA-2464-fhr4-w9xw), DoS in App Router
+    # Server Actions (GHSA-p3m5-59mp-jv5r), and RCE in `use cache` functions
+    # returning typed arrays (GHSA-673q-mjm6-r5xr). 0.0.167 ships next 16.4.1
+    # (service-nextjs#177), and with it Go 1.27.3 for GO-2026-6809 (#178) and
+    # typescript back to ^5, the only major typescript-eslint@8 admits (#179).
+    version: 0.0.167
     publisher: codefly.dev
 service-dependencies:
     - name: auth-gateway

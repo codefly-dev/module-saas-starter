@@ -80,14 +80,27 @@ func (s *Service) sealStore() (WorkContextSealStore, error) {
 }
 
 // isDeclaredModulePrincipal reports whether the current registry declares
-// principalID.
+// principalID, by the module's name or its registry id.
 func (s *Service) isDeclaredModulePrincipal(principalID string) bool {
+	_, declared := s.moduleRegistryID(principalID)
+	return declared
+}
+
+// ModuleRegistryID is moduleRegistryID, for an adapter holding a capability's
+// principal and comparing it with a module it knows by name.
+func (s *Service) ModuleRegistryID(principalID string) (string, bool) {
+	return s.moduleRegistryID(principalID)
+}
+
+// moduleRegistryID resolves a principal a capability names — a module's name,
+// as the host interface spells a module, or its registry id — to the registry
+// id every module authority read is keyed by (ModulePrincipalRegistry.RegistryIDOf).
+func (s *Service) moduleRegistryID(principalID string) (string, bool) {
 	snapshot := s.moduleRegistrySnapshot()
 	if snapshot == nil {
-		return false
+		return "", false
 	}
-	_, declared := snapshot.registry[principalID]
-	return declared
+	return snapshot.registry.RegistryIDOf(principalID)
 }
 
 func (s *Service) liveModuleAuthority(ctx context.Context, principalID, orgID, installationID string) (*LiveModuleAuthority, error) {
@@ -100,8 +113,8 @@ func (s *Service) liveModuleAuthority(ctx context.Context, principalID, orgID, i
 // WorkContextSeal answers the live installation a capability owned by
 // principalID is sealed to.
 func (s *Service) WorkContextSeal(ctx context.Context, orgID, principalID, installationID string) (string, uint64, error) {
-	if s.isDeclaredModulePrincipal(principalID) {
-		live, err := s.liveModuleAuthority(ctx, principalID, orgID, installationID)
+	if id, isModule := s.moduleRegistryID(principalID); isModule {
+		live, err := s.liveModuleAuthority(ctx, id, orgID, installationID)
 		if err != nil {
 			return "", 0, err
 		}
@@ -125,8 +138,8 @@ func (s *Service) WorkContextSeal(ctx context.Context, orgID, principalID, insta
 // enqueues are revoked by the same lever. Zero names nothing and is refused here
 // rather than handed to core as a value.
 func (s *Service) WorkContextPrincipalEpoch(ctx context.Context, orgID, principalID string) (uint64, error) {
-	if s.isDeclaredModulePrincipal(principalID) {
-		live, err := s.liveModuleAuthority(ctx, principalID, orgID, "")
+	if id, isModule := s.moduleRegistryID(principalID); isModule {
+		live, err := s.liveModuleAuthority(ctx, id, orgID, "")
 		if err != nil {
 			return 0, err
 		}
@@ -151,7 +164,7 @@ func (s *Service) WorkContextPrincipalEpoch(ctx context.Context, orgID, principa
 // grant as installed in this organization, so narrowing that grant or the
 // installation's scope revokes every capability it owns.
 func (s *Service) WorkContextRevision(ctx context.Context, orgID, ownerID string) (uint64, error) {
-	if s.isDeclaredModulePrincipal(ownerID) {
+	if id, isModule := s.moduleRegistryID(ownerID); isModule {
 		// A decision about current module authority, like every other, so it
 		// is judged from one snapshot fenced against the committed envelope.
 		ctx, releaseAuthority, fenceErr := s.BeginModuleAuthorityUse(ctx)
@@ -160,7 +173,7 @@ func (s *Service) WorkContextRevision(ctx context.Context, orgID, ownerID string
 		}
 		defer releaseAuthority()
 		installed, _, err := s.authorizeModuleCapabilityFromSnapshot(ctx, s.moduleRegistrySnapshot(),
-			ModuleCaller{PrincipalID: ownerID, BoundOrg: orgID})
+			ModuleCaller{PrincipalID: id, BoundOrg: orgID})
 		if err != nil {
 			return 0, err
 		}
@@ -185,6 +198,25 @@ func (s *Service) WorkContextAudienceInstallation(ctx context.Context, orgID, au
 			return "", err
 		}
 		return store.WorkContextSolutionInstallation(ctx, orgID, binding)
+	}
+	// A delivered solution named by its alias is installed explicitly, never by
+	// composition: its installation is the organization's installation of its
+	// solution binding, exactly as for the solution-prefixed audience.
+	grant := s.ModulePrincipals()[ModulePrincipalID(audience)]
+	if grant.PresenceBinding != "" {
+		bindings, err := s.liveDeclaredBindings(ctx)
+		if err != nil {
+			return "", err
+		}
+		for _, binding := range bindings {
+			if binding.BindingID == grant.PresenceBinding && binding.Kind == SolutionDeclaredKindSolution {
+				store, err := s.sealStore()
+				if err != nil {
+					return "", err
+				}
+				return store.WorkContextSolutionInstallation(ctx, orgID, binding.BindingID)
+			}
+		}
 	}
 	live, err := s.liveModuleAuthority(ctx, ModulePrincipalID(audience), orgID, "")
 	if errors.Is(err, ErrModuleInstallationInactive) {
@@ -255,12 +287,16 @@ func parseSourceDelegationBindingID(id string) (delegationID, usedBy string, ok 
 
 // WorkContextOperationBinding is the live state of one operation binding.
 type WorkContextOperationBinding struct {
-	ID             string
-	PrincipalID    string
-	InstallationID string
-	Revision       uint64
-	Incarnation    uint64
-	Revoked        bool
+	ID          string
+	PrincipalID string
+	// ModuleRegistryID is set for a module's installed operation binding
+	// (<organisation>/<module>/<binding>), whose PrincipalID is the module's
+	// name: the same module under the registry id this host stores it by.
+	ModuleRegistryID string
+	InstallationID   string
+	Revision         uint64
+	Incarnation      uint64
+	Revoked          bool
 }
 
 // WorkContextOperationBinding answers one binding by its id, exactly.
@@ -274,6 +310,9 @@ type WorkContextOperationBinding struct {
 func (s *Service) WorkContextOperationBinding(ctx context.Context, orgID, bindingID string) (WorkContextOperationBinding, error) {
 	if NamesInstalledBinding(bindingID) {
 		return s.resolveInstalledBinding(ctx, orgID, bindingID)
+	}
+	if _, _, _, isModule := parseModuleOperationBindingID(bindingID); isModule {
+		return s.moduleOperationBinding(ctx, orgID, bindingID)
 	}
 	delegationID, usedBy, ok := parseSourceDelegationBindingID(bindingID)
 	if !ok {

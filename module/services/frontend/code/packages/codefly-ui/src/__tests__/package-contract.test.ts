@@ -73,6 +73,7 @@ describe("@codefly-dev/ui public subpaths", () => {
 		"./layout",
 		"./content",
 		"./board",
+		"./playground",
 		"./lifecycle",
 	]) {
 		it(`exports ${subpath} to a typed dist entry`, () => {
@@ -120,7 +121,7 @@ describe("@codefly-dev/ui installable plugin peers", () => {
 // even though npm installs its small published peers alongside the full kit.
 describe("@codefly-dev/ui solution subpaths stay plugin-free", () => {
 	const srcDir = codeflyUiSrcDir();
-	for (const subpath of ["layout", "dashboard", "chat", "content", "board"]) {
+	for (const subpath of ["layout", "dashboard", "chat", "content", "board", "playground"]) {
 		it(`./${subpath} imports no plugin package package`, () => {
 			for (const file of sourceFiles(join(srcDir, subpath))) {
 				const source = readFileSync(file, "utf8");

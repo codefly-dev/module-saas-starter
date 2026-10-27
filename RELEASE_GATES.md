@@ -12,8 +12,8 @@ same gate as this repository.
 guard artifacts and contracts no single service owns: the canonical base
 manifest that seeds every consumer, the authorization catalog, the release
 gating graph itself, the interface docs, the published frontend kit's version,
-the marketing isolation build, the SDK boundary, and the
-immutable module package. They run
+the marketing isolation build, the SDK boundary, the
+immutable module package, and the host interfaces accounts serves. They run
 `node --test`, `go test`, `buf breaking`, and `npm` commands directly — see
 [Repository-specific gates](#repository-specific-gates) for the full list and
 why each one lives here rather than in a plugin.
@@ -65,6 +65,7 @@ base-integrity ───────┐
 authz-coverage ───────┤
 release-contract ─────┤
 docs-sync ────────────┤
+host-interface-conformance ┤
 kit-version ──────────┤
 marketing ────────────┤                     ┌─▶ publish-module-package  (module-package/v*)
 sdk-boundary ─────────┼─▶ release-gates ────┼─▶ publish-frontend-kit    (v*)
@@ -110,6 +111,7 @@ no per-track exemption.
 | `authz-coverage` | required | required | RBAC, audit, and no-broadening |
 | `release-contract` | required | required | this gating graph itself |
 | `docs-sync` | required | required | interface docs and story tests |
+| `host-interface-conformance` | required | required | the shared host-interface suite at authority main |
 | `kit-version` | required | required | published frontend kit version vs. content |
 | `marketing` | required | required | marketing isolation build |
 | `sdk-boundary` | required | required | Codefly SDK boundary and contracts |
@@ -227,8 +229,10 @@ A successful image build and matching materials alone do not establish that a
 generated-file change belongs in the PR. Reproduce recipes using the CI-pinned
 CLI and the released agents selected by the service manifests.
 Every topology service must declare image coverage, even if its recipe is absent
-from the checkout. Redis and Vault explicitly use the existing Codefly vendor
-image audit; an unknown agent is an error.
+from the checkout. Redis, Vault and object storage explicitly use the existing
+Codefly vendor image audit — the object-storage agent runs its gateway and MinIO
+images, both pinned by the agent, and builds nothing here; an unknown agent is
+an error.
 
 Changes to the image contract force the full service graph through CI. Before
 each canonical build attempt, CI snapshots Buildx history. After the build,
@@ -441,6 +445,7 @@ reverse, fails the `release-contract` job.
 | `authz-coverage` | the generated authorization catalog: RBAC coverage, audit coverage, and permission no-broadening against `main` | `node module/tools/authz-coverage-gate.mjs`, plus `go test` for the gateway header-lockstep and adapter enforcement tests |
 | `release-contract` | this gating graph itself, and the Dependabot configuration that feeds it | `node --test scripts/ci/release-gates.test.mjs`, `node --test scripts/ci/dependabot-coverage.test.mjs`, `node scripts/ci/release-gates.mjs check`, `node scripts/ci/dependabot-coverage.mjs check` |
 | `docs-sync` | the generated interface docs and the story-trace tests (#516) | `node module/tools/interface-docs-gate.mjs check`, `node module/tools/story-trace-gate.mjs tests` |
+| `host-interface-conformance` | accounts serves the host interfaces (authority, composition, installation) exactly as the shared conformance suite of `codefly-dev/authority` states them, at authority's main whenever main contains the pinned revision, so a case authority adds reaches accounts on its next pull request | `bash scripts/ci/host-interface-conformance-main.sh`, which re-pins the authority libraries to main when main contains the pin and runs `go test -run '^TestAccountsPassesTheHostInterfaceConformanceSuite$' ./pkg/adapters` |
 | `kit-version` | the published frontend kit's version moves whenever its content does, since a registry version is immutable once served | `node --test scripts/ci/kit-version.test.mjs`, `node scripts/ci/kit-version.mjs check` |
 | `marketing` | the marketing runtime builds in isolation from the app, and the public config is current | `node module/tools/generate-public-config.mjs --check`, `node module/tools/marketing-extraction.mjs` |
 | `sdk-boundary` | the root module's own tests, the Codefly SDK boundary, single-invocation protocol generation, the exported API contract, and the published module-authority client against the real host | `go test ./...` **in the root module only**, `go test codefly_sdk_boundary_test.go`, `codefly generate contracts saas-starter --check`, `codefly generate runnables saas-starter --check`, `go test ./...` in `qualification/module-authority` |

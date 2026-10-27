@@ -230,20 +230,8 @@ func (s *Service) applySolutionHostBinding(
 	}
 
 	// A withdrawal CLOSES the installable target and revokes every active
-	// installation naming it. That is a narrowing of authority, so it must be
-	// witnessed by the external policy log before it takes effect, and the
-	// append has to happen BEFORE this transaction opens — a slow log must not
-	// hold database locks. Whether a close is coming is only knowable from the
-	// live target, so it is read here, unlocked; the locked read inside the
-	// transaction is still the one that decides.
-	//
-	// The two reads can disagree, and only one direction is dangerous. If this
-	// one saw a live target and the locked one finds none, another replica
-	// closed it first: the appended entry is still true and commits. If this
-	// one saw none and the locked one finds one, a close would run with nothing
-	// appended for it — so reconcileSolutionTarget REFUSES an unwitnessed
-	// close, and the next pass, which now reads a live target, carries it.
-	var witnessedTargetClose string
+	// installation naming it. That narrowing applies directly: the close, the
+	// revocations and the audit event commit in this one transaction.
 	apply := func(ctx context.Context) error {
 		record, err := s.store.GetSolutionHostBindingForUpdate(ctx, document.Binding)
 		if err != nil {
@@ -302,7 +290,7 @@ func (s *Service) applySolutionHostBinding(
 		// The identity an organisation installs moves with this transaction, so a
 		// reused alias cannot carry an installation across to another binding
 		// (solution_targets.go).
-		targetID, err := s.reconcileSolutionTarget(ctx, document, solutionID, witnessedTargetClose, now)
+		targetID, err := s.reconcileSolutionTarget(ctx, document, solutionID, now)
 		if err != nil {
 			return err
 		}
@@ -402,50 +390,7 @@ func (s *Service) applySolutionHostBinding(
 			})
 	}
 
-	// A withdrawal: find the target this binding has live, and run the whole
-	// transaction under the policy log when there is one to close.
-	if document.Removed {
-		live, err := s.liveSolutionTargetForBinding(ctx, document.Binding)
-		if err != nil {
-			return err
-		}
-		if live != nil {
-			witnessedTargetClose = newPolicyLogOperationID("close-solution-target")
-			return s.WithPolicyLoggedNarrowing(ctx, closedSolutionTargetPolicyLogEntry(
-				witnessedTargetClose, live.ID, document.Binding, live.SolutionID, document.Generation,
-			), apply)
-		}
-	}
 	return s.store.WithControlPlane(ctx, apply)
-}
-
-// liveSolutionTargetForBinding is the unlocked read that decides whether a
-// withdrawal has a target to close, so the policy log append can happen before
-// the apply transaction opens.
-//
-// It filters the whole target listing rather than taking a lock, because the
-// locked read inside the transaction is the one that decides and a second lock
-// here would only widen the window it holds. The listing is one row per
-// solution instance this host has ever presented, which is the same set the
-// operator surface already pages through.
-func (s *Service) liveSolutionTargetForBinding(ctx context.Context, bindingID string) (*SolutionTarget, error) {
-	var live *SolutionTarget
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		targets, err := s.store.ListSolutionTargets(ctx)
-		if err != nil {
-			return err
-		}
-		for _, target := range targets {
-			if target.BindingID == bindingID && target.Live() {
-				live = target
-				return nil
-			}
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	return live, nil
 }
 
 // declareSolutionRegistration records the binding and immutable target that own
@@ -664,14 +609,9 @@ func solutionHostBindingResource(record *SolutionHostBindingRecord) string {
 // history and the audit event to the identity that ended. Reading it back after
 // the close would find nothing, which is how the tombstone's history row lost
 // its target.
-// witnessedTargetClose is the policy log operation whose append landed for the
-// close this call is about to perform, and "" when none did. A close with no
-// witness is REFUSED: closing the target revokes every installation naming it,
-// and performing that with nothing appended is the unwitnessed narrowing the
-// protocol forbids outright.
 func (s *Service) reconcileSolutionTarget(
 	ctx context.Context, document *solutionhost.ModuleManifest,
-	solutionID, witnessedTargetClose string, now time.Time,
+	solutionID string, now time.Time,
 ) (string, error) {
 	live, err := s.store.GetLiveSolutionTargetForUpdate(ctx, document.Binding)
 	if err != nil {
@@ -680,12 +620,6 @@ func (s *Service) reconcileSolutionTarget(
 	if document.Removed {
 		if live == nil {
 			return "", nil
-		}
-		if witnessedTargetClose == "" {
-			return "", fmt.Errorf(
-				"%w: closing solution target %s was not appended to the policy log, "+
-					"so the installations it revokes would be unwitnessed",
-				ErrPolicyLogUnreachable, live.ID)
 		}
 		if err := s.store.CloseSolutionTarget(ctx, live.ID, document.Generation, now); err != nil {
 			return "", err

@@ -203,6 +203,28 @@ export interface ConnectGitHubInput {
 }
 
 /**
+ * An object-storage source, ready for `addObjectStorageSource`: a bucket and a
+ * key prefix in a store, the keys under it to ingest, and the access key the
+ * host encrypts at receipt.
+ */
+export interface ConnectObjectStorageInput {
+	orgId: string;
+	endpoint: string;
+	region: string;
+	bucket: string;
+	prefix: string;
+	/** RE2 patterns over the key with the prefix removed; empty admits all. */
+	includePatterns: string[];
+	/** RE2 patterns; a key matching one is never ingested. */
+	excludePatterns: string[];
+	fileExtensions: string[];
+	accessKeyId: string;
+	secretAccessKey: string;
+	targetCollection: string;
+	boundaryNodeId?: string;
+}
+
+/**
  * The person's own `api` source, ready for `addPersonalApiSource`: an API base
  * URL the person signs in to through the deployment's provider registration.
  * There is no credential field — the credential is the sign-in, which the
@@ -403,7 +425,54 @@ export interface SourceReconcileReceipt {
 	jobId: string;
 }
 
+/** Catalog additions are optional so existing injected clients keep compiling. */
+export interface DatasourceConnectField {
+	key: string;
+	displayName: string;
+	help: string;
+	required: boolean;
+	format: "text" | "lines" | "json";
+}
+
+export interface DatasourceProviderView {
+	provider: number;
+	connector: string;
+	displayName: string;
+	description: string;
+	acceptsNewSources: boolean;
+	gap: string;
+	fields: DatasourceConnectField[];
+	credentialModes: string[];
+	supportsWebhook: boolean;
+	/** A newer host may describe a field this installed SDK cannot encode. */
+	unsupportedReason?: string;
+	/** Whether the existing organization-app setup operations serve this provider. */
+	supportsOrganizationAppSetup?: boolean;
+}
+
+/** Transient operation input. Never put this value in query/mutation state. */
+export type DatasourceCredential =
+	| { kind: "none" | "org_app" }
+	| {
+			kind: "static_secret";
+			secret: string;
+			webhookSecret?: string;
+			oauth2ClientSecret?: string;
+	  };
+
+export interface ConnectSourceInput {
+	orgId: string;
+	provider: DatasourceProviderView;
+	/** Raw form values; the adapter encodes them using the SDK descriptor. */
+	config: Record<string, string>;
+	credential: DatasourceCredential;
+	targetCollection: string;
+	boundaryNodeId?: string;
+}
+
 export interface DatasourceClient {
+	getCatalog?(): Promise<DatasourceProviderView[]>;
+	addSource?(input: ConnectSourceInput): Promise<void>;
 	listCollections?(orgId: string): Promise<CollectionAccessView[]>;
 	listGrantSubjects?(orgId: string): Promise<CollectionGrantSubject[]>;
 	grantCollectionRead?(
@@ -419,6 +488,11 @@ export interface DatasourceClient {
 	listActivity?(orgId: string, sourceId: string): Promise<SourceActivity[]>;
 	listSources(orgId: string): Promise<DatasourceView[]>;
 	addGitHubSource(input: ConnectGitHubInput): Promise<void>;
+	/**
+	 * Connects an object-storage source. Optional; a refused key filter comes
+	 * back as an error whose message leads with the field it names.
+	 */
+	addObjectStorageSource?(input: ConnectObjectStorageInput): Promise<void>;
 	/**
 	 * Creates the caller's own `api` source with the OAuth 2.0
 	 * authorization-code grant (`API_CREDENTIAL_KIND_OAUTH2` +

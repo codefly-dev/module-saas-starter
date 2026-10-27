@@ -3,7 +3,10 @@ package infra
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+
+	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
 
 	"github.com/codefly-dev/core/solutionhost"
 )
@@ -82,6 +87,7 @@ func (policy *SolutionHostVerificationPolicy) pinnedKeys() (*solutionhost.Pinned
 type keyBundleVerifier struct {
 	verifier           *solutionhost.Verifier
 	pins               *solutionhost.PinnedKeySet
+	authorityKeys      map[string]crypto.PublicKey
 	local              *SolutionHostLocalProfile
 	localClusterProven atomic.Bool
 }
@@ -146,7 +152,15 @@ func newSolutionHostKeyVerifier(policy *SolutionHostVerificationPolicy) (solutio
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrSolutionHostTrustRootUnavailable, err)
 	}
-	v := &keyBundleVerifier{verifier: verifier, pins: pins}
+	v := &keyBundleVerifier{verifier: verifier, pins: pins, authorityKeys: map[string]crypto.PublicKey{}}
+	for _, signer := range policy.Signers {
+		block, _ := pem.Decode([]byte(signer.PublicKey))
+		public, err := x509.ParsePKIXPublicKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		v.authorityKeys[signer.KeyID] = public
+	}
 	if policy.Local != nil {
 		local := *policy.Local
 		v.local = &local
@@ -200,4 +214,12 @@ func (v *keyBundleVerifier) ProveNativeRun(anchorFingerprint string) error {
 	}
 	v.localClusterProven.Store(true)
 	return nil
+}
+
+// VerifyAuthority uses the same proven trust policy as the core manifest.
+func (v *keyBundleVerifier) VerifyAuthority(document, envelope []byte) (string, error) {
+	if _, err := v.Verifier(); err != nil {
+		return "", err
+	}
+	return delivery.Verify(document, envelope, v.authorityKeys)
 }

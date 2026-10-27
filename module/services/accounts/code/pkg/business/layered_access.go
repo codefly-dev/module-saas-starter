@@ -188,21 +188,13 @@ func (s *Service) grantScopeTx(ctx context.Context, actorID string, req *gen.Gra
 
 // RevokeScope removes a hierarchical scope grant.
 //
-// A NARROWING, so it runs under the policy log: appended and receipted before
-// the grant goes, and the delete commits in the same transaction as the
-// receipt's commit. A host that cannot witness the append refuses rather than
-// revoking unwitnessed — a revocation a restore could silently undo is worse
-// than a refusal the caller can see.
-//
-// The transaction is the policy log's control-plane one, because the receipt
-// relation is control-plane only and the two writes must be atomic. The
-// statement below names req.OrgId explicitly, so the delete stays confined to
-// the organisation the tenant policy would have confined it to.
+// A NARROWING, so it applies directly (narrow): the delete and its audit
+// record commit in one control-plane transaction. The statement below names
+// req.OrgId explicitly, so the delete stays confined to the organisation the
+// tenant policy would have confined it to.
 func (s *Service) RevokeScope(ctx context.Context, actorID string, req *gen.RevokeScopeRequest) error {
 	w := wool.Get(ctx).In("RevokeScope")
-	if err := s.WithPolicyLoggedNarrowing(ctx, revokeScopePolicyLogEntry(
-		actorID, req.OrgId, req.SubjectId, req.SubjectKind.String(), req.ScopePath, req.RoleId,
-	), func(ctx context.Context) error {
+	if err := s.narrow(ctx, func(ctx context.Context) error {
 		return s.revokeScopeApply(ctx, actorID, req)
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke scope")
@@ -210,11 +202,10 @@ func (s *Service) RevokeScope(ctx context.Context, actorID string, req *gen.Revo
 	return nil
 }
 
-// revokeScopeApply is one scope revocation inside the policy log's narrowing
-// transaction: the delete, the tenant-visible scope.revoked event and the audit
-// record. RevokeScope and RevokeInstallationFromTeam both run it, under the same
-// entry builder, so a team removed from an installation is witnessed and
-// recorded exactly as any other scope revocation is.
+// revokeScopeApply is one scope revocation inside a narrowing transaction: the
+// delete, the tenant-visible scope.revoked event and the audit record.
+// RevokeScope and RevokeInstallationFromTeam both run it, so a team removed
+// from an installation is recorded exactly as any other scope revocation is.
 func (s *Service) revokeScopeApply(ctx context.Context, actorID string, req *gen.RevokeScopeRequest) error {
 	if e := s.store.RevokeScope(ctx, req.OrgId, req.SubjectId, req.SubjectKind, req.ScopePath, req.RoleId); e != nil {
 		return e
@@ -274,21 +265,12 @@ func (s *Service) ShareRecord(ctx context.Context, actorID string, req *gen.Shar
 
 // RevokeShare removes a per-record share.
 //
-// A NARROWING, so it runs under the policy log, exactly as RevokeScope above
-// does: appended and receipted before the share goes, with the delete and the
-// receipt's commit in one transaction, and a refusal rather than an unwitnessed
-// revocation when the log cannot be reached.
-//
-// That transaction is the policy log's control-plane one, because the receipt
-// relation is control-plane only and the two writes must be atomic. The delete
-// names req.OrgId in its WHERE, so it stays confined to the organisation the
-// tenant policy would have confined it to.
+// A NARROWING, so it applies directly, exactly as RevokeScope above does. The
+// delete names req.OrgId in its WHERE, so it stays confined to the organisation
+// the tenant policy would have confined it to.
 func (s *Service) RevokeShare(ctx context.Context, actorID string, req *gen.RevokeShareRequest) error {
 	w := wool.Get(ctx).In("RevokeShare")
-	if err := s.WithPolicyLoggedNarrowing(ctx, revokeSharePolicyLogEntry(
-		actorID, req.OrgId, req.ResourceType, req.ResourceId,
-		req.SubjectId, req.SubjectKind.String(), req.RoleId,
-	), func(ctx context.Context) error {
+	if err := s.narrow(ctx, func(ctx context.Context) error {
 		if err := s.store.RevokeShare(ctx, req.OrgId, req.ResourceType, req.ResourceId, req.SubjectId, req.SubjectKind, req.RoleId); err != nil {
 			return err
 		}

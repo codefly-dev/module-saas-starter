@@ -203,7 +203,11 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
   `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
   (repo · status · paths · branch · boundary · live updates · last sync) with per-row **Sync**/**Delete** and
-  a **Connect GitHub** action. The last-sync cell shows whichever clock applies:
+  catalog-driven connect actions. Every provider returned by `GetDatasourceCatalog`
+  is listed; a provider refusing new sources keeps its exact `conformance_gap`
+  text visible. A removed provider disappears, including an open form, on the
+  next catalog refresh (15 seconds or window focus). A failed catalog read
+  withdraws connect forms and offers a retry. The last-sync cell shows whichever clock applies:
   `last_synced_at` for a provider that pulls, or `last ingest <date, time> ·
   <short commit>` for a github source, whose change sets the compiler enqueues
   (a webhook delivery, or a reconcile pass — a declared schedule's occurrence or
@@ -268,6 +272,34 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   it keeps syncing, but the host connects no new source of that provider. The
   flag is keyed on `conformance_gap`, so an older host that sends no
   conformance fields flags nothing.
+
+The optional `DatasourceClient.getCatalog()` and `addSource(input)` methods are
+implemented by both kit transport bindings. Existing injected clients compile
+unchanged; without catalog support the panel states that the catalog is
+unavailable and invents no provider. No new panel prop is required.
+
+The host descriptor owns field keys, labels, help, required flags and credential
+modes. The adapter uses the SDK's `AddSource` message descriptor to encode the
+matching config oneof: text stays text, repeated strings accept one value per
+line, and other field types accept JSON. No provider table lives in the panel.
+A provider with unknown config fields stays visible with a newer-kit requirement;
+it is never silently dropped. A host adding a wire-contract variant still
+requires a compatible SDK. Prefixes and include/exclude patterns appear only
+when the host describes them. This UI does not change provider admission.
+
+`ConnectSourceInput.credential` is a typed, transient value. Password inputs are
+uncontrolled and cleared before the call; neither those values nor operation
+errors enter a query or mutation cache, storage, logs, or component state.
+Failures use neutral wording because an error may echo submitted secrets. The
+existing app-install return form also clears its credentials and calls directly.
+The catalog also gates installation-return redemption: a missing, refused,
+unsupported or failed catalog entry offers no return form and triggers no
+completion call. Organization-app support follows the advertised credential
+mode and the SDK setup operations matching its connector key; a credential mode
+alone never offers another connector’s installation workflow. No-credential and organization-app modes send no secret. Connecting still
+refreshes sources, collection grants and readable boundaries. Preview stories
+`CatalogProviders` and `RefusedProvider` exercise the descriptor-driven surface.
+
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, webhook secret, and an access token only on the PAT path).
   Its Authentication choice always offers **Public repository (no token)**: the
@@ -385,9 +417,19 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   in its own shell — a line in a header, say — without re-deriving them from the
   phase names and getting the terminal cases wrong. `<SourceSyncProgress source
   report />` is the card, and `useSourceSync(client, orgId, source)` the read.
+- `<ConnectObjectStorageForm onSubmit={…} … />` — endpoint (https only),
+  region, bucket, prefix, the key filter (include and exclude RE2 patterns, one
+  per line, over the key after the prefix; file types as on GitHub), access key
+  id, the secret access key the host encrypts at receipt, and the target
+  collection. It states that a bucket has no per-object access list, so one
+  source is one collection with one set of readers. A host refusal of a pattern
+  leads with the field it names and is shown under that field. Map its values
+  with `objectStorageInputFrom(orgId, values)` for the client's optional
+  `addObjectStorageSource`. Nothing in the kit mounts it yet: the host refuses
+  new object-storage sources until the provider is conformant (#1211).
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
-  `useUpdateSource`, `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`,
-  `useMyAccountLinks`.
+  `useAddObjectStorageSource`, `useUpdateSource`, `useSyncSource`,
+  `useDeleteSource`, `useAccessibleScopes`, `useMyAccountLinks`.
 - `<EditSourceForm source onSubmit … />`, behind the row's **Edit**, changes
   what a connected source fetches: its branch and its path and file-type
   filters, bound by the same schema the connect form uses. It offers the connect
@@ -583,6 +625,19 @@ elapsed through `Intl.RelativeTimeFormat`, for a consumer's own shell.
 
 ## Installing from a solution
 
+Version 0.13 requires Zod `^4.6.6`, `@hookform/resolvers >=5.1.0` and
+React Hook Form `>=7.55.0`. The exported source schemas use Zod 4 declarations
+and its `check` refinement hook; Zod 3 cannot consume them. Zod 4.6.6 is the
+minimum patched release for GHSA-mrhx-c7xc-m3w5. The resolver must understand
+Zod 4 errors so invalid form input becomes a field error instead of a thrown
+exception. The co-versioned `@codefly-dev/ui` peer is `^0.13.0`.
+
+The `example-registry-ui` consumer in `scripts/test-registry-ui.mjs` installs
+packed packages through a registry fixture, compiles imports of both source
+schemas and their inferred value types, and exercises valid, missing-token and
+oversized-scope input through the form resolver. Run it from the frontend with
+`npm run test:published-ui` after building the workspace packages.
+
 This package is published to GitHub Packages under the org's `@codefly-dev`
 scope, so a consumer needs that scope routed to the GitHub registry with a read
 token:
@@ -629,8 +684,8 @@ offer a Markdown preset. The host intersects suffixes with paths for snapshots
 and incremental changes; empty keeps all file types. The filter is selected at
 connection time and does not rewrite existing sources.
 
-The SDK peer floor is **0.3.35**: the datasource client maps an `api` source's
-credential kind and OAuth grant, and declares operations, with enums the SDK
-exports from that release (principal-name resolution needs 0.3.14's directory
-service). Earlier SDK versions must be rejected during installation rather than
+The SDK peer floor is **0.3.40**: the object-storage connect form sends an
+`upload` source's include and exclude key patterns, fields the SDK carries from
+that release (the `api` source's credential kind, OAuth grant and operations
+need 0.3.35; principal-name resolution needs 0.3.14's directory service). Earlier SDK versions must be rejected during installation rather than
 accepted and then failing when the component loads.

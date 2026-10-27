@@ -18,21 +18,39 @@ import (
 const ModuleAuthorityEndpoint = "authority"
 
 // moduleAuthorityCapabilityService is the one accounts service whose every
-// admissible method authenticates the CALLING MODULE from a signed capability
-// — its module Work Context, or a viewer Work Context whose audience names it —
-// before it decides anything. Its Mint* methods are the exception: they are
-// where a module obtains a capability in the first place, so they authenticate
-// with the module pod's projected ServiceAccount token, bound to its running
-// build, and the gateway brokers them. ValidateModuleAuthorityProcedures refuses
-// them here.
+// admissible method authenticates the CALLING MODULE itself before it decides
+// anything: from its module Work Context (a viewer it asks about travels in the
+// request body and must be addressed to it) — or, for the one workload mint named in
+// moduleAuthorityWorkloadMints, from the module pod's projected ServiceAccount
+// token, reviewed and bound to its running build. Because the caller is proven
+// by the call itself, no perimeter credential is asked of these methods on the
+// endpoint: a shared static token would add nothing a forged caller lacks and
+// would name no module. Its other Mint* methods are where a module obtains its
+// own capability, which the authority interface's Issue serves;
+// ValidateModuleAuthorityProcedures refuses them here.
 const moduleAuthorityCapabilityService = "/saas.accounts.v1.ModuleCapabilitiesService/"
 
+// moduleAuthorityWorkloadMints are the Mint* methods served on the endpoint.
+// Each authenticates the calling module from its workload credential alone —
+// the projected ServiceAccount token accounts reviews, the pod it names and the
+// build that pod runs — and derives the principal from it, so the request
+// cannot name a module it is not.
+//
+//   - MintSourceOperationContext — the Work Context one connected source's sync
+//     runs under, from the delegation the person who connected it gave the
+//     module. Datasources are this host's, never the authority interface's, so
+//     the module tier is the only place a module can ask for it.
+var moduleAuthorityWorkloadMints = map[string]struct{}{
+	"/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext": {},
+}
+
 // moduleAuthorityReadOracles are the only procedures admitted on the endpoint
-// that do NOT authenticate the caller: they authorize on the perimeter
-// credential alone and answer about the principals and tenant the request
-// names. Every entry must therefore be READ-ONLY, because the perimeter
-// credential is shared by every composed module, so a write here is a write any
-// module may make for any tenant.
+// that are not on the capability service. Each authenticates the calling
+// module exactly as the capability surface does — its module Work Context,
+// verified and held to its current grant — and then answers about principals
+// and a tenant the REQUEST names. Every entry must therefore be READ-ONLY:
+// any installed module may ask, so a write here is a write any module may make
+// for any tenant.
 //
 // Each entry, and why it is admissible in spite of that:
 //
@@ -44,9 +62,8 @@ const moduleAuthorityCapabilityService = "/saas.accounts.v1.ModuleCapabilitiesSe
 //
 // Both remain authority oracles over request-named principals, which is a real
 // residual property and the reason the set is this small and explicit rather
-// than "the WorkContextService consumer seams". Binding them to the calling
-// module's own Work Context would remove it; until then nothing may be added
-// here that writes.
+// than "the WorkContextService consumer seams"; nothing may be added here that
+// writes.
 var moduleAuthorityReadOracles = map[string]struct{}{
 	"/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead":      {},
 	"/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision": {},
@@ -54,19 +71,21 @@ var moduleAuthorityReadOracles = map[string]struct{}{
 
 // moduleAuthorityProcedures is the least-privilege subset of the internal tier
 // a composed module may call on ModuleAuthorityEndpoint. Every entry is an
-// EXPOSURE_INTERNAL method (the perimeter credential is verified on every
-// call), and every entry additionally either
+// EXPOSURE_INTERNAL method that authenticates the calling module itself — from
+// its signed module Work Context, or for a workload mint from its workload
+// credential — so the endpoint asks no perimeter credential of any of them.
+// Every entry additionally either
 //
-//   - authenticates the calling module from a signed Work Context and
-//     authorizes it against the grant its composition declared
-//     (the module principal registry) — the whole module capability surface does this; or
+//   - authorizes the module against the grant its composition declared (the
+//     module principal registry) — the whole module capability surface does
+//     this; or
 //   - is one of the read-only oracles named in moduleAuthorityReadOracles.
 //
 // Deliberately absent, and reachable only on the private listener:
 //
-//   - the secret exchanges the auth-gateway brokers (module/solution
-//     registration, module Work Context and operation-context mints), so a
-//     module never presents its own secret to accounts directly;
+//   - the exchanges the auth-gateway brokers for registration (module and
+//     solution registration), and the module Work Context and operation-context
+//     mints, which the authority interface's Issue serves;
 //   - the registries and credential validators only the gateway reads
 //     (solution and client registries, API-key validation, identity
 //     resolution);
@@ -108,6 +127,7 @@ var moduleAuthorityProcedures = []string{
 	"/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
 	"/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
 	"/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
+	"/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
 	"/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
 	"/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
 	"/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
@@ -148,20 +168,34 @@ func IsModuleAuthorityProcedure(fullMethod string) bool {
 	return ok
 }
 
+// ModuleAuthorityAuthenticatesInRequest reports whether fullMethod, served on
+// ModuleAuthorityEndpoint, is on the explicit allowlist of methods that prove
+// the calling module from the workload credential the request itself carries
+// (moduleAuthorityWorkloadMints), and so are admitted before a module Work
+// Context exists. Every other procedure on the endpoint is refused unless the
+// call presents the calling module's own Work Context.
+func ModuleAuthorityAuthenticatesInRequest(fullMethod string) bool {
+	if !strings.HasPrefix(fullMethod, "/") {
+		fullMethod = "/" + fullMethod
+	}
+	_, mint := moduleAuthorityWorkloadMints[fullMethod]
+	return mint
+}
+
 // ValidateModuleAuthorityProcedures holds the module surface to the internal
 // tier. Every entry must
 //
 //  1. name a classified EXPOSURE_INTERNAL method, and
 //  2. either belong to the capability surface that authenticates the calling
-//     module from a signed Work Context — excluding its Mint* methods, which
-//     authenticate with the module's secret and are the gateway's to broker —
-//     or be one of the explicitly justified read-only oracles.
+//     module from a signed Work Context — excluding its Mint* methods, other
+//     than the declared workload mints — or be one of the explicitly justified
+//     read-only oracles, which authenticate the calling module the same way.
 //
 // It runs in the catalog and deployment generators, so a stale or widened entry
 // fails generation rather than rendering a policy that admits nothing or too
-// much. Rule 2 is what keeps a method that authorizes on the shared perimeter
-// credential alone and mutates state from reaching every composed module by way
-// of a one-line edit to the list above.
+// much. Rule 2 is what keeps a method that does not prove its caller, or that
+// mutates state for a tenant the request names, from reaching every composed
+// module by way of a one-line edit to the list above.
 func ValidateModuleAuthorityProcedures() error {
 	seen := make(map[string]bool, len(moduleAuthorityProcedures))
 	for _, procedure := range moduleAuthorityProcedures {
@@ -180,10 +214,15 @@ func ValidateModuleAuthorityProcedures() error {
 			continue
 		}
 		if !strings.HasPrefix(procedure, moduleAuthorityCapabilityService) {
-			return fmt.Errorf("module authority procedure %s neither authenticates the calling module from its Work Context (it is not on %s) nor is a declared read-only oracle; a method that authorizes on the shared perimeter credential alone must not be served on the %q endpoint", procedure, strings.TrimSuffix(strings.TrimPrefix(moduleAuthorityCapabilityService, "/"), "/"), ModuleAuthorityEndpoint)
+			return fmt.Errorf("module authority procedure %s neither authenticates the calling module from its Work Context (it is not on %s) nor is a declared read-only oracle; a method that does not prove its calling module must not be served on the %q endpoint", procedure, strings.TrimSuffix(strings.TrimPrefix(moduleAuthorityCapabilityService, "/"), "/"), ModuleAuthorityEndpoint)
 		}
-		if strings.HasPrefix(policy.Method, "Mint") {
-			return fmt.Errorf("module authority procedure %s authenticates with the module pod's projected ServiceAccount token, not a Work Context; the gateway brokers it and it must not be served on the %q endpoint", procedure, ModuleAuthorityEndpoint)
+		if _, workloadMint := moduleAuthorityWorkloadMints[procedure]; strings.HasPrefix(policy.Method, "Mint") && !workloadMint {
+			return fmt.Errorf("module authority procedure %s mints a module's own capability, which the authority interface's Issue serves; it must not be served on the %q endpoint", procedure, ModuleAuthorityEndpoint)
+		}
+	}
+	for procedure := range moduleAuthorityWorkloadMints {
+		if _, served := moduleAuthorityIndex[procedure]; !served {
+			return fmt.Errorf("module authority workload mint %s is declared but not served; remove it rather than leaving a justification for a procedure nobody reaches", procedure)
 		}
 	}
 	for procedure := range moduleAuthorityReadOracles {

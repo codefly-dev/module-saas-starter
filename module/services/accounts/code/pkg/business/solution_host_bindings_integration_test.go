@@ -11,6 +11,7 @@ import (
 
 	"accounts/internal/deliverytest"
 	"accounts/pkg/business"
+	"accounts/pkg/infra"
 
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/google/uuid"
@@ -112,8 +113,54 @@ func testDeclaredSolutionID(t *testing.T) string {
 	return "dsol" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 }
 
+// These tests share Postgres, including deliberately incomplete presence rows
+// from other fixtures. Keep append-only records intact while giving each
+// reconciler fixture its own view of bindings. Writes and constraints remain real.
+type fixtureBindingStore struct {
+	*infra.PostgresStore
+	previous map[string]bool
+}
+
+func (s fixtureBindingStore) ListSolutionHostBindings(ctx context.Context) ([]*business.SolutionHostBindingRecord, error) {
+	rows, err := s.PostgresStore.ListSolutionHostBindings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var own []*business.SolutionHostBindingRecord
+	for _, row := range rows {
+		if !s.previous[row.BindingID] {
+			own = append(own, row)
+		}
+	}
+	return own, nil
+}
+
+var isolatedBindingFixtures = map[*testing.T]bool{}
+
+func isolateBindingFixture(t *testing.T) {
+	t.Helper()
+	if isolatedBindingFixtures[t] {
+		return
+	}
+	rows, err := testService.ListSolutionHostBindings(testCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := map[string]bool{}
+	for _, row := range rows {
+		previous[row.BindingID] = true
+	}
+	testService.SetStore(fixtureBindingStore{PostgresStore: testStore, previous: previous})
+	isolatedBindingFixtures[t] = true
+	t.Cleanup(func() {
+		testService.SetStore(testStore)
+		delete(isolatedBindingFixtures, t)
+	})
+}
+
 func newTestReconciler(t *testing.T, source business.SolutionHostBindingSource) *business.SolutionHostBindingReconciler {
 	t.Helper()
+	isolateBindingFixture(t)
 	reconciler, err := business.NewSolutionHostBindingReconciler(testService,
 		business.SolutionHostBindingReconcilerConfig{
 			Source:     source,
@@ -945,6 +992,7 @@ func testReconcilerAcceptingDomains(
 	t *testing.T, source business.SolutionHostBindingSource, domains ...string,
 ) *business.SolutionHostBindingReconciler {
 	t.Helper()
+	isolateBindingFixture(t)
 	reconciler, err := business.NewSolutionHostBindingReconciler(testService,
 		business.SolutionHostBindingReconcilerConfig{
 			Source: source,

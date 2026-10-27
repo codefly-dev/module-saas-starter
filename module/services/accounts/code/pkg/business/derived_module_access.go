@@ -55,7 +55,7 @@ import (
 // # How it is revoked, with its cause
 //
 // RevokeInstallationFromTeam revokes every derived grant of the grant it is
-// removing, in the same policy-logged narrowing, before the cause goes.
+// removing, in the same narrowing transaction, before the cause goes.
 // UninstallSolution revokes every derived grant whose cause is a grant at that
 // installation's authority root. Both go through revokeScopeApply, so each
 // carries the same scope.revoked event and audit record as any other
@@ -400,10 +400,9 @@ func declaredLabels(resources, actions []string) []string {
 // revokeScopeApply the cause's own revocation runs, so each carries the scope
 // revocation's event and audit record instead of disappearing silently.
 //
-// Runs inside the caller's policy-logged narrowing: the derived rows and the
-// cause go in one transaction, witnessed by one entry. A revocation that
-// witnessed the cause and lost the derived rows to a later failure is not a
-// state this can reach.
+// Runs inside the caller's narrowing: the derived rows and the cause go in one
+// transaction. A revocation that removed the cause and lost the derived rows to
+// a later failure is not a state this can reach.
 func (s *Service) revokeDerivedGrantsTx(ctx context.Context, actorID, orgID, causeGrantID, causeScopeNodeID string) error {
 	derived, err := s.installationStore().DerivedScopeGrants(ctx, orgID, causeGrantID, causeScopeNodeID)
 	if err != nil {

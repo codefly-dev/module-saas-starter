@@ -15,6 +15,10 @@ export {
 } from "./datasources/collection-access.js";
 export { ConnectGitHubForm } from "./datasources/connect-github-form.js";
 export {
+	ConnectObjectStorageForm,
+	objectStorageInputFrom,
+} from "./datasources/connect-object-storage-form.js";
+export {
 	DatasourcesPanel,
 	type DatasourcesPanelProps,
 } from "./datasources/datasources-panel.js";
@@ -57,6 +61,7 @@ export {
 export {
 	useAccessibleScopes,
 	useAddGitHubSource,
+	useAddObjectStorageSource,
 	useDeleteSource,
 	useListSources,
 	useReconcileSource,
@@ -76,7 +81,9 @@ export {
 } from "./datasources/reconcile-passes.js";
 export {
 	type ConnectGitHubValues,
+	type ConnectObjectStorageValues,
 	connectGitHubSchema,
+	connectObjectStorageSchema,
 	type EditSourceValues,
 	editSourceSchema,
 } from "./datasources/schema.js";
@@ -116,6 +123,11 @@ export type {
 	CollectionGrantSubject,
 	CollectionGrantView,
 	ConnectGitHubInput,
+	ConnectObjectStorageInput,
+	ConnectSourceInput,
+	DatasourceConnectField,
+	DatasourceCredential,
+	DatasourceProviderView,
 	ConnectPersonalApiInput,
 	DatasourceClient,
 	DatasourceDirectoryView,

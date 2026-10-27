@@ -34,13 +34,12 @@ func TestInstalledContentReadModeIsExplicitAndRestricted(t *testing.T) {
 	}
 	manifest := &solutionhost.ModuleManifest{Binding: "host.local.reader", Alias: "reader", Generation: 2, Authority: &solutionhost.Authority{Principal: "reader", Bindings: []solutionhost.AuthorityBinding{{ID: "evidence", Audience: "documents", Operations: map[string][]string{"invoke": {"documents:read"}}}}}}
 	held := ModuleEnvelopePrincipal{Grant: ModulePrincipalGrant{Tenant: "00000000-0000-7000-8000-0000000000a1", OperationAudiences: map[string]ModuleOperationAudience{"evidence": valid}}}
-	for _, mode := range []ModuleAuthorityEnforcement{ModuleAuthorityEnforce, ModuleAuthorityWarn} {
-		grant, omitted, err := deriveUnderEnforcement(mode, "reader", held, true, manifest, []ModuleWorkload{testWorkload}, nil)
-		require.NoError(t, err)
-		require.Empty(t, omitted)
-		require.Equal(t, DelegationModeContentRead, grant.OperationAudiences["evidence"].DelegationMode)
-		require.Empty(t, grant.OperationAudiences["evidence"].SourceDelegationScopes)
-	}
+	grant, omitted, err := deriveModulePrincipalGrant("reader", held, manifest, []ModuleWorkload{testWorkload})
+	require.NoError(t, err)
+	require.Empty(t, omitted)
+	require.Equal(t, DelegationModeContentRead, grant.OperationAudiences["evidence"].DelegationMode)
+	require.Empty(t, grant.OperationAudiences["evidence"].SourceDelegationScopes)
+
 }
 
 func TestInstalledModuleActorModeShape(t *testing.T) {

@@ -213,8 +213,8 @@ Four distinctions the projections keep:
   and a grant never lands on an installation already uninstalled. The
   write is `GrantScope`'s own body, so it emits the same `scope.granted` event
   and audit record. `RevokeInstallationFromTeam`
-  is `RevokeScope` after the same resolution: a narrowing under the policy log,
-  refused in the host's words when the log cannot witness it.
+  is `RevokeScope` after the same resolution: a narrowing, applied directly
+  with its audit record in one transaction.
   `ListOrganizationInstallations` is the administrator's read of the same state —
   each active installation with its health, installed target, authority-root path
   and the teams granted there or inherited from above. It is org-admin and bound to
@@ -446,15 +446,38 @@ manifest for the binding under another domain is refused (403) even while no
 applied manifest remains, at receipt and by the pass. `SOLUTION_HOST_OWNERSHIP_DOMAINS` bounds the domains any pin
 may grant: a pin naming another refuses the boot by name.
 
-### Module authority: the manifest asks, the envelope grants
+### Module authority: the manifest asks, an envelope narrows, an installation consents
 
 The module registry every capability decision reads is derived each pass from
-the applied, live manifests whose stored carrier still verifies and the
-administrator's module envelope. A manifest's `authority.principal` is the
-module's principal; its entry is the envelope's grant for that principal
-intersected with what the manifest asks for — queues, namespaces, resource kinds,
-and per operation binding the `invoke`, `lookup` and `headless` scopes — never
-more than either. A binding the envelope does not allow, or allows on another
+the applied, live manifests whose stored carrier still verifies and, where one
+is written, the administrator's module envelope. A manifest's
+`authority.principal` is the module's principal. With an envelope, its entry is
+the envelope's grant for that principal intersected with what the manifest asks
+for — queues, namespaces, resource kinds, and per operation binding the
+`invoke`, `lookup` and `headless` scopes — never more than either. With no
+envelope, the verified signed manifest is the ceiling on its own.
+
+**What an organisation holds is bounded by what it consented to.** An
+installation made with no explicit scope records the consented snapshot of the
+ceiling it was installed under, and a later ceiling can only narrow it. A
+module installation follows its grant as it moves only while an envelope sets
+that grant — a ceiling a platform administrator, or the composition's signed
+envelope, approved for every organisation. With no envelope, a later manifest
+generation that **widens** the ceiling reaches no organisation that installed
+an earlier one. An organization owner or admin explicitly approves the current
+ceiling by calling `host.installation.v1.InstallationService/Install` again with
+the same target and role, or `saas.accounts.v1.InstallationService/InstallSolution`
+with the target ID. A module re-install records a fresh snapshot, retains the
+installation ID, ownership and standing grants, and advances its revision when
+consent changes. A non-admin cannot re-consent, even by naming an admin owner.
+A fresh installation consents to the current generation. Fixture-declared
+installations use this same path: the host's setup is consent at creation and,
+when reseeded, re-consents its own existing module installations. A
+narrowing reaches every installation at once. An installation that already
+follows its grant (recorded under an envelope, or before the signed manifest
+became the ceiling) holds **nothing** on a host with no envelope — its
+capabilities answer `FAILED_PRECONDITION` with reason
+`INSTALLATION_CONSENT_REQUIRED` — until its administrator installs again. A binding the envelope does not allow, or allows on another
 audience, is omitted by name. Two manifests asking for one principal, or two
 principals sharing a workload, are omitted. The envelope document is
 `{"revision": N, "principals": {"<principal>": {"grant": {…}}}}`; it names no
@@ -465,9 +488,10 @@ workload and approves no build.
 The envelope is written two ways, through one writer: interactively by a
 platform super_admin (`PlatformAdminService/PutModuleEnvelope`, fresh MFA), or
 **delivered** from the composition, which declares each environment's envelope
-and signs it at publish with the cell's release key. Without a delivered
-envelope a hosted cell applies every module's signed manifest and grants none
-of them.
+and signs it at publish with the cell's release key. Without an envelope a
+host grants each module what its verified signed manifest asks for, and each
+organisation holds what it consented to at installation (above): a later
+generation's widening waits for that organisation's administrator.
 
 `POST /platform/_delivery/envelope` takes one carrier of core's
 `codefly/module-envelope/v1` (`{document, envelope}`, the same carrier shape,
@@ -499,9 +523,8 @@ of them.
    or below a revision a platform administrator wrote interactively it is
    refused (409) naming that revision, and the composition must state the change
    and deliver above it. Revisions need not be contiguous.
-6. **Write** it through the writer the interactive path uses: a narrowing is
-   witnessed in the policy log (refused, writing nothing, on a host with none),
-   installations the new ceiling no longer allows are revoked, the row and its
+6. **Write** it through the writer the interactive path uses: a narrowing applies
+   directly, installations the new ceiling no longer allows are revoked, the row and its
    `saas.platform.module_envelope_delivered` audit event (actor `system`;
    revision, previous revision, principals, signer, ownership domain, digest)
    commit together, and a registry pass is requested.
@@ -522,9 +545,10 @@ host with no verifier at all still reads it.
 
 A platform super_admin reads and writes it at `/admin/platform/module-authority`:
 the current revision, who wrote it and when, and every principal the applied
-manifests ask for that it does not allow. With no envelope every module is
-denied, and each reconcile pass says so by name in the accounts log
-(`ErrModuleEnvelopeMissing`).
+manifests ask for that it does not allow. With no envelope, applied signed
+manifests supply the ceiling directly, and installations hold their consented
+snapshot of it. An existing envelope narrows that ceiling;
+a failed read never removes its restrictions.
 
 ### Configuration
 

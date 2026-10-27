@@ -16,14 +16,21 @@ export function useInstallSolution(orgId: string) {
 	return useMutation({
 		mutationFn: ({
 			targetId,
+			generation,
+			expectedRevision,
+			operationId,
 			values,
 		}: {
 			targetId: string;
+			generation: bigint;
+			expectedRevision: bigint;
+			operationId: string;
 			values: InstallSolutionValues;
 		}) =>
 			service.installSolution({
 				orgId,
 				targetId,
+				approval: { targetId, generation, expectedRevision, operationId },
 				agentIdentifier: values.agentIdentifier.trim(),
 				displayName: values.displayName.trim(),
 				rootScopeLabel: values.rootScopeLabel.trim(),
@@ -36,10 +43,8 @@ export function useInstallSolution(orgId: string) {
 }
 
 /**
- * Uninstalls one installation. The host may refuse — today it refuses every
- * uninstall, because the policy log that must witness a narrowing has no
- * transport — and the caller shows that refusal; nothing here turns it into a
- * success.
+ * Uninstalls one installation. The host may refuse, and the caller shows that
+ * refusal; nothing here turns it into a success.
  */
 export function useUninstallSolution(orgId: string) {
 	const service = useInstallationService();
@@ -88,9 +93,8 @@ export function useGrantInstallationToTeam(orgId: string) {
 }
 
 /**
- * Removes one team's grant at an installation. A narrowing the host may refuse —
- * it does when its policy log cannot witness the change — and the caller shows
- * that refusal as the host words it.
+ * Removes one team's grant at an installation. The host may refuse it, and the
+ * caller shows that refusal as the host words it.
  */
 export function useRevokeInstallationFromTeam(orgId: string) {
 	const service = useInstallationService();

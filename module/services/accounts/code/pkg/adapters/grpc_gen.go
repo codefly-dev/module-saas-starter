@@ -174,13 +174,15 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 	// level limiter, same key derivation (rateLimitKey reads the
 	// wool context after authIc has stamped it).
 	rateIc := grpcRateLimitInterceptor()
-	opts = append(opts, grpc.ChainUnaryInterceptor(authIc, rateIc))
+	// The refusal interceptor is outermost so the auth and rate-limit refusals
+	// are translated and logged like every handler's.
+	opts = append(opts, grpc.ChainUnaryInterceptor(grpcRefusalInterceptor(), authIc, rateIc))
 	opts = append(opts, grpc.ChainStreamInterceptor(streamAuthIc))
 
 	grpcServer := grpc.NewServer(opts...)
 	internalOpts := append([]grpc.ServerOption{}, wooltel.GRPCServerOptions()...)
 	internalOpts = append(internalOpts,
-		grpc.ChainUnaryInterceptor(grpcAuthInterceptor(getMinter, rpcExposureInternal)),
+		grpc.ChainUnaryInterceptor(grpcRefusalInterceptor(), grpcAuthInterceptor(getMinter, rpcExposureInternal)),
 		grpc.ChainStreamInterceptor(grpcStreamAuthInterceptor(getMinter, rpcExposureInternal)),
 	)
 	internalServer := grpc.NewServer(internalOpts...)
@@ -191,7 +193,7 @@ func NewGrpServer(c *Configuration, opts ...grpc.ServerOption) (*GrpcServer, err
 	// on the private REST listener the full internal tier is multiplexed on.
 	authorityOpts := append([]grpc.ServerOption{}, wooltel.GRPCServerOptions()...)
 	authorityOpts = append(authorityOpts,
-		grpc.ChainUnaryInterceptor(grpcAuthInterceptor(getMinter, rpcExposureModule)),
+		grpc.ChainUnaryInterceptor(grpcRefusalInterceptor(), grpcAuthInterceptor(getMinter, rpcExposureModule)),
 		grpc.ChainStreamInterceptor(grpcStreamAuthInterceptor(getMinter, rpcExposureModule)),
 	)
 	authorityServer := grpc.NewServer(authorityOpts...)

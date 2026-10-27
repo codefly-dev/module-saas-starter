@@ -7,12 +7,18 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261027132425-c3568f113db1
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261027132425-c3568f113db1
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261027132425-c3568f113db1
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261027132425-c3568f113db1
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261027132425-c3568f113db1
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
-	github.com/codefly-dev/core v0.19.6-0.20261018171306-0a8d16c5e32d
+	github.com/codefly-dev/core v0.19.7-0.20261026092055-b23dc13543b2
 	github.com/codefly-dev/interface-cache/go/cache v0.4.1
-	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261018173826-0d423cb8bd17
+	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
 	github.com/codefly-dev/sdk-go v0.4.1
 	github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458
+	github.com/codefly-dev/service-object-storage v0.0.19
 	github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211
 	github.com/codefly-dev/service-redis/cache v0.3.0
 	github.com/codefly-dev/service-vault/keyservice v0.0.0-20261023210413-a6c7256bfae7
@@ -20,7 +26,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/rs/cors v1.11.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -37,8 +43,8 @@ require (
 	golang.org/x/net v0.60.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.49.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc
+	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
@@ -63,6 +69,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cheggaaa/pb/v3 v3.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/codefly-dev/authority/libraries/hop/go v0.0.0-20261027063450-22b86ccbf2a5 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect

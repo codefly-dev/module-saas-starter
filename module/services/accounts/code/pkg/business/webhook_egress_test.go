@@ -65,3 +65,42 @@ func TestWebhookEndpointPolicyAdmitsPublicAddresses(t *testing.T) {
 		})
 	}
 }
+
+// The webhook policy — registration and every delivery, and the Slack notifier
+// that shares its client — applies the egress rule's mesh admission: a declared
+// host a meshed cell resolves into its mesh egress range is registered and
+// dialed as that address, and every case around it is refused before dialing
+// (egresstest.MeshCases). Not parallel: the mesh egress configuration is
+// process-wide.
+func TestWebhookEndpointPolicyAppliesTheMeshEgressRule(t *testing.T) {
+	for _, c := range egresstest.MeshCases {
+		t.Run(c.Name, func(t *testing.T) {
+			c.Install(t)
+			dialed := ""
+			policy := &WebhookEndpointPolicy{
+				resolver: c.Resolver(),
+				dial: func(_ context.Context, _, address string) (net.Conn, error) {
+					dialed = address
+					return nil, errWebhookDialStopped
+				},
+			}
+			_, registerErr := policy.NormalizeAndValidate(t.Context(), "https://"+c.Requested()+"/hook")
+			_, dialErr := policy.dialContext(t.Context(), "tcp", c.Requested())
+			if c.Admitted {
+				if registerErr != nil {
+					t.Fatalf("registration refused: %v", registerErr)
+				}
+				if !errors.Is(dialErr, errWebhookDialStopped) || dialed != c.Dialed() {
+					t.Fatalf("delivery: err = %v, dialed %q; want %q dialed", dialErr, dialed, c.Dialed())
+				}
+				return
+			}
+			if registerErr == nil {
+				t.Fatal("registration admitted")
+			}
+			if dialErr == nil || errors.Is(dialErr, errWebhookDialStopped) || dialed != "" {
+				t.Fatalf("delivery: err = %v, dialed %q; want refused before dialing", dialErr, dialed)
+			}
+		})
+	}
+}

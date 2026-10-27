@@ -18,7 +18,7 @@ import (
 
 // A delivered module envelope, end to end through the business layer with
 // in-memory stores and real signatures: verification, the carrier, the host's
-// rules, admission, the shared writer, the witness and the audit record.
+// rules, admission, the shared writer and the audit record.
 
 const (
 	testHostModule      = "saas"
@@ -32,7 +32,14 @@ type envelopeTx struct{}
 
 type envelopeTxStore struct {
 	Store
-	next int
+	next    int
+	applied []*SolutionHostBindingRecord
+}
+
+// ListSolutionHostBindings is the applied manifests a first envelope is
+// classified against.
+func (s *envelopeTxStore) ListSolutionHostBindings(context.Context) ([]*SolutionHostBindingRecord, error) {
+	return s.applied, nil
 }
 
 func (s *envelopeTxStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
@@ -361,30 +368,40 @@ func TestEnvelopeDeliveryFailsClosedUntilFullyWired(t *testing.T) {
 	require.Empty(t, h.store.records)
 }
 
-// A delivered narrowing goes through the witness exactly as an interactive one:
-// refused with nothing written where no policy log is wired, appended to the
-// log under the delivery's actor where one is.
-func TestADeliveredNarrowingIsWitnessedLikeAnInteractiveOne(t *testing.T) {
+// A delivered narrowing applies directly, exactly as an interactive one: the
+// shared writer appends the narrower revision with no witness asked first.
+func TestADeliveredNarrowingAppliesDirectly(t *testing.T) {
 	h := newEnvelopeDeliveryHarness(t, fixtureSigner(t))
 	_, err := h.deliver(t, signedEnvelope(t, testDeliveredEnvelope(t, 1, testDeliveryDomain, deliveredGrant(t, nil)), testDeliveryKey))
 	require.NoError(t, err, "a first envelope narrows nothing")
 
 	narrower := signedEnvelope(t, testDeliveredEnvelope(t, 2, testDeliveryDomain,
 		deliveredGrant(t, func(g map[string]any) { g["queues"] = []any{"reports.render"} })), testDeliveryKey)
-	_, err = h.deliver(t, narrower)
-	require.ErrorIs(t, err, ErrPolicyLogUnreachable)
-	require.Len(t, h.store.records, 1, "an unwitnessed narrowing writes nothing")
-
-	log := newFakePolicyLog()
-	h.service.SetPolicyLog(log, newFakePolicyLogStore())
 	receipt, err := h.deliver(t, narrower)
 	require.NoError(t, err)
 	require.Equal(t, SolutionDeliveryAccepted, receipt.Disposition)
 	require.Len(t, h.store.records, 2)
-	require.Len(t, log.appends, 1)
-	require.Equal(t, moduleEnvelopeDeliveryActor, log.appends[0].Actor)
-	require.Equal(t, uint64(2), log.appends[0].EnvelopeRevision)
 	require.True(t, bytes.Contains(h.store.records[1].Document, []byte(`"revision":2`)))
+}
+
+// With no envelope the manifests are the ceiling, so a first envelope over an
+// applied manifest that asks for authority takes authority away, and it
+// applies directly like any narrowing.
+func TestAFirstEnvelopeOverGrantedManifestsAppliesDirectly(t *testing.T) {
+	h := newEnvelopeDeliveryHarness(t, fixtureSigner(t))
+	manifest := testManifest(t, map[string][]string{"invoke": {"profiles:read"}})
+	document, err := solutionhost.Marshal(manifest)
+	require.NoError(t, err)
+	h.service.store.(*envelopeTxStore).applied = []*SolutionHostBindingRecord{{
+		BindingID: manifest.Binding,
+		Applied: &SolutionHostBindingApplied{SolutionHostBindingGeneration: SolutionHostBindingGeneration{
+			Generation: manifest.Generation, Document: string(document),
+		}},
+	}}
+	first := signedEnvelope(t, testDeliveredEnvelope(t, 1, testDeliveryDomain, deliveredGrant(t, nil)), testDeliveryKey)
+	_, err = h.deliver(t, first)
+	require.NoError(t, err)
+	require.Len(t, h.store.records, 1)
 }
 
 // UNPINNING THE KEY WITHDRAWS THE CEILING IT STATED.

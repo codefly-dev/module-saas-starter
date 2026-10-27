@@ -41,8 +41,7 @@ func (s *PostgresStore) WorkContextHeldInstallation(
 			   -- what lets the step be delivered at all. A failed or
 			   -- revoked installation is held by nobody.
 			   AND i.status IN ('active', 'pending')
-			   AND EXISTS (SELECT 1 FROM public.organization_members m
-			                WHERE m.org_id = i.org_id AND m.user_id::text = $2)`,
+			   AND `+standsInOrganization,
 			orgID, principalID, installationID,
 		).Scan(&revision)
 	})
@@ -84,9 +83,8 @@ func (s *PostgresStore) WorkContextOwnerRevision(ctx context.Context, orgID, own
 			  FROM public.organization_authorization_revisions o
 			  JOIN public.principal_authorization_revisions p
 			    ON p.org_id = o.org_id AND p.principal_id::text = $2
-			  JOIN public.organization_members m
-			    ON m.org_id = o.org_id AND m.user_id::text = $2
-			 WHERE o.org_id = $1::uuid`,
+			 WHERE o.org_id = $1::uuid
+			   AND `+standsInOrganization,
 			orgID, ownerID,
 		).Scan(&revision)
 	})
@@ -126,3 +124,40 @@ func (s *PostgresStore) WorkContextSolutionInstallation(ctx context.Context, org
 }
 
 var _ business.WorkContextSealStore = (*PostgresStore)(nil)
+
+// WorkContextOrgStanding answers, on the control-plane snapshot the other seal
+// reads use, whether a principal stands in the organisation (standsInOrganization):
+// the question a composed module's installation asks, since whoever stands in
+// the organisation holds every one of them.
+func (s *PostgresStore) WorkContextOrgStanding(ctx context.Context, orgID, principalID string) (bool, error) {
+	var stands bool
+	err := s.sealRead(ctx, func(ctx context.Context, q QueryExecutor) error {
+		return q.QueryRow(ctx, `SELECT `+standsInOrganization, orgID, principalID).Scan(&stands)
+	})
+	if err != nil {
+		return false, fmt.Errorf("read standing: %w", err)
+	}
+	return stands, nil
+}
+
+// standsInOrganization is whether principal $2 stands in organisation $1, which
+// is what holding the organisation's installations and carrying its
+// authorization revision require. A person stands as a member. An
+// installation's agent stands while its installation does: the installation
+// is active, the agent is neither revoked nor disabled, and one of the
+// installation's owner and co-owners is still an organisation admin, the same
+// conditions the headless mint resolves (resolveInstallationAuthority). That
+// is what lets an installation acting for itself own its capability as its
+// agent, and what revokes the capability when any of them stops holding.
+const standsInOrganization = `(
+	EXISTS (SELECT 1 FROM public.organization_members m
+	         WHERE m.org_id = $1::uuid AND m.user_id::text = $2)
+	OR EXISTS (
+		SELECT 1
+		  FROM public.installations a
+		  JOIN public.principals p ON p.id = a.agent_principal_id AND p.org_id = a.org_id
+		 WHERE a.org_id = $1::uuid AND a.agent_principal_id::text = $2 AND a.status = 'active'
+		   AND p.kind = 'agent' AND p.revoked_at IS NULL AND p.disabled_at IS NULL
+		   AND EXISTS (SELECT 1 FROM public.organization_members owner
+		                WHERE owner.org_id = a.org_id AND owner.role IN ('owner', 'admin')
+		                  AND owner.user_id = ANY (a.owner_principal_id || a.co_owner_principal_ids))))`

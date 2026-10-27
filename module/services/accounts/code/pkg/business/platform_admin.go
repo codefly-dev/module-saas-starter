@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -22,6 +23,14 @@ var platformRoleLevel = map[string]int{
 	"support":     1,
 }
 
+// The platform-administration refusals a person can act on. Each sentence is
+// what the caller reads, so it names the rule and never the call path.
+var (
+	ErrPlatformRoleRequired               = errors.New("this action needs a higher platform role")
+	ErrImpersonationJustificationRequired = errors.New("impersonation requires a justification")
+	ErrImpersonationTargetInactive        = errors.New("the target user is not active; only an active user can be impersonated")
+)
+
 // PlatformRoleRank returns the privilege level of a platform role, higher being
 // more privileged; an unknown or empty role ranks 0. Handler-layer gates share
 // this ordering so the two authorization layers cannot drift.
@@ -36,17 +45,17 @@ func PlatformRoleRank(role string) int {
 // impersonation, since ImpersonateUser sits behind this gate.
 func (s *Service) requirePlatformRole(ctx context.Context, actorID, minRole string) error {
 	if auth.ImpersonatedRequest(ctx) {
-		return fmt.Errorf("platform authority is unavailable to an impersonated session")
+		return fmt.Errorf("%w: platform authority is unavailable to an impersonated session", ErrPlatformRoleRequired)
 	}
 	role, err := s.store.GetPlatformRole(ctx, actorID)
 	if err != nil {
 		return err
 	}
 	if role == "" {
-		return fmt.Errorf("not a platform admin")
+		return fmt.Errorf("%w: not a platform admin", ErrPlatformRoleRequired)
 	}
 	if PlatformRoleRank(role) < PlatformRoleRank(minRole) {
-		return fmt.Errorf("insufficient platform role: have %s, need %s", role, minRole)
+		return fmt.Errorf("%w: have %s, need %s", ErrPlatformRoleRequired, role, minRole)
 	}
 	return nil
 }
@@ -179,7 +188,7 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 	// customer, and wool masks field keys, never their values.
 	reason := strings.TrimSpace(req.Reason)
 	if len([]rune(reason)) < ImpersonationReasonMinRunes {
-		return nil, w.NewError("impersonation requires a justification")
+		return nil, ErrImpersonationJustificationRequired
 	}
 
 	// Cross-tenant lookups: a platform admin impersonating any user needs to see
@@ -204,7 +213,7 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		return nil, w.Wrapf(err, "cannot resolve target user")
 	}
 	if target.GetStatus() != gen.UserStatus_USER_STATUS_ACTIVE {
-		return nil, w.NewError("target user is not active")
+		return nil, ErrImpersonationTargetInactive
 	}
 
 	// The target's organizations come back ordered by name, so a target in
@@ -506,14 +515,12 @@ func (s *Service) RevokePlatformRole(ctx context.Context, actorID string, req *g
 		return w.Wrapf(err, "permission denied")
 	}
 
-	if err := s.WithPolicyLoggedNarrowing(ctx,
-		revokePlatformRolePolicyLogEntry(actorID, req.UserId),
-		func(ctx context.Context) error {
-			if err := s.store.RevokePlatformRole(ctx, req.UserId); err != nil {
-				return err
-			}
-			return s.emitTx(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
-		}); err != nil {
+	if err := s.narrow(ctx, func(ctx context.Context) error {
+		if err := s.store.RevokePlatformRole(ctx, req.UserId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
+	}); err != nil {
 		return w.Wrapf(err, "cannot revoke platform role")
 	}
 	return nil

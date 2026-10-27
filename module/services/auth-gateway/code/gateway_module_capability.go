@@ -38,6 +38,11 @@ package main
 // browser session, whose session id is its own, and never by anyone else. The
 // owner is therefore not compared here, which keeps this hop to what core's
 // Inspector exposes: a hop routes, it never reads the principal it would act as.
+//
+// This pairing is the BEARER path's rule only. The route's bearer-less arm
+// (gateway_workload_operation.go) has no bearer to pair a capability with: it
+// pairs nothing, reads no principal, and decides by the capability's seal against
+// the target's installation in the signed tenant.
 
 import (
 	"context"

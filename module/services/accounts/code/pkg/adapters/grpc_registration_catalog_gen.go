@@ -5,6 +5,8 @@ package adapters
 import (
 	"google.golang.org/grpc"
 
+	host_authority_v1 "accounts/pkg/gen/host/authority/v1"
+	host_composition_v1 "accounts/pkg/gen/host/composition/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -12,6 +14,8 @@ import (
 // native gRPC implementation. Connect-native business handlers are served by
 // the catalog-complete Connect listener and are intentionally omitted here.
 func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcServer) {
+	host_authority_v1.RegisterAuthorityServiceServer(registrar, HostAuthoritySingleton())
+	host_composition_v1.RegisterCompositionServiceServer(registrar, HostCompositionSingleton())
 	gen.RegisterAPIKeyServiceServer(registrar, server.APIKey)
 	gen.RegisterAccessibleScopeServiceServer(registrar, AccessibleScopeSingleton())
 	gen.RegisterApprovalReviewServiceServer(registrar, ApprovalReviewSingleton())
@@ -39,6 +43,8 @@ func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcSe
 }
 
 var catalogGRPCServiceNames = []string{
+	"host.authority.v1.AuthorityService",
+	"host.composition.v1.CompositionService",
 	"saas.accounts.v1.APIKeyService",
 	"saas.accounts.v1.AccessibleScopeService",
 	"saas.accounts.v1.ApprovalReviewService",
@@ -66,6 +72,9 @@ var catalogGRPCServiceNames = []string{
 }
 
 var catalogConnectOnlyServiceNames = []string{
+	"host.artifact.v1.ArtifactService",
+	"host.installation.v1.InstallationService",
+	"host.session.v1.SessionService",
 	"saas.accounts.v1.BillingService",
 	"saas.accounts.v1.ConsentService",
 	"saas.accounts.v1.DashboardService",

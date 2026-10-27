@@ -62,6 +62,14 @@ type Gateway struct {
 	// solution a viewer is currently using.
 	solutionEntitlements solutionEntitlementClient
 	workContext          *workContextVerifier
+	// workloadAdmission asks accounts whether a capability on the bearer-less
+	// module arm is a module operation context. Set after construction; nil
+	// answers 503 there and never admits.
+	workloadAdmission workloadAdmissionClient
+	// requireWorkloadPresenter makes the bearer-less arm require the waypoint
+	// presenter the workload listener authenticated. Set outside native
+	// development, where the listener already requires one.
+	requireWorkloadPresenter bool
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -513,6 +521,13 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		proxy.Transport = g.registeredTransport
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		if entry != nil && entry.staticUpstreamError {
+			// The dial detail stays in this log (SP-GW-13): a caller of a route
+			// that asks for it learns only that the upstream failed.
+			log.Printf("WARN: upstream error: service=%s err=%v", entry.Service, err)
+			httpError(w, http.StatusBadGateway, "upstream error")
+			return
+		}
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
 	proxy.ServeHTTP(w, r)
@@ -575,8 +590,14 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 //
 // For every other upstream path the host-wide session is still removed, and an upstream
 // that needs to act on the person's behalf there still needs a host-minted capability
-// bound to its own audience. **That remains unbuilt: see the audience-bound context
-// note in services/auth-gateway/AGENTS.md.**
+// bound to its own audience. **That remains unbuilt for a person: see the
+// audience-bound context note in services/auth-gateway/AGENTS.md.**
+//
+// A HEADLESS caller now gets exactly that capability. The declared module route's
+// bearer-less arm (gateway_workload_operation.go) forwards an operation context
+// accounts minted for the upstream's own audience, with no bearer, no cookie and
+// no identity header: the first path that meets SP-GW-07's positive half. The
+// person's path stays open.
 //
 // Catalog routes are untouched: accounts is the host's own API, where the session
 // is the credential.
@@ -896,6 +917,11 @@ const resourceConfinementHeader = "x-codefly-resource"
 // resourceConfinementHeader is, because ext_authz does not consult the
 // entitlement authority and an empty value here would be a claim this process
 // cannot make.
+//
+// A declared module route's bearer-less arm stamps NO value: a caller's is
+// stripped like any other, and the upstream verifies the operation context
+// itself. That arm admits on the caller's installation, which is not consent on
+// the target's side, so no header stating it could be read correctly here.
 const installationConfinementHeader = "x-codefly-installation-id"
 
 // solutionIdentityHeader and solutionPublisherHeader are the headers accounts

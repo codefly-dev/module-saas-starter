@@ -106,13 +106,55 @@ func TestCapabilityReReadsLiveAuthority(t *testing.T) {
 	require.Equal(t, []string{"a"}, got.Grant.Queues, "the declared ceiling still bounds it")
 }
 
-// An uninstalled solution's capability is refused, and the refusal is a VERDICT.
+// An uninstalled solution's capability is refused, and the refusal is a VERDICT
+// about the module's own context: Unauthenticated, so the module drops it.
 func TestCapabilityIsRefusedWhenTheInstallationIsInactive(t *testing.T) {
 	service := enforcingService(&fakeModuleAuthority{err: ErrModuleInstallationInactive}, nil)
 
 	_, err := service.AuthorizeModuleCapability(context.Background(), caller())
 	require.Error(t, err)
-	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+// A module context this host does not admit is the calling module's own
+// credential failing, never a revocation of anyone it acts for: each case is
+// Unauthenticated and names its reason, so the module drops its context and
+// mints a new one instead of reporting that a caller lost authority. A host
+// that cannot re-read live authority at all is Unavailable — retryable, and a
+// statement about nobody.
+func TestAModuleContextThisHostDoesNotAdmitIsUnauthenticated(t *testing.T) {
+	for name, tc := range map[string]struct {
+		authority ModuleAuthorityStore
+		caller    ModuleCaller
+		code      codes.Code
+		reason    string
+	}{
+		"a principal no composition registers": {liveAt(1, 1), ModuleCaller{PrincipalID: "stranger", BoundOrg: "org-1"},
+			codes.Unauthenticated, "is not a registered module principal"},
+		"a tenant the grant no longer names": {liveAt(1, 1), ModuleCaller{PrincipalID: "principal-1", BoundOrg: "org-2"},
+			codes.Unauthenticated, ErrModuleTenantNotCurrent.Error()},
+		"installed nowhere for the organization": {&fakeModuleAuthority{err: ErrModuleInstallationInactive}, caller(),
+			codes.Unauthenticated, ErrModuleInstallationInactive.Error()},
+		"no live installation answered": {&fakeModuleAuthority{live: &LiveModuleAuthority{}}, caller(),
+			codes.Unauthenticated, ErrModuleInstallationInactive.Error()},
+		"an installation of another registry binding": {&fakeModuleAuthority{live: &LiveModuleAuthority{
+			InstallationID: "install-1", RegistryBindingID: "another-binding", Scope: InstallationScope{Capabilities: true}}}, caller(),
+			codes.Unauthenticated, "different registry binding"},
+		"a host with no live read": {nil, caller(), codes.Unavailable, "cannot re-read live module authority"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			service := &Service{store: noopControlPlaneStore{}}
+			service.SetModulePrincipals(ModulePrincipalRegistry{
+				"principal-1": {Prefix: "crm", Tenant: "org-1", Queues: []string{"a"}},
+			})
+			if tc.authority != nil {
+				service.SetModuleAuthorityReads(tc.authority, nil)
+			}
+			_, err := service.AuthorizeModuleCapability(context.Background(), tc.caller)
+			require.Equal(t, tc.code, status.Code(err), "%v", err)
+			require.Contains(t, status.Convert(err).Message(), tc.reason)
+		})
+	}
 }
 
 // A host that CANNOT re-read answers Unavailable — neither a denial nor an
@@ -140,7 +182,7 @@ func TestCapabilityIsRefusedWithoutALiveReadWired(t *testing.T) {
 	})
 
 	_, err := service.AuthorizeModuleCapability(context.Background(), caller())
-	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.Equal(t, codes.Unavailable, status.Code(err))
 }
 
 // An unknown principal is refused WITHOUT a live read: the registry is the
@@ -152,7 +194,7 @@ func TestUnknownPrincipalIsRefusedBeforeTheLiveRead(t *testing.T) {
 
 	_, err := service.AuthorizeModuleCapability(context.Background(),
 		ModuleCaller{PrincipalID: "stranger", BoundOrg: "org-1"})
-	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
 	require.Zero(t, authority.calls, "an unknown principal must not cost a database round trip")
 }
 

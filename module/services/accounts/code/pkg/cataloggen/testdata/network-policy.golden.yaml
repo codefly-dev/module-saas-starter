@@ -175,6 +175,26 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: allow-object-storage-from-dependents
+  namespace: saas-starter
+spec:
+  podSelector:
+    matchLabels:
+      app: object-storage
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: accounts
+      ports:
+        - protocol: TCP
+          port: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-store-from-dependents
   namespace: saas-starter
 spec:
@@ -231,6 +251,13 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: object-storage
+      ports:
+        - protocol: TCP
+          port: 9090
     - to:
         - podSelector:
             matchLabels:
@@ -494,12 +521,12 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-policy-log-public-egress
+  name: allow-object-storage-public-egress
   namespace: saas-starter
 spec:
   podSelector:
     matchLabels:
-      app: policy-log
+      app: object-storage
   policyTypes:
     - Egress
   egress:

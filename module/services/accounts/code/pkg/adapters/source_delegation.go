@@ -85,7 +85,7 @@ func (s *ModuleCapabilitiesServer) MintSourceOperationContext(ctx context.Contex
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			return nil, status.Error(codes.FailedPrecondition, err.Error())
 		}
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	// Written once the capability exists, and withheld when it cannot be — or
 	// when the delegation was revoked while the capability was being signed.
@@ -297,9 +297,6 @@ func (h *datasourceConnectHandler) RevokeSourceDelegation(
 	}
 	delegation, err := h.svc.RevokeSourceDelegation(ctx, actorID, req.Msg.OrgId, req.Msg.Id)
 	if err != nil {
-		if errors.Is(err, business.ErrSourceDelegationNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, err)
-		}
 		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&gen.RevokeSourceDelegationResponse{Delegation: sourceDelegationToProto(delegation)}), nil

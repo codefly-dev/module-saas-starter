@@ -109,7 +109,7 @@ func runBusinessTests(m *testing.M) int {
 	setupDone := testdb.MeasureSetup("business-db", []string{"store", "vault"}, 10*time.Minute)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithExcludedDependencies("cache"),
+		sdk.WithExcludedDependencies("object-storage", "cache"),
 		// Keep this package-owned integration stack distinct from the outer
 		// service runtime and the other package TestMain stacks. The SDK gives
 		// each short-lived flow temporary host ports; the scope also isolates
@@ -147,13 +147,6 @@ func runBusinessTests(m *testing.M) int {
 		return 1
 	}
 	service.SetWebhookJobProducer(store)
-
-	// The policy log's two halves. Every narrowing — uninstall, solution-target
-	// close, scope-grant revocation, team-membership removal — now REFUSES on a
-	// host with no log, so a service without one could not exercise any of them.
-	// The local half is the real postgres store; only the external warehouse is a
-	// double (policy_log_production_path_test.go says why).
-	wirePolicyLogForTests(service, store)
 
 	// Wire optional components. The key service is bound exactly as work.go
 	// binds it, so these suites exercise the real stored envelope format rather
@@ -193,7 +186,7 @@ func runBusinessTests(m *testing.M) int {
 	defer auditEmitter.Close()
 	service.SetAuditEmitter(auditEmitter)
 
-	entitlementChecker := business.NewDefaultEntitlementChecker(store)
+	entitlementChecker := business.NewDefaultEntitlementChecker(store, business.PlansSold)
 	service.SetEntitlementChecker(entitlementChecker)
 
 	// The audit_events.event_type foreign key (migration 116) resolves against

@@ -1,6 +1,10 @@
 package adapters
 
 import (
+	"context"
+
+	"github.com/codefly-dev/core/wool"
+
 	"accounts/pkg/business"
 	"accounts/pkg/permissionsplugin"
 )
@@ -55,4 +59,11 @@ func configurePermissionServerKeys() {
 		Authority:  authority,
 		Seals:      seals,
 	})
+	// The host interfaces are decided by the shared authority core, which signs
+	// with the same Work Context key Keys publishes.
+	if service != nil {
+		if err := service.ConfigureAuthorityCore(context.Background(), plugin.WorkContextIssuer(), plugin.WorkContextKeyID(), plugin.Ed25519Key()); err != nil {
+			wool.Get(context.Background()).In("configurePermissionServerKeys").Warn("the authority core is not configured; every host interface call answers Unavailable", wool.ErrField(err))
+		}
+	}
 }

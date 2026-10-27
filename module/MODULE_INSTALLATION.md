@@ -504,8 +504,8 @@ that caused it. The derived role carries its provenance in `roles.derived_from`:
 the installation, the audience, and the chosen role.
 
 **How it is revoked, with its cause.** `RevokeInstallationFromTeam` revokes every
-derived grant of the grant it removes, first and in the same policy-logged
-narrowing. `UninstallSolution` revokes every derived grant whose cause is a grant
+derived grant of the grant it removes, first and in the same narrowing
+transaction. `UninstallSolution` revokes every derived grant whose cause is a grant
 at that installation's authority root. Both go through `revokeScopeApply`, so each
 carries the same `scope.revoked` event and audit record as any other revocation.
 `derived_from_grant_id` is `ON DELETE CASCADE`, which closes the paths that go
@@ -541,4 +541,7 @@ this replaces.
 applied declaration, which a later generation may move. It is reconciled on the
 NEXT grant or revoke of its cause: re-deriving replaces the role's permission set,
 and a module no longer reached stops being re-derived. Until then, an applied
-generation that narrows a declaration does not narrow the carried grants.
+generation that narrows a declaration does not narrow the carried grants. A
+re-derivation writes only what differs, so one that changes nothing leaves the
+authorization revision where it is; two re-derivations of one cause serialize on
+the role row, and the role ends at the declaration of the one that commits last.

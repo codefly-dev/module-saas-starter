@@ -38,6 +38,7 @@ import {
 	viewerAdministersOrganization,
 } from "../solution/viewer.js";
 import { CollectionGrants } from "./collection-access.js";
+import { ConnectSource, useDatasourceCatalog } from "./connect-source.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { EditSourceForm } from "./edit-source-form.js";
 import { messageOf } from "./errors.js";
@@ -45,7 +46,6 @@ import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import { readAppSetupReturn, scrubAppSetupReturn } from "./github-app-setup.js";
 import {
 	useAccessibleScopes,
-	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
 	useReconcileSource,
@@ -326,14 +326,19 @@ function DatasourcesPanelView({
 						: collection.label === justConnected.label,
 				)
 			: undefined;
-	const addMutation = useAddGitHubSource(client);
+	const [connectPending, setConnectPending] = useState(false);
+	const [connectError, setConnectError] = useState<string>();
 	const reconcileMutation = useReconcileSource(client);
 	const deleteMutation = useDeleteSource(client);
 	const updateMutation = useUpdateSource(client);
 
-	const handleConnect = (values: ConnectGitHubValues) => {
-		addMutation.mutate(
-			{
+	const handleConnect = async (values: ConnectGitHubValues) => {
+		setConnectPending(true);
+		setConnectError(undefined);
+		try {
+			// The app-install return uses the existing exported form. Keep its
+			// credentials out of the mutation cache too.
+			await client.addGitHubSource({
 				orgId,
 				repo: values.repo,
 				paths: parsePaths(values.paths),
@@ -343,29 +348,30 @@ function DatasourcesPanelView({
 				branch: values.branch ?? "",
 				targetCollection: values.targetCollection,
 				boundaryNodeId: values.boundaryNodeId || undefined,
-				// Neither the App nor a public repository sends a token: the host
-				// resolves the installation, or confirms with GitHub that the
-				// repository is public. A public source takes no webhook either, so
-				// a secret typed on another path before switching is not sent.
 				accessToken:
 					values.method === "app" || values.method === "public"
 						? undefined
 						: values.accessToken,
 				webhookSecret:
 					values.method === "public" ? "" : (values.webhookSecret ?? ""),
-			},
-			{
-				onSuccess: () => {
-					setConnectedRepos((prev) => new Set(prev).add(values.repo));
-					setShowConnect(false);
-					setJustConnected({
-						repo: values.repo,
-						nodeId: values.boundaryNodeId || undefined,
-						label: values.targetCollection,
-					});
-				},
-			},
-		);
+			});
+			setConnectedRepos((prev) => new Set(prev).add(values.repo));
+			setShowConnect(false);
+			setJustConnected({
+				repo: values.repo,
+				nodeId: values.boundaryNodeId || undefined,
+				label: values.targetCollection,
+			});
+			void list.refetch();
+			if (client.listAccessibleScopes) void scopes.refetch();
+			if (client.listCollections) void collections.refetch();
+		} catch {
+			setConnectError(
+				"Could not connect the source. Check its fields and access, then enter the credential again to retry.",
+			);
+		} finally {
+			setConnectPending(false);
+		}
 	};
 
 	// Redeeming is the host's to refuse, so the panel does not ask on behalf of a
@@ -373,7 +379,16 @@ function DatasourcesPanelView({
 	// so an authority that only arrives after the first paint still redeems the
 	// return leg the page loaded with.
 	const appSetupClaimed = !!appSetupReturn && appSetupReturn.orgId === orgId;
-	const appSetupActive = appSetupClaimed && canManage;
+	const catalog = useDatasourceCatalog(client, orgId);
+	const appSetupAdmitted =
+		!catalog.isError &&
+		catalog.data?.some(
+			(provider) =>
+				provider.acceptsNewSources &&
+				!provider.unsupportedReason &&
+				provider.supportsOrganizationAppSetup,
+		);
+	const appSetupActive = appSetupClaimed && canManage && !!appSetupAdmitted;
 	// A return leg nobody on this screen can redeem. The capture and the scrub ran
 	// regardless of authority, so the installation stands on the provider's side
 	// while its single-use state is spent: saying nothing would leave an ordinary
@@ -596,16 +611,71 @@ function DatasourcesPanelView({
 					<div>
 						<h3 className="type-section-title">Sources</h3>
 						<p className="type-body text-muted-foreground">
-							Repositories this organization ingests from.
+							Sources this organization ingests from.
 						</p>
 					</div>
-					{canManage && (
-						<Button type="button" onClick={() => setShowConnect(true)}>
-							Connect GitHub
-						</Button>
-					)}
 				</div>
 
+				{canManage && (
+					<ConnectSource
+						key={orgId}
+						client={client}
+						orgId={orgId}
+						appSetup={
+							appSetupReturn &&
+							(showConnect ? (
+								<ConnectGitHubForm
+									// Both legs or neither: an install the panel cannot redeem on the
+									// way back strands the tenant on a completed GitHub install with
+									// nothing to show for it.
+									onBeginAppSetup={
+										beginAppSetup && completeAppSetup
+											? handleBeginAppSetup
+											: undefined
+									}
+									appRepositories={appRepositories}
+									appSetupPhase={appSetupPhase}
+									appSetupError={appSetupError}
+									collections={collections.isError ? [] : collections.data}
+									readableNodeIds={
+										scopes.isSuccess && !scopes.isError
+											? [...boundaries.keys()]
+											: undefined
+									}
+									collectionError={collections.isError}
+									onSubmit={handleConnect}
+									onCancel={() => setShowConnect(false)}
+									isPending={connectPending}
+									errorMessage={connectError}
+								/>
+							) : (
+								<Button onClick={() => setShowConnect(true)}>
+									Choose another repository
+								</Button>
+							))
+						}
+						onBeginAppSetup={
+							beginAppSetup && completeAppSetup
+								? handleBeginAppSetup
+								: undefined
+						}
+						onConnected={(boundary) => {
+							setJustConnected({
+								repo: "Source",
+								label: boundary.targetCollection,
+								nodeId: boundary.boundaryNodeId,
+							});
+							void list.refetch();
+							if (client.listCollections) void collections.refetch();
+							if (client.listAccessibleScopes) void scopes.refetch();
+						}}
+					/>
+				)}
+				{beginError && !showConnect && (
+					<p role="alert" className="type-body text-destructive">
+						{beginError}
+					</p>
+				)}
 				{scopes.isError ? (
 					<p role="alert" className="type-body text-destructive">
 						Couldn’t verify collection permissions. This does not mean there is
@@ -731,18 +801,9 @@ function DatasourcesPanelView({
 					<div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center">
 						<p className="type-emphasis">No data sources connected.</p>
 						{canManage ? (
-							<>
-								<p className="type-body text-muted-foreground">
-									Connect a GitHub repository to start ingesting.
-								</p>
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => setShowConnect(true)}
-								>
-									Connect a repository
-								</Button>
-							</>
+							<p className="type-body text-muted-foreground">
+								Choose a provider above to start ingesting.
+							</p>
 						) : (
 							<p className="type-body text-muted-foreground">
 								An organization administrator connects the repositories this
@@ -934,32 +995,6 @@ function DatasourcesPanelView({
 					isPending={updateMutation.isPending}
 					errorMessage={
 						updateMutation.isError ? messageOf(updateMutation.error) : undefined
-					}
-				/>
-			)}
-			{canManage && showConnect && (
-				<ConnectGitHubForm
-					// Both legs or neither: an install the panel cannot redeem on the
-					// way back strands the tenant on a completed GitHub install with
-					// nothing to show for it.
-					onBeginAppSetup={
-						beginAppSetup && completeAppSetup ? handleBeginAppSetup : undefined
-					}
-					appRepositories={appRepositories}
-					appSetupPhase={appSetupPhase}
-					appSetupError={appSetupError}
-					collections={collections.isError ? [] : collections.data}
-					readableNodeIds={
-						scopes.isSuccess && !scopes.isError
-							? [...boundaries.keys()]
-							: undefined
-					}
-					collectionError={collections.isError}
-					onSubmit={handleConnect}
-					onCancel={() => setShowConnect(false)}
-					isPending={addMutation.isPending}
-					errorMessage={
-						addMutation.isError ? messageOf(addMutation.error) : undefined
 					}
 				/>
 			)}

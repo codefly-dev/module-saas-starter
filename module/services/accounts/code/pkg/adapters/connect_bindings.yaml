@@ -168,3 +168,26 @@ services:
     handler: webhookConnectHandler
     source:
       kind: business
+  # The host interfaces (the authority interface repository), served as adapters; see host_interface.go.
+  host.authority.v1.AuthorityService:
+    handler: hostAuthorityConnectHandler
+    source:
+      kind: singleton
+      name: HostAuthoritySingleton
+  host.composition.v1.CompositionService:
+    handler: hostCompositionConnectHandler
+    source:
+      kind: singleton
+      name: HostCompositionSingleton
+  host.session.v1.SessionService:
+    handler: hostSessionConnectHandler
+    source:
+      kind: business
+  host.installation.v1.InstallationService:
+    handler: hostInstallationConnectHandler
+    source:
+      kind: business
+  host.artifact.v1.ArtifactService:
+    handler: hostArtifactConnectHandler
+    source:
+      kind: business

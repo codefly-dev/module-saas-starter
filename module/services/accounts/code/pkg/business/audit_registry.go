@@ -385,6 +385,18 @@ const (
 	EventInstallationRevoked              EventType = "saas.installation.revoked"
 	EventInstallationOwnershipTransferred EventType = "saas.installation.ownership_transferred"
 
+	// The authority core's changes (authority_core_audit.go), recorded at
+	// platform scope in the core's own transaction, the organization named in
+	// the payload: the core decides across organizations.
+	EventAuthorityInstallationRequested   EventType = "saas.authority.installation_requested"
+	EventAuthorityInstallationActivated   EventType = "saas.authority.installation_activated"
+	EventAuthorityInstallationUninstalled EventType = "saas.authority.installation_uninstalled"
+	EventAuthorityRoleGranted             EventType = "saas.authority.role_granted"
+	EventAuthorityRoleRevoked             EventType = "saas.authority.role_revoked"
+	EventAuthorityResourceAttached        EventType = "saas.authority.resource_attached"
+	EventAuthorityResourceDetached        EventType = "saas.authority.resource_detached"
+	EventAuthorityResourceTransferred     EventType = "saas.authority.resource_transferred"
+
 	EventWorkContextTaskStarted  EventType = "saas.work_context.task_started"
 	EventWorkContextRootSession  EventType = "saas.work_context.root_session_started"
 	EventWorkContextChildSession EventType = "saas.work_context.child_session_started"
@@ -421,6 +433,12 @@ const (
 	// release key. Its actor is the system: the signer, its ownership domain
 	// and the payload digest name who stated the ceiling.
 	EventModuleEnvelopeDelivered EventType = "saas.platform.module_envelope_delivered"
+	// EventHopAdmissionKeyPublished records that Keys began publishing a hop
+	// admission key, the key every module behind the hop trusts to have
+	// admitted a call. Its actor is the system: the hop proved itself by its
+	// workload credential, which the payload names. A renewal of a published
+	// key is not an event; a key published again after it lapsed is.
+	EventHopAdmissionKeyPublished EventType = "saas.platform.hop_admission_key_published"
 
 	EventBillingCheckoutStarted EventType = "saas.billing.checkout_started"
 	EventBillingPortalOpened    EventType = "saas.billing.portal_opened"
@@ -500,6 +518,10 @@ const (
 	EventSourceDelegationUsed    EventType = "saas.datasource.delegation.used"
 	EventSourceDelegationRevoked EventType = "saas.datasource.delegation.revoked"
 	EventFeatureFlagUpdated      EventType = "saas.feature_flag.updated"
+	// A person's delegation to a composed module (module_delegation.go): a
+	// standing grant the module issues from for them, and its end.
+	EventModuleDelegationGranted EventType = "saas.module_delegation.granted"
+	EventModuleDelegationRevoked EventType = "saas.module_delegation.revoked"
 
 	// Domain-event pub/sub (issue #493). A subscription is a standing grant of
 	// delivery, so its create and revoke are audited on the tenant spine; a
@@ -683,6 +705,14 @@ var auditEventCatalog = []AuditEventDefinition{
 		uid("owner_principal_id")),
 	mutation(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
 	mutation(EventRecordShareRevoked, CategoryAccess, "A record share was revoked.", uid("role_id"), uid("subject_id")),
+	mutation(EventAuthorityInstallationRequested, CategoryAccess, "An installation attempt was recorded pending, under the consent it was reviewed with.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationActivated, CategoryAccess, "An installation's install step converged and it became active.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationUninstalled, CategoryAccess, "An installation was uninstalled: its grants cleared and every capability sealed to it ended.", authorityChangeFields()...),
+	mutation(EventAuthorityRoleGranted, CategoryAccess, "A solution role was granted on an installation to a person or a team.", authorityChangeFields()...),
+	mutation(EventAuthorityRoleRevoked, CategoryAccess, "A solution role grant was revoked; its subject's capabilities through the installation ended.", authorityChangeFields()...),
+	mutation(EventAuthorityResourceAttached, CategoryAccess, "A resource created through an installation was attached to it by the kind's serving module.", authorityChangeFields()...),
+	mutation(EventAuthorityResourceDetached, CategoryAccess, "A deleted resource was released from the installation that owned it.", authorityChangeFields()...),
+	mutation(EventAuthorityResourceTransferred, CategoryAccess, "An existing resource joined an installed solution's principal, authorized by a person administering it.", authorityChangeFields()...),
 	mutation(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),
 	mutation(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
 	mutation(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),
@@ -710,6 +740,10 @@ var auditEventCatalog = []AuditEventDefinition{
 		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "principals", Kind: FieldInt, Required: true}),
+	mutation(EventHopAdmissionKeyPublished, CategorySecurity, "Keys began publishing a hop admission key, registered by the hop's attested workload.",
+		PayloadField{Name: "key_id", Kind: FieldString, Required: true},
+		PayloadField{Name: "workload", Kind: FieldString, Required: true},
+		PayloadField{Name: "expires_at", Kind: FieldString, Required: true}),
 	mutation(EventModuleEnvelopeDelivered, CategorySecurity, "A release-signed revision of the module envelope was delivered.",
 		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},
@@ -740,7 +774,7 @@ var auditEventCatalog = []AuditEventDefinition{
 
 	mutation(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name")),
 	mutation(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization."),
-	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization."),
+	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization.", uid("user_id")),
 	mutation(EventOrgMemberLeft, CategoryOrganization, "A member left an organization."),
 	mutation(EventOrgUpdated, CategoryOrganization, "An organization was renamed or its slug changed.", str("name"), str("slug")),
 	mutation(EventOrgDeleted, CategoryOrganization, "An organization was deleted: archived, its members removed and its credentials revoked.", str("slug")),
@@ -750,7 +784,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventTeamUpdated, CategoryOrganization, "A team was updated."),
 	mutation(EventTeamDeleted, CategoryOrganization, "A team was deleted."),
 	mutation(EventTeamMemberAdded, CategoryOrganization, "A member was added to a team."),
-	mutation(EventTeamMemberRemoved, CategoryOrganization, "A member was removed from a team."),
+	mutation(EventTeamMemberRemoved, CategoryOrganization, "A member was removed from a team.", uid("user_id")),
 	mutation(EventSSOSetupStarted, CategoryOrganization, "SSO configuration was started."),
 	mutation(EventSSODisabled, CategoryOrganization, "SSO was disabled for an organization."),
 	observation(EventOnboardingStepDone, CategoryOrganization, "An onboarding step was completed.", str("step")),
@@ -815,6 +849,10 @@ var auditEventCatalog = []AuditEventDefinition{
 		append(append(slices.Clone(sourceDelegationFields), str("audience"), strs("scopes"), boolean("lookup")), optionalFields(mintExecutionFields())...)...), 3),
 	mutation(EventSourceDelegationRevoked, CategoryAccess, "A source delegation was revoked.",
 		append(slices.Clone(sourceDelegationFields), enum("reason", SourceDelegationRevocationReasons...))...),
+	mutation(EventModuleDelegationGranted, CategoryAccess, "A person delegated to a composed module the right to act for them, within what they hold.",
+		moduleDelegationFields...),
+	mutation(EventModuleDelegationRevoked, CategoryAccess, "A delegation to a composed module was revoked, by its grantor or an administrator.",
+		append(slices.Clone(moduleDelegationFields), uid("revoked_by"))...),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
 	revised(mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.",
 		str("repo"), enum("credential_kind", "pat", "app", "public")), 2),
@@ -846,8 +884,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	// reads this declaration for. An edit never moves the boundary, but it is
 	// the collection whose contents the next snapshot replaces, so whoever may
 	// read that collection is exactly who needs to see it.
-	mutation(EventDatasourceSourceUpdated, CategorySystem, "A connected datasource's branch or path filters were changed.",
-		str("repo"), str("branch"), str("previous_branch"), strs("paths"), strs("file_extensions"), str("boundary")),
+	mutation(EventDatasourceSourceUpdated, CategorySystem, "A connected datasource's branch, path or key filters were changed.",
+		str("repo"), str("branch"), str("previous_branch"), strs("paths"), strs("file_extensions"), str("boundary"),
+		str("bucket"), str("prefix"), strs("include_patterns"), strs("exclude_patterns")),
 	observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...),
 	observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...),
 	observation(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",
@@ -1037,6 +1076,8 @@ var webhookAdminFields = []PayloadField{
 // e.g. a webhook delivery id) make a solution-owned write attributable (#473).
 // sourceDelegationFields is what every source delegation event names: which
 // delegation, of which source, by which person, to which module binding.
+var moduleDelegationFields = []PayloadField{uid("delegation_id"), uid("grantor_id"), str("module"), strs("scopes")}
+
 var sourceDelegationFields = []PayloadField{uid("delegation_id"), uid("source_id"), uid("principal_id"), str("module"), str("binding_id")}
 
 var sourceSyncFields = []PayloadField{str("solution"), str("job_id"), str("repo"), str("commit"), PayloadField{Name: "processed", Kind: FieldInt}, PayloadField{Name: "new_versions", Kind: FieldInt}, PayloadField{Name: "deleted", Kind: FieldInt}, PayloadField{Name: "failed", Kind: FieldInt}, str("reason"), str("code"), str("trigger"), PayloadField{Name: "attempt", Kind: FieldInt}, PayloadField{Name: "retryable", Kind: FieldBool}}
@@ -1336,4 +1377,13 @@ func (d AuditEventDefinition) payloadJSONSchema() map[string]any {
 		schema["required"] = required
 	}
 	return schema
+}
+
+// authorityChangeFields are the payload of an authority core change: where it
+// happened, who acted, what changed and the change's own details, each
+// present when the change names it.
+func authorityChangeFields() []PayloadField {
+	return optionalFields([]PayloadField{str("organization"), str("actor"), str("subject"), str("target"), str("role"), str("person"), str("team"),
+		str("principal"), str("installed_by"), str("revision"), str("operation"), str("module"), str("purpose"), str("kind"), str("resource"),
+		str("from"), str("to"), str("store")})
 }

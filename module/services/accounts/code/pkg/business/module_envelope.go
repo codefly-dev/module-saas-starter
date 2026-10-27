@@ -35,9 +35,12 @@ import (
 // which workloads a principal runs as is the applied module manifest's, and
 // "only approved images run" is deploy-time admission, outside this host.
 //
-// WHAT IT IS NOT. It is not the registry. The registry is DERIVED each
-// reconcile pass from the applied module manifests and this ceiling
-// (module_principal_reconcile.go): a principal is in it only while both say so —
+// WHAT IT IS NOT. It is not the registry, and it is not required. The
+// registry is DERIVED each reconcile pass from the applied module manifests
+// (module_principal_reconcile.go), and the ceiling is the manifest: a host no
+// envelope was written to grants each signed manifest what it asks for, so a
+// composition runs with no hand-written authority. Where an envelope IS
+// written it narrows: a principal is in the registry only while both say so —
 // a signed manifest asks for it AND this envelope allows it — and it holds the
 // intersection of the two, never more than either.
 
@@ -412,30 +415,19 @@ type moduleEnvelopeWrite struct {
 	envelope         *ModuleEnvelope
 	record           *ModuleEnvelopeRecord
 	expectedRevision uint64
-	// actorID and actorType attribute the policy-log entry and every
-	// installation the write revokes.
+	// actorID and actorType attribute every installation the write revokes.
 	actorID, actorType string
 	// audit writes the writer's own event, inside the row's transaction.
 	audit func(ctx context.Context) error
 }
 
 // writeModuleEnvelope is the ONE writer of the ceiling, whoever wrote the
-// revision: it classifies the write, witnesses a narrowing in the policy log,
-// appends the row over the expected revision, revokes the installations the
-// new ceiling no longer allows, commits the writer's audit event with the row,
-// fences this replica and asks for a pass. Its callers authorise the writer
-// and validate the document; nothing here relaxes for either of them.
+// revision: it appends the row over the expected revision, revokes the
+// installations the new ceiling no longer allows, commits the writer's audit
+// event with the row in the same transaction, fences this replica and asks for
+// a pass. Its callers authorise the writer and validate the document; nothing
+// here relaxes for either of them.
 func (s *Service) writeModuleEnvelope(ctx context.Context, w moduleEnvelopeWrite) error {
-	var policy map[string]any
-	if err := json.Unmarshal(w.record.Document, &policy); err != nil {
-		return err
-	}
-	entry := &PolicyLogEntry{OperationID: newPolicyLogOperationID("module-envelope"),
-		Decision: PolicyLogNarrowed, SubjectKind: PolicyLogModuleEnvelope, SubjectID: "module-envelope",
-		Policy: policy, EnvelopeRevision: w.envelope.Revision, Actor: w.actorID}
-	// witnessed is set before apply runs under the policy log; apply refuses
-	// to revoke anything while it is false.
-	witnessed := false
 	apply := func(ctx context.Context) error {
 		if err := s.moduleEnvelopes.AppendModuleEnvelopeRecord(ctx, w.record, w.expectedRevision); err != nil {
 			return err
@@ -448,44 +440,15 @@ func (s *Service) writeModuleEnvelope(ctx context.Context, w moduleEnvelopeWrite
 			if installationTenancyAllowed(w.envelope, installation.PrincipalID, installation.OrgID) {
 				continue
 			}
-			// An installation acknowledged between the classification and
-			// this transaction is found here and nowhere else. Revoking it is
-			// a narrowing, so the write that was classified a pure grant
-			// stops and is taken again under the witness.
-			if !witnessed {
-				return errModuleEnvelopeNarrowsAfterAll
-			}
 			if err := s.uninstallSolutionTx(ctx, w.actorID, w.actorType, installation.OrgID, installation.ID); err != nil {
 				return err
 			}
 		}
 		return w.audit(ctx)
 	}
-	// The policy log witnesses NARROWINGS — "a narrowing nothing witnessed is
-	// one a restore undoes silently". A write that only grants (a first
-	// envelope, a principal added, nothing an installation loses)
-	// is not one: a restore that undoes it leaves less authority, which is the
-	// fail-closed direction, so it is applied and audited without a witness.
-	// Anything that removes or changes what was granted is witnessed as today.
-	narrows, err := s.moduleEnvelopeNarrows(ctx, w.envelope, w.record.Document)
-	if err != nil {
-		return err
-	}
-	underWitness := func(ctx context.Context) error {
-		witnessed = true
-		return s.WithPolicyLoggedNarrowing(ctx, entry, apply)
-	}
-	write := underWitness
-	if !narrows {
-		write = func(ctx context.Context) error {
-			err := s.store.WithControlPlane(ctx, apply)
-			if errors.Is(err, errModuleEnvelopeNarrowsAfterAll) {
-				return underWitness(ctx)
-			}
-			return err
-		}
-	}
-	if err := write(ctx); err != nil {
+	// A narrowing applies directly, its revocations and audit in one
+	// transaction (narrowing.go), like a write that only grants.
+	if err := s.narrow(ctx, apply); err != nil {
 		return err
 	}
 	// This replica fences its registry at once — it serves nothing derived
@@ -503,11 +466,6 @@ func (s *Service) writeModuleEnvelope(ctx context.Context, w moduleEnvelopeWrite
 // one; the refusal is Unavailable because the caller's retry succeeds once it
 // has.
 var ErrModuleRegistryStale = errors.New("the module registry predates the committed module envelope")
-
-// errModuleEnvelopeNarrowsAfterAll stops an envelope write that was classified
-// a pure grant and then found something to revoke. It never leaves this file:
-// the write is retried under the witness.
-var errModuleEnvelopeNarrowsAfterAll = errors.New("the envelope write revokes an installation and was not witnessed")
 
 // moduleRegistrySnapshot is the installed registry and the envelope revision
 // it was derived from, loaded ONCE. A decision reads its grant from this value
@@ -535,6 +493,12 @@ func (s *Service) moduleRegistrySnapshot() *installedModuleRegistry {
 // Where no envelope store is wired (a registry stated directly by a test)
 // there is no committed revision to compare with.
 func (s *Service) fenceModuleRegistrySnapshot(ctx context.Context, snapshot *installedModuleRegistry) error {
+	if snapshot.manifestDerived {
+		if err := s.fenceManifestGenerations(ctx, snapshot); err != nil {
+			return err
+		}
+	}
+
 	if s.moduleEnvelopes == nil {
 		return nil
 	}
@@ -684,201 +648,4 @@ func installationTenancyAllowed(envelope *ModuleEnvelope, principalID, orgID str
 		}
 	}
 	return false
-}
-
-// moduleEnvelopeNarrows reports whether writing next would take authority away
-// from anyone, and it is the boundary of the one write that skips the
-// policy-log witness, so it recognises a pure grant and calls everything else a
-// narrowing.
-//
-// A pure grant is exactly this, against the envelope in force: every principal
-// is still there with a section that is the same JSON value, every other
-// top-level key is the same JSON value, and no installation loses its
-// organization. What may differ is the revision and whole principals that were
-// added.
-//
-// A principal's section is compared member by member, and only ADDED members
-// are a gain (jsonOnlyGains): the deny-by-default lists — queues, namespaces,
-// external namespaces, resources, the four scope lists of an operation
-// audience — grant nothing until they name it, so a member appearing there
-// widens. Everything else is a narrowing, whatever changed, because the schema
-// does not let changed JSON mean more authority: a resource list that appears
-// narrows an audience that was unrestricted, a required kind that appears
-// refuses artifacts that passed, and a tenant that is set removes every other
-// organization. The one member that is an addition AND a narrowing is that
-// tenant, which is why apply re-checks every active installation against the
-// new ceiling (errModuleEnvelopeNarrowsAfterAll) rather than trusting this
-// classification alone. A comparison that tried to tell each case apart field
-// by field would be a second copy of every rule that reads the envelope, wrong
-// whenever one of them moved.
-//
-// A host with no envelope has granted nothing, so its first envelope narrows
-// nothing an envelope granted; installations are still checked.
-func (s *Service) moduleEnvelopeNarrows(ctx context.Context, next *ModuleEnvelope, nextDocument []byte) (bool, error) {
-	narrows := false
-	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		current, err := s.moduleEnvelopes.LatestModuleEnvelopeRecord(ctx)
-		if err != nil {
-			return err
-		}
-		if current != nil && !moduleEnvelopeOnlyAdds(current.Document, nextDocument) {
-			narrows = true
-			return nil
-		}
-		// Inside the control plane, like the apply's own read: outside it a
-		// row policy hides every installation, and the answer is "none lose
-		// anything" for the wrong reason.
-		installations, err := s.moduleEnvelopes.ModuleInstallations(ctx)
-		if err != nil {
-			return err
-		}
-		for _, installation := range installations {
-			if !installationTenancyAllowed(next, installation.PrincipalID, installation.OrgID) {
-				narrows = true
-				return nil
-			}
-		}
-		return nil
-	})
-	return narrows, err
-}
-
-// moduleEnvelopeOnlyAdds reports that after is before plus whole principals,
-// and nothing else: see moduleEnvelopeNarrows. Anything
-// it cannot read as that — a document that does not decode, a key it does not
-// know — is not an addition.
-func moduleEnvelopeOnlyAdds(before, after []byte) bool {
-	was, ok := envelopeTopLevel(before)
-	if !ok {
-		return false
-	}
-	is, ok := envelopeTopLevel(after)
-	if !ok {
-		return false
-	}
-	for key := range was {
-		if _, kept := is[key]; !kept {
-			return false
-		}
-	}
-	for key, value := range is {
-		switch key {
-		case "revision":
-		case "principals":
-			if !envelopePrincipalsKept(was[key], value) {
-				return false
-			}
-		default:
-			previous, existed := was[key]
-			if !existed || !sameJSONValue(previous, value) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func envelopeTopLevel(document []byte) (map[string]json.RawMessage, bool) {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(document, &top); err != nil || top == nil {
-		return nil, false
-	}
-	return top, true
-}
-
-func envelopePrincipalsKept(before, after json.RawMessage) bool {
-	var was, is map[string]json.RawMessage
-	if len(before) > 0 && json.Unmarshal(before, &was) != nil {
-		return false
-	}
-	if len(after) > 0 && json.Unmarshal(after, &is) != nil {
-		return false
-	}
-	for prefix, section := range was {
-		kept, exists := is[prefix]
-		if !exists || !envelopeDelegationModesKept(section, kept) || !jsonOnlyGains(section, kept) {
-			return false
-		}
-	}
-	return true
-}
-
-// Changing an existing binding's credential semantics is never a pure grant.
-// In particular, adding content_read restricts ordinary owner-only exchanges,
-// although adding an object field would otherwise look additive to JSON.
-func envelopeDelegationModesKept(before, after json.RawMessage) bool {
-	var was, is ModuleEnvelopePrincipal
-	if json.Unmarshal(before, &was) != nil || json.Unmarshal(after, &is) != nil {
-		return false
-	}
-	for id, binding := range was.Grant.OperationAudiences {
-		if current, ok := is.Grant.OperationAudiences[id]; !ok || current.DelegationMode != binding.DelegationMode {
-			return false
-		}
-	}
-	return true
-}
-
-// jsonOnlyGains reports that after is before with MEMBERS ADDED and nothing
-// else: every object key before holds is still there holding the same value,
-// recursively, and after may carry keys before did not.
-//
-// It is what lets a principal be widened without a witness. The rule this
-// serves is the one stated above — a write that grants, and that no
-// installation loses anything by, is not a narrowing — and a principal that
-// gains an arm of a binding it already had loses nobody anything: a restore
-// that undid it would leave LESS authority, which is the fail-closed
-// direction. Before this, such a write was classified a narrowing purely
-// because the principal's section was not byte-identical, so on a host with no
-// policy log (there is none: the warehouse cannot issue the receipt the
-// protocol requires) the only writable change was a whole new principal. A
-// module missing one arm of its ceiling could not be corrected at all.
-//
-// It stays deliberately narrow. An ARRAY must be identical, so adding an
-// action to a list of them, or a resource id to a scope, is still a narrowing
-// to be witnessed: an array's members are not independent — reordering,
-// replacing or extending one can change what the whole means — and this
-// cannot tell those apart. Only a member that did not exist is free.
-func jsonOnlyGains(before, after json.RawMessage) bool {
-	if sameJSONValue(before, after) {
-		return true
-	}
-	var was, is map[string]json.RawMessage
-	if json.Unmarshal(before, &was) != nil || json.Unmarshal(after, &is) != nil {
-		// Not both objects: anything but an exact match is a change, not a gain.
-		return false
-	}
-	for key, value := range was {
-		kept, exists := is[key]
-		if !exists || !jsonOnlyGains(value, kept) {
-			return false
-		}
-	}
-	return true
-}
-
-// sameJSONValue reports that two encodings are one JSON value: key order and
-// whitespace aside, every member, element and number literal equal. Numbers
-// are compared as written, so two revisions past 2^53 that a float would fold
-// together stay different.
-func sameJSONValue(a, b json.RawMessage) bool {
-	canonical := func(raw json.RawMessage) ([]byte, bool) {
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		var value any
-		if err := decoder.Decode(&value); err != nil {
-			return nil, false
-		}
-		if decoder.More() {
-			return nil, false
-		}
-		encoded, err := json.Marshal(value)
-		return encoded, err == nil
-	}
-	left, ok := canonical(a)
-	if !ok {
-		return false
-	}
-	right, ok := canonical(b)
-	return ok && bytes.Equal(left, right)
 }

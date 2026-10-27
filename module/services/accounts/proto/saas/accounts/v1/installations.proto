@@ -5,6 +5,7 @@ package saas.accounts.v1;
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
+import "host/installation/v1/installation.proto";
 import "google/protobuf/timestamp.proto";
 import "saas/accounts/v1/authorization.proto";
 import "saas/policy/v1/options.proto";
@@ -97,6 +98,8 @@ message Installation {
   // Why the install step failed: the solution's bounded refusal reason, or a
   // fixed reason when it never answered. Empty unless status is FAILED.
   string failure_reason = 13 [(buf.validate.field).string.max_len = 512];
+  // Current consent/lifecycle revision, for an explicit re-install approval.
+  uint64 revision = 14;
 }
 
 message InstallSolutionRequest {
@@ -174,6 +177,8 @@ message InstallSolutionRequest {
   // Must be a subset of the current ceiling. Omitted selects that ceiling;
   // an explicit {} grants nothing. Tenant and identity are never scope fields.
   optional string scope = 13 [(buf.validate.field).string = {min_len: 2 max_bytes: 1048576}];
+  // Required: the exact offer and installation state reviewed by the admin.
+  host.installation.v1.ConsentApproval approval = 14;
 
 }
 
@@ -319,8 +324,8 @@ service InstallationService {
     };
   }
 
-  // Narrowing is witnessed in the policy log before commit, then atomically
-  // bumps the installation revision, cancels its org's work and records audit.
+  // A narrowing applies directly: it atomically bumps the installation
+  // revision, cancels its org's work and records audit.
   rpc NarrowInstallation(NarrowInstallationRequest) returns (google.protobuf.Empty) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
@@ -562,9 +567,8 @@ service InstallationService {
   }
 
   // RevokeInstallationFromTeam removes one team grant at an installation's
-  // authority-root node. It is a narrowing, so it runs under the policy log
-  // exactly as RevokeScope does: a host that cannot witness the narrowing refuses
-  // it, and says so, rather than revoking unwitnessed. It removes the one grant
+  // authority-root node. It is a narrowing, so it applies directly, with its
+  // audit record in one transaction, exactly as RevokeScope does. It removes the one grant
   // at the authority root that granted_teams reports; a team that also reaches
   // the installation from a grant above keeps that reach. Organisation-admin,
   // with the same platform super administrator exception.

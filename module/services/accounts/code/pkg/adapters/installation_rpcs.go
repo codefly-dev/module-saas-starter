@@ -49,6 +49,10 @@ func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.Insta
 	if err := requireOrgAdmin(ctx, actorID, req.GetOrgId()); err != nil {
 		return nil, err
 	}
+	approval, err := installationApproval(req.GetApproval())
+	if err != nil {
+		return nil, err
+	}
 	var scope *business.InstallationScope
 	if req.Scope != nil {
 		parsed, err := business.ParseInstallationScope(req.GetScope())
@@ -58,6 +62,7 @@ func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.Insta
 		scope = &parsed
 	}
 	installation, err := service.InstallSolution(ctx, actorID, &business.InstallSolutionParams{
+		Approval:            approval,
 		Scope:               scope,
 		OrgID:               req.GetOrgId(),
 		AgentIdentifier:     req.GetAgentIdentifier(),
@@ -315,8 +320,7 @@ func (s *InstallationServer) GrantInstallationToTeam(
 }
 
 // RevokeInstallationFromTeam removes a team's grant at an installation. It is a
-// narrowing under the policy log; a host that cannot witness it refuses, and the
-// refusal carries the host's reason.
+// narrowing and applies directly.
 func (s *InstallationServer) RevokeInstallationFromTeam(
 	ctx context.Context, req *gen.RevokeInstallationFromTeamRequest,
 ) (*emptypb.Empty, error) {
@@ -340,9 +344,7 @@ func (s *InstallationServer) RevokeInstallationFromTeam(
 // mapInstallationExposureError maps the exposure RPCs' failures. Unlike
 // mapInstallationError it answers NotFound for an installation the caller's
 // organization does not have — another organization's installation id included,
-// which RLS makes indistinguishable from one that never existed — and it names a
-// narrowing the policy log could not witness as the refusal it is, in the host's
-// words, rather than as an internal fault.
+// which RLS makes indistinguishable from one that never existed.
 func mapInstallationExposureError(err error) error {
 	if err == nil {
 		return nil
@@ -359,9 +361,6 @@ func mapInstallationExposureError(err error) error {
 		case business.ErrTypeValidation:
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
-	}
-	if errors.Is(err, business.ErrPolicyLogUnreachable) {
-		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
 		return status.Error(st.Code(), err.Error())
@@ -385,9 +384,6 @@ func mapInstallationError(err error) error {
 		case business.ErrTypeValidation:
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
-	}
-	if errors.Is(err, business.ErrPolicyLogUnreachable) {
-		return status.Error(codes.Unavailable, err.Error())
 	}
 	if st, ok := status.FromError(err); ok {
 		return st.Err()

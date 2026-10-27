@@ -42,7 +42,7 @@ func TestInvitationOutcomesExportCanonicalEvents(t *testing.T) {
 
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
-	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore, business.PlansSold))
 	registry, err := analytics.DefaultRegistry()
 	require.NoError(t, err)
 	outbox, err := analytics.NewOutbox(testStore, registry)
@@ -256,7 +256,7 @@ func analyticsService(t *testing.T) (*business.Service, *analytics.Registry) {
 	t.Helper()
 	service, err := business.NewService(testStore)
 	require.NoError(t, err)
-	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore))
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore, business.PlansSold))
 	registry, err := analytics.DefaultRegistry()
 	require.NoError(t, err)
 	outbox, err := analytics.NewOutbox(testStore, registry)

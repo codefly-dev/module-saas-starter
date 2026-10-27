@@ -13,6 +13,7 @@ package main
 
 import (
 	"crypto/ed25519"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -264,4 +265,43 @@ func TestModuleRoute_TheSessionIsTheBindingAndTheOwnerIsNotRead(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.NotNil(t, module.lastHeaders)
+}
+
+// ON THE BEARER-LESS ARM a caller can assert no identity and no installation:
+// everything it sent under a gateway-owned name is gone, and the arm stamps no
+// installation of its own in its place.
+func TestModuleRoute_TheBearerLessArmTakesNoIdentityFromTheCaller(t *testing.T) {
+	gw, module, _, kid, wcPriv := operationHarness(t)
+	req := onWorkloadEndpoint(publishRequest(operationCapability(t, kid, wcPriv, "documents", publisherSeal)))
+	req.Header.Set(installationConfinementHeader, targetInstallation)
+	req.Header.Set(resourceConfinementHeader, solutionMCPResource(testPublicBase, "something-else"))
+	req.Header.Set("X-Org-Id", "55555555-5555-4555-8555-555555555555")
+	req.Header.Set("X-User-Id", "attacker")
+	req.Header.Set(workloadPresenterHeader, "spiffe://cluster.local/ns/other/sa/other")
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	for _, header := range []string{installationConfinementHeader, resourceConfinementHeader, "X-Org-Id", "X-User-Id", workloadPresenterHeader} {
+		require.Empty(t, module.lastHeaders.Values(header), "%s is the gateway's, never the caller's", header)
+	}
+}
+
+// A bearer beside an alias capability on the WORKLOAD listener is a person's
+// request and takes the person path: ext_authz verifies the bearer and stamps the
+// person, and the viewer admission names the target's installation.
+func TestModuleRoute_ABearerOnTheWorkloadListenerTakesThePersonPath(t *testing.T) {
+	gw, module, _, caller, kid, wcPriv, _ := confinedModuleHarness(t)
+	gw.workloadAdmission = &admissionFake{err: errors.New("the arm must not be consulted")}
+	capability := mintViewerCapability(t, kid, wcPriv, "documents", caller.subject, caller.org, caller.session)
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, onWorkloadEndpoint(moduleRequest(caller, capability)))
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, caller.subject, module.lastHeaders.Get("X-User-Id"), "ext_authz ran and stamped the person")
+	require.Equal(t, "install-"+fakeSolutionTarget("documents"), module.lastHeaders.Get(installationConfinementHeader),
+		"the viewer admission ran and named the target's installation")
+	require.Equal(t, "Bearer "+caller.bearer, module.lastHeaders.Get("Authorization"))
 }

@@ -16,7 +16,7 @@ func TestCatalogGRPCRegistrationMatchesGeneratedNativeSubset(t *testing.T) {
 	for _, listener := range []*grpc.Server{server.gRPC, server.internalGRPC, server.authorityGRPC} {
 		var registered []string
 		for name := range listener.GetServiceInfo() {
-			if strings.HasPrefix(name, "saas.accounts.v1.") {
+			if strings.HasPrefix(name, "saas.accounts.v1.") || strings.HasPrefix(name, "host.") {
 				registered = append(registered, name)
 			}
 		}

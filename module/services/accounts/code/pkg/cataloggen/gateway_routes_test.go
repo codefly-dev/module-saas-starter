@@ -33,7 +33,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 		}
 		require.NotEqual(t, policyv1.Exposure_EXPOSURE_INTERNAL, route.GetExposure())
 	}
-	require.Equal(t, 54, publicCount)
+	require.Equal(t, 63, publicCount) // +3: the artifact interface's Approve, Authorize and Revoke (authenticated by the module's workload credential and its parent); +5: the authority interface's Keys, Check and ListResources (authenticated by the token they check) and the session interface's SignIn and ListFixturePeople (before anyone signs in); +1: the installation interface's Current (authenticated by the module's workload credential and its parent); ApplyManifest is public on accounts' own listener but never routed (ServedInClusterOnly)
 
 	require.Nil(t, byMatch["POST /saas.accounts.v1.APIKeyService/ValidateAPIKey"])
 	require.Equal(t, policyv1.Exposure_EXPOSURE_PUBLIC, byMatch["POST /saas.accounts.v1.AuthService/BeginOAuth"].GetExposure())
@@ -56,6 +56,28 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	renamedRoutes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, renamed)
 	require.NoError(t, err)
 	require.Equal(t, "connect-api", renamedRoutes.GetRoutes()[0].GetUpstreamEndpoint())
+}
+
+// Module delivery never crosses the edge: ApplyManifest takes the module's
+// delivery credential and is served in-cluster only, like the HTTP delivery
+// route, so neither the built catalog, nor the committed one the gateway is
+// generated from, nor the gateway's own route table carries it — and a catalog
+// that did is refused.
+func TestTheGatewayNeverRoutesModuleDelivery(t *testing.T) {
+	const applyManifest = "/host.composition.v1.CompositionService/ApplyManifest"
+	serviceDocument := readFixture(t, "../../../generated/service-catalog.json")
+	bindingDocument := readFixture(t, "../../../gateway.bindings.codefly.yaml")
+	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, readDeploymentDocuments(t))
+	require.NoError(t, err)
+	for _, route := range routes.GetRoutes() {
+		require.NotEqual(t, applyManifest, route.GetProcedure(), "the gateway must not route module delivery")
+	}
+	require.NotContains(t, string(readFixture(t, "../../../generated/gateway-routes.json")), applyManifest)
+	require.NotContains(t, string(readFixture(t, "../../../../auth-gateway/code/routing_catalog_gen.go")), applyManifest)
+
+	routed := proto.Clone(routes).(*catalogv1.GatewayRouteCatalog)
+	routed.Routes[0].Procedure = applyManifest
+	require.ErrorContains(t, cataloggen.ValidateGatewayRouteCatalog(routed), "served in-cluster only")
 }
 
 func TestGatewayArtifactsAreDeterministicAndCurrent(t *testing.T) {

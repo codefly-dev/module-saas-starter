@@ -205,7 +205,8 @@ export function installedRows(
 			inheritedTeams,
 			readiness,
 		}) => {
-			if (!installation) return [];
+			if (!installation || installation.status === InstallationStatus.REVOKED)
+				return [];
 			return [
 				{
 					installationId: installation.id,

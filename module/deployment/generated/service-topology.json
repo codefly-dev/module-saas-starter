@@ -39,6 +39,12 @@
           ]
         },
         {
+          "service": "object-storage",
+          "endpoints": [
+            "grpc"
+          ]
+        },
+        {
           "service": "store",
           "endpoints": [
             "tcp"
@@ -137,7 +143,7 @@
       ]
     },
     {
-      "name": "policy-log",
+      "name": "object-storage",
       "endpoints": [
         {
           "name": "grpc",
@@ -227,7 +233,7 @@
       ]
     },
     {
-      "service": "policy-log",
+      "service": "object-storage",
       "ports": [
         443
       ]

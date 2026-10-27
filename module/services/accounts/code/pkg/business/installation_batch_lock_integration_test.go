@@ -99,7 +99,6 @@ func TestDeleteOrganizationSerializesWithAnotherInstallationUninstall(t *testing
 		cancel()
 		workers.Wait()
 		testService.SetStore(testStore)
-		closeEveryGap(t, testCtx)
 	})
 	deleted, uninstalled := make(chan error, 1), make(chan error, 1)
 	workers.Add(1)
@@ -213,9 +212,7 @@ func TestDeleteOrganizationWaitsForUninstallBeforeMembershipDeletion(t *testing.
 		cancel()
 		workers.Wait()
 		testService.SetStore(testStore)
-		closeEveryGap(t, testCtx)
 	})
-	mark := testPolicyLog.mark()
 	uninstalled, deleted := make(chan error, 1), make(chan error, 1)
 	require.NoError(t, testStore.WithControlPlane(ctx, func(barrierCtx context.Context) error {
 		tx := storetx.Tx(barrierCtx)
@@ -275,13 +272,6 @@ func TestDeleteOrganizationWaitsForUninstallBeforeMembershipDeletion(t *testing.
 	require.NoError(t, uninstallErr, "standalone uninstall must complete without 40P01")
 	require.NoError(t, deletionErr, "organization deletion must complete without 40P01")
 
-	entries := testPolicyLog.appended(mark)
-	require.Len(t, entries, 2, "both narrowings must be witnessed")
-	require.Equal(t, installationID, entries[0].SubjectID)
-	require.Equal(t, orgID, entries[1].SubjectID)
-	for _, entry := range entries {
-		requireCommitted(t, testCtx, entry.OperationID) // Assert before cleanup can close a gap.
-	}
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		archived, err := testStore.GetOrganization(ctx, orgID)
 		if err != nil {

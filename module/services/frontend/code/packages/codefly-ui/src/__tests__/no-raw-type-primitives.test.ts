@@ -78,7 +78,7 @@ const SAAS_UI_BASELINE: Record<string, number> = {
 	// Lowered from 16 when the credential block moved into
 	// `datasources/credential-mode.tsx`, which carries none: the shared copy
 	// names its slots, so the debt left behind shrank rather than moving.
-	"datasources/connect-github-form.tsx": 11,
+	"datasources/connect-github-form.tsx": 10,
 	"datasources/datasources-panel.tsx": 15,
 };
 const saasUiDir = resolve(srcDir, "../../saas-ui/src");

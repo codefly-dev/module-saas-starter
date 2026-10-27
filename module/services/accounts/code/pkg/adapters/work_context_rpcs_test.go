@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -27,15 +29,47 @@ type workContextAuthorityFake struct {
 	err              error
 	installationFcts *business.InstallationAuthorityFacts
 	installationErr  error
+	// installations answers whose each solution installation is, by id.
+	installations map[string]business.InstallationIdentity
+	// agents answers the installation each agent principal acts for.
+	agents map[string]string
 }
 
+func (f *workContextAuthorityFake) WorkContextInstallationIdentity(_ context.Context, id string) (business.InstallationIdentity, error) {
+	if found, ok := f.installations[id]; ok {
+		return found, nil
+	}
+	return business.InstallationIdentity{}, business.NewStoreError(fmt.Errorf("installation %q does not exist", id), business.ErrTypeNotFound)
+}
+
+// WorkContextAgentInstallation answers the installation agents names for
+// agent while installations holds it active in org.
+func (f *workContextAuthorityFake) WorkContextAgentInstallation(_ context.Context, org, agent string) (string, error) {
+	if id, ok := f.agents[agent]; ok && f.installations[id].OrgID == org && f.installations[id].Status == "active" {
+		return id, nil
+	}
+	return "", business.NewStoreError(fmt.Errorf("agent %s acts for no active installation", agent), business.ErrTypeNotFound)
+}
+
+// ResolveWorkContextAuthority answers the configured facts, except for an owner
+// the store holds no membership row for: a declared module principal, which the
+// deployment declares rather than registers in any organization. The store
+// refuses those (ErrTypeNotFound, "current organization membership and
+// authorization revision required"), and so does this fake, so no test can
+// read success for a module owner the store would never give.
 func (f *workContextAuthorityFake) ResolveWorkContextAuthority(
 	_ context.Context,
 	_ string,
-	_ string,
+	owner string,
 	_ string,
 	_ []business.WorkContextPermission,
 ) (*business.WorkContextAuthorityFacts, error) {
+	if service != nil && service.IsDeclaredModulePrincipal(owner) {
+		return nil, business.NewStoreError(
+			errors.New("current organization membership and authorization revision required"),
+			business.ErrTypeNotFound,
+		)
+	}
 	return f.facts, f.err
 }
 
@@ -314,7 +348,11 @@ func TestWorkContextAuthorityConfigurationFailsClosed(t *testing.T) {
 	require.False(t, server.configured())
 }
 
-func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactFacts(t *testing.T) {
+// The two read oracles answer only a module that proves itself with its own
+// module Work Context, and then project exactly the facts the request names.
+// The refusals for an unproven caller are covered beside requireCallingModule.
+func TestWorkContextReadOraclesRequireTheCallingModuleAndProjectExactFacts(t *testing.T) {
+	installModuleWorkContextService(t, documentsPrincipals)
 	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	fake := &workContextConsumerAuthorityFake{}
@@ -328,7 +366,9 @@ func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactF
 	})
 	require.NoError(t, server.configureErr)
 
-	orgID := "019fec91-1000-7000-8000-000000000001"
+	// The calling module is installed in its own tenant, so that is the one
+	// organisation it is answered about.
+	orgID := moduleWorkContextTenant
 	ownerID := "019fec91-1000-7000-8000-000000000002"
 	actorID := "019fec91-1000-7000-8000-000000000003"
 	sealsNone := true
@@ -352,13 +392,8 @@ func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactF
 	_, err = server.CheckAuthorizationRevision(context.Background(), revisionRequest)
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 
-	SetInternalToken("consumer-authority-test-token")
-	t.Cleanup(func() { SetInternalToken("") })
-	internalContext := metadata.NewIncomingContext(
-		context.Background(),
-		metadata.Pairs("x-codefly-internal-token", "consumer-authority-test-token"),
-	)
-	_, err = server.CheckAuthorizationRevision(internalContext, revisionRequest)
+	moduleContext := callingModuleContext(t, server, business.ModulePrincipalID("documents"), moduleWorkContextTenant)
+	_, err = server.CheckAuthorizationRevision(moduleContext, revisionRequest)
 	require.NoError(t, err)
 	require.Equal(t, orgID, fake.revisionOrg)
 	require.Equal(t, ownerID, fake.revisionOwner)
@@ -368,17 +403,37 @@ func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactF
 	require.Equal(t, orgID, fake.verifiedTenant)
 	require.Equal(t, ownerID, fake.verifiedUser)
 
+	// Another organisation, where the module is not installed, and one that
+	// does not exist are refused alike, by name, before anything is read.
+	elsewhere := func(org string) error {
+		other := proto.CloneOf(revisionRequest)
+		other.OrgId = org
+		_, err := server.CheckAuthorizationRevision(moduleContext, other)
+		return err
+	}
+	fake.revisionOrg = ""
+	notInstalled := elsewhere("019fec91-1000-7000-8000-000000000001")
+	absent := elsewhere("019fec91-1000-7000-8000-0000000000ff")
+	require.Equal(t, codes.PermissionDenied, status.Code(notInstalled))
+	require.Contains(t, status.Convert(notInstalled).Message(), "not installed in organization 019fec91-1000-7000-8000-000000000001")
+	require.Equal(t, strings.Replace(status.Convert(notInstalled).Message(), "000000000001", "0000000000ff", 1), status.Convert(absent).Message())
+	require.Equal(t, codes.PermissionDenied, status.Code(absent))
+	require.Empty(t, fake.revisionOrg, "nothing is read for an organisation the module is not installed in")
+	_, err = server.AuthorizeEvidenceRead(moduleContext, &gen.AuthorizeEvidenceReadRequest{OrgId: "019fec91-1000-7000-8000-000000000001", CallerPrincipalId: actorID})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "not installed in organization")
+
 	fake.revisionErr = business.ErrWorkContextAuthorizationStale
-	_, err = server.CheckAuthorizationRevision(internalContext, revisionRequest)
+	_, err = server.CheckAuthorizationRevision(moduleContext, revisionRequest)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	fake.revisionErr = errors.New("database unavailable")
-	_, err = server.CheckAuthorizationRevision(internalContext, revisionRequest)
+	_, err = server.CheckAuthorizationRevision(moduleContext, revisionRequest)
 	require.Equal(t, codes.Internal, status.Code(err))
 
 	fake.revisionErr = nil
 	callerID := "019fec91-1000-7000-8000-000000000004"
 	taskID := "task:one"
-	_, err = server.AuthorizeEvidenceRead(internalContext, &gen.AuthorizeEvidenceReadRequest{
+	_, err = server.AuthorizeEvidenceRead(moduleContext, &gen.AuthorizeEvidenceReadRequest{
 		OrgId:             orgID,
 		CallerPrincipalId: callerID,
 		OwnerPrincipalId:  &ownerID,
@@ -392,7 +447,7 @@ func TestWorkContextConsumerAuthorityRequiresInternalCredentialAndProjectsExactF
 	require.Equal(t, callerID, fake.verifiedUser)
 
 	fake.readErr = business.ErrEvidenceReadDenied
-	_, err = server.AuthorizeEvidenceRead(internalContext, &gen.AuthorizeEvidenceReadRequest{
+	_, err = server.AuthorizeEvidenceRead(moduleContext, &gen.AuthorizeEvidenceReadRequest{
 		OrgId:             orgID,
 		CallerPrincipalId: callerID,
 		OwnerPrincipalId:  &ownerID,

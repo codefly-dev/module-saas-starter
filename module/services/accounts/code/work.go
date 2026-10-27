@@ -17,6 +17,7 @@ import (
 	"accounts/pkg/business"
 	"accounts/pkg/datasource"
 	"accounts/pkg/datasource/apisource"
+	"accounts/pkg/datasource/objectstore"
 	"accounts/pkg/email"
 	"accounts/pkg/eventcatalog"
 	"accounts/pkg/githubconnector"
@@ -24,6 +25,7 @@ import (
 	"accounts/pkg/jobs"
 	"accounts/pkg/keyservice"
 	"accounts/pkg/membership"
+	"accounts/pkg/meshtransport"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
 	"accounts/pkg/redisstate"
@@ -44,9 +46,11 @@ import (
 	"github.com/codefly-dev/core/workloadidentity/native"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	codefly "github.com/codefly-dev/sdk-go"
+	storagev0 "github.com/codefly-dev/service-object-storage/gen/codefly/storage/v0"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	otelmetric "go.opentelemetry.io/otel/metric"
+	"google.golang.org/grpc"
 )
 
 func init() {
@@ -218,6 +222,9 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	// deliveries: a platform super_admin can write the ceiling before the first
 	// document arrives.
 	service.SetModuleEnvelopeStore(store)
+	// The hop's admission keys: registered by whichever replica the hop
+	// reaches, published by every replica from the same rows.
+	service.SetAdmissionKeyStore(store)
 	// Explicit organization delegation is separate from module identity. A
 	// projected policy is refreshed by the delivery system and read per call.
 	installerHandler, err := configuredModuleInstaller(service)
@@ -352,6 +359,19 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	// documents module consumes. GITHUB_API_BASE_URL overrides api.github.com for
 	// GitHub Enterprise or tests.
 	service.SetDatasourceConnector(cipher, jobStore, os.Getenv("GITHUB_API_BASE_URL"))
+	// Object-storage sources are read through the composed object-storage
+	// service, under a per-call binding of each source's bucket and credential.
+	objectStorage, err := dialObjectStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if objectStorage != nil {
+		if err := service.SetObjectStorage(ctx, storagev0.NewObjectStorageClient(objectStorage)); err != nil {
+			// Not a start failure: the host runs, and object storage is refused
+			// by name in the catalog, at AddSource and at sync.
+			wool.Get(ctx).Warn("the composed object-storage service cannot read a tenant's bucket; object-storage datasources are unavailable", wool.ErrField(err))
+		}
+	}
 	// Every provider credential's operations are metered in one window shared by
 	// every replica, so a sync a person starts is served before background work.
 	service.SetDatasourceBudgetStore(store)
@@ -520,45 +540,9 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, fmt.Errorf("configure solution host binding reconciler: %w", err)
 	}
 
-	// The policy log: append → receipt → commit, before authority is narrowed.
-	//
-	// THIS DEPLOYMENT HAS NO LOG TRANSPORT, and that is stated by wiring none
-	// rather than by wiring something that refuses. The difference matters now
-	// that the serving gate is on the request path: a host holding a log it can
-	// never reach never refreshes `reached_at`, so the staleness window closes
-	// and the host stops answering anything — a total outage dressed as
-	// fail-closed. A host holding NO log has nothing unreconciled to honour, so
-	// `MayServe` admits and the host serves.
-	//
-	// What it cannot do is NARROW authority. `WithPolicyLoggedNarrowing` refuses
-	// outright, so uninstalling a solution, closing a withdrawn solution
-	// target, revoking a scope grant and removing a team membership all refuse
-	// with ErrPolicyLogUnreachable until a transport exists. That is the
-	// protocol's own answer — a narrowing nothing witnessed is one a restore
-	// silently undoes — and it is loud rather than silent, below.
-	//
-	// WHY THERE IS NO TRANSPORT. The warehouse the log lives in cannot issue the
-	// receipt the protocol requires. `PolicyLog.Append` must return a token the
-	// LOG minted and a monotonic sequence the LOG assigned, because the receipt
-	// is what separates "the log witnessed this" from "this host decided it". A
-	// BigQuery dataset assigns neither to a writer: the non-job write paths
-	// return no ordinal, ingestion time is not readable until the streaming
-	// buffer flushes, and the writer role deliberately holds no read and no
-	// job-creation permission, so it cannot read its own row back to learn
-	// either. Closing that needs a receipt-issuing appender inside the
-	// warehouse's trust domain, which is infrastructure this service does not
-	// own. Anything else would be this host minting its own receipt — the exact
-	// tautology the protocol exists to prevent.
-	service.SetPolicyLog(nil, nil)
-	w.Warn("no policy log transport is configured: this host SERVES normally and REFUSES every " +
-		"narrowing of authority (solution uninstall, solution-target close, scope-grant revocation, " +
-		"team-membership removal), because a narrowing nothing witnessed is one a restore undoes silently")
-
-	// The serving gate, on the request path. Registered for both transports'
-	// authorization interceptors; with no log wired it admits, which is what
-	// MayServe answers for a host that has narrowed nothing through the
-	// protocol.
-	adapters.RegisterPolicyLogServingGate(service.RequireServing)
+	// A narrowing of authority (removing a member, revoking a grant,
+	// uninstalling, closing a withdrawn target) applies directly, recorded in
+	// the audit journal in the same transaction (business/narrowing.go).
 
 	// Enforcement at use. Every module capability path re-reads the live
 	// installation, producer epoch and binding revision through these, and
@@ -788,8 +772,16 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, err
 	}
 
-	entitlementChecker := business.NewDefaultEntitlementChecker(store)
-	service.SetEntitlementChecker(entitlementChecker)
+	// A deployment sells plans exactly when it takes payment for them. One that
+	// does not enforces no plan limit: the default plan's seats, keys and meters
+	// describe nothing anyone bought. The value is validated below, where the
+	// billing provider is wired.
+	billingProvider := strings.ToLower(strings.TrimSpace(os.Getenv("BILLING_PROVIDER")))
+	planPolicy := business.PlanPolicyForBillingProvider(billingProvider)
+	if planPolicy == business.NoPlansSold {
+		w.Info("plan limits are not enforced: this deployment sells no plans (BILLING_PROVIDER is not stripe)")
+	}
+	service.SetEntitlementChecker(business.NewDefaultEntitlementChecker(store, planPolicy))
 
 	// Redis wiring. accounts declares the `cache` dependency, and one client on
 	// it carries two different things:
@@ -927,11 +919,6 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, fmt.Errorf("application: %w", err)
 	}
 	service.SetOrganizationCreationPolicy(orgCreationPolicy)
-	enforcement, err := business.ParseModuleAuthorityEnforcement(applicationEnv("MODULE_AUTHORITY_ENFORCEMENT"))
-	if err != nil {
-		return nil, fmt.Errorf("application: %w", err)
-	}
-	service.SetModuleAuthorityEnforcement(enforcement)
 
 	emailConfig, err := configuredEmail(ctx, codefly.IsLocal())
 	if err != nil {
@@ -997,7 +984,6 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	// forwarded identity headers.
 	var stripeWebhookWorker *jobs.Worker
 	var billingWorkerPool interface{ Close() }
-	billingProvider := strings.ToLower(strings.TrimSpace(os.Getenv("BILLING_PROVIDER")))
 	switch billingProvider {
 	case "", "disabled":
 		if os.Getenv("STRIPE_API_KEY") != "" || os.Getenv("STRIPE_WEBHOOK_SECRET") != "" {
@@ -1292,10 +1278,20 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	}()
 
 	if selectedFixture != "" {
-		err = fixtures.Seed(ctx, service, selectedFixture)
+		installations, err := fixtures.SeedWithInstallations(ctx, service, selectedFixture)
 		if err != nil {
 			retentionCancel()
 			return nil, err
+		}
+		// A declared installation names a target the composition delivers
+		// after this boot, so it is performed after each delivery pass. A host
+		// with no delivery surface offers no target to install.
+		switch {
+		case installations == nil:
+		case solutionHostBindingReconciler != nil:
+			solutionHostBindingReconciler.AfterEachPass(installations.Converge)
+		default:
+			w.Warn("the fixture declares installations and this host has no delivery surface (no SOLUTION_HOST_COORDINATE), so no target is offered and none is installed")
 		}
 	}
 	if stripeWebhookWorker != nil {
@@ -1436,6 +1432,9 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 			} else {
 				sw.Info("redis cache closed")
 			}
+		}
+		if objectStorage != nil {
+			_ = objectStorage.Close()
 		}
 		sw.Info("closing store")
 		store.Close()
@@ -2009,6 +2008,7 @@ func configuredSolutionHostBindingReconciler(
 	service.SetModuleNamespaceRule(namespaces)
 	service.SetSolutionDelivery(keyVerifier, store, carrier)
 	service.SetSolutionDeliveryCoordinate(coordinate)
+	service.SetAuthorityDocumentVerifier(verifier.VerifyAuthority)
 	service.SetModuleEnvelopeDeliveryHost(hostModule)
 	// Deliberately not routed at the gateway, and the asymmetry with the
 	// credential mint is the reason. `POST /platform/_credential` is brokered by
@@ -2021,10 +2021,12 @@ func configuredSolutionHostBindingReconciler(
 	// codefly:gateway-route-exempt delivery is in-cluster and reaches accounts directly, never the public edge
 	adapters.RegisterHTTPRoute(adapters.SolutionDeliveryPrefix, adapters.NewSolutionDeliveryHTTPHandler(service))
 
-	// The AUTHORITY CEILING is the module envelope a platform super_admin
-	// writes at runtime, read by every pass from the store — never a file read
-	// once here, and never out of a delivered manifest, because a manifest
-	// requests authority and never approves its own.
+	// The AUTHORITY CEILING is the applied, signed module manifest: what the
+	// composition delivers, verified against the pinned release keys, is what
+	// a module holds, so a composition runs with no hand-written authority.
+	// Where a platform super_admin has written a module envelope it narrows
+	// that ceiling; every pass reads it from the store — never a file read once
+	// here.
 	reconciler, err := business.NewSolutionHostBindingReconciler(service, business.SolutionHostBindingReconcilerConfig{
 		Source:     business.NewDeliveredSolutionHostBindings(service),
 		Verifier:   keyVerifier,
@@ -2038,6 +2040,7 @@ func configuredSolutionHostBindingReconciler(
 	// A delivery or an envelope write asks for a pass now, so what it changes
 	// is in force within one pass instead of one interval.
 	service.SetModuleRegistryPassTrigger(reconciler.Trigger)
+	service.SetCompositionReconcile(reconciler.RunOnce)
 
 	// EXECUTION-BOUND MINTING, wired here because this is where its inputs
 	// exist: the reviewer is the environment's mechanism (a TokenReview of a
@@ -2688,6 +2691,9 @@ func requireStartupConfiguration(ctx context.Context, isLocal bool) error {
 	if err := configureLocalEgress(isLocal, infra.InCluster()); err != nil {
 		return err
 	}
+	if err := configureMeshEgress(codefly.For(ctx)); err != nil {
+		return err
+	}
 	selection, err := keyservice.Selection(ctx, isLocal)
 	if err != nil {
 		return err
@@ -2754,6 +2760,42 @@ func configureLocalEgress(isLocal, inCluster bool) error {
 	default:
 		return fmt.Errorf("datasource-oauth/local_egress: %w", err)
 	}
+}
+
+// configureMeshEgress installs the mesh egress admission every guarded egress
+// path applies, or refuses to start on one it cannot install.
+//
+// On a cell whose ambient mesh resolves each declared egress host to an
+// address it allocated (240.240.0.0/16 by default), those addresses are not
+// public, so without this every guarded path refuses the hosts the cell exists
+// to reach. Three values:
+//
+//   - internal-transport/mesh-protected, the mesh assertion the group already
+//     carries. Without it nothing is admitted: declared hosts are inert, and a
+//     mesh egress range refuses startup;
+//   - egress/HOSTS: the hosts the environment's egress declaration gives this
+//     service, as `host:port`, which Codefly generates and delivers;
+//   - internal-transport/mesh-egress-range: the CIDR prefixes the mesh
+//     allocates from, inside 240.0.0.0/4 or 2001:2::/48; 240.240.0.0/16 when
+//     empty.
+func configureMeshEgress(source meshtransport.Source) error {
+	meshed, err := meshtransport.Protected(source)
+	if err != nil {
+		return err
+	}
+	// Literal groups and keys, so the configuration-dependency gate sees the reads.
+	hosts, _ := source.WorkspaceValue("egress", "HOSTS")
+	ranges, _ := source.WorkspaceValue("internal-transport", "mesh-egress-range")
+	if err := auth.ConfigureMeshEgress(meshed, hosts, ranges); err != nil {
+		return fmt.Errorf("egress/HOSTS, internal-transport/mesh-egress-range: %w", err)
+	}
+	if meshed && strings.TrimSpace(hosts) != "" {
+		wool.Get(context.Background()).In("configureMeshEgress").Info(
+			"guarded egress admits these declared hosts at the mesh's egress addresses",
+			wool.Field("egress/HOSTS", hosts),
+			wool.Field("internal-transport/mesh-egress-range", ranges))
+	}
+	return nil
 }
 
 // requireApplicationBaseURL refuses to start a deployed runtime without the
@@ -2983,4 +3025,25 @@ func registerMembershipCacheHealth(c *membership.Cache) {
 			o.ObserveInt64(gauge, storeOnly)
 			return nil
 		}, gauge)
+}
+
+// dialObjectStorage opens the connection to the composed object-storage
+// service. Codefly resolves its endpoint; the service's agent hands its per-run
+// token to consumers as the "token" secret of its object-storage configuration.
+// A deployed cell publishes no such token — it runs the service anonymous and
+// gates callers at the mesh — so an absent token dials without one. A
+// composition that leaves the service out has no endpoint for it: the host
+// then runs without object storage, and an object-storage sync refuses by name.
+func dialObjectStorage(ctx context.Context) (*grpc.ClientConn, error) {
+	network := codefly.For(ctx).Service("object-storage").Endpoint("grpc").API("grpc").NetworkInstance()
+	if network == nil || network.Address == "" {
+		wool.Get(ctx).Info("no object-storage service is composed; object-storage datasources cannot sync")
+		return nil, nil
+	}
+	token, _ := codefly.For(ctx).Service("object-storage").Secret("object-storage", "token")
+	conn, err := objectstore.Dial(network.Address, token)
+	if err != nil {
+		return nil, fmt.Errorf("dial object-storage: %w", err)
+	}
+	return conn, nil
 }

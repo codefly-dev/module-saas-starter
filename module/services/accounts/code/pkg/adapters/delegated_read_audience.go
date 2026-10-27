@@ -59,9 +59,6 @@ func (s *ModuleCapabilitiesServer) exchangeDelegatedAudience(ctx context.Context
 	}
 	defer releaseAuthority()
 
-	if err := requireInternalCredential(ctx); err != nil {
-		return nil, err
-	}
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get(workContextHeader)) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one module Work Context required")
@@ -278,9 +275,6 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 	}
 	defer releaseAuthority()
 
-	if err := requireInternalCredential(ctx); err != nil {
-		return nil, err
-	}
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get(workContextHeader)) != 1 {
 		return nil, status.Error(codes.Unauthenticated, "one module Work Context required")
@@ -337,7 +331,7 @@ func (s *ModuleCapabilitiesServer) exchangeDelegationReference(ctx context.Conte
 		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
 			err = status.Error(codes.Unavailable, "work context authority unavailable")
 		} else {
-			err = mapWorkContextError(err)
+			err = mapWorkContextError(ctx, err)
 		}
 		audit(business.DelegatedAudienceExchangeRefused, err)
 		return nil, err
@@ -560,7 +554,7 @@ func (s *WorkContextAuthorityServer) exchangeDelegatedParent(
 	}
 	token, signed, err := s.startSourceOperation(ctx, authority, ttl)
 	if err != nil {
-		return nil, mapWorkContextError(err)
+		return nil, mapWorkContextError(ctx, err)
 	}
 	return issuedWorkContext(token, signed), nil
 }

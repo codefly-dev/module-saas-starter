@@ -312,6 +312,16 @@ func (rl *RateLimiter) Middleware(mode limiterFailureMode, class edgeRateLimitCl
 			key = "webhook:" + rl.proxies.clientIP(r)
 			keyKind = "webhook-ip"
 		}
+		if tenant, ok := workloadOperationTenant(r.Context()); ok {
+			// A headless operation context on the bearer-less module arm carries
+			// no X-Org-Id (the arm strips caller identity and ext_authz never
+			// runs), so the generic key would be the waypoint's address: every
+			// tenant on the cell in one bucket. Its budget is the tenant the
+			// capability is signed for, in a namespace of its own. Only the arm
+			// sets this context value; no header and no other route can.
+			key = "workload-operation:" + tenant
+			keyKind = "workload-operation-tenant"
+		}
 		if authenticationFactorAttempt {
 			// Login MFA completion is public and has no canonical user/org
 			// yet. Always bind the edge budget to the trusted client IP and

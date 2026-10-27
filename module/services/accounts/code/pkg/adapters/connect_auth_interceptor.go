@@ -194,11 +194,6 @@ func (i *connectPolicyInterceptor) WrapUnary(next connect.UnaryFunc) connect.Una
 		if err := enforceCentralPolicy(ctx, req.Spec().Procedure); err != nil {
 			return nil, translateGRPCError(err)
 		}
-		// The policy log's serving gate. After authorization, so the
-		// refusal reaches only callers this host would have served.
-		if err := enforcePolicyLogServing(ctx); err != nil {
-			return nil, translateGRPCError(err)
-		}
 		shadowPolicyCoverage(ctx, req.Spec().Procedure)
 		// One committed module-envelope revision read per unary request,
 		// however many module authority decisions the handler makes.
@@ -223,9 +218,6 @@ func (i *connectPolicyInterceptor) WrapStreamingHandler(next connect.StreamingHa
 			return translateGRPCError(err)
 		}
 		if err := enforceCentralPolicy(ctx, conn.Spec().Procedure); err != nil {
-			return translateGRPCError(err)
-		}
-		if err := enforcePolicyLogServing(ctx); err != nil {
 			return translateGRPCError(err)
 		}
 		shadowPolicyCoverage(ctx, conn.Spec().Procedure)
@@ -283,6 +275,15 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	if sourceOperationProcedure(procedure) && len(headers.Values(workContextHeader)) != 0 {
 		return authenticateSourceOperationContext(ctx, headers)
 	}
+	if directoryProcedure(procedure) && len(headers.Values(workContextHeader)) != 0 {
+		return authenticateOwnerWorkContext(ctx, headers, business.DirectoryAudience, "directory")
+	}
+	if business.ShapeAuthenticated(procedure) && headers.Get("Authorization") == "" && !trustedForwarded {
+		// A call carrying no credential at all: the request's shape
+		// authenticates (business.ShapeAuthenticated). A forwarded identity or a
+		// bearer is admitted as on every other method.
+		return ctx, nil
+	}
 	if trustedForwarded && headers.Get("X-User-Id") != "" {
 		forwarded, err := stampForwardedHTTPIdentity(ctx, headers)
 		if err != nil {
@@ -306,7 +307,7 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	if err != nil {
 		if errors.Is(err, auth.ErrRevocationUnavailable) {
 			wool.Get(ctx).In("connectPolicyInterceptor").Warn("revocation list unavailable, denying (fail-closed)", wool.ErrField(err))
-			return ctx, connect.NewError(connect.CodeUnavailable, errors.New("authorization temporarily unavailable"))
+			return ctx, connect.NewError(connect.CodeUnavailable, errors.New(authorizationUnavailableMessage))
 		}
 		wool.Get(ctx).In("connectPolicyInterceptor").Debug("VerifyAccess failed", wool.ErrField(err))
 		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid or expired access token"))

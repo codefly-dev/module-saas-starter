@@ -2202,6 +2202,10 @@
     padding-left: calc(var(--appearance-spacing) * 5);
   }
 
+  .pl-6 {
+    padding-left: calc(var(--appearance-spacing) * 6);
+  }
+
   .text-center {
     text-align: center;
   }

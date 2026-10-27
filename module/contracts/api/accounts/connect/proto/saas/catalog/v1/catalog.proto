@@ -35,6 +35,11 @@ message ServiceCatalog {
   // entitlements is the sorted server-owned feature/quota vocabulary shared
   // by plans, runtime checks, generated clients, and plugin manifests.
   repeated EntitlementDefinition entitlements = 8;
+
+  // Protobuf packages of the published interfaces this service implements, beside
+  // its own api_package. A method of one of these packages is served and
+  // catalogued like any other; its policy is the implementation's own sidecar.
+  repeated string interface_packages = 9;
 }
 
 // PermissionDefinition is one canonical resource:action capability. The

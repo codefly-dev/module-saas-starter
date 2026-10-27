@@ -124,6 +124,20 @@ func IsMemberPermission(resource, action string) bool {
 	return ok
 }
 
+// VocabularyActions is every action the composed permission vocabulary names
+// on one resource kind: the service's own and every contributed permission.
+// A wildcard names no action.
+func VocabularyActions(resource string) []string {
+	var actions []string
+	for _, definition := range completeServicePermissionVocabulary() {
+		kind, action := splitPermission(definition.Permission)
+		if kind == resource && action != "*" {
+			actions = append(actions, action)
+		}
+	}
+	return actions
+}
+
 func completeServicePermissionVocabulary() []servicePermissionDefinition {
 	definitions, err := composedPermissionVocabulary(servicePermissionVocabulary, permissioncatalog.Permissions())
 	if err != nil {

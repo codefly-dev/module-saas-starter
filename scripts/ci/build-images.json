@@ -24,6 +24,9 @@
       "node:alpine"
     ]
   },
+  "object-storage": {
+    "coverage": "codefly-vendor-audit"
+  },
   "postgres": {
     "source": "https://github.com/codefly-dev/service-postgres/blob/main/bootstrap-image.json",
     "images": [

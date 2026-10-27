@@ -7,13 +7,14 @@
 package accountsv1
 
 import (
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
+
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
 )
 
 const (
@@ -29,9 +30,9 @@ const (
 // the workload that principal declares, running the build its authority
 // document approves.
 //
-// The tenant the capability is bound to is not requested. It is the one declared
-// for that principal by the deployment, so a module cannot name a tenant by
-// asking, and the response reports which one was sealed.
+// A tenant-pinned principal keeps its declared tenant. A shared principal must
+// select an organization whose live installation consents to this principal;
+// requesting an organization is not authority over it.
 type ModuleMintWorkContextRequest struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Prefix string                 `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
@@ -39,8 +40,12 @@ type ModuleMintWorkContextRequest struct {
 	// for the `accounts` audience and read from its projection on every mint
 	// (the kubelet rotates it under the running process).
 	ServiceAccountToken string `protobuf:"bytes,3,opt,name=service_account_token,json=serviceAccountToken,proto3" json:"service_account_token,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Required for a shared principal with cross_tenant in its envelope. For a
+	// tenant-pinned principal, omit or match its tenant. Accounts validates the
+	// requested organization's live installation after authenticating execution.
+	OrganizationId string `protobuf:"bytes,4,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ModuleMintWorkContextRequest) Reset() {
@@ -83,6 +88,13 @@ func (x *ModuleMintWorkContextRequest) GetPrefix() string {
 func (x *ModuleMintWorkContextRequest) GetServiceAccountToken() string {
 	if x != nil {
 		return x.ServiceAccountToken
+	}
+	return ""
+}
+
+func (x *ModuleMintWorkContextRequest) GetOrganizationId() string {
+	if x != nil {
+		return x.OrganizationId
 	}
 	return ""
 }
@@ -174,8 +186,12 @@ type ModuleMintOperationContextRequest struct {
 	// service_account_token is the pod's projected ServiceAccount token, as on
 	// ModuleMintWorkContextRequest.
 	ServiceAccountToken string `protobuf:"bytes,4,opt,name=service_account_token,json=serviceAccountToken,proto3" json:"service_account_token,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Required for a shared principal with cross_tenant in its envelope. For a
+	// tenant-pinned principal, omit or match its tenant. Accounts validates the
+	// requested organization's live installation after authenticating execution.
+	OrganizationId string `protobuf:"bytes,5,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ModuleMintOperationContextRequest) Reset() {
@@ -225,6 +241,13 @@ func (x *ModuleMintOperationContextRequest) GetBinding() string {
 func (x *ModuleMintOperationContextRequest) GetServiceAccountToken() string {
 	if x != nil {
 		return x.ServiceAccountToken
+	}
+	return ""
+}
+
+func (x *ModuleMintOperationContextRequest) GetOrganizationId() string {
+	if x != nil {
+		return x.OrganizationId
 	}
 	return ""
 }
@@ -552,21 +575,23 @@ var File_saas_accounts_v1_module_registration_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_module_registration_proto_rawDesc = "" +
 	"\n" +
-	"*saas/accounts/v1/module_registration.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb3\x01\n" +
+	"*saas/accounts/v1/module_registration.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x89\x02\n" +
 	"\x1cModuleMintWorkContextRequest\x12D\n" +
 	"\x06prefix\x18\x01 \x01(\tB,\xbaH)r'\x10\x01\x18?2!^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$R\x06prefix\x12?\n" +
-	"\x15service_account_token\x18\x03 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x04R\x13serviceAccountTokenJ\x04\b\x02\x10\x03R\x06secret\"\xab\x01\n" +
+	"\x15service_account_token\x18\x03 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x04R\x13serviceAccountToken\x124\n" +
+	"\x0forganization_id\x18\x04 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x0eorganizationIdJ\x04\b\x02\x10\x03J\x04\b\x05\x10\x06J\x04\b\x06\x10\aR\x06secretR\bupstreamR\bmanifest\"\xab\x01\n" +
 	"\x1dModuleMintWorkContextResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12!\n" +
 	"\fprincipal_id\x18\x03 \x01(\tR\vprincipalId\x12\x16\n" +
-	"\x06tenant\x18\x04 \x01(\tR\x06tenant\"\xde\x01\n" +
+	"\x06tenant\x18\x04 \x01(\tR\x06tenant\"\x94\x02\n" +
 	"!ModuleMintOperationContextRequest\x12D\n" +
 	"\x06prefix\x18\x01 \x01(\tB,\xbaH)r'\x10\x01\x18?2!^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$R\x06prefix\x12$\n" +
 	"\abinding\x18\x03 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\abinding\x12?\n" +
-	"\x15service_account_token\x18\x04 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x04R\x13serviceAccountTokenJ\x04\b\x02\x10\x03R\x06secret\"\xe6\x01\n" +
+	"\x15service_account_token\x18\x04 \x01(\tB\v\xbaH\br\x06\x10\x01\x18\x80\x80\x04R\x13serviceAccountToken\x124\n" +
+	"\x0forganization_id\x18\x05 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x0eorganizationIdJ\x04\b\x02\x10\x03R\x06secret\"\xe6\x01\n" +
 	"\"ModuleMintOperationContextResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
 	"\n" +
@@ -592,7 +617,8 @@ const file_saas_accounts_v1_module_registration_proto_rawDesc = "" +
 	"\abinding\x18\x06 \x01(\tR\abinding\x12#\n" +
 	"\rdelegation_id\x18\a \x01(\tR\fdelegationId\x12\x1b\n" +
 	"\tsource_id\x18\b \x01(\tR\bsourceId\x12,\n" +
-	"\x12owner_principal_id\x18\t \x01(\tR\x10ownerPrincipalIdb\x06proto3"
+	"\x12owner_principal_id\x18\t \x01(\tR\x10ownerPrincipalIdB\xe6\x01\n" +
+	"\x14com.saas.accounts.v1B\x17ModuleRegistrationProtoP\x01ZSgithub.com/codefly-dev/cli/pkg/builder/clients/accounts/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
 	file_saas_accounts_v1_module_registration_proto_rawDescOnce sync.Once

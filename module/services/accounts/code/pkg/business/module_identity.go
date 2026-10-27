@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
@@ -63,6 +64,9 @@ type ModuleWorkContextAuthority struct {
 	// its ServiceAccount, the image it is running and the approved build's
 	// incarnation. Every mint carries one; there is no unbound module identity.
 	Execution ExecutionIdentity
+	// TTL, when set, is the lifetime the caller asked for: it shortens the
+	// mint's window and never lengthens it past the mint's own ceiling.
+	TTL time.Duration
 
 	// The immutable registry used for the entire mint, including its release fence.
 	snapshot *installedModuleRegistry
@@ -273,6 +277,32 @@ func (e ExecutionIdentity) auditFields() map[string]any {
 	}
 }
 
+// IssuedIn reports whether a capability of this principal's own — its module
+// mint, its headless context, its installation's issue — may be issued in
+// orgID: a principal pinned to a tenant is issued in that tenant only, whatever
+// cross_tenant says, and an unpinned one in the organisation the work names.
+// cross_tenant lets a principal's installed authority serve installations in
+// other organisations (moduleAvailableToOrganization); it never moves where
+// the principal itself is issued. This is the one statement of the pin rule;
+// the mint below and the host interface's installation issue both read it.
+func (g ModulePrincipalGrant) IssuedIn(orgID string) bool {
+	return orgID != "" && (g.Tenant == "" || g.Tenant == orgID)
+}
+
+// ModuleTenant is the organization the module named prefix is pinned to by
+// the installed registry (manifest within the module envelope), "" when it is
+// shared or not in the registry. A workload of a pinned module acts there and
+// nowhere else, whatever organization a request names. The registry is fenced
+// against the committed envelope first, like every module authority decision,
+// so a pin a newer envelope set is never read from an older registry.
+func (s *Service) ModuleTenant(ctx context.Context, prefix string) (string, error) {
+	snapshot := s.moduleRegistrySnapshot()
+	if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {
+		return "", err
+	}
+	return snapshot.registry[ModulePrincipalID(prefix)].Tenant, nil
+}
+
 // A shared principal selects consent, not authority: execution still proves the
 // principal and the subsequent live read must find that org's installation.
 // A tenant-pinned principal cannot switch orgs even if it has cross_tenant.
@@ -290,13 +320,13 @@ func moduleMintOrganization(grant ModulePrincipalGrant, requested []string) (str
 		}
 	}
 	if grant.Tenant != "" {
-		if org != "" && org != grant.Tenant {
+		if org != "" && !grant.IssuedIn(org) {
 			return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "requested organization differs from pinned tenant")
 		}
 		return grant.Tenant, nil
 	}
-	if !grant.CrossTenant || org == "" {
-		return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "shared mint requires cross_tenant and an organization")
+	if org == "" || (!grant.CrossTenant && grant.PresenceGeneration == 0) {
+		return "", wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent, "a shared workload must name the organization of the work item and have a delivered principal or cross_tenant grant")
 	}
 	return org, nil
 }

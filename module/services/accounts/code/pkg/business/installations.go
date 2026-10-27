@@ -14,11 +14,17 @@ import (
 // solution scope node, standing grant, and installation row are created together
 // in one transaction; see InstallationStore.InstallSolution.
 type InstallSolutionParams struct {
+	ApprovalReplayed    bool `json:"-"`
+	Approval            *InstallationApproval
 	Kind                string
 	RegistryBindingID   string
 	RegistryPrincipalID string
 	Scope               *InstallationScope
-	EnvelopeRevision    uint64
+	// ModuleCeiling is resolved by prepareInstallation, never from the request.
+	// Re-consent may approve this current ceiling; partial reductions use the
+	// NarrowInstallation lifecycle instead.
+	ModuleCeiling    *InstallationScope
+	EnvelopeRevision uint64
 	// InstallerPrincipalID records ownership for bounded nonhuman reconciliation.
 	InstallerPrincipalID string
 	OrgID                string
@@ -119,10 +125,16 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	w := wool.Get(ctx).In("InstallSolution",
 		wool.Field("org_id", params.OrgID),
 		wool.Field("target_id", params.TargetID))
-	params.GrantedBy = actorID
-	if params.OwnerPrincipalID == "" {
-		params.OwnerPrincipalID = actorID
+	// Bind the original intent before prepareInstallation fills mutable defaults.
+	approval, approvalErr := params.Approval.bindIntent(struct {
+		Actor  string
+		Params *InstallSolutionParams
+	}{actorID, params})
+	if approvalErr != nil {
+		return nil, approvalErr
 	}
+	params.Approval = approval
+	params.GrantedBy = actorID
 	// Composing at the store level (one transaction) skips the friendly
 	// Principal.Validate() check the CreateAgentPrincipal domain path runs, so a
 	// malformed identifier would otherwise surface as an opaque DB CHECK violation
@@ -148,6 +160,9 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	if err != nil {
 		return nil, err
 	}
+	if params.OwnerPrincipalID == "" {
+		params.OwnerPrincipalID = actorID
+	}
 	// The ceiling may only name audiences this host actually serves (issue #952).
 	// `allowed_audiences` used to be free text, so an installation could name a
 	// consumer that does not exist and then mint for it — the audience is what
@@ -168,6 +183,9 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		installation, e = s.installationStore().InstallSolution(ctx, params)
 		if e != nil {
 			return e
+		}
+		if params.ApprovalReplayed {
+			return nil
 		}
 		// Publish installation.created in the same transaction (outbox). The
 		// boundary is the solution scope node the install just composed.
@@ -261,6 +279,43 @@ func (s *Service) ListInstallations(ctx context.Context, req *gen.ListInstallati
 	return &gen.ListInstallationsResponse{Installations: summaries, NextPageToken: nextToken}, nil
 }
 
+// activeTargetInstallationPageLimit bounds ActiveTargetInstallations: a cursor
+// that has not ended after this many full pages is an error, never a short
+// answer.
+const activeTargetInstallationPageLimit = 20
+
+// ActiveTargetInstallations answers the ids of orgID's ACTIVE installations of
+// targetID, read through ListInstallations page by page. It is the admission
+// read of the gateway's bearer-less module arm, asked inside
+// AdmitWorkloadOperation so the gateway makes one call; the arm needs every
+// row, because a seal on ANY of them is the target's own.
+func (s *Service) ActiveTargetInstallations(ctx context.Context, orgID, targetID string) ([]string, error) {
+	var ids []string
+	token := ""
+	for page := 0; page < activeTargetInstallationPageLimit; page++ {
+		resp, err := s.ListInstallations(ctx, &gen.ListInstallationsRequest{
+			OrgId:     orgID,
+			Status:    gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE,
+			PageSize:  listInstallationsMaxPageSize,
+			PageToken: token,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, summary := range resp.GetInstallations() {
+			installation := summary.GetInstallation()
+			if installation.GetOrgId() == orgID && installation.GetTargetId() == targetID &&
+				installation.GetStatus() == gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+				ids = append(ids, installation.GetId())
+			}
+		}
+		if token = resp.GetNextPageToken(); token == "" {
+			return ids, nil
+		}
+	}
+	return nil, fmt.Errorf("installations of organization %s did not end within %d pages", orgID, activeTargetInstallationPageLimit)
+}
+
 // TransferInstallationOwnership reassigns the owner of record and replaces the
 // co-owner succession set. The new owner must be a current org admin; the store
 // fails closed otherwise.
@@ -289,27 +344,16 @@ func (s *Service) TransferInstallationOwnership(ctx context.Context, actorID, or
 // is left in place (inert without a grant or a live agent) so a reinstall reuses
 // it. Idempotent on an already-revoked installation (no second audit event).
 //
-// It is a NARROWING, so it runs under the policy log: the entry is appended to
-// the external record and its receipt is written here BEFORE anything is
-// revoked, and the revocation commits in the same transaction as the receipt's
-// commit. A host that cannot witness the append refuses the uninstall rather
-// than performing one a restore could silently undo.
-//
-// The transaction is the policy log's CONTROL-PLANE one rather than this
-// organisation's, because the receipt lives in a control-plane relation that
-// app_tenant holds no grant on — and the receipt and the revocation have to be
-// the same transaction or the protocol's one forbidden state ("applied but
-// unwitnessed") becomes reachable. The organisation's own scoping is not lost:
-// every statement below names orgID explicitly, which is what the tenant policy
-// would have checked.
+// It is a NARROWING, so it applies directly (narrow): every revocation and its
+// audit event commit in one control-plane transaction. The organisation's own
+// scoping is not lost: every statement below names orgID explicitly, which is
+// what the tenant policy would have checked.
 func (s *Service) UninstallSolution(ctx context.Context, actorID, orgID, installationID string) error {
 	w := wool.Get(ctx).In("UninstallSolution", wool.Field("installation_id", installationID))
 	actorType := s.actorTypeForCreator(ctx, actorID)
-	if err := s.WithPolicyLoggedNarrowing(ctx,
-		uninstallPolicyLogEntry(actorID, orgID, installationID),
-		func(ctx context.Context) error {
-			return s.uninstallSolutionTx(ctx, actorID, actorType, orgID, installationID)
-		}); err != nil {
+	if err := s.narrow(ctx, func(ctx context.Context) error {
+		return s.uninstallSolutionTx(ctx, actorID, actorType, orgID, installationID)
+	}); err != nil {
 		return w.Wrapf(err, "cannot uninstall solution")
 	}
 	return nil

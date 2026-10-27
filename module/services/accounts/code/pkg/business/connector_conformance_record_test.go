@@ -67,7 +67,7 @@ var conformanceRecordProviders = map[string]string{
 	DatasourceProviderGitHub:  "",
 	DatasourceProviderAPI:     gapAPIDatasource,
 	DatasourceProviderCrawler: gapCrawlerDatasource,
-	DatasourceProviderUpload:  gapUploadDatasource,
+	DatasourceProviderUpload:  "",
 }
 
 func TestConformanceRecordCoversEveryRegisteredProvider(t *testing.T) {

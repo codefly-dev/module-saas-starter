@@ -6,6 +6,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/datasource/connector"
+	"accounts/pkg/datasource/objectstore"
 	"accounts/pkg/email"
 	"accounts/pkg/events"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -30,78 +31,77 @@ import (
 )
 
 type Service struct {
-	sourceReceiptStore         receipts.Store
-	sourceReceiptGuard         *receipts.Interceptor
-	store                      Store
-	hasher                     KeyHasher
-	validator                  auth.TokenValidator // production: validates provider tokens after OAuth code exchange
-	headerJWTValidator         auth.TokenValidator // header-jwt mode only: validates the gateway-injected identity assertion
-	exchanger                  CodeExchanger       // production: exchanges OAuth codes for provider tokens
-	devValidator               auth.TokenValidator // development only: allowlists explicit fixture identities
-	resolver                   auth.IdentityResolver
-	minter                     auth.JWTMinter
-	emailOutbox                *email.Outbox    // optional durable email producer; transport is worker-only
-	billing                    BillingClient    // optional: Stripe client for checkout/portal
-	billingURLs                BillingRedirects // server-owned Stripe return destinations
-	appBaseURL                 string           // public URL of the frontend, used in email bodies
-	orgCreationPolicy          OrganizationCreationPolicy
-	moduleAuthorityEnforcement ModuleAuthorityEnforcement
-	audit                      AuditEmitter
-	auditTx                    TxAuditEmitter // set when audit also writes on the caller's tx; required in production
-	entitlements               EntitlementChecker
-	membership                 MembershipInvalidator
-	slack                      *SlackNotifier // optional: sends critical notifications to Slack
-	oauthState                 *auth.OAuthStateSigner
-	oauthPolicy                *auth.OAuthRequestPolicy
-	clientRegistry             *auth.ClientRegistry
-	clientMetadata             *auth.ClientMetadataResolver
-	oauthIssuer                string
-	webhookJobs                jobs.Producer // request-scoped, transactional outbound producer
-	mfaCipher                  SecretCipher  // required for TOTP enrollment and verification
-	webhookCipher              SecretCipher  // required for outbound-webhook signing keys
-	webhookPolicy              *WebhookEndpointPolicy
-	webAuthn                   WebAuthnEngine    // required for passkey registration and assertion
-	jobOperations              jobs.Operations   // isolated, payload-free platform operations
-	eventOperations            events.Operations // isolated, payload-free domain-event operations
-	followablesMu              sync.RWMutex
-	followables                []FollowableResource
-	followableByEvent          map[string]string // declared followable event type → resource type
-	acquisitionMode            gen.AcquisitionMode
-	waitlistEmailVerification  bool
-	eventRegistry              *analytics.Registry
-	productEvents              analytics.Emitter
-	usageMeters                *UsageMeterCatalog
-	privacy                    PrivacyWorkflow
-	privacyJobs                jobs.Producer // request-scoped, transactional producer for privacy workflow jobs
-	ssoManagementAPIKey        string
-	abuseVerifier              abuse.Verifier
-	identityCipher             SecretCipher               // encrypts per-org IdP client secrets
-	identityRegistry           *IdentityProviderRegistry  // resolves org → provider stack, cache-invalidated on config change
-	connectorCipher            SecretCipher               // encrypts per-source datasource connector credentials (#274 connector store)
-	githubConnector            *githubconnector.Connector // mints installation tokens and pulls repo contents (#274 connector store)
-	datasourceCipher           SecretCipher               // encrypts per-source DatasourceService credentials + webhook secrets
-	datasourceJobs             jobs.Producer              // privileged inbox producer for datasource ingest deliveries
-	datasourceSyncOperations   DatasourceSyncOperationStore
-	datasourceConnectors       *connector.Registry // the descriptor-driven connector registry; nil until the connector is configured
-	datasourceLinkKey          []byte              // signs account-link states; delivered as datasource-keys/DATASOURCE_ACCOUNT_LINK_KEY, not derived from any other credential
-	datasourceLinkers          map[string]DatasourceAccountLinker
-	datasourceOAuth            map[string]DatasourceOAuthProvider
-	datasourceTXTResolver      TXTResolver
-	datasourceBudgets          DatasourceBudgetStore // meters provider credentials; nil leaves connectors unmetered
-	githubBaseURL              string                // api.github.com override for the datasource connector
-	githubAppID                string                // deployment's GitHub App registration; empty leaves sources on their own PAT
-	githubAppKeyPEM            string                // the App's RSA signing key, deployment custody — never copied onto a source
-	githubAppWebhookSecret     string                // signs the App's own lifecycle deliveries; App-wide, never per source
-	githubAppSlug              string                // the App's URL slug, used to build its install link; empty disables App onboarding
-	githubAppClientID          string                // the App's OAuth client, which identifies the person returning from an install
-	githubAppClientSecret      string                // its secret; without the pair, an installation cannot be attributed to a caller
+	sourceReceiptStore        receipts.Store
+	sourceReceiptGuard        *receipts.Interceptor
+	store                     Store
+	hasher                    KeyHasher
+	validator                 auth.TokenValidator // production: validates provider tokens after OAuth code exchange
+	headerJWTValidator        auth.TokenValidator // header-jwt mode only: validates the gateway-injected identity assertion
+	exchanger                 CodeExchanger       // production: exchanges OAuth codes for provider tokens
+	devValidator              auth.TokenValidator // development only: allowlists explicit fixture identities
+	resolver                  auth.IdentityResolver
+	minter                    auth.JWTMinter
+	emailOutbox               *email.Outbox    // optional durable email producer; transport is worker-only
+	billing                   BillingClient    // optional: Stripe client for checkout/portal
+	billingURLs               BillingRedirects // server-owned Stripe return destinations
+	appBaseURL                string           // public URL of the frontend, used in email bodies
+	orgCreationPolicy         OrganizationCreationPolicy
+	audit                     AuditEmitter
+	auditTx                   TxAuditEmitter // set when audit also writes on the caller's tx; required in production
+	entitlements              EntitlementChecker
+	membership                MembershipInvalidator
+	slack                     *SlackNotifier // optional: sends critical notifications to Slack
+	oauthState                *auth.OAuthStateSigner
+	oauthPolicy               *auth.OAuthRequestPolicy
+	clientRegistry            *auth.ClientRegistry
+	clientMetadata            *auth.ClientMetadataResolver
+	oauthIssuer               string
+	webhookJobs               jobs.Producer // request-scoped, transactional outbound producer
+	mfaCipher                 SecretCipher  // required for TOTP enrollment and verification
+	webhookCipher             SecretCipher  // required for outbound-webhook signing keys
+	webhookPolicy             *WebhookEndpointPolicy
+	webAuthn                  WebAuthnEngine    // required for passkey registration and assertion
+	jobOperations             jobs.Operations   // isolated, payload-free platform operations
+	eventOperations           events.Operations // isolated, payload-free domain-event operations
+	followablesMu             sync.RWMutex
+	followables               []FollowableResource
+	followableByEvent         map[string]string // declared followable event type → resource type
+	acquisitionMode           gen.AcquisitionMode
+	waitlistEmailVerification bool
+	eventRegistry             *analytics.Registry
+	productEvents             analytics.Emitter
+	usageMeters               *UsageMeterCatalog
+	privacy                   PrivacyWorkflow
+	privacyJobs               jobs.Producer // request-scoped, transactional producer for privacy workflow jobs
+	ssoManagementAPIKey       string
+	abuseVerifier             abuse.Verifier
+	identityCipher            SecretCipher               // encrypts per-org IdP client secrets
+	identityRegistry          *IdentityProviderRegistry  // resolves org → provider stack, cache-invalidated on config change
+	connectorCipher           SecretCipher               // encrypts per-source datasource connector credentials (#274 connector store)
+	githubConnector           *githubconnector.Connector // mints installation tokens and pulls repo contents (#274 connector store)
+	datasourceCipher          SecretCipher               // encrypts per-source DatasourceService credentials + webhook secrets
+	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
+	datasourceSyncOperations  DatasourceSyncOperationStore
+	datasourceConnectors      *connector.Registry // the descriptor-driven connector registry; nil until the connector is configured
+	datasourceLinkKey         []byte              // signs account-link states; delivered as datasource-keys/DATASOURCE_ACCOUNT_LINK_KEY, not derived from any other credential
+	datasourceLinkers         map[string]DatasourceAccountLinker
+	datasourceOAuth           map[string]DatasourceOAuthProvider
+	datasourceTXTResolver     TXTResolver
+	datasourceBudgets         DatasourceBudgetStore // meters provider credentials; nil leaves connectors unmetered
+	githubBaseURL             string                // api.github.com override for the datasource connector
+	githubAppID               string                // deployment's GitHub App registration; empty leaves sources on their own PAT
+	githubAppKeyPEM           string                // the App's RSA signing key, deployment custody — never copied onto a source
+	githubAppWebhookSecret    string                // signs the App's own lifecycle deliveries; App-wide, never per source
+	githubAppSlug             string                // the App's URL slug, used to build its install link; empty disables App onboarding
+	githubAppClientID         string                // the App's OAuth client, which identifies the person returning from an install
+	githubAppClientSecret     string                // its secret; without the pair, an installation cannot be attributed to a caller
 	//nolint:lll // the mount this mirrors is a single deployment switch; splitting the note loses the pairing
 	datasourceWebhookMounted bool                    // whether THIS deployment mounted the per-source push receiver; a stored per-source secret verifies nothing without it
 	datasourceTicketSigner   *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
 	newGitHubClient          func(token string) GitHubContentClient
 	newAPIClient             func(cfg APIDatasourceConfig, credential string) APIContentClient
 	newCrawlerClient         func(cfg CrawlerDatasourceConfig) CrawlerContentClient
-	newUploadClient          func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient
+	newUploadBucket          func(cfg objectstore.SourceConfig, accessKeyID, secretAccessKey string) objectstore.Bucket
 	newOAuth2Refresh         OAuth2RefreshFunc // refreshes an OAuth 2.0 API source's access token
 	moduleProducer           jobs.Producer     // request-scoped, transactional outbox producer for the module-facing surface
 	moduleJobStore           jobs.Store        // privileged worker store (claim/finalize) for the module-facing surface
@@ -162,9 +162,14 @@ type Service struct {
 	// The delivery inbox's wiring. All of it or none: ReceiveSolutionDelivery
 	// fails closed and names the gap when any is absent, because a deployment
 	// that mounted the endpoint without a verifier must not accept documents.
-	deliveryVerifier *solutionhost.Verifier
-	deliveryStore    SolutionDeliveryStore
-	deliveryCarrier  SolutionDeliveryCarrierAuthorizer
+	deliveryVerifier          *solutionhost.Verifier
+	authorityDocumentVerifier func([]byte, []byte) (string, error)
+	// authorityDocuments is each binding's applied authority document, verified
+	// once per generation.
+	authorityDocuments   verifiedAuthorityDocuments
+	compositionReconcile func(context.Context) error
+	deliveryStore        SolutionDeliveryStore
+	deliveryCarrier      SolutionDeliveryCarrierAuthorizer
 	// deliveryCoordinate is this host's coordinate, which every admission is
 	// decided under.
 	deliveryCoordinate string
@@ -177,23 +182,8 @@ type Service struct {
 	frontendSource         frontendpayload.Source
 	frontendLazyLoadWindow time.Duration
 
-	// The policy log's wiring: the external append-only record, this host's
-	// local receipts and cursor, and an overridable clock.
-	//
-	// Both nil means no log. WithPolicyLoggedNarrowing then REFUSES — a host
-	// that cannot witness a narrowing must not perform one — while MayServe
-	// allows serving, because nothing has been narrowed through the protocol and
-	// there is therefore nothing unreconciled. Those two answers look
-	// inconsistent and are not: the first is about reducing authority, the
-	// second about honouring reductions that were recorded.
-	policyLog      PolicyLog
-	policyLogStore PolicyLogStore
-	policyClock    func() time.Time
-	// policyServing is the serving gate's bounded memory of its last
-	// answer. It lives here rather than in the gate because the gate is
-	// consulted per request and the answer is per host; see
-	// policy_log_gate.go for why the reuse window is safe.
-	policyServing policyLogServingCache
+	// policyClock is the clock narrowing-dependent reads judge time by; nil means time.Now.
+	policyClock func() time.Time
 
 	// The live-authority reads enforcement at use depends on. Nil means this
 	// host cannot re-read, and AuthorizeModuleCapability then refuses every
@@ -217,6 +207,12 @@ type Service struct {
 	// super_admin writes (module_envelope.go). Nil answers no question about
 	// the ceiling: the RPCs refuse and the reconcilers derive nothing.
 	moduleEnvelopes ModuleEnvelopeStore
+	// authorityCore decides every operation of the host interfaces: the shared
+	// authority core over this host's store (authority_core.go).
+	authorityCore *authorityCoreState
+	// admissionKeys persists the hop's registered admission keys
+	// (hop_admission_keys.go). Nil publishes none and registers none.
+	admissionKeys AdmissionKeyStore
 	// registryPassTrigger asks the reconciler for a pass now. Set once at boot,
 	// before the service listens; nil leaves the tick as the only pass.
 	registryPassTrigger func()
@@ -232,14 +228,6 @@ func (s *Service) SetModuleAuthorityReads(
 ) {
 	s.moduleAuthority = authority
 	s.moduleOperationBindings = bindings
-}
-
-// SetPolicyLog wires the append-only authority record and its local half.
-//
-// Boot wiring, called once before the service listens.
-func (s *Service) SetPolicyLog(log PolicyLog, store PolicyLogStore) {
-	s.policyLog = log
-	s.policyLogStore = store
 }
 
 // SetSolutionDelivery wires the delivery endpoint: the pinned-key verifier,
@@ -302,6 +290,7 @@ func (s *Service) moduleRegistryFenced() bool {
 // it was derived from. Published together through one pointer, so a reader can
 // never pair one pass's registry with another pass's revision.
 type installedModuleRegistry struct {
+	manifestDerived  bool
 	registry         ModulePrincipalRegistry
 	envelopeRevision uint64
 	// delivered is the size of the delivery inbox this registry was derived
@@ -376,9 +365,14 @@ func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
 func (s *Service) InstallDerivedModulePrincipals(
 	registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64, withheld ...ModuleBindingOmission,
 ) {
+	s.installModuleRegistry(registry, envelopeRevision, delivered, false, withheld...)
+}
+
+func (s *Service) installModuleRegistry(registry ModulePrincipalRegistry, envelopeRevision uint64, delivered *uint64, manifestDerived bool, withheld ...ModuleBindingOmission) {
 	s.observeModuleEnvelopeRevision(envelopeRevision)
 	s.modulePrincipals.Store(&installedModuleRegistry{
-		registry: maps.Clone(registry), envelopeRevision: envelopeRevision,
+		manifestDerived: manifestDerived,
+		registry:        maps.Clone(registry), envelopeRevision: envelopeRevision,
 		delivered: delivered, withheld: slices.Clone(withheld),
 	})
 }

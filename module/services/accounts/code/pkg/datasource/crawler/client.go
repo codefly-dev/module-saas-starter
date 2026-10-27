@@ -9,7 +9,8 @@
 // and on any redirect, checked against the exact IP being connected to (not the
 // hostname) so DNS rebinding cannot slip past the check. "Not on the public
 // internet" is auth.IsPublicDestination, read from the IANA special-purpose
-// registries.
+// registries; a declared host a meshed cell resolves into its mesh egress range
+// is admitted by the same shared rule (auth/mesh_egress.go).
 package crawler
 
 import (
@@ -71,10 +72,9 @@ type Client struct {
 // addresses.
 func New(cfg Config) *Client {
 	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: 10 * time.Second,
-			Control: dialGuard,
-		}).DialContext,
+		DialContext: auth.GuardedDialContext(net.Dialer{Timeout: 10 * time.Second}, dialResolver,
+			// Indirect through the dialGuard var so a test override is honored.
+			func(requested string) auth.DialControl { return dialGuard(requested) }),
 	}
 	return &Client{
 		cfg: cfg,
@@ -219,20 +219,29 @@ func requireHTTPURL(raw string) (string, error) {
 	return u.String(), nil
 }
 
-// dialGuard is the Control hook of every dial this package makes. It is
-// always guardDial in production; it is a variable only so a test can reach an
-// httptest listener on loopback.
+// dialGuard builds the Control hook of every dial this package makes, from
+// the "host:port" the client asked for. It is always guardDial in production;
+// it is a variable only so a test can reach an httptest listener on loopback,
+// or wrap guardDial in a recorder.
 var dialGuard = guardDial
 
-// guardDial refuses to open a connection to an address that is not on the
-// public internet. It runs after DNS resolution with the concrete IP:port being
-// dialed, so it blocks the exact address the connection would reach — closing
-// the DNS-rebinding gap a hostname-only check leaves open. The judgement is
-// auth.IsPublicDestinationDialAddress, the classifier the host's guarded
-// egress paths share; an address it cannot parse is refused.
-func guardDial(_, address string, _ syscall.RawConn) error {
-	if !auth.IsPublicDestinationDialAddress(address) {
-		return ErrBlockedAddress
+// dialResolver resolves the requested host before the dial. It is
+// net.DefaultResolver in production; a variable only so a test can answer with
+// the address it needs.
+var dialResolver auth.Resolver = net.DefaultResolver
+
+// guardDial refuses to open a connection the egress rule does not admit. Its
+// hook runs with the concrete IP:port being dialed, so it blocks the exact
+// address the connection would reach — closing the DNS-rebinding gap a
+// hostname-only check leaves open. The judgement is
+// auth.AdmitsDestinationDialAddress, the rule the host's guarded egress paths
+// share: a public address, or a declared host's address in a meshed cell's mesh
+// egress range. An address it cannot parse is refused.
+func guardDial(requested string) auth.DialControl {
+	return func(_, address string, _ syscall.RawConn) error {
+		if !auth.AdmitsDestinationDialAddress(requested, address) {
+			return ErrBlockedAddress
+		}
+		return nil
 	}
-	return nil
 }

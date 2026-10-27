@@ -410,6 +410,12 @@ func RenderPublicOpenAPI(rawDocument []byte, surface *catalogv1.RESTSurfaceCatal
 			if catalogMethod == nil {
 				return nil, fmt.Errorf("OpenAPI operation %q %q is absent from the service catalog", upperMethod, path)
 			}
+			if !strings.HasPrefix(catalogMethod.GetProcedure(), "/"+service.GetApiPackage()+".") {
+				// An implemented interface's REST mapping is not on this host's
+				// surface (see BuildGatewayRouteCatalog): served over Connect
+				// and gRPC only.
+				continue
+			}
 			if _, public := allowed[key]; public {
 				filteredItem[method] = operation
 				seen[key] = struct{}{}

@@ -1,0 +1,157 @@
+# The host-interface conformance harness's fixture: the dev-admin people,
+# organisations and teams, plus what the shared suite needs from the composing
+# workspace — the roles over the composed modules' kinds, their assignments,
+# and the solutions the harness delivers, installed through the host's own
+# install path. It mirrors the local authority's fixture, person for person.
+# It is a test fixture: no deployment selects it.
+users:
+  - {id: 00000000-0000-7000-8000-0000000000a1, email: admin@acme.com, name: Sarah Chen, role: super_admin, provider: email, provider_id: dev-admin}
+  - {id: 00000000-0000-7000-8000-0000000000a2, email: alice@acme.com, name: Alice Johnson, role: admin, provider: email, provider_id: dev-alice}
+  - {id: 00000000-0000-7000-8000-0000000000a3, email: bob@acme.com, name: Bob Williams, role: member, provider: email, provider_id: dev-bob}
+  - {id: 00000000-0000-7000-8000-0000000000b1, email: maya@acme.test, name: Maya Viewer, role: member, provider: email, provider_id: fixture-maya}
+  - {id: 00000000-0000-7000-8000-0000000000b2, email: remi@acme.test, name: Remi Editor, role: member, provider: email, provider_id: fixture-remi}
+  - {id: 00000000-0000-7000-8000-0000000000b3, email: alex@acme.test, name: Alex Admin, role: member, provider: email, provider_id: fixture-alex}
+  - {id: 00000000-0000-7000-8000-0000000000b4, email: dev@acme.test, name: Dev Developer, role: member, provider: email, provider_id: fixture-dev}
+  - {id: 00000000-0000-7000-8000-0000000000b5, email: zoe@globex.test, name: Zoe Admin, role: member, provider: email, provider_id: fixture-zoe}
+  - {id: 00000000-0000-7000-8000-0000000000b6, email: omar@globex.test, name: Omar Member, role: member, provider: email, provider_id: fixture-omar}
+  # An organisation owner who is not an administrator, and a member who holds
+  # no role and is on no team.
+  - {id: 00000000-0000-7000-8000-0000000000b7, email: owner@acme.test, name: Olivia Owner, role: member, provider: email, provider_id: fixture-owner}
+  - {id: 00000000-0000-7000-8000-0000000000b8, email: no-roles@acme.test, name: Nora Noroles, role: member, provider: email, provider_id: fixture-no-roles}
+  # The installer of two solutions who administers one existing collection
+  # through her own organization grant, and nothing else: no administrator.
+  - {id: 00000000-0000-7000-8000-0000000000b9, email: ivy@acme.test, name: Ivy Installer, role: member, provider: email, provider_id: fixture-ivy}
+  # The solution-principal target's people: two whose own organization grants
+  # reach one existing resource of the store's kind (one administers it, one
+  # reads it), an installer holding nothing yet, two members of a team no
+  # installation is granted to (one leaves it), one who leaves the
+  # organization, and a reader of one solution's notes.
+  - {id: 00000000-0000-7000-8000-0000000000d1, email: store-admin@acme.test, name: Sam Storeadmin, role: member, provider: email, provider_id: fixture-store-administrator}
+  - {id: 00000000-0000-7000-8000-0000000000d2, email: store-reader@acme.test, name: Rita Storereader, role: member, provider: email, provider_id: fixture-store-reader}
+  - {id: 00000000-0000-7000-8000-0000000000d3, email: installer@acme.test, name: Ian Installer, role: member, provider: email, provider_id: fixture-principal-installer}
+  - {id: 00000000-0000-7000-8000-0000000000d4, email: team-member@acme.test, name: Tom Teammember, role: member, provider: email, provider_id: fixture-principal-team-member}
+  - {id: 00000000-0000-7000-8000-0000000000d5, email: team-leaver@acme.test, name: Tess Teamleaver, role: member, provider: email, provider_id: fixture-principal-team-leaver}
+  - {id: 00000000-0000-7000-8000-0000000000d6, email: org-leaver@acme.test, name: Otto Orgleaver, role: member, provider: email, provider_id: fixture-principal-org-leaver}
+  - {id: 00000000-0000-7000-8000-0000000000d7, email: note-reader@acme.test, name: Nina Notereader, role: member, provider: email, provider_id: fixture-principal-note-reader}
+
+organizations:
+  - id: 00000000-0000-7000-8000-0000000000c1
+    name: Acme Corp
+    owner: admin@acme.com
+    members:
+      - {email: alice@acme.com, role: admin}
+      - {email: bob@acme.com, role: member}
+      - {email: maya@acme.test, role: member}
+      - {email: remi@acme.test, role: member}
+      - {email: alex@acme.test, role: admin}
+      - {email: dev@acme.test, role: admin}
+      - {email: owner@acme.test, role: owner}
+      - {email: no-roles@acme.test, role: member}
+      - {email: ivy@acme.test, role: member}
+      - {email: store-admin@acme.test, role: member}
+      - {email: store-reader@acme.test, role: member}
+      - {email: installer@acme.test, role: member}
+      - {email: team-member@acme.test, role: member}
+      - {email: team-leaver@acme.test, role: member}
+      - {email: org-leaver@acme.test, role: member}
+      - {email: note-reader@acme.test, role: member}
+  - id: 00000000-0000-7000-8000-0000000000c2
+    name: Globex
+    owner: zoe@globex.test
+    members:
+      - {email: omar@globex.test, role: member}
+
+teams:
+  - {name: Engineering, org: Acme Corp, members: [alice@acme.com, bob@acme.com, remi@acme.test, alex@acme.test, dev@acme.test]}
+  - {name: Finance, org: Acme Corp, members: [maya@acme.test, alex@acme.test]}
+  # No member: the staleness probe exposes the pages solution to it, which
+  # moves the organisation's authority and grants nobody anything.
+  - {name: Unexposed, org: Acme Corp, members: []}
+  - {name: Ops, org: Globex, members: [zoe@globex.test, omar@globex.test]}
+  # No installation is granted to it until the target grants one.
+  - {name: Principal team, org: Acme Corp, members: [team-member@acme.test, team-leaver@acme.test]}
+
+roles:
+  - org: Acme Corp
+    name: Collection reader
+    description: Read collection content in explicitly granted collections
+    permissions:
+      - {resource: example-records, action: read}
+  # The suite's viewer reads example records and directory entries across the
+  # organization: a role scoped to nothing holds the whole kind, where a
+  # collection's or a record's grant holds only what it names.
+  - org: Acme Corp
+    name: Record viewer
+    description: Read every example record and directory entry of the organization
+    permissions:
+      - {resource: example-records, action: read}
+      - {resource: directory.entry, action: read}
+  # A record reader holds example records one id at a time (a resource-limited
+  # grant): what ListResources answers by grant.
+  - org: Acme Corp
+    name: Record reader
+    description: Read the example records granted to them by id
+    permissions:
+      - {resource: example-records, action: read}
+  # The conversational module's users: a person who may use the module whether
+  # or not a solution it binds to is exposed to them.
+  - org: Acme Corp
+    name: Agent user
+    description: Read their conversations with the conformance agent
+    permissions:
+      - {resource: conformance-agent.conversation, action: read}
+
+  # The transfer seam reads a person's own organization grant on one existing
+  # resource, never a solution's owner-selected scope: Ivy administers
+  # collection-x alone.
+  - org: Acme Corp
+    name: Collection transfer
+    description: Administer the one collection granted to them by id
+    permissions:
+      - {resource: conformance.collection, action: admin}
+
+  - org: Acme Corp
+    name: Principal store admin
+    description: Administer the one existing collection granted to them by id
+    permissions:
+      - {resource: principal.collection, action: admin}
+  - org: Acme Corp
+    name: Principal store reader
+    description: Read the one existing collection granted to them by id
+    permissions:
+      - {resource: principal.collection, action: read}
+  - org: Acme Corp
+    name: Principal note reader
+    description: Read the notes of one solution's principal
+    permissions:
+      - {resource: principal-a.note, action: read}
+
+assignments:
+  - {org: Acme Corp, role: Principal store admin, email: store-admin@acme.test, scope: store-x}
+  - {org: Acme Corp, role: Principal store reader, email: store-reader@acme.test, scope: store-x}
+  - {org: Acme Corp, role: Principal note reader, email: note-reader@acme.test}
+  - {org: Acme Corp, role: Record reader, email: maya@acme.test, scope: conformance-record-a}
+  - {org: Acme Corp, role: Collection transfer, email: ivy@acme.test, scope: collection-x}
+  - {org: Acme Corp, role: Record viewer, email: bob@acme.com}
+  - {org: Acme Corp, role: Agent user, email: maya@acme.test}
+  - {org: Acme Corp, role: Agent user, email: remi@acme.test}
+
+collections:
+  - org: Acme Corp
+    label: Example Collection
+    role: Collection reader
+    readers: [admin@acme.com, bob@acme.com]
+
+# Installed once the harness delivers each solution, then acknowledged by its
+# install step and exposed to its teams, as a fixture's installations converge.
+installations:
+  # The pages solution reaches finance and engineering as viewers.
+  - {org: Acme Corp, target: conformance-pages, role: viewer, owner: alex@acme.test, teams: [Finance, Engineering]}
+  # The proposals solution reaches finance alone, so a module binding to it
+  # distinguishes Maya (finance) from Remi (engineering).
+  - {org: Acme Corp, target: conformance-proposals, role: viewer, owner: alex@acme.test, teams: [Finance]}
+  # The assistant solution acts for itself down a chain of modules.
+  - {org: Acme Corp, target: conformance-assistant, role: viewer, owner: alex@acme.test}
+  # Delivered only once the host is running, as a composition delivers a
+  # solution after boot: installed at Acme alone, and reached by its finance team.
+  - {org: Acme Corp, target: conformance-late, role: viewer, owner: alex@acme.test, teams: [Finance]}

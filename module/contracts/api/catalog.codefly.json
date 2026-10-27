@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:373a8f3a22b7968c36dd9faffb9be5ef64213b1de2a532f5e567007bd65caaa7",
+      "digest": "sha256:743b63bad9a546f105e994c754d845865e189465e6c72816e5785efe38ab7831",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -35,6 +35,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
+            "/saas.accounts.v1.ModuleCapabilitiesService/MintSourceOperationContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyOrgAdmins",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
@@ -63,10 +64,65 @@
       "endpoint": "connect",
       "api": "connect",
       "kind": "protobuf",
-      "package": "saas.accounts.v1",
+      "package": "",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:373a8f3a22b7968c36dd9faffb9be5ef64213b1de2a532f5e567007bd65caaa7",
+      "digest": "sha256:743b63bad9a546f105e994c754d845865e189465e6c72816e5785efe38ab7831",
       "services": [
+        {
+          "name": "ArtifactService",
+          "fullName": "host.artifact.v1.ArtifactService",
+          "procedures": [
+            "/host.artifact.v1.ArtifactService/Approve",
+            "/host.artifact.v1.ArtifactService/Authorize",
+            "/host.artifact.v1.ArtifactService/Revoke"
+          ]
+        },
+        {
+          "name": "AuthorityService",
+          "fullName": "host.authority.v1.AuthorityService",
+          "procedures": [
+            "/host.authority.v1.AuthorityService/AttachResource",
+            "/host.authority.v1.AuthorityService/AuthorizeTransfer",
+            "/host.authority.v1.AuthorityService/Check",
+            "/host.authority.v1.AuthorityService/Delegate",
+            "/host.authority.v1.AuthorityService/DetachResource",
+            "/host.authority.v1.AuthorityService/GetDelegation",
+            "/host.authority.v1.AuthorityService/Issue",
+            "/host.authority.v1.AuthorityService/Keys",
+            "/host.authority.v1.AuthorityService/ListResources",
+            "/host.authority.v1.AuthorityService/RegisterAdmissionKey",
+            "/host.authority.v1.AuthorityService/RevokeDelegation"
+          ]
+        },
+        {
+          "name": "CompositionService",
+          "fullName": "host.composition.v1.CompositionService",
+          "procedures": [
+            "/host.composition.v1.CompositionService/ApplyManifest"
+          ]
+        },
+        {
+          "name": "InstallationService",
+          "fullName": "host.installation.v1.InstallationService",
+          "procedures": [
+            "/host.installation.v1.InstallationService/Current",
+            "/host.installation.v1.InstallationService/GrantRole",
+            "/host.installation.v1.InstallationService/Install",
+            "/host.installation.v1.InstallationService/List",
+            "/host.installation.v1.InstallationService/ListRoleGrants",
+            "/host.installation.v1.InstallationService/Review",
+            "/host.installation.v1.InstallationService/RevokeRole"
+          ]
+        },
+        {
+          "name": "SessionService",
+          "fullName": "host.session.v1.SessionService",
+          "procedures": [
+            "/host.session.v1.SessionService/Current",
+            "/host.session.v1.SessionService/ListFixturePeople",
+            "/host.session.v1.SessionService/SignIn"
+          ]
+        },
         {
           "name": "APIKeyService",
           "fullName": "saas.accounts.v1.APIKeyService",
@@ -542,6 +598,7 @@
           "name": "WorkContextService",
           "fullName": "saas.accounts.v1.WorkContextService",
           "procedures": [
+            "/saas.accounts.v1.WorkContextService/AdmitWorkloadOperation",
             "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead",
             "/saas.accounts.v1.WorkContextService/CheckAuthorizationRevision",
             "/saas.accounts.v1.WorkContextService/ConsumeSingleUse",
@@ -562,7 +619,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:a54c94b3d74017a0493e0b08e799a59c4bb2979779b66b75426d6d1095d31747",
+      "digest": "sha256:282b2820ed0d1e8a693dad827b0446d65843a7d1f0328a6d137e8aec0c129291",
       "services": [
         {
           "name": "AuthGatewayService",

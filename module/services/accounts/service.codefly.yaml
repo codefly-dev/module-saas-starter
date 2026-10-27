@@ -19,6 +19,11 @@ service-dependencies:
       endpoints:
         - name: read
         - name: write
+    # Object-storage sources are read through this service, under a per-call
+    # binding of the source's bucket and credential (pkg/datasource/objectstore).
+    - name: object-storage
+      endpoints:
+        - name: grpc
     - name: store
       endpoints:
         - name: tcp
@@ -32,8 +37,16 @@ workspace-configuration-dependencies:
     - billing
     - datasource-keys
     - datasource-oauth
+    # Codefly-owned: HOSTS, generated from the environment's egress
+    # declaration, admitted by guarded egress on a meshed cell (code/work.go,
+    # configureMeshEgress). No authored file.
+    - egress
     - email
     - federation
+    # The roles a composing workspace's people hold at the modules it composes,
+    # added to the selected fixture (fixtures/workspace_grants.go): a document,
+    # fixture-grants.yaml (the default grants nothing).
+    - fixture-grants
     - gateway-trust
     - github-app
     - identity

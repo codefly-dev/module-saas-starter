@@ -3,8 +3,8 @@
 
 `ModuleCapabilitiesService.ExchangeDelegatedReadAudience` is an internal,
 read-only exchange for a module holding a current signed parent but no owner
-bearer. The module authenticates independently with its own module Work Context
-and the internal perimeter credential. Its request contains only `binding_id`
+bearer. The module authenticates independently with its own module Work Context;
+no perimeter credential is asked. Its request contains only `binding_id`
 and `parent_work_context_token`. No owner, actor, target audience or scope is
 caller selectable. The parent must address the authenticated module's installed
 prefix and tenant; the canonical current-revision and every-hop revocation
@@ -139,12 +139,12 @@ and restoring the binding invalidates an already issued child. Missing or
 unavailable owner state cannot fall back to an ordinary exchange.
 
 Changing the mode of an existing binding is a policy restriction, including
-adding it where the mode was previously absent. The existing witnessed policy
-log path must authorize that envelope transition; adding a JSON field is not
-an additive grant. An entirely new binding remains subject to the normal grant
-and installation checks. A host without the configured policy-log witness
-refuses a mode migration and leaves the stored envelope revision unchanged.
-No local substitute witness or automatically inferred migration is supported.
+adding it where the mode was previously absent: a platform administrator or a
+signed delivery writes it as a new envelope revision through the one envelope
+writer, and like every narrowing it applies directly, revoking what the new
+ceiling no longer allows in the same transaction. Adding a JSON field is not an
+additive grant. An entirely new binding remains subject to the normal grant and
+installation checks. No automatically inferred migration is supported.
 
 **Installed module actors.**
 
@@ -186,6 +186,18 @@ authorization store. The child is terminal, as above.
 The mode is the binding's, never the request's. The chain-preserving exchange,
 StartTask and registered-agent actors are unchanged, and a binding without a
 mode keeps its owner-only child.
+
+**A parent that names its module's bindings.** A person's parent for a module
+that will exchange through its installed bindings may name those bindings
+instead of their scopes: `StartTask`'s `operation_bindings` takes binding ids
+of the audience module. The host resolves each one the way the exchange will
+(`ModuleOperationAudience`: the binding as installed at the organization,
+narrowed by that installation) and adds its invoke scopes, keeping each
+resource only if the person holds it by the check every mint makes. A binding
+the person holds nothing under is refused by name. So a source binding's ids
+come from the organization's installation, never from the caller. Only a
+direct human-owned mint takes it; an actor's mint and a resource-confined mint
+refuse it. A scope the caller also names is carried once.
 
 Resource kinds, actions and resource ids are sorted and unique; wildcards are
 refused. Lookup scopes are optional: a binding that declares only invoke scopes
@@ -309,8 +321,8 @@ rejected with the reason rather than one call failing later.
 
 Name the resource by its **stable identity**, not by a digest of its current
 definition. The module principal registry is derived, each reconcile pass, from
-the applied module manifests and the module envelope, so re-issuing this entry is
-an envelope revision. A grant that has to be re-issued whenever
+applied signed manifests, narrowed by an administrative envelope when one exists,
+so re-issuing this entry is an envelope revision. A grant that has to be re-issued whenever
 the producer's definition moves leaves the consumer without access from the
 moment that definition moves until the new revision and its deliveries are
 applied, and each accounts replica derives its own registry on its own pass, so
@@ -344,6 +356,34 @@ answered by one set of functions for minting and verifying alike
   is sealed to the organization's installation of it, held while the person is an
   active member; an organization that never installed the audience is minted
   nothing. A module's is sealed to the installation its mint resolved.
+  This is an invariant, not a default: every capability a person's own session
+  or a module's re-mint for that person issues is sealed to the installation of
+  the audience it addresses. `StartChildSession` is the one derivation core
+  cannot re-seal (a child keeps its parent's seal), so it refuses a person's
+  child for an audience whose installation is not the parent's seal.
+  Several kinds of person-owned capability are sealed elsewhere, by design, and
+  each has its own mint gate:
+  - **Source-operation contexts** (`startSourceOperation`,
+    `pkg/adapters/source_delegation.go`): owned by the person, sealed to the
+    installation of the module USING the person's source delegation. Only that
+    module's identity, exercising a delegation the person granted to one of its
+    bindings, mints one.
+  - **Installation tasks** (`mintInstallationTask`,
+    `pkg/adapters/work_context_rpcs.go`): owned by the installation's owner of
+    record, sealed to the installation the authority is drawn from. Only an
+    `EXPOSURE_INTERNAL` credential reaches `StartInstallationTask`, and an
+    install step is signed by the host itself.
+  - **Installed binding children** (`exchangeInstalledBinding`,
+    `pkg/adapters/installed_content_read.go`): a module's `content_read` or
+    `module_actor` exchange of a person's capability derives a core `Child`,
+    which keeps the parent's seal (the exchanging module's installation) while
+    addressing another module.
+
+  So a seal on an installation other than the audience's does not mean
+  unattended work, and nothing decides that from the seal.
+  `TestAPersonsCapabilityIsSealedToItsAudiencesInstallation` pins the rule over
+  every person mint, and `TestEveryWorkContextMintIsClassifiedBySeal` fails on
+  any mint RPC that names neither where it seals nor why.
 - **Epoch.** The owner's authorization revision in the organization. Membership
   and role changes advance a person's; installing a module and every change to
   its installation's revision advance a module principal's (migration 35).
@@ -634,6 +674,24 @@ The rules are fail-closed on purpose:
 A composed module reaches it through the gateway's `POST
 /modules/_operation-context` ([services/auth-gateway/AGENTS.md](./services/auth-gateway/AGENTS.md)),
 which brokers to accounts exactly as `/modules/_work-context` does.
+
+The minted context is presented at `/v1/<audience>/*` on the same workload
+endpoint, with no bearer: the declared module route's bearer-less arm. A
+composed workload with no person present, such as a solution's release
+publisher, reaches the module it is bound to this way; modules keep calling
+their peers in-mesh. The edge checks what core's `Inspector` can (signature,
+issuer, window, the route's audience, shape), strips every identity header and
+meters on the tenant. It then asks the issuer: accounts'
+`AdmitWorkloadOperation` admits a capability only if it is exactly what
+`StartModuleOperationTask` signs, owned by a declared module principal other
+than the alias's and sealed to that principal's active installation, and
+refuses every person-owned kind, including those sealed elsewhere (see the seal
+rule above). It reads the capability back against its own live state and
+consumes nothing. In the same call it requires the route's target installed in
+the signed tenant, with the seal none of its rows. The arm forwards the
+capability as presented and stamps nothing beside it. The callee verifies the
+capability at full strength, as for any other carrier. The route's rules are in
+[GATEWAY_ROUTES.md](./GATEWAY_ROUTES.md#module-rest-routes).
 
 ## Operation contexts from a source delegation
 

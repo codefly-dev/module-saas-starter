@@ -9,6 +9,7 @@ import * as content from "./content.stories";
 import * as controls from "./controls.stories";
 import * as foundations from "./foundations.stories";
 import * as metrics from "./metrics.stories";
+import * as playground from "./playground.stories";
 import * as primitives from "./primitives.stories";
 import * as semanticTables from "./semantic-table.stories";
 import * as tables from "./table.stories";
@@ -26,6 +27,7 @@ const HOUSE_RULES = resolveSkinRules({
 for (const [section, stories] of Object.entries({
 	controls,
 	foundations,
+	playground,
 	primitives,
 	metrics,
 	tables,

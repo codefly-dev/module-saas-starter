@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -28,6 +29,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoregistry"
 )
@@ -144,7 +146,7 @@ func TestSourceOperationRemovedSourceOnlyRecoversOwnEffect(t *testing.T) {
 			svc, err := business.NewService(store)
 			require.NoError(t, err)
 			for _, lookup := range []bool{false, true} {
-				_, _, err := svc.SourceOperationAuthority(t.Context(), "caller", "org", "source", "read_item", "effect", lookup)
+				_, _, err := svc.SourceOperationAuthority(t.Context(), "caller", "org", "source", "read_item", "effect", "", lookup)
 				if owner == "caller" {
 					require.Equal(t, codes.FailedPrecondition, status.Code(err))
 				} else {
@@ -156,14 +158,31 @@ func TestSourceOperationRemovedSourceOnlyRecoversOwnEffect(t *testing.T) {
 }
 
 func TestSourceOperationPreparedConnectJSONReplayAndCurrentAuthority(t *testing.T) {
+	for _, fenced := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fenced=%t", fenced), func(t *testing.T) {
+			testSourceOperationReplayAndCurrentAuthority(t, fenced)
+		})
+	}
+}
+
+func testSourceOperationReplayAndCurrentAuthority(t *testing.T, fenced bool) {
 	org, actor, source := "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333"
 	mutation := connectortest.OperationDeclaration()
 	mutation.Effect = operations.Mutation
 	declaration, err := operations.Admit(mutation)
 	require.NoError(t, err)
 	request := &gen.InvokeSourceOperationRequest{OrgId: org, SourceId: source, Operation: declaration.Name, InputJson: `{"id":"one"}`, EffectId: "effect-one"}
+	if fenced {
+		request.ExpectedDeclarationDigest = proto.String(declaration.Digest)
+	}
 	digest, err := receipts.RequestDigest(request)
 	require.NoError(t, err)
+	if !fenced {
+		// Canonical request bytes from the five-field contract, before the
+		// additive precondition existed. An omitted field must preserve them.
+		legacy := sha256.Sum256([]byte(receipts.RequestDigestFormatV1 + "\x00" + `{"effect_id":"effect-one","input_json":"{\"id\":\"one\"}","operation":"read_item","org_id":"11111111-1111-4111-8111-111111111111","source_id":"33333333-3333-4333-8333-333333333333"}`))
+		require.Equal(t, legacy[:], digest)
+	}
 	store := &sourceWireStore{allowed: true, declaration: declaration, source: &business.DatasourceSource{ID: source, OrgID: org, Provider: business.DatasourceProviderAPI, API: &business.APIDatasourceConfig{}}, attempt: &business.SourceOperationAttempt{OrgID: org, ActorID: actor, SourceID: source, Operation: declaration.Name, DeclarationDigest: declaration.Digest, EffectID: request.EffectId, RequestDigest: digest}}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
@@ -200,6 +219,13 @@ func TestSourceOperationPreparedConnectJSONReplayAndCurrentAuthority(t *testing.
 		require.True(t, proto.Equal(expected, response.Msg))
 	}
 	require.Len(t, audit.events, 2, "one observation per replay")
+	changedPrecondition := proto.CloneOf(request)
+	changedPrecondition.ExpectedDeclarationDigest = proto.String(declaration.Digest)
+	if fenced {
+		changedPrecondition.ExpectedDeclarationDigest = nil
+	}
+	_, err = client.CallUnary(t.Context(), connect.NewRequest(changedPrecondition))
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "the declaration precondition is part of the effect fingerprint")
 	different := proto.CloneOf(request)
 	different.InputJson = `{"id":"two"}`
 	_, err = client.CallUnary(t.Context(), connect.NewRequest(different))
@@ -264,6 +290,79 @@ func TestSourceOperationPreparedConnectJSONReplayAndCurrentAuthority(t *testing.
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
 
+type replacingSourceReceiptStore struct {
+	receipts.Store
+	replace func()
+}
+
+func (s replacingSourceReceiptStore) Serialize(ctx context.Context, tenant, effect, method string) (receipts.Held, error) {
+	held, err := s.Store.Serialize(ctx, tenant, effect, method)
+	if err == nil {
+		s.replace()
+	}
+	return held, err
+}
+
+func TestSourceOperationDeclarationPreconditionBeforeDispatch(t *testing.T) {
+	for _, duringWait := range []bool{false, true} {
+		t.Run(fmt.Sprintf("during-wait=%t", duringWait), func(t *testing.T) {
+			org, actor, source := "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333"
+			declaration, err := operations.Admit(connectortest.OperationDeclaration())
+			require.NoError(t, err)
+			store := &sourceWireStore{allowed: true, declaration: declaration, source: &business.DatasourceSource{ID: source, OrgID: org, Provider: business.DatasourceProviderAPI, API: &business.APIDatasourceConfig{}}}
+			replace := func() {
+				d := connectortest.OperationDeclaration()
+				d.Effect = operations.Mutation
+				store.declaration, err = operations.Admit(d)
+				require.NoError(t, err)
+			}
+			svc, err := business.NewService(store)
+			require.NoError(t, err)
+			svc.SetAuditEmitter(&sourceWireAudit{})
+			require.NoError(t, svc.ConfigureSourceOperationReceipts(replacingSourceReceiptStore{Store: receipts.NewMemoryStore(), replace: replace}))
+			previous, cache := service, orgMembershipCache
+			service, orgMembershipCache = svc, nil
+			t.Cleanup(func() { service, orgMembershipCache = previous, cache })
+			if !duringWait {
+				replace()
+			}
+			ctx := stampVerifiedIdentity(t.Context(), actor, org, auth.Assurance{})
+			request := &gen.InvokeSourceOperationRequest{OrgId: org, SourceId: source, Operation: declaration.Name, InputJson: `{"id":"a"}`, EffectId: "first-call", ExpectedDeclarationDigest: proto.String(declaration.Digest)}
+			_, err = (&datasourceConnectHandler{svc: svc}).InvokeSourceOperation(ctx, connect.NewRequest(request))
+			require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+			require.Nil(t, store.attempt, "a stale declaration must not create a provider attempt")
+		})
+	}
+}
+
+func TestSourceOperationDeclarationPreconditionSyntax(t *testing.T) {
+	request := &gen.InvokeSourceOperationRequest{OrgId: "11111111-1111-4111-8111-111111111111", SourceId: "22222222-2222-4222-8222-222222222222", Operation: "read_item", InputJson: "{}"}
+	for _, digest := range []string{"", "sha256:" + strings.Repeat("a", 64)} {
+		request.ExpectedDeclarationDigest = proto.String(digest)
+		require.NoError(t, Validate(request))
+	}
+	for _, digest := range []string{"*", "sha256:short", "sha256:" + strings.Repeat("A", 64)} {
+		request.ExpectedDeclarationDigest = proto.String(digest)
+		require.Error(t, Validate(request))
+	}
+}
+
+func TestSourceOperationLegacyEnvelopeAllowance(t *testing.T) {
+	request := &gen.InvokeSourceOperationRequest{OrgId: "11111111-1111-4111-8111-111111111111", SourceId: "22222222-2222-4222-8222-222222222222", Operation: "read_item", InputJson: `{"id":""}`, EffectId: "effect"}
+	// All five historical fields are nonzero, so these bytes have the same
+	// length as the original EmitUnpopulated envelope before field 6 existed.
+	oldWire, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
+	require.NoError(t, err)
+	request.InputJson = `{"id":"` + strings.Repeat("a", sourceInputEnvelopeBytes-len(oldWire)) + `"}`
+	require.NoError(t, Validate(request))
+	require.True(t, sourceWireFits(request, sourceInputEnvelopeBytes), "adding an omitted field must not shrink the old input bound")
+	request.InputJson += " "
+	require.False(t, sourceWireFits(request, sourceInputEnvelopeBytes))
+	request.InputJson = `{"id":"a"}`
+	request.ExpectedDeclarationDigest = proto.String("sha256:" + strings.Repeat("a", 64))
+	require.True(t, sourceWireFits(request, sourceInputEnvelopeBytes))
+}
+
 func TestSourceOperationJSONEnvelopeBoundAndScope(t *testing.T) {
 	// Two output copies and JSON escaping must fit even at the declaration cap.
 	payload, _ := json.Marshal(map[string]string{"value": strings.Repeat("\x01", (operations.MaxOutputBytes-20)/6)})
@@ -299,6 +398,9 @@ func TestSourceOperationForeignTenantNeverAudits(t *testing.T) {
 			_, err = (&datasourceConnectHandler{svc: svc}).InvokeSourceOperation(ctx, connect.NewRequest(&gen.InvokeSourceOperationRequest{OrgId: foreign, SourceId: source, Operation: "read_item", InputJson: "{}", EffectId: "chosen audit text"}))
 			require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 			require.Empty(t, audit.events, "a foreign tenant must receive no audit row")
+			_, err = (&datasourceConnectHandler{svc: svc}).PruneSourceOperationReceipts(ctx, connect.NewRequest(&gen.PruneSourceOperationReceiptsRequest{OrgId: foreign, SourceId: source, EffectId: "chosen audit text"}))
+			require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+			require.Empty(t, audit.events, "foreign-tenant prune must receive no audit row either")
 		})
 	}
 }
@@ -319,7 +421,10 @@ func sourcePreparedBinding(t *testing.T, method, address, source string) *runnab
 	t.Helper()
 	pkg, spec, err := runnable.PackageFromMethod(protoregistry.GlobalFiles, &resources.RunnableLocation{Identity: &resources.RunnableIdentity{Name: "invoke-source", Module: "saas-starter", Workspace: "example", Version: "0.1.0"}, WorkspacePath: t.TempDir(), RelativeToWorkspace: "modules/saas-starter"}, runnable.ServiceOwner{Module: "saas-starter", Service: "accounts", Endpoint: "connect", Agent: &basev0.Agent{Kind: basev0.Agent_SERVICE, Name: "go-grpc", Publisher: "codefly.dev", Version: "0.1.53"}}, method)
 	require.NoError(t, err)
-	require.Nil(t, spec.Tool)
+	// Core derives the operation's tool exposure from the method itself (core
+	// b23dc135, which the authority core requires): the tool calls exactly it.
+	require.NotNil(t, spec.Tool)
+	require.Equal(t, method[strings.LastIndex(method, "/")+1:], spec.Tool.GetName())
 	scoped, err := spec.ResolveScopeSlots([]*runnablev0.ScopeSelection{{Slot: "source", Invoke: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"invoke", "read"}, ResourceIds: []string{source}}}, Lookup: []*basev0.WorkScopeV1{{ResourceKind: "datasource.sources", Actions: []string{"read"}, ResourceIds: []string{source}}}}})
 	require.NoError(t, err)
 	encoded, err := runnable.EncodePrepared(&runnablev0.PreparedBinding{Operation: &runnablev0.PreparedOperation{Module: "saas-starter", Service: "accounts", Endpoint: "connect", Spelling: method}, Call: &runnablev0.PreparedCall{Address: address, Route: &runnablev0.PreparedCall_Connect{Connect: &runnablev0.ConnectProcedure{Procedure: method}}}, Contract: pkg.Contract, Policy: scoped.Policy()})

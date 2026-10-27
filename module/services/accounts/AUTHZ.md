@@ -170,8 +170,8 @@ keep their prior subject intersection and credential shape.
 
 The host retains the explicit mode through manifest/envelope intersection.
 Missing target authority is a refusal or outage, never an ordinary fallback.
-Mode changes on existing bindings require the existing policy-log witness;
-a host without it refuses migration and preserves its current envelope.
+A mode change on an existing binding is a narrowing written as a new envelope
+revision; it applies directly, like every narrowing.
 See [Work Contexts](../../WORK_CONTEXTS.md#installed-delegated-audience-exchange)
 for the envelope field, terminal-lifetime rules and full exchange contract.
 

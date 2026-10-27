@@ -75,6 +75,19 @@ var ErrModuleInstallationInactive = errors.New("the installation this capability
 // is not this: that one is a refusal on every path.
 var errModuleInstalledNowhere = fmt.Errorf("%w", ErrModuleInstallationInactive)
 
+// ErrModuleNotRegistered reports a module context naming a principal no
+// composition on this host declares.
+var ErrModuleNotRegistered = errors.New("the module context names a principal this host does not register")
+
+// A module context this host does not admit — the principal is not registered,
+// it is installed nowhere for the bound organization, its tenant moved, its
+// installation belongs to another registry binding — is a fact about the
+// CALLING MODULE's own credential, never about the authority of a person or
+// caller it acts for. It answers Unauthenticated, naming the reason, so the
+// module drops its context and mints a new one rather than reporting a
+// revocation. PermissionDenied stays for a module this host admits asking for
+// what its grant does not hold.
+
 // ErrModuleAuthorityUnreadable reports a malformed caller the live read refuses
 // before it reaches the database.
 //
@@ -204,7 +217,7 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 		return nil, nil, err
 	}
 	if !found {
-		return nil, nil, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
+		return nil, nil, wrapStatus(codes.Unauthenticated, ErrModuleNotRegistered, "principal %s is not a registered module principal", caller.PrincipalID)
 	}
 	// THE TENANT IS THE CURRENT GRANT'S. A credential seals the tenant it was
 	// minted for, and the envelope can move a principal to another tenant at
@@ -212,15 +225,17 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 	// acting in the old tenant under the new grant. A cross-tenant principal
 	// names its tenant per mint, so for it the bound org is not compared.
 	if !moduleAvailableToOrganization(grant, caller.BoundOrg) {
-		return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleTenantNotCurrent,
+		return nil, nil, wrapStatus(codes.Unauthenticated, ErrModuleTenantNotCurrent,
 			"principal %s credential is bound to %s and its current tenant is %s", caller.PrincipalID, caller.BoundOrg, grant.Tenant)
 	}
 	if s.moduleAuthority == nil {
 		// Fail closed. A host with no live authority read cannot honour a
 		// narrowing, so it must not authorize capabilities at all rather than
 		// authorize them on the declared ceiling alone — which is the state this
-		// file exists to end.
-		return nil, nil, moduleRefusal(codes.FailedPrecondition, ModuleLiveAuthorityUnavailableReason,
+		// file exists to end. Unavailable: the host cannot answer, which says
+		// nothing about the module or the caller, and the work is retried once
+		// the host is repaired.
+		return nil, nil, moduleRefusal(codes.Unavailable, ModuleLiveAuthorityUnavailableReason,
 			"this host cannot re-read live module authority, so no capability may be exercised")
 	}
 
@@ -234,7 +249,7 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 		ctx, caller.PrincipalID, caller.BoundOrg, sealedInstallation)
 	if err != nil {
 		if errors.Is(err, ErrModuleInstallationInactive) {
-			return nil, nil, wrapStatus(codes.PermissionDenied, errModuleInstalledNowhere,
+			return nil, nil, wrapStatus(codes.Unauthenticated, errModuleInstalledNowhere,
 				"principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
 		}
 		if errors.Is(err, ErrModuleAuthorityUnreadable) {
@@ -250,15 +265,19 @@ func (s *Service) authorizeModuleCapabilityFromSnapshot(ctx context.Context, sna
 	}
 
 	if live == nil || live.InstallationID == "" || !live.Scope.Capabilities {
-		return nil, nil, wrapStatus(codes.PermissionDenied, errModuleInstalledNowhere, "principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
+		return nil, nil, wrapStatus(codes.Unauthenticated, errModuleInstalledNowhere, "principal %s in organization %s", caller.PrincipalID, caller.BoundOrg)
 	}
 	if live.RegistryBindingID != grant.PresenceBinding {
-		return nil, nil, wrapStatus(codes.PermissionDenied, ErrModuleInstallationInactive, "installation belongs to a different registry binding")
+		return nil, nil, wrapStatus(codes.Unauthenticated, ErrModuleInstallationInactive, "installation belongs to a different registry binding")
 	}
 	if live.EnvelopeRevision != nil && *live.EnvelopeRevision != snapshot.envelopeRevision {
 		return nil, nil, wrapStatus(codes.Unavailable, ErrModuleRegistryStale, "installation decision observed envelope revision %d", *live.EnvelopeRevision)
 	}
-	grant = intersectInstallationScope(grant, live.Scope)
+	grant, err = snapshot.consentedGrant(grant, live.Scope)
+	if err != nil {
+		return nil, nil, moduleRefusal(codes.FailedPrecondition, ModuleInstallationConsentRequiredReason,
+			fmt.Sprintf("principal %s in organization %s: %v", caller.PrincipalID, caller.BoundOrg, err))
+	}
 	authority := &ModuleCapabilityAuthority{
 		Caller:               caller,
 		Grant:                grant,

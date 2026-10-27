@@ -9,10 +9,10 @@ scope and RLS posture is in
 registration and module-identity records that only accounts may write.
 
 **Regenerating after a proto change** is one command from this directory,
-`codefly generate proto --proto ./proto --path saas --output .. --template
+`codefly generate proto --proto ./proto --output .. --template
 accounts/proto/buf.gen.yaml` (Docker, Codefly CLI ≥ 0.1.160), then the
 `go generate` steps. `codefly sync service accounts` also runs the agent-owned
-regeneration; `buf.gen.yaml` limits its input to the owned `saas` tree so the
+regeneration; `buf.gen.yaml` limits its input to the owned `saas` and `host` trees so the
 vendored Core options never become duplicate Go descriptors. The `--output . --local --template buf.gen.local.yaml`
 spelling that older docs and the `generated-pins-gate` message still show no
 longer works. The full procedure and why are in
@@ -24,6 +24,28 @@ Context exchanges below; no secret does.
 
 The principal directory lists stored identities only. Declared module authority
 is read by the capability checks and does not create synthetic directory rows.
+
+## Forwarded Work Contexts on the organization directory
+
+`DirectoryService` on the Connect endpoint accepts a person-owned Work Context
+addressed to `saas-directory` in `x-codefly-work-context`. A consuming module uses
+its existing `ExchangeDelegatedOperationAudience` binding in `module_actor` mode
+to obtain that context from the person's admitted parent. The binding declares
+`audience: saas-directory`; its scopes stay within the parent's effective scopes.
+Like a source-operation binding, it retains the calling module's installation
+seal: the host directory has no installation of its own.
+
+Admission shares the source-operation owner verifier: signature, intended
+audience, validity window, live seal/revision and current delegation authority.
+It stamps only the verified owner and tenant. The existing `requireAuth` and
+organization-membership gates still run, including for a team's resolved
+organization; membership in another organization never widens the context's
+tenant. A supplied invalid context is refused even beside a valid bearer.
+Without the Work Context header, bearer admission is unchanged.
+
+The module's own `module-capabilities` identity and a parent addressed to the
+module are not directory credentials. The three directory reads remain SaaS
+operations; no directory fact or RPC is added to the authority interface.
 
 ## The one diagnostic the binary answers
 
@@ -114,11 +136,24 @@ authority below.
 
 The module registry every capability check reads is **derived** each pass
 (`business.ModulePrincipalReconciler`) from the applied, live manifests whose
-stored carrier still verifies and the module envelope a platform super_admin
-writes: the manifest's `authority` is the request, the envelope's per-principal
-`grant` the ceiling, the entry their intersection, and its workloads the
-manifest's `(service, container)` spelled by the namespace rule. The envelope
-names no workload and approves no build.
+stored carrier still verifies. The signed manifest is the ceiling; no module
+envelope is needed on a fresh store. An existing administrative envelope narrows
+that ceiling. Workloads are the manifest's `(service, container)` spelled by the
+namespace rule; no administrative policy approves a build.
+
+## Composition interface delivery
+
+`CompositionService/ApplyManifest` accepts the same authenticated signed delivery
+on the Connect listener and synchronously runs the existing reconciler. Its
+optional authority document is signed by the same pinned key and bound to the
+core manifest digest, module and generation. Both carriers persist in one inbox
+row (migration 49). An exact replay preserves policy; a rewritten pair is refused.
+
+Every host interface operation (authority, composition, installation) is decided
+by the shared authority core of `codefly-dev/authority`, over this host's
+Postgres (`pkg/infra/postgres_authority_core.go`, migration 56); what this host
+adds is identity, the signing key, delivery, the review of workload credentials
+and the audit record. [HOST_INTERFACE.md](./HOST_INTERFACE.md) describes it.
 
 ## The solution's runtime boundary is derived from its delivered binding
 
@@ -328,10 +363,10 @@ configuration declares. The module principal reconciler derives the whole
 registry on every reconcile pass (and on a delivery or an envelope write,
 without waiting for the tick) and installs it tagged with the envelope revision
 it was derived from — the only production writer — so installing, narrowing or
-withdrawing a module takes effect with no restart. An entry exists only while
-two inputs agree:
+withdrawing a module takes effect with no restart. Applied manifest generations
+are fenced on each authority decision. Its inputs are:
 
-- **the module envelope** — the authority ceiling a platform super_admin writes
+- **an optional module envelope** — an administrative restriction a platform super_admin writes
   through `PlatformAdminService/PutModuleEnvelope` (`requirePlatformRole`, so
   never through an impersonated session; audited as
   `saas.platform.module_envelope_written`; append-only and revisioned in
@@ -351,7 +386,10 @@ two inputs agree:
   workload (namespace and service account) maps to exactly one principal, and
   two manifests asking for one principal are both omitted.
 
-The entry is the envelope's grant bounded by the manifest: queues, namespaces
+Without an envelope, the entry grants the manifest's queues, namespaces, resource
+kinds and operation scopes. It invents no tenant pin, cross-tenant grant, resource
+instance rights or installed delegation mode. With an envelope, the entry is
+its grant bounded by the manifest: queues, namespaces
 and resource kinds the manifest also asks for, and each operation binding only
 when the manifest asks for it on the envelope's audience with an `invoke`
 operation, every operation's scopes intersected with what the manifest asks.
@@ -372,15 +410,10 @@ nothing there is indistinguishable from the legitimate "no composed module
 accepts a delegation here" and the person is otherwise told, by the next sync,
 to reconnect what they just reconnected.
 
-**No envelope is said by name, every pass.** A pass that finds no envelope
-(none written, or no envelope store) publishes an empty registry and, while any
-applied manifest asks for authority, returns `ErrModuleEnvelopeMissing` naming
-each principal, binding and generation — logged by the reconcile loop as
-`solution host binding reconcile pass failed`, beside the omitted-principal
-reasons. The mint's refusal of a prefix the registry does not hold logs
-`module identity refused` with the prefix and why (the registry is empty and
-derived from no envelope, empty, or holds no entry for it), as a refused
-execution does; the caller still hears only the denial.
+**No envelope is required.** A fresh store derives its registry directly from
+applied signed manifests. An unreadable existing envelope never widens authority.
+Every omitted principal or binding still has a named refusal. The removed
+runtime enforcement switch cannot turn a refusal into a grant.
 
 **The administrator writes it at `/admin/platform/module-authority`.**
 `GetModuleEnvelope` answers, beside the current revision (`revision`,
@@ -399,7 +432,9 @@ the passkey, and lands back on the same page to write again
 (`features/auth/model/step-up.ts` — every sensitive screen turns `mfa_required`
 into that, never into a bare error).
 
-**The registry is fenced by the committed envelope revision.** Every module
+**The registry is fenced by applied manifest generations and, when present, the
+committed envelope revision.** A changed or withdrawn generation refuses an
+older registry snapshot with Unavailable and requests reconciliation. Every module
 authority decision — `AuthorizeModuleCapability`, the work-context and
 headless operation-context mints, the source-delegation mint, and the
 revision confirmations behind `CheckAuthorizationRevision` — takes its grant
@@ -435,9 +470,8 @@ credentials sealed for the old one at the next check. The grant ceiling's keys:
 | `tenant` | the org it is bound to |
 | `cross_tenant` | an inbox worker serving every tenant |
 
-**No envelope written, or no delivered authority inside it, means no module may
-call the surface** — accounts starts with an empty registry and serves no module
-until its first pass.
+**No verified delivered authority means no module may call the surface** —
+accounts starts with an empty registry and serves no module until its first pass.
 
 ### A non-member person is not a refusal of the module
 
@@ -472,7 +506,15 @@ one, under domain `saas.accounts.v1`:
 | `TENANT_MEMBERSHIP_MISSING` (`business.ModuleTenantMembershipMissingReason`) | the person named is not a member of the tenant | nobody's — final for that person |
 | `NOTIFICATION_IDEMPOTENCY_CONFLICT` (`business.ModuleNotificationIdempotencyConflictReason`) | the idempotency key was used for different content | the calling module's; a retry never clears it |
 | `SUBJECT_VISIBILITY_SET_TOO_LARGE` (`business.ModuleSubjectVisibilitySetTooLargeReason`) | the viewer's set exceeds `ModuleSubjectVisibilityMaxSet` | an administrator's, by changing the hierarchy |
-| `LIVE_AUTHORITY_UNAVAILABLE` (`business.ModuleLiveAuthorityUnavailableReason`) | this host cannot re-read live module authority, so it exercises no capability at all — refused by `AuthorizeModuleCapability` before any membership read | the operator's; **retain** the work and retry once repaired |
+| `LIVE_AUTHORITY_UNAVAILABLE` (`business.ModuleLiveAuthorityUnavailableReason`) | this host cannot re-read live module authority, so it exercises no capability at all — refused `UNAVAILABLE` (not `FAILED_PRECONDITION`) by `AuthorizeModuleCapability` before any membership read | the operator's; **retain** the work and retry once repaired |
+
+A module context `AuthorizeModuleCapability` does not admit — a principal no
+composition registers, installed nowhere for the bound organization, a tenant
+its grant no longer names, an installation of another registry binding — is the
+calling module's own credential failing, never a revocation of anyone it acts
+for. It answers `UNAUTHENTICATED`, naming the reason, so the module drops its
+context and mints again. `PERMISSION_DENIED` stays for a module this host admits
+asking for what its grant does not hold.
 
 Only `TENANT_MEMBERSHIP_MISSING` is final. **An absent or unrecognised reason is
 retainable, never final:** the table is what the surface answers today, not a
@@ -491,9 +533,10 @@ so matching on a bare reason across the whole service is wrong.
 ## Reading back a capability this host issued
 
 A capability presented with a QUESTION is read back, never verified:
-`CheckWorkContextRecordAccess`, `ListReadableSourceCollections` and the
-module-parent reads (`GetCurrentInstallation`, the executable-artifact reads) go
-through `WorkContextAuthorityServer.readBack`, which is core's
+`CheckWorkContextRecordAccess`, `ListReadableSourceCollections`, the
+module-parent reads (`GetCurrentInstallation`, the executable-artifact reads)
+and `AdmitWorkloadOperation` (through `readBackFor`, which takes the audience
+from the question) go through `WorkContextAuthorityServer.readBack`, which is core's
 `Authority.ReadBack`. It makes every check a verifier makes against live state —
 signature, issuer, audience, window, revision, seal, epochs, binding — and never
 touches the replay store, so the consumer that verified and consumed a
@@ -510,6 +553,89 @@ read-back — fail closed, as an invalid capability — while a consumer whose J
 still lists that key accepts it. The capability's lifetime bounds the window:
 its holder mints a new one under the current key. Rotating the Work Context key
 therefore briefly refuses questions about capabilities already in flight.
+
+## A person's capability is sealed to its audience's installation
+
+A capability a person's session issues, or a module re-mints for that person,
+is sealed to the organization's installation of the audience it addresses; a
+module principal's is sealed to its own. That is an invariant every such mint
+keeps, not a default: `StartTask` resolves it, `remint` re-resolves it for a
+root session, an audience exchange, a renewal and a module's exchange through
+its operation or read binding, and `StartChildSession` (whose core `Child` keeps
+the parent's seal) refuses a person's child for an audience sealed elsewhere. It
+holds a child of a service principal's capability as it is, and refuses a child
+of any other owner kind.
+
+Several person-owned kinds are sealed elsewhere by design, each behind its own
+gate:
+
+- a **source-operation context** (`startSourceOperation`): sealed to the
+  installation of the module using the person's source delegation, and minted
+  only by that module's identity exercising the delegation
+  (`MintSourceOperationContext`, or the delegation arm of
+  `ExchangeDelegatedOperationAudience`);
+- an **installation task** (`StartInstallationTask`, and an install step's
+  capability): owned by the installation's owner of record, sealed to that
+  installation, and reached only with an `EXPOSURE_INTERNAL` credential;
+- an **installed binding's child** (`exchangeInstalledBinding`, the
+  `content_read` and `module_actor` modes of
+  `ExchangeDelegatedOperationAudience`): a core `Child` of the person's
+  capability, so it keeps the parent's seal, the exchanging module's
+  installation, while addressing another module. It does not pass through
+  `StartChildSession`, so the child guard does not apply to it.
+
+`TestAPersonsCapabilityIsSealedToItsAudiencesInstallation`
+(`pkg/adapters/work_context_seal_pin_test.go`) pins the rule over every person
+mint, and `TestEveryWorkContextMintIsClassifiedBySeal` enumerates every mint RPC
+from the generated descriptors and fails on one listed neither as person-sealed
+(with its case in that table) nor as sealed elsewhere (with its reason).
+
+## The bearer-less module arm asks the issuer
+
+The gateway's bearer-less arm of `/v1/<alias>/*` admits exactly one shape, a
+module operation context (`StartModuleOperationTask`), and decides nothing from
+the seal itself: a seal on an installation other than the target's is carried
+by every kind above, all of them a person's. It asks
+`WorkContextService/AdmitWorkloadOperation{work_context, alias, target_id}`
+(`EXPOSURE_INTERNAL`, the gateway's internal credential, checked before the
+request is validated), one call per request. Accounts, as the issuer, reads the
+capability back (`readBackFor`, core's `Authority.ReadBack` with the alias as
+audience: signature, window, live revision, seal and epochs, never the replay
+store), and admits only a capability owned by a service principal with no actor
+chain, grant hop, operation binding, parent session or owner agent, with
+authority scopes, an idempotent replay policy and at most the
+operation-context window, whose owner is a declared module principal other
+than `ModulePrincipalID(alias)`, and whose tenant has an ACTIVE installation of
+`target_id` (`ActiveTargetInstallations`) that is not the seal. A refusal is an
+answer with a `WorkloadOperationRefusal`; an error means a live read could not
+answer, and the gateway answers 503. The messages live in
+`workload_operation_admission.proto`, which the gateway vendors byte for byte.
+
+Three tests hold it (`pkg/adapters/workload_operation_admission_test.go`):
+`TestEveryMintHasAWorkloadOperationVerdict` mints through every mint RPC, every
+binding mode and every signing entrypoint, plus crafted variants of the
+operation-context shape, and asserts each verdict, with exactly one admitted;
+`TestEveryRemintOfAServicePrincipalsParentHasAVerdict` presents a service
+principal's capability to every re-mint; and
+`TestWorkloadOperationTableNamesEveryMintAndOwnerKind` fails when a
+`saas.accounts.v1` RPC whose response carries a capability at any depth
+(`IssuedWorkContext`, or an accounts field named `token` or `work_context`), a
+re-mint RPC (one that also takes `parent_work_context_token` at any depth), an
+adapters declaration referencing a method of core's `*workcontext.Authority`
+other than `ReadBack` (or this server's `mint` or `remint`), found by type and
+keyed by receiver and name, whether a function, a method, a method value or a
+package-level variable, or a `PrincipalKind*` constant has no row
+(`TestCapabilityDetectionIsTransitive` holds the depth). `TestAdmitWorkloadOperationConsumesNothing`
+pins that a single-use capability shown to it still verifies once at its callee.
+
+Every re-mint refuses a service principal's capability as its parent: the
+owner a re-mint resolves current authority for needs an organization membership
+and an authorization revision, which a declared module principal does not have.
+`TestEveryRemintOfAServicePrincipalsParentHasAVerdict` pins it per re-mint, and
+`TestADelegatedExchangeRefusesAModuleOperationContextAsItsParent` (`pkg/infra`)
+runs both delegated exchanges against PostgreSQL with a real module operation
+context. The adapters' `workContextAuthorityFake` refuses a declared module
+owner as the store does.
 
 ## Minting a module Work Context
 
@@ -539,8 +665,9 @@ was bound to — namespace, ServiceAccount, pod, pod UID, container. The respons
   (`configuredSolutionHostBindingReconciler`), so **a host with no delivery mints
   for no module**, and a module run outside Kubernetes has no token to present.
 - A tenant-pinned module keeps the envelope's `tenant`; requesting a different
-  organization is refused. A shared module must name `organization_id` and have
-  `cross_tenant` in the envelope. Execution proves the principal first; the
+  organization is refused. A delivered shared module must name `organization_id`;
+  its current installation consent authorizes that organization. A directly
+  configured grant still requires `cross_tenant`. Execution proves the principal first; the
   organization's live installation then authorizes the mint. A selector grants
   nothing by itself.
 - **Every module credential is sealed.** Accounts mints and verifies Work
@@ -1008,9 +1135,10 @@ widens what every composed module can reach, so
 `business.ValidateModuleAuthorityProcedures` runs in the catalog and deployment
 generators and refuses an entry that is neither on the capability surface that
 authenticates the calling module from its Work Context nor one of the two
-declared read-only oracles. A method that authorizes on the shared perimeter
-credential alone and mutates state therefore cannot reach every composed module
-through a one-line edit to the list.
+declared read-only oracles, which authenticate the calling module the same way.
+A method that proves no caller, or mutates state for a tenant the request
+names, therefore cannot reach every composed module through a one-line edit to
+the list.
 
 `cmd/connect-registration` also generates
 `generated/api-contract-surfaces.json`, selected by the module's CLI-owned
@@ -1044,6 +1172,43 @@ not substitute for it: mTLS refuses the call before any token is read.
 The transport underneath — h2c rather than server TLS, the resolved origin, and
 the key set a consumer verifies host-signed credentials against — is
 [../../INTERNAL_TRANSPORT.md](../../INTERNAL_TRANSPORT.md).
+
+## An object-storage source is a prefix and a key filter
+
+An `upload` ("Object storage") source reads one bucket under one `prefix`, and
+`UploadDatasourceConfig` narrows it further: `include_patterns` and
+`exclude_patterns` are RE2 expressions over the object key with the prefix
+removed (unanchored, case-sensitive; exclude wins; an empty include admits
+everything), and `file_extensions` intersects them with GitHub's suffix
+semantics. `uploadKeyScope` (`pkg/business/datasource_file_filter.go`, beside
+GitHub's own filter) is the one matcher. The connector applies it, not the
+listing source: it is the `InScope` of an `objectstore.Scope`
+(`pkg/datasource/objectstore/scope.go`), whose `Window` takes the store's
+listing whole and keeps the matches, counting only them against
+`max_objects`. So an excluded object is never fetched and never uses up the
+cap, the closing listing names only matches, and replacing what lists the
+prefix leaves the filter where it is.
+
+- **Refused at the call, never at sync.** `AddSource` and `UpdateSource`
+  compile every pattern and refuse an invalid one, more than 16, or one over 256
+  characters as `INVALID_ARGUMENT` with a `google.rpc.BadRequest` violation and
+  a message that leads with the field path (`upload.include_patterns[1]: …` on
+  add, `include_patterns[1]: …` on update). The kit places a refusal under its
+  field by that leading path, because the TypeScript SDK carries no
+  error-detail types.
+- **Narrowing deletes.** `UpdateSource` takes the patterns and file types for an
+  upload source (branch and paths are refused), under the same `expected` rule
+  as a GitHub edit, and queues the source's pull sync. That sync's closing
+  listing omits what the narrower filter excludes, and the store tombstones it
+  — unlike a GitHub snapshot, which only declares scope (below).
+- **Access follows the source.** A source is (bucket, prefix, filter) → one
+  collection → one grant; two sources on one bucket with different filters are
+  two collections with different readers. The catalog description says so.
+- **The filter is the host's whatever the store.** An S3-style listing takes a
+  prefix and a delimiter only, so the object-storage service needs nothing for
+  this. The source's `Scope` rides on its `objectstore.SourceConfig`, so the
+  envelope connector applies it to the service's listing before the version is
+  digested (#1211).
 
 ## A datasource source is refreshed by three things, and one of them covers every provider
 
@@ -1176,3 +1341,86 @@ cause (v2 of that type; `datasourceAccessLostCodes` is the whole vocabulary a
 registry test holds the declaration to). Recovery is the ordinary one — a later
 snapshot clearing the degrade — which a repository made public again, or
 reconnected with a PAT or through the App, all reach.
+
+## Object storage is a client of the object-storage service, diffed against a listing the host retains
+
+The `upload` provider — "Object storage" to a person — reads a bucket under a
+key prefix into a `collection` scope node. Its readers are source-scoped: a
+bucket has no per-object access list, so the model to offer is one collection
+per prefix, granted like any scope. `AddSource` refuses a webhook secret for it:
+there is no push path (#1211 b).
+
+The host **re-uses the composed object-storage service** rather than keep a
+store client of its own (the owner's direction, 2026-10-21). This module
+composes it (`services/object-storage`, the `codefly.dev/object-storage` agent)
+and accounts depends on its `grpc` endpoint; `work.go` dials it with the token
+its agent publishes. The service takes a per-call bucket binding — kind,
+endpoint, region, bucket, prefix and the source's access key, for that one call
+— and owns the store protocol, every backend, the public-destination guard on
+each dial and the size cap (codefly-dev/service-object-storage#108). The host
+keeps what is per-source state:
+
+- **The sync reads through the connector.** `runUploadSync` takes a complete
+  snapshot through `objectstore.FilesConnector` (`Changes` from nothing), reads
+  it in batches with `FetchFiles`, delivers each object, and closes with the
+  listing the store tombstones the rest against. It still re-sends every object
+  in scope each sync; delivering only what the cursor says changed would change
+  what the consuming module receives, so it is its own change.
+- **The retained listing is the cursor.** The connector versions a source by
+  the digest of its scoped listing under its binding. The host keeps those
+  listings in `datasource_object_manifests` (migration 59), tenant-owned — the
+  control plane has no grant — and pruned to the newest four per source by
+  `PutDatasourceObjectManifest`; a pruned or rebound version resyncs. Clause by
+  clause, in [CONFORMANCE.md](./code/pkg/datasource/connector/CONFORMANCE.md).
+- **`objectstore.ServiceBucket` is the store.** It pages the listing (bounded;
+  past the bound it is `ErrListingIncomplete`, never a partial version) and
+  reads a batch in one `GetMany`, each object at `If-Match` its listed ETag.
+  The binding carries no prefix — the service would normalize it as a folder —
+  and every page filters on the source's literal key prefix (`/reports/` stays
+  `/reports/`), so an item keeps its full key; a listed key outside that prefix,
+  or a page past the service's page size, refuses the listing. Every call has a
+  deadline (30 s, five minutes for a batched read).
+  Before it lists or reads it asks `Capabilities` under the binding and refuses
+  a service that reports no bound caps or no batch size — a release from before
+  the binding would ignore it and serve its own bucket as the tenant's.
+- **Conformant, and admitted.** A batch is read in one `GetMany` call (up to
+  the service's `max_get_many_items`, 1000), each object at its listed ETag, so
+  the provider passes the conformance suite through `ServiceBucket` over the
+  service's wire and is registered through `connector.Budgeted`: a sync spends
+  its credential's budget, keyed by a digest of the store's origin and access
+  key id derived from the source's configuration on every use (never stored,
+  so sources connected at any time share one quota on one key), and a
+  requested sync may spend the reserved share. Where a compatible service is composed,
+  `GetDatasourceCatalog` reports `accepts_new_sources` and `AddSource` takes a
+  new source with its prefix and key filter. That is the whole admin path a
+  composed consumer drives — catalog, `AddSource`, sync — with no portal step.
+- **Admission needs a service that can read a bucket.** At start `work.go`
+  wires the composed service through `Service.SetObjectStorage`, which first
+  asks it, unbound, whether it reads a batch (`objectstore.CheckService`) and
+  refuses to wire one that does not. A composition without the service, or with one
+  from before the binding (0.0.18 and earlier; this module pins 0.0.19),
+  leaves object storage unavailable: the catalog says so, `AddSource` refuses
+  with `ErrObjectStorageUnavailable`, and an existing source's sync fails by
+  name.
+- **A sync never empties a source that has files** — a host-owned invariant,
+  whatever any service version answers. A closing snapshot with no files
+  tombstones every entry mirrored from the source, and a service that wrongly
+  answers "empty" (a rewritten scope, a discarded truncation) has happened.
+  So a listing that comes back empty for a source whose last closing snapshot
+  named objects — `datasource_sources.last_snapshot_items`, migration 60,
+  written only when a snapshot is sent; unknown on a source synced before it,
+  which counts as having files — is refused with
+  `ErrUploadEmptyListingRefused` (job code
+  `datasource.upload_empty_listing_refused`), closes nothing, and leaves the
+  collection as it is. Emptying a source is an explicit operation.
+- **Each refusal gets the action its reason names**, not one generic retry:
+  a throttle (`STORE_THROTTLED`) is retried no earlier than the store's reset;
+  an object over the service's cap (`OBJECT_TOO_LARGE`) is skipped and the
+  sync goes on, then surfaces it without a closing snapshot; a guard refusal
+  (`DESTINATION_REFUSED`) or a rejected access key (`CREDENTIAL_REJECTED`)
+  parks the source as degraded, with a fixed reason asking for a new endpoint
+  or a valid key, and fails the job terminally — unless the park itself cannot
+  be written, when the job retries instead, so a source never stops with
+  nothing on it to say why (`parkDatasourceSource`, the park the GitHub
+  unreadable-public-repository path goes through as well); an incomplete, too-long or too-large
+  listing is the terminal incomplete-listing disposition.

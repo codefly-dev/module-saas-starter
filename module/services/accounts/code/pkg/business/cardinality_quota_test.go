@@ -304,6 +304,44 @@ func TestExpiredCardinalityResourcesReleaseCapacity(t *testing.T) {
 	}))
 }
 
+// The default free plan allows 5 seats and 2 API keys. On a deployment that
+// sells no plans the sixth seat and the third key are admitted through the real
+// store; on one that sells plans the same requests are refused.
+func TestFreePlanLimitsApplyOnlyWhenPlansAreSold(t *testing.T) {
+	ctx := testCtx
+	t.Cleanup(func() {
+		testService.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore, business.PlansSold))
+	})
+	for _, policy := range []business.PlanPolicy{business.NoPlansSold, business.PlansSold} {
+		clearData(t)
+		testService.SetEntitlementChecker(business.NewDefaultEntitlementChecker(testStore, policy))
+		ownerID, orgID := mustUserAndOrg(t, ctx, "plan-owner@test.invalid", "plan-owner", "Plan Policy Org")
+
+		var seatErr error
+		for index := 1; index <= 5 && seatErr == nil; index++ {
+			_, seatErr = testService.CreateInvitation(ctx, ownerID, &gen.CreateInvitationRequest{
+				OrgId: orgID, Email: fmt.Sprintf("seat-%d@test.invalid", index), Role: gen.InvitationRole_INVITATION_ROLE_MEMBER,
+			})
+		}
+		var keyErr error
+		for index := 1; index <= 3 && keyErr == nil; index++ {
+			_, keyErr = testService.CreateAPIKey(ctx, ownerID, &gen.CreateAPIKeyRequest{
+				OrganizationId: orgID, Name: fmt.Sprintf("key-%d", index),
+				Environment: gen.APIKeyEnvironment_API_KEY_ENVIRONMENT_TEST,
+			})
+		}
+		if policy == business.NoPlansSold {
+			require.NoError(t, seatErr, "the sixth seat is admitted when no plan is sold")
+			require.NoError(t, keyErr, "the third API key is admitted when no plan is sold")
+			continue
+		}
+		require.ErrorIs(t, seatErr, business.ErrEntitlementQuotaExceeded)
+		require.ErrorContains(t, seatErr, "seats quota exhausted: used 5 of 5")
+		require.ErrorIs(t, keyErr, business.ErrEntitlementQuotaExceeded)
+		require.ErrorContains(t, keyErr, "api_keys quota exhausted: used 2 of 2")
+	}
+}
+
 func setEntitlementLimit(t *testing.T, ctx context.Context, orgID, actorID, feature string, limit int64) {
 	t.Helper()
 	require.NoError(t, testStore.WithOrgTx(ctx, orgID, func(ctx context.Context) error {

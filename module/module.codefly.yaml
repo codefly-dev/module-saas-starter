@@ -17,6 +17,17 @@ interface:
         - service: accounts
           endpoint: connect
           visibility: internal
+          # The published host authority interfaces, served where their
+          # services are mounted: the Connect listener, which serves every
+          # interface method under its own policy (the authority endpoint
+          # admits only the internal module-authority procedures). The same
+          # contract the authority gateway implements for a local run. A
+          # consumer depends on the interface, never on this service.
+          implements:
+              - codefly.dev/authority@0.3.4
+              - codefly.dev/composition@0.2.0
+              - codefly.dev/installation@0.3.0
+              - codefly.dev/session@0.2.0
         - service: auth-gateway
           endpoint: grpc
           visibility: internal
@@ -38,6 +49,6 @@ services:
     - name: cache
     - name: frontend
     - name: marketing
-    - name: policy-log
+    - name: object-storage
     - name: store
     - name: vault

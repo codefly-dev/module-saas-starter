@@ -56,7 +56,8 @@ var auditEmitExemptions = map[string]string{
 // constant the gate can resolve. Each must be justified: an unresolvable type is
 // a classification the gate cannot check.
 var unresolvedAuditEmitSites = map[string]string{
-	"waitlist.go:ReviewWaitlist": "the event type is composed from the target state; every saas.waitlist.* event is observational, so no transactional classification can hide here.",
+	"waitlist.go:ReviewWaitlist":               "the event type is composed from the target state; every saas.waitlist.* event is observational, so no transactional classification can hide here.",
+	"authority_core_audit.go:journalAuthority": "the event is one of authorityEvents' saas.authority.* constants, each registered as a mutation and emitted with emitTx on the core's own transaction; TestAuthorityChangesAreRecordedAsRegisteredMutations pins every entry.",
 }
 
 type auditEmitSite struct {

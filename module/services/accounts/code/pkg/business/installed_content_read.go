@@ -97,6 +97,12 @@ func (s *Service) InstalledBinding(ctx context.Context, caller ModuleCaller, bin
 	facts := []any{caller.BoundOrg, snapshot.envelopeRevision,
 		origin.Grant.PresenceBinding, origin.Grant.PresenceGeneration, origin.InstallationID, origin.InstallationRevision, origin.ProducerEpoch}
 	switch {
+	case mode == DelegationModeModuleActor && binding.Audience == DirectoryAudience:
+		// Like the host's source surface, the directory has no installation
+		// of its own. Keep the calling module's seal and binding. Directory
+		// reads require current organization membership; the binding's scopes
+		// remain bounded by the parent and are rechecked at admission.
+		facts = append(facts, binding.Audience)
 	case mode == DelegationModeModuleActor && binding.Audience == SourceOperationAudience:
 		// The host's own source surface has no installation to commit to, so
 		// the binding itself is held to what that surface serves: named

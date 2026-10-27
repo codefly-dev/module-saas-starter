@@ -28,7 +28,21 @@ turn off existing API endpoints, disable existing SSO connections, or waive quot
 Entitlements stays hidden while enforcement is incomplete; enabling its screen
 does not add the missing backend checks described below.
 
+## Plan limits hold only where plans are sold
+
+Whether accounts enforces plan limits at all is decided by the `billing`
+configuration group, not by these switches: a deployment with
+`BILLING_PROVIDER=stripe` sells plans and enforces each organization's plan and
+overrides; one with `BILLING_PROVIDER=disabled` (the default) sells none and
+enforces no plan limit — no seat, API-key or meter cap, and no feature the
+default plan disables. [USAGE_METERING.md](./USAGE_METERING.md#only-a-deployment-that-sells-plans-enforces-them)
+states the rule. A refused admission reaches the person as the quota's own
+sentence ("seats quota exhausted: used 5 of 5") and the operator as a WARN log
+line naming the organization id, feature, used and limit.
+
 ## Enforcement verified in the September 2026 local audit
+
+The checks below are what a deployment that sells plans enforces.
 
 - **Seats:** direct organization-member admission and pending invitation
   reservations enforce cardinality quotas inside a tenant transaction.

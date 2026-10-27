@@ -100,7 +100,7 @@ func TestModulePlaceRecord_UnregisteredPrincipalDenied(t *testing.T) {
 	_, err := svc.ModulePlaceRecord(context.Background(),
 		business.ModuleCaller{PrincipalID: moduleUserA, BoundOrg: moduleTenantA},
 		moduleTenantA, "space.doc_1", "record", "Record", "documents", "doc-1")
-	requireCode(t, err, codes.PermissionDenied)
+	requireCode(t, err, codes.Unauthenticated)
 }
 
 func TestModulePlaceRecord_CrossTenantStillRequiresTargetOrganizationConsent(t *testing.T) {

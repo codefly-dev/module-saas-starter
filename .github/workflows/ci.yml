@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Report any non-no-reply identity that landed on main
@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Test the module verification gate
@@ -223,7 +223,7 @@ jobs:
         with:
           # no-broadening diffs the catalog against main.
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Test the authz-coverage gate
@@ -274,7 +274,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Test the release-gate contract
@@ -300,7 +300,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Test the interface-docs gate
@@ -328,7 +328,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Test the kit-version gate
@@ -366,13 +366,33 @@ jobs:
       - name: Qualify the scoped reader, writer and request pools
         run: python3 scripts/qualify-scoped-pools.py --postgres-bin "${{ steps.postgres.outputs.bindir }}"
 
+  # The shared host-interface conformance suite at codefly-dev/authority main,
+  # against accounts: the newest authority that contains accounts' pin, so a
+  # case the suite adds or a rule the authority core changes reaches accounts on
+  # its next pull request, never silently on the next re-pin. The same suite at
+  # the pinned revision runs with accounts' tests in the quality phases.
+  host-interface-conformance:
+    name: Host interface conformance (authority main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: module/services/accounts/code/go.sum
+      - name: Install Codefly
+        run: bash scripts/ci/install-codefly.sh
+      - name: Run the shared suite at authority main against accounts
+        run: bash scripts/ci/host-interface-conformance-main.sh
+
   marketing:
     name: Marketing isolation
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -457,6 +477,8 @@ jobs:
         run: codefly generate contracts saas-starter --check
       - name: Check derived source operations
         run: codefly generate runnables saas-starter --check
+      - name: Check generated libraries are reproducible with the pinned CLI
+        run: bash scripts/ci/check-generated-libraries.sh
 
   module-package:
     name: Immutable module package
@@ -470,7 +492,7 @@ jobs:
         with:
           go-version: "1.27.3"
           cache-dependency-path: module/tools/go.sum
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -698,7 +720,7 @@ jobs:
               > "${RUNNER_TEMP}/ci-plan/${phase//,/-}.json"
           done
       - name: Retain the replay plan for every consuming phase
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: codefly-ci-plan
           path: ${{ runner.temp }}/ci-plan/
@@ -745,7 +767,7 @@ jobs:
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
       - name: Download the replay plan
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: codefly-ci-plan
           path: ${{ runner.temp }}/ci-plan
@@ -874,7 +896,7 @@ jobs:
         run: node scripts/ci/ci-outcome.mjs ".codefly/ci/${CI_PHASE//,/-}/report.json"
       - name: Retain the CI report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: codefly-ci-report-${{ env.CI_PHASE_ID }}
           path: .codefly/ci/
@@ -1047,7 +1069,7 @@ jobs:
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
       - name: Download the replay plan
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: codefly-ci-plan
           path: ${{ runner.temp }}/ci-plan
@@ -1116,7 +1138,7 @@ jobs:
         run: node scripts/ci/build-images.mjs evidence
       - name: Retain build image evidence
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: effective-build-images
           path: .codefly/ci/
@@ -1144,6 +1166,7 @@ jobs:
       - codefly-quality
       - codefly-supply-chain
       - docs-sync
+      - host-interface-conformance
       - kit-version
       - marketing
       - module-package
@@ -1154,7 +1177,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Require every mandatory gate to have succeeded
@@ -1185,7 +1208,7 @@ jobs:
           cache-dependency-path: module/tools/go.sum
       # The release record runs on the same Node every gate is tested against,
       # rather than whichever version the runner image happens to ship.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       # No client-library step runs here, and so no Codefly install either: the
@@ -1363,7 +1386,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # registry-url + scope makes setup-node write the `@codefly-dev` → GitHub
       # Packages mapping and the NODE_AUTH_TOKEN line into a project .npmrc.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -1398,7 +1421,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - name: Dispatch surface-bump

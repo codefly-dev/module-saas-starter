@@ -80,7 +80,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		dependencyCount += len(service.GetDependencies())
 	}
 	require.Equal(t, 14, endpointCount)
-	require.Equal(t, 6, dependencyCount)
+	require.Equal(t, 7, dependencyCount)
 	// Accounts REST stays private. Gateway REST is exported for module mints;
 	// solutions resolve its separately exported workload listener.
 	restVisibility := map[string]catalogv1.EndpointVisibility{
@@ -113,7 +113,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	for _, grant := range first.Catalog.GetPublicEgress() {
 		egress[grant.GetService()] = true
 	}
-	require.Equal(t, map[string]bool{"accounts": true, "frontend": true, "marketing": true, "policy-log": true}, egress)
+	require.Equal(t, map[string]bool{"accounts": true, "frontend": true, "marketing": true, "object-storage": true}, egress)
 	require.False(t, egress["auth-gateway"], "auth-gateway must have no public egress")
 	accountsConnectExposed, accountsAuthorityExposed, gatewayRESTExposed := false, false, false
 	for _, endpoint := range first.Catalog.GetInterfaceEndpoints() {
@@ -134,7 +134,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.True(t, accountsConnectExposed)
 	require.True(t, accountsAuthorityExposed)
 	require.True(t, gatewayRESTExposed)
-	require.Equal(t, 19, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
+	require.Equal(t, 20, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
 	for _, name := range []string{
 		"allow-accounts-from-dependents", "allow-auth-gateway-from-dependents", "allow-auth-gateway-to-dependencies",
@@ -279,7 +279,7 @@ func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
 		require.False(t, names[document.Metadata.Name], "duplicate NetworkPolicy %s", document.Metadata.Name)
 		names[document.Metadata.Name] = true
 	}
-	require.Len(t, names, 19)
+	require.Len(t, names, 20)
 	require.True(t, names["allow-istio-ingress-to-marketing"])
 	require.True(t, names["allow-istio-ingress-to-frontend"])
 	require.False(t, names["allow-istio-ingress-to-auth-gateway"])
@@ -372,7 +372,7 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			// instead, and carry their own deny. See DEPLOYMENT_TOPOLOGY.md,
 			// "Cluster-internal HTTP routes".
 			for _, path := range paths {
-				require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
+				require.True(t, (strings.HasPrefix(path.(string), "/saas.accounts.v1.") || strings.HasPrefix(path.(string), "/host.")),
 					"the gate lists gRPC procedures, not HTTP routes: %q", path)
 			}
 		case "Gateway":
@@ -442,7 +442,7 @@ func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
 				operation, ok := rule.(map[string]any)["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)
 				require.True(t, ok)
 				for _, path := range operation["paths"].([]any) {
-					require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
+					require.True(t, (strings.HasPrefix(path.(string), "/saas.accounts.v1.") || strings.HasPrefix(path.(string), "/host.")),
 						"a catalog-derived gate lists gRPC procedures, not HTTP routes: %q", path)
 				}
 			}

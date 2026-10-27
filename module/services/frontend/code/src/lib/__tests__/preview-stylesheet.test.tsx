@@ -14,6 +14,7 @@ import * as content from "../../../packages/codefly-ui/stories/content.stories";
 import * as controls from "../../../packages/codefly-ui/stories/controls.stories";
 import * as foundations from "../../../packages/codefly-ui/stories/foundations.stories";
 import * as metrics from "../../../packages/codefly-ui/stories/metrics.stories";
+import * as playground from "../../../packages/codefly-ui/stories/playground.stories";
 import * as primitives from "../../../packages/codefly-ui/stories/primitives.stories";
 import * as semanticTables from "../../../packages/codefly-ui/stories/semantic-table.stories";
 import * as tables from "../../../packages/codefly-ui/stories/table.stories";
@@ -107,6 +108,7 @@ describe("preview.css paints the kit without a host", () => {
 			controls,
 			foundations,
 			metrics,
+			playground,
 			primitives,
 			semanticTables,
 			tables,

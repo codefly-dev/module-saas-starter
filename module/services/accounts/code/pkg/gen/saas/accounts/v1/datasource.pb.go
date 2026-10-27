@@ -1249,9 +1249,25 @@ type UploadDatasourceConfig struct {
 	// AWS-style access key id. The matching secret access key is the credential.
 	AccessKeyId string `protobuf:"bytes,5,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
 	// Upper bound on objects fetched per sync. Zero applies the connector default.
-	MaxObjects    uint32 `protobuf:"varint,6,opt,name=max_objects,json=maxObjects,proto3" json:"max_objects,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Only objects that pass the filters below count against it.
+	MaxObjects uint32 `protobuf:"varint,6,opt,name=max_objects,json=maxObjects,proto3" json:"max_objects,omitempty"`
+	// Which keys under the prefix are ingested. Each pattern is an RE2 regular
+	// expression matched against the object key with the prefix removed,
+	// unanchored and case-sensitive (anchor with ^ and $, fold case with (?i)).
+	// An empty include admits every key; an exclude match always wins. Applied
+	// when the prefix is listed, before anything is fetched, so an excluded
+	// object is never read and never counts against max_objects. An invalid
+	// expression is refused when the source is added or updated, never at sync:
+	// the call fails INVALID_ARGUMENT with a google.rpc.BadRequest violation, and
+	// a message that starts with the field's path, e.g.
+	// "upload.include_patterns[1]: …".
+	IncludePatterns []string `protobuf:"bytes,7,rep,name=include_patterns,json=includePatterns,proto3" json:"include_patterns,omitempty"`
+	ExcludePatterns []string `protobuf:"bytes,8,rep,name=exclude_patterns,json=excludePatterns,proto3" json:"exclude_patterns,omitempty"`
+	// Case-insensitive key suffixes, e.g. [".md", ".pdf"], intersected with the
+	// patterns. Empty admits every type. GitHub's file_extensions semantics.
+	FileExtensions []string `protobuf:"bytes,9,rep,name=file_extensions,json=fileExtensions,proto3" json:"file_extensions,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *UploadDatasourceConfig) Reset() {
@@ -1324,6 +1340,27 @@ func (x *UploadDatasourceConfig) GetMaxObjects() uint32 {
 		return x.MaxObjects
 	}
 	return 0
+}
+
+func (x *UploadDatasourceConfig) GetIncludePatterns() []string {
+	if x != nil {
+		return x.IncludePatterns
+	}
+	return nil
+}
+
+func (x *UploadDatasourceConfig) GetExcludePatterns() []string {
+	if x != nil {
+		return x.ExcludePatterns
+	}
+	return nil
+}
+
+func (x *UploadDatasourceConfig) GetFileExtensions() []string {
+	if x != nil {
+		return x.FileExtensions
+	}
+	return nil
 }
 
 // Datasource is one connected external datasource. It is org-scoped and carries
@@ -2084,9 +2121,14 @@ type UpdateSourceRequest struct {
 	// on every successful sync, which would refuse a perfectly good edit for the
 	// sole reason that the source had reconciled since the form was opened. What
 	// an editor needs guarded is what they were looking at.
-	Expected      *SourceFetchScope `protobuf:"bytes,6,opt,name=expected,proto3" json:"expected,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Expected *SourceFetchScope `protobuf:"bytes,6,opt,name=expected,proto3" json:"expected,omitempty"`
+	// An object-storage source's key patterns (see UploadDatasourceConfig),
+	// replaced whole like every field here. Its file_extensions is field 5; its
+	// branch and paths must be empty. Refused for a github source.
+	IncludePatterns []string `protobuf:"bytes,7,rep,name=include_patterns,json=includePatterns,proto3" json:"include_patterns,omitempty"`
+	ExcludePatterns []string `protobuf:"bytes,8,rep,name=exclude_patterns,json=excludePatterns,proto3" json:"exclude_patterns,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *UpdateSourceRequest) Reset() {
@@ -2161,6 +2203,20 @@ func (x *UpdateSourceRequest) GetExpected() *SourceFetchScope {
 	return nil
 }
 
+func (x *UpdateSourceRequest) GetIncludePatterns() []string {
+	if x != nil {
+		return x.IncludePatterns
+	}
+	return nil
+}
+
+func (x *UpdateSourceRequest) GetExcludePatterns() []string {
+	if x != nil {
+		return x.ExcludePatterns
+	}
+	return nil
+}
+
 // SourceFetchScope is what a source fetches — the three values UpdateSource
 // replaces — carried on its own so a request can state the scope it expects to
 // be replacing as well as the one it wants.
@@ -2171,12 +2227,14 @@ func (x *UpdateSourceRequest) GetExpected() *SourceFetchScope {
 // edit at all. Size is still bounded, because the comparison reads the whole
 // thing.
 type SourceFetchScope struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Branch         string                 `protobuf:"bytes,1,opt,name=branch,proto3" json:"branch,omitempty"`
-	Paths          []string               `protobuf:"bytes,2,rep,name=paths,proto3" json:"paths,omitempty"`
-	FileExtensions []string               `protobuf:"bytes,3,rep,name=file_extensions,json=fileExtensions,proto3" json:"file_extensions,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Branch          string                 `protobuf:"bytes,1,opt,name=branch,proto3" json:"branch,omitempty"`
+	Paths           []string               `protobuf:"bytes,2,rep,name=paths,proto3" json:"paths,omitempty"`
+	FileExtensions  []string               `protobuf:"bytes,3,rep,name=file_extensions,json=fileExtensions,proto3" json:"file_extensions,omitempty"`
+	IncludePatterns []string               `protobuf:"bytes,4,rep,name=include_patterns,json=includePatterns,proto3" json:"include_patterns,omitempty"`
+	ExcludePatterns []string               `protobuf:"bytes,5,rep,name=exclude_patterns,json=excludePatterns,proto3" json:"exclude_patterns,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SourceFetchScope) Reset() {
@@ -2226,6 +2284,20 @@ func (x *SourceFetchScope) GetPaths() []string {
 func (x *SourceFetchScope) GetFileExtensions() []string {
 	if x != nil {
 		return x.FileExtensions
+	}
+	return nil
+}
+
+func (x *SourceFetchScope) GetIncludePatterns() []string {
+	if x != nil {
+		return x.IncludePatterns
+	}
+	return nil
+}
+
+func (x *SourceFetchScope) GetExcludePatterns() []string {
+	if x != nil {
+		return x.ExcludePatterns
 	}
 	return nil
 }
@@ -7018,14 +7090,18 @@ func (x *ListSourceOperationsResponse) GetOperations() []*SourceOperation {
 // InvokeSourceOperationRequest carries exactly one JSON object in input_json.
 // effect_id must match x-codefly-effect-id; either location may supply it.
 type InvokeSourceOperationRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	SourceId      string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
-	Operation     string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
-	InputJson     string                 `protobuf:"bytes,4,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
-	EffectId      string                 `protobuf:"bytes,5,opt,name=effect_id,json=effectId,proto3" json:"effect_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	OrgId     string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	SourceId  string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	Operation string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
+	InputJson string                 `protobuf:"bytes,4,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
+	EffectId  string                 `protobuf:"bytes,5,opt,name=effect_id,json=effectId,proto3" json:"effect_id,omitempty"`
+	// Optional for legacy callers. A caller that admitted a declaration supplies
+	// its canonical digest; a replacement is refused before provider dispatch.
+	// This precondition participates in the receipt request fingerprint.
+	ExpectedDeclarationDigest *string `protobuf:"bytes,6,opt,name=expected_declaration_digest,json=expectedDeclarationDigest,proto3,oneof" json:"expected_declaration_digest,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *InvokeSourceOperationRequest) Reset() {
@@ -7089,6 +7165,13 @@ func (x *InvokeSourceOperationRequest) GetInputJson() string {
 func (x *InvokeSourceOperationRequest) GetEffectId() string {
 	if x != nil {
 		return x.EffectId
+	}
+	return ""
+}
+
+func (x *InvokeSourceOperationRequest) GetExpectedDeclarationDigest() string {
+	if x != nil && x.ExpectedDeclarationDigest != nil {
+		return *x.ExpectedDeclarationDigest
 	}
 	return ""
 }
@@ -7463,7 +7546,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x17CrawlerDatasourceConfig\x12\x1f\n" +
 	"\vsitemap_url\x18\x01 \x01(\tR\n" +
 	"sitemapUrl\x12\x1b\n" +
-	"\tmax_pages\x18\x02 \x01(\rR\bmaxPages\"\xc1\x01\n" +
+	"\tmax_pages\x18\x02 \x01(\rR\bmaxPages\"\x98\x03\n" +
 	"\x16UploadDatasourceConfig\x12\x1a\n" +
 	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x16\n" +
 	"\x06region\x18\x02 \x01(\tR\x06region\x12\x16\n" +
@@ -7471,7 +7554,10 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x06prefix\x18\x04 \x01(\tR\x06prefix\x12\"\n" +
 	"\raccess_key_id\x18\x05 \x01(\tR\vaccessKeyId\x12\x1f\n" +
 	"\vmax_objects\x18\x06 \x01(\rR\n" +
-	"maxObjects\"\x83\t\n" +
+	"maxObjects\x12<\n" +
+	"\x10include_patterns\x18\a \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\x10\"\ar\x05\x10\x01\x18\x80\x02R\x0fincludePatterns\x12<\n" +
+	"\x10exclude_patterns\x18\b \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\x10\"\ar\x05\x10\x01\x18\x80\x02R\x0fexcludePatterns\x12Y\n" +
+	"\x0ffile_extensions\x18\t \x03(\tB0\xbaH-\x92\x01*\x10 \"&r$\x10\x02\x18!2\x1e^\\.[A-Za-z0-9][A-Za-z0-9._-]*$R\x0efileExtensions\"\x83\t\n" +
 	"\n" +
 	"Datasource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
@@ -7539,19 +7625,23 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x11AddSourceResponse\x12<\n" +
 	"\n" +
 	"datasource\x18\x01 \x01(\v2\x1c.saas.accounts.v1.DatasourceR\n" +
-	"datasource\"\xbe\x02\n" +
+	"datasource\"\xba\x03\n" +
 	"\x13UpdateSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x18\n" +
 	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12 \n" +
 	"\x06branch\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\x06branch\x12'\n" +
 	"\x05paths\x18\x04 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10@\"\ar\x05\x10\x01\x18\x80\x04R\x05paths\x12Y\n" +
 	"\x0ffile_extensions\x18\x05 \x03(\tB0\xbaH-\x92\x01*\x10 \"&r$\x10\x02\x18!2\x1e^\\.[A-Za-z0-9][A-Za-z0-9._-]*$R\x0efileExtensions\x12F\n" +
-	"\bexpected\x18\x06 \x01(\v2\".saas.accounts.v1.SourceFetchScopeB\x06\xbaH\x03\xc8\x01\x01R\bexpected\"\x98\x01\n" +
+	"\bexpected\x18\x06 \x01(\v2\".saas.accounts.v1.SourceFetchScopeB\x06\xbaH\x03\xc8\x01\x01R\bexpected\x12<\n" +
+	"\x10include_patterns\x18\a \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\x10\"\ar\x05\x10\x01\x18\x80\x02R\x0fincludePatterns\x12<\n" +
+	"\x10exclude_patterns\x18\b \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\x10\"\ar\x05\x10\x01\x18\x80\x02R\x0fexcludePatterns\"\x90\x02\n" +
 	"\x10SourceFetchScope\x12 \n" +
 	"\x06branch\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\x06branch\x12'\n" +
 	"\x05paths\x18\x02 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10@\"\ar\x05\x10\x01\x18\x80\x04R\x05paths\x129\n" +
 	"\x0ffile_extensions\x18\x03 \x03(\tB\x10\xbaH\r\x92\x01\n" +
-	"\x10 \"\x06r\x04\x10\x01\x18!R\x0efileExtensions\"k\n" +
+	"\x10 \"\x06r\x04\x10\x01\x18!R\x0efileExtensions\x12:\n" +
+	"\x10include_patterns\x18\x04 \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x10\"\x05r\x03\x18\x80\x02R\x0fincludePatterns\x12:\n" +
+	"\x10exclude_patterns\x18\x05 \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x10\"\x05r\x03\x18\x80\x02R\x0fexcludePatterns\"k\n" +
 	"\x14UpdateSourceResponse\x12<\n" +
 	"\n" +
 	"datasource\x18\x01 \x01(\v2\x1c.saas.accounts.v1.DatasourceR\n" +
@@ -7920,14 +8010,16 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x1cListSourceOperationsResponse\x12A\n" +
 	"\n" +
 	"operations\x18\x01 \x03(\v2!.saas.accounts.v1.SourceOperationR\n" +
-	"operations\"\xf4\x01\n" +
+	"operations\"\xfa\x02\n" +
 	"\x1cInvokeSourceOperationRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12%\n" +
 	"\tsource_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bsourceId\x12;\n" +
 	"\toperation\x18\x03 \x01(\tB\x1d\xbaH\x1ar\x182\x16^[a-z][a-z0-9_]{0,63}$R\toperation\x12(\n" +
 	"\n" +
 	"input_json\x18\x04 \x01(\tB\t\xbaH\x06r\x04(\x80\x80\x04R\tinputJson\x12%\n" +
-	"\teffect_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03(\x80\x01R\beffectId\"\xba\x01\n" +
+	"\teffect_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03(\x80\x01R\beffectId\x12d\n" +
+	"\x1bexpected_declaration_digest\x18\x06 \x01(\tB\x1f\xbaH\x1cr\x1a2\x18^(sha256:[0-9a-f]{64})?$H\x00R\x19expectedDeclarationDigest\x88\x01\x01B\x1e\n" +
+	"\x1c_expected_declaration_digest\"\xba\x01\n" +
 	"\x16SourceOperationReceipt\x12\x1b\n" +
 	"\teffect_id\x18\x01 \x01(\tR\beffectId\x12!\n" +
 	"\fcommitted_at\x18\x02 \x01(\tR\vcommittedAt\x12\x16\n" +
@@ -8443,6 +8535,7 @@ func file_saas_accounts_v1_datasource_proto_init() {
 		(*AddSourceRequest_CollectionLabel)(nil),
 	}
 	file_saas_accounts_v1_datasource_proto_msgTypes[64].OneofWrappers = []any{}
+	file_saas_accounts_v1_datasource_proto_msgTypes[85].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
