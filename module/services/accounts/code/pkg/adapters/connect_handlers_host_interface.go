@@ -95,6 +95,9 @@ func (h *hostInstallationConnectHandler) ListRoleGrants(ctx context.Context, req
 func (h *hostInstallationConnectHandler) List(ctx context.Context, req *connect.Request[installationv1.ListRequest]) (*connect.Response[installationv1.ListResponse], error) {
 	return unary(ctx, req, h.server().List)
 }
+func (h *hostInstallationConnectHandler) ListHeld(ctx context.Context, req *connect.Request[installationv1.ListHeldRequest]) (*connect.Response[installationv1.ListHeldResponse], error) {
+	return unary(ctx, req, h.server().ListHeld)
+}
 
 type hostOfferConnectHandler struct{ svc *business.Service }
 

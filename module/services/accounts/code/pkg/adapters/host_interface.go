@@ -557,6 +557,34 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 	return out, nil
 }
 
+// ListHeld answers the signed-in person which installations of their
+// organization they may use: each active one they hold a role on, granted to
+// them or to a team of theirs, with those roles. It is their own navigation,
+// so it names no other holder and refuses nobody who simply holds nothing:
+// the core decides, reading their teams from the store rather than from the
+// session, so leaving a team drops an entry at once.
+func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installationv1.ListHeldRequest) (*installationv1.ListHeldResponse, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	caller, err := signedInPerson(ctx, "list the installations they hold a role on")
+	if err != nil {
+		return nil, err
+	}
+	held, err := core.HeldInstallations(ctx, caller, req.GetOrganizationId())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	out := &installationv1.ListHeldResponse{}
+	for _, h := range held {
+		out.Installations = append(out.Installations, &installationv1.HeldInstallation{
+			Installation: installationToWire(core, ctx, h.Installation), Roles: h.Roles,
+		})
+	}
+	return out, nil
+}
+
 // installationToWire is an installation as the interface states it, with the
 // roles its solution declares.
 func installationToWire(core *authority.Service, ctx context.Context, i domain.Installation) *installationv1.Installation {

@@ -48,6 +48,7 @@
         "/host.installation.v1.InstallationService/GrantRole",
         "/host.installation.v1.InstallationService/Install",
         "/host.installation.v1.InstallationService/List",
+        "/host.installation.v1.InstallationService/ListHeld",
         "/host.installation.v1.InstallationService/ListRoleGrants",
         "/host.installation.v1.InstallationService/Review",
         "/host.installation.v1.InstallationService/RevokeRole"
@@ -1411,6 +1412,49 @@
       },
       "policy_tier": "org_admin",
       "description": "List what one organisation has installed.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/ListHeld",
+      "service": "InstallationService",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "ListHeld",
+      "input_type": "host.installation.v1.ListHeldRequest",
+      "output_type": "host.installation.v1.ListHeldResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/installation/v1/installation.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "List the installations of the caller's organisation they hold a role on, with those roles: their own navigation.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

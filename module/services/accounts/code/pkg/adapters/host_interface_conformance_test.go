@@ -54,7 +54,6 @@ import (
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
-	artifactv1 "accounts/pkg/gen/host/artifact/v1"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
@@ -245,6 +244,14 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NoError(t, installModule(ctx, m.alias))
 	}
 
+	// The artifact target's module: one kind, with the two actions an artifact
+	// decision asks of a policy. Installed at Acme alone, so Globex's
+	// administrator lists installations the module can never name.
+	const artifactModule = "conformance-artifact"
+	deliverModule(t, ctx, conn, signer, conformanceModule{alias: artifactModule,
+		ceilings: []*authorityv1.WorkScopeV1{wireScope(artifactModule+".intent", "activate", "run")}})
+	require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, artifactModule))
+
 	// The solutions, delivered as the CLI delivers them, then installed by the
 	// fixture's declared installations through the core. conformance-pages
 	// carries the roles, routes and binding the suite's solution-role cases
@@ -424,6 +431,18 @@ func runHostInterfaceFixture(t *testing.T) {
 			{Token: "fixture-maya", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: false},
 			{Token: "fixture-omar", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
 		},
+	})
+
+	// The artifact target (conformance RunArtifacts): the one artifact decision
+	// every host makes, the shared core's. Alex administers Acme, so he holds
+	// every action on every kind; the approver holds the policy's activate and
+	// run through a role and the runner its run alone, which is what proves
+	// consent is the action rather than an administrator tier. Globex's
+	// administrator is the outsider: the module is installed at Acme only.
+	conformance.RunArtifacts(t, conn, registeredDescriptors(t), conformance.ArtifactCase{
+		Module: artifactModule, Credential: credential(artifactModule), OtherCredential: credential("org-directory"),
+		Policy: artifactModule + ".intent",
+		Admin:  "fixture-alex", Approver: "fixture-artifact-approver", Member: "fixture-artifact-runner", OtherAdmin: "fixture-zoe",
 	})
 
 	// The solution-principal target (conformance RunSolutionPrincipalTarget):
@@ -971,81 +990,6 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NoError(t, err)
 		finance := teamNamed(t, ctx, svc, fixtureOrganization, "Finance")
 		require.Contains(t, grants, domain.RoleGrant{InstallationID: inst.ID, Role: "viewer", TeamID: finance}, "the declared team holds its role")
-	})
-
-	// The artifact interface the local authority serves (host.artifact.v1),
-	// asked as a module asks it: the module's workload credential and a parent
-	// capability addressed to the module. accounts' one artifact decision
-	// answers: an organization administrator present approves an exact
-	// artifact under the module's installed policy; a member without the
-	// policy's permission, a policy the module has none of, and consent through
-	// another module's credential are each refused by name.
-	t.Run("the artifact interface approves for an allowed caller and refuses otherwise", func(t *testing.T) {
-		const module = "conformance-artifacts"
-		const kind = "conformance-artifacts.intent"
-		deliverModule(t, ctx, conn, signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope(kind, "activate", "run")}})
-		digest := "sha256:" + strings.Repeat("ab", 32)
-		registry := svc.ModulePrincipals()
-		t.Cleanup(func() { svc.SetModulePrincipals(registry) })
-		withPolicy := svc.ModulePrincipals()
-		grant := withPolicy[business.ModulePrincipalID(module)]
-		grant.ArtifactPolicies = map[string]business.ExecutableArtifactPolicy{"intent-version": {
-			Schema: "example.intent-version/v1", Sources: map[string]string{module: module},
-			Activate: business.ArtifactPermission{Resource: kind, Action: "activate"}, Run: business.ArtifactPermission{Resource: kind, Action: "run"},
-			Contracts: []business.ArtifactContract{{Kind: "engine", Name: "example-engine", Digest: digest}}, RequiredKinds: []string{"engine"},
-		}}
-		withPolicy[business.ModulePrincipalID(module)] = grant
-		svc.SetModulePrincipals(withPolicy)
-		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
-		installed, err := core.Installations(ctx, alex, fixtureOrganization)
-		require.NoError(t, err)
-		var installation string
-		for _, inst := range installed {
-			if inst.Target == module {
-				installation = inst.ID
-			}
-		}
-		require.NotEmpty(t, installation)
-
-		parentOf := func(token string, actions ...string) string {
-			t.Helper()
-			issued, err := authorityv1.NewAuthorityServiceClient(conn).Issue(signIn(token), &authorityv1.IssueRequest{
-				As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: module,
-				Scopes: []*authorityv1.WorkScopeV1{wireScope(kind, actions...)}})
-			require.NoError(t, err, "%s at %s", token, module)
-			return issued.GetToken()
-		}
-		approve := func(parent, actor, policy string) (*artifactv1.Approval, error) {
-			return artifactv1.NewArtifactServiceClient(conn).Approve(ctx, &artifactv1.ArtifactRequest{
-				ParentToken: parent, ActorCredential: actor, InstallationId: installation, Policy: policy,
-				Identity: &artifactv1.Identity{Schema: "example.intent-version/v1", Source: module, Subject: []byte(`{"intent":"tool-assistant"}`),
-					Contracts: []*artifactv1.Contract{{Kind: "engine", Name: "example-engine", Digest: digest}}},
-			})
-		}
-		admin := parentOf("fixture-alex", "activate", "run")
-		approved, err := approve(admin, credential(module), "intent-version")
-		require.NoError(t, err, "an administrator present approves the artifact")
-		require.True(t, strings.HasPrefix(approved.GetQualifiedName(), "host/approved-artifacts/"))
-		authorized, err := artifactv1.NewArtifactServiceClient(conn).Authorize(ctx, &artifactv1.ArtifactRequest{
-			ParentToken: admin, ActorCredential: credential(module), InstallationId: installation, Policy: "intent-version",
-			Identity: &artifactv1.Identity{Schema: "example.intent-version/v1", Source: module, Subject: []byte(`{"intent":"tool-assistant"}`),
-				Contracts: []*artifactv1.Contract{{Kind: "engine", Name: "example-engine", Digest: digest}}},
-		})
-		require.NoError(t, err, "a run is authorized against the standing approval")
-		require.Equal(t, approved.GetQualifiedName(), authorized.GetQualifiedName())
-
-		_, err = approve(admin, credential(module), "no-such-policy")
-		requireCode(t, err, codes.PermissionDenied, "installed artifact policy required")
-		_, err = approve(admin, credential("documents"), "intent-version")
-		require.Error(t, err, "a parent addressed to the module is refused to another module's credential")
-		_, err = approve(admin, "", "intent-version")
-		requireCode(t, err, codes.PermissionDenied, "")
-		_, err = approve(parentOf("fixture-alex", "run"), credential(module), "intent-version")
-		requireCode(t, err, codes.PermissionDenied, "does not hold "+kind+":activate")
-		_, err = authorityv1.NewAuthorityServiceClient(conn).Issue(signIn("dev-bob"), &authorityv1.IssueRequest{
-			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: module,
-			Scopes: []*authorityv1.WorkScopeV1{wireScope(kind, "activate")}})
-		requireCode(t, err, codes.PermissionDenied, "beyond what the owner holds")
 	})
 
 	// Last, because the envelope it writes becomes every module's ceiling: a

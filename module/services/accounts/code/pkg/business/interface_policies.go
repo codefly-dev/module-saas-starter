@@ -229,7 +229,12 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		"/host.installation.v1.InstallationService/GrantRole":      roleChange(EventAuthorityRoleGranted),
 		"/host.installation.v1.InstallationService/RevokeRole":     roleChange(EventAuthorityRoleRevoked),
 		"/host.installation.v1.InstallationService/ListRoleGrants": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
-		"/host.installation.v1.InstallationService/List":           read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's view is the entitlement listing
+		"/host.installation.v1.InstallationService/List":           read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's own view is ListHeld
+		// A member's navigation: their own holdings. The core refuses a caller
+		// who is not a member of the organization they act at and answers a
+		// member holding nothing an empty list, so the perimeter adds no tenant
+		// floor that would refuse where the interface answers.
+		"/host.installation.v1.InstallationService/ListHeld": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// The setup read beside the installation interface. Listing what is on
 		// offer is an administrator's read. Reviewing one offer is the core's to
 		// decide (an administrator, and whoever else it lets read what the
@@ -319,6 +324,7 @@ var interfaceDescriptions = map[string]string{
 	"InstallationService/RevokeRole":        "Revoke one role grant; its subject's capabilities through the installation end.",
 	"InstallationService/ListRoleGrants":    "List who holds which role on one installation.",
 	"InstallationService/List":              "List what one organisation has installed.",
+	"InstallationService/ListHeld":          "List the installations of the caller's organisation they hold a role on, with those roles: their own navigation.",
 	"OfferService/ListOffers":               "List the solutions delivered to this host that one organisation's administrator may install.",
 	"OfferService/ReviewOffer":              "Read one delivered solution's offer as the core holds it: each role's scopes, the operations and tools they reach, and the permission ceiling; the consent tuple for an administrator alone.",
 	"AuthorityService/ListResources":        "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",

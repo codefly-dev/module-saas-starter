@@ -48,7 +48,12 @@ What accounts adds, and where:
   the tenant of a current parent addressed to it, proving itself by its
   workload credential), `Review`, `Install` (consent bound to the reviewed target,
   generation, revision, offer digest and a fresh operation id), `GrantRole`,
-  `RevokeRole`, `ListRoleGrants`, `List`. `OfferService`, the setup read beside
+  `RevokeRole`, `ListRoleGrants`, `List`, `ListHeld` (a member's own
+  navigation: each active installation of their organisation they hold a role
+  on, granted to them or to a team of theirs, with those roles — the core reads
+  their teams from the store, so leaving one drops an entry at once; holding
+  nothing is an empty list, and a caller acting at another organisation is
+  refused naming it). `OfferService`, the setup read beside
   it: `ListOffers` (an administrator's) and `ReviewOffer`, answered from the
   core's `ReviewOffer` with no floor of this host's own, so whoever the core
   answers (an administrator with the consent tuple, a member holding a role on
@@ -60,13 +65,23 @@ What accounts adds, and where:
   declaring the group would have the render grant accounts an authority binding
   per prepared key — so `tools_composed` is false and the Setup UI says so. The
   solution's side, `InstallableService`, is not served here.
-- **artifact** (`host.artifact.v1`, what the local authority serves): `Approve`,
-  `Authorize`, `Revoke`. A module proves itself by its workload credential and
-  presents a parent capability the core issued, addressed to it; accounts' one
-  artifact decision (`business.DecideExecutableArtifact`, which
-  `saas.accounts.v1` `ModuleCapabilitiesService` also answers) approves under
-  the module's installed artifact policy, for the person present
-  (`pkg/adapters/host_interface_artifact.go`).
+- **artifact** (`host.artifact.v1`): `Approve`, `Authorize`, `Revoke`. A module
+  proves itself by its workload credential and presents a parent capability the
+  core issued, addressed to it, and the core decides
+  (`authority.Service.DecideArtifact` over `decide.Artifact`), so this host and
+  the local authority answer alike: a policy is a resource kind the module
+  serves; approving and revoking need the person present holding that kind's
+  `activate` action and a run its `run` action, on the whole kind, which is the
+  whole requirement — no administrator tier; the installation is the module's
+  own active one at the parent's organisation, a foreign and a missing one
+  answering alike; an artifact's source is that installation's namespace, as
+  `InstallationService.Current` names it; the digest is `sha256` of the
+  identity's deterministic protobuf encoding, and every answer, `Revoke`
+  included, carries the revision the artifact was approved at. accounts adds
+  the records alone (`pkg/adapters/host_interface_artifact.go` over
+  `business.ApproveHostArtifact` and its siblings, which keep no rule). The
+  SaaS-only `ModuleCapabilitiesService` artifact path is a different face, with
+  its own installed-policy semantics, and is not this decision.
 - **session**: `SignIn` (fixture sign-in), `Current`, `ListFixturePeople`:
   accounts' own sessions.
 

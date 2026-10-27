@@ -33,6 +33,11 @@ users:
   - {id: 00000000-0000-7000-8000-0000000000d5, email: team-leaver@acme.test, name: Tess Teamleaver, role: member, provider: email, provider_id: fixture-principal-team-leaver}
   - {id: 00000000-0000-7000-8000-0000000000d6, email: org-leaver@acme.test, name: Otto Orgleaver, role: member, provider: email, provider_id: fixture-principal-org-leaver}
   - {id: 00000000-0000-7000-8000-0000000000d7, email: note-reader@acme.test, name: Nina Notereader, role: member, provider: email, provider_id: fixture-principal-note-reader}
+  # The artifact target's two members: one holds the policy kind's activate and
+  # run actions through a role (consent is the action, not an administrator
+  # tier), the other holds run alone and may never approve.
+  - {id: 00000000-0000-7000-8000-0000000000e1, email: artifact-approver@acme.test, name: Ada Artifactapprover, role: member, provider: email, provider_id: fixture-artifact-approver}
+  - {id: 00000000-0000-7000-8000-0000000000e2, email: artifact-runner@acme.test, name: Rob Artifactrunner, role: member, provider: email, provider_id: fixture-artifact-runner}
 
 organizations:
   - id: 00000000-0000-7000-8000-0000000000c1
@@ -55,6 +60,8 @@ organizations:
       - {email: team-leaver@acme.test, role: member}
       - {email: org-leaver@acme.test, role: member}
       - {email: note-reader@acme.test, role: member}
+      - {email: artifact-approver@acme.test, role: member}
+      - {email: artifact-runner@acme.test, role: member}
   - id: 00000000-0000-7000-8000-0000000000c2
     name: Globex
     owner: zoe@globex.test
@@ -126,6 +133,22 @@ roles:
     permissions:
       - {resource: principal-a.note, action: read}
 
+  # The artifact policy is a resource kind the module serves, and its actions
+  # are the whole requirement: activate to consent and to revoke, run to use
+  # what was consented to. A role scoped to nothing holds the whole kind,
+  # which is what an artifact decision needs — an id-limited grant is refused.
+  - org: Acme Corp
+    name: Artifact approver
+    description: Consent to the conformance module's artifacts, and run them
+    permissions:
+      - {resource: conformance-artifact.intent, action: activate}
+      - {resource: conformance-artifact.intent, action: run}
+  - org: Acme Corp
+    name: Artifact runner
+    description: Run the conformance module's approved artifacts, consenting to none
+    permissions:
+      - {resource: conformance-artifact.intent, action: run}
+
 assignments:
   - {org: Acme Corp, role: Principal store admin, email: store-admin@acme.test, scope: store-x}
   - {org: Acme Corp, role: Principal store reader, email: store-reader@acme.test, scope: store-x}
@@ -135,6 +158,8 @@ assignments:
   - {org: Acme Corp, role: Record viewer, email: bob@acme.com}
   - {org: Acme Corp, role: Agent user, email: maya@acme.test}
   - {org: Acme Corp, role: Agent user, email: remi@acme.test}
+  - {org: Acme Corp, role: Artifact approver, email: artifact-approver@acme.test}
+  - {org: Acme Corp, role: Artifact runner, email: artifact-runner@acme.test}
 
 collections:
   - org: Acme Corp
