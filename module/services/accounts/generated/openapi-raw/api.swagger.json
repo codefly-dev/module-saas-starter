@@ -7484,7 +7484,7 @@
         "percentile": {
           "type": "number",
           "format": "double",
-          "description": "percentile ∈ (0,1], used only when op == percentile (0.95 → p95)."
+          "description": "percentile ∈ (0,1], used only when op == percentile (0.95 → p95). Only the\nPostgres audit backend computes it: the warehouse backend keeps entries\nat-least-once and deduplicates them on read, and a percentile over that is not\nan exact answer, so a deployment on the warehouse backend refuses a query that\nasks for one with InvalidArgument. Every other op is served by both backends."
         },
         "alias": {
           "type": "string",

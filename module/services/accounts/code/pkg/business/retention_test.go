@@ -25,6 +25,7 @@ type retentionStoreFake struct {
 	ensured        []bool
 	cutoffs        map[string][]time.Time
 	auditDrops     []bool
+	journalCalls   []bool
 }
 
 // retentionDatabaseNow is the database's clock in these tests: a fixed instant,
@@ -90,6 +91,12 @@ func (f *retentionStoreFake) DeleteOldWebhookDeliveries(_ context.Context, befor
 
 func (f *retentionStoreFake) DeleteOldNotifications(_ context.Context, before time.Time) (int64, error) {
 	return f.remove("notifications", before)
+}
+
+func (f *retentionStoreFake) DeleteDeliveredAuditJournal(_ context.Context, before time.Time) (int64, int64, error) {
+	f.journalCalls = append(f.journalCalls, f.inControlPlane)
+	removed, err := f.remove("audit_journal", before)
+	return removed, 2, err
 }
 
 var retainedResourceTypes = []string{"audit_events", "sessions", "webhook_deliveries", "notifications"}
@@ -217,4 +224,71 @@ func TestRetentionDropsAuditPartitionsOutsideTheProvisioningTransaction(t *testi
 	require.NoError(t, err)
 	require.Equal(t, []bool{true}, store.ensured, "partitions are provisioned in a control-plane transaction")
 	require.Equal(t, []bool{false}, store.auditDrops, "the drop runs in a transaction of its own")
+}
+
+// Under the warehouse backend audit_events is not the store of record and
+// nothing writes it, so its policy is skipped — no partition is dropped — while
+// every other resource is retained as usual.
+func TestRetentionSkipsAuditEventsUnderTheWarehouseBackend(t *testing.T) {
+	store := newRetentionStoreFake(retentionPolicies(365)...)
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+	audit, err := business.NewAuditService(business.AuditServiceConfig{
+		Backend: business.AuditBackendWarehouse, Store: store, Producer: idleProducer{},
+		Transport: &journalRecorder{}, Warehouse: noWarehouse{},
+	})
+	require.NoError(t, err)
+	service.SetAuditService(audit)
+
+	deleted, err := service.RunRetention(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, store.auditDrops, "no audit partition is dropped under the warehouse backend")
+	require.NotContains(t, deleted, "audit_events")
+	require.Equal(t, int64(1), deleted["sessions"], "the other resources are retained as usual")
+	require.Equal(t, []bool{true}, store.ensured)
+	require.Equal(t, []bool{true}, store.journalCalls)
+	require.Equal(t, []time.Time{retentionDatabaseNow.UTC().AddDate(0, 0, -30)}, store.cutoffs["audit_journal"])
+	require.EqualValues(t, 1, deleted["audit_journal"])
+}
+
+// Under Postgres, the default, audit_events retention is exactly what it was.
+func TestRetentionDropsAuditPartitionsUnderThePostgresBackend(t *testing.T) {
+	store := newRetentionStoreFake(retentionPolicies(30)...)
+	deleted, err := runRetention(t, store)
+	require.NoError(t, err)
+	require.Len(t, store.auditDrops, 1)
+	require.Equal(t, int64(1), deleted["audit_events"])
+	require.Empty(t, store.journalCalls, "Postgres mode never retires the journal")
+}
+
+func TestWarehouseJournalRetentionRunsWithoutAPolicyAndReportsFailures(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "without a policy", true: "store failure"}[failed], func(t *testing.T) {
+			store := newRetentionStoreFake()
+			if failed {
+				store.removeErr["audit_journal"] = errors.New("receipt read failed")
+			}
+			svc, err := business.NewService(store)
+			require.NoError(t, err)
+			audit, err := business.NewAuditService(business.AuditServiceConfig{
+				Backend: business.AuditBackendWarehouse, Store: store, Producer: idleProducer{},
+				Transport: &journalRecorder{}, Warehouse: noWarehouse{},
+			})
+			require.NoError(t, err)
+			svc.SetAuditService(audit)
+			deleted, err := svc.RunRetention(context.Background())
+			if failed {
+				var failure *business.RetentionError
+				require.ErrorAs(t, err, &failure)
+				require.Len(t, failure.Failures, 1)
+				require.Equal(t, "audit_journal", failure.Failures[0].Resource)
+				require.NotContains(t, deleted, "audit_journal")
+			} else {
+				require.NoError(t, err)
+				require.EqualValues(t, 1, deleted["audit_journal"])
+			}
+			require.Equal(t, []bool{true}, store.journalCalls)
+			require.Equal(t, []time.Time{retentionDatabaseNow.UTC().AddDate(0, 0, -30)}, store.cutoffs["audit_journal"])
+		})
+	}
 }

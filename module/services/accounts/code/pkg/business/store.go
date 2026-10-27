@@ -897,6 +897,26 @@ type Store interface {
 	// skipped rather than leaving it to believe it is caught up.
 	ResolveTenantJournalCursor(ctx context.Context, orgID, eventID string) (seq int64, resolved bool, err error)
 
+	// The cross-tenant journal, for the platform's own reader (ModuleReadJournal,
+	// DeliverAuditEvents). All three run under WithControlPlane and refuse to run
+	// outside a transaction: they read every tenant's rows and the rows with no
+	// tenant, so the tenant floor is not beneath them and the caller's gate is the
+	// only one.
+	//
+	// ReadJournalPage returns one page of rows after q.After, in (xact_id, seq)
+	// order, of the types q names, and only rows whose writing transaction is below
+	// the oldest transaction still running (pg_snapshot_xmin), so a cursor that
+	// stops at the last row it was given never passes a transaction that can still
+	// commit. It carries the producers' bytes, at most q.MaxBytes of them beyond
+	// the first row.
+	ReadJournalPage(ctx context.Context, q JournalPageQuery) ([]JournalRow, error)
+	// CountJournalRange counts the rows ReadJournalPage would serve for q with no
+	// page limit, stopping at limit: the answer is at most limit.
+	CountJournalRange(ctx context.Context, q JournalPageQuery, limit int) (int, error)
+	// JournalPositionVisible reports whether every row at or before pos is final:
+	// pos's transaction is below the oldest transaction still running.
+	JournalPositionVisible(ctx context.Context, pos JournalPosition) (bool, error)
+
 	// MFA — exposed on the main Store interface so the auth layer's
 	// requireMFA gate can check enrollment without casting to MFAStore.
 	HasVerifiedMFA(ctx context.Context, userID string) (bool, error)
@@ -926,6 +946,10 @@ type Store interface {
 	// DatabaseNow reads the database's clock. Retention counts every cutoff
 	// from it rather than from this process's clock, which may run ahead.
 	DatabaseNow(ctx context.Context) (time.Time, error)
+	// DeleteDeliveredAuditJournal removes old audit journal rows only within
+	// committed delivery ranges. It requires a control-plane transaction and
+	// returns deleted rows and old rows whose delivery remains unproven.
+	DeleteDeliveredAuditJournal(ctx context.Context, before time.Time) (deleted, oldUnproven int64, err error)
 	DeleteOldSessions(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldWebhookDeliveries(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldNotifications(ctx context.Context, before time.Time) (int64, error)

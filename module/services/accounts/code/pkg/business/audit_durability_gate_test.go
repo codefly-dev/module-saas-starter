@@ -298,7 +298,9 @@ func auditEventConstants(files []*ast.File) map[string]EventType {
 // durability rules would otherwise have: a caller can write an audit row without
 // any emit site by reaching for the store directly, and every classification the
 // gate above enforces would be silently irrelevant to it. InsertAuditEvent is the
-// emitter's own call; nothing else in this package may make it.
+// emitter's own call, made by it directly and through PostgresAuditStorage.Append
+// (audit_storage.go), the one storage the emitter appends to under Postgres;
+// nothing else in this package may make it.
 func TestAuditDurability_NoBypassOfTheClassifiedEmitPath(t *testing.T) {
 	fset := token.NewFileSet()
 	entries, err := os.ReadDir(".")
@@ -321,7 +323,7 @@ func TestAuditDurability_NoBypassOfTheClassifiedEmitPath(t *testing.T) {
 			if !ok || sel.Sel.Name != "InsertAuditEvent" {
 				return true
 			}
-			if name == "audit.go" {
+			if name == "audit.go" || name == "audit_storage.go" {
 				return true
 			}
 			callers = append(callers, fmt.Sprintf("%s:%d", name, fset.Position(call.Pos()).Line))

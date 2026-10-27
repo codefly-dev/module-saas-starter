@@ -8,6 +8,7 @@ import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
 import { file_google_api_annotations } from "../../../google/api/annotations_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_struct, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import { file_codefly_runnable_v0_options } from "../../../codefly/runnable/v0/options_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
 import type { JsonObject, Message } from "@bufbuild/protobuf";
 
@@ -15,7 +16,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/audit.proto.
  */
 export const file_saas_accounts_v1_audit: GenFile = /*@__PURE__*/
-  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL2F1ZGl0LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIrsDCgpBdWRpdEV2ZW50EgoKAmlkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmFjdG9yX3R5cGUYAyABKAkSEgoGYWN0aW9uGAQgASgJQgIYARIQCghyZXNvdXJjZRgFIAEoCRITCgtyZXNvdXJjZV9pZBgGIAEoCRIOCgZvcmdfaWQYByABKAkSQAoIbWV0YWRhdGEYCCADKAsyKi5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQuTWV0YWRhdGFFbnRyeUICGAESEgoKaXBfYWRkcmVzcxgJIAEoCRIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpldmVudF90eXBlGAsgASgJEhYKDnNjaGVtYV92ZXJzaW9uGAwgASgFEigKB3BheWxvYWQYDSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhAKCGNhdGVnb3J5GA4gASgJEhEKCWNsaWVudF9pZBgPIAEoCRovCg1NZXRhZGF0YUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEi+AMKFFF1ZXJ5QXVkaXRMb2dSZXF1ZXN0Eg4KBm9yZ19pZBgBIAEoCRIQCghhY3Rvcl9pZBgCIAEoCRISCgZhY3Rpb24YAyABKAlCAhgBEhAKCHJlc291cmNlGAQgASgJEhMKC3Jlc291cmNlX2lkGAUgASgJEigKBGZyb20YBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKAnRvGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIcCglwYWdlX3NpemUYCCABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAkgASgJEhIKCmV2ZW50X3R5cGUYCiABKAkSEAoIY2F0ZWdvcnkYCyABKAkSVQoQcGF5bG9hZF9jb250YWlucxgMIAMoCzI7LnNhYXMuYWNjb3VudHMudjEuUXVlcnlBdWRpdExvZ1JlcXVlc3QuUGF5bG9hZENvbnRhaW5zRW50cnkSEQoJbmFtZXNwYWNlGA0gASgJEhEKCWNsaWVudF9pZBgOIAEoCRIkCgtldmVudF90eXBlcxgPIAMoCUIPukgMkgEJEEAiBXIDGP8BGjYKFFBheWxvYWRDb250YWluc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEicwoVUXVlcnlBdWRpdExvZ1Jlc3BvbnNlEiwKBmV2ZW50cxgBIAMoCzIcLnNhYXMuYWNjb3VudHMudjEuQXVkaXRFdmVudBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEwoLdG90YWxfY291bnQYAyABKAUilwEKFUV4cG9ydEF1ZGl0TG9nUmVxdWVzdBIOCgZvcmdfaWQYASABKAkSDgoGZm9ybWF0GAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhIKBmFjdGlvbhgEIAEoCUICGAESEgoKZXZlbnRfdHlwZRgFIAEoCRIkCgtldmVudF90eXBlcxgGIAMoCUIPukgMkgEJEEAiBXIDGP8BIk4KFkV4cG9ydEF1ZGl0TG9nUmVzcG9uc2USDAoEZGF0YRgBIAEoDBIUCgxjb250ZW50X3R5cGUYAiABKAkSEAoIZmlsZW5hbWUYAyABKAkiSwoLQXVkaXRNZXRyaWMSCgoCb3AYASABKAkSDQoFZmllbGQYAiABKAkSEgoKcGVyY2VudGlsZRgDIAEoARINCgVhbGlhcxgEIAEoCSJLChJBdWRpdERlcml2ZWRNZXRyaWMSDQoFYWxpYXMYASABKAkSEQoJbnVtZXJhdG9yGAIgASgJEhMKC2Rlbm9taW5hdG9yGAMgASgJIu0EChhBZ2dyZWdhdGVBdWRpdExvZ1JlcXVlc3QSDgoGb3JnX2lkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmV2ZW50X3R5cGUYAyABKAkSEAoIY2F0ZWdvcnkYBCABKAkSEAoIcmVzb3VyY2UYBSABKAkSKAoEZnJvbRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoCdG8YByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGdyb3VwX2J5GAggASgJEg4KBmJ1Y2tldBgJIAEoCRIRCglncm91cF9ieXMYCiADKAkSLgoHbWV0cmljcxgLIAMoCzIdLnNhYXMuYWNjb3VudHMudjEuQXVkaXRNZXRyaWMSNQoHZGVyaXZlZBgMIAMoCzIkLnNhYXMuYWNjb3VudHMudjEuQXVkaXREZXJpdmVkTWV0cmljEhEKCW5hbWVzcGFjZRgNIAEoCRITCgtyZXNvdXJjZV9pZBgOIAEoCRJZChBwYXlsb2FkX2NvbnRhaW5zGA8gAygLMj8uc2Fhcy5hY2NvdW50cy52MS5BZ2dyZWdhdGVBdWRpdExvZ1JlcXVlc3QuUGF5bG9hZENvbnRhaW5zRW50cnkSFQoNY29sbGVjdGlvbl9pZBgQIAEoCRIRCgljbGllbnRfaWQYESABKAkSJAoLZXZlbnRfdHlwZXMYEiADKAlCD7pIDJIBCRBAIgVyAxj/ARo2ChRQYXlsb2FkQ29udGFpbnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIqwCChRBdWRpdEFnZ3JlZ2F0ZUJ1Y2tldBILCgNrZXkYASABKAkSDQoFY291bnQYAiABKAMSDAoEa2V5cxgDIAMoCRJECgdtZXRyaWNzGAQgAygLMjMuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEFnZ3JlZ2F0ZUJ1Y2tldC5NZXRyaWNzRW50cnkSRAoHc2FtcGxlcxgFIAMoCzIzLnNhYXMuYWNjb3VudHMudjEuQXVkaXRBZ2dyZWdhdGVCdWNrZXQuU2FtcGxlc0VudHJ5Gi4KDE1ldHJpY3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBGi4KDFNhbXBsZXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAM6AjgBInQKGUFnZ3JlZ2F0ZUF1ZGl0TG9nUmVzcG9uc2USNwoHYnVja2V0cxgBIAMoCzImLnNhYXMuYWNjb3VudHMudjEuQXVkaXRBZ2dyZWdhdGVCdWNrZXQSHgoWc2NvcGVfY29udHJhY3RfdmVyc2lvbhgCIAEoDSIcChpMaXN0QXVkaXRFdmVudFR5cGVzUmVxdWVzdCLBAQoOQXVkaXRFdmVudFR5cGUSDAoEbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgFEhAKCGNhdGVnb3J5GAMgASgJEg0KBW93bmVyGAQgASgJEhIKCmRlcHJlY2F0ZWQYBSABKAgSEwoLZGVzY3JpcHRpb24YBiABKAkSEQoJbmFtZXNwYWNlGAcgASgJEhkKEW1hcmtzX3VzZXJfam9pbmVkGAggASgIEhgKEHdlYmhvb2tfZWxpZ2libGUYCSABKAgiTgobTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlEi8KBXR5cGVzGAEgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEV2ZW50VHlwZTKdBgoMQXVkaXRTZXJ2aWNlErUBCg1RdWVyeUF1ZGl0TG9nEiYuc2Fhcy5hY2NvdW50cy52MS5RdWVyeUF1ZGl0TG9nUmVxdWVzdBonLnNhYXMuYWNjb3VudHMudjEuUXVlcnlBdWRpdExvZ1Jlc3BvbnNlIlPC8xg6CAIQAxoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZCoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ADWANgAYLT5JMCDxINL3YxL2F1ZGl0LWxvZxLLAQoRQWdncmVnYXRlQXVkaXRMb2cSKi5zYWFzLmFjY291bnRzLnYxLkFnZ3JlZ2F0ZUF1ZGl0TG9nUmVxdWVzdBorLnNhYXMuYWNjb3VudHMudjEuQWdncmVnYXRlQXVkaXRMb2dSZXNwb25zZSJdwvMYOggCEAMaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhkSFy92MS9hdWRpdC1sb2c6YWdncmVnYXRlEsEBChNMaXN0QXVkaXRFdmVudFR5cGVzEiwuc2Fhcy5hY2NvdW50cy52MS5MaXN0QXVkaXRFdmVudFR5cGVzUmVxdWVzdBotLnNhYXMuYWNjb3VudHMudjEuTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlIk3C8xgsCAIQARoKYXVkaXQ6cmVhZCIKYXVkaXQ6cmVhZDABOgIQAUABSANQAlgCYAGC0+STAhcSFS92MS9hdWRpdC1ldmVudC10eXBlcxLCAQoORXhwb3J0QXVkaXRMb2cSJy5zYWFzLmFjY291bnRzLnYxLkV4cG9ydEF1ZGl0TG9nUmVxdWVzdBooLnNhYXMuYWNjb3VudHMudjEuRXhwb3J0QXVkaXRMb2dSZXNwb25zZSJdwvMYOggCEAQaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAhk6ASoiFC92MS9hdWRpdC1sb2c6ZXhwb3J0YgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("ChxzYWFzL2FjY291bnRzL3YxL2F1ZGl0LnByb3RvEhBzYWFzLmFjY291bnRzLnYxIrsDCgpBdWRpdEV2ZW50EgoKAmlkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmFjdG9yX3R5cGUYAyABKAkSEgoGYWN0aW9uGAQgASgJQgIYARIQCghyZXNvdXJjZRgFIAEoCRITCgtyZXNvdXJjZV9pZBgGIAEoCRIOCgZvcmdfaWQYByABKAkSQAoIbWV0YWRhdGEYCCADKAsyKi5zYWFzLmFjY291bnRzLnYxLkF1ZGl0RXZlbnQuTWV0YWRhdGFFbnRyeUICGAESEgoKaXBfYWRkcmVzcxgJIAEoCRIuCgpjcmVhdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpldmVudF90eXBlGAsgASgJEhYKDnNjaGVtYV92ZXJzaW9uGAwgASgFEigKB3BheWxvYWQYDSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhAKCGNhdGVnb3J5GA4gASgJEhEKCWNsaWVudF9pZBgPIAEoCRovCg1NZXRhZGF0YUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEi+AMKFFF1ZXJ5QXVkaXRMb2dSZXF1ZXN0Eg4KBm9yZ19pZBgBIAEoCRIQCghhY3Rvcl9pZBgCIAEoCRISCgZhY3Rpb24YAyABKAlCAhgBEhAKCHJlc291cmNlGAQgASgJEhMKC3Jlc291cmNlX2lkGAUgASgJEigKBGZyb20YBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiYKAnRvGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIcCglwYWdlX3NpemUYCCABKAVCCbpIBhoEGGQgABISCgpwYWdlX3Rva2VuGAkgASgJEhIKCmV2ZW50X3R5cGUYCiABKAkSEAoIY2F0ZWdvcnkYCyABKAkSVQoQcGF5bG9hZF9jb250YWlucxgMIAMoCzI7LnNhYXMuYWNjb3VudHMudjEuUXVlcnlBdWRpdExvZ1JlcXVlc3QuUGF5bG9hZENvbnRhaW5zRW50cnkSEQoJbmFtZXNwYWNlGA0gASgJEhEKCWNsaWVudF9pZBgOIAEoCRIkCgtldmVudF90eXBlcxgPIAMoCUIPukgMkgEJEEAiBXIDGP8BGjYKFFBheWxvYWRDb250YWluc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEicwoVUXVlcnlBdWRpdExvZ1Jlc3BvbnNlEiwKBmV2ZW50cxgBIAMoCzIcLnNhYXMuYWNjb3VudHMudjEuQXVkaXRFdmVudBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEwoLdG90YWxfY291bnQYAyABKAUilwEKFUV4cG9ydEF1ZGl0TG9nUmVxdWVzdBIOCgZvcmdfaWQYASABKAkSDgoGZm9ybWF0GAIgASgJEhAKCGFjdG9yX2lkGAMgASgJEhIKBmFjdGlvbhgEIAEoCUICGAESEgoKZXZlbnRfdHlwZRgFIAEoCRIkCgtldmVudF90eXBlcxgGIAMoCUIPukgMkgEJEEAiBXIDGP8BIk4KFkV4cG9ydEF1ZGl0TG9nUmVzcG9uc2USDAoEZGF0YRgBIAEoDBIUCgxjb250ZW50X3R5cGUYAiABKAkSEAoIZmlsZW5hbWUYAyABKAkiSwoLQXVkaXRNZXRyaWMSCgoCb3AYASABKAkSDQoFZmllbGQYAiABKAkSEgoKcGVyY2VudGlsZRgDIAEoARINCgVhbGlhcxgEIAEoCSJLChJBdWRpdERlcml2ZWRNZXRyaWMSDQoFYWxpYXMYASABKAkSEQoJbnVtZXJhdG9yGAIgASgJEhMKC2Rlbm9taW5hdG9yGAMgASgJIu0EChhBZ2dyZWdhdGVBdWRpdExvZ1JlcXVlc3QSDgoGb3JnX2lkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgJEhIKCmV2ZW50X3R5cGUYAyABKAkSEAoIY2F0ZWdvcnkYBCABKAkSEAoIcmVzb3VyY2UYBSABKAkSKAoEZnJvbRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoCdG8YByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCGdyb3VwX2J5GAggASgJEg4KBmJ1Y2tldBgJIAEoCRIRCglncm91cF9ieXMYCiADKAkSLgoHbWV0cmljcxgLIAMoCzIdLnNhYXMuYWNjb3VudHMudjEuQXVkaXRNZXRyaWMSNQoHZGVyaXZlZBgMIAMoCzIkLnNhYXMuYWNjb3VudHMudjEuQXVkaXREZXJpdmVkTWV0cmljEhEKCW5hbWVzcGFjZRgNIAEoCRITCgtyZXNvdXJjZV9pZBgOIAEoCRJZChBwYXlsb2FkX2NvbnRhaW5zGA8gAygLMj8uc2Fhcy5hY2NvdW50cy52MS5BZ2dyZWdhdGVBdWRpdExvZ1JlcXVlc3QuUGF5bG9hZENvbnRhaW5zRW50cnkSFQoNY29sbGVjdGlvbl9pZBgQIAEoCRIRCgljbGllbnRfaWQYESABKAkSJAoLZXZlbnRfdHlwZXMYEiADKAlCD7pIDJIBCRBAIgVyAxj/ARo2ChRQYXlsb2FkQ29udGFpbnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIqwCChRBdWRpdEFnZ3JlZ2F0ZUJ1Y2tldBILCgNrZXkYASABKAkSDQoFY291bnQYAiABKAMSDAoEa2V5cxgDIAMoCRJECgdtZXRyaWNzGAQgAygLMjMuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEFnZ3JlZ2F0ZUJ1Y2tldC5NZXRyaWNzRW50cnkSRAoHc2FtcGxlcxgFIAMoCzIzLnNhYXMuYWNjb3VudHMudjEuQXVkaXRBZ2dyZWdhdGVCdWNrZXQuU2FtcGxlc0VudHJ5Gi4KDE1ldHJpY3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBGi4KDFNhbXBsZXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAM6AjgBInQKGUFnZ3JlZ2F0ZUF1ZGl0TG9nUmVzcG9uc2USNwoHYnVja2V0cxgBIAMoCzImLnNhYXMuYWNjb3VudHMudjEuQXVkaXRBZ2dyZWdhdGVCdWNrZXQSHgoWc2NvcGVfY29udHJhY3RfdmVyc2lvbhgCIAEoDSIcChpMaXN0QXVkaXRFdmVudFR5cGVzUmVxdWVzdCLBAQoOQXVkaXRFdmVudFR5cGUSDAoEbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgFEhAKCGNhdGVnb3J5GAMgASgJEg0KBW93bmVyGAQgASgJEhIKCmRlcHJlY2F0ZWQYBSABKAgSEwoLZGVzY3JpcHRpb24YBiABKAkSEQoJbmFtZXNwYWNlGAcgASgJEhkKEW1hcmtzX3VzZXJfam9pbmVkGAggASgIEhgKEHdlYmhvb2tfZWxpZ2libGUYCSABKAgiTgobTGlzdEF1ZGl0RXZlbnRUeXBlc1Jlc3BvbnNlEi8KBXR5cGVzGAEgAygLMiAuc2Fhcy5hY2NvdW50cy52MS5BdWRpdEV2ZW50VHlwZSJLChlEZWxpdmVyQXVkaXRFdmVudHNSZXF1ZXN0EhcKBGZyb20YASABKAlCCbpIBnIEEAEYQBIVCgJ0bxgCIAEoCUIJukgGcgQQARhAImwKGkRlbGl2ZXJBdWRpdEV2ZW50c1Jlc3BvbnNlEhEKCWVmZmVjdF9pZBgBIAEoCRIOCgZzdGF0dXMYAiABKAkSEQoJZGVsaXZlcmVkGAMgASgFEgwKBGZyb20YBCABKAkSCgoCdG8YBSABKAky6QkKDEF1ZGl0U2VydmljZRK1AQoNUXVlcnlBdWRpdExvZxImLnNhYXMuYWNjb3VudHMudjEuUXVlcnlBdWRpdExvZ1JlcXVlc3QaJy5zYWFzLmFjY291bnRzLnYxLlF1ZXJ5QXVkaXRMb2dSZXNwb25zZSJTwvMYOggCEAMaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQqDAoGb3JnX2lkEAIYATABOgIQAUABSANQA1gDYAGC0+STAg8SDS92MS9hdWRpdC1sb2cSywEKEUFnZ3JlZ2F0ZUF1ZGl0TG9nEiouc2Fhcy5hY2NvdW50cy52MS5BZ2dyZWdhdGVBdWRpdExvZ1JlcXVlc3QaKy5zYWFzLmFjY291bnRzLnYxLkFnZ3JlZ2F0ZUF1ZGl0TG9nUmVzcG9uc2UiXcLzGDoIAhADGgphdWRpdDpyZWFkIgphdWRpdDpyZWFkKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIZEhcvdjEvYXVkaXQtbG9nOmFnZ3JlZ2F0ZRLBAQoTTGlzdEF1ZGl0RXZlbnRUeXBlcxIsLnNhYXMuYWNjb3VudHMudjEuTGlzdEF1ZGl0RXZlbnRUeXBlc1JlcXVlc3QaLS5zYWFzLmFjY291bnRzLnYxLkxpc3RBdWRpdEV2ZW50VHlwZXNSZXNwb25zZSJNwvMYLAgCEAEaCmF1ZGl0OnJlYWQiCmF1ZGl0OnJlYWQwAToCEAFAAUgDUAJYAmABgtPkkwIXEhUvdjEvYXVkaXQtZXZlbnQtdHlwZXMSwgEKDkV4cG9ydEF1ZGl0TG9nEicuc2Fhcy5hY2NvdW50cy52MS5FeHBvcnRBdWRpdExvZ1JlcXVlc3QaKC5zYWFzLmFjY291bnRzLnYxLkV4cG9ydEF1ZGl0TG9nUmVzcG9uc2UiXcLzGDoIAhAEGgphdWRpdDpyZWFkIgphdWRpdDpyZWFkKgwKBm9yZ19pZBACGAEwAToCEAFAAUgDUANYA2ABgtPkkwIZOgEqIhQvdjEvYXVkaXQtbG9nOmV4cG9ydBK3AgoSRGVsaXZlckF1ZGl0RXZlbnRzEisuc2Fhcy5hY2NvdW50cy52MS5EZWxpdmVyQXVkaXRFdmVudHNSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5EZWxpdmVyQXVkaXRFdmVudHNSZXNwb25zZSLFAcLzGBQIAhABMAE6AhABQANIBFACWAJgAdrzGKgBCgIIPBIDCNgEGAMiAggFKgtVTkFWQUlMQUJMRSoSUkVTT1VSQ0VfRVhIQVVTVEVEKgdBQk9SVEVEMgpzYWFzLWF1ZGl0Sjcvc2Fhcy5hY2NvdW50cy52MS5BdWRpdFNlcnZpY2UvTG9va3VwRGVsaXZlckF1ZGl0RXZlbnRzUIACWIAIYAFyIAoOYXVkaXRfZGVsaXZlcnkSBmludm9rZRIEcmVhZBgBEo8BChhMb29rdXBEZWxpdmVyQXVkaXRFdmVudHMSKy5zYWFzLmFjY291bnRzLnYxLkRlbGl2ZXJBdWRpdEV2ZW50c1JlcXVlc3QaLC5zYWFzLmFjY291bnRzLnYxLkRlbGl2ZXJBdWRpdEV2ZW50c1Jlc3BvbnNlIhjC8xgUCAIQATABOgIQAUABSANQAlgCYAFiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_struct, file_google_protobuf_timestamp, file_codefly_runnable_v0_options, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.AuditEvent
@@ -360,7 +361,11 @@ export type AuditMetric = Message<"saas.accounts.v1.AuditMetric"> & {
   field: string;
 
   /**
-   * percentile ∈ (0,1], used only when op == percentile (0.95 → p95).
+   * percentile ∈ (0,1], used only when op == percentile (0.95 → p95). Only the
+   * Postgres audit backend computes it: the warehouse backend keeps entries
+   * at-least-once and deduplicates them on read, and a percentile over that is not
+   * an exact answer, so a deployment on the warehouse backend refuses a query that
+   * asks for one with InvalidArgument. Every other op is served by both backends.
    *
    * @generated from field: double percentile = 3;
    */
@@ -734,6 +739,87 @@ export const ListAuditEventTypesResponseSchema: GenMessage<ListAuditEventTypesRe
   messageDesc(file_saas_accounts_v1_audit, 12);
 
 /**
+ * DeliverAuditEventsRequest names one range of the platform journal, (from, to],
+ * whose audit records the operation appends to the warehouse audit storage. Both
+ * ends are positions a ModuleReadJournal page returned; from may instead be the
+ * literal "start", meaning before the oldest retained entry, and is never empty so
+ * that the first range of a fresh journal has a non-empty value to correlate on.
+ * The range ends at a position that is final (below the oldest transaction still
+ * running) and holds at most 500 audit records, or it is refused before anything
+ * is appended. The effect id is "saas.audit.recorded.v1/<from>", derived by the
+ * host: one range, one receipt. A runtime task may carry its own transport
+ * effect identity; the range receipt is independent of that task identity.
+ *
+ * @generated from message saas.accounts.v1.DeliverAuditEventsRequest
+ */
+export type DeliverAuditEventsRequest = Message<"saas.accounts.v1.DeliverAuditEventsRequest"> & {
+  /**
+   * @generated from field: string from = 1;
+   */
+  from: string;
+
+  /**
+   * @generated from field: string to = 2;
+   */
+  to: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.DeliverAuditEventsRequest.
+ * Use `create(DeliverAuditEventsRequestSchema)` to create a new message.
+ */
+export const DeliverAuditEventsRequestSchema: GenMessage<DeliverAuditEventsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_audit, 13);
+
+/**
+ * @generated from message saas.accounts.v1.DeliverAuditEventsResponse
+ */
+export type DeliverAuditEventsResponse = Message<"saas.accounts.v1.DeliverAuditEventsResponse"> & {
+  /**
+   * @generated from field: string effect_id = 1;
+   */
+  effectId: string;
+
+  /**
+   * status is "committed" when the range is recorded. An absent lookup
+   * returns NOT_FOUND: absence is inconclusive, never a committed response.
+   *
+   * @generated from field: string status = 2;
+   */
+  status: string;
+
+  /**
+   * delivered is the number of audit records of the range appended to the
+   * storage; a range with none still commits a receipt.
+   *
+   * @generated from field: int32 delivered = 3;
+   */
+  delivered: number;
+
+  /**
+   * The exact committed interval is (from, to]. Retention verifies these
+   * positions against the receipt's effect identity and request digest before
+   * retiring journal rows. Legacy receipts without both positions prove no
+   * coverage; delivered alone never proves an interval.
+   *
+   * @generated from field: string from = 4;
+   */
+  from: string;
+
+  /**
+   * @generated from field: string to = 5;
+   */
+  to: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.DeliverAuditEventsResponse.
+ * Use `create(DeliverAuditEventsResponseSchema)` to create a new message.
+ */
+export const DeliverAuditEventsResponseSchema: GenMessage<DeliverAuditEventsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_audit, 14);
+
+/**
  * AuditService — append-only audit event log
  *
  * @generated from service saas.accounts.v1.AuditService
@@ -770,6 +856,33 @@ export const AuditService: GenService<{
     methodKind: "unary";
     input: typeof ExportAuditLogRequestSchema;
     output: typeof ExportAuditLogResponseSchema;
+  },
+  /**
+   * DeliverAuditEvents appends one range of the journal's audit records to the
+   * warehouse audit storage: the operation module-runtime calls after reading the
+   * range through ReadJournal. It is an operation, not a sweep. It takes each
+   * record's organization from the journal row and never from the caller, emits no
+   * audit of its own, and commits one receipt per range under the installation's
+   * tenant; delivery is at least once, and every read of the storage returns each
+   * entry once by id. Its receipt is read back through LookupDeliverAuditEvents.
+   *
+   * @generated from rpc saas.accounts.v1.AuditService.DeliverAuditEvents
+   */
+  deliverAuditEvents: {
+    methodKind: "unary";
+    input: typeof DeliverAuditEventsRequestSchema;
+    output: typeof DeliverAuditEventsResponseSchema;
+  },
+  /**
+   * LookupDeliverAuditEvents takes the invocation's same {from, to} body and
+   * derives the range receipt identity from from. It never delivers.
+   *
+   * @generated from rpc saas.accounts.v1.AuditService.LookupDeliverAuditEvents
+   */
+  lookupDeliverAuditEvents: {
+    methodKind: "unary";
+    input: typeof DeliverAuditEventsRequestSchema;
+    output: typeof DeliverAuditEventsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_audit, 0);

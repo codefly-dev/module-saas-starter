@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -377,6 +378,15 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 		return ctx, nil
 	}
 
+	if (fullMethod == business.DeliverAuditEventsMethod || fullMethod == business.LookupDeliverAuditEventsMethod) && len(md.Get(workContextHeader)) != 0 {
+		headers := make(http.Header)
+		copyAuditDeliveryMetadata(ctx, headers)
+		authenticated, err := authenticateAuditDeliveryContext(ctx, headers, fullMethod == business.LookupDeliverAuditEventsMethod)
+		if err != nil {
+			return ctx, auditDeliveryGRPCError(err)
+		}
+		return authenticated, nil
+	}
 	if trustedForwarded && hasForwardedIdentity(md) {
 		forwarded, err := stampForwardedGRPCIdentity(ctx, md)
 		if err != nil {

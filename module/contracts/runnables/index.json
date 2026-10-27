@@ -4,6 +4,17 @@
   "module": "saas-starter",
   "operations": [
     {
+      "name": "accounts-connect-deliver-audit-events",
+      "version": "0.2.0",
+      "digest": "ec57c25182a75de7ffe87df1491777ad902b7bf7c61eae7f2cbdcc111db7d19f",
+      "service": "accounts",
+      "endpoint": "connect",
+      "method": "/saas.accounts.v1.AuditService/DeliverAuditEvents",
+      "input_message": "saas.accounts.v1.DeliverAuditEventsRequest",
+      "output_message": "saas.accounts.v1.DeliverAuditEventsResponse",
+      "path": "contracts/runnables/accounts/connect/DeliverAuditEvents"
+    },
+    {
       "name": "accounts-connect-invoke-source-operation",
       "version": "0.2.0",
       "digest": "21ee90ad38e4da6ac0d27d75ebc866a26e2ccf2c3bba34ecd9208c3210faafe8",

@@ -73,6 +73,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		"/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe",
 		"/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
 		"/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
+		"/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal",
 		"/saas.accounts.v1.PermissionService/CheckAccess",
 		"/saas.accounts.v1.PermissionService/CheckPermission",
 		"/saas.accounts.v1.PermissionService/Decide",

@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:30bfd77c270428933734b6ae35f5cca165db62fbe181c3f7717a663b1aa0ed73",
+      "digest": "sha256:06734c27a0cee5a6706f13e2776d72b8f61888b2a54b07cfc0e1e79cdffad7a8",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -43,6 +43,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
             "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ReadJournal",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/ResolveWorkContextAuthority",

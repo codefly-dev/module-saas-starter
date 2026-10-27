@@ -7,8 +7,9 @@
 // RLS-protected subset into its GetServiceInfo catalog, so a consumer asking
 // "which relations are RLS-protected?" reads the same list the infrastructure
 // hardening suite checks a live database against (relation grants, ENABLE /
-// FORCE ROW LEVEL SECURITY, policy presence, and the scope column each policy
-// actually references). Neither copy can drift from the other, and both drift
+// FORCE ROW LEVEL SECURITY, policy presence, and the scope column each permissive
+// request policy references). Restrictive policies only narrow those grants.
+// Neither copy can drift from the other, and both drift
 // loudly from the database rather than quietly.
 package relationcatalog
 

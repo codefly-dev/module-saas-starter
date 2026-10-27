@@ -15,6 +15,11 @@
 # serialize every audited mutation in an organization. Nothing consumes the
 # ordering: an outbound webhook is dispatched in subscription-id order, and the
 # platform namespace is not subscribable by a module.
+#
+# The last entry, saas.audit.recorded.v1, is the one type here that is not an
+# audit event: the journal record of the warehouse audit backend, carrying the
+# whole entry. It is internal, so it is never fanned out, relayed or subscribable;
+# only the platform's own reader and the delivery task read it.
 schema: codefly/saas/events-contribution/v1
 namespace: saas
 queues: []
@@ -810,4 +815,8 @@ publishes:
   - type: saas.work_context.task_started
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
+    retention: 30d
+  - type: saas.audit.recorded.v1
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: internal
     retention: 30d
