@@ -52,83 +52,51 @@ The gateway proxies `/solutions/{id}/…` using the same verified identity and
 header discipline as catalog routes, with per-viewer installation admission.
 Only public `/assets` and `/.well-known` paths accept unauthenticated GET/HEAD.
 A declared module with a frontend block uses that same public asset surface.
-Module data requests still use `/v1/<alias>/*`, with live installation admission;
-`/solutions/<alias>/*` never turns into a second module API surface. A headless
+A module's data requests go through the hop (below), never through
+`/solutions/<alias>/*`, which never turns into a second module API surface. A headless
 current generation can retain previously admitted versioned assets while its
 target remains live; its own version opens no mutable asset path. Withdrawal and the registry lease apply to
 both kinds, including public assets.
 
-## Composed-module REST routes
+## Module calls go through the hop
 
-A composed module is reached at `/v1/<alias>/*`, and the alias comes from the same
-place a solution's does: the declared registry. The gateway holds **no
-process-local module upstream registry** and nothing self-registers — main's
-`/modules/_register`, where a module POSTed its own upstream and the gateway
-believed it, is deleted.
+Every module admits only a call the hop admitted: a single-use admission signed
+over the method, the module's audience, the Work Context's digest, a nonce and a
+30-second window, verified against the admission keys the host publishes in
+`Keys`. A local run composes the authority module, whose edge is the browser's
+origin and whose hop signs. A cell composes no authority module, so this gateway
+**is the hop** there (`gateway_hop.go`), built from the same library the
+authority's hop service is (`codefly-dev/authority` `libraries/hop`). Nothing
+reaches a module directly from this gateway.
 
-The **catalog always wins**: `handleDeclaredModule` is consulted only after the
-generated and explicit catalogs found no route, so a declared alias can never
-shadow one. An alias nothing declares falls through to the ordinary 404, which is
-what keeps the surface from being a probe for which modules a deployment runs. An
-alias the catalog *owns* is refused outright rather than half-served — the matcher
-takes only the paths it matches, so serving the rest would split one prefix
-between two authorities.
+- **Its faces**, `hop-grpc` and `hop-http`, serve a composed workload calling a
+  module with a Work Context addressed to it (a module calling another, a
+  solution's runnable binding). The library asks the authority's `Check`
+  whether the method may run for that context, signs the admission and forwards
+  to the exact listener `hop-routes` names.
+- **A browser's module call** on this gateway's own listener, once the catalog
+  found no route: the person is authenticated as on every protected route
+  (ext_authz, revocation included), the call is metered on the organization's
+  budget, the authority's `Issue` gives the person's Work Context at the module
+  whose published routes resolve the path (held until shortly before it
+  lapses), and the call goes through the same HTTP face in-process with that
+  context and nothing else: no `Authorization`, no `Cookie`, no identity header,
+  no caller `x-codefly-*` header. A path published by two modules is refused
+  (409); a module route under a `/v1/` prefix the catalog owns is refused (403).
+  Whether the person may use the module is the authority's answer (`Issue`, then
+  `Check`), never this gateway's.
 
-Where it goes is **the applied manifest's**, and a solution is routed the same
-way. The registry holds no address. On each refresh the gateway parses the
-APPLIED module manifest of each binding (`appliedManifest`, which must name the
-registration's binding, generation and alias) and takes the HTTP-family
-endpoints it declares for its own workloads (`appliedRouteEndpoints`), each at
-the address the signed manifest carries (`manifestEndpointAddress`,
-`resolveRouteUpstreams`). The CLI writes exactly the endpoints composed
-workloads are reached through, so exactly one answers and that is where
-`/v1/<alias>` — and `/solutions/<alias>` — goes. None, or more than one, leaves
-the alias unrouted (`503 … registration not active`) and is logged once.
-In-cluster traffic after the gateway is plain HTTP; the mesh provides mTLS.
-
-A missing, withdrawn or mismatched manifest never falls back to startup
-environment addresses, and a withheld desired generation never replaces the
-applied generation's addresses.
-
-The two surfaces share one shape: the same cache, single carried resolution,
-upstream URL policy, guarded transport, tombstone rule and the 120 s
-revocation lease (`solutionRegistryLease`): a snapshot the registry has not
-confirmed for that long authorises neither surface (`503 solution registry
-snapshot is stale`), a tombstone already held still answers as a withdrawal,
-and the next read that succeeds renews it. Before forwarding a bearer it asks accounts for the viewer's
-live entitlement to the resolved target, without caching that decision. Accounts
-intersects the delivered authority, envelope and organization's installation
-scope. The path is forwarded unchanged; a module owns its `/v1/<alias>` surface.
-
-**A declared module route has two arms.** A request carrying a bearer (or a
-cookie, or arriving on `rest`) takes the person path above. A request on the
-workload endpoint with no `Authorization` and no `Cookie`, presenting a
-capability addressed to the alias, takes the bearer-less arm
-(`gateway_workload_operation.go`): a composed workload's headless operation
-context, minted at `/modules/_operation-context`. The arm reads no principal and
-decides nothing from the seal. It requires exactly one capability header and
-no `Connection` option naming it (401 `invalid work context` otherwise), strips
-identity (and
-`X-Forwarded-Client-Cert`) before its limiter, meters on
-`workload-operation:<tenant>` (fail closed), and only then makes one call, per
-request and uncached: `WorkContextService/AdmitWorkloadOperation` with the
-capability, the alias and the route's target, which answers whether the
-capability is a module operation context for this alias and whether the target
-is installed in its tenant. Not installed (or no target resolved) is 403; any
-other refusal, or the request refused as invalid, is 401 `authentication
-required`, logged with the issuer's reason; an error, a call past its 2 second
-bound, an answer naming another tenant or seal, or no client wired is 503. It
-forwards no bearer and stamps nothing: no identity header and no
-`x-codefly-installation-id` (a caller's is stripped), because the callee
-verifies the capability and no module-route consumer reads that header. It
-answers an upstream failure with a static 502, and logs every admit and refusal
-with alias, tenant, task, seal and presenter. It is the gateway's half of a
-solution's release-declared headless operation; a module calling a peer keeps
-its in-mesh seam instead.
-
-**Release note: deploy accounts before this gateway.** The arm calls
-`AdmitWorkloadOperation`, which an older accounts does not serve: there every
-bearer-less request answers 503 and nothing is admitted. Roll accounts first.
+The composition names the modules in `hop/MODULES`; Codefly generates
+`hop-routes` from their published API catalogs. Each instance generates its own
+admission key at boot (the host pins one key per hop instance, so replicas
+sharing a delivered seed would refuse each other) and registers its public half
+with accounts' `RegisterAdmissionKey` under its workload credential
+(`module-identity: true`), renewing it while it runs. accounts admits this
+service account in the host's own namespace as a hop, beside the composed
+authority hop (`GatewayHopService`, pinned to this manifest by a test). A run
+that states no `hop/MODULES` for this gateway — a local run, where the authority
+hop signs — stands no hop here and registers no key, and a module path is an
+unexposed one (404).
 
 The registry's `SolutionDeclaredBinding.kind` positively identifies each surface.
 An unspecified kind is refused by both. Neither presence nor a reusable alias
@@ -188,9 +156,9 @@ independently of the bearer beside it.
 **SP-GW-07's second half is open on the person path, recorded as `SA-F-BEARER`.**
 The invariant is that an upstream receives a host-minted context bound to THAT
 upstream's own audience — not merely that it stops receiving the person's session.
-The bearer-less module arm is the first path that meets it: the upstream receives
-an operation context accounts minted for its own audience, and no bearer, no
-cookie and no identity header. A person's request still carries the bearer. The host access token
+A module call meets it: the module receives the person's Work Context for its own
+audience through the hop, and no bearer, no cookie and no identity header. A
+person's request to a solution still carries the bearer. The host access token
 carries one host-wide audience and the person's full authority, so a declared
 upstream holding it holds more than it needs, and that exposure is real while this
 stays open. What closes it: a host-minted context bound to the upstream's own
@@ -221,40 +189,22 @@ the caller's cookie, and a resource-bound token is confined — it reaches the t
 places below and nowhere else. Anything replaying such a token elsewhere stops
 working, deliberately.
 
-## Three places for a resource-confined credential
+## Two places for a resource-confined credential
 
 A token issued for a solution's MCP endpoint (RFC 8707 resource indicator) is held
 by a third-party client and, once forwarded, by the runtime it dialled. It reaches:
 
-- that solution's own routes, where the resource and the path agree;
-- `/saas.accounts.v1.WorkContextService/StartTask`, the delegation mint; and
-- `/v1/<alias>/*` for a DECLARED MODULE, and only in the company of a verified
-  capability for that module minted on this person's behalf.
+- that solution's own routes, where the resource and the path agree; and
+- `/saas.accounts.v1.WorkContextService/StartTask`, the delegation mint.
 
-The second and third exist because the consumer's own work needs them, and they are
-one flow, not two. The runtime's MCP viewer path derives a module gateway by minting
-a viewer-owned Work Context — carrying the person's bearer, because its own service
-credential does not stand in for the person — and then calls the module with that
-capability AND the same bearer, since a declared upstream still authenticates by the
-bearer (`SA-F-BEARER`, above). Admitting the mint alone moved the failure one request
-later: the tool minted and was then refused at the module.
+The runtime reaches a module with what the mint issued, through the hop's faces;
+the confined credential itself reaches no module route.
 
-**Admitting the bearer at module routes on its own would have been the confinement
-deleted, not relocated** — a one-solution credential with the person's whole
-authority at every declared module. So the pairing is the admission:
-`gateway_module_capability.go` requires a capability for THAT module, in the
-bearer's own organization, minted in its own session. The session binding is what
-makes "minted under the consumer's ceiling" a fact rather than an inference: a
-capability for the same module could otherwise have come from the same person's
-ordinary browser session, where no consumer ceiling applies. It is also sufficient
-to name the owner, because accounts signs into a capability only its caller's
-verified session or a fresh one — never a session a request names — and a session
-belongs to one person; so the owner is not read here, which keeps the edge to what
-core's `Inspector` exposes to a forwarding hop. Dropping the owner comparison is
-deliberate, not an omission: the session already names the owner, and a second
-check on a property the session establishes would be a check the edge cannot make
-from what it holds. `TestModuleRoute_TheSessionIsTheBindingAndTheOwnerIsNotRead`
-pins the dependency, so a change to how accounts assigns sessions is caught there.
+The second exists because the consumer's own work needs it: the runtime's MCP
+viewer path mints a viewer-owned Work Context for the module its solution
+consumes, carrying the person's bearer because its own service credential does
+not stand in for the person, and then calls the module through the hop with that
+context alone.
 
 **The edge check is core's `Inspector`** (`work_context.go`): encoding, issuer,
 the signature under the key the capability names, window, shape, and the audience
@@ -323,9 +273,8 @@ Both stamps are on `untrustedAuthHeaders`, so a caller can assert neither and ca
 pick its own ceiling. The consumer check and the installation stamp run on the HTTP
 gateway path, where the registry and the entitlement authority live; a deployment
 driving `ext_authz` from Envoy gets the route confinement and the carried resource
-but neither the consumer check nor the module pairing — the same asymmetry the
-gateway credential already has, and in the same direction: Envoy mode refuses the
-module route rather than admitting it unpaired.
+but not the consumer check — the same asymmetry the gateway credential already
+has, and in the same direction.
 
 `x-codefly-installation-id` is also what a solution's runtime reads to name an
 installation on every mint it makes. It will not take one out of a capability a
@@ -359,7 +308,7 @@ answer the way `gateway_solution_registry.go` caches the solution registry, and
   passes through whatever route matched it: a token naming a client must arrive
   from an origin that client registered, or it is refused before it reaches any
   upstream. A token issued to one client is therefore useless from another's
-  page, on catalog, solution, and declared-module routes alike.
+  page, on catalog and solution routes alike.
 - `X-Codefly-Public-Origin` — the WebAuthn relying party, the origin an OAuth
   start is validated against — is NOT derived from that registration, and was.
   A registered client's own origin was stamped as the verified public origin,
@@ -426,12 +375,6 @@ admits the waypoint alone; comparing `By` does not establish that network fact.
 The three module credential exchanges (`/modules/_work-context`,
 `/modules/_operation-context`, `/modules/_source-operation-context`) are served
 on this endpoint and nowhere else: on `rest` they are unexposed paths (`404`).
-The fourth workload-only surface is the bearer-less arm of `/v1/<alias>/*`
-(above): on `rest` the same request is an unauthenticated one, `401`. Unlike the
-exchanges it proves no workload with a projected token: it admits a capability
-on the strength of its signature, the issuer's admission of its shape and, on a
-cell, the presenter. A
-deployed gateway requires that presenter again in the arm itself.
 The listener puts the authenticated presenter in private request context and
 removes the raw headers. `moduleMintContext` sends that principal to accounts
 with the existing gateway-provenance credential, separately from the internal
