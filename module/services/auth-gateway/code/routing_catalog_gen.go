@@ -238,6 +238,7 @@ func generatedCatalogConnectRoutes() []*RouteEntry {
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/GrantRole", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/GrantRole"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/Install", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/Install"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/List", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/List"},
+		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/ListHeld", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/ListHeld"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/ListRoleGrants", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/ListRoleGrants"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/Review", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/Review"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/RevokeRole", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/RevokeRole"},
