@@ -29,7 +29,7 @@ pkg/auth/pg/session_store.go: (*SessionStore).RotateRefresh: WithControlPlane
 pkg/business/audit.go: (*DurableAuditEmitter).Emit: WithControlPlane
 pkg/business/audit.go: (*Service).AggregateAuditLog: WithControlPlane
 pkg/business/audit.go: (*Service).QueryAuditLog: WithControlPlane
-pkg/business/authority_core_delivery.go: (*Service).reconcileAuthorityCore: WithControlPlane
+pkg/business/authority_core_delivery.go: (*Service).composeAppliedDelivery: WithControlPlane
 pkg/business/authority_delivery.go: (*Service).verifyAppliedAuthorityDocument: WithControlPlane
 pkg/business/connector_credentials.go: (*Service).SourceSigningSecret: WithControlPlane
 pkg/business/current_installation.go: (*Service).ModuleCurrentInstallation: WithControlPlane

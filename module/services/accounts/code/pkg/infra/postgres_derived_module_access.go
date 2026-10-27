@@ -95,36 +95,77 @@ func (s *PostgresStore) EnsureDerivedRole(ctx context.Context, role business.Der
 		return "", fmt.Errorf("a derived role must name what it was derived from")
 	}
 
-	var roleID string
-	// The conflict target is the partial unique index on derived_from, so two
-	// grants of the same cause serialize on the row rather than both inserting.
-	//
-	// Only the DESCRIPTION is refreshed. `app_tenant` holds UPDATE on that one
-	// column (migration 5), column-scoped on purpose, and the derived role's name
-	// is the provenance precisely so that it never needs rewriting — see
-	// business.derivedRoleName.
-	if err := executor.QueryRow(ctx, `
-		INSERT INTO roles (id, name, description, built_in, org_id, derived_from, created_at)
-		VALUES ($1, $2, $3, false, $4, $5, CURRENT_TIMESTAMP)
-		ON CONFLICT (derived_from) WHERE derived_from IS NOT NULL
-		DO UPDATE SET description = EXCLUDED.description
-		RETURNING id::text`,
-		business.NewIDString(), role.Name, role.Description, role.OrgID, role.DerivedFrom,
-	).Scan(&roleID); err != nil {
-		return "", w.Wrapf(err, "failed to write the derived role")
+	// Every write to roles or role_permissions moves the organization's
+	// authorization revision (their BEFORE triggers fire even on an upsert
+	// that changes nothing), and every capability minted before it is then
+	// refused. A role already as declared is therefore read, never written:
+	// only a role that is missing, or whose description or permissions
+	// differ, is touched, and only by what differs.
+	var roleID, description string
+	err := executor.QueryRow(ctx, `SELECT id::text, COALESCE(description, '') FROM roles WHERE derived_from = $1`, role.DerivedFrom).Scan(&roleID, &description)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// The conflict target is the partial unique index on derived_from, so
+		// two grants of the same cause serialize on the row rather than both
+		// inserting. Only the DESCRIPTION is refreshed: `app_tenant` holds
+		// UPDATE on that one column (migration 5), column-scoped on purpose,
+		// and the derived role's name is the provenance precisely so that it
+		// never needs rewriting — see business.derivedRoleName.
+		if err := executor.QueryRow(ctx, `
+			INSERT INTO roles (id, name, description, built_in, org_id, derived_from, created_at)
+			VALUES ($1, $2, $3, false, $4, $5, CURRENT_TIMESTAMP)
+			ON CONFLICT (derived_from) WHERE derived_from IS NOT NULL
+			DO UPDATE SET description = EXCLUDED.description
+			RETURNING id::text`,
+			business.NewIDString(), role.Name, role.Description, role.OrgID, role.DerivedFrom,
+		).Scan(&roleID); err != nil {
+			return "", w.Wrapf(err, "failed to write the derived role")
+		}
+	case err != nil:
+		return "", w.Wrapf(err, "failed to read the derived role")
+	case description != role.Description:
+		if _, err := executor.Exec(ctx, `UPDATE roles SET description = $2 WHERE id = $1`, roleID, role.Description); err != nil {
+			return "", w.Wrapf(err, "failed to refresh the derived role's description")
+		}
 	}
 
-	if _, err := executor.Exec(ctx, `DELETE FROM role_permissions WHERE role_id = $1`, roleID); err != nil {
-		return "", w.Wrapf(err, "failed to clear the derived role's permissions")
+	rows, err := executor.Query(ctx, `SELECT resource, action FROM role_permissions WHERE role_id = $1`, roleID)
+	if err != nil {
+		return "", w.Wrapf(err, "failed to read the derived role's permissions")
 	}
+	held := map[[2]string]bool{}
+	for rows.Next() {
+		var resource, action string
+		if err := rows.Scan(&resource, &action); err != nil {
+			rows.Close()
+			return "", w.Wrapf(err, "failed to read the derived role's permissions")
+		}
+		held[[2]string{resource, action}] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return "", w.Wrapf(err, "failed to read the derived role's permissions")
+	}
+	declared := map[[2]string]bool{}
 	for _, permission := range role.Permissions {
-		if _, err := executor.Exec(ctx, `
-			INSERT INTO role_permissions (role_id, resource, action)
-			VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-			roleID, permission.Resource, permission.Action,
-		); err != nil {
-			return "", w.Wrapf(err, "failed to write the derived role's permission %s:%s",
-				permission.Resource, permission.Action)
+		declared[[2]string{permission.Resource, permission.Action}] = true
+	}
+	for permission := range held {
+		if declared[permission] {
+			continue
+		}
+		if _, err := executor.Exec(ctx, `DELETE FROM role_permissions WHERE role_id = $1 AND resource = $2 AND action = $3`,
+			roleID, permission[0], permission[1]); err != nil {
+			return "", w.Wrapf(err, "failed to remove the derived role's permission %s:%s", permission[0], permission[1])
+		}
+	}
+	for permission := range declared {
+		if held[permission] {
+			continue
+		}
+		if _, err := executor.Exec(ctx, `INSERT INTO role_permissions (role_id, resource, action) VALUES ($1, $2, $3)`,
+			roleID, permission[0], permission[1]); err != nil {
+			return "", w.Wrapf(err, "failed to write the derived role's permission %s:%s", permission[0], permission[1])
 		}
 	}
 	return roleID, nil

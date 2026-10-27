@@ -391,6 +391,14 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 			}
 			failures = append(failures, fmt.Errorf("apply binding %q generation %d: %w",
 				applied.Document.Binding, applied.Document.Generation, err))
+			continue
+		}
+		// The applied generation is composed in the authority core at once,
+		// whichever path delivered it: a solution the host's delivery endpoint
+		// took is then one the core installs and the host interfaces decide.
+		if err := r.service.composeAppliedBinding(ctx, applied.Document.Binding); err != nil {
+			failures = append(failures, fmt.Errorf("compose binding %q generation %d in the authority core: %w",
+				applied.Document.Binding, applied.Document.Generation, err))
 		}
 	}
 
