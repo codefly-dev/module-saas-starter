@@ -2,7 +2,7 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
-version="${CODEFLY_VERSION:-0.1.215}"
+version="${CODEFLY_VERSION:-0.1.219}"
 source_revision=""
 case "${version}" in
   source-8de0f6674550fb040f03bc6cb2530116878c8c6b)
@@ -77,6 +77,17 @@ case "${version}" in
     # hop-routes producer, which resolves the authority interface dependency.
     # Digest of the downloaded Linux amd64 archive; matches checksums.txt.
     checksum=e144417e595aa4e98937e01e5c2ce15123ae962fbe446479e8cd82e70ff7536a
+    ;;
+  0.1.219)
+    # cli#1197: a service that declares hop-routes receives the group with an
+    # empty ROUTES when the composition names no module behind the hop, instead
+    # of the group being withheld and the declaration refused as missing. Every
+    # phase that resolves auth-gateway's declared groups needs it: this
+    # workspace composes no module behind a hop (configurations/local/hop.env
+    # states MODULES=), so before this release runtime-init refused the service
+    # with "no configuration found for hop-routes".
+    # Published checksums.txt, Linux amd64 archive.
+    checksum=a85c7ac84f63e630b313424b28419d6fe85f28d9d11bcd05ff3e6ada4103f4a4
     ;;
   0.1.215)
     # cli#1173: --services narrows generated library descriptors and facades.

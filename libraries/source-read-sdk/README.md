@@ -59,7 +59,7 @@ provider.
 
 ## Regenerate
 
-Requires released Codefly CLI **v0.1.215** (the CI pin). From the repository root:
+Requires released Codefly CLI **v0.1.219** (the CI pin). From the repository root:
 
 ```sh
 codefly generate client --from saas-starter/accounts/authority --name source-read-sdk \
@@ -68,7 +68,7 @@ codefly generate client --from saas-starter/accounts/authority --name source-rea
   --output libraries/source-read-sdk
 ```
 
-CLI v0.1.215 applies `--services ModuleCapabilitiesService` to both the facade
+CLI v0.1.215 and later apply `--services ModuleCapabilitiesService` to both the facade
 and the contract's transitive descriptor closure. Use `--force` once when
 replacing an older broad generated library; subsequent regeneration must work
 without it. `TestContractContainsOnlyRequiredDescriptors` verifies the single

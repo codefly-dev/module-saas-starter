@@ -21,6 +21,6 @@ sources:
         - WebhookService
       as: accounts
 generated-by:
-    codefly: 0.1.215
+    codefly: 0.1.219
     companion: ghcr.io/codefly-dev/proto:0.0.18
     facade: true

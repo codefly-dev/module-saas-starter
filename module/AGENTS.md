@@ -105,12 +105,14 @@ Postgres 0.0.146 and Vault 0.0.42, which include their owners' outcome fixes.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 
-CI selects released Codefly CLI **v0.1.215** in
+CI selects released Codefly CLI **v0.1.219** in
 `scripts/ci/install-codefly.sh` for every planner/executor job. Use that release
 for local runtime qualification too: the accounts service declares Codefly's
 `egress` configuration producer, which older development binaries may not
-resolve. The CLI exports the host interfaces alongside the owned API in one
-Connect contract. The root module agent and `module/tools` retain Core
+resolve, and auth-gateway declares `hop-routes`, which a release before 0.1.219
+withheld entirely from a composition naming no module behind the hop instead of
+delivering it empty. The CLI exports the host interfaces alongside the owned API
+in one Connect contract. The root module agent and `module/tools` retain Core
 `v0.19.7-0.20261025161440-4e7f8ef01ed2` to validate that multi-package format.
 
 Accounts and auth-gateway use released SDK v0.4.1; other services retain their

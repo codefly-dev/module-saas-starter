@@ -184,9 +184,12 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
 
 ## Building, testing, and CI
 
-- CI and local runtime qualification use released Codefly CLI **v0.1.215**,
+- CI and local runtime qualification use released Codefly CLI **v0.1.219**,
   pinned in `scripts/ci/install-codefly.sh`. It resolves the Codefly-owned
-  `egress` dependency and exports the multi-package host-interface contract.
+  `egress` dependency, exports the multi-package host-interface contract, and
+  hands a service that declares `hop-routes` the group with an empty `ROUTES`
+  when the composition names no module behind the hop — which this workspace
+  does not, so an earlier release refused `auth-gateway` outright.
 - Canonical **service** gate: `codefly ci run`. It owns lint, compile/typecheck,
   tests, dependency/vuln audit, SBOM, and container build for every service in
   the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
