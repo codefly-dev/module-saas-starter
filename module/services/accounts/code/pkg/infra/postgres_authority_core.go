@@ -46,18 +46,29 @@ import (
 const authorityCoreAttempts = 8
 
 // AuthorityCoreStore is the core's Store over this host's Postgres.
-type AuthorityCoreStore struct{ s *PostgresStore }
+type AuthorityCoreStore struct {
+	s       *PostgresStore
+	consent business.ModuleConsent
+}
 
 var _ authority.Store = AuthorityCoreStore{}
 
-// AuthorityCore is the core's store over this database.
+// AuthorityCore is the core's store over this database, reading a module
+// installation's consent as allowing every binding as delivered: for the
+// store contract's tests. A host serves through AuthorityCoreWithConsent.
 func (s *PostgresStore) AuthorityCore() authority.Store { return AuthorityCoreStore{s: s} }
+
+// AuthorityCoreWithConsent is the core's store over this database, answering
+// what each module installation's consent allows (business.ModuleConsent).
+func (s *PostgresStore) AuthorityCoreWithConsent(consent business.ModuleConsent) authority.Store {
+	return AuthorityCoreStore{s: s, consent: consent}
+}
 
 // Read runs fn over one consistent snapshot.
 func (c AuthorityCoreStore) Read(ctx context.Context, fn func(authority.Tx) error) error {
 	recordControlPlane(ctx)
 	return c.s.withControlPlaneTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(ctx context.Context) error {
-		return fn(coreTx{ctx: ctx, q: c.s.getQueryExecutor(ctx)})
+		return fn(coreTx{ctx: ctx, q: c.s.getQueryExecutor(ctx), consent: c.consent})
 	})
 }
 
@@ -69,7 +80,7 @@ func (c AuthorityCoreStore) Write(ctx context.Context, fn func(authority.Tx) err
 	var err error
 	for attempt := range authorityCoreAttempts {
 		err = c.s.withControlPlaneTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable}, func(ctx context.Context) error {
-			return fn(coreTx{ctx: ctx, q: c.s.getQueryExecutor(ctx), write: true})
+			return fn(coreTx{ctx: ctx, q: c.s.getQueryExecutor(ctx), write: true, consent: c.consent})
 		})
 		if !serializationFailure(err) {
 			return err
@@ -85,9 +96,10 @@ func serializationFailure(err error) bool {
 }
 
 type coreTx struct {
-	ctx   context.Context
-	q     QueryExecutor
-	write bool
+	ctx     context.Context
+	q       QueryExecutor
+	write   bool
+	consent business.ModuleConsent
 }
 
 // Context is the context this transaction's writes bind to: what the host's
@@ -594,8 +606,19 @@ func (t coreTx) moduleInstallations(where string, args ...any) ([]domain.Install
 	for principal := range modules {
 		principals = append(principals, principal)
 	}
+	// The committed envelope revision, read in this transaction, so the
+	// consent is judged against the ceiling in force and never a registry a
+	// newer envelope has replaced.
+	var envelope uint64
+	if t.consent != nil {
+		var committed int64
+		if err := t.q.QueryRow(t.ctx, `SELECT COALESCE(max(revision), 0) FROM public.module_envelopes`).Scan(&committed); err != nil {
+			return nil, err
+		}
+		envelope = uint64(committed)
+	}
 	rows, err := t.q.Query(t.ctx, `
-		SELECT i.id, i.org_id, i.registry_principal_id, i.status, i.revision + COALESCE(r.raised, 0)
+		SELECT i.id, i.org_id, i.registry_principal_id, i.status, i.revision + COALESCE(r.raised, 0), i.scope
 		  FROM public.installations i
 		  LEFT JOIN public.authority_core_module_revisions r ON r.installation_id = i.id
 		 WHERE i.kind = 'module' AND i.registry_principal_id = ANY($1)`+where+`
@@ -603,16 +626,43 @@ func (t coreTx) moduleInstallations(where string, args ...any) ([]domain.Install
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Installation, error) {
+	type record struct {
+		inst  domain.Installation
+		scope []byte
+	}
+	records, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (record, error) {
 		var id, org, principal uuid.UUID
 		var status string
 		var revision int64
-		if err := row.Scan(&id, &org, &principal, &status, &revision); err != nil {
-			return domain.Installation{}, err
+		var consented []byte
+		if err := row.Scan(&id, &org, &principal, &status, &revision, &consented); err != nil {
+			return record{}, err
 		}
-		return domain.Installation{ID: id.String(), Organization: org.String(), Target: modules[principal],
-			Status: moduleInstallationStatus(status), Revision: uint64(revision), Owned: map[string][]string{}}, nil
+		return record{inst: domain.Installation{ID: id.String(), Organization: org.String(), Target: modules[principal],
+			Status: moduleInstallationStatus(status), Revision: uint64(revision), Owned: map[string][]string{}}, scope: consented}, nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.Installation, 0, len(records))
+	for _, r := range records {
+		// What the administrator consented to, within the module envelope:
+		// an installation whose consent allows no capability is not one the
+		// core may issue through, and the bindings it allows bound every
+		// issue through them (domain.Installation.Bindings).
+		if t.consent != nil {
+			bindings, active, err := t.consent(r.inst.Target, r.scope, envelope)
+			if err != nil {
+				return nil, err
+			}
+			if !active && r.inst.Status == domain.Active {
+				r.inst.Status = domain.Pending
+			}
+			r.inst.Bindings = bindings
+		}
+		out = append(out, r.inst)
+	}
+	return out, nil
 }
 
 // moduleInstallationStatus is how the core reads accounts' lifecycle: only an

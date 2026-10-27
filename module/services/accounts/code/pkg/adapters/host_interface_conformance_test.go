@@ -567,6 +567,90 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.Error(t, err, "a capability issued before the uninstall fails its check")
 	})
 
+	// What an organization's administrator consented to bounds every issue
+	// through the module's bindings there, exactly as the native mint is
+	// bounded: an installation narrowed to no capability issues nothing, a
+	// binding dropped from the consent (or from the module's grant within the
+	// envelope) issues nothing, and a redelivery that widens a binding issues
+	// no more than was consented. Capabilities issued before a narrowing fail
+	// their next check.
+	t.Run("a module workload is issued only what its installation's consent allows", func(t *testing.T) {
+		client := authorityv1.NewAuthorityServiceClient(conn)
+		const module = "conformance-narrow"
+		narrow := conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-narrow.task", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"headless": {"modelservice.profiles:read"}}}}}
+		deliverModule(t, ctx, conn, signer, narrow)
+		workloadOf := credential(module)
+		issue := func(org string) (*authorityv1.IssueResponse, error) {
+			return client.Issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Workload{Workload: &authorityv1.WorkloadCredential{Credential: workloadOf}},
+				OperationBindingId: "model", Audience: "model", OrganizationId: org})
+		}
+		installationAt := func(caller authority.Person, org string) string {
+			t.Helper()
+			installed, err := core.Installations(ctx, caller, org)
+			require.NoError(t, err)
+			for _, inst := range installed {
+				if inst.Target == module {
+					return inst.ID
+				}
+			}
+			t.Fatalf("%s is not installed at %s", module, org)
+			return ""
+		}
+		zoe := authority.Person{ID: conformanceZoe, Organization: globexOrganization, SessionID: "conformance-harness"}
+
+		// Acme narrows its installation to no capability.
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		before, err := issue(fixtureOrganization)
+		require.NoError(t, err)
+		acme := installationAt(alex, fixtureOrganization)
+		require.NoError(t, svc.NarrowInstallation(ctx, conformanceAlex, fixtureOrganization, acme, business.InstallationScope{Capabilities: false}))
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: before.GetToken(), Audience: "model"})
+		require.Error(t, err, "a capability issued before the narrowing fails its check")
+		_, err = svc.ModuleAuthorizeOperationContext(ctx, module, workloadOf, "model", fixtureOrganization)
+		require.Error(t, err, "the native mint refuses")
+		_, err = issue(fixtureOrganization)
+		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+fixtureOrganization)
+
+		// Globex keeps capabilities but drops the binding from its consent.
+		require.NoError(t, consentModule(ctx, svc, store, globexOrganization, conformanceZoe, module))
+		_, err = issue(globexOrganization)
+		require.NoError(t, err, "consented at Globex")
+		globex := installationAt(zoe, globexOrganization)
+		require.NoError(t, svc.NarrowInstallation(ctx, conformanceZoe, globexOrganization, globex, business.InstallationScope{Capabilities: true, Resources: []string{"conformance-narrow.task"}}))
+		_, err = svc.ModuleAuthorizeOperationContext(ctx, module, workloadOf, "model", globexOrganization)
+		require.Error(t, err, "the native mint refuses")
+		_, err = issue(globexOrganization)
+		requireCode(t, err, codes.PermissionDenied, `operation binding "model" is not one its installation at `+globexOrganization+" consents to")
+
+		// A redelivery that widens the binding issues no more than Acme's
+		// administrator consents to when they install it again.
+		widened := narrow
+		widened.generation = 2
+		widened.bindings = []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{
+			"headless": {"modelservice.profiles:read", "modelservice.datasets:read"}}}}
+		const consentedFirst = "consented before the widening"
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module), consentedFirst)
+		deliverModule(t, ctx, conn, signer, widened)
+		issued, err := issue(fixtureOrganization)
+		require.NoError(t, err)
+		for _, sc := range issued.GetContext().GetAuthorityScopes() {
+			require.NotEqual(t, "modelservice.datasets", sc.GetResourceKind(), "the widening reached an installation that did not consent to it")
+		}
+
+		// The module's grant within the envelope drops the binding: what the
+		// consent allowed no longer issues.
+		registry := svc.ModulePrincipals()
+		narrowed := svc.ModulePrincipals()
+		grant := narrowed[business.ModulePrincipalID(module)]
+		grant.OperationAudiences = nil
+		narrowed[business.ModulePrincipalID(module)] = grant
+		svc.SetModulePrincipals(narrowed)
+		_, err = issue(fixtureOrganization)
+		svc.SetModulePrincipals(registry)
+		requireCode(t, err, codes.PermissionDenied, `operation binding "model" is not one its installation at `+fixtureOrganization+" consents to")
+	})
+
 	t.Run("a delegation is bounded by its grantor and ends with its revocation", func(t *testing.T) {
 		client := authorityv1.NewAuthorityServiceClient(conn)
 		alex, bob, alice := signIn("fixture-alex"), signIn("dev-bob"), signIn("dev-alice")

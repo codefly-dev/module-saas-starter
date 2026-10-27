@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/workcontext"
 
 	"accounts/pkg/permissioncatalog"
@@ -23,9 +24,16 @@ import (
 
 // AuthorityCoreStore is a store that keeps the authority core's records.
 type AuthorityCoreStore interface {
-	AuthorityCore() authority.Store
+	AuthorityCoreWithConsent(ModuleConsent) authority.Store
 	AuthorityCoreReplay() workcontext.ReplayStore
 }
+
+// ModuleConsent answers, for one module installation's recorded consent (its
+// installations.scope) and the envelope revision committed in the reading
+// transaction, whether the installation allows any capability and what it
+// allows of the module's operation bindings. The authority core bounds every
+// issue through a binding by it (domain.Installation.Bindings).
+type ModuleConsent func(prefix string, consent []byte, committedEnvelope uint64) (bindings map[string]domain.Binding, active bool, err error)
 
 // ErrAuthorityCoreUnconfigured reports a host interface call this host cannot
 // decide: the authority core is not built (no signing key, or a store that
@@ -83,7 +91,7 @@ func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey)
 		return nil, fmt.Errorf("%w: an issuer, a key id and an Ed25519 signing key are required", ErrAuthorityCoreUnconfigured)
 	}
 	public, _ := key.Public().(ed25519.PublicKey)
-	return authority.New(store.AuthorityCore(), authority.Config{
+	return authority.New(store.AuthorityCoreWithConsent(s.moduleConsent), authority.Config{
 		Issuer: issuer, KeyID: keyID, Signer: key, Keys: staticKeys{keyID: public},
 		Replay: store.AuthorityCoreReplay(), MaxTTL: workcontext.DefaultMaxTTL, Journal: s.journalAuthority,
 		HostInstallsModules: true,

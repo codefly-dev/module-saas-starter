@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,6 +102,8 @@ type conformanceModule struct {
 	alias    string
 	ceilings []*authorityv1.WorkScopeV1
 	bindings []solutionhost.AuthorityBinding
+	// generation is the delivery's generation; zero delivers the first.
+	generation uint64
 }
 
 // deliverModule delivers m as the CLI does: core's manifest signed with the
@@ -108,7 +111,8 @@ type conformanceModule struct {
 // authority's document bound to it by module, generation and digest.
 func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterface, signer *solutionhost.InMemorySigner, m conformanceModule) {
 	t.Helper()
-	manifest := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: m.alias, Alias: m.alias, Kind: solutionhost.KindModule, Generation: 1,
+	generation := max(m.generation, 1)
+	manifest := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: m.alias, Alias: m.alias, Kind: solutionhost.KindModule, Generation: generation,
 		Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: m.alias, Version: "0.1.0"},
 		Workloads: []solutionhost.Workload{{Service: m.alias, Container: "app"}}, Authority: &solutionhost.Authority{Principal: m.alias, Bindings: m.bindings}}
 	for _, ceiling := range m.ceilings {
@@ -117,7 +121,7 @@ func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterf
 	raw, err := solutionhost.SignedPayload(manifest)
 	require.NoError(t, err)
 	sum := sha256.Sum256(raw)
-	doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&compositionv1.AuthorityManifestV1{Module: m.alias, Generation: 1,
+	doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&compositionv1.AuthorityManifestV1{Module: m.alias, Generation: generation,
 		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, OwnerAware: true})
 	require.NoError(t, err)
 	envelope, err := delivery.Sign(doc, signer.KeyID(), signer.Sign)
@@ -147,40 +151,24 @@ func teamNamed(t *testing.T, ctx context.Context, svc *business.Service, orgID, 
 	return ""
 }
 
-// consentModule installs a delivered module at org through accounts' own path,
-// as an administrator does: a role of the organization, the install (which
-// records the administrator's consent within the module envelope) and its
-// install step completed on the durable queue. A module installed there
-// already is left as it is. Nothing writes an installation directly; the
-// authority core reads the one this makes.
+// consentModule has org's administrator install a delivered module, or
+// consent again to its current delivery when it is installed, through
+// accounts' own path (the fixture's install: a role of the organization, an
+// approval of the reviewed target and generation, and its install step
+// completed on the durable queue). Nothing writes an installation directly;
+// the authority core reads the one this makes.
 func consentModule(ctx context.Context, svc *business.Service, store *infra.PostgresStore, org, admin, module string) error {
-	available, _, err := svc.ListAvailableSolutions(ctx, org, "", 500)
-	if err != nil {
-		return err
-	}
-	var target *business.AvailableSolutionTarget
-	for _, entry := range available {
-		if entry.RouteAlias == module {
-			target = entry
-		}
-	}
-	if target == nil {
-		return fmt.Errorf("%s is not offered at %s", module, org)
-	}
-	if target.Installed {
-		return nil
-	}
-	role := business.NewIDString()
+	// One role per module and organization: a consent given again keeps the
+	// role the installation holds, which is immutable.
+	role := "Use " + module
 	if err := store.WithOrgTx(ctx, org, func(ctx context.Context) error {
-		return store.CreateRole(ctx, &gen.Role{Id: role, OrgId: org, Name: "Use " + module + " " + role[:8], Permissions: []*gen.Permission{{Resource: "solution", Action: "use"}}})
-	}); err != nil {
+		return store.CreateRole(ctx, &gen.Role{Id: business.NewIDString(), OrgId: org, Name: role, Permissions: []*gen.Permission{{Resource: "solution", Action: "use"}}})
+	}); err != nil && !strings.Contains(err.Error(), "roles_org_id_name_key") {
 		return err
 	}
-	installation, err := svc.InstallSolution(ctx, admin, &business.InstallSolutionParams{
-		OrgID: org, TargetID: target.TargetID, AgentIdentifier: "conformance/" + module + ":0.1.0", RoleID: role,
-	})
+	installation, _, err := svc.InstallFixtureTarget(ctx, admin, org, module, role, admin)
 	if err != nil {
-		return err
+		return fmt.Errorf("install %s at %s: %w", module, org, err)
 	}
 	return completeInstallStep(ctx, store, installation)
 }
