@@ -816,6 +816,34 @@ func runHostInterfaceFixture(t *testing.T) {
 
 	// Beyond the suite: what the core changes is in the audit record, in the
 	// transaction that changed it, naming the organization.
+	// A capability is minted at the organization's authorization revision and
+	// refused once it moves, so the host must move it only for a real change.
+	// Idle reconcile passes, and fixture convergence retrying an installation
+	// that cannot converge yet (a solution whose install step is not
+	// acknowledged, so its teams wait), leave it where it is; a real change of
+	// a role moves it.
+	t.Run("idle reconcile passes and fixture convergence leave the authorization revision alone", func(t *testing.T) {
+		revision := func() int64 {
+			t.Helper()
+			var r int64
+			require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+				return storetx.Tx(ctx).QueryRow(ctx, `SELECT revision FROM public.organization_authorization_revisions WHERE org_id = $1`, fixtureOrganization).Scan(&r)
+			}))
+			return r
+		}
+		_ = installations.Converge(ctx) // the product's own records of the declared installations: a real change
+		settled := revision()
+		for range 3 {
+			_ = reconciler.RunOnce(ctx)
+			_ = installations.Converge(ctx)
+		}
+		require.Equal(t, settled, revision(), "an idle pass moved the authorization revision, superseding every capability minted before it")
+		require.NoError(t, store.WithOrgTx(ctx, fixtureOrganization, func(ctx context.Context) error {
+			return store.CreateRole(ctx, &gen.Role{Id: business.NewIDString(), OrgId: fixtureOrganization, Name: "Revision probe", Permissions: []*gen.Permission{{Resource: "example-records", Action: "read"}}})
+		}))
+		require.Greater(t, revision(), settled, "a real change of a role moves it")
+	})
+
 	t.Run("every change of authority is audited", func(t *testing.T) {
 		var count int
 		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
