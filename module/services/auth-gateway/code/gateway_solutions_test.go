@@ -468,7 +468,6 @@ func TestGateway_Solution_NoCarrier_NotRoutable(t *testing.T) {
 func TestGateway_Solution_StaleSnapshotStopsAuthorisingRoutes(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	fake := registerSolutionUpstream(t, gw, "audit")
-	module := declareModule(t, gw, "example-module")
 	registry := solutionRegistryFake(t, gw)
 	registry.seedDeclared("gone", "http://gone.svc")
 	registry.tombstone("gone")
@@ -486,14 +485,11 @@ func TestGateway_Solution_StaleSnapshotStopsAuthorisingRoutes(t *testing.T) {
 	// The registry goes away, and the snapshot ages past the lease.
 	registry.listErr = grpcstatus.Error(codes.Unavailable, "registry down")
 	gw.solutions.now = func() time.Time { return time.Now().Add(solutionRegistryLease + time.Second) }
-	fake.lastHeaders, module.lastHeaders = nil, nil
-	for _, path := range []string{"/solutions/audit/v1/ping", "/v1/example-module/things"} {
-		w := serve(path)
-		require.Equal(t, http.StatusServiceUnavailable, w.Code, path)
-		require.Contains(t, w.Body.String(), "stale", path)
-	}
+	fake.lastHeaders = nil
+	w := serve("/solutions/audit/v1/ping")
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "stale")
 	require.Nil(t, fake.lastHeaders, "nothing is forwarded on a stale snapshot")
-	require.Nil(t, module.lastHeaders, "nothing is forwarded on a stale snapshot")
 	_, resolution := gw.solutions.resolveRouting(context.Background(), "gone")
 	require.Equal(t, solutionUnregistered, resolution, "a withdrawal already held is still a withdrawal")
 

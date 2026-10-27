@@ -551,21 +551,12 @@ func (c *solutionRegistryCache) resolveRouting(ctx context.Context, id string) (
 	return c.resolveRoutingOfKind(ctx, id, solutionSurface)
 }
 
-// resolveModuleRouting is the same resolution for the /v1/<alias>/* surface. It
-// is the same function because the two surfaces must not drift: one lookup, one
-// carried resolution, one upstream policy, one tombstone rule, one revocation
-// lease. The only difference is the kind each surface serves.
-func (c *solutionRegistryCache) resolveModuleRouting(ctx context.Context, alias string) (*solutionRouting, solutionResolution) {
-	return c.resolveRoutingOfKind(ctx, alias, moduleSurface)
-}
-
 // routingSurface is which surface is asking. It exists so the kind check is a
 // parameter of one resolution rather than a second copy of it.
 type routingSurface int
 
 const (
 	solutionSurface routingSurface = iota
-	moduleSurface
 	frontendSurface
 	retainedFrontendSurface
 )
@@ -602,11 +593,6 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 		// uses this path; its APIs keep the module route and audience checks.
 		if (!declaredSolutionKind(record) && !declaredModuleKind(record)) ||
 			(surface != retainedFrontendSurface && record.GetFrontend().GetManifest() == "") {
-			return nil, solutionWrongKind
-		}
-	case moduleSurface:
-		// A record with no declaration has no module routing identity.
-		if !declaredModuleKind(record) {
 			return nil, solutionWrongKind
 		}
 	default:

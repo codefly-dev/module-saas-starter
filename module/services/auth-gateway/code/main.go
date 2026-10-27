@@ -49,13 +49,13 @@ func main() {
 		panic(err.Error())
 	}
 
-	grpcNetwork, err := codefly.For(ctx).API(standards.GRPC).ResolveNetworkInstance()
+	grpcNetwork, err := codefly.For(ctx).Endpoint("grpc").API(standards.GRPC).ResolveNetworkInstance()
 	if err != nil || grpcNetwork == nil || grpcNetwork.Port == 0 {
 		panic(fmt.Sprintf("Codefly gRPC endpoint is unavailable: %v", err))
 	}
 	grpcPort := grpcNetwork.Port
 	var httpPort uint16
-	httpNet, httpNetErr := codefly.For(ctx).API(standards.REST).ResolveNetworkInstance()
+	httpNet, httpNetErr := codefly.For(ctx).Endpoint("rest").API(standards.REST).ResolveNetworkInstance()
 	if httpNetErr != nil || httpNet == nil {
 		panic(fmt.Sprintf("Codefly REST endpoint is unavailable: %v", httpNetErr))
 	}
@@ -255,10 +255,6 @@ func main() {
 		// connection. It is not a cache: the answer is per viewer and must not
 		// outlive a revoke, so every request asks.
 		gateway.solutionEntitlements = &accountsSolutionEntitlements{conn: internalAPIConn, internalToken: authz.internalToken}
-		// The issuer's answer to what a bearer-less capability is, over the
-		// same connection, asked per request.
-		gateway.workloadAdmission = &accountsWorkloadAdmission{conn: internalAPIConn, internalToken: authz.internalToken}
-		gateway.requireWorkloadPresenter = !codefly.IsLocal()
 		go gateway.solutions.reconcile(ctx)
 		go gateway.clients.reconcile(ctx)
 		if apiHTTPURL != "" {

@@ -26,17 +26,13 @@ import (
 // it. Reading that parser requirement as an authorization grant is what made the
 // escape.
 //
-// TWO host surfaces are admitted, each in its own company, and neither is
-// exercised here: the Work Context mint (see
-// TestResourceTokenAtTheWorkContextMintIsAdmittedConfined), and a declared module
-// route reached together with this person's verified capability for that module
-// (see gateway_module_confinement_test.go). Every request below presents NO
-// capability, which is why the module path refuses here as well — what this test
-// pins is that nothing about the token alone admits it anywhere.
+// ONE host surface is admitted, in its own company, and it is not exercised
+// here: the Work Context mint (see
+// TestResourceTokenAtTheWorkContextMintIsAdmittedConfined). What this test pins
+// is that nothing about the token alone admits it anywhere else.
 func TestResourceTokenIsConfinedToItsOwnSolution(t *testing.T) {
 	for _, path := range []string{
 		"/v1/users",                  // this host's own API
-		"/v1/documents/entries",      // another declared module's routes
 		"/solutions/other/v1/things", // another solution's data
 		"/solutions/other/mcp",       // another solution's tool endpoint
 	} {
@@ -45,7 +41,6 @@ func TestResourceTokenIsConfinedToItsOwnSolution(t *testing.T) {
 			gw, api, _, priv := newGatewayHarness(t)
 			registerSolutionUpstream(t, gw, "example")
 			registerSolutionUpstream(t, gw, "other")
-			declareModule(t, gw, "documents")
 
 			// Issued for `example`, presented elsewhere.
 			token := signResourceToken(t, priv, testPublicBase+"/api/solutions/example/proxy/mcp")
