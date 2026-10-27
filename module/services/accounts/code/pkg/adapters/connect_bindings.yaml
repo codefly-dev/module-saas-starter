@@ -191,3 +191,7 @@ services:
     handler: hostOfferConnectHandler
     source:
       kind: business
+  host.artifact.v1.ArtifactService:
+    handler: hostArtifactConnectHandler
+    source:
+      kind: business

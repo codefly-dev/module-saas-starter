@@ -60,6 +60,13 @@ What accounts adds, and where:
   declaring the group would have the render grant accounts an authority binding
   per prepared key — so `tools_composed` is false and the Setup UI says so. The
   solution's side, `InstallableService`, is not served here.
+- **artifact** (`host.artifact.v1`, what the local authority serves): `Approve`,
+  `Authorize`, `Revoke`. A module proves itself by its workload credential and
+  presents a parent capability the core issued, addressed to it; accounts' one
+  artifact decision (`business.DecideExecutableArtifact`, which
+  `saas.accounts.v1` `ModuleCapabilitiesService` also answers) approves under
+  the module's installed artifact policy, for the person present
+  (`pkg/adapters/host_interface_artifact.go`).
 - **session**: `SignIn` (fixture sign-in), `Current`, `ListFixturePeople`:
   accounts' own sessions.
 

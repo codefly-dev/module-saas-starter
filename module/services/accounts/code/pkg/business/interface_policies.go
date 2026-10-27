@@ -5,6 +5,7 @@ import (
 
 	// The interface descriptors must be linked for RPCPolicies and the catalog
 	// generators to see them; the policy sidecar below is what names them.
+	_ "accounts/pkg/gen/host/artifact/v1"
 	_ "accounts/pkg/gen/host/authority/v1"
 	_ "accounts/pkg/gen/host/composition/v1"
 	_ "accounts/pkg/gen/host/installation/v1"
@@ -160,6 +161,13 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		p.Audit = &policyv1.AuditPolicy{Events: []string{string(event)}, Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS}
 		return p
 	}
+	// An artifact consent or its withdrawal is a mutation the decision records
+	// in the audit journal (saas.module.executable_artifact_decision).
+	artifactConsent := func() *policyv1.MethodPolicy {
+		p := workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET)
+		p.Audit = &policyv1.AuditPolicy{Events: []string{string(EventExecutableArtifactDecision)}, Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS}
+		return p
+	}
 	admissionKeyRegistration := workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET)
 	admissionKeyRegistration.Audit = &policyv1.AuditPolicy{
 		Events: []string{string(EventHopAdmissionKeyPublished)}, Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS,
@@ -210,7 +218,13 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		}(),
 		// A module authenticates by its workload credential and a current parent
 		// addressed to it; it reads its own installation's metadata and nothing more.
-		"/host.installation.v1.InstallationService/Current":        workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
+		"/host.installation.v1.InstallationService/Current": workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
+		// The artifact interface: a module proves itself by its workload
+		// credential and presents a parent capability addressed to it; consent
+		// is the person's, decided by accounts' one artifact decision.
+		"/host.artifact.v1.ArtifactService/Approve":                artifactConsent(),
+		"/host.artifact.v1.ArtifactService/Authorize":              workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
+		"/host.artifact.v1.ArtifactService/Revoke":                 artifactConsent(),
 		"/host.installation.v1.InstallationService/Review":         read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.installation.v1.InstallationService/GrantRole":      roleChange(EventAuthorityRoleGranted),
 		"/host.installation.v1.InstallationService/RevokeRole":     roleChange(EventAuthorityRoleRevoked),
@@ -278,7 +292,7 @@ func implementedHere(service protoreflect.ServiceDescriptor) bool {
 // interfaces this service implements.
 func interfacePackage(name string) bool {
 	switch name {
-	case "host.authority.v1", "host.composition.v1", "host.installation.v1", "host.session.v1":
+	case "host.artifact.v1", "host.authority.v1", "host.composition.v1", "host.installation.v1", "host.session.v1":
 		return true
 	}
 	return false
@@ -295,6 +309,9 @@ var interfaceDescriptions = map[string]string{
 	"AuthorityService/DetachResource":       "Release one deleted resource from the installation that owns it; the kind's serving module asks.",
 	"AuthorityService/AuthorizeTransfer":    "Decide whether an existing resource may join an installed solution's principal, and record it.",
 	"CompositionService/ApplyManifest":      "Deliver one module instance's manifest at one generation; the ceiling is the manifest.",
+	"ArtifactService/Approve":               "Record a person's consent to an exact artifact a module runs, for one installation, under one of its installed artifact policies.",
+	"ArtifactService/Authorize":             "Answer whether a standing approval covers an artifact for a run, under the policy's run permission.",
+	"ArtifactService/Revoke":                "Withdraw a person's approval of an artifact, for the person present.",
 	"InstallationService/Current":           "Read the authenticated module's own active installation in the tenant of a current parent addressed to it.",
 	"InstallationService/Install":           "Install one solution at one organisation under the consent its administrator reviewed; pending until its install step converges.",
 	"InstallationService/Review":            "Read the exact authority offer an administrator consents to, without recording consent.",

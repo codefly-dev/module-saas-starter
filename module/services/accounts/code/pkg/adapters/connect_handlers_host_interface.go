@@ -5,6 +5,7 @@ package adapters
 // from connect_bindings.yaml.
 
 import (
+	artifactv1 "accounts/pkg/gen/host/artifact/v1"
 	"context"
 
 	"connectrpc.com/connect"
@@ -114,4 +115,17 @@ func (h *hostSessionConnectHandler) Current(ctx context.Context, req *connect.Re
 }
 func (h *hostSessionConnectHandler) ListFixturePeople(ctx context.Context, req *connect.Request[sessionv1.ListFixturePeopleRequest]) (*connect.Response[sessionv1.ListFixturePeopleResponse], error) {
 	return unary(ctx, req, NewHostSessionServer(h.svc).ListFixturePeople)
+}
+
+type hostArtifactConnectHandler struct{ svc *business.Service }
+
+func (h *hostArtifactConnectHandler) server() *HostArtifactServer { return &HostArtifactServer{} }
+func (h *hostArtifactConnectHandler) Approve(ctx context.Context, req *connect.Request[artifactv1.ArtifactRequest]) (*connect.Response[artifactv1.Approval], error) {
+	return unary(ctx, req, h.server().Approve)
+}
+func (h *hostArtifactConnectHandler) Authorize(ctx context.Context, req *connect.Request[artifactv1.ArtifactRequest]) (*connect.Response[artifactv1.Approval], error) {
+	return unary(ctx, req, h.server().Authorize)
+}
+func (h *hostArtifactConnectHandler) Revoke(ctx context.Context, req *connect.Request[artifactv1.RevokeRequest]) (*connect.Response[artifactv1.Approval], error) {
+	return unary(ctx, req, h.server().Revoke)
 }

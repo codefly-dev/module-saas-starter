@@ -2,12 +2,15 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **295 RPCs** across **41 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **298 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
 | Procedure | Shape | REST mapping | Tier | Guards | Permission / scope | Resource bindings | Audit | Idempotency / rate | Sensitivity req → res | Description |
 |---|---|---|---|---|---|---|---|---|---|---|
+| `/host.artifact.v1.ArtifactService/Approve` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.module.executable_artifact_decision | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Record a person's consent to an exact artifact a module runs, for one installation, under one of its installed artifact policies. |
+| `/host.artifact.v1.ArtifactService/Authorize` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Answer whether a standing approval covers an artifact for a run, under the policy's run permission. |
+| `/host.artifact.v1.ArtifactService/Revoke` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.module.executable_artifact_decision | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Withdraw a person's approval of an artifact, for the person present. |
 | `/host.authority.v1.AuthorityService/AttachResource` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.authority.resource_attached | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Record that one resource created through an installation belongs to it; the kind's serving module asks. |
 | `/host.authority.v1.AuthorityService/AuthorizeTransfer` | unary | `—` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.authority.resource_transferred | OPTIONAL / AUTHENTICATION | SECRET → INTERNAL | Decide whether an existing resource may join an installed solution's principal, and record it. |
 | `/host.authority.v1.AuthorityService/Check` | unary | `POST /v1/authority:check` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live. |
@@ -312,4 +315,4 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `org_admin`: 69
 - `org_member`: 57
 - `platform_admin`: 29
-- `public`: 29
+- `public`: 32
