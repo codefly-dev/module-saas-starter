@@ -48,6 +48,15 @@
   ],
   "connect": [
     {
+      "name": "ArtifactService",
+      "fullName": "host.artifact.v1.ArtifactService",
+      "procedures": [
+        "/host.artifact.v1.ArtifactService/Approve",
+        "/host.artifact.v1.ArtifactService/Authorize",
+        "/host.artifact.v1.ArtifactService/Revoke"
+      ]
+    },
+    {
       "name": "AuthorityService",
       "fullName": "host.authority.v1.AuthorityService",
       "procedures": [
