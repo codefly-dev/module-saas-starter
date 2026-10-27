@@ -36,6 +36,7 @@ REST without a corresponding accounts endpoint, generation fails.
 | Caller | Target endpoints | Kubernetes ports |
 | --- | --- | --- |
 | `accounts` | `cache/read`, `cache/write` | TCP 6379 |
+| `accounts` | `object-storage/grpc` | Codefly-assigned gRPC port |
 | `accounts` | `store/tcp` | TCP 5432 |
 | `accounts` | `vault/http` | TCP 8200 |
 | `auth-gateway` | `accounts/connect`, `accounts/rest`, `accounts/grpc` | TCP 8080, 9090 |

@@ -39,6 +39,12 @@
           ]
         },
         {
+          "service": "object-storage",
+          "endpoints": [
+            "grpc"
+          ]
+        },
+        {
           "service": "store",
           "endpoints": [
             "tcp"
@@ -137,6 +143,17 @@
       ]
     },
     {
+      "name": "object-storage",
+      "endpoints": [
+        {
+          "name": "grpc",
+          "api": "CODEFLY_API_GRPC",
+          "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
+          "port": 9090
+        }
+      ]
+    },
+    {
       "name": "store",
       "endpoints": [
         {
@@ -211,6 +228,12 @@
     },
     {
       "service": "marketing",
+      "ports": [
+        443
+      ]
+    },
+    {
+      "service": "object-storage",
       "ports": [
         443
       ]

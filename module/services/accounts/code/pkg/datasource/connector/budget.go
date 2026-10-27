@@ -66,6 +66,10 @@ type budgeted struct {
 
 func (b *budgeted) Descriptor() Descriptor { return b.inner.Descriptor() }
 
+// Unwrap is the connector being metered, so a check of what implements a
+// registered connector reaches the implementation rather than the meter.
+func (b *budgeted) Unwrap() FilesConnector { return b.inner }
+
 func (b *budgeted) acquire(ctx context.Context, src Source) error {
 	return b.scheduler.Acquire(ctx, src, b.inner.Descriptor().Budget, PriorityFrom(ctx))
 }

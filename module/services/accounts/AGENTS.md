@@ -1173,6 +1173,43 @@ The transport underneath — h2c rather than server TLS, the resolved origin, an
 the key set a consumer verifies host-signed credentials against — is
 [../../INTERNAL_TRANSPORT.md](../../INTERNAL_TRANSPORT.md).
 
+## An object-storage source is a prefix and a key filter
+
+An `upload` ("Object storage") source reads one bucket under one `prefix`, and
+`UploadDatasourceConfig` narrows it further: `include_patterns` and
+`exclude_patterns` are RE2 expressions over the object key with the prefix
+removed (unanchored, case-sensitive; exclude wins; an empty include admits
+everything), and `file_extensions` intersects them with GitHub's suffix
+semantics. `uploadKeyScope` (`pkg/business/datasource_file_filter.go`, beside
+GitHub's own filter) is the one matcher. The connector applies it, not the
+listing source: it is the `InScope` of an `objectstore.Scope`
+(`pkg/datasource/objectstore/scope.go`), whose `Window` takes the store's
+listing whole and keeps the matches, counting only them against
+`max_objects`. So an excluded object is never fetched and never uses up the
+cap, the closing listing names only matches, and replacing what lists the
+prefix leaves the filter where it is.
+
+- **Refused at the call, never at sync.** `AddSource` and `UpdateSource`
+  compile every pattern and refuse an invalid one, more than 16, or one over 256
+  characters as `INVALID_ARGUMENT` with a `google.rpc.BadRequest` violation and
+  a message that leads with the field path (`upload.include_patterns[1]: …` on
+  add, `include_patterns[1]: …` on update). The kit places a refusal under its
+  field by that leading path, because the TypeScript SDK carries no
+  error-detail types.
+- **Narrowing deletes.** `UpdateSource` takes the patterns and file types for an
+  upload source (branch and paths are refused), under the same `expected` rule
+  as a GitHub edit, and queues the source's pull sync. That sync's closing
+  listing omits what the narrower filter excludes, and the store tombstones it
+  — unlike a GitHub snapshot, which only declares scope (below).
+- **Access follows the source.** A source is (bucket, prefix, filter) → one
+  collection → one grant; two sources on one bucket with different filters are
+  two collections with different readers. The catalog description says so.
+- **The filter is the host's whatever the store.** An S3-style listing takes a
+  prefix and a delimiter only, so the object-storage service needs nothing for
+  this. The source's `Scope` rides on its `objectstore.SourceConfig`, so the
+  envelope connector applies it to the service's listing before the version is
+  digested (#1211).
+
 ## A datasource source is refreshed by three things, and one of them covers every provider
 
 Ranked by latency, a source's content is refreshed by a push (near-live), by a
@@ -1304,3 +1341,86 @@ cause (v2 of that type; `datasourceAccessLostCodes` is the whole vocabulary a
 registry test holds the declaration to). Recovery is the ordinary one — a later
 snapshot clearing the degrade — which a repository made public again, or
 reconnected with a PAT or through the App, all reach.
+
+## Object storage is a client of the object-storage service, diffed against a listing the host retains
+
+The `upload` provider — "Object storage" to a person — reads a bucket under a
+key prefix into a `collection` scope node. Its readers are source-scoped: a
+bucket has no per-object access list, so the model to offer is one collection
+per prefix, granted like any scope. `AddSource` refuses a webhook secret for it:
+there is no push path (#1211 b).
+
+The host **re-uses the composed object-storage service** rather than keep a
+store client of its own (the owner's direction, 2026-10-21). This module
+composes it (`services/object-storage`, the `codefly.dev/object-storage` agent)
+and accounts depends on its `grpc` endpoint; `work.go` dials it with the token
+its agent publishes. The service takes a per-call bucket binding — kind,
+endpoint, region, bucket, prefix and the source's access key, for that one call
+— and owns the store protocol, every backend, the public-destination guard on
+each dial and the size cap (codefly-dev/service-object-storage#108). The host
+keeps what is per-source state:
+
+- **The sync reads through the connector.** `runUploadSync` takes a complete
+  snapshot through `objectstore.FilesConnector` (`Changes` from nothing), reads
+  it in batches with `FetchFiles`, delivers each object, and closes with the
+  listing the store tombstones the rest against. It still re-sends every object
+  in scope each sync; delivering only what the cursor says changed would change
+  what the consuming module receives, so it is its own change.
+- **The retained listing is the cursor.** The connector versions a source by
+  the digest of its scoped listing under its binding. The host keeps those
+  listings in `datasource_object_manifests` (migration 59), tenant-owned — the
+  control plane has no grant — and pruned to the newest four per source by
+  `PutDatasourceObjectManifest`; a pruned or rebound version resyncs. Clause by
+  clause, in [CONFORMANCE.md](./code/pkg/datasource/connector/CONFORMANCE.md).
+- **`objectstore.ServiceBucket` is the store.** It pages the listing (bounded;
+  past the bound it is `ErrListingIncomplete`, never a partial version) and
+  reads a batch in one `GetMany`, each object at `If-Match` its listed ETag.
+  The binding carries no prefix — the service would normalize it as a folder —
+  and every page filters on the source's literal key prefix (`/reports/` stays
+  `/reports/`), so an item keeps its full key; a listed key outside that prefix,
+  or a page past the service's page size, refuses the listing. Every call has a
+  deadline (30 s, five minutes for a batched read).
+  Before it lists or reads it asks `Capabilities` under the binding and refuses
+  a service that reports no bound caps or no batch size — a release from before
+  the binding would ignore it and serve its own bucket as the tenant's.
+- **Conformant, and admitted.** A batch is read in one `GetMany` call (up to
+  the service's `max_get_many_items`, 1000), each object at its listed ETag, so
+  the provider passes the conformance suite through `ServiceBucket` over the
+  service's wire and is registered through `connector.Budgeted`: a sync spends
+  its credential's budget, keyed by a digest of the store's origin and access
+  key id derived from the source's configuration on every use (never stored,
+  so sources connected at any time share one quota on one key), and a
+  requested sync may spend the reserved share. Where a compatible service is composed,
+  `GetDatasourceCatalog` reports `accepts_new_sources` and `AddSource` takes a
+  new source with its prefix and key filter. That is the whole admin path a
+  composed consumer drives — catalog, `AddSource`, sync — with no portal step.
+- **Admission needs a service that can read a bucket.** At start `work.go`
+  wires the composed service through `Service.SetObjectStorage`, which first
+  asks it, unbound, whether it reads a batch (`objectstore.CheckService`) and
+  refuses to wire one that does not. A composition without the service, or with one
+  from before the binding (0.0.18 and earlier; this module pins 0.0.19),
+  leaves object storage unavailable: the catalog says so, `AddSource` refuses
+  with `ErrObjectStorageUnavailable`, and an existing source's sync fails by
+  name.
+- **A sync never empties a source that has files** — a host-owned invariant,
+  whatever any service version answers. A closing snapshot with no files
+  tombstones every entry mirrored from the source, and a service that wrongly
+  answers "empty" (a rewritten scope, a discarded truncation) has happened.
+  So a listing that comes back empty for a source whose last closing snapshot
+  named objects — `datasource_sources.last_snapshot_items`, migration 60,
+  written only when a snapshot is sent; unknown on a source synced before it,
+  which counts as having files — is refused with
+  `ErrUploadEmptyListingRefused` (job code
+  `datasource.upload_empty_listing_refused`), closes nothing, and leaves the
+  collection as it is. Emptying a source is an explicit operation.
+- **Each refusal gets the action its reason names**, not one generic retry:
+  a throttle (`STORE_THROTTLED`) is retried no earlier than the store's reset;
+  an object over the service's cap (`OBJECT_TOO_LARGE`) is skipped and the
+  sync goes on, then surfaces it without a closing snapshot; a guard refusal
+  (`DESTINATION_REFUSED`) or a rejected access key (`CREDENTIAL_REJECTED`)
+  parks the source as degraded, with a fixed reason asking for a new endpoint
+  or a valid key, and fails the job terminally — unless the park itself cannot
+  be written, when the job retries instead, so a source never stops with
+  nothing on it to say why (`parkDatasourceSource`, the park the GitHub
+  unreadable-public-repository path goes through as well); an incomplete, too-long or too-large
+  listing is the terminal incomplete-listing disposition.

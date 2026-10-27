@@ -25,6 +25,9 @@ type DatasourceFetchScope struct {
 	Branch         string
 	Paths          []string
 	FileExtensions []string
+	// An object-storage source's key patterns; FileExtensions is its file types.
+	IncludePatterns []string
+	ExcludePatterns []string
 }
 
 // UpdateSourceInput is what a connected source may be re-aimed at: its branch
@@ -36,6 +39,10 @@ type UpdateSourceInput struct {
 	Branch         string
 	Paths          []string
 	FileExtensions []string
+	// IncludePatterns and ExcludePatterns are an object-storage source's key
+	// patterns, replaced whole like the rest.
+	IncludePatterns []string
+	ExcludePatterns []string
 	// Expected is the scope the caller was shown, which the edit is accepted
 	// against. Required, and nil is refused rather than read as "apply it
 	// anyway": a whole-field replacement applied unconditionally is precisely
@@ -150,8 +157,14 @@ func (s *Service) UpdateSource(ctx context.Context, actorID string, input Update
 	// providers are configured by their own fields (a base URL, a sitemap, a
 	// bucket prefix), and silently accepting a branch for one of them would
 	// report a change that changed nothing.
+	if source.Provider == DatasourceProviderUpload {
+		return s.updateUploadKeyFilter(ctx, actorID, source, input)
+	}
 	if source.Provider != DatasourceProviderGitHub {
-		return nil, "", status.Error(codes.FailedPrecondition, "only a github source has a branch and path filters")
+		return nil, "", status.Error(codes.FailedPrecondition, "only a github or object-storage source has filters to edit")
+	}
+	if len(input.IncludePatterns) > 0 || len(input.ExcludePatterns) > 0 {
+		return nil, "", keyFilterRefused("include_patterns", "a github source has no key patterns")
 	}
 
 	branch := strings.TrimSpace(input.Branch)
@@ -245,6 +258,95 @@ func (s *Service) UpdateSource(ctx context.Context, actorID string, input Update
 		// stands and the caller is told there is no sync to watch rather than
 		// being told the edit failed and retrying it.
 		w.Warn("enqueue reconfigured sync failed; the periodic reconcile will re-snapshot the source",
+			wool.Field("source", updated.ID), wool.ErrField(err))
+		return &updated, "", nil
+	}
+	return &updated, jobID, nil
+}
+
+// sameUploadKeyFilter reports whether scope is the key filter cfg holds, after
+// the same normalization comparison sameFetchScope applies.
+func sameUploadKeyFilter(scope DatasourceFetchScope, cfg *UploadDatasourceConfig) bool {
+	trimmed := func(values []string) []string {
+		var out []string
+		for _, v := range values {
+			if v = strings.TrimSpace(v); v != "" && !slices.Contains(out, v) {
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	return slices.Equal(trimmed(scope.IncludePatterns), trimmed(cfg.IncludePatterns)) &&
+		slices.Equal(trimmed(scope.ExcludePatterns), trimmed(cfg.ExcludePatterns)) &&
+		slices.Equal(comparableFileExtensions(scope.FileExtensions), comparableFileExtensions(cfg.FileExtensions))
+}
+
+// updateUploadKeyFilter is UpdateSource for an object-storage source: it
+// replaces the key patterns and file types and nothing else (the bucket and
+// prefix are the source's identity), under the same lock, expectation, audit
+// and reconfigured sync as a github edit. The next sync lists through the new
+// filter, so a narrowed filter's closing listing omits — and the store
+// tombstones — every key it now excludes.
+func (s *Service) updateUploadKeyFilter(ctx context.Context, actorID string, source *DatasourceSource, input UpdateSourceInput) (*DatasourceSource, string, error) {
+	w := wool.Get(ctx).In("updateUploadKeyFilter")
+	if strings.TrimSpace(input.Branch) != "" || len(input.Paths) > 0 {
+		return nil, "", keyFilterRefused("paths", "an object-storage source has no branch or paths; it is scoped by its prefix and key patterns")
+	}
+	var next UploadDatasourceConfig
+	if err := normalizeUploadKeyFilter(&next, &UploadDatasourceConfig{
+		IncludePatterns: input.IncludePatterns, ExcludePatterns: input.ExcludePatterns, FileExtensions: input.FileExtensions,
+	}, ""); err != nil {
+		return nil, "", err
+	}
+	nextScope := DatasourceFetchScope{IncludePatterns: next.IncludePatterns, ExcludePatterns: next.ExcludePatterns, FileExtensions: next.FileExtensions}
+	var (
+		updated DatasourceSource
+		changed bool
+	)
+	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
+		current, err := s.store.LockDatasourceSourceFetchScope(ctx, source.OrgID, source.ID)
+		if err != nil {
+			return err
+		}
+		if current == nil || current.Upload == nil {
+			return ErrDatasourceSourceNotFound
+		}
+		if !sameUploadKeyFilter(*input.Expected, current.Upload) {
+			return ErrDatasourceSourceScopeChanged
+		}
+		updated = *current
+		updated.BoundaryLabel = source.BoundaryLabel
+		if sameUploadKeyFilter(nextScope, current.Upload) {
+			return nil
+		}
+		cfg := *current.Upload
+		cfg.IncludePatterns, cfg.ExcludePatterns, cfg.FileExtensions = next.IncludePatterns, next.ExcludePatterns, next.FileExtensions
+		updated.Upload = &cfg
+		if err := s.store.UpdateDatasourceSourceFetchScope(ctx, &updated); err != nil {
+			return err
+		}
+		changed = true
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceUpdated, "datasource", updated.ID, updated.OrgID, map[string]any{
+			"bucket":           cfg.Bucket,
+			"prefix":           cfg.Prefix,
+			"include_patterns": cfg.IncludePatterns,
+			"exclude_patterns": cfg.ExcludePatterns,
+			"file_extensions":  cfg.FileExtensions,
+			"boundary":         updated.BoundaryNodeID,
+		})
+	}); err != nil {
+		if errors.Is(err, ErrDatasourceSourceNotFound) || errors.Is(err, ErrDatasourceSourceScopeChanged) {
+			return nil, "", err
+		}
+		return nil, "", w.Wrapf(err, "persist datasource source update")
+	}
+	if !changed {
+		return &updated, "", nil
+	}
+	// A pull source re-syncs through its own engine, not GitHub's reconcile.
+	jobID, err := s.enqueuePullSync(ctx, &updated, datasourceSyncRequestSource, NewIDString())
+	if err != nil {
+		w.Warn("enqueue re-sync failed; the periodic reconcile will re-sync the source",
 			wool.Field("source", updated.ID), wool.ErrField(err))
 		return &updated, "", nil
 	}

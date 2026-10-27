@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
 	ApiSourceCard,
 	ConnectGitHubForm,
+	ConnectObjectStorageForm,
 	type DatasourceClient,
 	DatasourcesPanel,
 	type DatasourceView,
@@ -108,6 +109,26 @@ export const ConnectionValidation = {
 		const [message, setMessage] = useState<string>();
 		return (
 			<ConnectGitHubForm
+				isPending={false}
+				errorMessage={message}
+				onCancel={() => setMessage("Close this story to leave the preview.")}
+				onSubmit={() =>
+					setMessage("Connection is unavailable in this preview.")
+				}
+			/>
+		);
+	},
+};
+/**
+ * Connecting a bucket, offered only once the host's catalog admits object
+ * storage. It shares the GitHub form's collection field, and says what a bucket
+ * cannot: every object is readable by whoever reads the collection.
+ */
+export const ConnectObjectStorage = {
+	render: function ConnectObjectStorageStory() {
+		const [message, setMessage] = useState<string>();
+		return (
+			<ConnectObjectStorageForm
 				isPending={false}
 				errorMessage={message}
 				onCancel={() => setMessage("Close this story to leave the preview.")}

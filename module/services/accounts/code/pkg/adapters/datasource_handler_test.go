@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/datasource/objectstore"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -36,6 +37,12 @@ func TestAPICredentialKindRoundTrip(t *testing.T) {
 func TestDatasourceCatalog_ProjectsTheRegistry(t *testing.T) {
 	svc, _ := business.NewService(nil)
 	svc.SetDatasourceConnector(nil, nil, "")
+	for _, p := range datasourceCatalog(svc.DatasourceCatalog()).GetProviders() {
+		if p.GetConnector() == business.DatasourceProviderUpload && p.GetAcceptsNewSources() {
+			t.Fatal("object storage accepts new sources with no object-storage service composed")
+		}
+	}
+	svc.SetDatasourceUploadBucketFactory(func(objectstore.SourceConfig, string, string) objectstore.Bucket { return nil })
 	catalog := datasourceCatalog(svc.DatasourceCatalog())
 	byKey := map[string]*gen.DatasourceProviderDescriptor{}
 	for _, p := range catalog.GetProviders() {
@@ -53,12 +60,23 @@ func TestDatasourceCatalog_ProjectsTheRegistry(t *testing.T) {
 		len(github.GetConfigFields()) != 4 || github.GetConfigFields()[0].GetKey() != "repo" || !github.GetSupportsWebhook() {
 		t.Fatalf("GitHub entry = %v", github)
 	}
-	for _, key := range []string{business.DatasourceProviderAPI, business.DatasourceProviderCrawler, business.DatasourceProviderUpload} {
+	upload := byKey[business.DatasourceProviderUpload]
+	if !upload.GetConformant() || !upload.GetAcceptsNewSources() || upload.GetConformanceGap() != "" ||
+		upload.GetInterface() != gen.DatasourceConnectorInterface_DATASOURCE_CONNECTOR_INTERFACE_FILES ||
+		upload.GetBudget().GetMaxItemsPerCall() != 1000 || upload.GetBudget().GetMaxItemBytes() != 5<<20 {
+		t.Fatalf("object storage entry = %v, want conformant, accepting new sources, budgeted", upload)
+	}
+	for _, key := range []string{business.DatasourceProviderAPI, business.DatasourceProviderCrawler} {
 		p := byKey[key]
 		if p == nil || p.GetConformant() || p.GetAcceptsNewSources() || p.GetConformanceGap() == "" || p.GetBudget() != nil ||
 			p.GetProvider() == gen.DatasourceProvider_DATASOURCE_PROVIDER_UNSPECIFIED {
 			t.Fatalf("%s entry = %v, want listed, non-conformant, with a gap, accepting no new source", key, p)
 		}
+	}
+	// A bucket has no per-object access list; the catalog says so before a
+	// person connects one.
+	if r := byKey[business.DatasourceProviderUpload].GetReadersModel(); r != gen.DatasourceReadersModel_DATASOURCE_READERS_MODEL_SOURCE_SCOPED {
+		t.Fatalf("object storage readers model = %v, want source-scoped", r)
 	}
 	if datasourceCatalog(nil).GetProviders() != nil {
 		t.Fatal("an unconfigured connector offers nothing")
