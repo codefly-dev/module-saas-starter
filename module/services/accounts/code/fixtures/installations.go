@@ -153,11 +153,18 @@ func (i *Installations) Converge(ctx context.Context) error {
 			// interfaces decide with (coreInstall). A target the core has not
 			// composed yet keeps the row for the next pass.
 			coreWaits := false
-			switch err := i.coreInstall(ctx, row); {
+			switch active, err := i.coreInstall(ctx, row); {
 			case errors.Is(err, errCoreTargetNotComposed):
 				coreWaits = true
 			case err != nil:
 				failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
+			case active:
+				// accounts' record of the installation follows the core's: the
+				// core's is active, so accounts' is, and its teams can be
+				// exposed below in this same pass.
+				if err := i.service.FollowCoreInstallation(ctx, row.orgID, installation.GetId()); err != nil {
+					failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
+				}
 			}
 			// Each declared team is exposed once the installation admits it (an
 			// installation still pending its install step does not); one not
@@ -187,13 +194,13 @@ var errCoreTargetNotComposed = errors.New("the authority core has not composed t
 // owner and its role to each declared team (GrantRoleAsHost), as the local
 // authority's fixture does. Each step is idempotent, so a reseed repeats it
 // harmlessly. A host whose core is not configured installs nothing there.
-func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation) error {
+func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation) (bool, error) {
 	core, err := i.service.AuthorityCore()
 	if errors.Is(err, business.ErrAuthorityCoreUnconfigured) {
-		return nil
+		return false, nil
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	// A module's installation is accounts' own record, which Converge's install
 	// made; the core reads it and installs no module itself. A target the core
@@ -201,21 +208,23 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 	// composes it.
 	m, err := core.Composed(ctx, row.declared.Target)
 	if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
-		return fmt.Errorf("%w: %s", errCoreTargetNotComposed, row.declared.Target)
+		return false, fmt.Errorf("%w: %s", errCoreTargetNotComposed, row.declared.Target)
 	}
 	if err != nil {
-		return fmt.Errorf("the authority core: %w", err)
+		return false, fmt.Errorf("the authority core: %w", err)
 	}
 	if m.Kind != domain.KindSolution {
-		return nil
+		return false, nil
 	}
 	inst, err := core.InstallAsHost(ctx, row.orgID, row.declared.Target, row.declared.Role, row.ownerID, i.service.AuthorityInstallStep())
 	switch {
 	case errors.Is(err, domain.ErrAlreadyInstalled):
-		// Installed already: its grants are granted again, idempotently.
+		// Installed already, and active: its grants are granted again,
+		// idempotently.
 		inst.ID = authority.StableInstallationID(row.orgID, row.declared.Target)
+		inst.Status = domain.Active
 	case err != nil:
-		return fmt.Errorf("the authority core: %w", err)
+		return false, fmt.Errorf("the authority core: %w", err)
 	}
 	grants := []authority.RoleRequest{{Organization: row.orgID, InstallationID: inst.ID, Role: domain.InstallerRole, PersonID: row.ownerID}}
 	for _, teamID := range row.allTeamIDs {
@@ -223,10 +232,10 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 	}
 	for _, grant := range grants {
 		if _, err := core.GrantRoleAsHost(ctx, grant); err != nil {
-			return fmt.Errorf("the authority core: grant %s: %w", grant.Role, err)
+			return false, fmt.Errorf("the authority core: grant %s: %w", grant.Role, err)
 		}
 	}
-	return nil
+	return inst.Status == domain.Active, nil
 }
 
 // ConvergeAuthority performs every declared installation in the authority core
@@ -241,7 +250,7 @@ func (i *Installations) ConvergeAuthority(ctx context.Context) error {
 	defer i.mu.Unlock()
 	var failures []error
 	for _, row := range i.pending {
-		err := i.coreInstall(ctx, row)
+		_, err := i.coreInstall(ctx, row)
 		if code, ok := domain.CodeOf(err); errors.Is(err, errCoreTargetNotComposed) || ok && code == domain.NotFound {
 			continue
 		}

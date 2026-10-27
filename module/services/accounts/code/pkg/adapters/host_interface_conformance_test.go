@@ -71,6 +71,7 @@ const (
 	conformanceAlex     = "00000000-0000-7000-8000-0000000000b3"
 	conformanceIvy      = "00000000-0000-7000-8000-0000000000b9"
 	conformanceZoe      = "00000000-0000-7000-8000-0000000000b5"
+	conformanceMaya     = "00000000-0000-7000-8000-0000000000b1"
 )
 
 // TestAccountsPassesTheHostInterfaceConformanceSuite boots accounts over a
@@ -990,6 +991,41 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NoError(t, err)
 		finance := teamNamed(t, ctx, svc, fixtureOrganization, "Finance")
 		require.Contains(t, grants, domain.RoleGrant{InstallationID: inst.ID, Role: "viewer", TeamID: finance}, "the declared team holds its role")
+
+		// accounts' own record of the installation follows the core's: active,
+		// with no install step acknowledged, and exposed to the declared team.
+		available, _, err := svc.ListAvailableSolutions(ctx, fixtureOrganization, "", 500)
+		require.NoError(t, err)
+		var target string
+		for _, entry := range available {
+			if entry.RouteAlias == "conformance-late" {
+				target = entry.TargetID
+			}
+		}
+		require.NotEmpty(t, target)
+		rows, _, err := svc.ListOrganizationInstallations(ctx, fixtureOrganization, "", 100)
+		require.NoError(t, err)
+		var native *gen.Installation
+		for _, row := range rows {
+			if row.Summary.GetInstallation().GetTargetId() == target {
+				native = row.Summary.GetInstallation()
+			}
+		}
+		require.NotNil(t, native, "accounts holds its own record of the installation")
+		require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, native.GetStatus(), "accounts' record follows the core's")
+		entitled, err := svc.ListSolutionEntitlements(ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceMaya})
+		require.NoError(t, err)
+		var exposed bool
+		for _, entitlement := range entitled.GetEntitlements() {
+			exposed = exposed || entitlement.GetInstallationId() == native.GetId()
+		}
+		require.True(t, exposed, "the declared team is exposed to it")
+
+		// A person on the team is issued a capability through the solution.
+		issued, err := authorityv1.NewAuthorityServiceClient(conn).Issue(signIn("fixture-maya"), &authorityv1.IssueRequest{
+			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "conformance-late"})
+		require.NoError(t, err, "a member of the declared team holds the solution's role")
+		require.NotEmpty(t, issued.GetContext().GetAuthorityScopes())
 	})
 
 	// Last, because the envelope it writes becomes every module's ceiling: a
