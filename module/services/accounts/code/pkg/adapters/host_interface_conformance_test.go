@@ -891,7 +891,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	})
 
 	// The artifact interface the local authority serves (host.artifact.v1),
-	// asked as robin asks it: the module's workload credential and a parent
+	// asked as a module asks it: the module's workload credential and a parent
 	// capability addressed to the module. accounts' one artifact decision
 	// answers: an organization administrator present approves an exact
 	// artifact under the module's installed policy; a member without the
