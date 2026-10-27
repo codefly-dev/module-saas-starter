@@ -5,6 +5,7 @@ package infra_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -13,67 +14,186 @@ import (
 	"accounts/pkg/infra/storetx"
 )
 
+var (
+	solutionUse = &gen.Permission{Resource: "solution", Action: "use"}
+	docRead     = &gen.Permission{Resource: "doc", Action: "read"}
+	docWrite    = &gen.Permission{Resource: "doc", Action: "write"}
+)
+
+func derivedRole(orgID, cause, description string, perms ...*gen.Permission) business.DerivedRole {
+	return business.DerivedRole{OrgID: orgID, DerivedFrom: cause,
+		Name: "solution role · " + cause, Description: description, Permissions: perms}
+}
+
+// ensureDerivedRole ensures the role in its own committed organization
+// transaction and returns its id.
+func ensureDerivedRole(t *testing.T, role business.DerivedRole) string {
+	t.Helper()
+	var id string
+	require.NoError(t, testStore.WithOrgTx(testCtx, role.OrgID, func(ctx context.Context) error {
+		var err error
+		id, err = testStore.EnsureDerivedRole(ctx, role)
+		return err
+	}))
+	return id
+}
+
+func authorizationRevision(t *testing.T, orgID string) int64 {
+	t.Helper()
+	var r int64
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return storetx.Tx(ctx).QueryRow(ctx, `SELECT revision FROM public.organization_authorization_revisions WHERE org_id = $1`, orgID).Scan(&r)
+	}))
+	return r
+}
+
+func rolePermissions(t *testing.T, roleID string) []string {
+	t.Helper()
+	out := []string{}
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		rows, err := storetx.Tx(ctx).Query(ctx, `SELECT resource || ':' || action FROM role_permissions WHERE role_id = $1`, roleID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var p string
+			if err := rows.Scan(&p); err != nil {
+				return err
+			}
+			out = append(out, p)
+		}
+		return rows.Err()
+	}))
+	return out
+}
+
 // Ensuring a derived role that is already as declared writes nothing, so it
 // leaves the organization's authorization revision (what every capability is
 // minted at) where it is; a changed description or permission set is written,
 // and only what changed.
 func TestEnsuringADerivedRoleAsDeclaredMovesNoRevision(t *testing.T) {
-	userID := seedUser(t)
-	orgID := seedOrg(t, userID)
-	revision := func() int64 {
-		t.Helper()
-		var r int64
-		require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-			return storetx.Tx(ctx).QueryRow(ctx, `SELECT revision FROM public.organization_authorization_revisions WHERE org_id = $1`, orgID).Scan(&r)
-		}))
-		return r
-	}
-	permissions := func(roleID string) []string {
-		t.Helper()
-		var out []string
-		require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-			rows, err := storetx.Tx(ctx).Query(ctx, `SELECT resource || ':' || action FROM role_permissions WHERE role_id = $1`, roleID)
-			if err != nil {
-				return err
-			}
-			defer rows.Close()
-			for rows.Next() {
-				var p string
-				if err := rows.Scan(&p); err != nil {
-					return err
-				}
-				out = append(out, p)
-			}
-			return rows.Err()
-		}))
-		return out
-	}
-	ensure := func(description string, perms ...*gen.Permission) string {
-		t.Helper()
-		var id string
-		require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-			var err error
-			id, err = testStore.EnsureDerivedRole(ctx, business.DerivedRole{OrgID: orgID, DerivedFrom: "installation=revision-test;role=viewer",
-				Name: "solution role · revision-test", Description: description, Permissions: perms})
-			return err
-		}))
-		return id
-	}
-	use, read, write := &gen.Permission{Resource: "solution", Action: "use"}, &gen.Permission{Resource: "doc", Action: "read"}, &gen.Permission{Resource: "doc", Action: "write"}
+	orgID := seedOrg(t, seedUser(t))
+	const cause = "installation=revision-test;role=viewer"
+	revision := func() int64 { return authorizationRevision(t, orgID) }
 
-	id := ensure("the viewer role", use, read)
+	id := ensureDerivedRole(t, derivedRole(orgID, cause, "the viewer role", solutionUse, docRead))
 	settled := revision()
 	for range 3 {
-		require.Equal(t, id, ensure("the viewer role", use, read))
+		require.Equal(t, id, ensureDerivedRole(t, derivedRole(orgID, cause, "the viewer role", solutionUse, docRead)))
 	}
 	require.Equal(t, settled, revision(), "ensuring a role already as declared wrote it")
 
-	require.Equal(t, id, ensure("the viewer role", use, write))
-	require.ElementsMatch(t, []string{"solution:use", "doc:write"}, permissions(id))
+	require.Equal(t, id, ensureDerivedRole(t, derivedRole(orgID, cause, "the viewer role", solutionUse, docWrite)))
+	require.ElementsMatch(t, []string{"solution:use", "doc:write"}, rolePermissions(t, id))
 	moved := revision()
 	require.Greater(t, moved, settled, "a changed permission set is written")
 
-	require.Equal(t, id, ensure("the viewer role, renamed", use, write))
-	require.Greater(t, revision(), moved, "a changed description is written")
-	require.ElementsMatch(t, []string{"solution:use", "doc:write"}, permissions(id))
+	require.Equal(t, id, ensureDerivedRole(t, derivedRole(orgID, cause, "the viewer role, renamed", solutionUse, docWrite)))
+	renamed := revision()
+	require.Greater(t, renamed, moved, "a changed description is written")
+	require.ElementsMatch(t, []string{"solution:use", "doc:write"}, rolePermissions(t, id))
+
+	require.Equal(t, id, ensureDerivedRole(t, derivedRole(orgID, cause, "the viewer role, renamed", solutionUse)))
+	require.ElementsMatch(t, []string{"solution:use"}, rolePermissions(t, id))
+	removed := revision()
+	require.Greater(t, removed, renamed, "a permission no longer declared is removed, and that is written")
+
+	require.Equal(t, id, ensureDerivedRole(t, derivedRole(orgID, cause, "the viewer role, renamed", solutionUse)))
+	require.Equal(t, removed, revision(), "re-ensuring the narrowed role wrote it")
+}
+
+// Two ensures of the same cause with different declarations serialize on the
+// role row: the second waits for the first to commit, reads what it wrote, and
+// ends at its own declaration (last writer wins). Without the lock the second
+// would read before the first committed and the role would end at the union of
+// both, keeping the permission the later declaration dropped.
+func TestRacingEnsuresOfADerivedRoleEndAtTheLastDeclaration(t *testing.T) {
+	orgID := seedOrg(t, seedUser(t))
+	const cause = "installation=race-test;role=viewer"
+	id := ensureDerivedRole(t, derivedRole(orgID, cause, "the viewer role", solutionUse))
+
+	added, release := make(chan struct{}), make(chan struct{})
+	first := make(chan error, 1)
+	go func() {
+		first <- testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			if _, err := testStore.EnsureDerivedRole(ctx, derivedRole(orgID, cause, "the viewer role", solutionUse, docWrite)); err != nil {
+				return err
+			}
+			close(added)
+			<-release
+			return nil
+		})
+	}()
+	select {
+	case <-added:
+	case err := <-first:
+		t.Fatalf("the first ensure ended before it held the role: %v", err)
+	}
+
+	second := make(chan error, 1)
+	go func() {
+		second <- testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			_, err := testStore.EnsureDerivedRole(ctx, derivedRole(orgID, cause, "the viewer role", solutionUse))
+			return err
+		})
+	}()
+	select {
+	case err := <-second:
+		close(release)
+		<-first
+		t.Fatalf("the second ensure did not wait for the first to commit (err=%v)", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	close(release)
+	require.NoError(t, <-first)
+	require.NoError(t, <-second)
+	require.ElementsMatch(t, []string{"solution:use"}, rolePermissions(t, id),
+		"the later declaration drops doc:write; the role must not end at the union")
+}
+
+// The lock an ensure takes on the role row must not conflict with the lock a row
+// REFERENCING the role takes through its foreign key (FOR KEY SHARE: scope_grants,
+// role_assignments, role_permissions and record_shares all reference roles).
+// installSolution moves the organization's revision (its agent principal) and
+// THEN writes the standing grant of the solution role; an ensure of that role
+// with a changed declaration holds the role row and then needs the revision row.
+// FOR UPDATE conflicts with KEY SHARE and the two deadlock; FOR NO KEY UPDATE,
+// the lock the upsert it replaced took, does not.
+func TestAnEnsureDoesNotDeadlockAWriterThatReferencesTheRole(t *testing.T) {
+	orgID := seedOrg(t, seedUser(t))
+	const cause = "installation=reference-test;role=viewer"
+	id := ensureDerivedRole(t, derivedRole(orgID, cause, "the viewer role", solutionUse))
+
+	movedRevision, reference := make(chan struct{}), make(chan struct{})
+	referencing := make(chan error, 1)
+	go func() {
+		referencing <- testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			// Any authorization write moves the revision and holds its row.
+			if _, err := testStore.EnsureDerivedRole(ctx, derivedRole(orgID, "installation=reference-test;role=other", "another role", solutionUse)); err != nil {
+				return err
+			}
+			close(movedRevision)
+			<-reference
+			_, err := storetx.Tx(ctx).Exec(ctx, `SELECT 1 FROM roles WHERE id = $1 FOR KEY SHARE`, id)
+			return err
+		})
+	}()
+	<-movedRevision
+
+	ensuring := make(chan error, 1)
+	go func() {
+		ensuring <- testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			_, err := testStore.EnsureDerivedRole(ctx, derivedRole(orgID, cause, "the viewer role", solutionUse, docWrite))
+			return err
+		})
+	}()
+	// Let the ensure take the role row and block on the revision row.
+	time.Sleep(300 * time.Millisecond)
+	close(reference)
+
+	require.NoError(t, <-referencing, "the referencing writer")
+	require.NoError(t, <-ensuring, "the ensure")
+	require.ElementsMatch(t, []string{"solution:use", "doc:write"}, rolePermissions(t, id))
 }
