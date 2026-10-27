@@ -191,21 +191,9 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 		return nil, err
 	}
 
-	// 3. The agent's standing, non-expiring, least-privilege grant at the node.
-	grant := &gen.ScopeGrant{
-		Id:          business.NewIDString(),
-		OrgId:       params.OrgID,
-		SubjectId:   agentID,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
-		ScopePath:   nodePath,
-		RoleId:      params.RoleID,
-		GrantedBy:   params.GrantedBy,
-	}
-	if err := s.GrantScope(ctx, grant); err != nil {
-		return nil, w.Wrapf(err, "failed to grant standing scope to agent")
-	}
-
-	// 4. Persist explicit consent. A direct store call with no scope grants none.
+	// 3. Persist the installation before its standing grant, in this transaction.
+	// The common grant guard can then verify the agent/root/target relationship.
+	// Persist explicit consent. A direct store call with no scope grants none.
 	consent := params.Scope
 	if consent == nil {
 		consent = &business.InstallationScope{}
@@ -238,6 +226,20 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 		}
 		return nil, w.Wrapf(err, "failed to insert installation")
 	}
+	// 4. The agent's standing, non-expiring, least-privilege grant at the node.
+	grant := &gen.ScopeGrant{
+		Id:          business.NewIDString(),
+		OrgId:       params.OrgID,
+		SubjectId:   agentID,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+		ScopePath:   nodePath,
+		RoleId:      params.RoleID,
+		GrantedBy:   params.GrantedBy,
+	}
+	if err := s.GrantScope(ctx, grant); err != nil {
+		return nil, w.Wrapf(err, "failed to grant standing scope to agent")
+	}
+
 	if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING && params.Approval == nil {
 		if err := s.EnqueueInstallationStep(ctx, params.OrgID, installation.Id, "initial"); err != nil {
 			return nil, err

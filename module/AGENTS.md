@@ -101,7 +101,9 @@ and check the built executable's toolchain evidence. Never lower the accounts
 minimum to accommodate an older builder.
 CLI v0.1.185 requires an explicit run-level test outcome from every service
 agent. The cache, store and vault manifests pin released Redis 0.0.100,
-Postgres 0.0.146 and Vault 0.0.42, which include their owners' outcome fixes.
+Postgres 0.0.146 and Vault 0.0.44, which include their owners' outcome fixes.
+Vault 0.0.44 also corrects its owner's runtime image digest; the agent resolves
+that image, so the module pins the released agent rather than restating the digest.
 An empty legacy response is not evidence that tests passed; do not bypass that
 check or disable the service's test phase to accept it.
 

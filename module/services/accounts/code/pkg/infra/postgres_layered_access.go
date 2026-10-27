@@ -521,9 +521,9 @@ func requireNotDerivedRole(ctx context.Context, executor QueryExecutor, roleID s
 // exposed to hold it there. So it is granted only at the authority-root node of
 // an installation of THAT solution, in the organisation it was derived for —
 // never at another solution's root — and only to a team or an agent principal:
-// a person never holds a solution role directly. The one node no installation
-// names yet is the fresh root an install registers before writing its row, and
-// only the installation's agent principal is granted there.
+// a person never holds a solution role directly. The installation row is
+// written before its standing grant in the same transaction, so every grant
+// proves the same relationship without a fresh-root exception.
 func requireNotDerivedRoleOrSolutionRoot(ctx context.Context, executor QueryExecutor, grant *gen.ScopeGrant) error {
 	provenance, err := derivedRoleProvenance(ctx, executor, grant.RoleId)
 	if err != nil || provenance == "" {
@@ -560,21 +560,25 @@ func requireNotDerivedRoleOrSolutionRoot(ctx context.Context, executor QueryExec
 			return refuse("%q is the authority root of solution %s", grant.ScopePath, other)
 		}
 	}
+	if len(rootOf) == 0 {
+		return refuse("no installation of it has %q as its root", grant.ScopePath)
+	}
 	if grant.SubjectKind == gen.SubjectKind_SUBJECT_KIND_TEAM {
-		if len(rootOf) == 0 {
-			return refuse("no installation of it has %q as its root, so no team is granted there", grant.ScopePath)
-		}
 		return nil
 	}
 	var agent bool
 	if err := executor.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM principals WHERE id::text = $1 AND kind = 'agent' AND org_id = $2::uuid)`,
-		grant.SubjectId, grant.OrgId,
+		`SELECT EXISTS(SELECT 1 FROM principals p
+          JOIN installations i ON i.agent_principal_id = p.id AND i.org_id = p.org_id
+          JOIN scope_nodes n ON n.id = i.root_scope_node_id
+          WHERE p.id::text = $1 AND p.kind = 'agent' AND p.org_id = $2::uuid
+            AND i.target_id::text = $3 AND n.scope_path = $4::ltree)`,
+		grant.SubjectId, grant.OrgId, target, grant.ScopePath,
 	).Scan(&agent); err != nil {
 		return err
 	}
 	if !agent {
-		return refuse("principal %s is not an agent principal of this organization, and a person never holds a solution role directly", grant.SubjectId)
+		return refuse("principal %s is not this installation's agent, and a person never holds a solution role directly", grant.SubjectId)
 	}
 	return nil
 }

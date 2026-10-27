@@ -1118,8 +1118,12 @@ not executable content. FORCE RLS admits only `app_tenant` with matching
 select/insert and update only `revoked_at`/`revoked_by`; they cannot change the
 approved identity, approver, installation or policy. A trigger makes revocation
 terminal. The service uses `As(verified tenant and current user).Within` and explicit tenant/installation/module
-predicates, serializing exact-identity decisions with revocation. Down migration
-refuses to discard any retained approval.
+and policy predicates, serializing exact-identity decisions with revocation.
+Migration 61 adds policy to the unique consent identity: shared artifact digests
+identify content, so the same content may hold independent approvals under two
+policies. Revoking one never revokes the other. Rollback refuses when independent
+policy receipts cannot fit the old uniqueness constraint; it deletes no receipts.
+The original table down migration refuses to discard any retained approval.
 
 The shared relation catalog classifies this table as tenant-scoped with a direct
 `org_id` policy. The live database inventory verifies the table grants, FORCE

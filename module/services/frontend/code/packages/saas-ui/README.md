@@ -242,8 +242,9 @@ authority's answer, never a check here: an administrator reads the offer with
 its consent tuple and may grant; a member holding a role reads what it grants,
 read-only; anyone else sees the authority's one refusal. Every refusal is shown
 with its code and the authority's reason, verbatim, where the answer would have
-been. A host that composes no tool bindings answers `tools_composed: false`, and
-the page says so instead of listing no tool.
+been. When `tools_composed: false`, the host has not supplied tool exposure
+metadata. The page reports it as unavailable, including on each operation;
+this is not evidence that the composition exposes no tools.
 
 **What a host adds.** Only what it knows and the authority does not: the
 organization its session is at (`organizationId`), the people and teams it can

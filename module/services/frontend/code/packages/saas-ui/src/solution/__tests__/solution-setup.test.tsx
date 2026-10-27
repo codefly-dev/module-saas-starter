@@ -150,22 +150,20 @@ describe("Roles and what they grant", () => {
 		expect(
 			within(ceiling).getByText("example-records: read, write"),
 		).toBeTruthy();
-		expect(roles.queryByText(/composes no tool bindings/)).toBeNull();
+		expect(roles.queryByText(/Tool exposure is unavailable/)).toBeNull();
 	});
 
 	it("renders a host that composes no tools from the same message, saying so (a SaaS answer)", async () => {
 		await mounted(setupFixture({ offer: reviewedOffer({ tools: false }) }));
 		const roles = within(section("Roles and what they grant"));
 		expect(
-			roles.getByText(
-				"This host composes no tool bindings, so no tool is listed.",
-			),
+			roles.getByText("Tool exposure is unavailable from this host."),
 		).toBeTruthy();
 		const editor = roles.getByRole("table", { name: "What editor reaches" });
 		expect(within(editor).getByText("POST /items/{id}")).toBeTruthy();
-		expect(within(editor).getAllByText("Not exposed as a tool")).toHaveLength(
-			2,
-		);
+		expect(
+			within(editor).getAllByText("Tool exposure unavailable"),
+		).toHaveLength(2);
 	});
 
 	it("shows a member holding a role what it grants, without the consent tuple and read-only", async () => {

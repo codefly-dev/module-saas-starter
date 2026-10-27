@@ -42,7 +42,7 @@ type HostArtifactServer struct {
 // Approve records the person's consent to the artifact: the policy's activate
 // action, held by the person present.
 func (s *HostArtifactServer) Approve(ctx context.Context, req *artifactv1.ArtifactRequest) (*artifactv1.Approval, error) {
-	decided, err := artifactDecide(ctx, req.GetParentToken(), req.GetActorCredential(), req.GetInstallationId(), req.GetPolicy(), decide.ArtifactActivate, req.GetIdentity())
+	decided, err := artifactDecide(ctx, req.GetParentToken(), req.GetActorCredential(), req.GetInstallationId(), req.GetPolicy(), decide.ArtifactActivate, artifactIdentity(req))
 	if err != nil {
 		return nil, err
 	}
@@ -54,12 +54,12 @@ func (s *HostArtifactServer) Approve(ctx context.Context, req *artifactv1.Artifa
 // Authorize answers whether a standing approval covers the artifact, for a
 // run: the policy's run action, which a context a module acts through carries.
 func (s *HostArtifactServer) Authorize(ctx context.Context, req *artifactv1.ArtifactRequest) (*artifactv1.Approval, error) {
-	decided, err := artifactDecide(ctx, req.GetParentToken(), req.GetActorCredential(), req.GetInstallationId(), req.GetPolicy(), decide.ArtifactRun, req.GetIdentity())
+	decided, err := artifactDecide(ctx, req.GetParentToken(), req.GetActorCredential(), req.GetInstallationId(), req.GetPolicy(), decide.ArtifactRun, artifactIdentity(req))
 	if err != nil {
 		return nil, err
 	}
 	out, err := service.AuthorizedHostArtifact(decided.ctx, decided.tenant, decided.owner, decided.installation, decided.module,
-		decided.digest, decided.subject, req.GetIdentity().GetExpectedRevision())
+		req.GetPolicy(), decided.digest, decided.subject, req.GetIdentity().GetExpectedRevision())
 	return artifactApprovalToWire(out, err)
 }
 
@@ -71,7 +71,7 @@ func (s *HostArtifactServer) Revoke(ctx context.Context, req *artifactv1.RevokeR
 	if err != nil {
 		return nil, err
 	}
-	out, err := service.RevokeHostArtifact(decided.ctx, decided.tenant, decided.owner, decided.installation, decided.module, req.GetApprovalId(), approvedArtifactRevision)
+	out, err := service.RevokeHostArtifact(decided.ctx, decided.tenant, decided.owner, decided.installation, decided.module, req.GetPolicy(), req.GetApprovalId(), approvedArtifactRevision)
 	return artifactApprovalToWire(out, err)
 }
 
@@ -156,4 +156,13 @@ func artifactApprovalToWire(out *business.HostArtifactApproval, err error) (*art
 		return nil, err
 	}
 	return &artifactv1.Approval{QualifiedName: "host/approved-artifacts/" + out.ID, Digest: out.Digest, ExpectedRevision: out.Revision}, nil
+}
+
+// An omitted identity is an empty identity for the core to reject, never the
+// nil identity that selects its revoke decision.
+func artifactIdentity(req *artifactv1.ArtifactRequest) *artifactv1.Identity {
+	if identity := req.GetIdentity(); identity != nil {
+		return identity
+	}
+	return &artifactv1.Identity{}
 }

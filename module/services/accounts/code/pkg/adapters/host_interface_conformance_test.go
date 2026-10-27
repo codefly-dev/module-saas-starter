@@ -250,7 +250,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	// administrator lists installations the module can never name.
 	const artifactModule = "conformance-artifact"
 	deliverModule(t, ctx, conn, signer, conformanceModule{alias: artifactModule,
-		ceilings: []*authorityv1.WorkScopeV1{wireScope(artifactModule+".intent", "activate", "run")}})
+		ceilings: []*authorityv1.WorkScopeV1{wireScope(artifactModule+".intent", "activate", "run"), wireScope(artifactModule+".preview", "activate", "run")}})
 	require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, artifactModule))
 
 	// The solutions, delivered as the CLI delivers them, then installed by the
@@ -494,6 +494,9 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NoError(t, err)
 		return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())
 	}
+	t.Run("artifact consent stays with its policy", func(t *testing.T) {
+		testHostArtifactPolicyIsolation(t, ctx, conn, signIn("fixture-alex"), artifactModule, credential(artifactModule))
+	})
 	requireCode := func(t *testing.T, err error, code codes.Code, reason string) {
 		t.Helper()
 		require.Equal(t, code, status.Code(err), "%v", err)

@@ -72,16 +72,19 @@ The browser cache tests do not qualify that producer/deployment boundary.
 Every `/s/<id>` page has a Setup tab beside App (and Dashboard): the solution's
 roles, what each grants (scopes → module operations → agent tools, and the
 permission ceiling) and who holds them. It renders the kit's `<SolutionSetup>`
-(`@codefly-dev/saas-ui/solution`), the one Setup UI every host renders — the
-local authority's setup page and solution playgrounds mount the same component
-— through `SolutionSetupPanel`, which adds only what this host knows: the
+(`@codefly-dev/saas-ui/solution`) through `SolutionSetupPanel`, which adds
+only what this host knows: the
 session's organization, the people and teams it can name, and, on the admin
 installation page, this host's own unmet conditions. Every fact and refusal on
 the tab is the authority's answer through the host installation interface. The
-solution is named by its target, its registered route alias.
+solution is named by its target, its registered route alias. The component is
+available for other hosts; adoption by the local authority is a separate owner
+integration and is not established by this repository.
 
 The Setup loading state follows the kit's delay and minimum visible duration,
 including when the authority answers immediately after the indicator appears.
+When the host cannot read composed tool bindings, tool exposure is shown as
+unavailable; an empty tool list is not reported as proof of no exposure.
 
 The browser reaches that interface at exactly the procedures the local
 authority's edge serves a browser (`src/lib/host-setup-procedures.ts`):

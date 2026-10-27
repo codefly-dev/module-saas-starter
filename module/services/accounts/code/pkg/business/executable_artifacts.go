@@ -80,9 +80,9 @@ type ExecutableArtifactStore interface {
 	// Insert is immutable and idempotent by exact digest. A revoked row is never
 	// resurrected. The result reports whether this transaction inserted the row.
 	PutExecutableArtifactApproval(context.Context, *ExecutableArtifactApproval) (*ExecutableArtifactApproval, bool, error)
-	GetExecutableArtifactApproval(context.Context, string, string, string, string) (*ExecutableArtifactApproval, error)
+	GetExecutableArtifactApproval(context.Context, string, string, string, string, string) (*ExecutableArtifactApproval, error)
 	GetExecutableArtifactApprovalByID(context.Context, string, string, string, string) (*ExecutableArtifactApproval, error)
-	RevokeExecutableArtifactApproval(context.Context, string, string, string, string, string) (bool, error)
+	RevokeExecutableArtifactApproval(context.Context, string, string, string, string, string, string) (bool, error)
 }
 
 var artifactDigestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
@@ -295,7 +295,7 @@ func (s *Service) DecideExecutableArtifact(ctx context.Context, caller ModuleCal
 		if action == "approve" {
 			out, changed, e = store.PutExecutableArtifactApproval(ctx, &ExecutableArtifactApproval{ID: uuid.NewString(), OrgID: tenant, Installation: req.Installation, Module: caller.PrincipalID, Policy: req.Policy, Digest: digest, Subject: encoded, ApprovedBy: actor})
 		} else {
-			out, e = store.GetExecutableArtifactApproval(ctx, tenant, req.Installation, caller.PrincipalID, digest)
+			out, e = store.GetExecutableArtifactApproval(ctx, tenant, req.Installation, caller.PrincipalID, req.Policy, digest)
 		}
 		if e != nil {
 			return e
@@ -400,7 +400,7 @@ func (s *Service) RevokeApprovedExecutableArtifact(ctx context.Context, caller M
 		if !allowed {
 			return status.Error(codes.PermissionDenied, "current artifact revocation authority required")
 		}
-		changed, e := store.RevokeExecutableArtifactApproval(ctx, tenant, installation, caller.PrincipalID, out.Digest, actor)
+		changed, e := store.RevokeExecutableArtifactApproval(ctx, tenant, installation, caller.PrincipalID, out.Policy, out.Digest, actor)
 		if e != nil {
 			return e
 		}

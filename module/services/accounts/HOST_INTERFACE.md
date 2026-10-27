@@ -81,7 +81,11 @@ What accounts adds, and where:
   the records alone (`pkg/adapters/host_interface_artifact.go` over
   `business.ApproveHostArtifact` and its siblings, which keep no rule). The
   SaaS-only `ModuleCapabilitiesService` artifact path is a different face, with
-  its own installed-policy semantics, and is not this decision.
+  its own installed-policy semantics, and is not this decision. Consent is
+  stored per organization, installation, module, policy and content digest
+  (migration 61). The same content can have independent approvals under two
+  policies; neither approval authorizes or revokes the other. An omitted
+  artifact identity is rejected by the core as malformed.
 - **session**: `SignIn` (fixture sign-in), `Current`, `ListFixturePeople`:
   accounts' own sessions.
 

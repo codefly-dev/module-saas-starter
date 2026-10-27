@@ -85,7 +85,9 @@ reaches a module directly from this gateway.
   no caller `x-codefly-*` header. A path published by two modules is refused
   (409); a module route under a `/v1/` prefix the catalog owns is refused (403).
   Whether the person may use the module is the authority's answer (`Issue`, then
-  `Check`), never this gateway's.
+  `Check`), never this gateway's. Preflight refusals use Connect's error writer
+  for protocol callers, preserving the authority's code and reason; ordinary
+  HTTP callers keep the HTTP error response.
 
 The composition names the modules in `hop/MODULES`; Codefly generates
 `hop-routes` from their published API catalogs. Each instance generates its own

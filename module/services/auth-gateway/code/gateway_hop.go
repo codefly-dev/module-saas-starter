@@ -45,6 +45,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -54,6 +55,7 @@ import (
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
 	authorityv1 "github.com/codefly-dev/authority/libraries/authority-client/go/gen/host/authority/v1"
 	"github.com/codefly-dev/authority/libraries/authority-client/go/stamp"
 	hop "github.com/codefly-dev/authority/libraries/hop/go"
@@ -152,7 +154,7 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 	}
 	module, err := h.moduleFor(r)
 	if err != nil {
-		httpError(w, http.StatusConflict, err.Error())
+		hopBrowserError(w, r, http.StatusConflict, codes.AlreadyExists, err.Error())
 		return true
 	}
 	if module == "" {
@@ -163,7 +165,7 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 	// whole rather than split between two authorities.
 	if prefix, ok := v1Prefix(r.URL.Path); ok {
 		if _, reserved := g.matcher.ReservedV1Prefixes()[prefix]; reserved {
-			httpError(w, http.StatusForbidden, "module "+module+" publishes a route under this host's own /v1/"+prefix+" prefix")
+			hopBrowserError(w, r, http.StatusForbidden, codes.PermissionDenied, "module "+module+" publishes a route under this host's own /v1/"+prefix+" prefix")
 			return true
 		}
 	}
@@ -172,7 +174,7 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 	stripAllIdentityHeaders(r)
 	checked, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 	if err != nil {
-		httpError(w, http.StatusInternalServerError, "auth check failed")
+		hopBrowserError(w, r, http.StatusInternalServerError, codes.Internal, "auth check failed")
 		return true
 	}
 	if denied := checked.GetDeniedResponse(); denied != nil {
@@ -180,17 +182,17 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 		if code == 0 {
 			code = http.StatusForbidden
 		}
-		httpError(w, code, denied.GetBody())
+		hopBrowserError(w, r, code, codes.Code(checked.GetStatus().GetCode()), denied.GetBody())
 		return true
 	}
 	if codes.Code(checked.GetStatus().GetCode()) != codes.OK {
-		httpError(w, http.StatusForbidden, "forbidden")
+		hopBrowserError(w, r, http.StatusForbidden, codes.PermissionDenied, "forbidden")
 		return true
 	}
 	injectHeaders(r, checked.GetOkResponse().GetHeaders())
 	bearer, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if bearer == "" {
-		httpError(w, http.StatusUnauthorized, "a module call needs a session: present an access token as `Authorization: Bearer`")
+		hopBrowserError(w, r, http.StatusUnauthorized, codes.Unauthenticated, "a module call needs a session: present an access token as `Authorization: Bearer`")
 		return true
 	}
 	// The module's calls consume the organization's budget, as a catalog
@@ -206,12 +208,24 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 			case codes.Unavailable, codes.DeadlineExceeded:
 				code = http.StatusServiceUnavailable
 			}
-			httpError(w, code, "the authority refused this person at "+module+": "+status.Convert(err).Message())
+			hopBrowserError(w, r, code, status.Code(err), "the authority refused this person at "+module+": "+status.Convert(err).Message())
 			return
 		}
 		h.face.ServeHTTP(w, withOnlyWorkContext(r, token))
 	}))
 	return true
+}
+
+// Connect owns protocol error rendering. Require an explicit protocol signal
+// so REST JSON callers retain the HTTP status/body contract.
+var hopErrorWriter = connect.NewErrorWriter(connect.WithRequireConnectProtocolHeader())
+
+func hopBrowserError(w http.ResponseWriter, r *http.Request, httpCode int, code codes.Code, reason string) {
+	if hopErrorWriter.IsSupported(r) {
+		_ = hopErrorWriter.Write(w, r, connect.NewError(connect.Code(code), errors.New(reason)))
+		return
+	}
+	httpError(w, httpCode, reason)
 }
 
 // hopServicePrefix marks the RouteEntry of a module call through the hop, for

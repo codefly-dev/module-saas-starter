@@ -9,7 +9,7 @@ package business
 //
 // The rows are the same `executable_artifact_approvals` the SaaS-only
 // ModuleCapabilitiesService path writes, keyed the same way (organization,
-// installation, module principal, subject digest), so an approval is one
+// installation, module principal, policy, subject digest), so an approval is one
 // record however it was given.
 
 import (
@@ -53,7 +53,7 @@ func (s *Service) ApproveHostArtifact(ctx context.Context, tenant, owner, instal
 		if err != nil {
 			return err
 		}
-		if row == nil || !bytes.Equal(row.Subject, subject) || row.RevokedAt != nil {
+		if row == nil || row.Policy != policy || !bytes.Equal(row.Subject, subject) || row.RevokedAt != nil {
 			return hostArtifactAbsent()
 		}
 		out = &HostArtifactApproval{ID: row.ID, Digest: row.Digest, Revision: revision}
@@ -72,7 +72,7 @@ func (s *Service) ApproveHostArtifact(ctx context.Context, tenant, owner, instal
 // a run. An artifact nobody approved, one approved at another revision (the
 // revision is part of the digest) and a revoked one all read the same: no
 // standing consent.
-func (s *Service) AuthorizedHostArtifact(ctx context.Context, tenant, owner, installation, module, digest string, subject []byte, revision int64) (*HostArtifactApproval, error) {
+func (s *Service) AuthorizedHostArtifact(ctx context.Context, tenant, owner, installation, module, policy, digest string, subject []byte, revision int64) (*HostArtifactApproval, error) {
 	store, err := s.hostArtifactStore()
 	if err != nil {
 		return nil, err
@@ -84,11 +84,11 @@ func (s *Service) AuthorizedHostArtifact(ctx context.Context, tenant, owner, ins
 	defer release()
 	var out *HostArtifactApproval
 	err = s.store.As(Identity{OrgID: tenant, UserID: owner}).Within(ctx, func(ctx context.Context) error {
-		row, err := store.GetExecutableArtifactApproval(ctx, tenant, installation, module, digest)
+		row, err := store.GetExecutableArtifactApproval(ctx, tenant, installation, module, policy, digest)
 		if err != nil {
 			return err
 		}
-		if row == nil || !bytes.Equal(row.Subject, subject) || row.RevokedAt != nil {
+		if row == nil || row.Policy != policy || !bytes.Equal(row.Subject, subject) || row.RevokedAt != nil {
 			return hostArtifactAbsent()
 		}
 		out = &HostArtifactApproval{ID: row.ID, Digest: row.Digest, Revision: revision}
@@ -101,7 +101,7 @@ func (s *Service) AuthorizedHostArtifact(ctx context.Context, tenant, owner, ins
 // core already decided. It answers the approval it ended, at the revision it
 // was approved at — read back from the retained record, since a revoke names
 // no artifact. Revoking twice refuses: there is nothing standing to end.
-func (s *Service) RevokeHostArtifact(ctx context.Context, tenant, owner, installation, module, id string, revisionOf func([]byte) int64) (*HostArtifactApproval, error) {
+func (s *Service) RevokeHostArtifact(ctx context.Context, tenant, owner, installation, module, policy, id string, revisionOf func([]byte) int64) (*HostArtifactApproval, error) {
 	store, err := s.hostArtifactStore()
 	if err != nil {
 		return nil, err
@@ -117,10 +117,10 @@ func (s *Service) RevokeHostArtifact(ctx context.Context, tenant, owner, install
 		if err != nil {
 			return err
 		}
-		if row == nil || row.RevokedAt != nil {
+		if row == nil || row.Policy != policy || row.RevokedAt != nil {
 			return hostArtifactAbsent()
 		}
-		ended, err := store.RevokeExecutableArtifactApproval(ctx, tenant, installation, module, row.Digest, owner)
+		ended, err := store.RevokeExecutableArtifactApproval(ctx, tenant, installation, module, policy, row.Digest, owner)
 		if err != nil {
 			return err
 		}

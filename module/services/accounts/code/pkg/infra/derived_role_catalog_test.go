@@ -188,7 +188,7 @@ var _ = context.Background
 // A solution's role is granted only at the authority root of an installation of
 // THAT solution, in the organisation it was derived for, and only to a team or
 // the installation's agent principal. Installing still writes the agent's
-// standing grant at a root no installation names yet, and exposing to a team —
+// standing grant after recording its root relationship, and exposing to a team —
 // again — still passes. Another solution's root, a node that is not a
 // solution's root, and a person are each refused, naming why.
 func TestASolutionRoleIsGrantedOnlyAtItsOwnSolutionRootToATeamOrItsAgent(t *testing.T) {
@@ -251,6 +251,9 @@ func TestASolutionRoleIsGrantedOnlyAtItsOwnSolutionRootToATeamOrItsAgent(t *test
 
 	require.NoError(t, grant(teamID, team, rootA, roleA), "exposing A to a team at A's own root")
 	require.NoError(t, grant(teamID, team, rootA, roleA), "re-exposing is idempotent")
+	require.Error(t, grant(installationB.GetAgentPrincipalId(), person, rootA, roleA), "another installation's agent cannot hold A's standing role")
+	require.Error(t, grant(installationA.GetAgentPrincipalId(), person, unattached, roleA), "a fresh solution-kind node is not an installation root")
+	require.NoError(t, grant(installationA.GetAgentPrincipalId(), person, rootA, roleA), "A's own agent still holds its role")
 
 	err := grant(teamID, team, rootB, roleA)
 	require.Error(t, err, "A's role at B's root")

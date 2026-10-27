@@ -303,7 +303,7 @@ function RolesSection({
 					{!offer.toolsComposed && (
 						<Banner
 							tone="info"
-							title="This host composes no tool bindings, so no tool is listed."
+							title="Tool exposure is unavailable from this host."
 						/>
 					)}
 					<div>
@@ -329,7 +329,13 @@ function RolesSection({
 					{offer.roles.length === 0 ? (
 						<p>This solution declares no role.</p>
 					) : (
-						offer.roles.map((role) => <RoleCard key={role.name} role={role} />)
+						offer.roles.map((role) => (
+							<RoleCard
+								key={role.name}
+								role={role}
+								toolsComposed={offer.toolsComposed}
+							/>
+						))
 					)}
 				</div>
 			)}
@@ -337,7 +343,13 @@ function RolesSection({
 	);
 }
 
-function RoleCard({ role }: { role: OfferRole }) {
+function RoleCard({
+	role,
+	toolsComposed,
+}: {
+	role: OfferRole;
+	toolsComposed: boolean;
+}) {
 	return (
 		<Card
 			titleAs="h4"
@@ -368,7 +380,11 @@ function RoleCard({ role }: { role: OfferRole }) {
 								</TableCell>
 								<TableCell className="whitespace-normal">
 									{c.tools.length === 0 ? (
-										"Not exposed as a tool"
+										toolsComposed ? (
+											"Not exposed as a tool"
+										) : (
+											"Tool exposure unavailable"
+										)
 									) : (
 										<span className="inline-flex flex-wrap gap-1.5">
 											{c.tools.map((t) => (

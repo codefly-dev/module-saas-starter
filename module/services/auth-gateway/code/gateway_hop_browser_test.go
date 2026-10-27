@@ -1,7 +1,9 @@
 package main
 
 import (
+	"connectrpc.com/connect"
 	"context"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -215,4 +217,23 @@ func TestHopBrowserCallAnAmbiguousRouteIsRefused(t *testing.T) {
 func TestHopModulesReadsTheComposition(t *testing.T) {
 	require.Equal(t, []string{"documents", "tracing"}, hopModules(" tracing,documents,, tracing "))
 	require.Empty(t, hopModules(""))
+}
+
+func TestHopBrowserConnectClientKeepsAuthorityRefusal(t *testing.T) {
+	for _, code := range []codes.Code{codes.PermissionDenied, codes.Unavailable, codes.Unauthenticated} {
+		t.Run(code.String(), func(t *testing.T) {
+			gw, issuer, face, bearer := hopBrowserHarness(t)
+			const reason = "the current installation does not grant this person"
+			issuer.refuse = status.Error(code, reason)
+			server := httptest.NewServer(gw)
+			defer server.Close()
+			client := connect.NewClient[emptypb.Empty, emptypb.Empty](server.Client(), server.URL+listCollection)
+			request := connect.NewRequest(&emptypb.Empty{})
+			request.Header().Set("Authorization", "Bearer "+bearer)
+			_, err := client.CallUnary(context.Background(), request)
+			require.Equal(t, connect.Code(code), connect.CodeOf(err))
+			require.ErrorContains(t, err, reason)
+			require.Zero(t, face.calls)
+		})
+	}
 }
