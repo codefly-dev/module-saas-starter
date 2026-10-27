@@ -4,6 +4,7 @@ package infra_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -184,27 +185,53 @@ func TestListRolesListsARoleWithNoDescription(t *testing.T) {
 
 var _ = context.Background
 
-// A solution's role is granted only at a solution's authority-root node in the
-// organisation it was derived for: the installation's standing grant and the
-// teams it is exposed to. Any other node, like any carried-access role with no
-// cause, refuses it.
-func TestASolutionRoleIsGrantedOnlyAtASolutionRoot(t *testing.T) {
-	userID := seedUser(t)
-	orgID := seedOrg(t, userID)
-	provenance := "org=" + orgID + ";solution=11111111-1111-1111-1111-111111111111;role=viewer"
-	var roleID string
-	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		var err error
-		roleID, err = testStore.EnsureDerivedRole(ctx, business.DerivedRole{
-			OrgID: orgID, DerivedFrom: provenance, Name: "solution role · " + provenance,
-			Permissions: []*gen.Permission{{Resource: "evidence", Action: "read"}},
-		})
-		if err != nil {
+// A solution's role is granted only at the authority root of an installation of
+// THAT solution, in the organisation it was derived for, and only to a team or
+// the installation's agent principal. Installing still writes the agent's
+// standing grant at a root no installation names yet, and exposing to a team —
+// again — still passes. Another solution's root, a node that is not a
+// solution's root, and a person are each refused, naming why.
+func TestASolutionRoleIsGrantedOnlyAtItsOwnSolutionRootToATeamOrItsAgent(t *testing.T) {
+	orgID, userID, _ := entitlementOrg(t)
+	solutionRole := func(targetID string) string {
+		provenance := "org=" + orgID + ";solution=" + targetID + ";role=viewer"
+		var roleID string
+		require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+			var err error
+			roleID, err = testStore.EnsureDerivedRole(ctx, business.DerivedRole{
+				OrgID: orgID, DerivedFrom: provenance, Name: "solution role · " + provenance,
+				Permissions: []*gen.Permission{{Resource: "evidence", Action: "read"}},
+			})
 			return err
-		}
+		}))
+		return roleID
+	}
+	aliasA, aliasB := uniqueAlias("notes"), uniqueAlias("ledger")
+	targetA := declarePresence(t, "acme.test."+aliasA, aliasA)
+	targetB := declarePresence(t, "acme.test."+aliasB, aliasB)
+	roleA, roleB := solutionRole(targetA), solutionRole(targetB)
+
+	// Install still grants its agent the standing role at the fresh root.
+	installationA := installSolutionTarget(t, orgID, userID, roleA, aliasA, targetA)
+	installationB := installSolutionTarget(t, orgID, userID, roleB, aliasB, targetB)
+	rootA := scopeNodePath(t, orgID, installationA.GetRootScopeNodeId())
+	rootB := scopeNodePath(t, orgID, installationB.GetRootScopeNodeId())
+	var standing bool
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return storetx.Tx(ctx).QueryRow(ctx, `
+			SELECT EXISTS(SELECT 1 FROM scope_grants WHERE org_id = $1 AND subject_kind = 'principal'
+			              AND subject_id = $2 AND scope_path = $3::ltree AND role_id = $4)`,
+			orgID, installationA.GetAgentPrincipalId(), rootA, roleA).Scan(&standing)
+	}))
+	require.True(t, standing, "the installation's agent holds the solution's role at its own root")
+
+	// A solution-kind node no installation names, and a node of another kind.
+	unattached := "unattached_" + strings.ReplaceAll(business.NewIDString(), "-", "_")
+	plain := "plain_" + strings.ReplaceAll(business.NewIDString(), "-", "_")
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		for _, node := range []*gen.ScopeNode{
-			{Id: business.NewIDString(), OrgId: orgID, ScopePath: "notes", Kind: "solution", Label: "notes"},
-			{Id: business.NewIDString(), OrgId: orgID, ScopePath: "plain", Kind: "team", Label: "plain"},
+			{Id: business.NewIDString(), OrgId: orgID, ScopePath: unattached, Kind: "solution", Label: "unattached"},
+			{Id: business.NewIDString(), OrgId: orgID, ScopePath: plain, Kind: "team", Label: "plain"},
 		} {
 			if err := testStore.RegisterScopeNode(ctx, node); err != nil {
 				return err
@@ -212,14 +239,33 @@ func TestASolutionRoleIsGrantedOnlyAtASolutionRoot(t *testing.T) {
 		}
 		return nil
 	}))
-	grant := func(path string) error {
+
+	teamID := seedTeamWith(t, orgID, userID)
+	grant := func(subjectID string, kind gen.SubjectKind, path, roleID string) error {
 		return testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-			return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: orgID, SubjectId: userID,
-				SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: path, RoleId: roleID})
+			return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: orgID,
+				SubjectId: subjectID, SubjectKind: kind, ScopePath: path, RoleId: roleID})
 		})
 	}
-	require.NoError(t, grant("notes"))
-	err := grant("plain")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "granted only at that solution's authority root")
+	team, person := gen.SubjectKind_SUBJECT_KIND_TEAM, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL
+
+	require.NoError(t, grant(teamID, team, rootA, roleA), "exposing A to a team at A's own root")
+	require.NoError(t, grant(teamID, team, rootA, roleA), "re-exposing is idempotent")
+
+	err := grant(teamID, team, rootB, roleA)
+	require.Error(t, err, "A's role at B's root")
+	require.Contains(t, err.Error(), "role of solution "+targetA)
+	require.Contains(t, err.Error(), "is the authority root of solution "+targetB)
+
+	err = grant(userID, person, rootA, roleA)
+	require.Error(t, err, "A's role to a person directly")
+	require.Contains(t, err.Error(), "a person never holds a solution role directly")
+
+	err = grant(teamID, team, plain, roleA)
+	require.Error(t, err, "a node that is not a solution's root")
+	require.Contains(t, err.Error(), "is not a solution's authority root")
+
+	err = grant(teamID, team, unattached, roleA)
+	require.Error(t, err, "a solution node no installation of A names")
+	require.Contains(t, err.Error(), "no installation of it has")
 }
