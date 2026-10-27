@@ -61,17 +61,25 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// The module envelope: the authority ceiling a platform super_admin
 	// writes. Request traffic has no access; the control plane appends a
 	// revision and never edits one.
-	"module_envelopes": {},
-	// The policy log's local half. Request traffic has no access at all: a
-	// receipt is evidence about authority, and the request path neither reads
-	// nor writes it.
-	"policy_log_commits":            {},
-	"policy_log_cursor":             {},
+	"module_envelopes":              {},
 	"datasource_credential_budgets": {}, // platform relation; the control plane meters provider credentials
 	"hop_admission_keys":            {}, // platform relation; the hop's public keys, published by the control plane
-	"job_attempts":                  {},
-	"job_messages":                  {},
-	"job_state_transitions":         {},
+	"hop_admission_proofs":          {}, // platform relation; the registration proofs' nonces, each used once
+	// The authority core's records (migration 56): the core decides across
+	// organizations under the control plane; request traffic has no access.
+	"authority_core_delegations":      {},
+	"authority_core_grant_epochs":     {},
+	"authority_core_installations":    {},
+	"authority_core_module_revisions": {},
+	"authority_core_modules":          {},
+	"authority_core_owner_aware":      {},
+	"authority_core_person_epochs":    {},
+	"authority_core_replay":           {},
+	"authority_core_role_grants":      {},
+	"authority_core_tombstones":       {},
+	"job_attempts":                    {},
+	"job_messages":                    {},
+	"job_state_transitions":           {},
 
 	// Tenant-scoped relations.
 	"actor_chain_journal":                  {selectRows: true, insertRows: true},
@@ -96,7 +104,6 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"github_app_installations":             {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"delegation_grants":                    {selectRows: true, insertRows: true, updateRows: true},
 	"source_delegations":                   {selectRows: true, insertRows: true, updateRows: true}, // revoked, never deleted
-	"module_delegations":                   {selectRows: true, insertRows: true, updateRows: true}, // revoked, never deleted
 	"domain_events":                        {selectRows: true},                                     // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
 	"executable_artifact_approvals":        {selectRows: true, insertRows: true}, // only revocation columns, no table-wide UPDATE
@@ -431,13 +438,16 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "module_envelopes" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
-			// policy_log_commits and policy_log_cursor are read, inserted and
-			// updated, never deleted. The commit row is completed by the commit
-			// and the cursor advances — but deleting either would make an
-			// unreconciled gap DISAPPEAR rather than be closed, which is the one
-			// way the fail-closed asymmetry could be defeated locally.
-			if relation == "policy_log_commits" || relation == "policy_log_cursor" {
+			// The authority core's records: an installation, a delegation or a
+			// tombstone is revoked or superseded, never erased, and an epoch or
+			// a revision only grows; a role grant is granted and revoked by row,
+			// and a consumed nonce is reclaimed once its capability expired.
+			switch relation {
+			case "authority_core_tombstones", "authority_core_installations", "authority_core_module_revisions", "authority_core_delegations",
+				"authority_core_person_epochs", "authority_core_grant_epochs", "authority_core_owner_aware":
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			case "authority_core_role_grants", "authority_core_replay", "hop_admission_proofs":
+				want = relationPrivileges{selectRows: true, insertRows: true, deleteRows: true}
 			}
 			// solution_targets is never row-deleted either: a CLOSED target is the
 			// evidence that an installation's consent ended, and deleting it
@@ -457,11 +467,6 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// person delegated outlives the source and the person it names.
 			// Organization deletion removes them through the FK cascade.
 			if relation == "source_delegations" {
-				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
-			}
-			// module_delegations likewise: a revoked delegation to a module stays
-			// readable as what was delegated, to whom, and when it stopped.
-			if relation == "module_delegations" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 			// approval_decisions is append-only like actor_chain_journal: read and

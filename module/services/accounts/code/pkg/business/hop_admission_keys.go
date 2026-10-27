@@ -1,6 +1,6 @@
 package business
 
-// The hop's admission keys (codefly.dev/authority@0.3.3, RegisterAdmissionKey).
+// The hop's admission keys (codefly.dev/authority@0.3.4, RegisterAdmissionKey).
 //
 // The composition's hop signs each call it admits with a key of its own, and
 // every module behind it verifies that admission by the public half, which it
@@ -15,11 +15,11 @@ package business
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/codefly-dev/authority/libraries/authority-client/go/stamp"
 )
 
 // AdmissionKeyLease is how long a registered admission key stays published
@@ -31,22 +31,6 @@ const AdmissionKeyLease = 2 * time.Minute
 // MaxAdmissionKeys bounds the keys published at once: a rotation needs two,
 // and a few more absorb rotations closer together than one lease.
 const MaxAdmissionKeys = 8
-
-// AdmissionKeyID is the id a hop signs its admissions under, derived from the
-// public key so the same seed always publishes the same entry: "hop-" and the
-// first eight bytes of the key's SHA-256, in hex.
-//
-// Labelled stopgap: this restates stamp.KeyID (codefly-dev/authority
-// libraries/authority-client/go/stamp at 49101ae1), the one derivation the hop
-// signs with, instead of importing it. That revision of the authority client
-// no longer builds with the conformance suite revision this module's harness
-// pins (6870db87, the suite's 0.2 contract), and the suite at 49101ae1 asserts
-// contracts this host does not serve yet. TestAdmissionKeyIDIsTheStampDerivation
-// pins a vector stamp.KeyID produced; import stamp.KeyID once the harness moves.
-func AdmissionKeyID(public ed25519.PublicKey) string {
-	sum := sha256.Sum256(public)
-	return "hop-" + hex.EncodeToString(sum[:8])
-}
 
 // HopModule and HopService name the one workload whose admission keys this
 // host publishes: the hop service of the composition's authority module, the
@@ -75,9 +59,27 @@ var ErrAdmissionKeysFull = errors.New("the published admission keys are at their
 // publishes none and registers none, and says so.
 var ErrAdmissionKeysUnwired = errors.New("this host has no admission key store wired")
 
+// ErrAdmissionKeyProof refuses a registration whose proof does not verify,
+// names another credential, key or audience, is stale or ahead of the clock,
+// or repeats a nonce already used (stamp.CheckRegistration).
+var ErrAdmissionKeyProof = errors.New("the admission key's registration proof is refused")
+
+// ErrAdmissionKeyPinned refuses a key for a hop instance that holds another
+// until its registration lapses: one key is pinned per hop instance.
+var ErrAdmissionKeyPinned = errors.New("the hop instance holds another admission key")
+
+// AdmissionRegistration is what one registration binds beside its key: the
+// hop instance (its pod) the key is pinned to, and the proof's nonce, used
+// once until it could no longer be judged fresh.
+type AdmissionRegistration struct {
+	Instance   string
+	Nonce      string
+	NonceUntil time.Time
+}
+
 // AdmissionKey is one published hop admission key.
 type AdmissionKey struct {
-	// ID is AdmissionKeyID of the key: the id the hop signs under.
+	// ID is stamp.KeyID of the key: the id the hop signs under.
 	ID        string
 	PublicKey ed25519.PublicKey
 	// ExpiresAt is when the registration lapses unless renewed.
@@ -87,11 +89,14 @@ type AdmissionKey struct {
 // AdmissionKeyStore persists registrations. Both methods judge a lease by the
 // store's clock, so replicas whose clocks differ publish the same set.
 type AdmissionKeyStore interface {
-	// RegisterAdmissionKey publishes key for lease from now, renewing it when
-	// it is already published, and answers when it lapses and whether this
-	// call began publishing it (false for a renewal). It refuses
-	// ErrAdmissionKeysFull when max other keys are published and unlapsed.
-	RegisterAdmissionKey(ctx context.Context, key AdmissionKey, lease time.Duration, max int) (expires time.Time, published bool, err error)
+	// RegisterAdmissionKey reserves the registration's nonce and publishes key
+	// for lease from now, pinned to the registration's instance, renewing it
+	// when that instance already holds it, and answers when it lapses and
+	// whether this call began publishing it (false for a renewal). It refuses
+	// ErrAdmissionKeyProof for a nonce already used, ErrAdmissionKeyPinned when
+	// the instance holds another unlapsed key, and ErrAdmissionKeysFull when max
+	// other keys are published and unlapsed.
+	RegisterAdmissionKey(ctx context.Context, key AdmissionKey, registration AdmissionRegistration, lease time.Duration, max int) (expires time.Time, published bool, err error)
 	// AdmissionKeys are the keys whose lease has not lapsed, by key id.
 	AdmissionKeys(ctx context.Context) ([]AdmissionKey, error)
 }
@@ -102,8 +107,12 @@ func (s *Service) SetAdmissionKeyStore(store AdmissionKeyStore) { s.admissionKey
 // RegisterAdmissionKey records the public key the hop signs call admissions
 // with and publishes it until the answered time; registering it again renews
 // it. The caller is attested by its workload credential, and any workload but
-// the hop is refused by name.
-func (s *Service) RegisterAdmissionKey(ctx context.Context, credential string, public []byte) (AdmissionKey, error) {
+// the hop is refused by name. Each registration carries a fresh proof signed
+// by the key it registers over that credential and this host's audience, used
+// once; and one key is pinned per hop instance (its pod) until its lease
+// lapses, so a captured hop credential cannot replace or add a key for an
+// instance that has registered (interface 0.3.4).
+func (s *Service) RegisterAdmissionKey(ctx context.Context, credential string, public []byte, proof string) (AdmissionKey, error) {
 	reviewed, err := s.reviewWorkloadCredential(ctx, credential)
 	if err != nil {
 		return AdmissionKey{}, err
@@ -113,15 +122,25 @@ func (s *Service) RegisterAdmissionKey(ctx context.Context, credential string, p
 		return AdmissionKey{}, fmt.Errorf("%w: the caller is %s/%s, not the hop (%s/%s)",
 			ErrAdmissionKeyNotTheHop, reviewed.Namespace, reviewed.ServiceAccount, hopNamespace, HopService)
 	}
+	if reviewed.PodName == "" {
+		return AdmissionKey{}, fmt.Errorf("%w: the hop's credential names no pod, so no admission key can be pinned to it", ErrAdmissionKeyNotTheHop)
+	}
 	if len(public) != ed25519.PublicKeySize {
 		return AdmissionKey{}, fmt.Errorf("%w: %d bytes, not %d", ErrAdmissionKeyMalformed, len(public), ed25519.PublicKeySize)
+	}
+	now := time.Now()
+	proved, err := stamp.CheckRegistration(proof, public, credential, executionTokenAudience, now)
+	if err != nil {
+		return AdmissionKey{}, fmt.Errorf("%w: %w", ErrAdmissionKeyProof, err)
 	}
 	if s.admissionKeys == nil {
 		return AdmissionKey{}, ErrAdmissionKeysUnwired
 	}
-	key := AdmissionKey{ID: AdmissionKeyID(public), PublicKey: append(ed25519.PublicKey(nil), public...)}
+	registration := AdmissionRegistration{Instance: reviewed.PodName, Nonce: proved.Nonce,
+		NonceUntil: now.Add(stamp.RegistrationWindow + 2*stamp.Skew)}
+	key := AdmissionKey{ID: stamp.KeyID(public), PublicKey: append(ed25519.PublicKey(nil), public...)}
 	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		expires, published, err := s.admissionKeys.RegisterAdmissionKey(ctx, key, AdmissionKeyLease, MaxAdmissionKeys)
+		expires, published, err := s.admissionKeys.RegisterAdmissionKey(ctx, key, registration, AdmissionKeyLease, MaxAdmissionKeys)
 		if err != nil {
 			return err
 		}
@@ -132,7 +151,7 @@ func (s *Service) RegisterAdmissionKey(ctx context.Context, credential string, p
 		// A key every module behind the hop now trusts is recorded in the
 		// same transaction that publishes it; a renewal is not.
 		return s.emitTx(ctx, admissionKeyActor, ActorTypeSystem, EventHopAdmissionKeyPublished, "hop_admission_key", key.ID, "", map[string]any{
-			"key_id": key.ID, "workload": reviewed.Namespace + "/" + reviewed.ServiceAccount, "expires_at": expires.UTC().Format(time.RFC3339),
+			"key_id": key.ID, "workload": reviewed.Namespace + "/" + reviewed.ServiceAccount, "instance": reviewed.PodName, "expires_at": expires.UTC().Format(time.RFC3339),
 		})
 	})
 	if err != nil {

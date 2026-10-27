@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:01434d2862c0bead380d184d1f9323c6349b5d228447d24be85b8be1b296cde3",
+      "digest": "sha256:b818c862dd556e37c7ef597ba2109798a6e6ff957046100ab809575ff165e6a3",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -66,7 +66,7 @@
       "kind": "protobuf",
       "package": "",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:01434d2862c0bead380d184d1f9323c6349b5d228447d24be85b8be1b296cde3",
+      "digest": "sha256:b818c862dd556e37c7ef597ba2109798a6e6ff957046100ab809575ff165e6a3",
       "services": [
         {
           "name": "AuthorityService",
@@ -96,9 +96,13 @@
           "name": "InstallationService",
           "fullName": "host.installation.v1.InstallationService",
           "procedures": [
-            "/host.installation.v1.InstallationService/GrantToTeam",
+            "/host.installation.v1.InstallationService/Current",
+            "/host.installation.v1.InstallationService/GrantRole",
             "/host.installation.v1.InstallationService/Install",
-            "/host.installation.v1.InstallationService/List"
+            "/host.installation.v1.InstallationService/List",
+            "/host.installation.v1.InstallationService/ListRoleGrants",
+            "/host.installation.v1.InstallationService/Review",
+            "/host.installation.v1.InstallationService/RevokeRole"
           ]
         },
         {

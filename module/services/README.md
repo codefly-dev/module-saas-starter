@@ -8,10 +8,7 @@ wrong, and nothing enforces it.
 
 `marketing` and `frontend` are separate Next.js applications: marketing owns
 public apex/`www` content, while frontend remains the authenticated product
-behind `auth-gateway`. `policy-log` is the independent signed witness for
-authority changes; it is private to this module, has no public endpoint, and
-belongs to the warehouse's trust domain rather than to the database whose
-narrowings it witnesses — see `policy-log/README.md`.
+behind `auth-gateway`.
 
 Run the complete local dependency graph from `module/`:
 

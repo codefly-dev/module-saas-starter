@@ -33,7 +33,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 		}
 		require.NotEqual(t, policyv1.Exposure_EXPOSURE_INTERNAL, route.GetExposure())
 	}
-	require.Equal(t, 59, publicCount) // +5: the authority interface's Keys, Check and ListResources (authenticated by the token they check) and the session interface's SignIn and ListFixturePeople (before anyone signs in); ApplyManifest is public on accounts' own listener but never routed (ServedInClusterOnly)
+	require.Equal(t, 60, publicCount) // +5: the authority interface's Keys, Check and ListResources (authenticated by the token they check) and the session interface's SignIn and ListFixturePeople (before anyone signs in); +1: the installation interface's Current (authenticated by the module's workload credential and its parent); ApplyManifest is public on accounts' own listener but never routed (ServedInClusterOnly)
 
 	require.Nil(t, byMatch["POST /saas.accounts.v1.APIKeyService/ValidateAPIKey"])
 	require.Equal(t, policyv1.Exposure_EXPOSURE_PUBLIC, byMatch["POST /saas.accounts.v1.AuthService/BeginOAuth"].GetExposure())

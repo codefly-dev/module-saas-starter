@@ -19,6 +19,9 @@
       "name": "InstallableService"
     },
     {
+      "name": "OfferService"
+    },
+    {
       "name": "SessionService"
     },
     {
@@ -1967,7 +1970,7 @@
     },
     "/v1/installations/{installationId}/teams/{teamId}:revoke": {
       "post": {
-        "summary": "RevokeInstallationFromTeam removes one team grant at an installation's\nauthority-root node. It is a narrowing, so it runs under the policy log\nexactly as RevokeScope does: a host that cannot witness the narrowing refuses\nit, and says so, rather than revoking unwitnessed. It removes the one grant\nat the authority root that granted_teams reports; a team that also reaches\nthe installation from a grant above keeps that reach. Organisation-admin,\nwith the same platform super administrator exception.",
+        "summary": "RevokeInstallationFromTeam removes one team grant at an installation's\nauthority-root node. It is a narrowing, so it applies directly, with its\naudit record in one transaction, exactly as RevokeScope does. It removes the one grant\nat the authority root that granted_teams reports; a team that also reaches\nthe installation from a grant above keeps that reach. Organisation-admin,\nwith the same platform super administrator exception.",
         "operationId": "InstallationService_RevokeInstallationFromTeam",
         "responses": {
           "200": {
@@ -2013,7 +2016,7 @@
     },
     "/v1/installations/{installationId}:narrow": {
       "post": {
-        "summary": "Narrowing is witnessed in the policy log before commit, then atomically\nbumps the installation revision, cancels its org's work and records audit.",
+        "summary": "A narrowing applies directly: it atomically bumps the installation\nrevision, cancels its org's work and records audit.",
         "operationId": "InstallationService_NarrowInstallation",
         "responses": {
           "200": {
@@ -8156,9 +8159,13 @@
         },
         "operationId": {
           "type": "string"
+        },
+        "digest": {
+          "type": "string",
+          "description": "sha256 digest of the reviewed authority offer."
         }
       },
-      "description": "ConsentApproval binds an explicit approval to the state reviewed by the admin.\nObtain target_id and generation from ListAvailableSolutions, and revision from\nthe installation listing (zero means absent). Keep these values and operation_id\nunchanged on retry; a refusal requires a fresh review and operation."
+      "description": "ConsentApproval binds consent to an immutable target, its reviewed delivery and\nthe installation revision (zero if absent). Review leaves operation_id empty;\nthe caller supplies a fresh UUID and preserves the entire request on retry."
     },
     "v1ConsentPurpose": {
       "type": "string",

@@ -538,7 +538,7 @@ describe("SolutionInstallationsPage admin container", () => {
 						{
 							code: "failed_precondition",
 							message:
-								"cannot uninstall solution: policy log append is not witnessed: no transport is configured",
+								"cannot uninstall solution: installation 0190a7c2 is still being installed",
 						},
 						{ status: 400 },
 					);
@@ -554,7 +554,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		fireEvent.click(within(confirm).getByRole("button", { name: "Uninstall" }));
 
 		const refusal = await screen.findByText(
-			"cannot uninstall solution: policy log append is not witnessed: no transport is configured",
+			"cannot uninstall solution: installation 0190a7c2 is still being installed",
 		);
 		expect(
 			screen.getByText("The host refused to uninstall expenses"),
@@ -689,7 +689,7 @@ describe("SolutionInstallationsPage admin container", () => {
 						{
 							code: "failed_precondition",
 							message:
-								"cannot revoke installation from team: policy log unreachable: this host has no policy log, so authority cannot be narrowed",
+								"cannot revoke installation from team: role \"viewer\" is not granted to that team here",
 						},
 						{ status: 400 },
 					);
@@ -711,7 +711,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBeTruthy();
 		expect(
 			screen.getByText(
-				"cannot revoke installation from team: policy log unreachable: this host has no policy log, so authority cannot be narrowed",
+				"cannot revoke installation from team: role \"viewer\" is not granted to that team here",
 			),
 		).toBeTruthy();
 		expect(toast.success).not.toHaveBeenCalled();

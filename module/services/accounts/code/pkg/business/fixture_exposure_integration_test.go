@@ -55,6 +55,7 @@ func wireSignedDelivery(t *testing.T) *solutionhost.InMemorySigner {
 	})
 	require.NoError(t, err)
 	testService.SetCompositionReconcile(reconciler.RunOnce)
+	legacyReconcile = reconciler.RunOnce
 	t.Cleanup(func() {
 		testService.SetSolutionDelivery(nil, nil, nil)
 		testService.SetAuthorityDocumentVerifier(nil)
@@ -63,8 +64,14 @@ func wireSignedDelivery(t *testing.T) *solutionhost.InMemorySigner {
 	return signer
 }
 
+// legacyReconcile is the reconcile pass wireSignedDelivery wired.
+var legacyReconcile func(context.Context) error
+
 // deliverSolution applies one signed solution delivery, with its authority
-// document carrying roles when roles are given.
+// document carrying roles when roles are given. A solution delivered without
+// roles is a legacy delivery the composition interface refuses (a solution
+// declares an installer role, the authority core's contract), so it arrives
+// through the HTTP delivery endpoint and the reconcile pass, as it did.
 func deliverSolution(t *testing.T, signer *solutionhost.InMemorySigner, alias string, generation uint64, roles []*compositionv1.RoleV1) {
 	t.Helper()
 	m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: alias, Alias: alias, Kind: solutionhost.KindSolution, Generation: generation,
@@ -72,6 +79,12 @@ func deliverSolution(t *testing.T, signer *solutionhost.InMemorySigner, alias st
 		Workloads: []solutionhost.Workload{{Service: "api", Container: "app"}}, Authority: &solutionhost.Authority{Principal: alias, ResourceKinds: []string{"doc"}}}
 	raw, err := solutionhost.SignedPayload(m)
 	require.NoError(t, err)
+	if roles == nil {
+		_, _, err = testService.ReceiveSolutionDelivery(testCtx, deliverytest.Carrier(t, raw, signer.KeyID()), "Bearer delivery:"+alias)
+		require.NoError(t, err)
+		require.NoError(t, legacyReconcile(testCtx))
+		return
+	}
 	req := &compositionv1.ApplyManifestRequest{Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + alias}
 	if roles != nil {
 		doc, err := proto.Marshal(&compositionv1.AuthorityManifestV1{Module: alias, Generation: generation, CoreManifestDigest: delivery.Digest(raw), Roles: roles,

@@ -3,9 +3,13 @@
 package infra_test
 
 import (
+	"github.com/codefly-dev/authority/libraries/authority-client/go/stamp"
+
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"slices"
 	"testing"
@@ -21,7 +25,7 @@ func admissionKey(t *testing.T, label string) business.AdmissionKey {
 	t.Helper()
 	seed := sha256.Sum256([]byte(label))
 	public := ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
-	return business.AdmissionKey{ID: business.AdmissionKeyID(public), PublicKey: public}
+	return business.AdmissionKey{ID: stamp.KeyID(public), PublicKey: public}
 }
 
 func registerAdmissionKey(store *infra.PostgresStore, key business.AdmissionKey, lease time.Duration, max int) (time.Time, error) {
@@ -36,7 +40,7 @@ func registerAdmissionKeyPublished(store *infra.PostgresStore, key business.Admi
 	)
 	err := store.WithControlPlane(testCtx, func(ctx context.Context) error {
 		var err error
-		expires, published, err = store.RegisterAdmissionKey(ctx, key, lease, max)
+		expires, published, err = store.RegisterAdmissionKey(ctx, key, freshRegistration(key.ID), lease, max)
 		return err
 	})
 	return expires, published, err
@@ -143,7 +147,8 @@ func TestTheAdmissionKeyBoundHoldsAcrossReplicas(t *testing.T) {
 		finished bool
 	)
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		if _, _, err := testStore.RegisterAdmissionKey(ctx, admissionKey(t, "racing-a"), business.AdmissionKeyLease, bound); err != nil {
+		racer := admissionKey(t, "racing-a")
+		if _, _, err := testStore.RegisterAdmissionKey(ctx, racer, freshRegistration(racer.ID), business.AdmissionKeyLease, bound); err != nil {
 			return err
 		}
 		go func() {
@@ -162,4 +167,32 @@ func TestTheAdmissionKeyBoundHoldsAcrossReplicas(t *testing.T) {
 	require.Len(t, publishedAdmissionKeys(t, testStore), bound)
 	_, err := registerAdmissionKey(replica, held, business.AdmissionKeyLease, bound)
 	require.NoError(t, err, "a registered key renews at the bound")
+}
+
+// freshRegistration is one registration of a key by its own hop instance,
+// with a nonce never used.
+func freshRegistration(instance string) business.AdmissionRegistration {
+	nonce := make([]byte, 32)
+	_, _ = rand.Read(nonce)
+	return business.AdmissionRegistration{Instance: instance, Nonce: hex.EncodeToString(nonce), NonceUntil: time.Now().Add(time.Minute)}
+}
+
+// A proof's nonce is used once across replicas, and a hop instance keeps the
+// one key it registered while that registration holds.
+func TestARegistrationNonceIsUsedOnceAndAnInstanceKeepsOneKeyPostgres(t *testing.T) {
+	register := func(key business.AdmissionKey, registration business.AdmissionRegistration) error {
+		return testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+			_, _, err := testStore.RegisterAdmissionKey(ctx, key, registration, business.AdmissionKeyLease, 1000)
+			return err
+		})
+	}
+	first, second := admissionKey(t, "pinned-first"), admissionKey(t, "pinned-second")
+	registration := freshRegistration("hop-abcd")
+	require.NoError(t, register(first, registration))
+	require.ErrorIs(t, register(first, registration), business.ErrAdmissionKeyProof, "a nonce is used once")
+	require.NoError(t, register(first, freshRegistration("hop-abcd")), "the same key renews with a fresh proof")
+	require.ErrorIs(t, register(second, freshRegistration("hop-abcd")), business.ErrAdmissionKeyPinned, "another key for the instance")
+	require.ErrorIs(t, register(first, freshRegistration("hop-efgh")), business.ErrAdmissionKeyPinned, "the key another instance holds")
+	require.NoError(t, register(second, freshRegistration("hop-efgh")), "a new key from a new instance")
+	require.Subset(t, publishedAdmissionKeys(t, testStore), []string{first.ID, second.ID})
 }

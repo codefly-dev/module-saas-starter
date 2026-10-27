@@ -395,22 +395,15 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	w := wool.Get(ctx).In("RemoveOrgMember")
 
 	// A NARROWING — the member loses the standing every grant inside the
-	// organization hangs from — so it runs under the policy log: the entry is
-	// appended to the external record and receipted BEFORE the membership goes,
-	// and the removal commits in the same transaction as the receipt's commit. A
-	// host that cannot witness the append refuses rather than removing
-	// unwitnessed.
+	// organization hangs from — so it applies directly (narrow).
 	//
 	// Lock, last-admin guard, dependent-access delete, membership delete, and
-	// the audit event all run inside that ONE transaction, so the record cannot
-	// commit describing a removal whose dependent access is still standing. It
-	// is the policy log's control-plane transaction rather than this
-	// organization's, because the receipt relation is control-plane only and the
-	// receipt and the removal have to be atomic. What the tenant policy used to
-	// confine is confined by the statements instead: every call below names
-	// orgID — the continuity count, both locks, the dependent-membership
-	// delete, the membership delete and the delegation revoke — so none of them
-	// can reach another organization's rows.
+	// the audit event all run inside that ONE control-plane transaction, so the
+	// record cannot commit describing a removal whose dependent access is still
+	// standing. What the tenant policy would confine is confined by the
+	// statements instead: every call below names orgID — the continuity count,
+	// both locks, the dependent-membership delete, the membership delete and the
+	// delegation revoke — so none of them can reach another organization's rows.
 	//
 	// Two locks, in the order AUTHZ.md fixes. The organization-wide
 	// administration lock is taken first, inside the continuity guard, because
@@ -418,14 +411,13 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	// taken before the writes, so a concurrent team insert for the same pair
 	// either commits before the dependent delete or waits behind this
 	// transaction, and can neither be missed by it nor land after it.
-	if err := s.WithPolicyLoggedNarrowing(ctx,
-		removeOrgMemberPolicyLogEntry(actorID, orgID, memberID),
-		func(ctx context.Context) error {
-			if err := s.removeOrgMembershipTx(ctx, actorID, orgID, memberID); err != nil {
-				return err
-			}
-			return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", orgID, orgID)
-		}); err != nil {
+	if err := s.narrow(ctx, func(ctx context.Context) error {
+		if err := s.removeOrgMembershipTx(ctx, actorID, orgID, memberID); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", orgID, orgID,
+			map[string]any{"user_id": memberID})
+	}); err != nil {
 		return w.Wrapf(err, "cannot remove member")
 	}
 

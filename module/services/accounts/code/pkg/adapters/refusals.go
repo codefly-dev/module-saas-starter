@@ -52,7 +52,6 @@ var businessRefusals = []struct {
 	{business.ErrImpersonationTargetInactive, codes.FailedPrecondition},
 	{business.ErrPublicOriginUnavailable, codes.FailedPrecondition},
 	{business.ErrPrivacyWorkflowUnavailable, codes.FailedPrecondition},
-	{business.ErrPolicyLogUnreachable, codes.FailedPrecondition},
 	{business.ErrDatasourceSourceNotFound, codes.NotFound},
 	{business.ErrDatasourceSyncNotFound, codes.NotFound},
 	// The source moved under the editor. FailedPrecondition and not Aborted:

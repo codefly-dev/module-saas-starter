@@ -136,7 +136,12 @@ type AuthorityManifestV1 struct {
 	// one of them installer. Headless-only scopes cannot supply a role grant.
 	// Core's manifest carries no roles, so they travel here until it does. A
 	// module declares none; a module's delivery listing any is refused.
-	Roles         []*RoleV1 `protobuf:"bytes,6,rep,name=roles,proto3" json:"roles,omitempty"`
+	Roles []*RoleV1 `protobuf:"bytes,6,rep,name=roles,proto3" json:"roles,omitempty"`
+	// The module checks a resource's owner against an owner-selected scope
+	// (Claims.AllowsOwned): only an audience declaring it receives one, and a
+	// delivery withdrawing it refuses the owner-selected capabilities issued
+	// before. Every solution receiving its roles' scopes declares it.
+	OwnerAware    bool `protobuf:"varint,7,opt,name=owner_aware,json=ownerAware,proto3" json:"owner_aware,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -211,6 +216,13 @@ func (x *AuthorityManifestV1) GetRoles() []*RoleV1 {
 		return x.Roles
 	}
 	return nil
+}
+
+func (x *AuthorityManifestV1) GetOwnerAware() bool {
+	if x != nil {
+		return x.OwnerAware
+	}
+	return false
 }
 
 // MethodPolicyV1 is what a call to one method must hold, as the module's
@@ -417,7 +429,7 @@ type ModuleManifestV1 struct {
 	Page *PageV1 `protobuf:"bytes,7,opt,name=page,proto3" json:"page,omitempty"`
 	// The roles a solution declares a person may hold on an installation of it,
 	// each within what the solution serves or explicitly consumes through
-	// invoke/lookup bindings; one is named installer, held by whoever installs it.
+	// invoke/lookup bindings; one is named installer, held only by whom it is granted to.
 	// Headless-only scopes cannot supply a role grant. A module declares none.
 	Roles         []*RoleV1 `protobuf:"bytes,8,rep,name=roles,proto3" json:"roles,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -512,11 +524,20 @@ func (x *ModuleManifestV1) GetRoles() []*RoleV1 {
 
 // RoleV1 is one role a solution declares.
 type RoleV1 struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Scopes        []*v1.WorkScopeV1      `protobuf:"bytes,2,rep,name=scopes,proto3" json:"scopes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Scopes []*v1.WorkScopeV1      `protobuf:"bytes,2,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	// Scopes the role grants only on the resources the installation owns: those
+	// created through it (AuthorityService.AttachResource) or transferred after
+	// AuthorityService.AuthorizeTransfer authorizes the change of owner. Each
+	// names a kind and actions and no resource ids, since ids are per
+	// installation, and is held to the same ceiling as scopes. The authority
+	// resolves each, for the installation the role is held on, into the same
+	// scope limited to the ids that installation owns of the kind; a kind it owns
+	// nothing of grants nothing, and never the whole kind.
+	InstallationOwnedScopes []*v1.WorkScopeV1 `protobuf:"bytes,3,rep,name=installation_owned_scopes,json=installationOwnedScopes,proto3" json:"installation_owned_scopes,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *RoleV1) Reset() {
@@ -559,6 +580,13 @@ func (x *RoleV1) GetName() string {
 func (x *RoleV1) GetScopes() []*v1.WorkScopeV1 {
 	if x != nil {
 		return x.Scopes
+	}
+	return nil
+}
+
+func (x *RoleV1) GetInstallationOwnedScopes() []*v1.WorkScopeV1 {
+	if x != nil {
+		return x.InstallationOwnedScopes
 	}
 	return nil
 }
@@ -769,7 +797,7 @@ const file_host_composition_v1_composition_proto_rawDesc = "" +
 	"\n" +
 	"credential\x18\x03 \x01(\tR\n" +
 	"credential\x12C\n" +
-	"\tauthority\x18\x04 \x01(\v2%.host.composition.v1.SignedManifestV1R\tauthority\"\xb8\x02\n" +
+	"\tauthority\x18\x04 \x01(\v2%.host.composition.v1.SignedManifestV1R\tauthority\"\xd9\x02\n" +
 	"\x13AuthorityManifestV1\x12\x16\n" +
 	"\x06module\x18\x01 \x01(\tR\x06module\x12\x1e\n" +
 	"\n" +
@@ -778,7 +806,9 @@ const file_host_composition_v1_composition_proto_rawDesc = "" +
 	"\x14core_manifest_digest\x18\x03 \x01(\tR\x12coreManifestDigest\x12=\n" +
 	"\amethods\x18\x04 \x03(\v2#.host.composition.v1.MethodPolicyV1R\amethods\x12E\n" +
 	"\x0escope_ceilings\x18\x05 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\rscopeCeilings\x121\n" +
-	"\x05roles\x18\x06 \x03(\v2\x1b.host.composition.v1.RoleV1R\x05roles\"\x92\x01\n" +
+	"\x05roles\x18\x06 \x03(\v2\x1b.host.composition.v1.RoleV1R\x05roles\x12\x1f\n" +
+	"\vowner_aware\x18\a \x01(\bR\n" +
+	"ownerAware\"\x92\x01\n" +
 	"\x0eMethodPolicyV1\x12\x16\n" +
 	"\x06method\x18\x01 \x01(\tR\x06method\x12:\n" +
 	"\brequires\x18\x02 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\brequires\x12,\n" +
@@ -802,10 +832,11 @@ const file_host_composition_v1_composition_proto_rawDesc = "" +
 	"\bbindings\x18\x05 \x03(\v2\x1e.host.composition.v1.BindingV1R\bbindings\x12J\n" +
 	"\x0eresource_kinds\x18\x06 \x03(\v2#.host.composition.v1.ResourceKindV1R\rresourceKinds\x12/\n" +
 	"\x04page\x18\a \x01(\v2\x1b.host.composition.v1.PageV1R\x04page\x121\n" +
-	"\x05roles\x18\b \x03(\v2\x1b.host.composition.v1.RoleV1R\x05roles\"T\n" +
+	"\x05roles\x18\b \x03(\v2\x1b.host.composition.v1.RoleV1R\x05roles\"\xb0\x01\n" +
 	"\x06RoleV1\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x126\n" +
-	"\x06scopes\x18\x02 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\x06scopes\"\x8a\x02\n" +
+	"\x06scopes\x18\x02 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\x06scopes\x12Z\n" +
+	"\x19installation_owned_scopes\x18\x03 \x03(\v2\x1e.host.authority.v1.WorkScopeV1R\x17installationOwnedScopes\"\x8a\x02\n" +
 	"\tBindingV1\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\baudience\x18\x02 \x01(\tR\baudience\x12C\n" +
@@ -861,16 +892,17 @@ var file_host_composition_v1_composition_proto_depIdxs = []int32{
 	9,  // 9: host.composition.v1.ModuleManifestV1.page:type_name -> host.composition.v1.PageV1
 	6,  // 10: host.composition.v1.ModuleManifestV1.roles:type_name -> host.composition.v1.RoleV1
 	10, // 11: host.composition.v1.RoleV1.scopes:type_name -> host.authority.v1.WorkScopeV1
-	10, // 12: host.composition.v1.BindingV1.invoke_scopes:type_name -> host.authority.v1.WorkScopeV1
-	10, // 13: host.composition.v1.BindingV1.headless_scopes:type_name -> host.authority.v1.WorkScopeV1
-	10, // 14: host.composition.v1.BindingV1.lookup_scopes:type_name -> host.authority.v1.WorkScopeV1
-	0,  // 15: host.composition.v1.CompositionService.ApplyManifest:input_type -> host.composition.v1.ApplyManifestRequest
-	4,  // 16: host.composition.v1.CompositionService.ApplyManifest:output_type -> host.composition.v1.ApplyManifestResponse
-	16, // [16:17] is the sub-list for method output_type
-	15, // [15:16] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	10, // 12: host.composition.v1.RoleV1.installation_owned_scopes:type_name -> host.authority.v1.WorkScopeV1
+	10, // 13: host.composition.v1.BindingV1.invoke_scopes:type_name -> host.authority.v1.WorkScopeV1
+	10, // 14: host.composition.v1.BindingV1.headless_scopes:type_name -> host.authority.v1.WorkScopeV1
+	10, // 15: host.composition.v1.BindingV1.lookup_scopes:type_name -> host.authority.v1.WorkScopeV1
+	0,  // 16: host.composition.v1.CompositionService.ApplyManifest:input_type -> host.composition.v1.ApplyManifestRequest
+	4,  // 17: host.composition.v1.CompositionService.ApplyManifest:output_type -> host.composition.v1.ApplyManifestResponse
+	17, // [17:18] is the sub-list for method output_type
+	16, // [16:17] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_host_composition_v1_composition_proto_init() }

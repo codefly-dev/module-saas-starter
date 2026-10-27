@@ -181,23 +181,8 @@ type Service struct {
 	frontendSource         frontendpayload.Source
 	frontendLazyLoadWindow time.Duration
 
-	// The policy log's wiring: the external append-only record, this host's
-	// local receipts and cursor, and an overridable clock.
-	//
-	// Both nil means no log. WithPolicyLoggedNarrowing then REFUSES — a host
-	// that cannot witness a narrowing must not perform one — while MayServe
-	// allows serving, because nothing has been narrowed through the protocol and
-	// there is therefore nothing unreconciled. Those two answers look
-	// inconsistent and are not: the first is about reducing authority, the
-	// second about honouring reductions that were recorded.
-	policyLog      PolicyLog
-	policyLogStore PolicyLogStore
-	policyClock    func() time.Time
-	// policyServing is the serving gate's bounded memory of its last
-	// answer. It lives here rather than in the gate because the gate is
-	// consulted per request and the answer is per host; see
-	// policy_log_gate.go for why the reuse window is safe.
-	policyServing policyLogServingCache
+	// policyClock is the clock narrowing-dependent reads judge time by; nil means time.Now.
+	policyClock func() time.Time
 
 	// The live-authority reads enforcement at use depends on. Nil means this
 	// host cannot re-read, and AuthorizeModuleCapability then refuses every
@@ -221,6 +206,9 @@ type Service struct {
 	// super_admin writes (module_envelope.go). Nil answers no question about
 	// the ceiling: the RPCs refuse and the reconcilers derive nothing.
 	moduleEnvelopes ModuleEnvelopeStore
+	// authorityCore decides every operation of the host interfaces: the shared
+	// authority core over this host's store (authority_core.go).
+	authorityCore *authorityCoreState
 	// admissionKeys persists the hop's registered admission keys
 	// (hop_admission_keys.go). Nil publishes none and registers none.
 	admissionKeys AdmissionKeyStore
@@ -239,14 +227,6 @@ func (s *Service) SetModuleAuthorityReads(
 ) {
 	s.moduleAuthority = authority
 	s.moduleOperationBindings = bindings
-}
-
-// SetPolicyLog wires the append-only authority record and its local half.
-//
-// Boot wiring, called once before the service listens.
-func (s *Service) SetPolicyLog(log PolicyLog, store PolicyLogStore) {
-	s.policyLog = log
-	s.policyLogStore = store
 }
 
 // SetSolutionDelivery wires the delivery endpoint: the pinned-key verifier,

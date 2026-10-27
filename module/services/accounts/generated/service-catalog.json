@@ -35,9 +35,13 @@
       "name": "InstallationService",
       "full_name": "host.installation.v1.InstallationService",
       "procedures": [
-        "/host.installation.v1.InstallationService/GrantToTeam",
+        "/host.installation.v1.InstallationService/Current",
+        "/host.installation.v1.InstallationService/GrantRole",
         "/host.installation.v1.InstallationService/Install",
-        "/host.installation.v1.InstallationService/List"
+        "/host.installation.v1.InstallationService/List",
+        "/host.installation.v1.InstallationService/ListRoleGrants",
+        "/host.installation.v1.InstallationService/Review",
+        "/host.installation.v1.InstallationService/RevokeRole"
       ]
     },
     {
@@ -562,8 +566,10 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.authority.resource_attached"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
         "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
@@ -575,7 +581,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
-      "description": "Record that one resource belongs to an installation; refused by name until this host records installation-owned resources.",
+      "description": "Record that one resource created through an installation belongs to it; the kind's serving module asks.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -605,8 +611,10 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.authority.resource_transferred"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
         "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
@@ -618,7 +626,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
-      "description": "Decide whether an existing resource may join an installed solution's principal; refused by name until this host records installation-owned resources.",
+      "description": "Decide whether an existing resource may join an installed solution's principal, and record it.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -744,8 +752,10 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.authority.resource_detached"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
         "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
@@ -757,7 +767,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
-      "description": "Release one resource from the installation that owns it; refused by name until this host records installation-owned resources.",
+      "description": "Release one deleted resource from the installation that owns it; the kind's serving module asks.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -839,7 +849,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "saas.work_context.task_started"
+            "saas.work_context.task_started",
+            "saas.work_context.child_session_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1079,11 +1090,54 @@
       }
     },
     {
-      "procedure": "/host.installation.v1.InstallationService/GrantToTeam",
+      "procedure": "/host.installation.v1.InstallationService/Current",
       "service": "InstallationService",
       "full_service": "host.installation.v1.InstallationService",
-      "method": "GrantToTeam",
-      "input_type": "host.installation.v1.GrantToTeamRequest",
+      "method": "Current",
+      "input_type": "host.installation.v1.CurrentInstallationRequest",
+      "output_type": "host.installation.v1.CurrentInstallation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/installation/v1/installation.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Read the authenticated module's own active installation in the tenant of a current parent addressed to it.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/GrantRole",
+      "service": "InstallationService",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "GrantRole",
+      "input_type": "host.installation.v1.GrantRoleRequest",
       "output_type": "host.installation.v1.Installation",
       "client_streaming": false,
       "server_streaming": false,
@@ -1096,14 +1150,14 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_NONE",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "saas.scope.granted"
+            "saas.authority.role_granted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1116,8 +1170,8 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
-      "policy_tier": "org_admin",
-      "description": "Expose an installation to a team under the installation's role.",
+      "policy_tier": "auth",
+      "description": "Grant a person or a team one of an installed solution's roles.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1148,7 +1202,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "saas.installation.created"
+            "saas.authority.installation_requested",
+            "saas.authority.installation_activated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1162,7 +1217,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
-      "description": "Install one target at one organisation under the least role it needs; pending until its install step is acknowledged.",
+      "description": "Install one solution at one organisation under the consent its administrator reviewed; pending until its install step converges.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1206,6 +1261,137 @@
       },
       "policy_tier": "org_admin",
       "description": "List what one organisation has installed.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/ListRoleGrants",
+      "service": "InstallationService",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "ListRoleGrants",
+      "input_type": "host.installation.v1.ListRoleGrantsRequest",
+      "output_type": "host.installation.v1.ListRoleGrantsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/installation/v1/installation.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "List who holds which role on one installation.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/Review",
+      "service": "InstallationService",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "Review",
+      "input_type": "host.installation.v1.ReviewRequest",
+      "output_type": "host.installation.v1.ConsentApproval",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/installation/v1/installation.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_OPTIONAL",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "org_admin",
+      "description": "Read the exact authority offer an administrator consents to, without recording consent.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/host.installation.v1.InstallationService/RevokeRole",
+      "service": "InstallationService",
+      "full_service": "host.installation.v1.InstallationService",
+      "method": "RevokeRole",
+      "input_type": "host.installation.v1.RevokeRoleRequest",
+      "output_type": "host.installation.v1.Installation",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "host/installation/v1/installation.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.authority.role_revoked"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "Revoke one role grant; its subject's capabilities through the installation end.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6249,7 +6435,7 @@
         "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
-      "description": "Remove a team's grant at an installation's authority root, under the policy log.",
+      "description": "Remove a team's grant at an installation's authority root.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

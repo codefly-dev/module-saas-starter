@@ -343,9 +343,8 @@ func (s *Service) organizationInstallation(ctx context.Context, orgID, installat
 // CAUSED at the modules the solution reaches.
 //
 // The node is resolved in the organization's transaction, then the revocation is
-// RevokeScope's own: the same policy-log entry and the same apply, so it is
-// witnessed before it lands and refused — with the host's reason — when the log
-// cannot witness it.
+// RevokeScope's own: the same apply, in one narrowing transaction with its
+// audit record.
 //
 // The derived grants go FIRST and in the same narrowing, so there is no moment,
 // and no failure, that leaves a carried grant alive after the grant that caused
@@ -395,9 +394,7 @@ func (s *Service) RevokeInstallationFromTeam(
 		ScopePath:   path,
 		RoleId:      roleID,
 	}
-	if err := s.WithPolicyLoggedNarrowing(ctx, revokeScopePolicyLogEntry(
-		actorID, orgID, teamID, req.SubjectKind.String(), path, roleID,
-	), func(ctx context.Context) error {
+	if err := s.narrow(ctx, func(ctx context.Context) error {
 		if causeGrantID != "" {
 			if err := s.revokeDerivedGrantsTx(ctx, actorID, orgID, causeGrantID, ""); err != nil {
 				return err

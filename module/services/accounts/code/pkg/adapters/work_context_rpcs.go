@@ -645,9 +645,6 @@ func (s *WorkContextAuthorityServer) StartTask(
 		return nil, err
 	}
 
-	if facts.Actor == nil {
-		scopes = append(scopes, droppedKindScopes(ctx, scopes)...)
-	}
 	request := mintRequest{
 		Start: workcontext.StartInput{
 			TenantID:           req.GetOrgId(),

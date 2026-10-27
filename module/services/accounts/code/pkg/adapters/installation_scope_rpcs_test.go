@@ -1,7 +1,6 @@
 package adapters
 
 import (
-	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 	"testing"
@@ -34,7 +33,6 @@ func TestNarrowInstallationRequiresOrgAdminAndOwnOrganization(t *testing.T) {
 }
 
 func TestInstallationNarrowingErrorMapping(t *testing.T) {
-	require.Equal(t, codes.Unavailable, status.Code(mapInstallationError(business.ErrPolicyLogUnreachable)))
 	require.Equal(t, codes.PermissionDenied, status.Code(mapInstallationError(status.Error(codes.PermissionDenied, "outside ceiling"))))
 }
 

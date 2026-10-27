@@ -99,7 +99,7 @@ var skippedSourceDirs = map[string]bool{
 // servicesKnownToReadGroups are services whose literal reads this gate must find.
 // If one of them yields none, an accessor was renamed and the gate is proving
 // nothing for it. A service that reads its group through a named constant
-// (policy-log, telemetry) is outside what a literal match can see, and declares
+// (telemetry) is outside what a literal match can see, and declares
 // its one group beside that constant.
 var servicesKnownToReadGroups = []string{"accounts", "auth-gateway", "frontend"}
 

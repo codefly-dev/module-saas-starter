@@ -289,6 +289,20 @@ func (g ModulePrincipalGrant) IssuedIn(orgID string) bool {
 	return orgID != "" && (g.Tenant == "" || g.Tenant == orgID)
 }
 
+// ModuleTenant is the organization the module named prefix is pinned to by
+// the installed registry (manifest within the module envelope), "" when it is
+// shared or not in the registry. A workload of a pinned module acts there and
+// nowhere else, whatever organization a request names. The registry is fenced
+// against the committed envelope first, like every module authority decision,
+// so a pin a newer envelope set is never read from an older registry.
+func (s *Service) ModuleTenant(ctx context.Context, prefix string) (string, error) {
+	snapshot := s.moduleRegistrySnapshot()
+	if err := s.fenceModuleRegistrySnapshot(ctx, snapshot); err != nil {
+		return "", err
+	}
+	return snapshot.registry[ModulePrincipalID(prefix)].Tenant, nil
+}
+
 // A shared principal selects consent, not authority: execution still proves the
 // principal and the subsequent live read must find that org's installation.
 // A tenant-pinned principal cannot switch orgs even if it has cross_tenant.

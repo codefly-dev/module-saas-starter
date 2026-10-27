@@ -1,23 +1,27 @@
 package adapters
 
-// The host authority interfaces (the authority interface repository), served by accounts as
-// adapters over what it already does. Nothing here decides authority: every
-// operation maps onto an existing path, and where no path exists the refusal
-// names the gap instead of inventing one. The same four interfaces are served by
-// the local authority for a local run, and the authority interface repository's pkg/conformance is
-// the suite both must pass.
+// The host interfaces (codefly.dev/authority, composition, installation,
+// session) served by accounts. Every decision is the shared authority core's
+// (codefly-dev/authority libraries/authority-core), the same core the local
+// authority serves on a laptop, over this host's store (pkg/infra
+// postgres_authority_core.go). What this file adds is the wire and what is
+// this host's own: who the caller is (the session the perimeter verified, or
+// a workload credential the execution reviewer reviewed), the signing key
+// Keys publishes, delivery (composition.go's ApplyComposition) and the audit
+// record of each issue.
 
 import (
-	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
@@ -28,50 +32,124 @@ import (
 	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
-	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
 	sessionv1 "accounts/pkg/gen/host/session/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// HostAuthorityServer serves codefly.dev/authority over the Work Context authority.
+// authorityCore is the core every host interface call is decided by.
+func authorityCore() (*authority.Service, error) {
+	if service == nil {
+		return nil, status.Error(codes.Unavailable, business.ErrAuthorityCoreUnconfigured.Error())
+	}
+	core, err := service.AuthorityCore()
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+	return core, nil
+}
+
+// coreStatus maps a refusal to a status naming its reason: every refusal
+// reaches the caller. The core's refusals carry their code; core's Work
+// Context errors map by kind.
+func coreStatus(err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := status.FromError(err); ok {
+		return err
+	}
+	if c, ok := domain.CodeOf(err); ok {
+		return status.Error(map[domain.Code]codes.Code{
+			domain.Denied: codes.PermissionDenied, domain.NotFound: codes.NotFound,
+			domain.Invalid: codes.InvalidArgument, domain.Precondition: codes.FailedPrecondition,
+		}[c], err.Error())
+	}
+	switch {
+	case errors.Is(err, workcontext.ErrNoBinding):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, workcontext.ErrRevoked), errors.Is(err, workcontext.ErrNoSeal):
+		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, workcontext.ErrInvalid), errors.Is(err, workcontext.ErrNotACoreToken), errors.Is(err, workcontext.ErrReplayed):
+		return status.Error(codes.Unauthenticated, err.Error())
+	case errors.Is(err, authority.ErrConflict):
+		return status.Error(codes.Aborted, err.Error())
+	case errors.Is(err, business.ErrAuthorityCoreUnconfigured):
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	return status.Error(codes.Internal, err.Error())
+}
+
+// signedInPerson is the person a session bearer authenticates, as the core
+// takes them: their id, the organization the session is at, the session.
+// Only an interactive session acts as a person here: never a credential
+// confined to one consumer's ceiling, an identity acting on someone's behalf
+// (X-Act), an administrator viewing as someone (impersonation) or an API key.
+func signedInPerson(ctx context.Context, what string) (authority.Person, error) {
+	identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
+	if !ok || identity.EffectiveSubject == uuid.Nil {
+		return authority.Person{}, status.Errorf(codes.Unauthenticated, "only the signed-in person may %s; the call carries no session", what)
+	}
+	if _, confined := accountsauth.VerifiedResourceConfinement(ctx); confined {
+		return authority.Person{}, status.Errorf(codes.PermissionDenied, "a resource-confined credential cannot %s: it acts only within its consumer's ceiling", what)
+	}
+	if _, acting := accountsauth.VerifiedActorFromContext(ctx); acting || identity.Delegation != nil {
+		return authority.Person{}, status.Errorf(codes.PermissionDenied, "an identity acting on someone's behalf (X-Act) cannot %s for them", what)
+	}
+	if identity.Impersonated() {
+		return authority.Person{}, status.Errorf(codes.PermissionDenied, "an impersonated session cannot %s for the person it views as", what)
+	}
+	if kind := credentialKindFromContext(ctx); kind != credentialKindSession {
+		if kind == "" {
+			kind = "no credential kind"
+		}
+		return authority.Person{}, status.Errorf(codes.PermissionDenied, "only an interactive session may %s; this call presented %s", what, kind)
+	}
+	person := authority.Person{ID: identity.EffectiveSubjectID(), SessionID: identity.SessionID.String()}
+	if identity.OrgID != uuid.Nil {
+		person.Organization = identity.OrgID.String()
+	}
+	return person, nil
+}
+
+// workload is the composed module a workload credential proves, reviewed by
+// the execution reviewer and resolved to the one module whose delivered
+// manifest declares that workload, bound to the organization the module
+// envelope pins it to: a pinned workload is issued nothing elsewhere. A shared
+// one acts only where an administrator installed it (the core reads accounts'
+// installations).
+func workload(ctx context.Context, credential, which string) (authority.Workload, error) {
+	if service == nil {
+		return authority.Workload{}, status.Error(codes.Unavailable, "the execution reviewer is not wired")
+	}
+	module, err := service.ModulePrefixOfWorkload(ctx, credential)
+	if err != nil {
+		return authority.Workload{}, credentialRefusal(err, which)
+	}
+	tenant, err := service.ModuleTenant(ctx, module)
+	if err != nil {
+		return authority.Workload{}, status.Errorf(codes.Unavailable, "the module registry could not be read current: %v", err)
+	}
+	return authority.Workload{Module: module, Organization: tenant}, nil
+}
+
+// HostAuthorityServer serves codefly.dev/authority.
 type HostAuthorityServer struct {
 	authorityv1.UnimplementedAuthorityServiceServer
 	workContexts *WorkContextAuthorityServer
-	modules      *ModuleCapabilitiesServer
-	// roles answers solution roles; nil reads the service.
-	roles solutionRoleReader
-	// methods holds a call to a delivered method policy; nil reads the service.
-	methods methodPolicyChecker
 	// admissions registers and publishes the hop's admission keys; nil reads
 	// the service.
 	admissions admissionKeys
 }
 
-// methodPolicyChecker holds a call's scopes to what the audience module's
-// applied delivery declares for one method.
-type methodPolicyChecker interface {
-	CheckDeliveredMethod(ctx context.Context, audience, method string, held []*basev0.WorkScopeV1) error
+// NewHostAuthorityServer serves the authority interface with the Work Context
+// key workContexts holds.
+func NewHostAuthorityServer(workContexts *WorkContextAuthorityServer) *HostAuthorityServer {
+	return &HostAuthorityServer{workContexts: workContexts}
 }
 
-func (s *HostAuthorityServer) methodPolicies() methodPolicyChecker {
-	if s.methods != nil {
-		return s.methods
-	}
-	if service == nil {
-		return nil
-	}
-	return service
-}
-
-// NewHostAuthorityServer adapts the Work Context authority.
-func NewHostAuthorityServer(workContexts *WorkContextAuthorityServer, modules *ModuleCapabilitiesServer) *HostAuthorityServer {
-	return &HostAuthorityServer{workContexts: workContexts, modules: modules}
-}
-
-// Keys is the issuer and the one Work Context signing key, and apart from it
-// the admission keys the hop registered (RegisterAdmissionKey), never among
-// the Work Context keys.
+// Keys is the issuer and the one Work Context signing key the core signs
+// with, and apart from it the admission keys the hop registered.
 func (s *HostAuthorityServer) Keys(ctx context.Context, _ *authorityv1.KeysRequest) (*authorityv1.KeysResponse, error) {
 	if !s.workContexts.configured() {
 		return nil, status.Error(codes.FailedPrecondition, ErrWorkContextAuthorityUnconfigured.Error())
@@ -86,252 +164,452 @@ func (s *HostAuthorityServer) Keys(ctx context.Context, _ *authorityv1.KeysReque
 	}}, AdmissionKeys: admission}, nil
 }
 
-// Check verifies for the audience the caller is: core's full check with the
-// host's live seals and revisions, exactly as a module capability is verified.
+// Check verifies a capability for the audience the caller is and, when a
+// method is named, applies what the audience's delivery declares for it.
 func (s *HostAuthorityServer) Check(ctx context.Context, req *authorityv1.CheckRequest) (*authorityv1.CheckResponse, error) {
-	if req.GetAudience() == "" {
-		return nil, status.Error(codes.InvalidArgument, "a check names the audience the caller is")
-	}
-	verified, err := s.workContexts.verifyFor(ctx, req.GetToken(), req.GetAudience())
+	core, err := authorityCore()
 	if err != nil {
-		return nil, interfaceStatus(err)
-	}
-	if err := s.workContexts.requireModuleChainStands(ctx, verified.Context()); err != nil {
 		return nil, err
 	}
-	// An installation's agent owns its capability by its installation's
-	// standing, which core's seal and revision do not wholly carry (a
-	// standing grant narrowed moves neither), so it is re-read here.
-	if verified.Context().GetOwnerPrincipalKind() == business.PrincipalKindAgent {
-		if _, _, err := s.workContexts.requireInstallationStands(ctx, verified.Context()); err != nil {
-			return nil, interfaceStatus(err)
-		}
-	}
-	// The capability is sound. A named method is then held to what the
-	// audience module's delivery declares for it, against what the call's
-	// current actor holds (the last hop's grant on a delegated capability, never
-	// the owner's authority above it); advisory reports that decision beside
-	// the capability instead of refusing.
-	refusal := ""
-	refusalCode := codes.PermissionDenied
-	if method := req.GetMethod(); method != "" {
-		if policies := s.methodPolicies(); policies == nil {
-			refusal = methodPolicyRefusal(req.GetAudience(), method)
-		} else if err := policies.CheckDeliveredMethod(ctx, req.GetAudience(), method, effectiveScopes(verified.Context())); err != nil {
-			refusal = err.Error()
-			if errors.Is(err, business.ErrDeliveredMethodUnknown) {
-				refusalCode = codes.NotFound
-			}
-		}
-		if refusal != "" && !req.GetAdvisory() {
-			return nil, status.Error(refusalCode, refusal)
-		}
+	verified, revision, refused, err := core.CheckMethod(ctx, req.GetToken(), req.GetAudience(), req.GetMethod(), req.GetAdvisory())
+	if err != nil {
+		return nil, coreStatus(err)
 	}
 	wire, err := workContextToWire(verified.Context())
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return &authorityv1.CheckResponse{Context: wire, AuthorizationRevision: verified.Context().GetAuthorizationRevision(), Refusal: refusal}, nil
+	out := &authorityv1.CheckResponse{Context: wire, AuthorizationRevision: revision}
+	if refused != nil {
+		// The advisory answer names the refusal exactly as an enforced check reports it.
+		out.Refusal = status.Convert(coreStatus(refused)).Message()
+	}
+	return out, nil
 }
 
-// methodPolicyRefusal names the fail-closed answer when no service is wired.
-func methodPolicyRefusal(audience, method string) string {
-	return fmt.Sprintf("%s's delivery declares no method policy, so %s is refused", audience, method)
-}
-
-// Issue maps each owner shape onto the mint that already exists for it. Each
-// shape is authenticated first (the bearer, the workload credential, the actor
-// credential), and only then is its audience held to the composition, so a
-// caller proving nothing learns nothing of which modules are composed.
+// Issue signs a capability for one owner shape. Each shape is authenticated
+// first (the session, the workload credential, the actor's credential), and
+// its issue is recorded before the capability is handed out.
 func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueRequest) (*authorityv1.IssueResponse, error) {
-	if err := refuseOwnerSelected(req.GetScopes()); err != nil {
-		return nil, err
-	}
-	// An installation proves its solution's workload before anything it asks
-	// is read, so its audience is required there, once the caller is proven.
-	if _, installation := req.GetAs().(*authorityv1.IssueRequest_Installation); req.GetAudience() == "" && !installation {
-		derived, err := bindingAudience(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		req = proto.CloneOf(req)
-		req.Audience = derived
-	}
-	ttl, err := issueTTL(req)
+	core, err := authorityCore()
 	if err != nil {
 		return nil, err
 	}
-	scopes := scopesToHost(req.GetScopes())
-	var issued *gen.IssuedWorkContext
+	if req.GetTtlSeconds() < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "a lifetime is not negative: %d seconds", req.GetTtlSeconds())
+	}
+	r := authority.IssueRequest{Audience: req.GetAudience(), Binding: req.GetOperationBindingId(), Operation: req.GetOperation(),
+		Organization: req.GetOrganizationId(), Scopes: scopesFromWire(req.GetScopes()), TTL: time.Duration(req.GetTtlSeconds()) * time.Second}
+	var out authority.Issued
+	child := false
 	switch as := req.GetAs().(type) {
 	case *authorityv1.IssueRequest_Person:
-		// The person is whoever the perimeter verified from the bearer on this
-		// call; the request names nobody, by the interface's design.
-		identity, ok := accountsauth.VerifiedRequestIdentity(ctx)
-		if !ok {
-			return nil, status.Error(codes.Unauthenticated, "a person-owned issue is made by the signed-in person")
+		person, perr := signedInPerson(ctx, "be issued a capability")
+		if perr != nil {
+			return nil, perr
 		}
-		if err := requireComposed(req.GetAudience()); err != nil {
+		if err := requireOrgMember(ctx, person.ID, person.Organization); err != nil {
 			return nil, err
 		}
-		issued, err = s.personIssue(ctx, identity, req, scopes, ttl)
-		if err != nil {
-			return nil, interfaceStatus(err)
-		}
-	case *authorityv1.IssueRequest_Installation:
-		issued, err = s.forInstallation(ctx, as.Installation.GetInstallationId(), req, scopes, ttl)
-	case *authorityv1.IssueRequest_ParentToken:
-		if req.GetActor() == nil {
-			issued, err = s.exchangeOrRenew(ctx, as.ParentToken, req, scopes, ttl)
-			break
-		}
-		issued, err = s.childHop(ctx, as.ParentToken, req)
+		out, err = core.IssueForPerson(ctx, person, r)
 	case *authorityv1.IssueRequest_Workload:
-		issued, err = s.workloadIssue(ctx, as.Workload.GetCredential(), req, ttl)
+		w, werr := workload(ctx, as.Workload.GetCredential(), "workload")
+		if werr != nil {
+			return nil, werr
+		}
+		out, err = core.IssueForWorkload(ctx, w, r)
+	case *authorityv1.IssueRequest_Installation:
+		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
+		if werr != nil {
+			return nil, werr
+		}
+		out, err = core.IssueForInstallation(ctx, w, as.Installation.GetInstallationId(), r)
+	case *authorityv1.IssueRequest_ParentToken:
+		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
+		if werr != nil {
+			return nil, werr
+		}
+		out, err = core.IssueChild(ctx, as.ParentToken, w, r)
+		child = true
 	case *authorityv1.IssueRequest_Delegation:
-		issued, err = s.delegationHop(ctx, as.Delegation.GetDelegationId(), req)
+		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
+		if werr != nil {
+			return nil, werr
+		}
+		out, err = core.IssueForDelegation(ctx, as.Delegation.GetDelegationId(), w, r)
 	default:
 		return nil, status.Error(codes.InvalidArgument, "an issue names whom it is for: a person, a workload, an installation, a parent token or a delegation")
 	}
 	if err != nil {
-		return nil, interfaceStatus(err)
+		return nil, coreStatus(err)
 	}
-	decoded, err := workcontext.Decode(issued.GetToken())
+	return s.issued(ctx, out, child)
+}
+
+// issued records the issue in the organization it was issued in and answers it.
+func (s *HostAuthorityServer) issued(ctx context.Context, out authority.Issued, child bool) (*authorityv1.IssueResponse, error) {
+	wc := out.Context
+	actor := wc.GetOwnerPrincipalId()
+	if chain := wc.GetActorChain(); len(chain) > 0 {
+		actor = chain[len(chain)-1].GetPrincipalId()
+	}
+	if err := service.RecordAuthorityIssue(ctx, wc.GetTenantId(), actor, child, wc.GetTaskId()); err != nil {
+		return nil, status.Errorf(codes.Unavailable, "the issue could not be recorded, so it is not handed out: %v", err)
+	}
+	wire, err := workContextToWire(wc)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	wire, err := workContextToWire(decoded.Context())
+	return &authorityv1.IssueResponse{Token: out.Token, ExpiresAtUnix: wc.GetExpiresAtUnix(), Context: wire}, nil
+}
+
+// ListResources answers which resources of one kind a checked capability
+// covers for one action, decided now.
+func (s *HostAuthorityServer) ListResources(ctx context.Context, req *authorityv1.ListResourcesRequest) (*authorityv1.ListResourcesResponse, error) {
+	core, err := authorityCore()
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return &authorityv1.IssueResponse{Token: issued.GetToken(), ExpiresAtUnix: issued.GetExpiresAt().GetSeconds(), Context: wire}, nil
-}
-
-// requireComposed refuses, NotFound by name, an audience the composition does
-// not declare: by the contract it does not exist, which is not the host's own
-// "not one this host serves" denial. It runs only once the caller's shape is
-// authenticated.
-func requireComposed(audience string) error {
-	if service == nil || !service.IsDeclaredModulePrincipal(business.ModulePrincipalID(audience)) {
-		return status.Errorf(codes.NotFound, "audience %q is not composed", audience)
-	}
-	return nil
-}
-
-// issueTTL is the lifetime an issue asks for, clamped to the issuer's ceiling
-// as the interface states; zero leaves it to the mint.
-func issueTTL(req *authorityv1.IssueRequest) (int32, error) {
-	ceiling := int64(workcontext.DefaultMaxTTL / time.Second)
-	switch seconds := req.GetTtlSeconds(); {
-	case seconds < 0:
-		return 0, status.Errorf(codes.InvalidArgument, "a lifetime is not negative: %d seconds", seconds)
-	case seconds > ceiling:
-		return int32(ceiling), nil
-	default:
-		return int32(seconds), nil
-	}
-}
-
-// personIssue is a signed-in person's own capability at the audience.
-func (s *HostAuthorityServer) personIssue(ctx context.Context, identity accountsauth.RequestIdentity, req *authorityv1.IssueRequest, scopes []*gen.WorkContextScope, ttl int32) (*gen.IssuedWorkContext, error) {
-	if err := requireOrgMember(ctx, identity.EffectiveSubject.String(), identity.OrgID.String()); err != nil {
 		return nil, err
 	}
-	// An audience the organisation never installed has no installation to seal
-	// a capability to, whatever would decide what the person holds there: that
-	// is the failed precondition, named, before a solution's roles read an
-	// installation that is not there and answer that the person holds nothing.
-	if _, err := s.workContexts.audienceInstallation(ctx, identity.OrgID.String(), req.GetAudience()); err != nil {
-		return nil, err
-	}
-	// A solution that declares roles decides what the person holds there.
-	authority, held, err := s.solutionRoles().PersonSolutionRoles(ctx, identity.OrgID.String(), identity.EffectiveSubject.String(), req.GetAudience())
+	grants, err := core.ListResources(ctx, req.GetToken(), req.GetAudience(), req.GetResourceKind(), req.GetAction())
 	if err != nil {
-		return nil, interfaceStatus(err)
+		return nil, coreStatus(err)
 	}
-	if authority != nil {
-		if binding := req.GetOperationBindingId(); binding != "" {
-			if operation := req.GetOperation(); operation != "" && operation != "invoke" {
-				return nil, status.Errorf(codes.InvalidArgument, "a person-owned issue carries invoke scopes for operation binding %q; operation %q is refused", binding, operation)
-			}
-			return s.solutionBindingIssue(ctx, identity.OrgID.String(), req.GetAudience(), binding, authority, held, scopes, ttl)
+	out := &authorityv1.ListResourcesResponse{}
+	for _, g := range grants {
+		grant := &authorityv1.ResourceGrant{ResourceOwnerId: g.Owner}
+		switch {
+		case g.All:
+			grant.Match = &authorityv1.ResourceGrant_All{All: true}
+		case g.ID != "":
+			grant.Match = &authorityv1.ResourceGrant_Id{Id: g.ID}
+		case g.Prefix != "":
+			grant.Match = &authorityv1.ResourceGrant_Prefix{Prefix: g.Prefix}
+		default:
+			grant.Match = &authorityv1.ResourceGrant_Pattern{Pattern: g.Pattern}
 		}
-		return s.solutionPersonIssue(ctx, identity.OrgID.String(), req.GetAudience(), authority, held, scopes, ttl)
+		out.Grants = append(out.Grants, grant)
 	}
-	var bindings []string
-	if binding := req.GetOperationBindingId(); binding != "" {
-		if operation := req.GetOperation(); operation != "" && operation != "invoke" {
-			return nil, status.Errorf(codes.InvalidArgument, "a person-owned issue carries invoke scopes for operation binding %q; operation %q is refused", binding, operation)
-		}
-		bindings = []string{binding}
-	}
-	if len(scopes) == 0 && len(bindings) == 0 {
-		// An empty ask is everything the person holds at the audience.
-		if scopes, err = s.workContexts.personHoldings(ctx, identity.OrgID.String(), req.GetAudience()); err != nil {
-			return nil, interfaceStatus(err)
-		}
-	} else if len(scopes) > 0 {
-		// An ask is met with what the person holds: what they do not hold of it
-		// is dropped, and an ask of which they hold nothing is refused.
-		if scopes, err = s.workContexts.personHeldOfAsk(ctx, identity.OrgID.String(), req.GetAudience(), scopes); err != nil {
-			return nil, interfaceStatus(err)
-		}
-		// Every kind of the audience the ask left out is dropped for the whole
-		// chain below this capability, not merely absent from it.
-		ctx = withDroppedKinds(ctx, droppedAudienceKinds(req.GetAudience(), scopes))
-	}
-	// A fresh task per issue: the interface names no task, the host requires
-	// one as the identity tuple's third element.
-	return s.workContexts.StartTask(ctx, &gen.StartTaskWorkContextRequest{
-		OrgId: identity.OrgID.String(), TaskId: uuid.NewString(), Audience: req.GetAudience(), AuthorityScopes: scopes, TtlSeconds: ttl,
-		OperationBindings: bindings,
-	})
+	return out, nil
 }
 
-// exchangeOrRenew is one more issue from a capability, with no actor: the
-// bearer of whoever holds it authorizes it. At another audience it is the
-// host's audience exchange. At the parent's own audience it is a renewal, a
-// fresh window on the same task: a delegated capability's current actor renews
-// it (RenewWorkContext, which may narrow it), and an owner's own capability is
-// re-issued as another root session of its task (StartRootSession), which
-// keeps its authority as it stands and so takes no scopes. The organisation is
-// the request's, or the parent's own when it names none. An empty ask is the
-// parent's own authority: what its current actor holds. The parent's claims are
-// only read to route the issue; each path verifies it.
-func (s *HostAuthorityServer) exchangeOrRenew(ctx context.Context, parentToken string, req *authorityv1.IssueRequest, scopes []*gen.WorkContextScope, ttl int32) (*gen.IssuedWorkContext, error) {
-	if _, ok := accountsauth.VerifiedRequestIdentity(ctx); !ok {
-		return nil, status.Error(codes.Unauthenticated, "an exchange or a renewal is made by the capability's owner, signed in; the call carries no bearer")
-	}
-	if err := requireComposed(req.GetAudience()); err != nil {
+// Delegate records the signed-in person's grant to a module, within what they hold.
+func (s *HostAuthorityServer) Delegate(ctx context.Context, req *authorityv1.DelegateRequest) (*authorityv1.Delegation, error) {
+	core, err := authorityCore()
+	if err != nil {
 		return nil, err
 	}
-	decoded, err := workcontext.Decode(parentToken)
+	person, err := signedInPerson(ctx, "delegate")
 	if err != nil {
-		return nil, interfaceStatus(err)
+		return nil, err
 	}
-	parent := decoded.Context()
-	org := cmp.Or(req.GetOrganizationId(), parent.GetTenantId())
-	if req.GetAudience() == parent.GetAudience() {
-		if len(parent.GetActorChain()) > 0 {
-			return s.workContexts.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
-				OrgId: org, ParentWorkContextToken: parentToken, AttenuatedScopes: scopes, TtlSeconds: ttl,
-			})
+	d, err := core.Delegate(ctx, person, req.GetModule(), scopesFromWire(req.GetScopes()), req.GetPurpose())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	return delegationToWire(d), nil
+}
+
+// RevokeDelegation ends one of the signed-in person's delegations.
+func (s *HostAuthorityServer) RevokeDelegation(ctx context.Context, req *authorityv1.RevokeDelegationRequest) (*authorityv1.RevokeDelegationResponse, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	person, err := signedInPerson(ctx, "revoke a delegation")
+	if err != nil {
+		return nil, err
+	}
+	d, err := core.RevokeDelegation(ctx, person, req.GetDelegationId())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	return &authorityv1.RevokeDelegationResponse{Delegation: delegationToWire(d)}, nil
+}
+
+// GetDelegation reads one delegation for its module (by its workload
+// credential) or its grantor (by their session); anyone else learns nothing.
+func (s *HostAuthorityServer) GetDelegation(ctx context.Context, req *authorityv1.GetDelegationRequest) (*authorityv1.Delegation, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	var d domain.Delegation
+	if credential := req.GetActor().GetCredential(); credential != "" {
+		w, werr := workload(ctx, credential, "actor")
+		if werr != nil {
+			return nil, werr
 		}
-		if len(scopes) > 0 {
-			return nil, status.Errorf(codes.InvalidArgument, "a renewal of an owner's own capability at %s keeps its authority as it stands and names no scopes; an exchange narrows it", req.GetAudience())
+		d, err = core.Delegation(ctx, req.GetDelegationId(), nil, &w)
+	} else {
+		person, perr := signedInPerson(ctx, "read a delegation")
+		if perr != nil {
+			return nil, perr
 		}
-		// The request's session id is validated and never read: the issuer
-		// assigns the new session (StartRootSession).
-		return s.workContexts.StartRootSession(ctx, &gen.StartRootSessionWorkContextRequest{
-			OrgId: org, ParentWorkContextToken: parentToken, SessionId: uuid.NewString(), Audience: req.GetAudience(), TtlSeconds: ttl,
-		})
+		d, err = core.Delegation(ctx, req.GetDelegationId(), &person, nil)
 	}
-	if len(scopes) == 0 {
-		scopes = hostScopesOf(effectiveScopes(parent))
+	if err != nil {
+		return nil, coreStatus(err)
 	}
-	return s.workContexts.ExchangeAudience(ctx, &gen.ExchangeWorkContextAudienceRequest{
-		OrgId: org, ParentWorkContextToken: parentToken, Audience: req.GetAudience(), AttenuatedScopes: scopes, TtlSeconds: ttl,
-	})
+	return delegationToWire(d), nil
+}
+
+// AttachResource records a resource created through the installation the
+// presented capability was issued through; the kind's serving module asks.
+func (s *HostAuthorityServer) AttachResource(ctx context.Context, req *authorityv1.AttachResourceRequest) (*authorityv1.AttachResourceResponse, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	w, err := workload(ctx, req.GetActor().GetCredential(), "actor")
+	if err != nil {
+		return nil, err
+	}
+	id, err := core.AttachResource(ctx, authority.AttachmentRequest{Token: req.GetToken(), Kind: req.GetResourceKind(), ResourceID: req.GetResourceId(), Store: w})
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	return &authorityv1.AttachResourceResponse{InstallationId: id}, nil
+}
+
+// DetachResource releases a resource its serving module deleted.
+func (s *HostAuthorityServer) DetachResource(ctx context.Context, req *authorityv1.DetachResourceRequest) (*authorityv1.DetachResourceResponse, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	w, err := workload(ctx, req.GetActor().GetCredential(), "actor")
+	if err != nil {
+		return nil, err
+	}
+	id, err := core.DetachResource(ctx, w, req.GetOrganizationId(), req.GetResourceKind(), req.GetResourceId())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	return &authorityv1.DetachResourceResponse{InstallationId: id}, nil
+}
+
+// AuthorizeTransfer decides whether an existing resource joins a solution
+// principal, and records it; the kind's serving module asks with the person's
+// capability.
+func (s *HostAuthorityServer) AuthorizeTransfer(ctx context.Context, req *authorityv1.AuthorizeTransferRequest) (*authorityv1.AuthorizeTransferResponse, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	w, err := workload(ctx, req.GetActor().GetCredential(), "actor")
+	if err != nil {
+		return nil, err
+	}
+	d, err := core.AuthorizeTransfer(ctx, authority.TransferRequest{Token: req.GetToken(), Store: w, Kind: req.GetResourceKind(),
+		ResourceID: req.GetResourceId(), From: req.GetFromOwnerId(), To: req.GetToPrincipalId()})
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	return &authorityv1.AuthorizeTransferResponse{PrincipalId: d.PrincipalID, AuthorizedBy: d.AuthorizedBy}, nil
+}
+
+// HostInstallationServer serves codefly.dev/installation.
+type HostInstallationServer struct {
+	installationv1.UnimplementedInstallationServiceServer
+}
+
+// Current reads only the authenticated module's own active installation, in
+// the tenant of a current parent addressed to it: the module proves itself by
+// its workload credential and the core verifies the parent. It needs no
+// session and exposes no roles or grants.
+func (s *HostInstallationServer) Current(ctx context.Context, req *installationv1.CurrentInstallationRequest) (*installationv1.CurrentInstallation, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	// Current answers a module about itself alone, so a credential that proves
+	// no module is refused the read, whatever made it fail to.
+	actor, err := workload(ctx, req.GetActorCredential(), "the actor")
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, status.Convert(err).Message())
+	}
+	inst, err := core.CurrentInstallation(ctx, req.GetParentToken(), actor)
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	return &installationv1.CurrentInstallation{Id: inst.ID, OrganizationId: inst.Organization, Target: inst.Target,
+		Revision: inst.Revision, Namespace: inst.Organization + "." + inst.Target}, nil
+}
+
+// Review reads the exact authority offer an administrator consents to,
+// without recording consent.
+func (s *HostInstallationServer) Review(ctx context.Context, req *installationv1.ReviewRequest) (*installationv1.ConsentApproval, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	caller, err := signedInPerson(ctx, "review an installation")
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, caller.ID, req.GetOrganizationId()); err != nil {
+		return nil, err
+	}
+	a, err := core.Review(ctx, caller, req.GetOrganizationId(), req.GetTarget())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	return &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest}, nil
+}
+
+// Install installs a solution at the caller's organization under the consent
+// they reviewed; nobody holds a role on it until granted one.
+func (s *HostInstallationServer) Install(ctx context.Context, req *installationv1.InstallRequest) (*installationv1.Installation, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	caller, err := signedInPerson(ctx, "install")
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, caller.ID, req.GetOrganizationId()); err != nil {
+		return nil, err
+	}
+	var approval *domain.ConsentApproval
+	if a := req.GetApproval(); a != nil {
+		approval = &domain.ConsentApproval{TargetID: a.GetTargetId(), Generation: a.GetGeneration(), ExpectedRevision: a.GetExpectedRevision(),
+			OperationID: a.GetOperationId(), Digest: a.GetDigest()}
+	}
+	inst, err := core.Install(ctx, caller, req.GetOrganizationId(), req.GetTarget(), req.GetRole(), req.GetOwnerPersonId(), approval, service.AuthorityInstallStep())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	return installationToWire(core, ctx, inst), nil
+}
+
+// GrantRole grants a person or a team one of the solution's roles.
+func (s *HostInstallationServer) GrantRole(ctx context.Context, req *installationv1.GrantRoleRequest) (*installationv1.Installation, error) {
+	return s.change(ctx, "grant a role", (*authority.Service).GrantRole, authority.RoleRequest{Organization: req.GetOrganizationId(),
+		InstallationID: req.GetInstallationId(), Role: req.GetRole(), PersonID: req.GetPersonId(), TeamID: req.GetTeamId()})
+}
+
+// RevokeRole ends one grant; its subject's capabilities through the installation end with it.
+func (s *HostInstallationServer) RevokeRole(ctx context.Context, req *installationv1.RevokeRoleRequest) (*installationv1.Installation, error) {
+	return s.change(ctx, "revoke a role", (*authority.Service).RevokeRole, authority.RoleRequest{Organization: req.GetOrganizationId(),
+		InstallationID: req.GetInstallationId(), Role: req.GetRole(), PersonID: req.GetPersonId(), TeamID: req.GetTeamId()})
+}
+
+func (s *HostInstallationServer) change(ctx context.Context, what string, do func(*authority.Service, context.Context, authority.Person, authority.RoleRequest) (domain.Installation, error), r authority.RoleRequest) (*installationv1.Installation, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	caller, err := signedInPerson(ctx, what)
+	if err != nil {
+		return nil, err
+	}
+	inst, err := do(core, ctx, caller, r)
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	return installationToWire(core, ctx, inst), nil
+}
+
+// ListRoleGrants answers who holds which role on an installation.
+func (s *HostInstallationServer) ListRoleGrants(ctx context.Context, req *installationv1.ListRoleGrantsRequest) (*installationv1.ListRoleGrantsResponse, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	caller, err := signedInPerson(ctx, "list role grants")
+	if err != nil {
+		return nil, err
+	}
+	grants, err := core.ListRoleGrants(ctx, caller, req.GetOrganizationId(), req.GetInstallationId())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	out := &installationv1.ListRoleGrantsResponse{}
+	for _, g := range grants {
+		out.Grants = append(out.Grants, &installationv1.RoleGrant{Role: g.Role, PersonId: g.PersonID, TeamId: g.TeamID})
+	}
+	return out, nil
+}
+
+// List answers what one organization has installed, for its administrator.
+func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.ListRequest) (*installationv1.ListResponse, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	caller, err := signedInPerson(ctx, "list installations")
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, caller.ID, req.GetOrganizationId()); err != nil {
+		return nil, err
+	}
+	all, err := core.Installations(ctx, caller, req.GetOrganizationId())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	slices.SortFunc(all, func(a, b domain.Installation) int { return strings.Compare(a.ID, b.ID) })
+	out := &installationv1.ListResponse{}
+	for _, inst := range all {
+		out.Installations = append(out.Installations, installationToWire(core, ctx, inst))
+	}
+	return out, nil
+}
+
+// installationToWire is an installation as the interface states it, with the
+// roles its solution declares.
+func installationToWire(core *authority.Service, ctx context.Context, i domain.Installation) *installationv1.Installation {
+	st := map[domain.Status]installationv1.Installation_Status{
+		domain.Pending: installationv1.Installation_STATUS_PENDING, domain.Active: installationv1.Installation_STATUS_ACTIVE, domain.Revoked: installationv1.Installation_STATUS_REVOKED,
+	}[i.Status]
+	out := &installationv1.Installation{Id: i.ID, OrganizationId: i.Organization, Target: i.Target, Status: st, Revision: i.Revision,
+		Role: i.AgentRole, PrincipalId: i.PrincipalID, Namespace: i.Organization + "." + i.Target}
+	if m, err := core.Composed(ctx, i.Target); err == nil {
+		for name := range m.Roles {
+			out.Roles = append(out.Roles, name)
+		}
+		slices.Sort(out.Roles)
+	}
+	return out
+}
+
+func delegationToWire(d domain.Delegation) *authorityv1.Delegation {
+	return &authorityv1.Delegation{DelegationId: d.ID, OrganizationId: d.Organization, Grantor: d.Grantor, Module: d.Module, Purpose: d.Purpose,
+		Active: !d.Revoked, Scopes: scopesToWire(d.Scopes)}
+}
+
+// scopesFromWire converts interface scopes to core's, byte for byte.
+func scopesFromWire(in []*authorityv1.WorkScopeV1) []*basev0.WorkScopeV1 {
+	out := make([]*basev0.WorkScopeV1, 0, len(in))
+	for _, sc := range in {
+		raw, _ := proto.Marshal(sc)
+		c := &basev0.WorkScopeV1{}
+		_ = proto.Unmarshal(raw, c)
+		out = append(out, c)
+	}
+	return out
+}
+
+// scopesToWire converts core's scopes to the interface's, byte for byte.
+func scopesToWire(in []*basev0.WorkScopeV1) []*authorityv1.WorkScopeV1 {
+	out := make([]*authorityv1.WorkScopeV1, 0, len(in))
+	for _, sc := range in {
+		raw, _ := proto.Marshal(sc)
+		c := &authorityv1.WorkScopeV1{}
+		_ = proto.Unmarshal(raw, c)
+		out = append(out, c)
+	}
+	return out
+}
+
+func workContextToWire(in proto.Message) (*authorityv1.WorkContextV1, error) {
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
+	out := &authorityv1.WorkContextV1{}
+	return out, proto.Unmarshal(raw, out)
 }
 
 // credentialRefusal names why a workload credential did not prove a module,
@@ -360,177 +638,6 @@ func credentialRefusal(err error, which string) error {
 		return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err)
 	}
 	return status.Errorf(codes.PermissionDenied, "%s credential refused: %v", which, err)
-}
-
-// bindingAudience is the audience of an issue that names none: an issue
-// through a binding the acting module declares is addressed to that binding's
-// audience, as the interface's callers send it (a hop's ForModule as the
-// workload, its ForChild with the workload as actor). Any other shape names
-// its audience.
-func bindingAudience(ctx context.Context, req *authorityv1.IssueRequest) (string, error) {
-	var credential string
-	switch as := req.GetAs().(type) {
-	case *authorityv1.IssueRequest_Workload:
-		credential = as.Workload.GetCredential()
-	case *authorityv1.IssueRequest_ParentToken, *authorityv1.IssueRequest_Delegation:
-		credential = req.GetActor().GetCredential()
-	}
-	binding := req.GetOperationBindingId()
-	if credential == "" || binding == "" || service == nil {
-		return "", status.Error(codes.InvalidArgument, "an issue names its audience")
-	}
-	prefix, err := service.ModulePrefixOfWorkload(ctx, credential)
-	if err != nil {
-		return "", credentialRefusal(err, "workload")
-	}
-	declared, ok := service.ModulePrincipals()[business.ModulePrincipalID(prefix)].OperationAudiences[binding]
-	if !ok || declared.Audience == "" {
-		return "", status.Errorf(codes.NotFound, "operation binding %q is not declared by %s", binding, prefix)
-	}
-	return declared.Audience, nil
-}
-
-// HostCompositionServer serves codefly.dev/composition.
-type HostCompositionServer struct {
-	compositionv1.UnimplementedCompositionServiceServer
-}
-
-// ApplyManifest authenticates the signed carrier at the delivery owner.
-func (s *HostCompositionServer) ApplyManifest(ctx context.Context, req *compositionv1.ApplyManifestRequest) (*compositionv1.ApplyManifestResponse, error) {
-	if service == nil {
-		return nil, status.Error(codes.Unavailable, "composition service is not wired")
-	}
-	out, err := service.ApplyComposition(ctx, req)
-	if err == nil {
-		return out, nil
-	}
-	httpStatus, reason := solutionDeliveryStatus(err)
-	code := codes.Unavailable
-	switch httpStatus {
-	case http.StatusBadRequest:
-		code = codes.InvalidArgument
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity:
-		code = codes.PermissionDenied
-	case http.StatusConflict:
-		code = codes.FailedPrecondition
-	}
-	return nil, status.Error(code, reason)
-}
-
-// HostInstallationServer serves codefly.dev/installation over the installation service.
-type HostInstallationServer struct {
-	installationv1.UnimplementedInstallationServiceServer
-	installations *InstallationServer
-	service       *business.Service
-}
-
-// NewHostInstallationServer adapts the installation service.
-func NewHostInstallationServer(installations *InstallationServer, service *business.Service) *HostInstallationServer {
-	return &HostInstallationServer{installations: installations, service: service}
-}
-
-// List answers what one organisation has installed: an administrator's read,
-// over the host's organisation-installation listing.
-func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.ListRequest) (*installationv1.ListResponse, error) {
-	actorID, err := requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
-		return nil, err
-	}
-	resp := &installationv1.ListResponse{}
-	for token := ""; ; {
-		out, err := s.installations.ListOrganizationInstallations(ctx, &gen.ListOrganizationInstallationsRequest{OrgId: req.GetOrganizationId(), PageToken: token})
-		if err != nil {
-			return nil, err
-		}
-		for _, row := range out.GetInstallations() {
-			details, err := s.service.ReadHostInstallation(ctx, req.GetOrganizationId(), row.GetInstallation().GetId())
-			if err != nil {
-				return nil, mapInstallationError(err)
-			}
-			resp.Installations = append(resp.Installations, hostInstallationToWire(details))
-		}
-		if out.GetNextPageToken() == "" {
-			break
-		}
-		token = out.GetNextPageToken()
-	}
-	return resp, nil
-}
-
-// Install names the target and the role by name; the host's resolver
-// (InstallTargetByName) reads them from the organisation's catalogue and role
-// catalogue and installs through the host's own install path. A module
-// re-install explicitly approves its current ceiling. A solution the
-// organisation already holds keeps its existing installation lifecycle.
-func (s *HostInstallationServer) Install(ctx context.Context, req *installationv1.InstallRequest) (*installationv1.Installation, error) {
-	actorID, err := requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
-		return nil, err
-	}
-	approval, err := installationApproval(req.GetApproval())
-	if err != nil {
-		return nil, err
-	}
-	installation, installed, err := s.service.InstallTargetByName(ctx, actorID, req.GetOrganizationId(), req.GetTarget(), req.GetRole(), req.GetOwnerPersonId(), approval)
-	switch {
-	case errors.Is(err, business.ErrInstallTargetNotPresent):
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
-	case err != nil:
-		return nil, mapInstallationError(err)
-	case !installed:
-		return nil, status.Errorf(codes.PermissionDenied, "%q is already installed in organization %s, as installation %s", req.GetTarget(), req.GetOrganizationId(), installation.GetId())
-	}
-	details, err := s.service.ReadHostInstallation(ctx, req.GetOrganizationId(), installation.GetId())
-	if err != nil {
-		return nil, mapInstallationError(err)
-	}
-	out := hostInstallationToWire(details)
-	out.Target = req.GetTarget()
-	return out, nil
-}
-
-// GrantToTeam resolves the installation's standing role through the grant owner.
-func (s *HostInstallationServer) GrantToTeam(ctx context.Context, req *installationv1.GrantToTeamRequest) (*installationv1.Installation, error) {
-	actorID, err := requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := requireOrgAdmin(ctx, actorID, req.GetOrganizationId()); err != nil {
-		return nil, err
-	}
-	// Only an active installation is exposed: one still pending its
-	// acknowledgement, or revoked, is refused naming which it is.
-	current, err := s.service.ReadHostInstallation(ctx, req.GetOrganizationId(), req.GetInstallationId())
-	if err != nil {
-		return nil, mapInstallationError(err)
-	}
-	if st := current.Installation.GetStatus(); st != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
-		return nil, status.Errorf(codes.PermissionDenied, "installation %s is %s; only an active installation can be exposed", req.GetInstallationId(), installationStatusWord(st))
-	}
-	details, err := s.service.ExposeHostInstallation(ctx, actorID, req.GetOrganizationId(), req.GetInstallationId(), req.GetTeamId())
-	if err != nil {
-		return nil, mapInstallationError(err)
-	}
-	return hostInstallationToWire(details), nil
-}
-
-// installationStatusWord is an installation's status as a refusal names it.
-func installationStatusWord(st gen.InstallationStatus) string {
-	switch st {
-	case gen.InstallationStatus_INSTALLATION_STATUS_PENDING:
-		return "pending"
-	case gen.InstallationStatus_INSTALLATION_STATUS_REVOKED:
-		return "revoked"
-	case gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE:
-		return "active"
-	}
-	return "not active"
 }
 
 // HostSessionServer serves codefly.dev/session over fixture authentication.
@@ -672,115 +779,13 @@ func accessClaimsOf(token string) (accessClaims, error) {
 	return claims, json.Unmarshal(raw, &claims)
 }
 
-// hostScopesOf is core scopes in the host's own request shape.
-func hostScopesOf(in []*basev0.WorkScopeV1) []*gen.WorkContextScope {
-	out := make([]*gen.WorkContextScope, 0, len(in))
-	for _, sc := range in {
-		out = append(out, &gen.WorkContextScope{ResourceKind: sc.GetResourceKind(), Actions: sc.GetActions(), ResourceIds: sc.GetResourceIds()})
-	}
-	return out
-}
-
-func scopesToHost(in []*authorityv1.WorkScopeV1) []*gen.WorkContextScope {
-	out := make([]*gen.WorkContextScope, 0, len(in))
-	for _, sc := range in {
-		out = append(out, &gen.WorkContextScope{ResourceKind: sc.GetResourceKind(), Actions: sc.GetActions(), ResourceIds: sc.GetResourceIds()})
-	}
-	return out
-}
-
-func workContextToWire(in proto.Message) (*authorityv1.WorkContextV1, error) {
-	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(in)
-	if err != nil {
-		return nil, err
-	}
-	out := &authorityv1.WorkContextV1{}
-	return out, proto.Unmarshal(raw, out)
-}
-
-// installationToWire is an installation as the interface states it. Its target
-// is the name the composition gives what is installed (the presence's route
-// alias, "notes"), the name Install takes and a frontend binds to, never this
-// host's row id for the presence; a row whose presence is gone keeps the id.
-func installationToWire(in *gen.Installation, target string) *installationv1.Installation {
-	st := installationv1.Installation_STATUS_UNSPECIFIED
-	switch in.GetStatus() {
-	case gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE:
-		st = installationv1.Installation_STATUS_ACTIVE
-	case gen.InstallationStatus_INSTALLATION_STATUS_PENDING:
-		st = installationv1.Installation_STATUS_PENDING
-	case gen.InstallationStatus_INSTALLATION_STATUS_REVOKED:
-		st = installationv1.Installation_STATUS_REVOKED
-	}
-	return &installationv1.Installation{
-		Id: in.GetId(), OrganizationId: in.GetOrgId(), Target: cmp.Or(target, in.GetTargetId()), Status: st,
-		AgentPrincipalId: in.GetAgentPrincipalId(),
-	}
-}
-
-// interfaceStatus maps a refusal to a status naming its reason, as the suite
-// requires: every refusal reaches the caller.
+// interfaceStatus maps a session refusal to a status naming its reason.
 func interfaceStatus(err error) error {
 	if _, ok := status.FromError(err); ok {
 		return err
 	}
-	switch {
-	case errors.Is(err, accountsauth.ErrUnknownIdentity):
-		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, workcontext.ErrRevoked), errors.Is(err, workcontext.ErrNoSeal),
-		// The issuer looked and its owner no longer stands: a person who left,
-		// an installation revoked under its agent. A decision, not an outage.
-		errors.Is(err, business.ErrWorkContextPrincipalUnknown), errors.Is(err, business.ErrWorkContextSealUnheld):
-		return status.Error(codes.PermissionDenied, err.Error())
-	case errors.Is(err, workcontext.ErrInvalid), errors.Is(err, workcontext.ErrNotACoreToken), errors.Is(err, workcontext.ErrReplayed):
-		return status.Error(codes.Unauthenticated, err.Error())
-	case errors.Is(err, workcontext.ErrNoBinding):
+	if errors.Is(err, accountsauth.ErrUnknownIdentity) {
 		return status.Error(codes.NotFound, err.Error())
 	}
 	return status.Error(codes.Internal, fmt.Sprintf("%v", err))
-}
-
-// childHop derives a module's hop on a context addressed to it behind the
-// interface: the parent token is the authentication, the actor's credential
-// names the module, and the hop names the binding it exercises (bindingHop:
-// the owner's current grants through that binding). There is one rule for a
-// module hop: a hop naming no binding is refused, as is a parent addressed to
-// another module, both before the parent is verified, so a refused hop spends
-// no single-use parent.
-func (s *HostAuthorityServer) childHop(ctx context.Context, parentToken string, req *authorityv1.IssueRequest) (*gen.IssuedWorkContext, error) {
-	prefix, err := service.ModulePrefixOfWorkload(ctx, req.GetActor().GetCredential())
-	if err != nil {
-		return nil, credentialRefusal(err, "actor")
-	}
-	if err := requireComposed(req.GetAudience()); err != nil {
-		return nil, err
-	}
-	if req.GetOperationBindingId() == "" {
-		return nil, status.Errorf(codes.PermissionDenied, "a module's hop names the binding it exercises; %s named none", prefix)
-	}
-	// The parent's claims are only read to refuse it; nothing is issued on them.
-	if decoded, derr := workcontext.Decode(parentToken); derr == nil && decoded.Context().GetAudience() != prefix {
-		return nil, status.Errorf(codes.PermissionDenied, "%s hops only on a token addressed to it; this one is addressed to %s", prefix, decoded.Context().GetAudience())
-	}
-	if err := requireDeclaredHopBinding(prefix, req); err != nil {
-		return nil, err
-	}
-	// The audience guards every mint runs, before the parent is spent.
-	if err := requireVocabularyAudience(ctx, req.GetAudience()); err != nil {
-		return nil, err
-	}
-	parent, err := s.workContexts.verifyFor(ctx, parentToken, prefix)
-	if err != nil {
-		return nil, interfaceStatus(err)
-	}
-	if err := s.workContexts.requireModuleChainStands(ctx, parent.Context()); err != nil {
-		return nil, err
-	}
-	return s.bindingHop(ctx, prefix, parent, req)
-}
-
-func hostInstallationToWire(details *business.HostInstallationDetails) *installationv1.Installation {
-	out := installationToWire(details.Installation, details.Target)
-	out.Role, out.Revision, out.TeamIds = details.Role, details.Revision, details.TeamIDs
-	return out
 }

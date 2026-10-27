@@ -24,7 +24,7 @@ import (
 //
 // The interactive write stays (PutModuleEnvelope): a platform super_admin with
 // fresh MFA can still write a higher revision. The two share one writer, so a
-// delivered revision is classified, witnessed, fenced and revoked exactly like
+// delivered revision is written, fenced and revoked exactly like
 // an interactive one, and neither relaxes the other.
 
 // ErrSolutionDeliverySignerNotRelease: the envelope verifies under a key this
@@ -156,10 +156,8 @@ func (s *Service) ReceiveModuleEnvelopeDelivery(
 		Signer: signer, OwnershipDomain: candidate.Host.Domain,
 		Payload: delivered.Payload(), Envelope: bytes.Clone(signed.Envelope),
 	}
-	// A delivered NARROWING is witnessed like an interactive one: on a host
-	// with no policy log it is refused (ErrPolicyLogUnreachable) exactly as
-	// PutModuleEnvelope refuses it, and nothing is written. Delivery does not
-	// bypass the witness; the composition's envelope waits for the log.
+	// A delivered NARROWING applies like an interactive one, through the one
+	// writer PutModuleEnvelope also uses.
 	err = s.writeModuleEnvelope(ctx, moduleEnvelopeWrite{
 		envelope: envelope, record: record, expectedRevision: committed,
 		actorID: moduleEnvelopeDeliveryActor, actorType: ActorTypeSystem,

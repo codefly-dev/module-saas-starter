@@ -48,8 +48,8 @@ const HostApplyManifestMethod = "/host.composition.v1.CompositionService/ApplyMa
 const HostRegisterAdmissionKeyMethod = "/host.authority.v1.AuthorityService/RegisterAdmissionKey"
 
 // The installation-owned resource methods (authority 0.3.0), each called by a
-// kind's serving module with its workload credential. This host refuses them
-// by name until it records installation-owned resources.
+// kind's serving module with its workload credential, decided by the
+// authority core.
 const (
 	HostAttachResourceMethod    = "/host.authority.v1.AuthorityService/AttachResource"
 	HostDetachResourceMethod    = "/host.authority.v1.AuthorityService/DetachResource"
@@ -130,9 +130,16 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		p.ResponseSensitivity = policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL
 		return p
 	}
-	// The policy describes the grant owner's transactional emission; it does
-	// not emit a second event at the interface adapter.
-	exposureGrant := adminWrite("saas.scope.granted")
+	// A role change is an administrator's or the installation's installer's,
+	// at the organization the session was opened at: the core decides both,
+	// answering another organization's installation and an absent one alike,
+	// so the perimeter adds no tenant floor that would answer differently.
+	// The core journals the change in its own transaction.
+	roleChange := func(event EventType) *policyv1.MethodPolicy {
+		p := adminWrite(string(event))
+		p.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE
+		return p
+	}
 	// A workload's call authenticated by the credential in its request, from
 	// inside the cell (ServedInClusterOnly).
 	workloadCall := func(request policyv1.Sensitivity) *policyv1.MethodPolicy {
@@ -147,12 +154,24 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 			PlatformRole:        policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
 		}
 	}
+	// A resource change is journaled by the core in the transaction that makes it.
+	resourceChange := func(event EventType) *policyv1.MethodPolicy {
+		p := workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET)
+		p.Audit = &policyv1.AuditPolicy{Events: []string{string(event)}, Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS}
+		return p
+	}
 	admissionKeyRegistration := workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET)
 	admissionKeyRegistration.Audit = &policyv1.AuditPolicy{
 		Events: []string{string(EventHopAdmissionKeyPublished)}, Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS,
 	}
 	return map[string]*policyv1.MethodPolicy{
-		"/host.authority.v1.AuthorityService/Issue": authenticatedMint("saas.work_context.task_started"),
+		// Every issue is recorded before it is handed out: a child hop as a child
+		// session, every other shape as a task started.
+		"/host.authority.v1.AuthorityService/Issue": func() *policyv1.MethodPolicy {
+			p := authenticatedMint(string(EventWorkContextTaskStarted))
+			p.Audit.Events = append(p.Audit.Events, string(EventWorkContextChildSession))
+			return p
+		}(),
 		// Check is authenticated by the token it checks: the caller is whoever holds it,
 		// and the answer says nothing the token does not already carry but its standing.
 		"/host.authority.v1.AuthorityService/Check": read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
@@ -161,9 +180,9 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		// key travels. A key's first publication is audited in the transaction
 		// that publishes it; its renewal every lease is not an event.
 		HostRegisterAdmissionKeyMethod: admissionKeyRegistration,
-		HostAttachResourceMethod:       workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
-		HostDetachResourceMethod:       workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
-		HostAuthorizeTransferMethod:    workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
+		HostAttachResourceMethod:       resourceChange(EventAuthorityResourceAttached),
+		HostDetachResourceMethod:       resourceChange(EventAuthorityResourceDetached),
+		HostAuthorizeTransferMethod:    resourceChange(EventAuthorityResourceTransferred),
 		// ListResources is authenticated by the capability it is asked about, like Check.
 		"/host.authority.v1.AuthorityService/ListResources": read(policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// A delegation names no organisation: it is the bearer's, so the floor is
@@ -184,9 +203,19 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 			ResponseSensitivity: policyv1.Sensitivity_SENSITIVITY_INTERNAL,
 			PlatformRole:        policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
 		},
-		"/host.installation.v1.InstallationService/Install":     adminWrite("saas.installation.created"),
-		"/host.installation.v1.InstallationService/GrantToTeam": exposureGrant,
-		"/host.installation.v1.InstallationService/List":        read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's view is the entitlement listing
+		"/host.installation.v1.InstallationService/Install": func() *policyv1.MethodPolicy {
+			p := adminWrite(string(EventAuthorityInstallationRequested))
+			p.Audit.Events = append(p.Audit.Events, string(EventAuthorityInstallationActivated))
+			return p
+		}(),
+		// A module authenticates by its workload credential and a current parent
+		// addressed to it; it reads its own installation's metadata and nothing more.
+		"/host.installation.v1.InstallationService/Current":        workloadCall(policyv1.Sensitivity_SENSITIVITY_SECRET),
+		"/host.installation.v1.InstallationService/Review":         read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		"/host.installation.v1.InstallationService/GrantRole":      roleChange(EventAuthorityRoleGranted),
+		"/host.installation.v1.InstallationService/RevokeRole":     roleChange(EventAuthorityRoleRevoked),
+		"/host.installation.v1.InstallationService/ListRoleGrants": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		"/host.installation.v1.InstallationService/List":           read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's view is the entitlement listing
 		// Current is the caller's own session: authenticated by the bearer it
 		// describes, organisation-less like the session itself may be.
 		"/host.session.v1.SessionService/Current": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
@@ -230,9 +259,15 @@ const ServiceAPIPackage = "saas.accounts.v1"
 
 // implementedHere reports whether this service serves a descriptor. Every
 // accounts service is served; of the interface packages, InstallableService is
-// the solution's side of the installation interface and is not served here.
+// the solution's side of the installation interface, and OfferService is the
+// local authority's setup read beside it (codefly.dev/installation declares
+// InstallationService alone), so neither is served here.
 func implementedHere(service protoreflect.ServiceDescriptor) bool {
-	return string(service.FullName()) != "host.installation.v1.InstallableService"
+	switch string(service.FullName()) {
+	case "host.installation.v1.InstallableService", "host.installation.v1.OfferService":
+		return false
+	}
+	return true
 }
 
 // interfacePackage reports whether a proto package is one of the published host
@@ -252,12 +287,16 @@ var interfaceDescriptions = map[string]string{
 	"AuthorityService/Check":                "Verify a presented Work Context for the audience the caller is, re-checking the revision and the seal live.",
 	"AuthorityService/Keys":                 "Return the issuer and the public keys a verifier pins: the Work Context keys and, apart from them, the hop's admission keys.",
 	"AuthorityService/RegisterAdmissionKey": "Publish the hop's admission public key in Keys for one lease; only the hop's workload registers one.",
-	"AuthorityService/AttachResource":       "Record that one resource belongs to an installation; refused by name until this host records installation-owned resources.",
-	"AuthorityService/DetachResource":       "Release one resource from the installation that owns it; refused by name until this host records installation-owned resources.",
-	"AuthorityService/AuthorizeTransfer":    "Decide whether an existing resource may join an installed solution's principal; refused by name until this host records installation-owned resources.",
+	"AuthorityService/AttachResource":       "Record that one resource created through an installation belongs to it; the kind's serving module asks.",
+	"AuthorityService/DetachResource":       "Release one deleted resource from the installation that owns it; the kind's serving module asks.",
+	"AuthorityService/AuthorizeTransfer":    "Decide whether an existing resource may join an installed solution's principal, and record it.",
 	"CompositionService/ApplyManifest":      "Deliver one module instance's manifest at one generation; the ceiling is the manifest.",
-	"InstallationService/Install":           "Install one target at one organisation under the least role it needs; pending until its install step is acknowledged.",
-	"InstallationService/GrantToTeam":       "Expose an installation to a team under the installation's role.",
+	"InstallationService/Current":           "Read the authenticated module's own active installation in the tenant of a current parent addressed to it.",
+	"InstallationService/Install":           "Install one solution at one organisation under the consent its administrator reviewed; pending until its install step converges.",
+	"InstallationService/Review":            "Read the exact authority offer an administrator consents to, without recording consent.",
+	"InstallationService/GrantRole":         "Grant a person or a team one of an installed solution's roles.",
+	"InstallationService/RevokeRole":        "Revoke one role grant; its subject's capabilities through the installation end.",
+	"InstallationService/ListRoleGrants":    "List who holds which role on one installation.",
 	"InstallationService/List":              "List what one organisation has installed.",
 	"AuthorityService/ListResources":        "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",
 	"AuthorityService/Delegate":             "Record a signed-in person's grant to a module, within what they hold.",

@@ -139,12 +139,12 @@ and restoring the binding invalidates an already issued child. Missing or
 unavailable owner state cannot fall back to an ordinary exchange.
 
 Changing the mode of an existing binding is a policy restriction, including
-adding it where the mode was previously absent. The existing witnessed policy
-log path must authorize that envelope transition; adding a JSON field is not
-an additive grant. An entirely new binding remains subject to the normal grant
-and installation checks. A host without the configured policy-log witness
-refuses a mode migration and leaves the stored envelope revision unchanged.
-No local substitute witness or automatically inferred migration is supported.
+adding it where the mode was previously absent: a platform administrator or a
+signed delivery writes it as a new envelope revision through the one envelope
+writer, and like every narrowing it applies directly, revoking what the new
+ceiling no longer allows in the same transaction. Adding a JSON field is not an
+additive grant. An entirely new binding remains subject to the normal grant and
+installation checks. No automatically inferred migration is supported.
 
 **Installed module actors.**
 
