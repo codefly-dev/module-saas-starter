@@ -70,6 +70,28 @@ var (
 	ErrModulePrincipalBindingOmitted = errors.New("module operation audience omitted from the registry")
 )
 
+// ModulePrincipalOmission is one principal a pass left out of the registry
+// whole, the manifest that asked for it, and why. It is a value for the same
+// reason ModuleBindingOmission is: every binding that manifest asked for is
+// withheld with it, and the row an operator reads must carry this reason, not
+// only the pass's log line.
+type ModulePrincipalOmission struct {
+	Prefix     string
+	Manifest   string
+	Generation uint64
+	Reason     error
+}
+
+func (o ModulePrincipalOmission) Error() string {
+	return fmt.Sprintf("%s: %q (binding %q generation %d): %s",
+		ErrModulePrincipalOmitted, o.Prefix, o.Manifest, o.Generation, o.Reason)
+}
+
+// Unwrap keeps errors.Is finding the sentinel and the particular reason.
+func (o ModulePrincipalOmission) Unwrap() []error {
+	return []error{ErrModulePrincipalOmitted, o.Reason}
+}
+
 // ModuleBindingOmission is one operation binding an applied, live manifest asks
 // for that a pass could not put in the registry: the envelope allows no such
 // binding, allows it on another audience, leaves it with no valid audience, or
@@ -287,8 +309,9 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		}
 		prefix := manifest.Authority.Principal
 		omit := func(reason error) {
-			refusals = append(refusals, fmt.Errorf("%w: %q (binding %q generation %d): %w",
-				ErrModulePrincipalOmitted, prefix, manifest.Binding, manifest.Generation, reason))
+			refusals = append(refusals, ModulePrincipalOmission{
+				Prefix: prefix, Manifest: manifest.Binding, Generation: manifest.Generation, Reason: reason,
+			})
 		}
 		if bindings := askedBy[prefix]; len(bindings) > 1 {
 			named := slices.Clone(bindings)
@@ -348,10 +371,15 @@ func withheldModuleAuthority(
 	manifests []*solutionhost.ModuleManifest, registry ModulePrincipalRegistry, refusals []error,
 ) ([]ModuleBindingOmission, map[string]string) {
 	named := map[string]ModuleBindingOmission{}
+	principals := map[string]ModulePrincipalOmission{}
 	for _, refusal := range refusals {
 		var omission ModuleBindingOmission
 		if errors.As(refusal, &omission) {
 			named[omission.Prefix+"\x00"+omission.BindingID] = omission
+		}
+		var principal ModulePrincipalOmission
+		if errors.As(refusal, &principal) {
+			principals[principal.Prefix+"\x00"+principal.Manifest] = principal
 		}
 	}
 	var withheld []ModuleBindingOmission
@@ -369,15 +397,26 @@ func withheldModuleAuthority(
 			}
 			omission, reported := named[prefix+"\x00"+asked.ID]
 			if !reported {
+				// The principal never reached the registry. When this pass
+				// omitted it by name, that name is the reason, so the row says
+				// why rather than only that the entry is missing.
+				reason := errors.New("the registry holds no entry for this module principal, so it granted none of its bindings")
+				if principal, omitted := principals[prefix+"\x00"+manifest.Binding]; omitted {
+					reason = fmt.Errorf("%w: %w", reason, principal.Reason)
+				}
 				omission = ModuleBindingOmission{
 					Prefix: prefix, BindingID: asked.ID, Manifest: manifest.Binding, Generation: manifest.Generation,
-					Reason: errors.New("the registry holds no entry for this module principal, so it granted none of its bindings"),
+					Reason: reason,
 				}
 			}
 			withheld = append(withheld, omission)
 			missing = append(missing, omission.Error())
 		}
-		if len(missing) > 0 {
+		switch principal, omitted := principals[prefix+"\x00"+manifest.Binding]; {
+		case omitted && len(missing) > 0:
+			// One reason withholds every binding: say it once, not per binding.
+			reasons[manifest.Binding] = fmt.Sprintf("%s; so all %d bindings it asks for are withheld", principal.Error(), len(missing))
+		case len(missing) > 0:
 			reasons[manifest.Binding] = strings.Join(missing, "; ")
 		}
 	}
