@@ -67,6 +67,28 @@ This does not by itself make a rolling backend serve immutable assets: delivery
 must also bind the resolved endpoint and packaged frontend to the same build.
 The browser cache tests do not qualify that producer/deployment boundary.
 
+## The solution Setup tab
+
+Every `/s/<id>` page has a Setup tab beside App (and Dashboard): the solution's
+roles, what each grants (scopes → module operations → agent tools, and the
+permission ceiling) and who holds them. It renders the kit's `<SolutionSetup>`
+(`@codefly-dev/saas-ui/solution`), the one Setup UI every host renders — the
+local authority's setup page and solution playgrounds mount the same component
+— through `SolutionSetupPanel`, which adds only what this host knows: the
+session's organization, the people and teams it can name, and, on the admin
+installation page, this host's own unmet conditions. Every fact and refusal on
+the tab is the authority's answer through the host installation interface. The
+solution is named by its target, its registered route alias.
+
+The browser reaches that interface at exactly the procedures the local
+authority's edge serves a browser (`src/lib/host-setup-procedures.ts`):
+InstallationService List, Review, ListRoleGrants, GrantRole, RevokeRole and
+OfferService ListOffers, ReviewOffer. `src/proxy.ts` forwards them from a host
+page and the solution proxy from a remote's `apiBase`, both to the gateway
+root; Install and Current are not forwarded. The admin installation page keeps
+this host's own team access card (its installation record and the team grants
+the gateway admits by) beside the shared component.
+
 ## Three projections, deliberately separate
 
 Two of them are **per viewer** (issue #949): they answer the solutions the
@@ -99,7 +121,8 @@ the organization. `src/lib/auth-session.ts` can read an `org` claim, but
 `decodeJWTPayload` only base64-decodes — it verifies nothing — so a route that
 narrowed on it would let a caller read another tenant's menu by editing one field.
 These `/api/*` paths are also not proxied through the gateway (`src/proxy.ts`
-forwards `/v1/*` and `/saas.accounts.v1.*` only), so no `ext_authz` stamp reaches
+forwards `/v1/*`, `/saas.accounts.v1.*` and the Setup tab's seven host
+installation procedures only), so no `ext_authz` stamp reaches
 them either. `src/solutions/entitlements.ts` therefore forwards the caller's
 credential to `GET /solutions/_entitlements` on the gateway, which authenticates
 it, projects the organization and viewer from its own check, and answers from

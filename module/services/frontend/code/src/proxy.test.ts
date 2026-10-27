@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { HOST_SETUP_PROCEDURES } from "@/lib/host-setup-procedures";
 import { isPublic } from "./proxy";
 
 describe("public paths", () => {
@@ -54,5 +55,26 @@ describe("public paths", () => {
 		// stays behind the redirect.
 		expect(isPublic("/oauth2/authorize")).toBe(true);
 		expect(isPublic("/oauth2/consent")).toBe(false);
+	});
+
+	it("forwards the Setup tab's installation procedures to the gateway, and no other host procedure", () => {
+		// The solution Setup tab reads and changes role grants through the host
+		// installation interface, as the signed-in person: the gateway decides.
+		for (const pathname of HOST_SETUP_PROCEDURES) {
+			expect(isPublic(pathname), pathname).toBe(true);
+		}
+		// What the local authority's edge does not serve a browser is not
+		// forwarded here either: installing stays behind the host's consent
+		// form, Current is a module's call, and nothing else of the package or
+		// the session interface gains a route.
+		for (const pathname of [
+			"/host.installation.v1.InstallationService/Install",
+			"/host.installation.v1.InstallationService/Current",
+			"/host.installation.v1.InstallableService/Install",
+			"/host.session.v1.SessionService/SignIn",
+			"/host.authority.v1.AuthorityService/Issue",
+		]) {
+			expect(isPublic(pathname), pathname).toBe(false);
+		}
 	});
 });

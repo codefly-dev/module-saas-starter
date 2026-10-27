@@ -1,5 +1,6 @@
 "use client";
 
+import type { SetupCondition } from "@codefly-dev/saas-ui/solution";
 import { ArrowLeft, Layers, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
@@ -15,7 +16,6 @@ import {
 	Badge,
 	Banner,
 	Button,
-	buttonVariants,
 	Card,
 	CardContent,
 	CardDescription,
@@ -39,6 +39,7 @@ import {
 } from "../service/mutations";
 import { useInstallations } from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
+import { SolutionSetupPanel } from "./solution-setup-panel";
 import { Fact } from "./solution-installations-page";
 
 /**
@@ -138,6 +139,37 @@ function InstallationSetup({
 	const [carried, setCarried] =
 		useState<GrantInstallationToTeamResponse | null>(null);
 	const name = row.target?.routeAlias || "this installation";
+	const target = row.target?.routeAlias ?? "";
+	// The host's own unmet conditions, in the words of whoever owns each, handed
+	// to the shared Setup UI: it renders them beside the authority's answers.
+	const conditions: SetupCondition[] = (row.readiness?.unmet ?? []).map(
+		(condition) => {
+			const act = affordance(condition);
+			return {
+				// The host sorts conditions by kind then subject, and a source is
+				// identified by its id — so kind, subject and source id name one
+				// condition and keep naming it across refreshes.
+				key: `${condition.kind}:${condition.subject}:${condition.sourceId}`,
+				heading: conditionHeading(condition.kind),
+				subject: condition.subject || undefined,
+				detail: condition.detail,
+				clearedBy: clearedByText(condition.clearedBy),
+				action:
+					act.kind === "perform"
+						? {
+								kind: "perform",
+								label: act.label,
+								onPerform: () =>
+									retry.mutateAsync(installationId).then(() => {
+										toast.success(`${name} installation pending`);
+									}),
+							}
+						: act.kind === "elsewhere"
+							? { kind: "link", label: act.label, href: act.href }
+							: { kind: "note", label: act.label },
+			};
+		},
+	);
 
 	return (
 		<div className="space-y-6">
@@ -151,19 +183,21 @@ function InstallationSetup({
 				</Banner>
 			)}
 
+			<SolutionSetupPanel target={target} conditions={conditions} />
+
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">
-						What it is, and is it ready?
-					</CardTitle>
+					<CardTitle className="text-base">Team access on this host</CardTitle>
 					<CardDescription>
-						Readiness is about this {entryKindText(row).toLowerCase()} working.
-						The record&apos;s own health — active, owned, granted — is one
-						condition among the others below, not the answer.
+						This host&apos;s own installation record and the teams it admits
+						to the solution, at which role. A team granted here holds everything
+						that role permits beneath this installation&apos;s authority root; a
+						team reaching it from a grant above is real reach that was not
+						granted here. The solution&apos;s own roles are granted above.
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-3">
-					<dl className="grid gap-3 sm:grid-cols-3">
+					<dl className="grid gap-3 sm:grid-cols-4">
 						<div>
 							<dt className="text-xs uppercase text-muted-foreground">
 								Release
@@ -188,108 +222,17 @@ function InstallationSetup({
 								{fact ? <Fact view={fact.health} /> : null}
 							</dd>
 						</div>
+						<div>
+							<dt className="text-xs uppercase text-muted-foreground">
+								Readiness
+							</dt>
+							<dd className="mt-1">
+								<Badge tone={summary.tone} dot aria-label="Readiness">
+									{summary.text}
+								</Badge>
+							</dd>
+						</div>
 					</dl>
-					<Badge tone={summary.tone} dot aria-label="Readiness">
-						{summary.text}
-					</Badge>
-				</CardContent>
-			</Card>
-
-			<Card>
-				<CardHeader>
-					<CardTitle className="text-base">
-						What does it still need from a person?
-					</CardTitle>
-					<CardDescription>
-						Each condition is in the words of whoever owns it, with who can
-						clear it and what clears it — or plainly that nothing here can.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{summary.ready ? (
-						<p className="py-4 text-sm text-muted-foreground">
-							Nothing. Every condition this host can check is met.
-						</p>
-					) : (
-						<ul className="space-y-4" aria-label="Unmet conditions">
-							{(row.readiness?.unmet ?? []).map((condition) => {
-								const act = affordance(condition);
-								return (
-									<li
-										// The host sorts conditions by kind then subject, and a
-										// source is identified by its id — so kind, subject and
-										// source id name one condition and keep naming it across
-										// refreshes.
-										key={`${condition.kind}:${condition.subject}:${condition.sourceId}`}
-										className="rounded-lg border p-3"
-									>
-										<p className="font-medium">
-											{conditionHeading(condition.kind)}
-											{condition.subject && (
-												<span className="ml-1 font-mono text-sm text-muted-foreground">
-													{condition.subject}
-												</span>
-											)}
-										</p>
-										<p className="mt-1 text-sm text-muted-foreground">
-											{condition.detail}
-										</p>
-										<p className="mt-2 text-xs text-muted-foreground">
-											Cleared by: {clearedByText(condition.clearedBy)}
-										</p>
-										<div className="mt-2">
-											{act.kind === "perform" ? (
-												<Button
-													size="sm"
-													variant="outline"
-													disabled={retry.isPending}
-													onClick={() => {
-														setRefusal(null);
-														retry.mutate(installationId, {
-															onSuccess: () =>
-																toast.success(`${name} installation pending`),
-															onError: (error) =>
-																setRefusal(hostRefusal(error)),
-														});
-													}}
-												>
-													{act.label}
-												</Button>
-											) : act.kind === "elsewhere" ? (
-												<Link
-													href={act.href}
-													className={buttonVariants({
-														variant: "outline",
-														size: "sm",
-													})}
-												>
-													{act.label}
-												</Link>
-											) : (
-												<p className="text-sm italic text-muted-foreground">
-													{act.label}
-												</p>
-											)}
-										</div>
-									</li>
-								);
-							})}
-						</ul>
-					)}
-				</CardContent>
-			</Card>
-
-			<Card>
-				<CardHeader>
-					<CardTitle className="text-base">Who may reach it?</CardTitle>
-					<CardDescription>
-						The teams a grant reaches here, at which role. A team granted here
-						holds everything that role permits beneath this installation&apos;s
-						authority root; a team reaching it from a grant above is real reach
-						that was not granted here.
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-3">
 					{fact && fact.grantedTeams.length === 0 && (
 						<p className="text-sm text-muted-foreground">
 							No team is granted here, so no member reaches it through this

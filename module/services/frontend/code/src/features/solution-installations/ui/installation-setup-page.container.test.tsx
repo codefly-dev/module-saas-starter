@@ -109,6 +109,10 @@ function serve(installationsBody: JsonBodyType) {
 			HttpResponse.json(roles),
 		),
 		http.post(rpc("TeamService", "ListTeams"), () => HttpResponse.json(teams)),
+		// The shared Setup UI's read; a test about it answers it itself.
+		http.post("http://localhost:3000/host.installation.v1.OfferService/ReviewOffer", () =>
+			HttpResponse.json({ code: "not_found", message: '"suite" is not delivered here' }, { status: 404 }),
+		),
 		http.post(
 			rpc("InstallationService", "GrantInstallationToTeam"),
 			async ({ request }) => {
@@ -298,4 +302,44 @@ it("grants once, and reports what that grant carried", async () => {
 	expect(
 		await screen.findByText(/This organisation has not installed notes\./),
 	).toBeTruthy();
+});
+
+// The page mounts the one Setup UI for this installation's solution: the
+// authority's answer through the host installation interface, at the
+// organization the session is at, beside this host's own team access.
+it("shows the solution's roles, what they grant and who holds them, from the authority", async () => {
+	serve({ installations: [installation({ readiness: { ready: true, unmet: [] } })] });
+	const asked: { procedure: string; body: unknown }[] = [];
+	const host = (procedure: string, answer: JsonBodyType) =>
+		http.post(`http://localhost:3000/host.installation.v1.${procedure}`, async ({ request }) => {
+			asked.push({ procedure, body: await request.json() });
+			return HttpResponse.json(answer);
+		});
+	server.use(
+		host("OfferService/ReviewOffer", {
+			target: "suite",
+			approval: { targetId: "suite", generation: "3", digest: "sha256:suite" },
+			installation: { id: "core-suite", organizationId: "org-1", target: "suite", status: "STATUS_ACTIVE", revision: "2", role: "viewer" },
+			ceiling: [{ binding: "documents", module: "documents", scopes: [{ resourceKind: "example-records", actions: ["read"] }] }],
+			roles: [
+				{
+					name: "viewer",
+					scopes: [{ resourceKind: "suite.page", actions: ["read"] }],
+					capabilities: [{ module: "suite", operation: "GET /pages/{id}", requires: [{ resourceKind: "suite.page", actions: ["read"] }] }],
+				},
+			],
+		}),
+		host("InstallationService/ListRoleGrants", { grants: [{ role: "viewer", teamId: SUPPORT_TEAM }] }),
+	);
+	render();
+
+	expect(await screen.findByRole("heading", { name: "Role: viewer" })).toBeTruthy();
+	expect(await screen.findByText("GET /pages/{id}")).toBeTruthy();
+	expect(await screen.findByText("viewer · Team Support")).toBeTruthy();
+	expect(screen.getByText("Team access on this host")).toBeTruthy();
+	expect(asked[0]).toEqual({ procedure: "OfferService/ReviewOffer", body: { organizationId: "org-1", target: "suite" } });
+	expect(asked[1]).toEqual({
+		procedure: "InstallationService/ListRoleGrants",
+		body: { organizationId: "org-1", installationId: "core-suite" },
+	});
 });

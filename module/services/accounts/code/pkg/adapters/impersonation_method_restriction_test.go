@@ -99,7 +99,7 @@ func TestRestrictedProceduresAreDeniedOnlyWhileImpersonating(t *testing.T) {
 	withoutCentralEnforcement(t)
 
 	restricted := restrictedProcedures(t)
-	require.Len(t, restricted, 68, "the declared restriction set changed; confirm it against AUTHZ_MATRIX.md") // +11: Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, Current of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
+	require.Len(t, restricted, 70, "the declared restriction set changed; confirm it against AUTHZ_MATRIX.md") // +13: Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, Current, ListOffers, ReviewOffer of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
 
 	for _, procedure := range restricted {
 		t.Run(procedure, func(t *testing.T) {

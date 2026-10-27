@@ -17,7 +17,8 @@ import { gatewayOrigin } from "@/lib/gateway-endpoint";
  * organization read from a claim in a route handler is an organization the caller
  * chose, and reading another tenant's menu would be a matter of editing one
  * field. These routes are also not proxied through the gateway (`src/proxy.ts`
- * forwards `/v1/*` and `/saas.accounts.v1.*`; every `/api/*` path is served
+ * forwards `/v1/*`, `/saas.accounts.v1.*` and the Setup tab's host procedures;
+ * every `/api/*` path is served
  * in-process), so nothing stamps a verified identity on the incoming request
  * either — and a caller-supplied `x-org-id` is exactly what this app strips
  * elsewhere.

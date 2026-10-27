@@ -1,3 +1,4 @@
+import { isHostSetupProcedure } from "@/lib/host-setup-procedures";
 import { gatewayBase } from "@/lib/gateway-endpoint";
 
 import {
@@ -120,10 +121,13 @@ async function handler(
 
 	const suffix = (path ?? []).map(encodeURIComponent).join("/");
 	const search = new URL(request.url).search;
+	// The host's own Connect procedures, at the gateway root: its saas.*
+	// services, and the Setup tab's host installation procedures a solution
+	// mounting `<SolutionSetup binding>` calls over this same base.
 	const platformProcedure =
 		/^saas\.[A-Za-z_][A-Za-z0-9_]*\.v1\.[A-Za-z_][A-Za-z0-9_]*\/[A-Za-z_][A-Za-z0-9_]*$/.test(
 			suffix,
-		);
+		) || isHostSetupProcedure(`/${suffix}`);
 	// Both kinds use the same page and asset loader. A module's data requests
 	// stay on the module gateway surface, preserving its audience and checks.
 	// The gateway independently restricts the common asset route to public

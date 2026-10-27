@@ -198,6 +198,66 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
   answers the directory's label or `undefined`, never "You" — a kit decides that
   from the viewer it is given — and never `""`.
 
+## Solution setup: `<SolutionSetup>`
+
+A solution's Setup tab: is it ready, what each of its roles grants — scopes →
+module operations → agent tools, and the permission ceiling — and who holds
+them. It is the **only** Setup UI: the SaaS host's solution tab and admin
+installation page, the local authority's setup page and every solution
+playground render this component, so a developer learns role setup once and it
+looks the same everywhere. Exported from `@codefly-dev/saas-ui/solution` and
+the package root.
+
+```tsx
+import { SolutionSetup } from "@codefly-dev/saas-ui/solution";
+
+<SolutionSetup
+	transport={transport}            // or binding={solutionBinding}
+	organizationId={organizationId}  // the organization the session is at
+	target="example-pages"           // the solution's name in the composition
+	subjects={[{ kind: "team", id: "team-1", label: "Finance" }]} // optional
+	conditions={[]}                  // optional: the host's own unmet conditions
+/>
+```
+
+**The transport contract.** The component calls the host installation
+interface (`host.installation.v1`) with its generated client and nothing else.
+A host supplies a Connect transport — `transport`, or a `binding` whose
+`apiBase` reaches the host — on which these procedures are served to the
+signed-in person, as the person:
+
+| Procedure | Used for |
+|---|---|
+| `OfferService/ReviewOffer` | the solution's roles, operations, tools, ceiling and its installation at `organizationId` |
+| `InstallationService/ListRoleGrants` | who holds which role |
+| `InstallationService/GrantRole`, `RevokeRole` | granting and revoking a role to a person or a team |
+
+The SaaS host serves them through its gateway (the browser paths
+`/host.installation.v1.<Service>/<Method>`); the local authority's edge serves
+the same paths over Connect on its own origin, from the signed-in session.
+`Install` is not called: installing stays behind the host's own consent form.
+
+**The authority decides; the page shows.** Who may read or change what is the
+authority's answer, never a check here: an administrator reads the offer with
+its consent tuple and may grant; a member holding a role reads what it grants,
+read-only; anyone else sees the authority's one refusal. Every refusal is shown
+with its code and the authority's reason, verbatim, where the answer would have
+been. A host that composes no tool bindings answers `tools_composed: false`, and
+the page says so instead of listing no tool.
+
+**What a host adds.** Only what it knows and the authority does not: the
+organization its session is at (`organizationId`), the people and teams it can
+name (`subjects`; without them the page grants to an id and names holders by
+id), and its own unmet conditions (`conditions`: heading, detail, who clears
+it, and a link, an act, or a note). Nothing else is host-specific: no host
+context, no host role gate, and only this kit's own components and tokens, so
+it renders identically in any shell.
+
+`useSolutionSetup(transport, organizationId, target)` and `setupClients` are the
+same reads without the UI. Stories (`stories/solution-setup.stories.tsx`) render
+each section from a local-authority-shaped and a SaaS-shaped answer — the same
+messages, over an in-memory transport speaking the real wire format.
+
 ## Datasources
 
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or

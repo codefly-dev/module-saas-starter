@@ -216,6 +216,13 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		"/host.installation.v1.InstallationService/RevokeRole":     roleChange(EventAuthorityRoleRevoked),
 		"/host.installation.v1.InstallationService/ListRoleGrants": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		"/host.installation.v1.InstallationService/List":           read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL), // an administrator's read; a member's view is the entitlement listing
+		// The setup read beside the installation interface. Listing what is on
+		// offer is an administrator's read. Reviewing one offer is the core's to
+		// decide (an administrator, and whoever else it lets read what the
+		// solution they use grants), so the perimeter adds no tenant floor that
+		// would answer differently, as for the role grants.
+		"/host.installation.v1.OfferService/ListOffers":  read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		"/host.installation.v1.OfferService/ReviewOffer": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
 		// Current is the caller's own session: authenticated by the bearer it
 		// describes, organisation-less like the session itself may be.
 		"/host.session.v1.SessionService/Current": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
@@ -259,15 +266,12 @@ const ServiceAPIPackage = "saas.accounts.v1"
 
 // implementedHere reports whether this service serves a descriptor. Every
 // accounts service is served; of the interface packages, InstallableService is
-// the solution's side of the installation interface, and OfferService is the
-// local authority's setup read beside it (codefly.dev/installation declares
-// InstallationService alone), so neither is served here.
+// the solution's side of the installation interface, so it is not served here.
+// OfferService, the setup read beside InstallationService, is: every host
+// answers it from the same core, so a solution's setup reads the same here and
+// on the local authority.
 func implementedHere(service protoreflect.ServiceDescriptor) bool {
-	switch string(service.FullName()) {
-	case "host.installation.v1.InstallableService", "host.installation.v1.OfferService":
-		return false
-	}
-	return true
+	return string(service.FullName()) != "host.installation.v1.InstallableService"
 }
 
 // interfacePackage reports whether a proto package is one of the published host
@@ -298,6 +302,8 @@ var interfaceDescriptions = map[string]string{
 	"InstallationService/RevokeRole":        "Revoke one role grant; its subject's capabilities through the installation end.",
 	"InstallationService/ListRoleGrants":    "List who holds which role on one installation.",
 	"InstallationService/List":              "List what one organisation has installed.",
+	"OfferService/ListOffers":               "List the solutions delivered to this host that one organisation's administrator may install.",
+	"OfferService/ReviewOffer":              "Read one delivered solution's offer as the core holds it: each role's scopes, the operations and tools they reach, and the permission ceiling; the consent tuple for an administrator alone.",
 	"AuthorityService/ListResources":        "Answer which resources of one kind a checked capability covers for one action, from its owner's current grants.",
 	"AuthorityService/Delegate":             "Record a signed-in person's grant to a module, within what they hold.",
 	"AuthorityService/RevokeDelegation":     "End a delegation; every capability issued from it is refused from then on.",

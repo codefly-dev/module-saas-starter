@@ -81,9 +81,9 @@ func interfaceMethods(t *testing.T, pkg string) []string {
 		for i := 0; i < file.Services().Len(); i++ {
 			service := file.Services().Get(i)
 			// InstallableService is the solution's side of the installation
-			// interface, and OfferService the local authority's setup read beside
-			// it: codefly.dev/installation declares InstallationService alone.
-			if service.FullName() == "host.installation.v1.InstallableService" || service.FullName() == "host.installation.v1.OfferService" {
+			// interface; OfferService, the setup read beside InstallationService,
+			// is served like it.
+			if service.FullName() == "host.installation.v1.InstallableService" {
 				continue
 			}
 			for j := 0; j < service.Methods().Len(); j++ {

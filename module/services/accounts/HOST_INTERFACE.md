@@ -48,8 +48,18 @@ What accounts adds, and where:
   the tenant of a current parent addressed to it, proving itself by its
   workload credential), `Review`, `Install` (consent bound to the reviewed target,
   generation, revision, offer digest and a fresh operation id), `GrantRole`,
-  `RevokeRole`, `ListRoleGrants`, `List`. `OfferService` (the local authority's
-  setup read) is not served here.
+  `RevokeRole`, `ListRoleGrants`, `List`. `OfferService`, the setup read beside
+  it: `ListOffers` (an administrator's) and `ReviewOffer`, answered from the
+  core's `ReviewOffer` with no floor of this host's own, so whoever the core
+  answers (an administrator with the consent tuple, a member holding a role on
+  the active installation without it) is answered here, and every refusal is the
+  core's. The offer is projected into roles → operations → tools and the
+  permission ceiling by a port of the local authority's projection
+  (`pkg/adapters/host_offers.go`), a labelled stopgap until that projection is a
+  shared library. Tools: this host composes no runnable bindings for accounts —
+  declaring the group would have the render grant accounts an authority binding
+  per prepared key — so `tools_composed` is false and the Setup UI says so. The
+  solution's side, `InstallableService`, is not served here.
 - **session**: `SignIn` (fixture sign-in), `Current`, `ListFixturePeople`:
   accounts' own sessions.
 

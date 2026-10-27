@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **293 RPCs** across **40 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **295 RPCs** across **41 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -27,6 +27,8 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/host.installation.v1.InstallationService/ListRoleGrants` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List who holds which role on one installation. |
 | `/host.installation.v1.InstallationService/Review` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read the exact authority offer an administrator consents to, without recording consent. |
 | `/host.installation.v1.InstallationService/RevokeRole` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke one role grant; its subject's capabilities through the installation end. |
+| `/host.installation.v1.OfferService/ListOffers` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the solutions delivered to this host that one organisation's administrator may install. |
+| `/host.installation.v1.OfferService/ReviewOffer` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read one delivered solution's offer as the core holds it: each role's scopes, the operations and tools they reach, and the permission ceiling; the consent tuple for an administrator alone. |
 | `/host.session.v1.SessionService/Current` | unary | `GET /v1/session` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Answer the session the caller's bearer belongs to, without the bearer. |
 | `/host.session.v1.SessionService/ListFixturePeople` | unary | `GET /v1/session/fixture-people` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | PUBLIC → SECRET | List the people fixture sign-in admits, in the fixture's order; none where it is not enabled. |
 | `/host.session.v1.SessionService/SignIn` | unary | `POST /v1/session:sign-in` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.auth.login | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Open a session for a fixture person by their fixture token. |
@@ -304,10 +306,10 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 50
+- `auth`: 51
 - `internal`: 55
 - `mfa`: 5
-- `org_admin`: 68
+- `org_admin`: 69
 - `org_member`: 57
 - `platform_admin`: 29
 - `public`: 29

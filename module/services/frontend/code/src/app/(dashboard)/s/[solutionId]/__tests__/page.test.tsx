@@ -16,6 +16,11 @@ vi.mock("@/solutions/SolutionRuntime", () => ({
 vi.mock("@/solutions/SolutionDashboard", () => ({
 	SolutionDashboards: () => <div data-testid="dashboard">dashboards</div>,
 }));
+// The Setup UI is the kit's `<SolutionSetup>`, tested in its package; what is
+// pinned here is that every solution has the tab, naming its target.
+vi.mock("@/features/solution-installations", () => ({
+	SolutionSetupPanel: ({ target }: { target: string }) => <div data-testid="setup">{target}</div>,
+}));
 // The live delivery gate has its own polling and router tests. This page test
 // exercises only the server page's dashboard/tab placement.
 vi.mock("@/solutions/SolutionLivePage", () => ({
@@ -62,17 +67,25 @@ describe("the solution page", () => {
 
 	// A graph may declare events and metrics and no dashboard: a Dashboard tab
 	// would hide the solution behind an empty panel.
-	it("shows no tab bar for a graph that declares no dashboard", async () => {
+	it("shows no Dashboard tab for a graph that declares no dashboard", async () => {
 		findSolution.mockResolvedValue(solution({ events: [], metrics: [], dashboards: [] }));
 		await renderPage();
 		expect(await screen.findByTestId("remote")).toBeTruthy();
-		expect(screen.queryByRole("tablist")).toBeNull();
+		expect(screen.queryByRole("tab", { name: "Dashboard" })).toBeNull();
 	});
 
-	it("shows a solution without a dashboard as before, with no tab bar", async () => {
-		findSolution.mockResolvedValue(solution());
+	// Every solution has a Setup tab beside its app: the roles it declares, what
+	// each grants, and who holds them.
+	it.each([
+		["without a dashboard", undefined],
+		["with a dashboard", { events: [], metrics: [], dashboards: [{ id: "overview", title: "Overview", layout: "grid", widgets: [] }] }],
+	])("gives a solution %s a Setup tab for its own target, keeping the app mounted", async (_, dashboard) => {
+		findSolution.mockResolvedValue(solution(dashboard));
 		await renderPage();
+		expect(screen.getByRole("tab", { name: "App" })).toBeTruthy();
+		expect(screen.queryByTestId("setup")).toBeNull();
+		fireEvent.click(screen.getByRole("tab", { name: "Setup" }));
+		expect((await screen.findByTestId("setup")).textContent).toBe("example-solution");
 		expect(screen.getByTestId("remote")).toBeTruthy();
-		expect(screen.queryByRole("tablist")).toBeNull();
 	});
 });

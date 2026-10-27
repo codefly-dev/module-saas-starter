@@ -1,3 +1,4 @@
+import { HOST_SETUP_PROCEDURES } from "@/lib/host-setup-procedures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -264,6 +265,8 @@ describe("solution proxy passthrough", () => {
 		"saas.accounts.v1.DatasourceService/DeleteSource",
 		"saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes",
 		"saas.accounts.v1.AuditService/QueryAuditLog",
+		// `<SolutionSetup binding>`: the Setup tab's host installation procedures.
+		...HOST_SETUP_PROCEDURES.map((procedure) => procedure.slice(1)),
 	])(
 		"reaches the host over the solution's own apiBase for %s",
 		async (procedure) => {
@@ -293,6 +296,11 @@ describe("solution proxy passthrough", () => {
 		"saas.accounts.v1.DatasourceService/ListSources/extra",
 		"saas.accounts.v1.DatasourceService/not-a-method",
 		"saas.accounts.v2.DatasourceService/ListSources",
+		// Only the Setup tab's host procedures reach the host; the rest of the
+		// interface stays the solution's own path.
+		"host.installation.v1.InstallationService/Install",
+		"host.installation.v1.InstallationService/Current",
+		"host.authority.v1.AuthorityService/Issue",
 	])("keeps solution path %s on the registered upstream", async (path) => {
 		withGateway();
 		registerAudit();

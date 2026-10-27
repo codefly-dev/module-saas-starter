@@ -12,8 +12,10 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -503,6 +505,84 @@ func runHostInterfaceFixture(t *testing.T) {
 		_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(leaver, &authorityv1.IssueRequest{
 			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "documents", Scopes: records("read")})
 		requireCode(t, err, codes.PermissionDenied, "not a member of this organization")
+	})
+
+	// Beyond the suite: OfferService answers from the core's view of the
+	// delivered declaration. An administrator reviews an installed solution's
+	// roles → operations → tools and its permission ceiling, with the consent
+	// tuple; another organization's administrator is refused by name; anyone
+	// else gets exactly what the core answers them, never a tuple.
+	t.Run("an administrator reviews an installed solution's roles, operations and ceiling", func(t *testing.T) {
+		offers := installationv1.NewOfferServiceClient(conn)
+		const target = "conformance-pages"
+		composed, err := core.Composed(ctx, target)
+		require.NoError(t, err)
+
+		admin := signIn("fixture-alex")
+		listed, err := offers.ListOffers(admin, &installationv1.ListOffersRequest{OrganizationId: fixtureOrganization})
+		require.NoError(t, err)
+		var names []string
+		for _, o := range listed.GetOffers() {
+			names = append(names, o.GetTarget())
+		}
+		require.Contains(t, names, target)
+		require.NotContains(t, names, "documents", "a module is installed by composition, never offered")
+
+		review, err := offers.ReviewOffer(admin, &installationv1.ReviewRequest{OrganizationId: fixtureOrganization, Target: target})
+		require.NoError(t, err)
+		require.Equal(t, target, review.GetTarget())
+		require.Equal(t, composed.Generation, review.GetApproval().GetGeneration())
+		require.NotEmpty(t, review.GetApproval().GetDigest(), "an administrator reads the consent tuple")
+		require.Equal(t, authority.StableInstallationID(fixtureOrganization, target), review.GetInstallation().GetId())
+		require.Equal(t, installationv1.Installation_STATUS_ACTIVE, review.GetInstallation().GetStatus())
+		require.False(t, review.GetToolsComposed(), "this host composes no tool bindings and says so")
+
+		var roles []string
+		reaches := map[string][]string{}
+		for _, role := range review.GetRoles() {
+			roles = append(roles, role.GetName())
+			require.NotEmpty(t, role.GetScopes(), "role %s states its scopes", role.GetName())
+			for _, c := range role.GetCapabilities() {
+				reaches[role.GetName()] = append(reaches[role.GetName()], c.GetModule()+" "+c.GetOperation())
+				require.NotEmpty(t, c.GetRequires())
+				require.Empty(t, c.GetTools(), "no tool without composed bindings")
+			}
+		}
+		require.ElementsMatch(t, slices.Collect(maps.Keys(composed.Roles)), roles, "every declared role, and only those")
+		require.Contains(t, reaches["viewer"], target+" GET /items/{id}", "the viewer reaches the read it declares")
+		require.NotContains(t, reaches["viewer"], target+" POST /items/{id}", "and never the write")
+		require.NotContains(t, reaches["viewer"], target+" GET /open/{path=**}", "an operation any checked caller reaches needs no role")
+
+		var ceiling []string
+		for _, b := range review.GetCeiling() {
+			ceiling = append(ceiling, b.GetBinding()+"→"+b.GetModule())
+			require.NotEmpty(t, b.GetScopes())
+		}
+		require.Contains(t, ceiling, "documents→documents", "the ceiling is every binding the solution declares")
+		require.Len(t, ceiling, len(composed.Bindings))
+
+		// Globex's administrator learns nothing of Acme's offers.
+		zoe := signIn("fixture-zoe")
+		_, err = offers.ReviewOffer(zoe, &installationv1.ReviewRequest{OrganizationId: fixtureOrganization, Target: target})
+		requireCode(t, err, codes.PermissionDenied, fixtureOrganization)
+		_, err = offers.ListOffers(zoe, &installationv1.ListOffersRequest{OrganizationId: fixtureOrganization})
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+
+		// A member is answered exactly as the core answers them: its refusal
+		// verbatim, or the offer without the consent tuple.
+		member := signIn("fixture-maya")
+		session, err := sessionv1.NewSessionServiceClient(conn).Current(member, &sessionv1.CurrentRequest{})
+		require.NoError(t, err)
+		_, coreErr := core.ReviewOffer(ctx, authority.Person{ID: session.GetPersonId(), Organization: session.GetOrganizationId(), SessionID: session.GetSessionId()}, fixtureOrganization, target)
+		answer, err := offers.ReviewOffer(member, &installationv1.ReviewRequest{OrganizationId: fixtureOrganization, Target: target})
+		if coreErr != nil {
+			require.Equal(t, status.Code(coreStatus(coreErr)), status.Code(err), "%v", err)
+			require.Equal(t, coreErr.Error(), status.Convert(err).Message())
+		} else {
+			require.NoError(t, err)
+			require.Nil(t, answer.GetApproval(), "only an administrator reads the consent tuple")
+			require.NotEmpty(t, answer.GetRoles())
+		}
 	})
 
 	// Beyond the suite: a delegation never reaches past what its grantor holds

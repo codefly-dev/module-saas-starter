@@ -236,6 +236,8 @@ func generatedCatalogConnectRoutes() []*RouteEntry {
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/ListRoleGrants", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/ListRoleGrants"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/Review", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/Review"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.InstallationService/RevokeRole", UpstreamPath: "", Procedure: "/host.installation.v1.InstallationService/RevokeRole"},
+		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.OfferService/ListOffers", UpstreamPath: "", Procedure: "/host.installation.v1.OfferService/ListOffers"},
+		{Service: "accounts_connect", Method: "POST", Path: "/host.installation.v1.OfferService/ReviewOffer", UpstreamPath: "", Procedure: "/host.installation.v1.OfferService/ReviewOffer"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/Current", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/Current"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/ListFixturePeople", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/ListFixturePeople"},
 		{Service: "accounts_connect", Method: "POST", Path: "/host.session.v1.SessionService/SignIn", UpstreamPath: "", Procedure: "/host.session.v1.SessionService/SignIn"},

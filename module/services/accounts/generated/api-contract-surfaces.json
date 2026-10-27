@@ -85,6 +85,14 @@
       ]
     },
     {
+      "name": "OfferService",
+      "fullName": "host.installation.v1.OfferService",
+      "procedures": [
+        "/host.installation.v1.OfferService/ListOffers",
+        "/host.installation.v1.OfferService/ReviewOffer"
+      ]
+    },
+    {
       "name": "SessionService",
       "fullName": "host.session.v1.SessionService",
       "procedures": [

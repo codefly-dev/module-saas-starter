@@ -95,6 +95,15 @@ func (h *hostInstallationConnectHandler) List(ctx context.Context, req *connect.
 	return unary(ctx, req, h.server().List)
 }
 
+type hostOfferConnectHandler struct{ svc *business.Service }
+
+func (h *hostOfferConnectHandler) ListOffers(ctx context.Context, req *connect.Request[installationv1.ListOffersRequest]) (*connect.Response[installationv1.ListOffersResponse], error) {
+	return unary(ctx, req, HostOfferSingleton().ListOffers)
+}
+func (h *hostOfferConnectHandler) ReviewOffer(ctx context.Context, req *connect.Request[installationv1.ReviewRequest]) (*connect.Response[installationv1.ReviewedOffer], error) {
+	return unary(ctx, req, HostOfferSingleton().ReviewOffer)
+}
+
 type hostSessionConnectHandler struct{ svc *business.Service }
 
 func (h *hostSessionConnectHandler) SignIn(ctx context.Context, req *connect.Request[sessionv1.SignInRequest]) (*connect.Response[sessionv1.Session], error) {
