@@ -6185,8 +6185,8 @@
     }
   },
   "info": {
-    "description": "Moved from codefly-dev/core proto/codefly/base/v0/work_context.proto on 2026-10-21.\nEvery message, field name and field number is unchanged, so the deterministic\nbytes a verifier reads are identical; only the package and the Go import path\ndiffer. The conformance fixtures prove it. A change in meaning is a V2 message\nbeside the V1, never a field reinterpreted.",
-    "title": "host/authority/v1/work_context.proto",
+    "description": "The artifact interface: a person's consent to an exact authored artifact a\nmodule runs (an agent's configuration, an intent version), for one\ninstallation, under one policy. A policy is a resource kind: approving\nrequires its `activate` action at the module, running requires its `run`.\nConsent is given in person and read back at every run; it is never a\ncredential to execute or read anything.",
+    "title": "host/artifact/v1/artifact.proto",
     "version": "version not set"
   },
   "paths": {
@@ -12517,6 +12517,9 @@
   ],
   "swagger": "2.0",
   "tags": [
+    {
+      "name": "ArtifactService"
+    },
     {
       "name": "AuthorityService"
     },

@@ -72,6 +72,7 @@ var catalogGRPCServiceNames = []string{
 }
 
 var catalogConnectOnlyServiceNames = []string{
+	"host.artifact.v1.ArtifactService",
 	"host.installation.v1.InstallationService",
 	"host.session.v1.SessionService",
 	"saas.accounts.v1.BillingService",

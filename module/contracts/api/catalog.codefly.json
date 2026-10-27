@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:b818c862dd556e37c7ef597ba2109798a6e6ff957046100ab809575ff165e6a3",
+      "digest": "sha256:10a231ea430313364937808160138bca599ac012230ad70b7047eac27764836a",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -66,8 +66,17 @@
       "kind": "protobuf",
       "package": "",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:b818c862dd556e37c7ef597ba2109798a6e6ff957046100ab809575ff165e6a3",
+      "digest": "sha256:10a231ea430313364937808160138bca599ac012230ad70b7047eac27764836a",
       "services": [
+        {
+          "name": "ArtifactService",
+          "fullName": "host.artifact.v1.ArtifactService",
+          "procedures": [
+            "/host.artifact.v1.ArtifactService/Approve",
+            "/host.artifact.v1.ArtifactService/Authorize",
+            "/host.artifact.v1.ArtifactService/Revoke"
+          ]
+        },
         {
           "name": "AuthorityService",
           "fullName": "host.authority.v1.AuthorityService",
