@@ -65,7 +65,7 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
 // places, and it is what caught this branch moving the installer to 0.1.179
 // while this constant still said 0.1.171. Deriving it from the installer would
 // make the second assertion below tautological and lose that.
-const DEFAULT_CODEFLY_VERSION = '0.1.219';
+const DEFAULT_CODEFLY_VERSION = '0.1.221';
 const HISTORICAL_SOURCE_VERSION = 'source-5234ce248b092edf1138a16ec4140dfbc8745522';
 
 test('source qualification installs the exact owner commit and never falls back or releases it', () => {

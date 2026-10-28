@@ -184,7 +184,7 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
 
 ## Building, testing, and CI
 
-- CI and local runtime qualification use released Codefly CLI **v0.1.219**,
+- CI and local runtime qualification use released Codefly CLI **v0.1.221**,
   pinned in `scripts/ci/install-codefly.sh`. It resolves the Codefly-owned
   `egress` dependency, exports the multi-package host-interface contract, and
   hands a service that declares `hop-routes` the group with an empty `ROUTES`
