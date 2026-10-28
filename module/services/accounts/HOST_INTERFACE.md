@@ -122,6 +122,8 @@ What accounts adds, and where:
   normal membership upsert, retaining the session and membership. The shared
   suite checks revocation after review and while acknowledgement is paused;
   restoring the role permits the unchanged pending approval to resume.
+  A member without that role receives `PermissionDenied` with a reason naming
+  the required organization administrator or owner role.
 - `.github/workflows/ci.yml` (`host-interface-conformance`, the required
   context "Host interface conformance (authority main)" and a release gate)
   runs the suite at authority main, whenever main contains the pinned revision,

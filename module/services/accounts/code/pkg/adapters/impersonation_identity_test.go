@@ -157,6 +157,9 @@ func TestImpersonationConfersOnlyTargetAuthority(t *testing.T) {
 			ctx := impersonatedContext(t, supportActorID, tc.subject, targetOrgID)
 			err := requireOrgAdmin(ctx, tc.subject, targetOrgID)
 			require.Equal(t, tc.wantCode, status.Code(err))
+			if tc.wantCode == codes.PermissionDenied {
+				require.Contains(t, status.Convert(err).Message(), "administrator")
+			}
 		})
 	}
 }
