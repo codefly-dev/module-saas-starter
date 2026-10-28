@@ -230,7 +230,7 @@ func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
 	if role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String() {
 		return nil
 	}
-	return status.Error(codes.PermissionDenied, "requires org admin or owner role")
+	return status.Error(codes.PermissionDenied, "requires an organization administrator (admin or owner role)")
 }
 
 // subjectOutsideOrg is the one answer every way a subject can fail to belong

@@ -769,9 +769,14 @@ func (s *HostSessionServer) ListFixturePeople(ctx context.Context, _ *sessionv1.
 	}
 	out := &sessionv1.ListFixturePeopleResponse{}
 	for _, p := range people {
+		_, organization, err := s.service.SessionDisplayNames(ctx, p.PersonID, p.OrganizationID)
+		if err != nil {
+			return nil, status.Errorf(codes.Unavailable, "cannot read fixture display names: %v", err)
+		}
 		out.People = append(out.People, &sessionv1.FixturePerson{
 			PersonId: p.PersonID, Email: p.Email, OrganizationId: p.OrganizationID,
 			Roles: p.Roles, TeamIds: p.TeamIDs, FixtureToken: p.FixtureToken,
+			OrganizationDisplayName: organization,
 		})
 	}
 	return out, nil
