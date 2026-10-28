@@ -74,6 +74,9 @@ contracts:
   permissions: ">=1.0.0 <2.0.0"
   fixtures: ">=1.0.0 <2.0.0"
 generators:
+  - name: embedded-fixtures
+    working-directory: tools
+    command: [go, run, ./cmd/module-package, sync-embedded-fixtures, --module, ..]
   - name: composition
     working-directory: tools
     command: [go, run, ./cmd/module-compose, --events, ../contracts/accounts/installation.events.codefly.yaml, --events, ../contracts/accounts/scope.events.codefly.yaml, --events, ../contracts/reference/events.codefly.yaml, --base-events, ../contracts/accounts/saas.events.codefly.yaml]

@@ -280,11 +280,10 @@ func SeedWithInstallations(ctx context.Context, service *business.Service, name 
 		wool.Field("assignments", len(f.Assignments)),
 		wool.Field("installations", len(f.Installations)))
 
-	// Every condition that can make this seed refuse is checked before the
-	// first write. seedUsers commits each user in its own transaction and
-	// deliberately skips personal-org creation, so a refusal raised later —
-	// once organizations are being seeded — would leave fixture users
-	// belonging to no organization at all. Decide first, then write.
+	// Fixture shape and duplicate identities have been checked on the combined
+	// document. Check organization preconditions before seedUsers commits its
+	// per-user transactions without personal organizations. Later reference,
+	// storage and installation failures can still leave partial seed effects.
 	if err := validateOrganizationPreconditions(ctx, service, f.Organizations); err != nil {
 		return nil, err
 	}
@@ -450,6 +449,7 @@ func validateFixture(f *fixtureFile) error {
 			return fmt.Errorf("agent[%d] (%s): created_by is required", i, agent.AgentIdentifier)
 		}
 	}
+	roleIndexes := make(map[[2]string]int, len(f.Roles))
 	for i, role := range f.Roles {
 		if strings.TrimSpace(role.Org) == "" {
 			return fmt.Errorf("role[%d]: org is required", i)
@@ -465,7 +465,13 @@ func validateFixture(f *fixtureFile) error {
 				return fmt.Errorf("role[%d] (%s) permission[%d]: resource and action are required", i, role.Name, j)
 			}
 		}
+		key := [2]string{role.Org, role.Name}
+		if previous, exists := roleIndexes[key]; exists {
+			return fmt.Errorf("role[%d]: duplicate identity (org, name) of role[%d]", i, previous)
+		}
+		roleIndexes[key] = i
 	}
+	assignmentIndexes := make(map[[5]string]int, len(f.Assignments))
 	for i, assignment := range f.Assignments {
 		if strings.TrimSpace(assignment.Org) == "" || strings.TrimSpace(assignment.Role) == "" {
 			return fmt.Errorf("assignment[%d]: org and role are required", i)
@@ -473,6 +479,17 @@ func validateFixture(f *fixtureFile) error {
 		if (strings.TrimSpace(assignment.AgentIdentifier) == "") == (strings.TrimSpace(assignment.Email) == "") {
 			return fmt.Errorf("assignment[%d]: exactly one of agent_identifier and email is required", i)
 		}
+		// Keep the seed lookup's exact spelling and distinguish its person and
+		// agent lookup namespaces; scope is part of assignment identity.
+		kind := "agent_identifier"
+		if assignment.Email != "" {
+			kind = "email"
+		}
+		key := [5]string{assignment.Org, assignment.Role, kind, assignment.subject(), assignment.Scope}
+		if previous, exists := assignmentIndexes[key]; exists {
+			return fmt.Errorf("assignment[%d]: duplicate identity (org, role, subject, scope) of assignment[%d]", i, previous)
+		}
+		assignmentIndexes[key] = i
 	}
 	return validateInstallations(f)
 }

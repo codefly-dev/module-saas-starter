@@ -19,7 +19,7 @@ func main() {
 
 func run(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: module-package <validate|build|sign-provenance|run-generators|run-conformance|verify-release-policy|verify-release-ref|verify-release-ancestry>")
+		return fmt.Errorf("usage: module-package <validate|build|sign-provenance|run-generators|sync-embedded-fixtures|run-conformance|verify-release-policy|verify-release-ref|verify-release-ancestry>")
 	}
 	switch arguments[0] {
 	case "validate":
@@ -83,6 +83,13 @@ func run(arguments []string) error {
 		}
 		fmt.Println(provenance.ArtifactDigest)
 		return nil
+	case "sync-embedded-fixtures":
+		flags := flag.NewFlagSet(arguments[0], flag.ContinueOnError)
+		moduleRoot := flags.String("module", ".", "module package root")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		return modulepackage.SyncEmbeddedFixtures(*moduleRoot)
 	case "run-generators", "run-conformance":
 		flags := flag.NewFlagSet(arguments[0], flag.ContinueOnError)
 		moduleRoot := flags.String("module", ".", "module package root")

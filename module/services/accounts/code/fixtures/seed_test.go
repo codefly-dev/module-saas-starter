@@ -328,17 +328,34 @@ func TestEmbeddedFixturesMatchModuleFixtures(t *testing.T) {
 	if len(entries) == 0 {
 		t.Fatal("no fixtures embedded in the binary")
 	}
+	canonicalDirectory := filepath.Join("..", "..", "..", "..", "fixtures")
+	canonical, err := os.ReadDir(canonicalDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make(map[string]bool)
+	for _, entry := range canonical {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".yaml" {
+			names[entry.Name()] = true
+		}
+	}
+	if len(names) != len(entries) {
+		t.Fatalf("canonical/embedded fixture filename sets differ: %d canonical, %d embedded; run the declared module generators", len(names), len(entries))
+	}
 	for _, entry := range entries {
+		if !names[entry.Name()] {
+			t.Fatalf("embedded fixture %q is absent from the canonical filename set", entry.Name())
+		}
 		got, err := embeddedFixtures.ReadFile(path.Join("embedded", entry.Name()))
 		if err != nil {
 			t.Fatal(err)
 		}
-		want, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "fixtures", entry.Name()))
+		want, err := os.ReadFile(filepath.Join(canonicalDirectory, entry.Name()))
 		if err != nil {
 			t.Fatalf("read module fixture %q: %v", entry.Name(), err)
 		}
 		if !bytes.Equal(got, want) {
-			t.Fatalf("embedded fixture %q drifted from module/fixtures/%s; re-copy the module fixture", entry.Name(), entry.Name())
+			t.Fatalf("embedded fixture %q drifted from module/fixtures/%s; run the declared module generators", entry.Name(), entry.Name())
 		}
 	}
 }

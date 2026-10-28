@@ -36,6 +36,7 @@ func (i fixtureInstallation) describe() string {
 // administrator of the organisation, as an install requires. Refused here, a
 // typo is read at boot instead of as an install refused at every pass.
 func validateInstallations(f *fixtureFile) error {
+	indexes := make(map[[2]string]int, len(f.Installations))
 	for i, installation := range f.Installations {
 		if strings.TrimSpace(installation.Org) == "" || strings.TrimSpace(installation.Target) == "" ||
 			strings.TrimSpace(installation.Role) == "" || strings.TrimSpace(installation.Owner) == "" {
@@ -45,6 +46,11 @@ func validateInstallations(f *fixtureFile) error {
 			return fmt.Errorf("installation[%d] (%s): %s is not an owner or admin of %q in this fixture, and only an administrator installs",
 				i, installation.describe(), installation.Owner, installation.Org)
 		}
+		key := [2]string{installation.Org, installation.Target}
+		if previous, exists := indexes[key]; exists {
+			return fmt.Errorf("installation[%d]: duplicate identity (org, target) of installation[%d]", i, previous)
+		}
+		indexes[key] = i
 	}
 	return nil
 }
