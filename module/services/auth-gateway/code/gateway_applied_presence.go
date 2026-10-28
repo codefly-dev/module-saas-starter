@@ -58,6 +58,10 @@ func appliedRouteEndpoints(binding *accountsv1.SolutionHostBindingState) []modul
 	if !ok {
 		return nil
 	}
+	return manifestRouteEndpoints(manifest)
+}
+
+func manifestRouteEndpoints(manifest *solutionhost.ModuleManifest) []moduleEndpoint {
 	serving := map[string]bool{}
 	for _, workload := range manifest.Workloads {
 		serving[workload.Service] = true

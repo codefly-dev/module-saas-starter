@@ -48,6 +48,11 @@ capability path. It exposes no address: where a solution's backend is reached
 is resolved in this process and stays here. The frontend reads it with the
 cluster-internal credential.
 
+The route snapshot also carries `authority.principal` from that exact applied
+manifest, beside its endpoints and registration. An alias is not a principal:
+absent authority stays empty, and mismatched or removed generations supply no
+principal. This projection chooses no runtime path or caller credential.
+
 The gateway proxies `/solutions/{id}/…` using the same verified identity and
 header discipline as catalog routes, with per-viewer installation admission.
 Only public `/assets` and `/.well-known` paths accept unauthenticated GET/HEAD.
@@ -68,6 +73,14 @@ origin and whose hop signs. A cell composes no authority module, so this gateway
 **is the hop** there (`gateway_hop.go`), built from the same library the
 authority's hop service is (`codefly-dev/authority` `libraries/hop`). Nothing
 reaches a module directly from this gateway.
+
+When a hop is configured, `/ready` also requires that same forwarding front's
+`Ready()` publication lease, in addition to upstreams and verification keys.
+Initial registration refusal, lease expiry, cancellation or close makes it
+unready; successful renewal can restore it. No configured hop leaves ordinary
+readiness unchanged, and `/health` remains process liveness. Publication alone
+does not prove downstream verifier propagation or preserve a signer across
+instance reloads; the owner's prepublication overlap requirement still applies.
 
 - **Its faces**, both on the `hop` endpoint (gRPC over HTTP/2 to the gRPC face,
   everything else to the HTTP/Connect face), serve a composed workload calling a

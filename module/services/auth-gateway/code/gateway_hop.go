@@ -85,7 +85,9 @@ type hopRole struct {
 	// face is the library's HTTP face: it decides with the authority's Check,
 	// signs the admission and forwards to the published listener.
 	face http.Handler
-	now  func() time.Time
+	// front owns the signer's publication lease for both forwarding faces.
+	front *forward.Front
+	now   func() time.Time
 
 	mu   sync.Mutex
 	held map[[32]byte]heldWorkContext
@@ -387,7 +389,7 @@ func newHopRole(ctx context.Context, authority hopAuthorityClient, credential fu
 		return nil, nil, err
 	}
 	log.Printf("hop: standing in front of %s", strings.Join(modules, ", "))
-	return &hopRole{modules: modules, routes: routes, issuer: authority, face: front.Handler}, front, nil
+	return &hopRole{modules: modules, routes: routes, issuer: authority, face: front.Handler, front: front}, front, nil
 }
 
 // hopFace is the hop's one face, as the hop endpoint serves it: a gRPC call

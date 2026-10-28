@@ -167,6 +167,14 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
+	// Publication is necessary only when this composition configures a hop.
+	// The front owns lease renewal/expiry; this is not verifier propagation.
+	if g.hop != nil && !g.hop.front.Ready() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"status":"not ready","reason":"hop admission key not published"}`)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, `{"status":"ok"}`)
 }

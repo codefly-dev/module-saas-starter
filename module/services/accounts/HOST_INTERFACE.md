@@ -1,7 +1,7 @@
 # The host interfaces, served by accounts
 
 accounts implements the host interfaces published by `codefly-dev/authority`:
-`codefly.dev/authority@0.3.4`, `codefly.dev/composition@0.2.0`,
+`codefly.dev/authority@0.3.5`, `codefly.dev/composition@0.2.0`,
 `codefly.dev/installation@0.3.0` and `codefly.dev/session@0.2.0`. The local
 authority implements the same four on a laptop. The shared conformance suite
 (`libraries/conformance/go`) proves that the two agree.
@@ -31,6 +31,30 @@ What accounts adds, and where:
 | Audit: each change the core journals is recorded in the core's own transaction (`saas.authority.*`, `saas.module_delegation.*`); each issue is recorded before it is handed out | `pkg/business/authority_core_audit.go` |
 | The hop's admission keys: leased rows judged by the database's clock, published apart from the Work Context key; each registration proves its key once (its nonce is kept in `hop_admission_proofs`), and one key is pinned per hop instance (its pod) while its registration holds | migrations 55 and 58, `pkg/business/hop_admission_keys.go`, `pkg/adapters/host_interface_admission.go` |
 | Tenancy at the perimeter: a member or an administrator of the organization a call names, before the core decides | `pkg/adapters/host_interface.go` (`requireOrgMember`, `requireOrgAdmin`) |
+
+## Delegation lifetimes
+
+`Delegate.ttl_seconds` reaches the shared core unchanged in seconds. Negative
+lifetimes are invalid; positive lifetimes are clamped by the core before duration
+conversion (default ceiling seven days); zero explicitly means until revoked.
+Accounts persists the resulting expiry in `authority_core_delegations.expires_at`
+(migration 62), with SQL NULL for the until-revoked case. Delegate, GetDelegation
+and RevokeDelegation project `expires_at_unix` (zero only for no expiry) and use
+`domain.Delegation.Active(core.Now())`, so a stored expired grant never reads as
+active. Issuance and checking remain the core's decisions; this adapter adds no
+permission or lifetime fallback. Browser-edge positive-lifetime requirements
+remain owned by that edge.
+
+Expiry stops fresh issuance from the delegation; it does not revoke capabilities
+already issued. Those retain their own lifetime, bounded by the core's maximum
+token lifetime and verifier clock tolerance. Parent exchange remains bounded by
+the parent's remaining lifetime and scopes. Explicit revocation is the separate
+operation that invalidates existing descendants through authority revisions.
+
+Apply migration 62 before deploying this code, and keep expiry-bearing traffic
+off old Accounts peers that ignore the stored timestamp. The down migration
+discards expiry data: rolling back to indefinite delegation behavior is not a
+behavior-preserving rollback.
 
 ## The interfaces, method by method
 

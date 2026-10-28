@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"net/url"
 	"sync"
 	"time"
@@ -57,6 +58,8 @@ type solutionRegistrySnapshot struct {
 	// endpoints its applied presence declares for the service that runs it
 	// (appliedRouteEndpoints), with the addresses the manifest carries.
 	routeEndpoints map[string][]moduleEndpoint
+	// principals come from the same applied manifest as the route endpoints.
+	principals map[string]string
 }
 
 // solutionRegistryClient is the registry surface used by the cache and handlers.
@@ -90,7 +93,11 @@ func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.Lis
 	if err := c.invoke(ctx, "/saas.accounts.v1.SolutionRegistryService/ListSolutionHostBindings", &accountsv1.ListSolutionHostBindingsRequest{}, bindings); err != nil {
 		return nil, err
 	}
-	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, routeEndpoints: make(map[string][]moduleEndpoint)}
+	return snapshotFromAppliedBindings(resp, bindings), nil
+}
+
+func snapshotFromAppliedBindings(resp *accountsv1.ListSolutionRegistrationsResponse, bindings *accountsv1.ListSolutionHostBindingsResponse) *solutionRegistrySnapshot {
+	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, routeEndpoints: make(map[string][]moduleEndpoint), principals: make(map[string]string)}
 	for _, record := range resp.GetRegistrations() {
 		for _, binding := range bindings.GetBindings() {
 			// These reads may straddle reconciliation. Never attach a successor's
@@ -98,12 +105,19 @@ func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.Lis
 			if !proto.Equal(record, binding.GetRegistration()) {
 				continue
 			}
-			if endpoints := appliedRouteEndpoints(binding); len(endpoints) > 0 {
+			manifest, ok := appliedManifest(binding)
+			if !ok {
+				continue
+			}
+			if manifest.Authority != nil {
+				out.principals[record.GetSolutionId()] = manifest.Authority.Principal
+			}
+			if endpoints := manifestRouteEndpoints(manifest); len(endpoints) > 0 {
 				out.routeEndpoints[record.GetSolutionId()] = endpoints
 			}
 		}
 	}
-	return out, nil
+	return out
 }
 
 // Historical assets are read by identity, never broadcast in the route snapshot.
@@ -170,7 +184,8 @@ type solutionRegistryCache struct {
 	// upstreams is each declared alias's resolved address, taken on the same
 	// refresh as the record it routes, so a lookup never pairs one snapshot's
 	// record with another's address.
-	upstreams map[string]*url.URL
+	upstreams  map[string]*url.URL
+	principals map[string]string
 	// routeRefusals remembers, per alias, the last refusal reason logged.
 	routeRefusals sync.Map
 	revision      int64
@@ -279,6 +294,7 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 	}
 	c.records = records
 	c.upstreams = upstreams
+	c.principals = maps.Clone(resp.principals)
 	c.frontends = frontends
 	c.revision = resp.GetRegistryRevision()
 	c.loaded = true
@@ -412,7 +428,7 @@ func (c *solutionRegistryCache) lookupSnapshot(id string) solutionLookup {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	record, found := c.records[id]
-	return solutionLookup{record: record, upstream: c.upstreams[id], frontends: c.frontends[id], found: found, loaded: c.loaded, stale: c.loaded && c.now().Sub(c.loadedAt) > solutionRegistryLease}
+	return solutionLookup{principal: c.principals[id], record: record, upstream: c.upstreams[id], frontends: c.frontends[id], found: found, loaded: c.loaded, stale: c.loaded && c.now().Sub(c.loadedAt) > solutionRegistryLease}
 }
 
 func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
@@ -425,6 +441,7 @@ func (c *solutionRegistryCache) staleEnoughToRefresh() bool {
 // a verdict must never be derived without: whether the registry could actually
 // be consulted about it.
 type solutionLookup struct {
+	principal string
 	record    *accountsv1.SolutionRegistration
 	frontends map[string]*preparedFrontend
 	// upstream is the resolved address of the alias, from the same snapshot as
@@ -512,6 +529,9 @@ func (c *solutionRegistryCache) lookupFresh(ctx context.Context, id string) solu
 // that must refuse it is the one holding the viewer, and it refuses it as a
 // verdict rather than as a missing route.
 type solutionRouting struct {
+	// Principal is the signed applied authority principal, never inferred from
+	// the alias. Empty means the applied manifest declares no authority.
+	Principal                   string
 	Alias                       string
 	AssetVersion                string
 	FrontendRequiresPreparation bool
@@ -611,6 +631,7 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 		return nil, solutionNotActive
 	}
 	return &solutionRouting{
+		Principal:                   read.principal,
 		Alias:                       record.GetSolutionId(),
 		AssetVersion:                frontendAssetVersion(record),
 		FrontendRequiresPreparation: frontendRequiresPreparation(record),

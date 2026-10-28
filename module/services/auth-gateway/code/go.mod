@@ -6,7 +6,8 @@ require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	connectrpc.com/connect v1.21.0
 	github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261027143830-b0da2a09e63a
-	github.com/codefly-dev/authority/libraries/hop/go v0.0.0-20261027143830-b0da2a09e63a
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261028195314-39369d67a088
+	github.com/codefly-dev/authority/libraries/hop/go v0.1.1-0.20261028210015-681f0cca49eb
 	github.com/codefly-dev/core v0.19.7
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
 	github.com/codefly-dev/sdk-go v0.4.1
@@ -46,6 +47,8 @@ require (
 	github.com/cheggaaa/pb/v3 v3.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261026023425-000d44495d93 // indirect
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261026023425-000d44495d93 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect

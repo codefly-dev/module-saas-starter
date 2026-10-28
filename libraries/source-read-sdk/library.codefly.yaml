@@ -12,7 +12,7 @@ sources:
       module: saas-starter
       service: accounts
       endpoint: authority
-      contract-digest: sha256:6eb1f3eb1ba262017ff4bdfafe047cba7b441855affd67f44285804bdda9e4d5
+      contract-digest: sha256:a52a0090582a72d9dea0d26443b5745a88b2e10dd1f801bb0d3be7f335c61cf6
       services:
         - ModuleCapabilitiesService
 generated-by:

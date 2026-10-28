@@ -302,11 +302,11 @@ func (s *HostAuthorityServer) Delegate(ctx context.Context, req *authorityv1.Del
 	if err != nil {
 		return nil, err
 	}
-	d, err := core.Delegate(ctx, person, req.GetModule(), scopesFromWire(req.GetScopes()), req.GetPurpose())
+	d, err := core.Delegate(ctx, person, req.GetModule(), scopesFromWire(req.GetScopes()), req.GetPurpose(), req.GetTtlSeconds())
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	return delegationToWire(d), nil
+	return delegationToWire(d, core.Now()), nil
 }
 
 // RevokeDelegation ends one of the signed-in person's delegations.
@@ -323,7 +323,7 @@ func (s *HostAuthorityServer) RevokeDelegation(ctx context.Context, req *authori
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	return &authorityv1.RevokeDelegationResponse{Delegation: delegationToWire(d)}, nil
+	return &authorityv1.RevokeDelegationResponse{Delegation: delegationToWire(d, core.Now())}, nil
 }
 
 // GetDelegation reads one delegation for its module (by its workload
@@ -350,7 +350,7 @@ func (s *HostAuthorityServer) GetDelegation(ctx context.Context, req *authorityv
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	return delegationToWire(d), nil
+	return delegationToWire(d, core.Now()), nil
 }
 
 // AttachResource records a resource created through the installation the
@@ -608,9 +608,13 @@ func installationToWireWithRoles(i domain.Installation, roles []string) *install
 	return out
 }
 
-func delegationToWire(d domain.Delegation) *authorityv1.Delegation {
-	return &authorityv1.Delegation{DelegationId: d.ID, OrganizationId: d.Organization, Grantor: d.Grantor, Module: d.Module, Purpose: d.Purpose,
-		Active: !d.Revoked, Scopes: scopesToWire(d.Scopes)}
+func delegationToWire(d domain.Delegation, now time.Time) *authorityv1.Delegation {
+	out := &authorityv1.Delegation{DelegationId: d.ID, OrganizationId: d.Organization, Grantor: d.Grantor, Module: d.Module, Purpose: d.Purpose,
+		Active: d.Active(now), Scopes: scopesToWire(d.Scopes)}
+	if !d.ExpiresAt.IsZero() {
+		out.ExpiresAtUnix = d.ExpiresAt.Unix()
+	}
+	return out
 }
 
 // scopesFromWire converts interface scopes to core's, byte for byte.

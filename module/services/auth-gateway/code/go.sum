@@ -46,8 +46,16 @@ github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
 github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261027143830-b0da2a09e63a h1:QgWaMbx3NU1OJl/xyz+scXXvk3xK10nuFohWxDv7Jdc=
 github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261027143830-b0da2a09e63a/go.mod h1:4hRjiWuJOKzrEk8AS87pbWCbpiEmhEvQBGQaJo5Hmkg=
+github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261028195314-39369d67a088 h1:hAnxuUVTJu+pRmDbKcwcAofu0I+qBz9/Q29fcZyCn2g=
+github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261028195314-39369d67a088/go.mod h1:kTjeuNl03XSCkH3UhGKuHAKamkIzNsC2RPFu/g0fqSk=
+github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261026023425-000d44495d93 h1:PnhgA9wkib67bJnc5hkhkc80J2ch5uYiq+9/NiD/XFU=
+github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261026023425-000d44495d93/go.mod h1:XsOFnO2MQdr37vM3ULa0Uwi8ZWptyVx7hRSUyIdaZ1Q=
 github.com/codefly-dev/authority/libraries/hop/go v0.0.0-20261027143830-b0da2a09e63a h1:U8nefSY7u1bnJch94vRFnrEWFuuehPeWv40IiuzJA6I=
 github.com/codefly-dev/authority/libraries/hop/go v0.0.0-20261027143830-b0da2a09e63a/go.mod h1:/SZab4/ll1nAKTucP3h30rpcXo56BHmJWLkvs2ayaMs=
+github.com/codefly-dev/authority/libraries/hop/go v0.1.1-0.20261028210015-681f0cca49eb h1:v4RXqnJNmSHC7mSTsCy3uPoy5b+e3nWPdxNWiuFcL/w=
+github.com/codefly-dev/authority/libraries/hop/go v0.1.1-0.20261028210015-681f0cca49eb/go.mod h1:/SZab4/ll1nAKTucP3h30rpcXo56BHmJWLkvs2ayaMs=
+github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261026023425-000d44495d93 h1:4EygH7/J0E6aM7hUPdbQGfit1rsLUNCtWJ8kMh2b9PE=
+github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261026023425-000d44495d93/go.mod h1:1rmjrVyr0h7zOuwOHS9i+BoeS9dr3XNvtupLZFwY6As=
 github.com/codefly-dev/core v0.19.7 h1:jm87CM9MQVCO7h2B1WxWEBoWeTIU9ts3anVg0pi6YA4=
 github.com/codefly-dev/core v0.19.7/go.mod h1:1ina3kP+YSAL4tlZvnEYd4P8bFGnJECfkP86ojeeF1A=
 github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1hQ=
