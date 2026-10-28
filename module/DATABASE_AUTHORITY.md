@@ -525,7 +525,7 @@ executable inventory and this table in the same change.
 
 | Scope | Relations | Required database boundary |
 |---|---|---|
-| `global` | `audit_event_types`, `authority_core_delegations`, `authority_core_grant_epochs`, `authority_core_installations`, `authority_core_module_revisions`, `authority_core_modules`, `authority_core_owner_aware`, `authority_core_person_epochs`, `authority_core_replay`, `authority_core_role_grants`, `authority_core_tombstones`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `hop_admission_keys`, `hop_admission_proofs`, `identity_providers`, `module_envelopes`, `plan_entitlements`, `plans`, `platform_admins`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
+| `global` | `audit_event_types`, `authority_core_clients`, `authority_core_delegations`, `authority_core_grant_epochs`, `authority_core_installations`, `authority_core_module_revisions`, `authority_core_modules`, `authority_core_owner_aware`, `authority_core_person_epochs`, `authority_core_replay`, `authority_core_role_grants`, `authority_core_tombstones`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `hop_admission_keys`, `hop_admission_proofs`, `identity_providers`, `module_envelopes`, `plan_entitlements`, `plans`, `platform_admins`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
 | `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `datasource_object_manifests`, `codefly_effect_receipts`, `datasource_operation_attempts`, `datasource_oauth_consumed_states`, `datasource_source_operations`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `executable_artifact_approvals`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_key_bindings`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `client_authorization_codes`, `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `resource_follows`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
@@ -1142,3 +1142,18 @@ attempt markers under the request pool's RLS. Expired response bytes, a typed
 audit event and the cleanup operation's own receipt commit atomically. Compact
 markers are retained so expiry cannot authorize redispatch of a mutation.
 No control-plane grant or host retention timer is added.
+
+### Authority public-client state
+
+Migration 63 adds `authority_core_clients`, a global control-plane relation with
+SELECT, INSERT and UPDATE only. Tenant/request roles have no access. Its opaque
+client ID, name, redirect list, unsigned revision and disabled state are metadata;
+registration grants no scopes or installation. The existing authority transaction
+replaces the complete record, including a lower revision or re-enabled state.
+The core owns validation and disabled-client refusal. Delegations persist their
+client ID, exact solution audience and resource beside existing module-grantee,
+scope, revocation and expiry fields. No HTTP or OAuth acquisition flow is exposed.
+
+Migration 63 must precede the adapter. Old adapters discard client-grantee fields
+and must not handle client-bearing state. Down migration removes client metadata
+and grantee fields; it is data loss, not a behavior-preserving rollback.

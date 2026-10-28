@@ -46,8 +46,9 @@ permission or lifetime fallback. Browser-edge positive-lifetime requirements
 remain owned by that edge.
 
 Expiry stops fresh issuance from the delegation; it does not revoke capabilities
-already issued. Those retain their own lifetime, bounded by the core's maximum
-token lifetime and verifier clock tolerance. Parent exchange remains bounded by
+already issued. Newly issued delegated capabilities are also bounded by the
+remaining grant lifetime at owner revision 7954; previously issued tokens retain
+their signed expiry and verifier clock tolerance. Parent exchange remains bounded by
 the parent's remaining lifetime and scopes. Explicit revocation is the separate
 operation that invalidates existing descendants through authority revisions.
 
@@ -174,3 +175,20 @@ behavior-preserving rollback.
   grant) runs on the control plane with an explicit organisation predicate at
   each statement, as it did under the former witness; returning the
   organisation-only ones to the tenant transaction is open.
+
+### Durable client metadata at Authority 7954
+
+Accounts selects the owner revision 7954a627c818 and persists its complete
+`Client` record and client delegation fields in the existing control-plane store
+(migration 63). A disabled client still reads as its stored record; core owns the
+refusal. Missing records wrap the owner not-found error, while SQL failures remain
+errors. Client replacement and delegation writes share the existing transaction
+and rollback rules. This adds no public registration or OAuth endpoint.
+
+This owner revision bounds newly issued module-delegated capabilities by the
+remaining delegation lifetime. Previously issued tokens retain their signed
+expiry and verifier tolerance; the earlier 39369 lifetime evidence applies only
+to that revision. Accounts adds no local token-expiry enforcement. Migration 63
+must precede this adapter, and older adapters must not handle client-bearing
+state. Downgrading migration 63 discards client metadata and is not a safe
+behavior-preserving rollback after clients have been used.
