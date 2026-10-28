@@ -90,6 +90,15 @@ reaches a module directly from this gateway.
   for protocol callers, preserving the authority's code and reason; ordinary
   HTTP callers keep the HTTP error response.
 
+The frontend's separate module binding reaches `/_browser/<Connect procedure>`.
+This dispatch is terminal: POST with a canonical package/service/method path only,
+no encoded path components, host namespaces or catalog-owned procedures. It
+invokes the existing browser admission above and returns a refusal when no hop
+or publication exists; it never falls through to internal exchanges, registry
+reads or solution handlers. The marker conveys no authority. The frontend
+retains it upstream and refuses noncanonical components before URL construction,
+so fetch normalization cannot remove it while carrying internal trust headers.
+
 The composition names the modules in `hop/MODULES`; Codefly generates
 `hop-routes` from their published API catalogs. Each instance generates its own
 admission key at boot (the host pins one key per hop instance, so replicas

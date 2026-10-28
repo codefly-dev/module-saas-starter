@@ -50,6 +50,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -141,6 +142,29 @@ func (h *hopRole) moduleFor(r *http.Request) (string, error) {
 		return found[0], nil
 	default:
 		return "", fmt.Errorf("%s is published by more than one module (%s)", method, strings.Join(found, ", "))
+	}
+}
+
+const browserModulePrefix = "/_browser"
+
+var browserProcedure = regexp.MustCompile(`^/(?:[A-Za-z_][A-Za-z0-9_]*\.)+[A-Za-z_][A-Za-z0-9_]*/[A-Za-z_][A-Za-z0-9_]*$`)
+
+// serveBrowserModule is an explicit, public-only door into serveBrowser. The
+// marker is not a credential. No outcome can enter another gateway handler.
+// The same-origin frontend proxy reaches this entry server-side. It deliberately
+// precedes CORS handling: direct cross-origin browser preflights are not served.
+func (g *Gateway) serveBrowserModule(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, browserModulePrefix)
+	if r.Method != http.MethodPost || r.URL.EscapedPath() != r.URL.Path || !browserProcedure.MatchString(path) ||
+		strings.HasPrefix(path, "/host.") || strings.HasPrefix(path, "/saas.") || g.matcher.Match(r.Method, path) != nil {
+		hopBrowserError(w, r, http.StatusNotFound, codes.NotFound, "module procedure not exposed")
+		return
+	}
+	out := r.Clone(r.Context())
+	out.URL.Path, out.URL.RawPath = path, ""
+	out.RequestURI = out.URL.RequestURI()
+	if !g.serveBrowser(w, g.withTrustedFrontendOrigin(out)) {
+		hopBrowserError(w, r, http.StatusNotFound, codes.NotFound, "module procedure not published")
 	}
 }
 

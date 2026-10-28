@@ -238,3 +238,134 @@ func TestHopBrowserConnectClientKeepsAuthorityRefusal(t *testing.T) {
 		})
 	}
 }
+
+// The browser alias is terminal: neither an unpublished path nor a hostile
+// suffix may fall through to the gateway's internally trusted handlers.
+func TestBrowserAliasOnlyServesPublishedPersonCalls(t *testing.T) {
+	for _, path := range []string{
+		"/_browser" + listCollection,
+		"/_browser/solutions/_registry",
+		"/_browser/modules/_work-context",
+		"/_browser/host.authority.v1.AuthorityService/Issue",
+		"/_browser/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
+		"/_browser/example.v1.Missing/Read",
+		"/_browser/../solutions/_registry",
+		"/_browser/documents.v1.DocumentsService%2fListCollection",
+		"/_browser/documents.v1.DocumentsService/%4cistCollection",
+		"/_browser/documents.v1.DocumentsService/ListCollection/extra",
+		"/_browser/https://example.com/Read",
+	} {
+		t.Run(path, func(t *testing.T) {
+			gw, issuer, face, bearer := hopBrowserHarness(t)
+			req := listCollectionRequest(path)
+			req.Header.Set("Authorization", "Bearer "+bearer)
+			req.Header.Set("X-Codefly-Internal-Token", "caller-supplied")
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
+			if path == "/_browser"+listCollection {
+				require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+				require.Equal(t, listCollection, face.path)
+				require.Equal(t, 1, issuer.calls)
+				require.Empty(t, face.header.Get("X-Codefly-Internal-Token"))
+			} else {
+				require.GreaterOrEqual(t, w.Code, 400, w.Body.String())
+				require.Zero(t, issuer.calls)
+				require.Zero(t, face.calls)
+			}
+		})
+	}
+}
+
+func TestBrowserAliasRetainsSessionAndMethodRefusals(t *testing.T) {
+	for _, tc := range []struct{ method, bearer string }{{"GET", "valid"}, {"POST", ""}, {"POST", "invalid"}} {
+		t.Run(tc.method+"/"+tc.bearer, func(t *testing.T) {
+			gw, issuer, face, bearer := hopBrowserHarness(t)
+			req := httptest.NewRequest(tc.method, "/_browser"+listCollection, nil)
+			if tc.bearer == "valid" {
+				req.Header.Set("Authorization", "Bearer "+bearer)
+			}
+			if tc.bearer == "invalid" {
+				req.Header.Set("Authorization", "Bearer invalid")
+			}
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
+			require.GreaterOrEqual(t, w.Code, 400)
+			require.Zero(t, issuer.calls)
+			require.Zero(t, face.calls)
+		})
+	}
+}
+
+func TestBrowserAliasUsesTheExistingSignedHop(t *testing.T) {
+	gw, _, module, _, bearer := hopHarness(t)
+	req := listCollectionRequest("/_browser" + listCollection)
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, 1, module.reached)
+	require.NotEmpty(t, module.arrived.Get("X-Codefly-Hop-Proof"))
+	require.Empty(t, module.arrived.Get("Authorization"))
+}
+
+func TestBrowserAliasRefusesBeforeInternalOrCatalogDispatch(t *testing.T) {
+	for _, mode := range []string{"no hop", "catalog collision", "ambiguous publication"} {
+		t.Run(mode, func(t *testing.T) {
+			gw, issuer, face, bearer := hopBrowserHarness(t)
+			switch mode {
+			case "no hop":
+				gw.hop = nil
+			case "catalog collision":
+				gw.matcher.connectRoutes[listCollection] = &RouteEntry{Service: "accounts", Method: http.MethodPost, Path: listCollection}
+			case "ambiguous publication":
+				routes := testHopRoutes(t)
+				second := routes.Endpoints[0]
+				second.Audience, second.Package = "records", "records"
+				routes.Endpoints = append(routes.Endpoints, second)
+				gw.hop.routes, gw.hop.modules = routes, []string{"documents", "records", "tracing"}
+			}
+			req := listCollectionRequest("/_browser" + listCollection)
+			req.Header.Set("Authorization", "Bearer "+bearer)
+			req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, req)
+			want := http.StatusNotFound
+			if mode == "ambiguous publication" {
+				want = http.StatusConflict
+			}
+			require.Equal(t, want, w.Code, w.Body.String())
+			require.Zero(t, issuer.calls)
+			require.Zero(t, face.calls)
+		})
+	}
+	gw, issuer, face, bearer := hopBrowserHarness(t)
+	for _, path := range []string{"/solutions/_registry", "/modules/_work-context", "/solutions/_work-context"} {
+		req := httptest.NewRequest(http.MethodGet, "/_browser"+path, nil)
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	}
+	require.Zero(t, issuer.calls)
+	require.Zero(t, face.calls)
+}
+
+func TestBrowserAliasConnectClientKeepsAuthorityRefusal(t *testing.T) {
+	for _, code := range []codes.Code{codes.PermissionDenied, codes.Unavailable, codes.Unauthenticated} {
+		t.Run(code.String(), func(t *testing.T) {
+			gw, issuer, face, bearer := hopBrowserHarness(t)
+			const reason = "the current installation does not grant this person"
+			issuer.refuse = status.Error(code, reason)
+			server := httptest.NewServer(gw)
+			defer server.Close()
+			client := connect.NewClient[emptypb.Empty, emptypb.Empty](server.Client(), server.URL+"/_browser"+listCollection)
+			request := connect.NewRequest(&emptypb.Empty{})
+			request.Header().Set("Authorization", "Bearer "+bearer)
+			_, err := client.CallUnary(context.Background(), request)
+			require.Equal(t, connect.Code(code), connect.CodeOf(err))
+			require.ErrorContains(t, err, reason)
+			require.Zero(t, face.calls)
+		})
+	}
+}

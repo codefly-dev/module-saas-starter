@@ -7,11 +7,12 @@ vi.mock("@/solutions/registry", () => ({
 	findSolution,
 	browserManifestUrl: () => "/assets/mf-manifest.json",
 	solutionProxyBase: (id: string) => `/api/solutions/${id}/proxy`,
+	solutionModuleApiBase: (id: string) => `/api/solutions/${id}/proxy/_browser`,
 }));
 // The remote and the dashboard are their own components with their own tests;
 // what is pinned here is where the page puts them.
 vi.mock("@/solutions/SolutionRuntime", () => ({
-	SolutionRuntime: ({ remote }: { remote: { id: string } }) => <div data-testid="remote">{remote.id}</div>,
+	SolutionRuntime: ({ remote, pageProps }: { remote: { id: string }; pageProps: { moduleApiBase?: string } }) => <div data-testid="remote" data-module-base={pageProps.moduleApiBase}>{remote.id}</div>,
 }));
 vi.mock("@/solutions/SolutionDashboard", () => ({
 	SolutionDashboards: () => <div data-testid="dashboard">dashboards</div>,
@@ -57,6 +58,7 @@ describe("the solution page", () => {
 		expect(await screen.findByRole("tab", { name: "App" })).toBeTruthy();
 		expect(await screen.findByRole("tab", { name: "Dashboard" })).toBeTruthy();
 		expect(await screen.findByTestId("remote")).toBeTruthy();
+		expect(screen.getByTestId("remote").getAttribute("data-module-base")).toBe("/api/solutions/example-solution/proxy/_browser");
 		expect(screen.queryByTestId("dashboard")).toBeNull();
 
 		fireEvent.click(screen.getByRole("tab", { name: "Dashboard" }));

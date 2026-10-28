@@ -64,7 +64,7 @@ export {
 	setupClients,
 	useSolutionSetup,
 } from "./setup/use-solution-setup.js";
-export { solutionTransport } from "./transport.js";
+export { moduleTransport, solutionTransport } from "./transport.js";
 export {
 	type SolutionResource,
 	useAccessToken,

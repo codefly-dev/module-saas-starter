@@ -9,6 +9,7 @@ import {
 	browserManifestUrl,
 	findSolution,
 	solutionProxyBase,
+	solutionModuleApiBase,
 } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -41,12 +42,13 @@ export default async function SolutionPage({
 			}}
 			pageProps={{
 				solutionId: solution.id,
-				// Same-origin base for every backend call the remote makes. The
+				// Same-origin base for host procedures and the solution relay. The
 				// proxy routes on the path: a `saas.<pkg>.v1.<Service>/<Method>`
 				// procedure reaches the API gateway's root (the host's own
 				// services, e.g. the DatasourceService `<DatasourcesPanel>`
 				// calls), anything else reaches this solution's upstream.
 				apiBase: solutionProxyBase(solution.id),
+				moduleApiBase: solutionModuleApiBase(solution.id),
 				// What this solution declared it is built on, handed straight
 				// back to it. The remote could hard-code the same repository,
 				// but then two statements would have to agree: the one the host

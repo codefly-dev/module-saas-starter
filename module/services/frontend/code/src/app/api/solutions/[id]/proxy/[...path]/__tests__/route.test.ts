@@ -1,3 +1,6 @@
+import { AccessibleScopeService } from "@codefly-dev/saas-sdk";
+import { createClient, Code } from "@connectrpc/connect";
+import { moduleTransport, requestBinding } from "@codefly-dev/saas-ui/solution";
 import { HOST_SETUP_PROCEDURES } from "@/lib/host-setup-procedures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,7 +25,13 @@ const {
 	getWorkspaceConfiguration:
 		vi.fn<(name: string, key: string) => string | undefined>(),
 }));
-vi.mock("codefly", () => ({
+vi.mock("codefly", async () => ({
+	...(await vi.importActual<typeof import("codefly")>("codefly")),
+	networkInstance: () => {
+		const endpoints = getEndpoints();
+		if (endpoints.length !== 1) throw new Error("gateway unavailable");
+		return endpoints[0];
+	},
 	getEndpoints,
 	getCurrentModule,
 	getCurrentService,
@@ -1126,4 +1135,70 @@ describe("retained frontend authority", () => {
   expect(res.status).toBe(410);
   expect(fetchMock).not.toHaveBeenCalled();
  });
+});
+
+describe("the dedicated browser module edge", () => {
+	it.each([
+		["_browser", "..", "solutions", "_registry"],
+		["_browser", "example.v1.Service", "Read", "..", "..", "solutions", "_registry"],
+		["_browser", "example.v1.Service/Read"],
+		["_browser", "example.v1.Service", "%2e%2e"],
+	])("refuses malformed components before a trusted fetch: %j", async (...path) => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+		const res = await POST(proxyRequest("http://frontend/api/solutions/audit/proxy/_browser", { method: "POST" }), context("audit", path));
+		expect(res.status).toBe(404);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+});
+
+
+describe("generated clients through the browser module forwarder", () => {
+	it("keeps the marker, generated procedure, base path and protocol headers", async () => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+		fetchMock.mockResolvedValue(Response.json({ scopes: [] }));
+		const authedFetch: typeof fetch = async (input, init) => {
+			const url = new URL(String(input), "http://frontend");
+			const path = url.pathname.split("/proxy/")[1].split("/");
+			return POST(new Request(url, init), context("audit", path));
+		};
+		const client = createClient(AccessibleScopeService, moduleTransport(
+			requestBinding("/relay", () => "viewer", authedFetch, "/api/solutions/audit/proxy/_browser"),
+		));
+		await client.listMyAccessibleScopes({ orgId: "acme" });
+		const [target, init] = fetchMock.mock.calls[0];
+		expect(target).toBe(`${GATEWAY_BASE}/_browser/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes`);
+		expect(init.headers.get("authorization")).toBe("Bearer viewer");
+		expect(init.headers.get("connect-protocol-version")).toBe("1");
+		expect(init.headers.get("X-Codefly-Internal-Token")).toBe(INTERNAL_TOKEN);
+		expect(init.redirect).toBe("error");
+		// This descriptor tests generic forwarding only: gateway tests separately
+		// refuse host namespaces and admit only composed-module publications.
+	});
+
+	it.each([[401, "unauthenticated", Code.Unauthenticated], [403, "permission_denied", Code.PermissionDenied]] as const)("retains owner refusal %s", async (status, code, want) => {
+		withGateway();
+		registerAudit();
+		fetchMock.mockResolvedValue(Response.json({ code, message: "owner refusal" }, { status }));
+		const authedFetch: typeof fetch = (input, init) => POST(
+			new Request(new URL(String(input), "http://frontend"), init),
+			context("audit", ["_browser", "example.v1.Service", "Read"]),
+		);
+		await expect(createClient(AccessibleScopeService, moduleTransport(
+			requestBinding("/relay", () => "viewer", authedFetch, "/api/solutions/audit/proxy/_browser"),
+		)).listMyAccessibleScopes({})).rejects.toMatchObject({ code: want });
+	});
+
+	it("never serves a module call through a retained asset version", async () => {
+		withGateway();
+		registerAudit();
+		const res = await POST(proxyRequest("http://frontend/api/solutions/audit/proxy/_browser", { method: "POST" }), {
+			params: Promise.resolve({ id: "audit", path: ["_browser", "example.v1.Service", "Read"], version: "a".repeat(64) }),
+		});
+		expect(res.status).toBe(404);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
 });

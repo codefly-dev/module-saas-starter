@@ -66,6 +66,21 @@ components:
   there (on solution-runtime-go, `/modules/<as>` is a consumed module's
   passthrough). The bearer is stamped, requests go through `authedFetch`, and a
   refused authority is reported.
+- `moduleTransport(binding, onUnauthorized?)` — the transport for generated
+  clients calling composed modules directly through the person's authorized
+  edge. It uses the optional host-provided `moduleApiBase` without a consumer
+  path suffix and reuses `solutionTransport` for bearer, tracing, host-owned
+  refresh and refusal handling. Missing, empty or whitespace-only bases refuse
+  before any request; there is no inferred origin or solution-relay fallback.
+  The host resolves its gateway through the Codefly SDK from delivered
+  environment and projects a same-origin browser path, never a private endpoint.
+  A standalone host may explicitly supply `/` for its root-mounted public edge.
+- `requestBinding(apiBase, getAccessToken, authedFetch, moduleApiBase?)` preserves
+  that optional fourth argument when rebuilding a destructured binding. Existing
+  three-argument calls keep their shape. `SolutionBinding` and
+  `SolutionRequestBinding` expose the optional field from both package exports.
+  Keep `solutionTransport(binding, path)` for supported solution-runtime relays;
+  the module helper does not change those routes or grant authority.
 - `installBrowserTracing({ allowedAttributeKeys, allowedSpanNames?, allowedEndpointOrigins?, endpoint?, serviceName?, resourceAttributes? })`
   — registers the page's tracer provider once (the first caller on the page
   wins, across every bundled copy of this package): W3C trace context as the

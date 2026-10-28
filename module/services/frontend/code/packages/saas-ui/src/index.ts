@@ -187,6 +187,7 @@ export {
 	type SolutionSetupTransport,
 	solutionFetch,
 	solutionJson,
+	moduleTransport,
 	solutionTransport,
 	TRACE_ATTRIBUTE_VALUE_MAX_LENGTH,
 	TRACE_DENIED_ATTRIBUTE_KEYS,

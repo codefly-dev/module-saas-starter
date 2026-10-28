@@ -221,6 +221,11 @@ export function solutionProxyBase(id: string): string {
 	return `/api/solutions/${encodeURIComponent(id)}/proxy`;
 }
 
+/** The host's explicit published-module browser edge, separate from the relay. */
+export function solutionModuleApiBase(id: string): string {
+	return `${solutionProxyBase(id)}/_browser`;
+}
+
 /** The same applied asset directory for web pages and client surfaces. */
 export function solutionAssetProxyBase(
 	manifest: Pick<SolutionManifest, "id" | "assetVersion">,

@@ -175,6 +175,12 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 // Unlisted paths are rejected with 404. Every request must match an explicit
 // entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// This explicit frontend entry can reach only published person operations.
+	// Even a refusal is terminal; it must never enter internal dispatch below.
+	if r.URL.Path == browserModulePrefix || strings.HasPrefix(r.URL.Path, browserModulePrefix+"/") {
+		g.serveBrowserModule(w, r)
+		return
+	}
 	// A presented Work Context is verified at the edge, but NOT here: it is
 	// verified against the audience of the route it was presented to, so the route
 	// has to be resolved first. Each routing destination below calls

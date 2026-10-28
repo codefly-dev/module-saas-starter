@@ -38,6 +38,20 @@ For a module page, relative data requests through the injected `apiBase` reach
 Public GET/HEAD assets use the common `/solutions/<alias>/assets` surface for
 both kinds. Platform Connect procedures still reach the gateway root.
 
+Direct generated module clients use the optional `moduleApiBase` page binding
+and the kit's `moduleTransport`. The base is a same-origin `/_browser` suffix on
+the existing solution proxy; private gateway addresses stay server-side. The
+server selects the current module's `auth-gateway` / `rest` / `REST` endpoint
+through the existing Codefly `networkInstance` resolver and preserves its base
+path. Missing, ambiguous or unsafe destinations refuse without fallback.
+Ambiguous composition also emits a static server diagnostic, without endpoint
+addresses or delivered environment values; ordinary absence is not ambiguity.
+The proxy keeps the marker for terminal gateway browser-only dispatch, validates
+canonical POST procedure components before URL normalization, and preserves
+Connect headers, streaming, cancellation and the host's credential handling.
+Versioned asset routes cannot open this entry. Existing `apiBase`/path relays
+remain unchanged; the module connection adds no installation or permission.
+
 These declarations grant no access to content. The solution page reads the full
 manifest in process; browser projections carry only the fields described below.
 
