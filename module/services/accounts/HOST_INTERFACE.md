@@ -48,7 +48,11 @@ remain owned by that edge.
 Expiry stops fresh issuance from the delegation; it does not revoke capabilities
 already issued. Newly issued delegated capabilities are also bounded by the
 remaining grant lifetime at owner revision 7954; previously issued tokens retain
-their signed expiry and verifier clock tolerance. Parent exchange remains bounded by
+their signed expiry and verifier clock tolerance. The selected owner correction
+f82a98e093ef uses one issuance instant for a finite grant's remaining lifetime
+and root timestamps, so revision/seal-read latency cannot extend the signed
+window. Verification, child derivation and post-sign grant checks remain live;
+Accounts adds no deadline arithmetic. Parent exchange remains bounded by
 the parent's remaining lifetime and scopes. Explicit revocation is the separate
 operation that invalidates existing descendants through authority revisions.
 
@@ -178,8 +182,9 @@ behavior-preserving rollback.
 
 ### Durable client metadata at Authority 7954
 
-Accounts selects the owner revision 7954a627c818 and persists its complete
-`Client` record and client delegation fields in the existing control-plane store
+Accounts persists the complete client contract introduced at owner revision
+7954a627c818 and selects its deadline correction f82a98e093ef. It preserves every
+`Client` record field and client delegation field in the existing control-plane store
 (migration 63). A disabled client still reads as its stored record; core owns the
 refusal. Missing records wrap the owner not-found error, while SQL failures remain
 errors. Client replacement and delegation writes share the existing transaction
