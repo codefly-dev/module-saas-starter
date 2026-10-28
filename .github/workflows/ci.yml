@@ -7,7 +7,7 @@ on:
     # immutable-package release track keyed to module.package.codefly.yaml.
     tags: ["v*", "module-package/v*"]
   pull_request:
-    branches: [main]
+    branches: [main, feat/solution-setup-tab]
   # The merge queue builds each entry as `main + the PR` and reports the
   # required checks from THAT ref, which is the guarantee "require branches to
   # be up to date" was buying by making every author rebase by hand. Every

@@ -14,7 +14,7 @@ name: naming-records
 # restart nineteen checks. This workflow runs one check in seconds instead.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/solution-setup-tab]
     types: [opened, reopened, synchronize, edited]
 
 permissions:
