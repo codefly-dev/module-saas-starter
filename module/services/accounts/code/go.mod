@@ -7,11 +7,11 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261027132425-c3568f113db1
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261027132425-c3568f113db1
-	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261027132425-c3568f113db1
-	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261027132425-c3568f113db1
-	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261027132425-c3568f113db1
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261028150114-269005645a32
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261028150114-269005645a32
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261028150114-269005645a32
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261028150114-269005645a32
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261028150114-269005645a32
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
 	github.com/codefly-dev/core v0.19.7-0.20261026092055-b23dc13543b2
 	github.com/codefly-dev/interface-cache/go/cache v0.4.1
@@ -21,6 +21,7 @@ require (
 	github.com/codefly-dev/service-object-storage v0.0.19
 	github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260929200903-bae6c31c7211
 	github.com/codefly-dev/service-redis/cache v0.3.0
+	github.com/codefly-dev/service-vault/keyservice v0.0.0-20261023210413-a6c7256bfae7
 	github.com/go-webauthn/webauthn v0.18.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -54,7 +55,10 @@ require (
 	cel.dev/expr v0.25.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.1 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/containers/azcontainerregistry v0.2.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.5.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.9.0 // indirect
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
@@ -132,3 +136,9 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	oras.land/oras-go/v2 v2.6.2 // indirect
 )
+
+// DEVELOPMENT CANDIDATE: service-vault PR #86; replace with an owner release before promotion.
+replace github.com/codefly-dev/service-vault/keyservice => github.com/crisfiorini-oss/service-vault/keyservice v0.0.0-20261023210413-a6c7256bfae7
+
+// DEVELOPMENT CANDIDATE: frontend registry reader in PR #1234; adopt an owner release before promotion.
+replace github.com/codefly-dev/module-saas-starter/module/frontendpayload => github.com/crisfiorini-oss/module-saas-starter/module/frontendpayload v0.0.0-20261028181434-d67666bdc352

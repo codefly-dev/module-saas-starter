@@ -96,6 +96,10 @@ func (h *hostInstallationConnectHandler) List(ctx context.Context, req *connect.
 	return unary(ctx, req, h.server().List)
 }
 
+func (h *hostInstallationConnectHandler) ListHeld(ctx context.Context, req *connect.Request[installationv1.ListHeldRequest]) (*connect.Response[installationv1.ListHeldResponse], error) {
+	return unary(ctx, req, h.server().ListHeld)
+}
+
 type hostSessionConnectHandler struct{ svc *business.Service }
 
 func (h *hostSessionConnectHandler) SignIn(ctx context.Context, req *connect.Request[sessionv1.SignInRequest]) (*connect.Response[sessionv1.Session], error) {

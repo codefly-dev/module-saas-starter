@@ -557,6 +557,28 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 	return out, nil
 }
 
+// ListHeld reads the signed-in member's current installation roles through
+// the shared Authority core, including team grants and their live revocation.
+func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installationv1.ListHeldRequest) (*installationv1.ListHeldResponse, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	caller, err := signedInPerson(ctx, "list held installations")
+	if err != nil {
+		return nil, err
+	}
+	held, err := core.HeldInstallations(ctx, caller, req.GetOrganizationId())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	out := &installationv1.ListHeldResponse{}
+	for _, h := range held {
+		out.Installations = append(out.Installations, &installationv1.HeldInstallation{Installation: installationToWire(core, ctx, h.Installation), Roles: h.Roles})
+	}
+	return out, nil
+}
+
 // installationToWire is an installation as the interface states it, with the
 // roles its solution declares.
 func installationToWire(core *authority.Service, ctx context.Context, i domain.Installation) *installationv1.Installation {
@@ -747,9 +769,14 @@ func (s *HostSessionServer) ListFixturePeople(ctx context.Context, _ *sessionv1.
 	}
 	out := &sessionv1.ListFixturePeopleResponse{}
 	for _, p := range people {
+		_, organization, err := s.service.SessionDisplayNames(ctx, p.PersonID, p.OrganizationID)
+		if err != nil {
+			return nil, status.Errorf(codes.Unavailable, "cannot read fixture display names: %v", err)
+		}
 		out.People = append(out.People, &sessionv1.FixturePerson{
 			PersonId: p.PersonID, Email: p.Email, OrganizationId: p.OrganizationID,
 			Roles: p.Roles, TeamIds: p.TeamIDs, FixtureToken: p.FixtureToken,
+			OrganizationDisplayName: organization,
 		})
 	}
 	return out, nil

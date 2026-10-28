@@ -68,6 +68,7 @@ const (
 	fixtureOrganization = "00000000-0000-7000-8000-0000000000c1"
 	globexOrganization  = "00000000-0000-7000-8000-0000000000c2"
 	conformanceAlex     = "00000000-0000-7000-8000-0000000000b3"
+	conformanceAdmin    = "00000000-0000-7000-8000-0000000000a2"
 	conformanceIvy      = "00000000-0000-7000-8000-0000000000b9"
 	conformanceZoe      = "00000000-0000-7000-8000-0000000000b5"
 )
@@ -394,6 +395,15 @@ func runHostInterfaceFixture(t *testing.T) {
 		// waits until the harness resumes it, and uninstalling revokes it.
 		Lifecycle: &conformance.InstallationLifecycleCase{
 			Target: "conformance-lifecycle", Credential: credential("conformance-lifecycle"), Kind: "conformance-lifecycle.page", Team: finance,
+			SetAdministrator: func(ctx context.Context, administrator bool) error {
+				role := gen.OrgRole_ORG_ROLE_MEMBER
+				if administrator {
+					role = gen.OrgRole_ORG_ROLE_ADMIN
+				}
+				return svc.ConvergeFixtureOrgMember(ctx, &gen.AddOrgMemberRequest{
+					OrgId: fixtureOrganization, UserId: conformanceAdmin, Role: role,
+				})
+			},
 			PauseInstall: func() func() {
 				release := make(chan struct{})
 				svc.SetAuthorityInstallStep(func(ctx context.Context, _ domain.Installation) error {

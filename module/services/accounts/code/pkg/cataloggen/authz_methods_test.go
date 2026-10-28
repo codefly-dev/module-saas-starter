@@ -184,5 +184,6 @@ func TestImpersonationRestrictionsMatchTheDescriptorsTheInterceptorReads(t *test
 	}
 
 	require.Equal(t, catalogued, enforced)
-	require.Len(t, enforced, 68) // 57 of the API package + Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, Current of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
+	require.Contains(t, enforced, "/host.installation.v1.InstallationService/ListHeld")
+	require.Len(t, enforced, 69) // 57 of the API package + Issue, Delegate, RevokeDelegation, GetDelegation, Install, Review, GrantRole, RevokeRole, ListRoleGrants, List, ListHeld, Current of the implemented interfaces; Check and ListResources are public, authenticated by the token they check
 }
