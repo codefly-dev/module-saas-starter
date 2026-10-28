@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"connectrpc.com/otelconnect"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
@@ -1042,7 +1041,7 @@ func serveConnect(t *testing.T, ctx context.Context, grpcServer *GrpcServer) uin
 	tier, err := NewConnectServer(&Configuration{}, grpcServer)
 	require.NoError(t, err)
 	mux := http.NewServeMux()
-	otel, err := otelconnect.NewInterceptor()
+	otel, err := NewOTelInterceptor()
 	require.NoError(t, err)
 	registerCatalogConnectServices(mux, tier, connect.WithInterceptors(otel,
 		connectRefusalInterceptor(), connectAuthInterceptor(func() auth.JWTMinter {
