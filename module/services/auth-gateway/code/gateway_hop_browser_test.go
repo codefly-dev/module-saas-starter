@@ -1,15 +1,16 @@
 package main
 
 import (
-	"connectrpc.com/connect"
 	"context"
-	"google.golang.org/protobuf/types/known/emptypb"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	authorityv1 "github.com/codefly-dev/authority/libraries/authority-client/go/gen/host/authority/v1"
 	hop "github.com/codefly-dev/authority/libraries/hop/go"

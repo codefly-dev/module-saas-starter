@@ -193,6 +193,9 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
 - Canonical **service** gate: `codefly ci run`. It owns lint, compile/typecheck,
   tests, dependency/vuln audit, SBOM, and container build for every service in
   the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
+- Repair authored-source formatting through `codefly fix service <service>
+  --file <source-root-relative-path>`; its default safe mode uses the owning
+  language plugin. Regenerate generated files instead of applying fixes to them.
 - Beside it, CI runs ten repository-specific gates that no service owns — the
   module verification job, authorization coverage, the release-gate contract,
   interface docs and story tests, the kit's version, marketing isolation, the

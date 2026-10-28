@@ -8,6 +8,7 @@ import (
 	artifactv1 "accounts/pkg/gen/host/artifact/v1"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
