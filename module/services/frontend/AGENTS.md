@@ -102,10 +102,12 @@ unavailable; an empty tool list is not reported as proof of no exposure.
 
 The browser reaches that interface at exactly the procedures the local
 authority's edge serves a browser (`src/lib/host-setup-procedures.ts`):
-InstallationService List, Review, ListRoleGrants, GrantRole, RevokeRole and
+InstallationService List, ListHeld, Review, ListRoleGrants, GrantRole, RevokeRole and
 OfferService ListOffers, ReviewOffer. `src/proxy.ts` forwards them from a host
 page and the solution proxy from a remote's `apiBase`, both to the gateway
-root; Install and Current are not forwarded. The admin installation page keeps
+root; Install and Current are not forwarded. ListHeld reads the signed-in
+member’s own held roles; ListRoleGrants still requires the authority’s
+admin/installer standing to list everyone’s grants. The admin installation page keeps
 this host's own team access card (its installation record and the team grants
 the gateway admits by) beside the shared component.
 
@@ -141,7 +143,7 @@ the organization. `src/lib/auth-session.ts` can read an `org` claim, but
 `decodeJWTPayload` only base64-decodes — it verifies nothing — so a route that
 narrowed on it would let a caller read another tenant's menu by editing one field.
 These `/api/*` paths are also not proxied through the gateway (`src/proxy.ts`
-forwards `/v1/*`, `/saas.accounts.v1.*` and the Setup tab's seven host
+forwards `/v1/*`, `/saas.accounts.v1.*` and the Setup tab's eight host
 installation procedures only), so no `ext_authz` stamp reaches
 them either. `src/solutions/entitlements.ts` therefore forwards the caller's
 credential to `GET /solutions/_entitlements` on the gateway, which authenticates

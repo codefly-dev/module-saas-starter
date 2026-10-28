@@ -11,6 +11,7 @@
  */
 export const HOST_SETUP_PROCEDURES = [
 	"/host.installation.v1.InstallationService/List",
+	"/host.installation.v1.InstallationService/ListHeld",
 	"/host.installation.v1.InstallationService/Review",
 	"/host.installation.v1.InstallationService/ListRoleGrants",
 	"/host.installation.v1.InstallationService/GrantRole",

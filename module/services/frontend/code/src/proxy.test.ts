@@ -57,6 +57,11 @@ describe("public paths", () => {
 		expect(isPublic("/oauth2/consent")).toBe(false);
 	});
 
+	it("forwards the signed-in member’s held installation roles to the authority", () => {
+		expect(isPublic("/host.installation.v1.InstallationService/ListHeld")).toBe(true);
+		expect(isPublic("/host.installation.v1.InstallationService/ListHeldExtra")).toBe(false);
+	});
+
 	it("forwards the Setup tab's installation procedures to the gateway, and no other host procedure", () => {
 		// The solution Setup tab reads and changes role grants through the host
 		// installation interface, as the signed-in person: the gateway decides.
