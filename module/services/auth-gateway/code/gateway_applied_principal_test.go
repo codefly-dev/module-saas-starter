@@ -7,6 +7,7 @@ import (
 	"time"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
+
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
