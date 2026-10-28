@@ -330,6 +330,9 @@ func runHostInterfaceFixture(t *testing.T) {
 		{Credential: modelCredential, Binding: "records", Audience: "documents", AskKind: "example-records", AskAction: "read"},
 	}}
 	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization, SessionID: "conformance-harness"}
+	const adminToken = "dev-alice"
+	administrator, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: adminToken})
+	require.NoError(t, err)
 	conformance.Run(t, conn, registeredDescriptors(t), conformance.Fixture{
 		Organization:   fixtureOrganization,
 		HostCoordinate: "conformance-host", HostDomain: "acme",
@@ -340,7 +343,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		// accounts serves OfferService from the same core, so the declaration
 		// case compares the reviewed offer here too: a solution's roles and the
 		// permissions they carry are its declaration on either host.
-		ViewerToken: "dev-bob", AdminToken: "dev-alice",
+		ViewerToken: "dev-bob", AdminToken: adminToken,
 		Audience: "documents", ReadKind: "example-records",
 		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
 		// The installed proposals solution and its own workload. Its roles name
@@ -417,6 +420,17 @@ func runHostInterfaceFixture(t *testing.T) {
 				return func() { once.Do(func() { close(release); svc.SetAuthorityInstallStep(nil) }) }
 			},
 			Revoke: func(ctx context.Context, id string) error { return core.Uninstall(ctx, alex, fixtureOrganization, id) },
+			SetAdministrator: func(ctx context.Context, enabled bool) error {
+				role := gen.OrgRole_ORG_ROLE_MEMBER
+				if enabled {
+					role = gen.OrgRole_ORG_ROLE_ADMIN
+				}
+				// The normal membership upsert changes live standing without
+				// ending the session, and invalidates the membership cache.
+				return svc.AddOrgMember(ctx, conformanceAlex, &gen.AddOrgMemberRequest{
+					OrgId: fixtureOrganization, UserId: administrator.GetPersonId(), Role: role,
+				})
+			},
 		},
 		Chain: &chain,
 		// The same binding read as a lookup carries its lookup scopes alone.

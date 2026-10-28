@@ -784,6 +784,7 @@ func (s *HostSessionServer) ListFixturePeople(ctx context.Context, _ *sessionv1.
 		out.People = append(out.People, &sessionv1.FixturePerson{
 			PersonId: p.PersonID, Email: p.Email, OrganizationId: p.OrganizationID,
 			Roles: p.Roles, TeamIds: p.TeamIDs, FixtureToken: p.FixtureToken,
+			OrganizationDisplayName: p.OrganizationDisplayName,
 		})
 	}
 	return out, nil

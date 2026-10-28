@@ -92,7 +92,11 @@ What accounts adds, and where:
   policies; neither approval authorizes or revokes the other. An omitted
   artifact identity is rejected by the core as malformed.
 - **session**: `SignIn` (fixture sign-in), `Current`, `ListFixturePeople`:
-  accounts' own sessions.
+  accounts' own sessions. Fixture listing names the selected organization from
+  its current stored record through the same scoped read as sign-in. It opens
+  no session; disabled fixture authentication reads and lists nobody, and an
+  organization read failure refuses the listing rather than returning a partial
+  list or an empty display name.
 
 ## Proof
 
@@ -114,6 +118,10 @@ What accounts adds, and where:
   own production paths (`RemoveTeamMember`, `RemoveOrgMember`): the narrowing
   applies at once, the next issue no longer carries what the membership gave,
   and the removal is in the audit journal naming the person removed.
+- Installation conformance changes the administrator's live role through the
+  normal membership upsert, retaining the session and membership. The shared
+  suite checks revocation after review and while acknowledgement is paused;
+  restoring the role permits the unchanged pending approval to resume.
 - `.github/workflows/ci.yml` (`host-interface-conformance`, the required
   context "Host interface conformance (authority main)" and a release gate)
   runs the suite at authority main, whenever main contains the pinned revision,
