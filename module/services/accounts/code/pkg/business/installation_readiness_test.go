@@ -218,3 +218,92 @@ func conditionsOfKind(conditions []ReadinessCondition, kind gen.ReadinessConditi
 	}
 	return out
 }
+
+// The selected authority core's IssueChild (authority/issue.go) bypasses the
+// outward consent ceiling for the actor principal's own audience. It selects
+// invoke/lookup through decide.ScopesFor; headless issuance still uses consent.
+// TestReadinessSelfOperationsMatchOwnerConsent exercises that owner path too.
+func TestReadinessPersonSelfBindingsDoNotRequireOutwardConsent(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		audience   string
+		operations map[string][]string
+		derived    bool
+		omitted    bool
+	}{
+		{name: "self invoke omitted", audience: readinessPrefix, operations: map[string][]string{"invoke": {"evidence:read"}}},
+		{name: "self lookup omitted", audience: readinessPrefix, operations: map[string][]string{"lookup": {"evidence:read"}}},
+		{name: "self invoke and lookup omitted", audience: readinessPrefix, operations: map[string][]string{"invoke": {"evidence:read"}, "lookup": {"evidence:read"}}},
+		{name: "self invoke derived is not a reached module", audience: readinessPrefix, operations: map[string][]string{"invoke": {"evidence:read"}}, derived: true},
+		{name: "self mixed derived is not a reached module", audience: readinessPrefix, operations: map[string][]string{"invoke": {"evidence:read"}, "headless": {"evidence:read"}}, derived: true},
+		{name: "self headless omitted", audience: readinessPrefix, operations: map[string][]string{"headless": {"evidence:read"}}, omitted: true},
+		{name: "self mixed omitted", audience: readinessPrefix, operations: map[string][]string{"invoke": {"evidence:read"}, "lookup": {"evidence:read"}, "headless": {"evidence:read"}}, omitted: true},
+		{name: "cross audience invoke omitted", audience: "model", operations: map[string][]string{"invoke": {"evidence:read"}}, omitted: true},
+		{name: "cross audience lookup omitted", audience: "model", operations: map[string][]string{"lookup": {"evidence:read"}}, omitted: true},
+		{name: "alias is not authoritative principal", audience: "display-alias", operations: map[string][]string{"invoke": {"evidence:read"}}, omitted: true},
+		{name: "empty self operation omitted", audience: readinessPrefix, operations: map[string][]string{"invoke": {}}, omitted: true},
+		{name: "unknown self operation omitted", audience: readinessPrefix, operations: map[string][]string{"invoke": {"evidence:read"}, "unknown": {"evidence:read"}}, omitted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			derived := map[string]ModuleOperationAudience{}
+			if tc.derived {
+				derived["operation"] = ModuleOperationAudience{Audience: tc.audience, InvokeScopes: []ModuleOperationScope{{ResourceKind: "evidence", Actions: []string{"read"}}}}
+			}
+			facts := readinessTestFacts(derived, nil, nil)
+			asked := facts.askedByBinding["acme.documents"]
+			asked.Principal, asked.Alias = "display-alias", "display-alias"
+			asked.Authority.Bindings = []solutionhost.AuthorityBinding{{ID: "operation", Audience: tc.audience, Operations: tc.operations}}
+			facts.askedByBinding["acme.documents"] = asked
+			readiness, reached := facts.readinessFor(activeInstallation(), gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY, documentsTarget(), nil)
+			require.Equal(t, !tc.omitted, readiness.Ready)
+			require.Empty(t, reached, "self operations never carry a grant to another module")
+			if tc.omitted {
+				require.Len(t, readiness.Unmet, 1)
+				require.Equal(t, gen.ReadinessConditionKind_READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED, readiness.Unmet[0].Kind)
+			} else {
+				require.Empty(t, readiness.Unmet)
+			}
+		})
+	}
+}
+
+func TestReadinessSelfBindingsRetainHostConditions(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		status           gen.InstallationStatus
+		health           gen.InstallationHealth
+		missingPrincipal bool
+		undelegated      bool
+		kind             gen.ReadinessConditionKind
+	}{
+		{name: "pending", status: gen.InstallationStatus_INSTALLATION_STATUS_PENDING, kind: gen.ReadinessConditionKind_READINESS_CONDITION_KIND_INSTALL_STEP_PENDING},
+		{name: "failed", status: gen.InstallationStatus_INSTALLATION_STATUS_FAILED, kind: gen.ReadinessConditionKind_READINESS_CONDITION_KIND_INSTALL_STEP_FAILED},
+		{name: "standing grant missing", health: gen.InstallationHealth_INSTALLATION_HEALTH_STANDING_GRANT_MISSING, kind: gen.ReadinessConditionKind_READINESS_CONDITION_KIND_RECORD_UNHEALTHY},
+		{name: "principal missing", missingPrincipal: true, kind: gen.ReadinessConditionKind_READINESS_CONDITION_KIND_MODULE_PRINCIPAL_OMITTED},
+		{name: "source not delegated", undelegated: true, kind: gen.ReadinessConditionKind_READINESS_CONDITION_KIND_SOURCE_NOT_DELEGATED},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			facts := readinessTestFacts(map[string]ModuleOperationAudience{}, nil, nil)
+			facts.askedByBinding["acme.documents"].Authority.Bindings = []solutionhost.AuthorityBinding{{ID: "self", Audience: readinessPrefix, Operations: map[string][]string{"invoke": {"evidence:read"}}}}
+			if tc.missingPrincipal {
+				delete(facts.registry, ModulePrincipalID(readinessPrefix))
+			}
+			if tc.undelegated {
+				facts.sources = []*DatasourceSource{{ID: "source", Repo: "acme/source"}}
+				facts.delegationTargets = []SourceDelegationTarget{{Prefix: readinessPrefix}}
+			}
+			installation, health := activeInstallation(), gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY
+			if tc.status != 0 {
+				installation.Status = tc.status
+			}
+			if tc.health != 0 {
+				health = tc.health
+			}
+			readiness, reached := facts.readinessFor(installation, health, documentsTarget(), nil)
+			require.False(t, readiness.Ready)
+			require.Len(t, readiness.Unmet, 1)
+			require.Equal(t, tc.kind, readiness.Unmet[0].Kind)
+			require.Empty(t, reached)
+		})
+	}
+}

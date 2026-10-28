@@ -443,7 +443,7 @@ already reads for the same page:
 | `INSTALL_STEP_PENDING`, `INSTALL_STEP_FAILED` | the installation's own status and `failure_reason` |
 | `RECORD_UNHEALTHY` | the live `InstallationHealth`, restated as one condition in the same list |
 | `MODULE_PRINCIPAL_OMITTED` | the derived module registry holds no principal for the target's module |
-| `OPERATION_BINDING_OMITTED` | the applied manifest's `authority.bindings` compared against the derived grant's operation audiences |
+| `OPERATION_BINDING_OMITTED` | the applied manifest's cross-audience or headless bindings compared against the derived grant's operation audiences |
 | `SOURCE_NOT_DELEGATED` | this organisation's sources, against the active `source_delegations` of a module that declares a source-delegation binding |
 | `REACHED_MODULE_NOT_INSTALLED` | an audience the applied manifest invokes, with no active installation of that module in this organisation |
 
@@ -457,10 +457,23 @@ derivation. `module_principal_reconcile.go` owns the derivation and names each
 omission in its own log; `installation_readiness.go` owns the comparison, so the
 page states what is missing even when nobody was reading the boot log.
 
+A binding containing only person `invoke`/`lookup` operations on the applied
+authority's own principal does not require an outward operation-audience grant.
+This follows the shared authority core's `IssueChild` self-audience rule and its
+`decide.ScopesFor` operation selection: the person's current grants and parent
+limits still bound the call. A headless or mixed binding is not exempt from the
+comparison, nor is a binding addressed to another principal. Missing principals,
+installation lifecycle/health and source delegations remain readiness conditions.
+Capability consent, live installation fences and admission are still enforced by
+their owners; this report grants nothing and does not prove a browser route or
+operation succeeds.
+
 `OrganizationInstallation.reached_modules` is the other half: the modules the
 applied manifest declares it invokes on the asking person's own session, each
 resolved to this organisation's installation of that module. A headless-only
 binding is not in the set: it acts for no person, so no person's grant is needed.
+The installation's own principal is not another reached module either, including
+when a mixed self binding has a derived grant.
 That set is what a grant of the solution CARRIES, below.
 
 | Condition | Read from |
