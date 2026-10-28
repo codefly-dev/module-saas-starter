@@ -834,6 +834,8 @@ jobs:
       - name: Run quality phase
         shell: bash
         env:
+          # The agent loader uses this existing contents:read token for release lookup.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI_PHASE: ${{ matrix.phase }}
           SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
           CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
