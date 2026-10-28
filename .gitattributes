@@ -11,3 +11,11 @@ module/services/telemetry/code/pkg/gen/** linguist-generated=true
 # Build recipes emitted by the pinned Go service agent.
 module/services/accounts/builder/** linguist-generated=true
 module/services/auth-gateway/builder/** linguist-generated=true
+
+# Native protocol and catalog output; authored proto inputs and dependency files stay visible.
+/module/services/accounts/code/pkg/gen/** linguist-generated=true
+/module/services/accounts/generated/** linguist-generated=true
+/module/services/frontend/code/src/gen/** linguist-generated=true
+/module/services/frontend/code/packages/saas-sdk/generated/typescript/src/** linguist-generated=true
+/module/contracts/api/accounts/authority/proto/host/** linguist-generated=true
+/module/contracts/api/accounts/connect/proto/host/** linguist-generated=true

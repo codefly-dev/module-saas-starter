@@ -7,7 +7,7 @@ on:
     # immutable-package release track keyed to module.package.codefly.yaml.
     tags: ["v*", "module-package/v*"]
   pull_request:
-    branches: [main]
+    branches: [main, feat/solution-setup-tab]
   # The merge queue builds each entry as `main + the PR` and reports the
   # required checks from THAT ref, which is the guarantee "require branches to
   # be up to date" was buying by making every author rebase by hand. Every
@@ -834,6 +834,8 @@ jobs:
       - name: Run quality phase
         shell: bash
         env:
+          # The agent loader uses this existing contents:read token for release lookup.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI_PHASE: ${{ matrix.phase }}
           SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
           CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
