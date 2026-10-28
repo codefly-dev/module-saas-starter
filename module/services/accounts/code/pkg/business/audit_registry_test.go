@@ -1,6 +1,7 @@
 package business
 
 import (
+	"context"
 	"encoding/json"
 	"maps"
 	"regexp"
@@ -10,6 +11,64 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestInstallationCreatedAuditCeilingPayload(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		audiences []string
+		scopes    []string
+	}{
+		{"populated", []string{"example.api", "example.search"}, []string{"read", "invoke"}},
+		{"empty", []string{}, []string{}},
+		{"unset", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params := InstallSolutionParams{TargetID: NewIDString(), RoleID: NewIDString(),
+				AllowedAudiences: tc.audiences, AllowedScopes: tc.scopes}
+			// The payload emitted by InstallSolution carries its ceiling slices,
+			// not a joined or JSON-encoded string.
+			entry := orgAuditEntry()
+			entry.EventType = EventInstallationCreated
+			entry.Payload = map[string]any{
+				"agent_principal_id": NewIDString(), "target_id": params.TargetID,
+				"role_id": params.RoleID, "allowed_audiences": params.AllowedAudiences,
+				"allowed_scopes": params.AllowedScopes,
+			}
+			store := &teeStore{}
+			resolved, err := NewAuditEventResolver(store).Resolve(t.Context(), entry.EventType)
+			require.NoError(t, err)
+			require.NoError(t, resolved.Validate(entry.EventType, entry.Payload))
+			transport, queue := auditEventSubscriber()
+			emitter, err := NewDurableAuditEmitter(store, store, WithDomainEventTransport(transport))
+			require.NoError(t, err)
+			require.NoError(t, store.WithOrgTx(t.Context(), entry.OrgID, func(ctx context.Context) error {
+				return emitter.EmitTx(ctx, entry)
+			}))
+			require.Len(t, store.audits, 1)
+			require.Equal(t, entry.Payload, store.audits[0].Payload)
+			published := publishedEvents(t, transport, queue)
+			require.Len(t, published, 1)
+			want, err := AuditEventWebhookData(store.audits[0], resolved)
+			require.NoError(t, err)
+			require.JSONEq(t, string(want), string(published[0].Envelope.GetData()))
+			for _, field := range []string{"allowed_audiences", "allowed_scopes"} {
+				for _, invalid := range []any{"read", []any{"read", 1}} {
+					bad := maps.Clone(entry.Payload)
+					bad[field] = invalid
+					require.ErrorContains(t, resolved.Validate(entry.EventType, bad), field)
+				}
+			}
+		})
+	}
+	definition, ok := LookupAuditEvent(EventInstallationCreated)
+	require.True(t, ok)
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal(definition.PayloadSchemaJSON(), &schema))
+	properties := schema["properties"].(map[string]any)
+	for _, field := range []string{"allowed_audiences", "allowed_scopes"} {
+		require.Equal(t, map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, properties[field])
+	}
+}
 
 func TestAuditCatalog_NoDuplicatesAndComplete(t *testing.T) {
 	seen := map[EventType]bool{}

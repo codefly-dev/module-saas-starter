@@ -6,6 +6,13 @@ The runtime does not append `.v1`. All requests still require organization audit
 read authority. Resource/collection filters additionally require current read
 access; possessing `audit:read` does not bypass that check.
 
+`saas.installation.created` records `allowed_audiences` and `allowed_scopes`
+as string arrays, matching the installation's supplied ceilings. The typed
+registry and its database schema projection use that same array shape; callers
+must not join or JSON-encode the arrays into strings. Audit schema validation
+warnings are advisory and do not by themselves reject an installation or drop
+its audit record. Authorization and transaction failures remain separate.
+
 ## Configuration recipes
 
 The SDK supplies `orgId`, `from`, and `to` through `runDashboard`'s viewer context.
