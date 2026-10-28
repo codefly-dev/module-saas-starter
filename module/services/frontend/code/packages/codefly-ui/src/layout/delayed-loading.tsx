@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "./cn.js";
 
 /**
@@ -53,7 +53,9 @@ export function useDelayedLoading(
 	// became visible rather than from the moment the wait started.
 	const shownAt = useRef(0);
 
-	useEffect(() => {
+	// Cancel timers during commit: a completed read must not paint content
+	// and then have its old delay timer replace that content with a spinner.
+	useLayoutEffect(() => {
 		if (active) {
 			// Already up: keep it up. A wait that restarts while the indicator is
 			// showing must not restart the delay, or a series of quick refetches

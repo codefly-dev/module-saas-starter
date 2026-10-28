@@ -141,6 +141,13 @@ envelope is needed on a fresh store. An existing administrative envelope narrows
 that ceiling. Workloads are the manifest's `(service, container)` spelled by the
 namespace rule; no administrative policy approves a build.
 
+## Derived solution-role grants
+
+A solution-derived role is granted only at that solution's installation root,
+to a team or that installation's own agent. Installation creation records the
+agent/root/target relationship before its standing grant in the same transaction;
+public scope registration cannot create a fresh-root exception to this check.
+
 ## Composition interface delivery
 
 `CompositionService/ApplyManifest` accepts the same authenticated signed delivery

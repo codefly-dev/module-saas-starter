@@ -211,9 +211,8 @@ func TestIntrospection_RPCListMatchesDescriptors(t *testing.T) {
 		}
 		for i := 0; i < file.Services().Len(); i++ {
 			service := file.Services().Get(i)
-			// The solution's side of the installation interface, and the local
-			// authority's setup read beside it: not served here.
-			if name := string(service.FullName()); name == "host.installation.v1.InstallableService" || name == "host.installation.v1.OfferService" {
+			// The solution's side of the installation interface: not served here.
+			if string(service.FullName()) == "host.installation.v1.InstallableService" {
 				continue
 			}
 			for j := 0; j < service.Methods().Len(); j++ {

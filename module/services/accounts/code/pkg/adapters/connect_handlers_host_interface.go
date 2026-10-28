@@ -95,6 +95,18 @@ func (h *hostInstallationConnectHandler) ListRoleGrants(ctx context.Context, req
 func (h *hostInstallationConnectHandler) List(ctx context.Context, req *connect.Request[installationv1.ListRequest]) (*connect.Response[installationv1.ListResponse], error) {
 	return unary(ctx, req, h.server().List)
 }
+func (h *hostInstallationConnectHandler) ListHeld(ctx context.Context, req *connect.Request[installationv1.ListHeldRequest]) (*connect.Response[installationv1.ListHeldResponse], error) {
+	return unary(ctx, req, h.server().ListHeld)
+}
+
+type hostOfferConnectHandler struct{ svc *business.Service }
+
+func (h *hostOfferConnectHandler) ListOffers(ctx context.Context, req *connect.Request[installationv1.ListOffersRequest]) (*connect.Response[installationv1.ListOffersResponse], error) {
+	return unary(ctx, req, HostOfferSingleton().ListOffers)
+}
+func (h *hostOfferConnectHandler) ReviewOffer(ctx context.Context, req *connect.Request[installationv1.ReviewRequest]) (*connect.Response[installationv1.ReviewedOffer], error) {
+	return unary(ctx, req, HostOfferSingleton().ReviewOffer)
+}
 
 type hostSessionConnectHandler struct{ svc *business.Service }
 

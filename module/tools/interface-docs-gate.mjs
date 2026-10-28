@@ -72,6 +72,7 @@ const SERVICE_CONTEXTS = {
   InvitationService: "tenancy",
   MFAService: "identity",
   NotificationService: "notifications",
+  OfferService: "authorization",
   OnboardingService: "tenancy",
   OrganizationService: "tenancy",
   PermissionService: "authorization",

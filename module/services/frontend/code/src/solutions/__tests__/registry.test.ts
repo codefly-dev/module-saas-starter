@@ -11,7 +11,8 @@ const { getEndpoints, getWorkspaceSecret } = vi.hoisted(() => ({
   getWorkspaceSecret:
     vi.fn<(name: string, key: string) => string | undefined>(),
 }));
-vi.mock("codefly", () => ({ getEndpoints, getWorkspaceSecret }));
+vi.mock("codefly", async () => ({
+	...(await vi.importActual<typeof import("codefly")>("codefly")), getEndpoints, getWorkspaceSecret, networkInstance: () => { const endpoints = getEndpoints(); if (endpoints.length !== 1) throw new Error("gateway unavailable"); return endpoints[0]; } }));
 
 import { groupSolutionNavigation } from "@/solutions/solution-groups";
 

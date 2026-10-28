@@ -191,21 +191,9 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 		return nil, err
 	}
 
-	// 3. The agent's standing, non-expiring, least-privilege grant at the node.
-	grant := &gen.ScopeGrant{
-		Id:          business.NewIDString(),
-		OrgId:       params.OrgID,
-		SubjectId:   agentID,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
-		ScopePath:   nodePath,
-		RoleId:      params.RoleID,
-		GrantedBy:   params.GrantedBy,
-	}
-	if err := s.GrantScope(ctx, grant); err != nil {
-		return nil, w.Wrapf(err, "failed to grant standing scope to agent")
-	}
-
-	// 4. Persist explicit consent. A direct store call with no scope grants none.
+	// 3. Persist the installation before its standing grant, in this transaction.
+	// The common grant guard can then verify the agent/root/target relationship.
+	// Persist explicit consent. A direct store call with no scope grants none.
 	consent := params.Scope
 	if consent == nil {
 		consent = &business.InstallationScope{}
@@ -238,6 +226,20 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 		}
 		return nil, w.Wrapf(err, "failed to insert installation")
 	}
+	// 4. The agent's standing, non-expiring, least-privilege grant at the node.
+	grant := &gen.ScopeGrant{
+		Id:          business.NewIDString(),
+		OrgId:       params.OrgID,
+		SubjectId:   agentID,
+		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+		ScopePath:   nodePath,
+		RoleId:      params.RoleID,
+		GrantedBy:   params.GrantedBy,
+	}
+	if err := s.GrantScope(ctx, grant); err != nil {
+		return nil, w.Wrapf(err, "failed to grant standing scope to agent")
+	}
+
 	if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING && params.Approval == nil {
 		if err := s.EnqueueInstallationStep(ctx, params.OrgID, installation.Id, "initial"); err != nil {
 			return nil, err
@@ -1155,4 +1157,22 @@ func (s *PostgresStore) InstallationRoleRevision(ctx context.Context, org, id st
 		return "", "", 0, fmt.Errorf("installation %s standing role and revision: %w", id, err)
 	}
 	return roleID, role, revision, nil
+}
+
+// ActivateInstallationFollowingCore activates accounts' record of an
+// installation whose authority core installation is active: pending its
+// install step, or failed at it, it becomes active, keeping the root scope
+// node it was installed with. It reports whether it changed the row; an
+// active or revoked installation is left as it is. The installation-step
+// projection (record_installation_step) only ever moves a pending row, so a
+// later acknowledgement changes nothing.
+func (s *PostgresStore) ActivateInstallationFollowingCore(ctx context.Context, orgID, installationID string) (bool, error) {
+	tag, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE installations SET status = 'active', failure_reason = NULL
+		 WHERE org_id = $1 AND id::text = $2 AND status IN ('pending', 'failed')`,
+		orgID, installationID)
+	if err != nil {
+		return false, fmt.Errorf("activate installation %s following the authority core: %w", installationID, err)
+	}
+	return tag.RowsAffected() == 1, nil
 }

@@ -1,3 +1,4 @@
+import { isHostSetupProcedure } from "@/lib/host-setup-procedures";
 import { gatewayBase } from "@/lib/gateway-endpoint";
 
 import {
@@ -69,6 +70,22 @@ async function handler(
 	context: RouteContext,
 ): Promise<Response> {
 	const { id, path, version } = await context.params;
+	const moduleCall = path?.[0] === "_browser";
+	// Retained code identities open assets only, never the separate module edge.
+	if (moduleCall && version !== undefined) {
+		return new Response("versioned module calls are not served", { status: 404 });
+	}
+
+	// Fetch normalizes dot segments before the gateway sees them. Validate this
+	// dedicated Connect entry before constructing a trusted URL so no suffix can
+	// remove the terminal marker. Publication and authority remain gateway-owned.
+	if (moduleCall && (
+		request.method !== "POST" || path.length !== 3 ||
+		! /^(?:[A-Za-z_][A-Za-z0-9_]*\.)+[A-Za-z_][A-Za-z0-9_]*$/.test(path[1]) ||
+		! /^[A-Za-z_][A-Za-z0-9_]*$/.test(path[2])
+	)) {
+		return new Response("invalid module procedure", { status: 404 });
+	}
 
 	// The origin is resolved on its own, not off the trust context: a deployment
 	// missing the internal token is a different condition from one with no verified
@@ -120,10 +137,13 @@ async function handler(
 
 	const suffix = (path ?? []).map(encodeURIComponent).join("/");
 	const search = new URL(request.url).search;
+	// The host's own Connect procedures, at the gateway root: its saas.*
+	// services, and the Setup tab's host installation procedures a solution
+	// mounting `<SolutionSetup binding>` calls over this same base.
 	const platformProcedure =
 		/^saas\.[A-Za-z_][A-Za-z0-9_]*\.v1\.[A-Za-z_][A-Za-z0-9_]*\/[A-Za-z_][A-Za-z0-9_]*$/.test(
 			suffix,
-		);
+		) || isHostSetupProcedure(`/${suffix}`);
 	// Both kinds use the same page and asset loader. A module's data requests
 	// stay on the module gateway surface, preserving its audience and checks.
 	// The gateway independently restricts the common asset route to public
@@ -133,7 +153,10 @@ async function handler(
 		/^(?:assets|\.well-known)(?:\/|$)/.test(suffix);
 	const routePrefix =
 		solution?.kind === "module" && !publicAsset ? "v1" : "solutions";
-	const target = platformProcedure
+	// Preserve the marker: only the gateway's terminal public-only dispatch
+	// may remove it. Sending an arbitrary suffix to the root would expose its
+	// internal exchanges under this proxy's trust context.
+	const target = moduleCall || platformProcedure
 		? `${base}/${suffix}${search}`
 		: `${base}/${routePrefix}/${encodeURIComponent((solution?.backend.serviceAlias ?? id))}/${suffix}${search}`;
 
@@ -163,6 +186,12 @@ async function handler(
 	const contentType = request.headers.get("content-type");
 	if (contentType) {
 		headers.set("content-type", contentType);
+	}
+	if (moduleCall) {
+		for (const name of ["connect-protocol-version", "connect-timeout-ms", "connect-content-encoding", "connect-accept-encoding"]) {
+			const value = request.headers.get(name);
+			if (value !== null) headers.set(name, value);
+		}
 	}
 	headers.set("accept", request.headers.get("accept") ?? "application/json");
 
@@ -219,6 +248,12 @@ async function handler(
 	}
 
 	const responseHeaders = new Headers();
+	if (moduleCall) {
+		for (const name of ["connect-content-encoding", "connect-accept-encoding"]) {
+			const value = upstream.headers.get(name);
+			if (value !== null) responseHeaders.set(name, value);
+		}
+	}
  if (retainedAsset) {
   responseHeaders.set("cache-control", upstream.headers.get("cache-control") ?? "no-store");
   responseHeaders.set("x-content-type-options", "nosniff");

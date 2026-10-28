@@ -9,7 +9,8 @@ const { getEndpoints } = vi.hoisted(() => ({
 		{ service: "auth-gateway", name: "rest", address: "http://auth-gateway.internal:8080" },
 	]),
 }));
-vi.mock("codefly", () => ({ getEndpoints }));
+vi.mock("codefly", async () => ({
+	...(await vi.importActual<typeof import("codefly")>("codefly")), networkInstance: () => getEndpoints()[0], getEndpoints }));
 vi.mock("next/headers", () => ({
 	cookies: async () => cookieStore,
 }));

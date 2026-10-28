@@ -20,6 +20,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -52,15 +53,11 @@ func mintRequestOf(caller confinedCaller, forged http.Header) *http.Request {
 	return req
 }
 
-// BOTH HOPS, through the real handler, with the capability signed from what the
-// gateway actually projected on the first one.
-//
-// This is the consumer flow end to end as far as this repository reaches: the
-// mint is told which consumer and which installation, accounts (a double here,
-// signing with the key the edge verifies) issues a capability for the viewer the
-// projection named, and the module read is admitted on the pairing.
-func TestCeilingHeaders_TheConsumersTwoHopsThroughTheRealGateway(t *testing.T) {
-	gw, module, accounts, caller, kid, wcPriv, _ := confinedModuleHarness(t)
+// THE MINT, through the real handler: it is told which consumer and which
+// installation, which is the ceiling accounts resolves. The module is not read
+// through this gateway; a module call goes through the hop.
+func TestCeilingHeaders_TheMintIsToldTheConsumerAndItsInstallation(t *testing.T) {
+	gw, accounts, caller, _ := confinedMintHarness(t)
 
 	mint := httptest.NewRecorder()
 	gw.ServeHTTP(mint, mintRequestOf(caller, nil))
@@ -72,16 +69,19 @@ func TestCeilingHeaders_TheConsumersTwoHopsThroughTheRealGateway(t *testing.T) {
 	require.Equal(t, "install-"+fakeSolutionTarget("example"),
 		accounts.lastHeaders.Get(installationConfinementHeader),
 		"and WHICH INSTALLATION of it admitted the request, which is the ceiling accounts resolves")
+}
 
-	// What accounts signs from that projection, and nothing of its own.
-	capability := mintViewerCapability(t, kid, wcPriv, "documents",
-		accounts.lastHeaders.Get("X-User-Id"), accounts.lastHeaders.Get("X-Org-Id"), accounts.lastHeaders.Get("X-Session-Id"))
-
-	read := httptest.NewRecorder()
-	gw.ServeHTTP(read, moduleRequest(caller, capability))
-
-	require.Equal(t, http.StatusOK, read.Code, read.Body.String())
-	require.NotNil(t, module.lastHeaders)
+// confinedMintHarness wires a gateway with one declared solution whose
+// resource the credential names, entitled to the caller's organization: the
+// consumer a confined credential mints for.
+func confinedMintHarness(t *testing.T) (gw *Gateway, accounts *fakeUpstream, caller confinedCaller, access ed25519.PrivateKey) {
+	t.Helper()
+	withPublicBase(t, testPublicBase)
+	gw, accounts, _, access = newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "example")
+	gw.solutionEntitlements = &entitledTo{ids: []string{fakeSolutionTarget("example")}}
+	caller = signConfinedCaller(t, access, solutionMCPResource(testPublicBase, "example"))
+	return gw, accounts, caller, access
 }
 
 // A caller cannot pick the ceiling AT THE MINT — the route whose stamp accounts
@@ -89,7 +89,7 @@ func TestCeilingHeaders_TheConsumersTwoHopsThroughTheRealGateway(t *testing.T) {
 // grpc-metadata spelling of either reaches nothing: accounts transcodes REST to
 // gRPC, so a prefixed name is a second way to assert the same field.
 func TestCeilingHeaders_ACallerCannotPickTheMintsCeiling(t *testing.T) {
-	gw, _, accounts, caller, _, _, _ := confinedModuleHarness(t)
+	gw, accounts, caller, _ := confinedMintHarness(t)
 
 	forged := http.Header{}
 	forged.Set(resourceConfinementHeader, solutionMCPResource(testPublicBase, "a-broader-consumer"))
@@ -115,7 +115,7 @@ func TestCeilingHeaders_ACallerCannotPickTheMintsCeiling(t *testing.T) {
 // ceiling for an installation this person never acted under. The resource header
 // is restamped EMPTY rather than dropped, so accounts reads a value either way.
 func TestCeilingHeaders_AnOrdinarySessionCannotForgeAnInstallationAtTheMint(t *testing.T) {
-	gw, _, accounts, _, _, _, access := confinedModuleHarness(t)
+	gw, accounts, _, access := confinedMintHarness(t)
 
 	forged := http.Header{}
 	forged.Set(installationConfinementHeader, "install-of-somebody-else")

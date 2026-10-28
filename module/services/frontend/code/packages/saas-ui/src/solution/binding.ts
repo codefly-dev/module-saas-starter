@@ -15,7 +15,7 @@ import type { DeclaredSource } from "../datasources/declared-source.js";
 export interface SolutionBinding {
 	solutionId: string;
 	/**
-	 * Same-origin base for ALL of a remote's backend calls — its own service and
+	 * Same-origin base for a remote's solution-runtime and host platform calls — its own service and
 	 * the host's platform services alike. ONE base covers both because the host
 	 * proxy routes on the path, not on the base: a Connect procedure shaped
 	 * `saas.<pkg>.v1.<Service>/<Method>` goes to the API gateway's root, exactly
@@ -24,10 +24,14 @@ export interface SolutionBinding {
 	 *
 	 * So a kit component the host hands a remote — `<DatasourcesPanel gateway>`
 	 * calls the host's `saas.accounts.v1.DatasourceService` — works over this
-	 * base unchanged. Do NOT add a second "host" base: it would be the same
-	 * destination reached a second way.
+	 * base unchanged. Direct composed-module calls use moduleApiBase instead: they acquire the
+	 * person's capability through the host edge, not the solution-runtime relay.
 	 */
 	apiBase: string;
+	/** Optional host-provided browser edge for generated module clients.
+	 * Missing means unavailable; never infer an origin or a module URL.
+	 */
+	moduleApiBase?: string;
 	/** Host-owned access-token getter — the remote never touches the token store. */
 	getAccessToken: () => string | null;
 	/**
@@ -123,7 +127,7 @@ export type SolutionCredential =
  * binding — but the credential as a whole is not.
  */
 export type SolutionRequestBinding = Pick<SolutionBinding, "apiBase"> &
-	Partial<Pick<SolutionBinding, "subscribeToken">> &
+	Partial<Pick<SolutionBinding, "subscribeToken" | "moduleApiBase">> &
 	SolutionCredential;
 
 /** Thrown for a binding that carries no credential at all. */
@@ -145,9 +149,10 @@ export function requestBinding(
 	apiBase: string,
 	getAccessToken: SolutionBinding["getAccessToken"] | undefined,
 	authedFetch: SolutionBinding["authedFetch"] | undefined,
+	moduleApiBase?: SolutionBinding["moduleApiBase"],
 ): SolutionRequestBinding {
-	if (authedFetch) return { apiBase, getAccessToken, authedFetch };
-	if (getAccessToken) return { apiBase, getAccessToken };
+	if (authedFetch) return { apiBase, getAccessToken, authedFetch, ...(moduleApiBase === undefined ? {} : { moduleApiBase }) };
+	if (getAccessToken) return { apiBase, getAccessToken, ...(moduleApiBase === undefined ? {} : { moduleApiBase }) };
 	throw new SolutionBindingError();
 }
 

@@ -9,7 +9,8 @@ const { getEndpoints, findSolution } = vi.hoisted(() => ({
 	getEndpoints: vi.fn(),
 	findSolution: vi.fn(),
 }));
-vi.mock("codefly", () => ({
+vi.mock("codefly", async () => ({
+	...(await vi.importActual<typeof import("codefly")>("codefly")), networkInstance: () => getEndpoints()[0],
 	getEndpoints,
 	getCurrentModule: () => "",
 	getCurrentService: () => "",
@@ -313,4 +314,34 @@ describe("authenticated solution stream carrier", () => {
 		expect(init.headers.has("last-event-id")).toBe(false);
 		expect(init.cache).toBe("no-store");
 	});
+});
+
+it.each(["abort", "cancel"])("streams the module alias and releases its socket on %s", async (mode) => {
+	const paths: string[] = [];
+	let closed = false;
+	await upstream((req, res) => {
+		paths.push(req.url!);
+		res.on("close", () => { closed = true; });
+		expect(req.headers["connect-protocol-version"]).toBe("1");
+		res.writeHead(200, {
+			"content-type": "application/connect+json",
+			"connect-content-encoding": "identity",
+		});
+		res.write(encoder.encode("\u0000\u0000\u0000\u0000\u0002{}"));
+	});
+	const abort = new AbortController();
+	const response = await POST(new Request("http://frontend/api/solutions/example/proxy/_browser/example.v1.Service/Watch", {
+		method: "POST", body: "{}", signal: abort.signal,
+		headers: { authorization: "Bearer fixture-user", "content-type": "application/connect+json", "connect-protocol-version": "1" },
+	}), { params: Promise.resolve({ id: "example", path: ["_browser", "example.v1.Service", "Watch"] }) });
+	expect(response.headers.get("connect-content-encoding")).toBe("identity");
+	expect(response.headers.get("x-accel-buffering")).toBe("no");
+	const reader = response.body!.getReader();
+	expect((await reader.read()).value).toEqual(encoder.encode("\u0000\u0000\u0000\u0000\u0002{}"));
+	if (mode === "abort") {
+		abort.abort();
+		await expect(reader.read()).rejects.toMatchObject({ name: "AbortError" });
+	} else await reader.cancel();
+	await vi.waitFor(() => expect(closed).toBe(true));
+	expect(paths).toEqual(["/_browser/example.v1.Service/Watch"]);
 });

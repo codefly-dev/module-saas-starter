@@ -224,15 +224,20 @@ func solutionRoleProvenance(orgID, targetID, role string) string {
 	return fmt.Sprintf("org=%s;solution=%s;role=%s", orgID, targetID, role)
 }
 
-// SolutionRoleOrganization is the organisation a solution role's provenance
-// names, and whether the provenance is a solution role's at all.
-func SolutionRoleOrganization(provenance string) (string, bool) {
+// SolutionRoleOrigin is the organisation and the solution target a solution
+// role's provenance names, and whether the provenance is a solution role's at
+// all.
+func SolutionRoleOrigin(provenance string) (org, target string, ok bool) {
 	rest, ok := strings.CutPrefix(provenance, "org=")
-	if !ok || !strings.Contains(rest, ";solution=") || !strings.Contains(rest, ";role=") {
-		return "", false
+	if !ok {
+		return "", "", false
 	}
-	org, _, _ := strings.Cut(rest, ";")
-	return org, true
+	org, rest, _ = strings.Cut(rest, ";solution=")
+	target, _, ok = strings.Cut(rest, ";role=")
+	if !ok || org == "" || target == "" {
+		return "", "", false
+	}
+	return org, target, true
 }
 
 // SolutionRoleOf is the solution's role name a standing role carries, or the

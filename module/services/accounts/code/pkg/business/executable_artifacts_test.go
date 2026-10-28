@@ -125,18 +125,18 @@ func (s *artifactDecisionStore) CheckPermission(context.Context, string, gen.Sub
 	return s.permission, "", nil
 }
 func (s *artifactDecisionStore) PutExecutableArtifactApproval(_ context.Context, a *ExecutableArtifactApproval) (*ExecutableArtifactApproval, bool, error) {
-	if old := s.rows[a.Digest]; old != nil {
+	if old := s.rows[a.Policy+"\x00"+a.Digest]; old != nil {
 		return old, false, nil
 	}
-	s.rows[a.Digest] = a
+	s.rows[a.Policy+"\x00"+a.Digest] = a
 	s.puts++
 	return a, true, nil
 }
-func (s *artifactDecisionStore) GetExecutableArtifactApproval(_ context.Context, _, _, _, digest string) (*ExecutableArtifactApproval, error) {
-	return s.rows[digest], nil
+func (s *artifactDecisionStore) GetExecutableArtifactApproval(_ context.Context, _, _, _, policy, digest string) (*ExecutableArtifactApproval, error) {
+	return s.rows[policy+"\x00"+digest], nil
 }
-func (s *artifactDecisionStore) RevokeExecutableArtifactApproval(_ context.Context, _, _, _, digest, _ string) (bool, error) {
-	a := s.rows[digest]
+func (s *artifactDecisionStore) RevokeExecutableArtifactApproval(_ context.Context, _, _, _, policy, digest, _ string) (bool, error) {
+	a := s.rows[policy+"\x00"+digest]
 	if a.RevokedAt != nil {
 		return false, nil
 	}

@@ -949,12 +949,13 @@ func (t coreTx) BumpOwnerAwareRevision(audience string) error {
 
 // --- delegations ------------------------------------------------------------
 
-const coreDelegationColumns = `id, organization_id::text, grantor, module, purpose, scopes, revoked`
+const coreDelegationColumns = `id, organization_id::text, grantor, module, purpose, scopes, revoked, expires_at, client_id, audience, resource`
 
 func scanCoreDelegation(row pgx.Row) (domain.Delegation, error) {
 	var d domain.Delegation
+	var expires *time.Time
 	var raw []byte
-	if err := row.Scan(&d.ID, &d.Organization, &d.Grantor, &d.Module, &d.Purpose, &raw, &d.Revoked); err != nil {
+	if err := row.Scan(&d.ID, &d.Organization, &d.Grantor, &d.Module, &d.Purpose, &raw, &d.Revoked, &expires, &d.ClientID, &d.Audience, &d.Resource); err != nil {
 		return d, err
 	}
 	var scopes []storedScope
@@ -962,6 +963,9 @@ func scanCoreDelegation(row pgx.Row) (domain.Delegation, error) {
 		return d, fmt.Errorf("delegation %s: stored scopes do not read: %w", d.ID, err)
 	}
 	d.Scopes = loadScopes(scopes)
+	if expires != nil {
+		d.ExpiresAt = expires.UTC()
+	}
 	return d, nil
 }
 
@@ -995,12 +999,18 @@ func (t coreTx) PutDelegation(d domain.Delegation) error {
 	if err != nil {
 		return err
 	}
+	var expires *time.Time
+	if !d.ExpiresAt.IsZero() {
+		until := d.ExpiresAt.UTC()
+		expires = &until
+	}
 	_, err = t.q.Exec(t.ctx, `
-		INSERT INTO public.authority_core_delegations (id, organization_id, grantor, module, purpose, scopes, revoked)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO public.authority_core_delegations (id, organization_id, grantor, module, purpose, scopes, revoked, expires_at, client_id, audience, resource)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (id) DO UPDATE SET organization_id = EXCLUDED.organization_id, grantor = EXCLUDED.grantor, module = EXCLUDED.module,
-		       purpose = EXCLUDED.purpose, scopes = EXCLUDED.scopes, revoked = EXCLUDED.revoked`,
-		d.ID, org, d.Grantor, d.Module, d.Purpose, raw, d.Revoked)
+		       purpose = EXCLUDED.purpose, scopes = EXCLUDED.scopes, revoked = EXCLUDED.revoked, expires_at = EXCLUDED.expires_at,
+		       client_id = EXCLUDED.client_id, audience = EXCLUDED.audience, resource = EXCLUDED.resource`,
+		d.ID, org, d.Grantor, d.Module, d.Purpose, raw, d.Revoked, expires, d.ClientID, d.Audience, d.Resource)
 	return err
 }
 

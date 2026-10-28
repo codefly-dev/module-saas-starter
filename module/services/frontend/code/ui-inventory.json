@@ -1888,6 +1888,62 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/saas-ui/src/solution/setup/solution-setup.tsx",
+      "imports": [
+        "@codefly-dev/saas-sdk",
+        "@codefly-dev/ui/layout",
+        "@connectrpc/connect",
+        "react",
+        "../binding.js",
+        "../transport.js",
+        "./model.js",
+        "./use-solution-setup.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "The one Setup UI for a solution: is it ready, what each role grants (scopes, module operations, agent tools, the permission ceiling) and who holds them, answered by the authority through the host installation interface. Every host renders it, so it looks the same locally and deployed.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "ReadyLocalAuthority"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "ReadySaaS"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "NotInstalled"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "RolesLocalAuthority"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "RolesSaaS"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "HoldersLocalAuthority"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "HoldersSaaSRefused"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "MemberReadOnly"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "Refused"
+        }
+      ],
+      "coverage": "owner stories and unit tests; browser/skin verification pending",
+      "remaining": "Verify explorer rendering and interactive accessibility under external skins."
+    },
+    {
       "source": "src/app/(auth)/auth/callback/page.tsx",
       "imports": [
         "@/features/auth/ui/callback-page"
@@ -5111,6 +5167,25 @@
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/solution-setup-panel.tsx",
+      "imports": [
+        "@codefly-dev/saas-ui/solution",
+        "@tanstack/react-query",
+        "react",
+        "@/features/teams/service/queries",
+        "@/lib/auth",
+        "@/lib/connect/transport",
+        "@/lib/hooks/use-organizations",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "This host's mount of the shared Setup UI: the session's organization, the people and teams the host can name, and its own conditions. Presentation is the kit's SolutionSetup.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required; the presentation is the kit's SolutionSetup, with its own stories."
     },
     {
       "source": "src/features/sso-admin/ui/sso-admin-page.tsx",

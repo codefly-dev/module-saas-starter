@@ -9,6 +9,9 @@ description: |
       - workload API gateway: the same handler over plain HTTP on its own
         port, reached by composed workloads inside the cell's mesh; the
         module credential exchanges are served there and nowhere else
+      - the hop in front of every composed module on a cell (hop), and
+        the browser's module calls, each signed with a
+        single-use admission the module verifies
 agent:
     kind: codefly:service
     name: go-grpc
@@ -33,10 +36,37 @@ workspace-configuration-dependencies:
     - artifact-cache
     - gateway
     - gateway-trust
+    # On a cell this gateway is the hop in front of every composed module
+    # (code/gateway_hop.go): hop/MODULES names the modules it fronts, and
+    # Codefly generates hop-routes from their published API catalogs. A local
+    # run composes the authority module's hop instead and states no hop/MODULES
+    # for this service, so the gateway registers no second admission key there.
+    # The list is sorted: the gateway-route compiler requires it.
+    - hop
+    - hop-routes
     - internal-auth
+    # Whether the cell's mesh protects in-cluster plaintext: the hop dials the
+    # authority and every module listener under the same rule a module does.
+    - internal-transport
     - security
+# The gateway registers the admission key it signs module calls with under its
+# own workload credential, which the run projects only for a service that
+# declares module identity. accounts admits this service account as a hop
+# (GatewayHopService, pinned to spec.service-account.name by a test).
+module-identity: true
 endpoints:
     - name: grpc
+      visibility: internal
+    # The hop, in place of the authority module's hop on a cell: a module
+    # calls another module through it with a Work Context addressed to it, and
+    # the gateway checks the method with the authority, signs a single-use
+    # admission and forwards the call to the exact listener hop-routes names.
+    # One endpoint carries both faces: gRPC over HTTP/2 (application/grpc) and
+    # Connect and HTTP routes. An exported gRPC endpoint must publish a
+    # contract of its own, and the hop serves none: it forwards its modules'.
+    # The list is sorted: the gateway-route compiler requires it.
+    - name: hop
+      api: http
       visibility: internal
     - name: rest
       visibility: internal

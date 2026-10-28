@@ -247,10 +247,23 @@ func assertSecretDefaultIsPlaceholder(t *testing.T, name string) {
 
 func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 	for _, group := range declaredWorkspaceConfigGroups(t) {
-		// The CLI supplies these groups: artifact-cache per native run, egress
-		// from the environment's egress declaration. An authored path (even an
-		// empty placeholder) conflicts with its CLI-owned declaration.
-		if group == "artifact-cache" || group == "egress" {
+		// The CLI supplies these groups and refuses an authored one anywhere:
+		// artifact-cache per native run, egress from the environment's egress
+		// declaration, hop-routes from the published API catalogs of the
+		// modules hop/MODULES names.
+		//
+		// For hop-routes this is load-bearing, not tidiness, so do not relax it
+		// as pedantry. The CLI is the single supplier: it writes the routes of
+		// the modules hop/MODULES names, and for a composition that names none
+		// it delivers the group with an empty ROUTES, which is the whole of
+		// "no routes". An authored file here would be a second way to say the
+		// same thing, and the two could disagree — a tree that says "no routes"
+		// while the composition names modules, or routes a composition never
+		// generated. Refusing one keeps exactly one representation, which is
+		// what makes the gateway's single reader safe: it reads hop-routes only
+		// after hop/MODULES named something (code/gateway_hop.go standHop), and
+		// nothing else in this repository reads the group at all.
+		if group == "artifact-cache" || group == "egress" || group == "hop-routes" {
 			for _, directory := range []string{moduleConfigLocalDir, workspaceConfigLocalDir} {
 				for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
 					path := filepath.Join(directory, group+suffix)
@@ -258,6 +271,26 @@ func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 						t.Errorf("CLI-owned group %s must have no authored default at %s", group, path)
 					}
 				}
+			}
+			continue
+		}
+		// hop names the modules the gateway stands in front of, which only a
+		// composition knows. The module subtree ships no default, because a
+		// base-synced consumer inherits it and it would collide with the hop
+		// group that consumer authors — the same group the authority module's
+		// hop reads. The repo root is this repository's OWN composition, which
+		// composes no module behind a hop, so it states that there rather than
+		// leaving the gateway's declared dependency unresolved.
+		if group == "hop" {
+			for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
+				path := filepath.Join(moduleConfigLocalDir, group+suffix)
+				if _, err := os.Lstat(path); !os.IsNotExist(err) {
+					t.Errorf("composition-owned group %s must have no base-synced default at %s", group, path)
+				}
+			}
+			if _, err := os.Lstat(filepath.Join(workspaceConfigLocalDir, group+".env")); err != nil {
+				t.Errorf("this workspace's own composition must state %s at %s/%s.env: it composes no module behind a hop, and the gateway declares the group",
+					group, workspaceConfigLocalDir, group)
 			}
 			continue
 		}

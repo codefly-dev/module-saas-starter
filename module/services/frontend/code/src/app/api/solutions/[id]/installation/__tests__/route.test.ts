@@ -6,7 +6,8 @@ const { getWorkspaceSecret, getEndpoints } = vi.hoisted(() => ({
 	getWorkspaceSecret: vi.fn<(name: string, key: string) => string | undefined>(),
 	getEndpoints: vi.fn<() => Array<Record<string, unknown>>>(() => []),
 }));
-vi.mock("codefly", () => ({ getWorkspaceSecret, getEndpoints }));
+vi.mock("codefly", async () => ({
+	...(await vi.importActual<typeof import("codefly")>("codefly")), networkInstance: () => getEndpoints()[0], getWorkspaceSecret, getEndpoints }));
 
 import { GET } from "@/app/api/solutions/[id]/installation/route";
 

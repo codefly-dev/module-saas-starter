@@ -88,9 +88,18 @@
         "/host.installation.v1.InstallationService/GrantRole",
         "/host.installation.v1.InstallationService/Install",
         "/host.installation.v1.InstallationService/List",
+        "/host.installation.v1.InstallationService/ListHeld",
         "/host.installation.v1.InstallationService/ListRoleGrants",
         "/host.installation.v1.InstallationService/Review",
         "/host.installation.v1.InstallationService/RevokeRole"
+      ]
+    },
+    {
+      "name": "OfferService",
+      "fullName": "host.installation.v1.OfferService",
+      "procedures": [
+        "/host.installation.v1.OfferService/ListOffers",
+        "/host.installation.v1.OfferService/ReviewOffer"
       ]
     },
     {

@@ -8,6 +8,30 @@ holds the roles a composing workspace's people hold at the modules it composes,
 added to the selected fixture (`services/accounts/code/fixtures/workspace_grants.go`);
 the default grants nothing.
 
+### Fixture grant identities
+
+Accounts validates the complete selected fixture plus its workspace grants before
+the first seed write. Both identical and conflicting duplicate identities are
+refused, with the two row indices; rows are never unioned or deduplicated:
+
+- roles: `(org, name)`;
+- assignments: `(org, role, subject lookup kind, subject identity, scope)`, with
+  separate email and agent-identifier lookup namespaces;
+- installations: `(org, target)`, regardless of owner, role or team differences.
+
+These keys retain the seed's exact spelling, without case folding or trimming.
+The same role name in another organization and distinct assignment subjects or
+scopes remain separate and subject to the other validation and seed rules.
+Each exact identity must occur once in the complete input. Repeating a valid
+invocation retains the existing reuse and permission-mismatch rules.
+Composition extensions append imported rows before the consuming workspace's
+rows; the resulting document is public policy, not an identity/credential fixture.
+An imported workspace extension can be delivered as composition-root configuration
+to services beyond Accounts; receiving it does not execute the fixture seed.
+Validation does not make seeding transactional: later reference, storage or
+installation failures can leave partial effects. Installation convergence collects
+errors and continues other pending rows.
+
 ## A key a group does not declare is inert
 
 A composition can supply a value for a **declared** key. It cannot declare one.

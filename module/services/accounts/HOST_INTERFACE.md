@@ -1,7 +1,7 @@
 # The host interfaces, served by accounts
 
 accounts implements the host interfaces published by `codefly-dev/authority`:
-`codefly.dev/authority@0.3.4`, `codefly.dev/composition@0.2.0`,
+`codefly.dev/authority@0.3.5`, `codefly.dev/composition@0.2.0`,
 `codefly.dev/installation@0.3.0` and `codefly.dev/session@0.2.0`. The local
 authority implements the same four on a laptop. The shared conformance suite
 (`libraries/conformance/go`) proves that the two agree.
@@ -32,6 +32,35 @@ What accounts adds, and where:
 | The hop's admission keys: leased rows judged by the database's clock, published apart from the Work Context key; each registration proves its key once (its nonce is kept in `hop_admission_proofs`), and one key is pinned per hop instance (its pod) while its registration holds | migrations 55 and 58, `pkg/business/hop_admission_keys.go`, `pkg/adapters/host_interface_admission.go` |
 | Tenancy at the perimeter: a member or an administrator of the organization a call names, before the core decides | `pkg/adapters/host_interface.go` (`requireOrgMember`, `requireOrgAdmin`) |
 
+## Delegation lifetimes
+
+`Delegate.ttl_seconds` reaches the shared core unchanged in seconds. Negative
+lifetimes are invalid; positive lifetimes are clamped by the core before duration
+conversion (default ceiling seven days); zero explicitly means until revoked.
+Accounts persists the resulting expiry in `authority_core_delegations.expires_at`
+(migration 62), with SQL NULL for the until-revoked case. Delegate, GetDelegation
+and RevokeDelegation project `expires_at_unix` (zero only for no expiry) and use
+`domain.Delegation.Active(core.Now())`, so a stored expired grant never reads as
+active. Issuance and checking remain the core's decisions; this adapter adds no
+permission or lifetime fallback. Browser-edge positive-lifetime requirements
+remain owned by that edge.
+
+Expiry stops fresh issuance from the delegation; it does not revoke capabilities
+already issued. Newly issued delegated capabilities are also bounded by the
+remaining grant lifetime at owner revision 7954; previously issued tokens retain
+their signed expiry and verifier clock tolerance. The selected owner correction
+f82a98e093ef uses one issuance instant for a finite grant's remaining lifetime
+and root timestamps, so revision/seal-read latency cannot extend the signed
+window. Verification, child derivation and post-sign grant checks remain live;
+Accounts adds no deadline arithmetic. Parent exchange remains bounded by
+the parent's remaining lifetime and scopes. Explicit revocation is the separate
+operation that invalidates existing descendants through authority revisions.
+
+Apply migration 62 before deploying this code, and keep expiry-bearing traffic
+off old Accounts peers that ignore the stored timestamp. The down migration
+discards expiry data: rolling back to indefinite delegation behavior is not a
+behavior-preserving rollback.
+
 ## The interfaces, method by method
 
 - **authority**: `Issue` for a person (the signed-in session), a workload, an
@@ -48,17 +77,55 @@ What accounts adds, and where:
   the tenant of a current parent addressed to it, proving itself by its
   workload credential), `Review`, `Install` (consent bound to the reviewed target,
   generation, revision, offer digest and a fresh operation id), `GrantRole`,
-  `RevokeRole`, `ListRoleGrants`, `List`. `OfferService` (the local authority's
-  setup read) is not served here.
-- **artifact** (`host.artifact.v1`, what the local authority serves): `Approve`,
-  `Authorize`, `Revoke`. A module proves itself by its workload credential and
-  presents a parent capability the core issued, addressed to it; accounts' one
-  artifact decision (`business.DecideExecutableArtifact`, which
-  `saas.accounts.v1` `ModuleCapabilitiesService` also answers) approves under
-  the module's installed artifact policy, for the person present
-  (`pkg/adapters/host_interface_artifact.go`).
+  `RevokeRole`, `ListRoleGrants`, `List`, `ListHeld` (a member's own
+  navigation: each active installation of their organisation they hold a role
+  on, granted to them or to a team of theirs, with those roles — the core reads
+  their teams from the store, so leaving one drops an entry at once; holding
+  nothing is an empty list, and a caller acting at another organisation is
+  refused naming it). `OfferService`, the setup read beside
+  it: `ListOffers` (an administrator's) and `ReviewOffer`, answered from the
+  core's `ReviewOffer` with no floor of this host's own, so whoever the core
+  answers (an administrator with the consent tuple, a member holding a role on
+  the active installation without it) is answered here, and every refusal is the
+  core's. The authority-owned `offers.Project` projects roles → operations →
+  tools and the permission ceiling; `pkg/adapters/host_offers.go` only adapts
+  its result to this host's wire messages, including installation role names from
+  that same reviewed snapshot. Redelivery during conversion cannot replace them
+  with a newer declaration. The local authority uses the same
+  projection (authority #47 and #48, selected at `0ef857ee3ba5`), including
+  Core's default tool exposure when no explicit metadata is declared. Accounts has no production
+  tool-metadata reader, so `tools_composed` is false and the Setup UI reports
+  exposure as unavailable. A read-only delivery remains to be qualified: the
+  CLI treats a `runnable-bindings` consumer as an executor, including network
+  reach; the Setup read must not create execution authority. The
+  solution's side, `InstallableService`, is not served here.
+- **artifact** (`host.artifact.v1`): `Approve`, `Authorize`, `Revoke`. A module
+  proves itself by its workload credential and presents a parent capability the
+  core issued, addressed to it, and the core decides
+  (`authority.Service.DecideArtifact` over `decide.Artifact`), so this host and
+  the local authority answer alike: a policy is a resource kind the module
+  serves; approving and revoking need the person present holding that kind's
+  `activate` action and a run its `run` action, on the whole kind, which is the
+  whole requirement — no administrator tier; the installation is the module's
+  own active one at the parent's organisation, a foreign and a missing one
+  answering alike; an artifact's source is that installation's namespace, as
+  `InstallationService.Current` names it; the digest is `sha256` of the
+  identity's deterministic protobuf encoding, and every answer, `Revoke`
+  included, carries the revision the artifact was approved at. accounts adds
+  the records alone (`pkg/adapters/host_interface_artifact.go` over
+  `business.ApproveHostArtifact` and its siblings, which keep no rule). The
+  SaaS-only `ModuleCapabilitiesService` artifact path is a different face, with
+  its own installed-policy semantics, and is not this decision. Consent is
+  stored per organization, installation, module, policy and content digest
+  (migration 61). The same content can have independent approvals under two
+  policies; neither approval authorizes or revokes the other. An omitted
+  artifact identity is rejected by the core as malformed.
 - **session**: `SignIn` (fixture sign-in), `Current`, `ListFixturePeople`:
-  accounts' own sessions.
+  accounts' own sessions. Fixture listing names the selected organization from
+  its current stored record through the same scoped read as sign-in. It opens
+  no session; disabled fixture authentication reads and lists nobody, and an
+  organization read failure refuses the listing rather than returning a partial
+  list or an empty display name.
 
 ## Proof
 
@@ -80,6 +147,12 @@ What accounts adds, and where:
   own production paths (`RemoveTeamMember`, `RemoveOrgMember`): the narrowing
   applies at once, the next issue no longer carries what the membership gave,
   and the removal is in the audit journal naming the person removed.
+- Installation conformance changes the administrator's live role through the
+  normal membership upsert, retaining the session and membership. The shared
+  suite checks revocation after review and while acknowledgement is paused;
+  restoring the role permits the unchanged pending approval to resume.
+  A member without that role receives `PermissionDenied` with a reason naming
+  the required organization administrator or owner role.
 - `.github/workflows/ci.yml` (`host-interface-conformance`, the required
   context "Host interface conformance (authority main)" and a release gate)
   runs the suite at authority main, whenever main contains the pinned revision,
@@ -106,3 +179,21 @@ What accounts adds, and where:
   grant) runs on the control plane with an explicit organisation predicate at
   each statement, as it did under the former witness; returning the
   organisation-only ones to the tenant transaction is open.
+
+### Durable client metadata at Authority 7954
+
+Accounts persists the complete client contract introduced at owner revision
+7954a627c818 and selects its deadline correction f82a98e093ef. It preserves every
+`Client` record field and client delegation field in the existing control-plane store
+(migration 63). A disabled client still reads as its stored record; core owns the
+refusal. Missing records wrap the owner not-found error, while SQL failures remain
+errors. Client replacement and delegation writes share the existing transaction
+and rollback rules. This adds no public registration or OAuth endpoint.
+
+This owner revision bounds newly issued module-delegated capabilities by the
+remaining delegation lifetime. Previously issued tokens retain their signed
+expiry and verifier tolerance; the earlier 39369 lifetime evidence applies only
+to that revision. Accounts adds no local token-expiry enforcement. Migration 63
+must precede this adapter, and older adapters must not handle client-bearing
+state. Downgrading migration 63 discards client metadata and is not a safe
+behavior-preserving rollback after clients have been used.

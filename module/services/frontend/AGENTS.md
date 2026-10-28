@@ -38,6 +38,20 @@ For a module page, relative data requests through the injected `apiBase` reach
 Public GET/HEAD assets use the common `/solutions/<alias>/assets` surface for
 both kinds. Platform Connect procedures still reach the gateway root.
 
+Direct generated module clients use the optional `moduleApiBase` page binding
+and the kit's `moduleTransport`. The base is a same-origin `/_browser` suffix on
+the existing solution proxy; private gateway addresses stay server-side. The
+server selects the current module's `auth-gateway` / `rest` / `REST` endpoint
+through the existing Codefly `networkInstance` resolver and preserves its base
+path. Missing, ambiguous or unsafe destinations refuse without fallback.
+Ambiguous composition also emits a static server diagnostic, without endpoint
+addresses or delivered environment values; ordinary absence is not ambiguity.
+The proxy keeps the marker for terminal gateway browser-only dispatch, validates
+canonical POST procedure components before URL normalization, and preserves
+Connect headers, streaming, cancellation and the host's credential handling.
+Versioned asset routes cannot open this entry. Existing `apiBase`/path relays
+remain unchanged; the module connection adds no installation or permission.
+
 These declarations grant no access to content. The solution page reads the full
 manifest in process; browser projections carry only the fields described below.
 
@@ -66,6 +80,36 @@ and a previous loading failure cannot poison the new generation.
 This does not by itself make a rolling backend serve immutable assets: delivery
 must also bind the resolved endpoint and packaged frontend to the same build.
 The browser cache tests do not qualify that producer/deployment boundary.
+
+## The solution Setup tab
+
+Every `/s/<id>` page has a Setup tab beside App (and Dashboard): the solution's
+roles, what each grants (scopes → module operations → agent tools, and the
+permission ceiling) and who holds them. It renders the kit's `<SolutionSetup>`
+(`@codefly-dev/saas-ui/solution`) through `SolutionSetupPanel`, which adds
+only what this host knows: the
+session's organization, the people and teams it can name, and, on the admin
+installation page, this host's own unmet conditions. Every fact and refusal on
+the tab is the authority's answer through the host installation interface. The
+solution is named by its target, its registered route alias. The component is
+available for other hosts; adoption by the local authority is a separate owner
+integration and is not established by this repository.
+
+The Setup loading state follows the kit's delay and minimum visible duration,
+including when the authority answers immediately after the indicator appears.
+When the host cannot read composed tool bindings, tool exposure is shown as
+unavailable; an empty tool list is not reported as proof of no exposure.
+
+The browser reaches that interface at exactly the procedures the local
+authority's edge serves a browser (`src/lib/host-setup-procedures.ts`):
+InstallationService List, ListHeld, Review, ListRoleGrants, GrantRole, RevokeRole and
+OfferService ListOffers, ReviewOffer. `src/proxy.ts` forwards them from a host
+page and the solution proxy from a remote's `apiBase`, both to the gateway
+root; Install and Current are not forwarded. ListHeld reads the signed-in
+member’s own held roles; ListRoleGrants still requires the authority’s
+admin/installer standing to list everyone’s grants. The admin installation page keeps
+this host's own team access card (its installation record and the team grants
+the gateway admits by) beside the shared component.
 
 ## Three projections, deliberately separate
 
@@ -99,7 +143,8 @@ the organization. `src/lib/auth-session.ts` can read an `org` claim, but
 `decodeJWTPayload` only base64-decodes — it verifies nothing — so a route that
 narrowed on it would let a caller read another tenant's menu by editing one field.
 These `/api/*` paths are also not proxied through the gateway (`src/proxy.ts`
-forwards `/v1/*` and `/saas.accounts.v1.*` only), so no `ext_authz` stamp reaches
+forwards `/v1/*`, `/saas.accounts.v1.*` and the Setup tab's eight host
+installation procedures only), so no `ext_authz` stamp reaches
 them either. `src/solutions/entitlements.ts` therefore forwards the caller's
 credential to `GET /solutions/_entitlements` on the gateway, which authenticates
 it, projects the organization and viewer from its own check, and answers from

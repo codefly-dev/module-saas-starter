@@ -302,11 +302,11 @@ func (s *HostAuthorityServer) Delegate(ctx context.Context, req *authorityv1.Del
 	if err != nil {
 		return nil, err
 	}
-	d, err := core.Delegate(ctx, person, req.GetModule(), scopesFromWire(req.GetScopes()), req.GetPurpose())
+	d, err := core.Delegate(ctx, person, req.GetModule(), scopesFromWire(req.GetScopes()), req.GetPurpose(), req.GetTtlSeconds())
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	return delegationToWire(d), nil
+	return delegationToWire(d, core.Now()), nil
 }
 
 // RevokeDelegation ends one of the signed-in person's delegations.
@@ -323,7 +323,7 @@ func (s *HostAuthorityServer) RevokeDelegation(ctx context.Context, req *authori
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	return &authorityv1.RevokeDelegationResponse{Delegation: delegationToWire(d)}, nil
+	return &authorityv1.RevokeDelegationResponse{Delegation: delegationToWire(d, core.Now())}, nil
 }
 
 // GetDelegation reads one delegation for its module (by its workload
@@ -350,7 +350,7 @@ func (s *HostAuthorityServer) GetDelegation(ctx context.Context, req *authorityv
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	return delegationToWire(d), nil
+	return delegationToWire(d, core.Now()), nil
 }
 
 // AttachResource records a resource created through the installation the
@@ -557,26 +557,64 @@ func (s *HostInstallationServer) List(ctx context.Context, req *installationv1.L
 	return out, nil
 }
 
+// ListHeld answers the signed-in person which installations of their
+// organization they may use: each active one they hold a role on, granted to
+// them or to a team of theirs, with those roles. It is their own navigation,
+// so it names no other holder and refuses nobody who simply holds nothing:
+// the core decides, reading their teams from the store rather than from the
+// session, so leaving a team drops an entry at once.
+func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installationv1.ListHeldRequest) (*installationv1.ListHeldResponse, error) {
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	caller, err := signedInPerson(ctx, "list the installations they hold a role on")
+	if err != nil {
+		return nil, err
+	}
+	held, err := core.HeldInstallations(ctx, caller, req.GetOrganizationId())
+	if err != nil {
+		return nil, coreStatus(err)
+	}
+	out := &installationv1.ListHeldResponse{}
+	for _, h := range held {
+		out.Installations = append(out.Installations, &installationv1.HeldInstallation{
+			Installation: installationToWire(core, ctx, h.Installation), Roles: h.Roles,
+		})
+	}
+	return out, nil
+}
+
 // installationToWire is an installation as the interface states it, with the
 // roles its solution declares.
 func installationToWire(core *authority.Service, ctx context.Context, i domain.Installation) *installationv1.Installation {
+	var roles []string
+	if m, err := core.Composed(ctx, i.Target); err == nil {
+		for name := range m.Roles {
+			roles = append(roles, name)
+		}
+	}
+	return installationToWireWithRoles(i, roles)
+}
+
+// installationToWireWithRoles converts one snapshot without another authority read.
+func installationToWireWithRoles(i domain.Installation, roles []string) *installationv1.Installation {
 	st := map[domain.Status]installationv1.Installation_Status{
 		domain.Pending: installationv1.Installation_STATUS_PENDING, domain.Active: installationv1.Installation_STATUS_ACTIVE, domain.Revoked: installationv1.Installation_STATUS_REVOKED,
 	}[i.Status]
 	out := &installationv1.Installation{Id: i.ID, OrganizationId: i.Organization, Target: i.Target, Status: st, Revision: i.Revision,
-		Role: i.AgentRole, PrincipalId: i.PrincipalID, Namespace: i.Organization + "." + i.Target}
-	if m, err := core.Composed(ctx, i.Target); err == nil {
-		for name := range m.Roles {
-			out.Roles = append(out.Roles, name)
-		}
-		slices.Sort(out.Roles)
-	}
+		Role: i.AgentRole, PrincipalId: i.PrincipalID, Namespace: i.Organization + "." + i.Target, Roles: slices.Clone(roles)}
+	slices.Sort(out.Roles)
 	return out
 }
 
-func delegationToWire(d domain.Delegation) *authorityv1.Delegation {
-	return &authorityv1.Delegation{DelegationId: d.ID, OrganizationId: d.Organization, Grantor: d.Grantor, Module: d.Module, Purpose: d.Purpose,
-		Active: !d.Revoked, Scopes: scopesToWire(d.Scopes)}
+func delegationToWire(d domain.Delegation, now time.Time) *authorityv1.Delegation {
+	out := &authorityv1.Delegation{DelegationId: d.ID, OrganizationId: d.Organization, Grantor: d.Grantor, Module: d.Module, Purpose: d.Purpose,
+		Active: d.Active(now), Scopes: scopesToWire(d.Scopes)}
+	if !d.ExpiresAt.IsZero() {
+		out.ExpiresAtUnix = d.ExpiresAt.Unix()
+	}
+	return out
 }
 
 // scopesFromWire converts interface scopes to core's, byte for byte.
@@ -750,6 +788,7 @@ func (s *HostSessionServer) ListFixturePeople(ctx context.Context, _ *sessionv1.
 		out.People = append(out.People, &sessionv1.FixturePerson{
 			PersonId: p.PersonID, Email: p.Email, OrganizationId: p.OrganizationID,
 			Roles: p.Roles, TeamIds: p.TeamIDs, FixtureToken: p.FixtureToken,
+			OrganizationDisplayName: p.OrganizationDisplayName,
 		})
 	}
 	return out, nil

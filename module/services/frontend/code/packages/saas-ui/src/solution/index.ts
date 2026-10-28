@@ -48,7 +48,23 @@ export {
 	TRACE_EXPORT_DELAY_MS,
 	TRACE_EXPORT_META_NAME,
 } from "./tracing.js";
-export { solutionTransport } from "./transport.js";
+export {
+	refusalOf,
+	type SetupCondition,
+	type SetupSubject,
+} from "./setup/model.js";
+export {
+	SolutionSetup,
+	type SolutionSetupProps,
+	type SolutionSetupTransport,
+} from "./setup/solution-setup.js";
+export {
+	type SetupClients,
+	type SetupState,
+	setupClients,
+	useSolutionSetup,
+} from "./setup/use-solution-setup.js";
+export { moduleTransport, solutionTransport } from "./transport.js";
 export {
 	type SolutionResource,
 	useAccessToken,

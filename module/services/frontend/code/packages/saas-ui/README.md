@@ -66,6 +66,21 @@ components:
   there (on solution-runtime-go, `/modules/<as>` is a consumed module's
   passthrough). The bearer is stamped, requests go through `authedFetch`, and a
   refused authority is reported.
+- `moduleTransport(binding, onUnauthorized?)` — the transport for generated
+  clients calling composed modules directly through the person's authorized
+  edge. It uses the optional host-provided `moduleApiBase` without a consumer
+  path suffix and reuses `solutionTransport` for bearer, tracing, host-owned
+  refresh and refusal handling. Missing, empty or whitespace-only bases refuse
+  before any request; there is no inferred origin or solution-relay fallback.
+  The host resolves its gateway through the Codefly SDK from delivered
+  environment and projects a same-origin browser path, never a private endpoint.
+  A standalone host may explicitly supply `/` for its root-mounted public edge.
+- `requestBinding(apiBase, getAccessToken, authedFetch, moduleApiBase?)` preserves
+  that optional fourth argument when rebuilding a destructured binding. Existing
+  three-argument calls keep their shape. `SolutionBinding` and
+  `SolutionRequestBinding` expose the optional field from both package exports.
+  Keep `solutionTransport(binding, path)` for supported solution-runtime relays;
+  the module helper does not change those routes or grant authority.
 - `installBrowserTracing({ allowedAttributeKeys, allowedSpanNames?, allowedEndpointOrigins?, endpoint?, serviceName?, resourceAttributes? })`
   — registers the page's tracer provider once (the first caller on the page
   wins, across every bundled copy of this package): W3C trace context as the
@@ -197,6 +212,67 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
 - **`useNameOf()`** is the function form a module kit takes as a prop. It
   answers the directory's label or `undefined`, never "You" — a kit decides that
   from the viewer it is given — and never `""`.
+
+## Solution setup: `<SolutionSetup>`
+
+A solution's Setup tab: is it ready, what each of its roles grants — scopes →
+module operations → agent tools, and the permission ceiling — and who holds
+them. It is the **only** Setup UI: the SaaS host's solution tab and admin
+installation page, the local authority's setup page and every solution
+playground render this component, so a developer learns role setup once and it
+looks the same everywhere. Exported from `@codefly-dev/saas-ui/solution` and
+the package root.
+
+```tsx
+import { SolutionSetup } from "@codefly-dev/saas-ui/solution";
+
+<SolutionSetup
+	transport={transport}            // or binding={solutionBinding}
+	organizationId={organizationId}  // the organization the session is at
+	target="example-pages"           // the solution's name in the composition
+	subjects={[{ kind: "team", id: "team-1", label: "Finance" }]} // optional
+	conditions={[]}                  // optional: the host's own unmet conditions
+/>
+```
+
+**The transport contract.** The component calls the host installation
+interface (`host.installation.v1`) with its generated client and nothing else.
+A host supplies a Connect transport — `transport`, or a `binding` whose
+`apiBase` reaches the host — on which these procedures are served to the
+signed-in person, as the person:
+
+| Procedure | Used for |
+|---|---|
+| `OfferService/ReviewOffer` | the solution's roles, operations, tools, ceiling and its installation at `organizationId` |
+| `InstallationService/ListRoleGrants` | who holds which role |
+| `InstallationService/GrantRole`, `RevokeRole` | granting and revoking a role to a person or a team |
+
+The SaaS host serves them through its gateway (the browser paths
+`/host.installation.v1.<Service>/<Method>`); the local authority's edge serves
+the same paths over Connect on its own origin, from the signed-in session.
+`Install` is not called: installing stays behind the host's own consent form.
+
+**The authority decides; the page shows.** Who may read or change what is the
+authority's answer, never a check here: an administrator reads the offer with
+its consent tuple and may grant; a member holding a role reads what it grants,
+read-only; anyone else sees the authority's one refusal. Every refusal is shown
+with its code and the authority's reason, verbatim, where the answer would have
+been. When `tools_composed: false`, the host has not supplied tool exposure
+metadata. The page reports it as unavailable, including on each operation;
+this is not evidence that the composition exposes no tools.
+
+**What a host adds.** Only what it knows and the authority does not: the
+organization its session is at (`organizationId`), the people and teams it can
+name (`subjects`; without them the page grants to an id and names holders by
+id), and its own unmet conditions (`conditions`: heading, detail, who clears
+it, and a link, an act, or a note). Nothing else is host-specific: no host
+context, no host role gate, and only this kit's own components and tokens, so
+it renders identically in any shell.
+
+`useSolutionSetup(transport, organizationId, target)` and `setupClients` are the
+same reads without the UI. Stories (`stories/solution-setup.stories.tsx`) render
+each section from a local-authority-shaped and a SaaS-shaped answer — the same
+messages, over an in-memory transport speaking the real wire format.
 
 ## Datasources
 
