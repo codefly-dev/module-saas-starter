@@ -455,3 +455,9 @@ Supporting modules remain visible through the catalogue toggle and installation
 detail. Their separate administrator path remains available, but is not a step
 in normal solution installation. Person/team roles are assigned separately in
 the existing Setup surface after activation.
+
+The combined review describes Accounts `namespaces` as event publication and
+`external_namespaces` as eligibility for declared external events to reach the
+organization's configured outbound webhook; neither is storage access. Preparing
+access uses the shared delayed-loading component with its default 200 ms delay
+and 300 ms minimum visibility, kept mounted across fetch completion.

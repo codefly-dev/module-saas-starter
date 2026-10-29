@@ -46,6 +46,20 @@ describe("installation access review", () => {
 		expect(lines.join(" ")).not.toContain("Perform operations through");
 	});
 
+	it("describes publication separately from declared external event delivery", () => {
+		const lines = moduleConsentText(
+			'{"capabilities":true,"namespaces":["example"],"external_namespaces":["example"]}',
+		);
+		expect(lines).toContain("Publish events in namespaces: example.");
+		expect(lines).toContain(
+			"Namespaces whose declared external events may be delivered to this organization's configured outbound webhook: example.",
+		);
+		expect(lines.join(" ")).not.toContain("storage");
+		expect(moduleConsentText('{"capabilities":true}')).toContain(
+			"No additional jobs, event publication, external event delivery, resource types or cross-module operations are requested.",
+		);
+	});
+
 	it("does not silently hide unknown access axes or malformed consent", () => {
 		expect(() =>
 			moduleConsentText('{"capabilities":true,"new_grant":["all"]}'),

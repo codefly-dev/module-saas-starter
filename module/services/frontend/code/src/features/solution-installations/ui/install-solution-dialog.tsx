@@ -13,13 +13,13 @@ import { apiTransport } from "@/lib/connect/transport";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 import {
 	Button,
+	DelayedLoading,
 	Dialog,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-	Spinner,
 } from "@/shared/ui";
 import {
 	assertMatchingOffer,
@@ -87,7 +87,10 @@ export function InstallSolutionDialog({
 						solution and its supporting modules together.
 					</DialogDescription>
 				</DialogHeader>
-				{review.isFetching && <Spinner label="Preparing required access" />}
+				<DelayedLoading
+					active={review.isFetching}
+					label="Preparing required access"
+				/>
 				{review.isError && <p role="alert">{hostRefusal(review.error)}</p>}
 				{data && (
 					<div className="space-y-4 text-sm">

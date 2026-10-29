@@ -49,7 +49,7 @@ const review = {
 			required: true,
 			installationRole: "none",
 			scope:
-				'{"capabilities":true,"queues":["index"],"read_audiences":{"records":{"audience":"records","scopes":[{"resource_kind":"document","resource_ids":["approved-folder"]}]}}}',
+				'{"capabilities":true,"queues":["index"],"namespaces":["example"],"external_namespaces":["example"],"read_audiences":{"records":{"audience":"records","scopes":[{"resource_kind":"document","resource_ids":["approved-folder"]}]}}}',
 			approval: {
 				targetId: "records-target",
 				generation: "3",
@@ -186,6 +186,15 @@ describe("combined reviewed installation", () => {
 			within(dialog).getByText(/Optional — will not be installed/),
 		).toBeTruthy();
 		expect(within(dialog).getByText(/Run jobs in: index/)).toBeTruthy();
+		expect(
+			within(dialog).getByText("Publish events in namespaces: example."),
+		).toBeTruthy();
+		expect(
+			within(dialog).getByText(
+				"Namespaces whose declared external events may be delivered to this organization's configured outbound webhook: example.",
+			),
+		).toBeTruthy();
+		expect(within(dialog).queryByText(/storage spaces/)).toBeNull();
 		expect(within(dialog).getByText(/approved-folder/)).toBeTruthy();
 		expect(within(dialog).queryByLabelText("Agent identifier")).toBeNull();
 		expect(within(dialog).queryByLabelText("Agent role")).toBeNull();
@@ -201,9 +210,7 @@ describe("combined reviewed installation", () => {
 		dialog = await open();
 		await within(dialog).findByText("Records");
 		fireEvent.click(within(dialog).getByRole("checkbox"));
-		fireEvent.click(
-			within(dialog).getByRole("button", { name: "Install" }),
-		);
+		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
 		await waitFor(() => expect(requests).toHaveLength(2));
 		expect(requests[0]).toEqual({
 			orgId: "org-1",

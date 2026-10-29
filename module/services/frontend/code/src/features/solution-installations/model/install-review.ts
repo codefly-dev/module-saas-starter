@@ -104,8 +104,11 @@ export function moduleConsentText(raw: string): string[] {
 		);
 	for (const [key, label] of [
 		["queues", "Run jobs in"],
-		["namespaces", "Use storage spaces"],
-		["external_namespaces", "Use external storage spaces"],
+		["namespaces", "Publish events in namespaces"],
+		[
+			"external_namespaces",
+			"Namespaces whose declared external events may be delivered to this organization's configured outbound webhook",
+		],
 		["resources", "Use resource types"],
 	] as const) {
 		if (value[key]?.length) lines.push(`${label}: ${value[key].join(", ")}.`);
@@ -135,7 +138,7 @@ export function moduleConsentText(raw: string): string[] {
 	}
 	if (lines.length === 1 && value.capabilities)
 		lines.push(
-			"No additional jobs, storage spaces, resource types or cross-module operations are requested.",
+			"No additional jobs, event publication, external event delivery, resource types or cross-module operations are requested.",
 		);
 	return lines;
 }
