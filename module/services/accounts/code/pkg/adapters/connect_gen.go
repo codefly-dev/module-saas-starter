@@ -92,6 +92,13 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 	// singleton); it cannot add or omit descriptor services.
 	registerCatalogConnectServices(mux, s, auth)
 
+	// CUSTOM: the delivery documents the composition interface has no
+	// procedure for yet — the module envelope, and the HTTP manifest route —
+	// are served on this listener too, so the one endpoint the composition
+	// names as host.delivery serves every delivery document. See
+	// solution_delivery_http.go. Preserve this line when regenerating.
+	mountDeliveryRoutes(mux, s.service)
+
 	// CORS — required when the FE talks directly to this api (no
 	// auth-gateway in front). Connect-Web preflights every POST
 	// because it sends Authorization + Connect-Protocol-Version
