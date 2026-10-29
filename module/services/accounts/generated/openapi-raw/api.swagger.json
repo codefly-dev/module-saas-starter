@@ -5398,6 +5398,72 @@
         ]
       }
     },
+    "/v1/solution-installations": {
+      "post": {
+        "summary": "Consent to the exact review; retries retain its original per-owner receipts.",
+        "operationId": "InstallationService_InstallReviewedSolution",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/saasAccountsV1Installation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1InstallReviewedSolutionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/solution-installations/review": {
+      "post": {
+        "summary": "Review one solution release and its supporting module access before consent.",
+        "operationId": "InstallationService_ReviewSolutionInstall",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ReviewedSolutionInstall"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ReviewSolutionInstallRequest"
+            }
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
     "/v1/sso/disable": {
       "post": {
         "operationId": "SSOAdminService_Disable",
@@ -7068,6 +7134,14 @@
           "type": "string",
           "format": "uint64",
           "description": "Current consent/lifecycle revision, for an explicit re-install approval."
+        },
+        "setupState": {
+          "type": "string",
+          "description": "Read-only outcome of the exact durable setup attempt. This is not the\ncanonical installation status: an acknowledged setup stays pending until\na current administrator resumes the original consent and activation passes."
+        },
+        "setupMessage": {
+          "type": "string",
+          "description": "Public recovery guidance; transport diagnostics and credentials are omitted."
         }
       },
       "description": "Installation is one solution's bound identity in an org. Server-assigned ids;\nthe browser cannot attest to tenancy, the agent principal, or the scope node."
@@ -8010,11 +8084,11 @@
         },
         "method": {
           "type": "string",
-          "description": "The method the capability is presented to: \"/package.Service/Method\" for a\ngRPC call, \"\u003cVERB\u003e \u003cpath\u003e\" for an HTTP request (GET /v1/model/profiles),\nmatched against the routes the module declares. When set, the check also\napplies what the audience module's delivery declares for that method, and\nrefuses by name a call that does not hold it, a method that declares\nnothing, and a method the module does not serve."
+          "description": "The method the capability is presented to: \"/package.Service/Method\" for a\ngRPC call, \"\u003cVERB\u003e \u003cpath\u003e\" for an HTTP request (GET /v1/model/profiles),\nmatched against the routes the module declares. When set, the check also\napplies what the audience module's delivery declares for that method, and\nrefuses by name a call that does not hold it, a method that declares\nnothing, and a method the module does not serve.\nTwo exact methods are reserved for installation setup instead of delivered\nmethod policy: \"POST /_codefly/installations\" and\n\"/host.installation.v1.InstallableService/Install\". They accept only the\nsetup-only credential for the exact current consented pending installation;\nordinary capabilities are refused, even if delivered policy permits them.\nThe receiver supplies its actual method and its own delivered audience,\nnever values selected by the request body. The verified organization and\ninstallation seal must match the setup body and carriers before callback\nexecution or a cached acknowledgement. Setup admits no ordinary data work."
         },
         "advisory": {
           "type": "boolean",
-          "description": "Advisory asks for the policy decision without its refusal: the capability\nis still verified and refused when it is not sound, but what the method\ndeclares is only reported, in CheckResponse.refusal, and the verified\ncapability is answered. A hop in a composition that runs permissive\n(hop/ENFORCEMENT=warn) asks this way and logs the refusal it did not make.\nHosts may refuse advisory outside local development runs."
+          "description": "Advisory asks for the policy decision without its refusal: the capability\nis still verified and refused when it is not sound, but what the method\ndeclares is only reported, in CheckResponse.refusal, and the verified\ncapability is answered. A hop in a composition that runs permissive\n(hop/ENFORCEMENT=warn) asks this way and logs the refusal it did not make.\nHosts may refuse advisory outside local development runs.\nAt either reserved setup method, advisory does not relax setup credential\nauthentication or its pending-attempt checks: a refusal is always an error."
         }
       },
       "description": "CheckRequest presents a capability for verification."
@@ -9233,6 +9307,17 @@
       "properties": {
         "token": {
           "type": "string"
+        }
+      }
+    },
+    "v1InstallReviewedSolutionRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "review": {
+          "$ref": "#/definitions/v1ReviewedSolutionInstall"
         }
       }
     },
@@ -11644,6 +11729,97 @@
     },
     "v1RequestDeletionRequest": {
       "type": "object"
+    },
+    "v1ReviewSolutionInstallRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ReviewedSolutionInstall": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "actorId": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "bindingId": {
+          "type": "string"
+        },
+        "release": {
+          "type": "string"
+        },
+        "deliveryDigest": {
+          "type": "string"
+        },
+        "approval": {
+          "$ref": "#/definitions/v1ConsentApproval"
+        },
+        "installationRole": {
+          "type": "string"
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ReviewedSupportingModule"
+          }
+        }
+      },
+      "description": "InstallationService composes and administers installations. The headless mint\nthat turns an installation into a short-lived Work Context is\nWorkContextService.StartInstallationTask.\nA host review binds the shared solution approval to its live delivery and\nexplicit supporting-module consents. Return this unchanged when installing."
+    },
+    "v1ReviewedSupportingModule": {
+      "type": "object",
+      "properties": {
+        "principal": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "bindingId": {
+          "type": "string"
+        },
+        "release": {
+          "type": "string"
+        },
+        "deliveryDigest": {
+          "type": "string"
+        },
+        "installationRole": {
+          "type": "string"
+        },
+        "reuseInstallationId": {
+          "type": "string",
+          "description": "Nonempty means reuse this sufficient installation without rewriting consent."
+        },
+        "scope": {
+          "type": "string",
+          "description": "The existing module owner's exact consent scope; never a machine role grant."
+        },
+        "approval": {
+          "$ref": "#/definitions/v1ConsentApproval"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
     },
     "v1Role": {
       "type": "object",

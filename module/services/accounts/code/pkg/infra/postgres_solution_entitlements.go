@@ -11,9 +11,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// ListSolutionEntitlements answers what one subject may use inside one org
-// (issue #949): the org's active installations, narrowed to those whose
-// authority-root scope node the subject may act on.
+// ListSolutionEntitlements reads the module half of one subject's admission:
+// active module installations whose authority-root node the subject may use.
+// Business merges the shared core's HeldInstallations for solutions. Legacy
+// solution scope grants cannot substitute for canonical person/team grants.
 //
 // It is ONE statement on purpose. The installation set and the grant + share
 // union are two authority facts, and reading them in two round trips lets a
@@ -72,7 +73,7 @@ func (s *PostgresStore) ListSolutionEntitlements(
 	// set, so the two reads share one query, one keyset and one health definition,
 	// and health for every row is resolved inside this one statement.
 	summaries, err := s.listInstallationSummaries(ctx, executor, orgID, "active", cursor, limit,
-		"i.root_scope_node_id::text IN ("+admitted+")",
+		"i.kind = 'module' AND i.root_scope_node_id::text IN ("+admitted+")",
 		subjectID, business.ResourceTypeSolution, business.ActionUseSolution, orgID,
 		business.ScopeNodeKindSolution,
 		platformReadAdmissible(ctx, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, business.ActionUseSolution))

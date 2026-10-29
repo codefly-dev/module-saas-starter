@@ -140,6 +140,15 @@ func (i *Installations) Converge(ctx context.Context) error {
 	var failures []error
 	remaining := i.pending[:0]
 	for _, row := range i.pending {
+		if active, err := i.coreInstall(ctx, row); active || err != nil {
+			if err != nil {
+				remaining = append(remaining, row)
+				if !errors.Is(err, errCoreTargetNotComposed) {
+					failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
+				}
+			}
+			continue
+		}
 		installation, installed, err := i.service.InstallFixtureTarget(ctx, row.ownerID, row.orgID, row.declared.Target, row.declared.Role, row.ownerID)
 		switch {
 		case errors.Is(err, business.ErrInstallTargetNotPresent):
@@ -155,23 +164,6 @@ func (i *Installations) Converge(ctx context.Context) error {
 			if installed {
 				w.Info("fixture installation installed", wool.Field("installation", row.declared.describe()), wool.Field("installation_id", installation.GetId()))
 			}
-			// The authority core holds the same installation, which the host
-			// interfaces decide with (coreInstall). A target the core has not
-			// composed yet keeps the row for the next pass.
-			coreWaits := false
-			switch active, err := i.coreInstall(ctx, row); {
-			case errors.Is(err, errCoreTargetNotComposed):
-				coreWaits = true
-			case err != nil:
-				failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
-			case active:
-				// accounts' record of the installation follows the core's: the
-				// core's is active, so accounts' is, and its teams can be
-				// exposed below in this same pass.
-				if err := i.service.FollowCoreInstallation(ctx, row.orgID, installation.GetId()); err != nil {
-					failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
-				}
-			}
 			// Each declared team is exposed once the installation admits it (an
 			// installation still pending its install step does not); one not
 			// exposed yet keeps the row for the next pass.
@@ -182,7 +174,7 @@ func (i *Installations) Converge(ctx context.Context) error {
 					unexposed = append(unexposed, teamID)
 				}
 			}
-			if row.teamIDs = unexposed; len(row.teamIDs) > 0 || coreWaits {
+			if row.teamIDs = unexposed; len(row.teamIDs) > 0 {
 				remaining = append(remaining, row)
 			}
 		}
@@ -195,11 +187,9 @@ func (i *Installations) Converge(ctx context.Context) error {
 // authority core has not composed yet; the next pass installs it there.
 var errCoreTargetNotComposed = errors.New("the authority core has not composed this target yet")
 
-// coreInstall performs the declared installation in the authority core as the
-// host's own setup (InstallAsHost), then grants the installer role to its
-// owner and its role to each declared team (GrantRoleAsHost), as the local
-// authority's fixture does. Each step is idempotent, so a reseed repeats it
-// harmlessly. A host whose core is not configured installs nothing there.
+// coreInstall uses the fixture's explicitly declared administrator and role.
+// It reuses the durable original approval; fixture convergence never invents
+// additional module consent or activates an unacknowledged solution.
 func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation) (bool, error) {
 	core, err := i.service.AuthorityCore()
 	if errors.Is(err, business.ErrAuthorityCoreUnconfigured) {
@@ -222,7 +212,18 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 	if m.Kind != domain.KindSolution {
 		return false, nil
 	}
-	inst, err := core.InstallAsHost(ctx, row.orgID, row.declared.Target, row.declared.Role, row.ownerID, i.service.AuthorityInstallStep())
+	caller := authority.Person{ID: row.ownerID, Organization: row.orgID}
+	approval, err := core.Review(ctx, caller, row.orgID, row.declared.Target)
+	if err != nil {
+		return false, err
+	}
+	approval.OperationID = business.NewIDString()
+	if store, ok := i.service.Store().(business.CanonicalInstallationSetupStore); ok {
+		if plan, err := store.SolutionInstallationPlan(ctx, row.orgID, authority.StableInstallationID(row.orgID, row.declared.Target)); err == nil {
+			approval = plan.Approval
+		}
+	}
+	inst, err := i.service.InstallAuthoritySolution(ctx, caller, row.orgID, row.declared.Target, row.declared.Role, row.ownerID, &approval)
 	switch {
 	case errors.Is(err, domain.ErrAlreadyInstalled):
 		// Installed already, and active: its grants are granted again,

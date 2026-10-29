@@ -140,6 +140,7 @@ function InstallationSetup({
 		useState<GrantInstallationToTeamResponse | null>(null);
 	const name = row.target?.routeAlias || "this installation";
 	const target = row.target?.routeAlias ?? "";
+	const hasHostScopeRoot = Boolean(row.rootScopePath);
 	// The host's own unmet conditions, in the words of whoever owns each, handed
 	// to the shared Setup UI: it renders them beside the authority's answers.
 	const conditions: SetupCondition[] = (row.readiness?.unmet ?? []).map(
@@ -185,7 +186,7 @@ function InstallationSetup({
 
 			<SolutionSetupPanel target={target} conditions={conditions} />
 
-			<Card>
+			{hasHostScopeRoot ? <Card>
 				<CardHeader>
 					<CardTitle className="text-base">Team access on this host</CardTitle>
 					<CardDescription>
@@ -322,9 +323,14 @@ function InstallationSetup({
 						</p>
 					)}
 				</CardContent>
-			</Card>
+			</Card> : (
+				<p className="text-sm text-muted-foreground">
+					Assign people and teams using the solution roles above. Installing a
+					solution does not grant anyone access or change their module permissions.
+				</p>
+			)}
 
-			{granting && (
+			{hasHostScopeRoot && granting && (
 				<GrantTeamDialog
 					orgId={orgId}
 					solution={name}

@@ -21,6 +21,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	InstallationService_ReviewSolutionInstall_FullMethodName         = "/saas.accounts.v1.InstallationService/ReviewSolutionInstall"
+	InstallationService_InstallReviewedSolution_FullMethodName       = "/saas.accounts.v1.InstallationService/InstallReviewedSolution"
 	InstallationService_InstallSolution_FullMethodName               = "/saas.accounts.v1.InstallationService/InstallSolution"
 	InstallationService_UninstallSolution_FullMethodName             = "/saas.accounts.v1.InstallationService/UninstallSolution"
 	InstallationService_NarrowInstallation_FullMethodName            = "/saas.accounts.v1.InstallationService/NarrowInstallation"
@@ -37,11 +39,11 @@ const (
 // InstallationServiceClient is the client API for InstallationService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// InstallationService composes and administers installations. The headless mint
-// that turns an installation into a short-lived Work Context is
-// WorkContextService.StartInstallationTask.
 type InstallationServiceClient interface {
+	// Review one solution release and its supporting module access before consent.
+	ReviewSolutionInstall(ctx context.Context, in *ReviewSolutionInstallRequest, opts ...grpc.CallOption) (*ReviewedSolutionInstall, error)
+	// Consent to the exact review; retries retain its original per-owner receipts.
+	InstallReviewedSolution(ctx context.Context, in *InstallReviewedSolutionRequest, opts ...grpc.CallOption) (*Installation, error)
 	// InstallSolution composes an installation in one transaction: an idempotent
 	// agent Principal with its ceiling, a solution scope node, the agent's standing
 	// least-privilege grant at that node, and the installation row with its owner of
@@ -134,6 +136,26 @@ type installationServiceClient struct {
 
 func NewInstallationServiceClient(cc grpc.ClientConnInterface) InstallationServiceClient {
 	return &installationServiceClient{cc}
+}
+
+func (c *installationServiceClient) ReviewSolutionInstall(ctx context.Context, in *ReviewSolutionInstallRequest, opts ...grpc.CallOption) (*ReviewedSolutionInstall, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReviewedSolutionInstall)
+	err := c.cc.Invoke(ctx, InstallationService_ReviewSolutionInstall_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *installationServiceClient) InstallReviewedSolution(ctx context.Context, in *InstallReviewedSolutionRequest, opts ...grpc.CallOption) (*Installation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Installation)
+	err := c.cc.Invoke(ctx, InstallationService_InstallReviewedSolution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *installationServiceClient) InstallSolution(ctx context.Context, in *InstallSolutionRequest, opts ...grpc.CallOption) (*Installation, error) {
@@ -249,11 +271,11 @@ func (c *installationServiceClient) RevokeInstallationFromTeam(ctx context.Conte
 // InstallationServiceServer is the server API for InstallationService service.
 // All implementations must embed UnimplementedInstallationServiceServer
 // for forward compatibility.
-//
-// InstallationService composes and administers installations. The headless mint
-// that turns an installation into a short-lived Work Context is
-// WorkContextService.StartInstallationTask.
 type InstallationServiceServer interface {
+	// Review one solution release and its supporting module access before consent.
+	ReviewSolutionInstall(context.Context, *ReviewSolutionInstallRequest) (*ReviewedSolutionInstall, error)
+	// Consent to the exact review; retries retain its original per-owner receipts.
+	InstallReviewedSolution(context.Context, *InstallReviewedSolutionRequest) (*Installation, error)
 	// InstallSolution composes an installation in one transaction: an idempotent
 	// agent Principal with its ceiling, a solution scope node, the agent's standing
 	// least-privilege grant at that node, and the installation row with its owner of
@@ -348,6 +370,12 @@ type InstallationServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedInstallationServiceServer struct{}
 
+func (UnimplementedInstallationServiceServer) ReviewSolutionInstall(context.Context, *ReviewSolutionInstallRequest) (*ReviewedSolutionInstall, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReviewSolutionInstall not implemented")
+}
+func (UnimplementedInstallationServiceServer) InstallReviewedSolution(context.Context, *InstallReviewedSolutionRequest) (*Installation, error) {
+	return nil, status.Error(codes.Unimplemented, "method InstallReviewedSolution not implemented")
+}
 func (UnimplementedInstallationServiceServer) InstallSolution(context.Context, *InstallSolutionRequest) (*Installation, error) {
 	return nil, status.Error(codes.Unimplemented, "method InstallSolution not implemented")
 }
@@ -400,6 +428,42 @@ func RegisterInstallationServiceServer(s grpc.ServiceRegistrar, srv Installation
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&InstallationService_ServiceDesc, srv)
+}
+
+func _InstallationService_ReviewSolutionInstall_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReviewSolutionInstallRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstallationServiceServer).ReviewSolutionInstall(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstallationService_ReviewSolutionInstall_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstallationServiceServer).ReviewSolutionInstall(ctx, req.(*ReviewSolutionInstallRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InstallationService_InstallReviewedSolution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallReviewedSolutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstallationServiceServer).InstallReviewedSolution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstallationService_InstallReviewedSolution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstallationServiceServer).InstallReviewedSolution(ctx, req.(*InstallReviewedSolutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _InstallationService_InstallSolution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -607,6 +671,14 @@ var InstallationService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.InstallationService",
 	HandlerType: (*InstallationServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ReviewSolutionInstall",
+			Handler:    _InstallationService_ReviewSolutionInstall_Handler,
+		},
+		{
+			MethodName: "InstallReviewedSolution",
+			Handler:    _InstallationService_InstallReviewedSolution_Handler,
+		},
 		{
 			MethodName: "InstallSolution",
 			Handler:    _InstallationService_InstallSolution_Handler,

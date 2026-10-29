@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	modulecontract "github.com/codefly-dev/core/contracts/module"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -56,12 +57,14 @@ func wireScope(kind string, actions ...string) *authorityv1.WorkScopeV1 {
 // conformanceSolution is one solution the harness delivers: its own kinds and
 // the actions it serves on them, its roles, its routes and its bindings.
 type conformanceSolution struct {
-	alias      string
-	generation uint64
-	ceilings   []*authorityv1.WorkScopeV1
-	roles      map[string][]*authorityv1.WorkScopeV1
-	methods    []*compositionv1.MethodPolicyV1
-	bindings   []solutionhost.AuthorityBinding
+	installationRole string
+	edges            []modulecontract.EdgeDependency
+	alias            string
+	generation       uint64
+	ceilings         []*authorityv1.WorkScopeV1
+	roles            map[string][]*authorityv1.WorkScopeV1
+	methods          []*compositionv1.MethodPolicyV1
+	bindings         []solutionhost.AuthorityBinding
 }
 
 // deliverSolution delivers s as the CLI does: core's manifest signed with the
@@ -71,7 +74,7 @@ func deliverSolution(t *testing.T, ctx context.Context, conn grpc.ClientConnInte
 	t.Helper()
 	m := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: s.alias, Alias: s.alias, Kind: solutionhost.KindSolution, Generation: s.generation,
 		Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: s.alias, Version: "0.1.0"},
-		Workloads: []solutionhost.Workload{{Service: s.alias, Container: "app"}}, Authority: &solutionhost.Authority{Principal: s.alias, Bindings: s.bindings}}
+		Workloads: []solutionhost.Workload{{Service: s.alias, Container: "app"}}, Authority: &solutionhost.Authority{Principal: s.alias, Bindings: s.bindings, InstallationRole: s.installationRole, EdgeDependencies: s.edges}}
 	for _, ceiling := range s.ceilings {
 		m.Authority.ResourceKinds = append(m.Authority.ResourceKinds, ceiling.GetResourceKind())
 	}
@@ -80,7 +83,10 @@ func deliverSolution(t *testing.T, ctx context.Context, conn grpc.ClientConnInte
 	sum := sha256.Sum256(raw)
 	// A solution receives owner-selected scopes, so it declares owner-aware checking.
 	document := &compositionv1.AuthorityManifestV1{Module: s.alias, Generation: s.generation, CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]),
-		ScopeCeilings: s.ceilings, Methods: s.methods, OwnerAware: true}
+		ScopeCeilings: s.ceilings, Methods: s.methods, OwnerAware: true, InstallationRole: s.installationRole}
+	for _, edge := range s.edges {
+		document.EdgeDependencies = append(document.EdgeDependencies, &compositionv1.EdgeDependencyV1{Module: edge.Module, Presence: edge.Presence})
+	}
 	for name, scopes := range s.roles {
 		document.Roles = append(document.Roles, &compositionv1.RoleV1{Name: name, Scopes: scopes})
 	}
@@ -99,9 +105,10 @@ func deliverSolution(t *testing.T, ctx context.Context, conn grpc.ClientConnInte
 // with the actions it serves, and its bindings. A module checks resource
 // owners, so it declares owner-aware checking.
 type conformanceModule struct {
-	alias    string
-	ceilings []*authorityv1.WorkScopeV1
-	bindings []solutionhost.AuthorityBinding
+	installationRole string
+	alias            string
+	ceilings         []*authorityv1.WorkScopeV1
+	bindings         []solutionhost.AuthorityBinding
 	// generation is the delivery's generation; zero delivers the first.
 	generation uint64
 }
@@ -114,7 +121,7 @@ func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterf
 	generation := max(m.generation, 1)
 	manifest := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: m.alias, Alias: m.alias, Kind: solutionhost.KindModule, Generation: generation,
 		Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: m.alias, Version: "0.1.0"},
-		Workloads: []solutionhost.Workload{{Service: m.alias, Container: "app"}}, Authority: &solutionhost.Authority{Principal: m.alias, Bindings: m.bindings}}
+		Workloads: []solutionhost.Workload{{Service: m.alias, Container: "app"}}, Authority: &solutionhost.Authority{Principal: m.alias, Bindings: m.bindings, InstallationRole: m.installationRole}}
 	for _, ceiling := range m.ceilings {
 		manifest.Authority.ResourceKinds = append(manifest.Authority.ResourceKinds, ceiling.GetResourceKind())
 	}
@@ -122,7 +129,7 @@ func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterf
 	require.NoError(t, err)
 	sum := sha256.Sum256(raw)
 	doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&compositionv1.AuthorityManifestV1{Module: m.alias, Generation: generation,
-		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, OwnerAware: true})
+		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, OwnerAware: true, InstallationRole: m.installationRole})
 	require.NoError(t, err)
 	envelope, err := delivery.Sign(doc, signer.KeyID(), signer.Sign)
 	require.NoError(t, err)

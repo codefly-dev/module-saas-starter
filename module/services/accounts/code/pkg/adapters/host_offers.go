@@ -113,7 +113,10 @@ func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	out := &installationv1.ReviewedOffer{Target: projected.Target, ToolsComposed: projected.ToolsComposed}
+	out := &installationv1.ReviewedOffer{Target: projected.Target, ToolsComposed: projected.ToolsComposed, InstallationRole: projected.InstallationRole}
+	for _, edge := range projected.EdgeDependencies {
+		out.EdgeDependencies = append(out.EdgeDependencies, &installationv1.OfferDependency{Module: edge.Module, Presence: edge.Presence})
+	}
 	if a := projected.Approval; a != nil {
 		out.Approval = &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest}
 	}

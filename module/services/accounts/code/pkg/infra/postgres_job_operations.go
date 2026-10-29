@@ -362,6 +362,13 @@ func (s *PostgresJobStore) ReplayJob(
 	ctx context.Context,
 	request *jobsv1.ReplayJobRequest,
 ) (*jobsv1.ReplayJobResponse, error) {
+	return replayJob(ctx, s.pool, request)
+}
+
+// replayJob also supports a lifecycle-owned transaction that must atomically
+// attach the replay to its original consent. Validation and fingerprinting are
+// identical to the public job operation.
+func replayJob(ctx context.Context, q QueryExecutor, request *jobsv1.ReplayJobRequest) (*jobsv1.ReplayJobResponse, error) {
 	fingerprint, err := jobs.ReplayFingerprint(request)
 	if err != nil {
 		return nil, err
@@ -378,9 +385,9 @@ func (s *PostgresJobStore) ReplayJob(
 		value := request.GetAvailableAt().AsTime()
 		availableAt = &value
 	}
-	err = s.pool.QueryRow(ctx, `
+	err = q.QueryRow(ctx, `
 		SELECT job_id::text, stored_fingerprint, inserted
-		FROM replay_job_message($1::uuid, $2, $3, $4)`,
+		FROM public.replay_job_message($1::uuid, $2, $3, $4)`,
 		request.GetSourceJobId(), request.GetIdempotencyKey(), availableAt, fingerprint[:],
 	).Scan(&jobID, &storedFingerprint, &inserted)
 	if err != nil {

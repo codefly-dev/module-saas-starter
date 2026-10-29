@@ -446,6 +446,14 @@
         "rootScopeNodeId": {
           "type": "string"
         },
+        "setupMessage": {
+          "description": "Public recovery guidance; transport diagnostics and credentials are omitted.",
+          "type": "string"
+        },
+        "setupState": {
+          "description": "Read-only outcome of the exact durable setup attempt. This is not the\ncanonical installation status: an acknowledged setup stays pending until\na current administrator resumes the original consent and activation passes.",
+          "type": "string"
+        },
         "status": {
           "$ref": "#/definitions/v1InstallationStatus"
         },
@@ -2487,6 +2495,17 @@
       "properties": {
         "token": {
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1InstallReviewedSolutionRequest": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "review": {
+          "$ref": "#/definitions/v1ReviewedSolutionInstall"
         }
       },
       "type": "object"
@@ -4792,6 +4811,97 @@
       "type": "object"
     },
     "v1RequestDeletionRequest": {
+      "type": "object"
+    },
+    "v1ReviewSolutionInstallRequest": {
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1ReviewedSolutionInstall": {
+      "description": "InstallationService composes and administers installations. The headless mint\nthat turns an installation into a short-lived Work Context is\nWorkContextService.StartInstallationTask.\nA host review binds the shared solution approval to its live delivery and\nexplicit supporting-module consents. Return this unchanged when installing.",
+      "properties": {
+        "actorId": {
+          "type": "string"
+        },
+        "approval": {
+          "$ref": "#/definitions/v1ConsentApproval"
+        },
+        "bindingId": {
+          "type": "string"
+        },
+        "deliveryDigest": {
+          "type": "string"
+        },
+        "installationRole": {
+          "type": "string"
+        },
+        "modules": {
+          "items": {
+            "$ref": "#/definitions/v1ReviewedSupportingModule",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "release": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1ReviewedSupportingModule": {
+      "properties": {
+        "approval": {
+          "$ref": "#/definitions/v1ConsentApproval"
+        },
+        "bindingId": {
+          "type": "string"
+        },
+        "deliveryDigest": {
+          "type": "string"
+        },
+        "installationRole": {
+          "type": "string"
+        },
+        "principal": {
+          "type": "string"
+        },
+        "release": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "reuseInstallationId": {
+          "description": "Nonempty means reuse this sufficient installation without rewriting consent.",
+          "type": "string"
+        },
+        "scope": {
+          "description": "The existing module owner's exact consent scope; never a machine role grant.",
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "v1Role": {
@@ -11297,6 +11407,72 @@
         "summary": "RegisterScopeNode adds a node to the org's scope tree, or places a product\nrecord at a node when resource_type/resource_id are set.",
         "tags": [
           "PermissionService"
+        ]
+      }
+    },
+    "/v1/solution-installations": {
+      "post": {
+        "operationId": "InstallationService_InstallReviewedSolution",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1InstallReviewedSolutionRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/saasAccountsV1Installation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "summary": "Consent to the exact review; retries retain its original per-owner receipts.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/solution-installations/review": {
+      "post": {
+        "operationId": "InstallationService_ReviewSolutionInstall",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ReviewSolutionInstallRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ReviewedSolutionInstall"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "summary": "Review one solution release and its supporting module access before consent.",
+        "tags": [
+          "InstallationService"
         ]
       }
     },

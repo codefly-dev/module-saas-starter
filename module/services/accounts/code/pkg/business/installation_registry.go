@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -64,6 +66,22 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 	}
 	params.RegistryBindingID, params.RegistryPrincipalID = target.BindingID, principal
 	params.RouteAlias, params.Kind = target.RouteAlias, target.Kind
+	params.NoStandingAuthority = false
+	declaration, err := s.moduleInstallationDeclaration(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	if declaration.Principal != "" && declaration.Principal != grant.Prefix {
+		return nil, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: the module principal differs from its paired declaration")
+	}
+	if declaration.InstallationRole == domain.NoInstallationRole {
+		if params.RoleID != "" {
+			return nil, domain.Refuse("the delivered module declares no standing machine authority")
+		}
+		params.NoStandingAuthority = true
+	} else if declaration.InstallationRole != "" {
+		return nil, domain.NotNow("INSTALLATION_MODULE_ROLE_UNSUPPORTED: module %q declares role %q; the module standing-role owner must support that declaration before installation", declaration.Principal, declaration.InstallationRole)
+	}
 	if params.Kind == "module" && target.Installed && params.OwnerPrincipalID == "" {
 		existing, err := s.heldTargetInstallation(ctx, params.OrgID, params.TargetID)
 		if err != nil {

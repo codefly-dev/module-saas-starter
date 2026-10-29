@@ -7,6 +7,7 @@ import (
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/core/wool"
 )
 
@@ -44,6 +45,9 @@ type InstallSolutionParams struct {
 	// ltree path is derived server-side from its id (ADR-0002), never caller-chosen.
 	RootScopeLabel string
 	RoleID         string // the least-privilege role granted at the root node
+	// NoStandingAuthority is resolved from the paired module declaration. It is
+	// never a public input; the store rechecks it against locked delivery rows.
+	NoStandingAuthority bool `json:"-"`
 	// OwnerPrincipalID is the accountable human of record; empty defaults to the
 	// installing admin (GrantedBy). Must be a current org admin.
 	OwnerPrincipalID    string
@@ -160,6 +164,11 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	if err != nil {
 		return nil, err
 	}
+	if params.Kind == "solution" {
+		if _, err := s.AuthorityCore(); err == nil {
+			return nil, NewStoreError(fmt.Errorf("canonical solution installation requires ReviewSolutionInstall and InstallReviewedSolution; legacy solution writes are retired"), ErrTypeValidation)
+		}
+	}
 	if params.OwnerPrincipalID == "" {
 		params.OwnerPrincipalID = actorID
 	}
@@ -223,6 +232,13 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 // GetInstallation returns one installation plus its health, resolved live from
 // current authority facts (agent lifecycle, standing grant, owner admin status).
 func (s *Service) GetInstallation(ctx context.Context, orgID, installationID string) (*gen.Installation, gen.InstallationHealth, error) {
+	canonical, err := s.canonicalSolutionSummaries(ctx, orgID, installationID, "", gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, 1)
+	if err != nil {
+		return nil, gen.InstallationHealth_INSTALLATION_HEALTH_UNSPECIFIED, err
+	}
+	if len(canonical) == 1 {
+		return canonical[0].Installation, canonical[0].Health, nil
+	}
 	w := wool.Get(ctx).In("GetInstallation", wool.Field("installation_id", installationID))
 	var installation *gen.Installation
 	var health gen.InstallationHealth
@@ -269,6 +285,11 @@ func (s *Service) ListInstallations(ctx context.Context, req *gen.ListInstallati
 		return nil, w.Wrapf(err, "cannot list installations")
 	}
 
+	canonical, err := s.canonicalSolutionSummaries(ctx, req.GetOrgId(), "", req.GetPageToken(), req.GetStatus(), pageSize+1)
+	if err != nil {
+		return nil, err
+	}
+	summaries = mergeInstallationSummaries(summaries, canonical)
 	var nextToken string
 	if len(summaries) > pageSize {
 		summaries = summaries[:pageSize]
@@ -349,6 +370,17 @@ func (s *Service) TransferInstallationOwnership(ctx context.Context, actorID, or
 // scoping is not lost: every statement below names orgID explicitly, which is
 // what the tenant policy would have checked.
 func (s *Service) UninstallSolution(ctx context.Context, actorID, orgID, installationID string) error {
+	canonical, err := s.canonicalSolutionSummaries(ctx, orgID, installationID, "", gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, 1)
+	if err != nil {
+		return err
+	}
+	if len(canonical) == 1 {
+		core, err := s.AuthorityCore()
+		if err != nil {
+			return err
+		}
+		return core.Uninstall(ctx, authority.Person{ID: actorID, Organization: orgID}, orgID, installationID)
+	}
 	w := wool.Get(ctx).In("UninstallSolution", wool.Field("installation_id", installationID))
 	actorType := s.actorTypeForCreator(ctx, actorID)
 	if err := s.narrow(ctx, func(ctx context.Context) error {

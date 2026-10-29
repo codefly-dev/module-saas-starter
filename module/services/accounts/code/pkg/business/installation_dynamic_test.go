@@ -178,7 +178,7 @@ func (f availableInstallationStore) WithControlPlane(ctx context.Context, fn fun
 func (f availableInstallationStore) ListAvailableSolutionTargets(_ context.Context, q AvailableSolutionQuery) ([]*AvailableSolutionTarget, error) {
 	var out []*AvailableSolutionTarget
 	for _, target := range f.targets {
-		if target.TargetID > q.Cursor && (q.TargetID == "" || target.TargetID == q.TargetID) {
+		if target.TargetID > q.Cursor && (q.TargetID == "" || target.TargetID == q.TargetID) && (q.BindingID == "" || target.BindingID == q.BindingID) {
 			out = append(out, target)
 			if len(out) == q.Limit {
 				break

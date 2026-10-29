@@ -283,12 +283,14 @@
       "procedures": [
         "/saas.accounts.v1.InstallationService/GetInstallation",
         "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
+        "/saas.accounts.v1.InstallationService/InstallReviewedSolution",
         "/saas.accounts.v1.InstallationService/InstallSolution",
         "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
         "/saas.accounts.v1.InstallationService/ListInstallations",
         "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
         "/saas.accounts.v1.InstallationService/NarrowInstallation",
         "/saas.accounts.v1.InstallationService/RetryInstallation",
+        "/saas.accounts.v1.InstallationService/ReviewSolutionInstall",
         "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
         "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
         "/saas.accounts.v1.InstallationService/UninstallSolution"

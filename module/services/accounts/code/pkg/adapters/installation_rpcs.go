@@ -10,6 +10,9 @@ import (
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 )
 
 // InstallationServer handles InstallationService RPCs — the install composition
@@ -18,6 +21,46 @@ import (
 // signer; this server holds no keys and delegates to the business Service.
 type InstallationServer struct {
 	gen.UnsafeInstallationServiceServer
+}
+
+func (s *InstallationServer) ReviewSolutionInstall(ctx context.Context, req *gen.ReviewSolutionInstallRequest) (*gen.ReviewedSolutionInstall, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actor, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actor, req.OrgId); err != nil {
+		return nil, err
+	}
+	review, err := service.ReviewSolutionInstall(ctx, authority.Person{ID: actor, Organization: req.OrgId}, req.OrgId, req.TargetId)
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	return review, nil
+}
+
+func (s *InstallationServer) InstallReviewedSolution(ctx context.Context, req *gen.InstallReviewedSolutionRequest) (*gen.Installation, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actor, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actor, req.OrgId); err != nil {
+		return nil, err
+	}
+	inst, err := service.InstallReviewedSolution(ctx, authority.Person{ID: actor, Organization: req.OrgId}, req.OrgId, req.Review)
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	result, _, err := service.GetInstallation(ctx, req.OrgId, inst.ID)
+	if err != nil {
+		return nil, mapInstallationError(err)
+	}
+	return result, nil
 }
 
 func (s *InstallationServer) RetryInstallation(ctx context.Context, req *gen.RetryInstallationRequest) (*gen.Installation, error) {
@@ -371,6 +414,9 @@ func mapInstallationExposureError(err error) error {
 func mapInstallationError(err error) error {
 	if err == nil {
 		return nil
+	}
+	if _, refusal := domain.CodeOf(err); refusal {
+		return coreStatus(err)
 	}
 	var se *business.StoreError
 	if errors.As(err, &se) {

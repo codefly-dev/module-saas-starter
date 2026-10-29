@@ -3,6 +3,8 @@ package business
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -107,6 +109,18 @@ func (s *Service) ListSolutionEntitlements(ctx context.Context, req *gen.ListSol
 		cursor = rows[len(rows)-1].GetInstallationId()
 	}
 
+	canonical, err := s.canonicalSolutionEntitlements(ctx, snapshot, req.GetOrgId(), req.GetSubjectId())
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot read canonical solution entitlements")
+	}
+	for _, entry := range canonical {
+		if req.GetPageToken() == "" || entry.GetInstallationId() > req.GetPageToken() {
+			entitlements = append(entitlements, entry)
+		}
+	}
+	slices.SortFunc(entitlements, func(a, b *gen.SolutionEntitlement) int {
+		return strings.Compare(a.GetInstallationId(), b.GetInstallationId())
+	})
 	var nextToken string
 	if len(entitlements) > pageSize {
 		entitlements = entitlements[:pageSize]

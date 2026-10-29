@@ -476,7 +476,7 @@ func (s *HostInstallationServer) Install(ctx context.Context, req *installationv
 		approval = &domain.ConsentApproval{TargetID: a.GetTargetId(), Generation: a.GetGeneration(), ExpectedRevision: a.GetExpectedRevision(),
 			OperationID: a.GetOperationId(), Digest: a.GetDigest()}
 	}
-	inst, err := core.Install(ctx, caller, req.GetOrganizationId(), req.GetTarget(), req.GetRole(), req.GetOwnerPersonId(), approval, service.AuthorityInstallStep())
+	inst, err := service.InstallAuthoritySolution(ctx, caller, req.GetOrganizationId(), req.GetTarget(), req.GetRole(), req.GetOwnerPersonId(), approval)
 	if err != nil {
 		return nil, coreStatus(err)
 	}

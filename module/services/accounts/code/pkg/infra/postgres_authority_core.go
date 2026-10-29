@@ -47,8 +47,9 @@ const authorityCoreAttempts = 8
 
 // AuthorityCoreStore is the core's Store over this host's Postgres.
 type AuthorityCoreStore struct {
-	s       *PostgresStore
-	consent business.ModuleConsent
+	s             *PostgresStore
+	consent       business.ModuleConsent
+	hostSolutions bool
 }
 
 var _ authority.Store = AuthorityCoreStore{}
@@ -61,14 +62,14 @@ func (s *PostgresStore) AuthorityCore() authority.Store { return AuthorityCoreSt
 // AuthorityCoreWithConsent is the core's store over this database, answering
 // what each module installation's consent allows (business.ModuleConsent).
 func (s *PostgresStore) AuthorityCoreWithConsent(consent business.ModuleConsent) authority.Store {
-	return AuthorityCoreStore{s: s, consent: consent}
+	return AuthorityCoreStore{s: s, consent: consent, hostSolutions: true}
 }
 
 // Read runs fn over one consistent snapshot.
 func (c AuthorityCoreStore) Read(ctx context.Context, fn func(authority.Tx) error) error {
 	recordControlPlane(ctx)
 	return c.s.withControlPlaneTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(ctx context.Context) error {
-		return fn(coreTx{ctx: ctx, q: c.s.getQueryExecutor(ctx), consent: c.consent})
+		return fn(coreTx{ctx: ctx, q: c.s.getQueryExecutor(ctx), consent: c.consent, hostSolutions: c.hostSolutions})
 	})
 }
 
@@ -80,7 +81,7 @@ func (c AuthorityCoreStore) Write(ctx context.Context, fn func(authority.Tx) err
 	var err error
 	for attempt := range authorityCoreAttempts {
 		err = c.s.withControlPlaneTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable}, func(ctx context.Context) error {
-			return fn(coreTx{ctx: ctx, q: c.s.getQueryExecutor(ctx), write: true, consent: c.consent})
+			return fn(coreTx{ctx: ctx, q: c.s.getQueryExecutor(ctx), write: true, consent: c.consent, hostSolutions: c.hostSolutions})
 		})
 		if !serializationFailure(err) {
 			return err
@@ -96,10 +97,11 @@ func serializationFailure(err error) bool {
 }
 
 type coreTx struct {
-	ctx     context.Context
-	q       QueryExecutor
-	write   bool
-	consent business.ModuleConsent
+	ctx           context.Context
+	q             QueryExecutor
+	write         bool
+	consent       business.ModuleConsent
+	hostSolutions bool
 }
 
 // Context is the context this transaction's writes bind to: what the host's
@@ -342,14 +344,16 @@ func (t coreTx) grantedRole(role domain.OrgRole, query string, args ...any) (dom
 
 // moduleDocument is a module's declarations as stored.
 type moduleDocument struct {
-	ResourceKinds []storedScope            `json:"resource_kinds,omitempty"`
-	Bindings      map[string]storedBinding `json:"bindings,omitempty"`
-	Roles         map[string][]storedScope `json:"roles,omitempty"`
-	OwnedRoles    map[string][]storedScope `json:"owned_roles,omitempty"`
-	OwnerAware    bool                     `json:"owner_aware,omitempty"`
-	Methods       map[string]storedMethod  `json:"methods,omitempty"`
-	HasRoles      bool                     `json:"has_roles,omitempty"`
-	HasMethods    bool                     `json:"has_methods,omitempty"`
+	ResourceKinds    []storedScope            `json:"resource_kinds,omitempty"`
+	Bindings         map[string]storedBinding `json:"bindings,omitempty"`
+	Roles            map[string][]storedScope `json:"roles,omitempty"`
+	OwnedRoles       map[string][]storedScope `json:"owned_roles,omitempty"`
+	OwnerAware       bool                     `json:"owner_aware,omitempty"`
+	Methods          map[string]storedMethod  `json:"methods,omitempty"`
+	HasRoles         bool                     `json:"has_roles,omitempty"`
+	HasMethods       bool                     `json:"has_methods,omitempty"`
+	InstallationRole string                   `json:"installation_role,omitempty"`
+	EdgeDependencies []domain.EdgeDependency  `json:"edge_dependencies,omitempty"`
 }
 
 type storedScope struct {
@@ -391,7 +395,8 @@ func loadScopes(in []storedScope) []*basev0.WorkScopeV1 {
 }
 
 func encodeModule(m domain.Module) ([]byte, error) {
-	doc := moduleDocument{ResourceKinds: storeScopes(m.ResourceKinds), OwnerAware: m.OwnerAware, HasRoles: m.Roles != nil, HasMethods: m.Methods != nil}
+	doc := moduleDocument{ResourceKinds: storeScopes(m.ResourceKinds), OwnerAware: m.OwnerAware, HasRoles: m.Roles != nil, HasMethods: m.Methods != nil,
+		InstallationRole: m.InstallationRole, EdgeDependencies: m.EdgeDependencies}
 	if len(m.Bindings) > 0 {
 		doc.Bindings = map[string]storedBinding{}
 		for id, b := range m.Bindings {
@@ -425,6 +430,7 @@ func decodeModule(m *domain.Module, raw []byte) error {
 		return fmt.Errorf("module %s: stored declarations do not read: %w", m.Name, err)
 	}
 	m.ResourceKinds, m.OwnerAware = loadScopes(doc.ResourceKinds), doc.OwnerAware
+	m.InstallationRole, m.EdgeDependencies = doc.InstallationRole, doc.EdgeDependencies
 	m.Bindings = map[string]domain.Binding{}
 	for id, b := range doc.Bindings {
 		m.Bindings[id] = domain.Binding{ID: id, Audience: b.Audience, InvokeScopes: loadScopes(b.Invoke), HeadlessScopes: loadScopes(b.Headless), LookupScopes: loadScopes(b.Lookup)}
@@ -758,7 +764,7 @@ func (t coreTx) PutInstallation(inst domain.Installation) error {
 	if !ok {
 		return fmt.Errorf("installation %s names organization %q, which is not one of this host's", inst.ID, inst.Organization)
 	}
-	consent, err := json.Marshal(inst.Consent)
+	consent, err := t.solutionConsentForWrite(inst)
 	if err != nil {
 		return err
 	}

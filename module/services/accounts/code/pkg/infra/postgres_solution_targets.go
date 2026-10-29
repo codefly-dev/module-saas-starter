@@ -234,10 +234,14 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
 		SELECT t.id::text, t.binding_id, t.solution_id, r.declared_kind,
 		       b.applied_release, t.opened_generation, b.applied_generation,
-		       ($1 <> '' AND EXISTS (
+		       ($1 <> '' AND (EXISTS (
 		           SELECT 1 FROM public.installations i
-		            WHERE i.target_id = t.id AND i.org_id = $1::uuid AND i.status <> 'revoked'
-		       ))
+		            WHERE i.target_id = t.id AND i.org_id = $1::uuid AND i.kind='module' AND i.status <> 'revoked'
+		       ) OR EXISTS (
+		           SELECT 1 FROM public.authority_core_installations i
+		            WHERE i.organization_id=$1::uuid AND i.status<>'revoked'
+		              AND i.consent->'host_plan'->>'HostTargetID'=t.id::text
+		       )))
 		  FROM public.solution_targets t
 		  JOIN public.solution_host_bindings b ON b.binding_id = t.binding_id
 		  JOIN public.solution_registrations r ON r.declared_target_id = t.id
@@ -245,10 +249,11 @@ func (s *PostgresStore) ListAvailableSolutionTargets(
 		   AND b.applied_generation IS NOT NULL
 		   AND b.applied_removed = FALSE
 		   AND ($4 = '' OR t.id::text = $4)
+           AND ($6 = '' OR t.binding_id = $6)
 		   AND (cardinality($5::text[]) = 0 OR t.id::text = ANY($5::text[]))
 		   AND ($2 = '' OR t.id::text > $2)
 		 ORDER BY t.id
-		 LIMIT $3`, query.OrgID, query.Cursor, limit, query.TargetID, targetIDs)
+		 LIMIT $3`, query.OrgID, query.Cursor, limit, query.TargetID, targetIDs, query.BindingID)
 	if err != nil {
 		return nil, err
 	}

@@ -97,20 +97,34 @@ func installationStepHandler(svc installationStepService, mint func(context.Cont
 			}
 			lease := &jobsv1.JobLeaseReference{JobId: job.GetId(), WorkerId: req.Worker, LeaseToken: job.GetLease().GetToken()}
 			var result map[string]any
-			err = svc.WithInstallationStep(r.Context(), lease, func(ctx context.Context, a *business.InstallationStepAuthority, scopes []*gen.WorkContextScope) error {
-				token, err := mint(ctx, a, scopes, lease)
-				if err != nil {
-					return err
+			if job.GetAttributes()["canonical.installation"] == "true" {
+				canonical, ok := svc.(interface {
+					WithCanonicalInstallationStep(context.Context, *jobsv1.JobEnvelope, *jobsv1.JobLeaseReference, func(business.CanonicalInstallationDelivery) error) error
+				})
+				if !ok {
+					err = business.ErrAuthorityCoreUnconfigured
+				} else {
+					err = canonical.WithCanonicalInstallationStep(r.Context(), job, lease, func(delivery business.CanonicalInstallationDelivery) error {
+						result = canonicalInstallationClaim(delivery, job, lease)
+						return nil
+					})
 				}
-				wire := make([]installationWireScope, 0, len(scopes))
-				for _, s := range scopes {
-					wire = append(wire, installationWireScope{s.GetResourceKind(), s.GetActions(), s.GetResourceIds()})
-				}
-				result = map[string]any{"job_id": lease.JobId, "worker": lease.WorkerId, "lease_token": lease.LeaseToken, "attempt": job.GetAttemptCount(),
-					"route_alias": a.RouteAlias, "target_id": a.TargetID, "binding_id": a.BindingID, "work_context": token,
-					"installation": map[string]any{"installation_id": a.InstallationID, "organization_id": a.OrganizationID, "revision": a.Revision, "scope": wire}}
-				return nil
-			})
+			} else {
+				err = svc.WithInstallationStep(r.Context(), lease, func(ctx context.Context, a *business.InstallationStepAuthority, scopes []*gen.WorkContextScope) error {
+					token, err := mint(ctx, a, scopes, lease)
+					if err != nil {
+						return err
+					}
+					wire := make([]installationWireScope, 0, len(scopes))
+					for _, s := range scopes {
+						wire = append(wire, installationWireScope{s.GetResourceKind(), s.GetActions(), s.GetResourceIds()})
+					}
+					result = map[string]any{"job_id": lease.JobId, "worker": lease.WorkerId, "lease_token": lease.LeaseToken, "attempt": job.GetAttemptCount(),
+						"route_alias": a.RouteAlias, "target_id": a.TargetID, "binding_id": a.BindingID, "work_context": token,
+						"installation": map[string]any{"installation_id": a.InstallationID, "organization_id": a.OrganizationID, "revision": a.Revision, "scope": wire}}
+					return nil
+				})
+			}
 			if err != nil {
 				// An unavailable mint consumes this attempt just like an unavailable
 				// solution. If finalization itself fails, lease expiry recovers it.

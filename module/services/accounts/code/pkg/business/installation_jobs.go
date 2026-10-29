@@ -14,6 +14,9 @@ import (
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -25,15 +28,35 @@ type InstallationRetryStore interface {
 // RetryInstallation preserves the consent revision. State, outbox and audit
 // commit together; a repeated request while pending is a conflict.
 func (s *Service) RetryInstallation(ctx context.Context, actorID, orgID, id string) (*gen.Installation, error) {
+	canonical, err := s.canonicalSolutionSummaries(ctx, orgID, id, "", gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(canonical) == 1 {
+		if _, err := s.RetryCanonicalSolution(ctx, authority.Person{ID: actorID, Organization: orgID}, orgID, id); err != nil {
+			return nil, err
+		}
+		inst, _, err := s.GetInstallation(ctx, orgID, id)
+		return inst, err
+	}
 	store, ok := s.store.(InstallationRetryStore)
 	if !ok {
 		return nil, errors.New("installation retry store unavailable")
+	}
+	if _, err := s.AuthorityCore(); err == nil {
+		current, _, err := s.GetInstallation(ctx, orgID, id)
+		if err != nil {
+			return nil, err
+		}
+		if current.GetSetupState() == "legacy_review_required" {
+			return nil, domain.NotNow("legacy solution setup is retired; review the canonical installation")
+		}
 	}
 	actorType := s.actorTypeForCreator(ctx, actorID)
 	var installation *gen.Installation
 	// The target lock must precede the installation lock, as on withdrawal.
 	// The control-plane transaction can read the target; every write names orgID.
-	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
 		var revision uint64
 		installation, revision, err = store.RetryInstallation(ctx, orgID, id)

@@ -469,7 +469,7 @@ function InstalledSection({
 										</TableCell>
 										<TableCell>
 											{row.status === InstallationStatus.ACTIVE ? (
-												<TeamExposure
+												row.hasHostScopeRoot ? <TeamExposure
 													row={row}
 													name={name(row)}
 													revoking={revoke.isPending}
@@ -479,7 +479,7 @@ function InstalledSection({
 														setGranting(row);
 													}}
 													onRevoke={(team) => runRevoke(row, team)}
-												/>
+												/> : <Link href={`/admin/solutions/${row.installationId}`}>Manage solution roles</Link>
 											) : (
 												<span className="text-sm text-muted-foreground">
 													Available after activation
@@ -490,7 +490,7 @@ function InstalledSection({
 											{formatDate(row.installedAt)}
 										</TableCell>
 										<TableCell className="text-right">
-											{row.status === InstallationStatus.FAILED && (
+											{(row.status === InstallationStatus.FAILED || (row.status === InstallationStatus.PENDING && !row.hasHostScopeRoot)) && (
 												<Button
 													variant="outline"
 													size="sm"

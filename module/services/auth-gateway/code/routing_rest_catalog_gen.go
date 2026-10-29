@@ -156,6 +156,8 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/roles", Procedure: "/saas.accounts.v1.PermissionService/CreateRole"},
 		{Service: "accounts", Method: "POST", Path: "/v1/scope-grants", Procedure: "/saas.accounts.v1.PermissionService/GrantScope"},
 		{Service: "accounts", Method: "POST", Path: "/v1/scope-nodes", Procedure: "/saas.accounts.v1.PermissionService/RegisterScopeNode"},
+		{Service: "accounts", Method: "POST", Path: "/v1/solution-installations", Procedure: "/saas.accounts.v1.InstallationService/InstallReviewedSolution"},
+		{Service: "accounts", Method: "POST", Path: "/v1/solution-installations/review", Procedure: "/saas.accounts.v1.InstallationService/ReviewSolutionInstall"},
 		{Service: "accounts", Method: "POST", Path: "/v1/sso/disable", Procedure: "/saas.accounts.v1.SSOAdminService/Disable"},
 		{Service: "accounts", Method: "POST", Path: "/v1/sso/setup", Procedure: "/saas.accounts.v1.SSOAdminService/StartSetup"},
 		{Service: "accounts", Method: "POST", Path: "/v1/teams/{team_id}/members", Procedure: "/saas.accounts.v1.TeamService/AddMember"},

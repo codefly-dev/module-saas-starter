@@ -1431,3 +1431,16 @@ keeps what is per-source state:
   nothing on it to say why (`parkDatasourceSource`, the park the GitHub
   unreadable-public-repository path goes through as well); an incomplete, too-long or too-large
   listing is the terminal incomplete-listing disposition.
+
+## Canonical solution installation
+
+New solution installation uses `ReviewSolutionInstall` followed by
+`InstallReviewedSolution`; the shared Authority record is canonical. The host
+retains the reviewed dependency approvals and durable job linkage beside its
+consent receipt, not in a second installation table. Supporting modules retain
+the existing Accounts module consent/lifecycle path. Never call the legacy
+product solution writer to make a canonical installation or copy its standing
+grants into person/team roles. Queue ACK is not activation: the shared final
+serializable transaction checks the exact prerequisites. Pending outcomes are
+read from the linked job; continuation is explicitly authorized as the current
+person. See `HOST_INTERFACE.md` for the API, recovery and qualification limits.

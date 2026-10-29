@@ -128,6 +128,18 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 	if err := lockSolutionInstallation(ctx, executor, params.OrgID, params.TargetID); err != nil {
 		return nil, err
 	}
+	if params.NoStandingAuthority {
+		if params.Kind != "module" || params.RoleID != "" {
+			return nil, installerConflict("no-standing authority requires a module and no role input")
+		}
+		var declared bool
+		if err := executor.QueryRow(ctx, `SELECT public.lock_module_no_standing_declaration($1::uuid)`, params.TargetID).Scan(&declared); err != nil {
+			return nil, err
+		}
+		if !declared {
+			return nil, installerConflict("the current paired module declaration does not select no standing authority")
+		}
+	}
 
 	// A module install or re-install is explicit consent by an organization
 	// administrator. Check the actor here too: fixture and business callers
@@ -205,13 +217,13 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 	installation, err := scanInstallation(executor.QueryRow(ctx, `
 		INSERT INTO installations
 			(id, org_id, agent_principal_id, target_id, owner_principal_id,
-			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id, kind, registry_binding_id, registry_principal_id, scope, revision)
+			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id, kind, registry_binding_id, registry_principal_id, scope, revision, no_standing_authority)
 		VALUES (gen_random_uuid(), $1, $2, $3::uuid, $4, $5, $6, CASE WHEN $8='module' THEN 'active' ELSE 'pending' END, NULLIF($7, '')::uuid, COALESCE(NULLIF($8,''),'solution'), NULLIF($9,''), NULLIF($10, '')::uuid, $11::jsonb,
- (SELECT COALESCE(max(revision),0)+1 FROM public.installations WHERE org_id=$1 AND target_id=$3::uuid))
+ (SELECT COALESCE(max(revision),0)+1 FROM public.installations WHERE org_id=$1 AND target_id=$3::uuid), $12)
 		RETURNING `+installationColumns,
 		params.OrgID, agentID, params.TargetID, params.OwnerPrincipalID,
 		stringArray(params.CoOwnerPrincipalIDs), nodeID, params.InstallerPrincipalID,
-		params.Kind, params.RegistryBindingID, params.RegistryPrincipalID, scopeJSON,
+		params.Kind, params.RegistryBindingID, params.RegistryPrincipalID, scopeJSON, params.NoStandingAuthority,
 	))
 	if err != nil {
 		// A concurrent install of the same solution won the race between the
@@ -227,17 +239,28 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 		return nil, w.Wrapf(err, "failed to insert installation")
 	}
 	// 4. The agent's standing, non-expiring, least-privilege grant at the node.
-	grant := &gen.ScopeGrant{
-		Id:          business.NewIDString(),
-		OrgId:       params.OrgID,
-		SubjectId:   agentID,
-		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
-		ScopePath:   nodePath,
-		RoleId:      params.RoleID,
-		GrantedBy:   params.GrantedBy,
+	if params.NoStandingAuthority {
+		var existingGrant bool
+		if err := executor.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM public.scope_grants WHERE org_id=$1 AND subject_kind='principal' AND subject_id=$2 AND scope_path=$3)`, params.OrgID, agentID, nodePath).Scan(&existingGrant); err != nil {
+			return nil, err
+		}
+		if existingGrant {
+			return nil, installerConflict("the no-standing installation root already carries an agent grant")
+		}
 	}
-	if err := s.GrantScope(ctx, grant); err != nil {
-		return nil, w.Wrapf(err, "failed to grant standing scope to agent")
+	if !params.NoStandingAuthority {
+		grant := &gen.ScopeGrant{
+			Id:          business.NewIDString(),
+			OrgId:       params.OrgID,
+			SubjectId:   agentID,
+			SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			ScopePath:   nodePath,
+			RoleId:      params.RoleID,
+			GrantedBy:   params.GrantedBy,
+		}
+		if err := s.GrantScope(ctx, grant); err != nil {
+			return nil, w.Wrapf(err, "failed to grant standing scope to agent")
+		}
 	}
 
 	if installation.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING && params.Approval == nil {
@@ -332,7 +355,8 @@ func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *b
 func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, existing *gen.Installation, params *business.InstallSolutionParams) error {
 	var installedScope []byte
 	var principal, binding, kind string
-	if err := executor.QueryRow(ctx, `SELECT scope, COALESCE(registry_principal_id::text,''), registry_binding_id, kind FROM installations WHERE id=$1::uuid AND org_id=$2::uuid`, existing.Id, existing.OrgId).Scan(&installedScope, &principal, &binding, &kind); err != nil {
+	var noStanding bool
+	if err := executor.QueryRow(ctx, `SELECT scope, COALESCE(registry_principal_id::text,''), registry_binding_id, kind, no_standing_authority FROM installations WHERE id=$1::uuid AND org_id=$2::uuid`, existing.Id, existing.OrgId).Scan(&installedScope, &principal, &binding, &kind, &noStanding); err != nil {
 		return err
 	}
 	var current business.InstallationScope
@@ -343,7 +367,7 @@ func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, 
 	if params.Scope != nil {
 		requested = *params.Scope
 	}
-	sameAuthority := principal == params.RegistryPrincipalID &&
+	sameAuthority := noStanding == params.NoStandingAuthority && principal == params.RegistryPrincipalID &&
 		(params.RegistryBindingID == "" || binding == params.RegistryBindingID) &&
 		(params.Kind == "" || kind == params.Kind)
 	sameScope := current.Follows == requested.Follows &&
@@ -497,7 +521,7 @@ const installationHealthLabel = `CASE
 			  AND hm.user_id = ANY (ARRAY[i.owner_principal_id] || i.co_owner_principal_ids)
 			  AND hm.role IN ('owner', 'admin')
 		) THEN 'no_eligible_owner'
-		WHEN NOT EXISTS (
+		WHEN NOT i.no_standing_authority AND NOT EXISTS (
 			SELECT 1 FROM scope_grants hg
 			JOIN scope_nodes hn ON hn.id = i.root_scope_node_id
 			WHERE hg.org_id = i.org_id
@@ -531,17 +555,18 @@ func installationHealthFromLabel(label string) gen.InstallationHealth {
 const installationListingColumns = `i.id::text, i.org_id::text, i.agent_principal_id::text,
 	i.owner_principal_id::text, i.co_owner_principal_ids::text[],
 	i.root_scope_node_id::text, i.status, i.created_at, i.revoked_at,
-	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), COALESCE(i.failure_reason, ''), i.revision, ` + installationHealthLabel
+	COALESCE(i.target_id::text, ''), COALESCE(i.revoked_reason, ''), COALESCE(i.failure_reason, ''), i.revision, ` + installationHealthLabel + `, i.kind`
 
 // withHealthLabel scans one listing row: the installation's own columns through
 // scanInstallation, so the wire mapping has one definition, then the label.
 type withHealthLabel struct {
 	row   rowScanner
 	label *string
+	kind  *string
 }
 
 func (r withHealthLabel) Scan(dest ...any) error {
-	return r.row.Scan(append(dest, r.label)...)
+	return r.row.Scan(append(dest, r.label, r.kind)...)
 }
 
 // listInstallationSummaries is the one installation listing both reads go through:
@@ -578,10 +603,13 @@ func (s *PostgresStore) listInstallationSummaries(
 
 	var summaries []*gen.InstallationSummary
 	for rows.Next() {
-		var label string
-		installation, e := scanInstallation(withHealthLabel{row: rows, label: &label})
+		var label, kind string
+		installation, e := scanInstallation(withHealthLabel{row: rows, label: &label, kind: &kind})
 		if e != nil {
 			return nil, e
+		}
+		if kind == "solution" {
+			markLegacyInstallation(installation)
 		}
 		summaries = append(summaries, &gen.InstallationSummary{
 			Installation: installation,
@@ -589,6 +617,11 @@ func (s *PostgresStore) listInstallationSummaries(
 		})
 	}
 	return summaries, rows.Err()
+}
+
+func markLegacyInstallation(i *gen.Installation) {
+	i.SetupState = "legacy_review_required"
+	i.SetupMessage = "This legacy installation is retired. Review the delivered solution to create its canonical installation; existing human grants are not copied."
 }
 
 // GetInstallation loads one installation and resolves its health live from the
@@ -611,6 +644,13 @@ func (s *PostgresStore) GetInstallation(ctx context.Context, orgID, installation
 	health, err := s.resolveInstallationHealth(ctx, executor, installation)
 	if err != nil {
 		return nil, gen.InstallationHealth_INSTALLATION_HEALTH_UNSPECIFIED, err
+	}
+	var kind string
+	if err := executor.QueryRow(ctx, `SELECT kind FROM installations WHERE id=$1 AND org_id=$2`, installationID, orgID).Scan(&kind); err != nil {
+		return nil, health, err
+	}
+	if kind == "solution" {
+		markLegacyInstallation(installation)
 	}
 	return installation, health, nil
 }
@@ -643,6 +683,13 @@ func (s *PostgresStore) resolveInstallationHealth(ctx context.Context, executor 
 		return gen.InstallationHealth_INSTALLATION_HEALTH_NO_ELIGIBLE_OWNER, nil
 	}
 
+	var noStanding bool
+	if err := executor.QueryRow(ctx, `SELECT no_standing_authority FROM public.installations WHERE id=$1 AND org_id=$2`, installation.Id, installation.OrgId).Scan(&noStanding); err != nil {
+		return 0, err
+	}
+	if noStanding {
+		return gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY, nil
+	}
 	var hasGrant bool
 	if err := executor.QueryRow(ctx, `
 		SELECT EXISTS (
@@ -1145,6 +1192,13 @@ var _ business.InstallationStore = (*PostgresStore)(nil)
 func (s *PostgresStore) InstallationRoleRevision(ctx context.Context, org, id string) (string, string, uint64, error) {
 	var roleID, role string
 	var revision uint64
+	var noStanding bool
+	if err := s.getQueryExecutor(ctx).QueryRow(ctx, `SELECT no_standing_authority,revision FROM public.installations WHERE id=$1 AND org_id=$2 AND status <> 'revoked'`, id, org).Scan(&noStanding, &revision); err != nil {
+		return "", "", 0, err
+	}
+	if noStanding {
+		return "", "", revision, nil
+	}
 	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
  SELECT r.id::text, r.name, i.revision
  FROM installations i JOIN scope_nodes n ON n.id=i.root_scope_node_id
