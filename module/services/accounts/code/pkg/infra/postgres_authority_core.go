@@ -187,8 +187,14 @@ func (t coreTx) Member(organization, id string) (domain.Person, error) {
 // TeamExists reads the authoritative directory in the same canonical transaction.
 // Empty teams exist independently of memberships; deleted or foreign teams do not.
 func (t coreTx) TeamExists(organization, id string) (bool, error) {
+	org, okOrg := asUUID(organization)
+	team, okTeam := asUUID(id)
+	if !okOrg || !okTeam {
+		// A malformed id names no team; it is an absent entry, not a storage failure.
+		return false, nil
+	}
 	var exists bool
-	err := t.q.QueryRow(t.ctx, `SELECT EXISTS (SELECT 1 FROM public.teams WHERE org_id = $1 AND id = $2)`, organization, id).Scan(&exists)
+	err := t.q.QueryRow(t.ctx, `SELECT EXISTS (SELECT 1 FROM public.teams WHERE org_id = $1 AND id = $2)`, org, team).Scan(&exists)
 	return exists, err
 }
 

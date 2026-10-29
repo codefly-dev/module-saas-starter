@@ -485,6 +485,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		LegacyStore: "principal-legacy-store", LegacyStoreCredential: credential("principal-legacy-store"), LegacyKind: "principal.legacy",
 		Admin: "fixture-alex", Viewer: "fixture-maya", Editor: "fixture-remi", Member: "fixture-no-roles", Installer: "fixture-principal-installer",
 		Team: teamNamed(t, ctx, svc, fixtureOrganization, "Principal team"), TeamMember: "fixture-principal-team-member", TeamLeaver: "fixture-principal-team-leaver",
+		EmptyTeam: teamNamed(t, ctx, svc, fixtureOrganization, "Principal empty team"),
 		OrgLeaver: "fixture-principal-org-leaver", Administrator: "fixture-store-administrator", Reader: "fixture-store-reader", NoteReader: "fixture-principal-note-reader",
 		OtherAdmin: "fixture-zoe", OtherMember: "fixture-omar", OtherTeam: teamNamed(t, ctx, svc, globexOrganization, "Ops"),
 		Existing:  "store-x",

@@ -77,6 +77,9 @@ teams:
   - {name: Ops, org: Globex, members: [zoe@globex.test, omar@globex.test]}
   # No installation is granted to it until the target grants one.
   - {name: Principal team, org: Acme Corp, members: [team-member@acme.test, team-leaver@acme.test]}
+  # No member: a team created during installation, before anyone joins it,
+  # is granted a role, listed and revoked.
+  - {name: Principal empty team, org: Acme Corp, members: []}
 
 roles:
   - org: Acme Corp
