@@ -17,8 +17,10 @@ The gateway stamps `kind` from the applied declaration; a remote manifest cannot
 choose its routing kind. A shared module has one deployment, while each
 organisation installs it and grants team access independently through the same
 target-based entitlement projection. The organization administration destination
-is labelled "Modules & solutions" and retains `/admin/solutions`; its empty
-state directs an administrator to the platform operator when nothing is available.
+is labelled "Solutions" and retains `/admin/solutions`, listing solutions only;
+supporting modules are administered at `/admin/modules`, which it links to. Its
+empty state directs an administrator to the platform operator when nothing is
+available.
 Each installed row links to `/admin/solutions/<installation id>`, that
 installation's setup page: what it is and whether it is READY (the host's
 `InstallationReadiness`, which is not the record's health), the unmet conditions
@@ -451,10 +453,32 @@ module consent, and submits `InstallReviewedSolution` unchanged. A mismatched
 shared offer or unreadable consent prevents submission. Closing the dialog does
 not replace the cached operation; retries retain it, and Review again explicitly
 requests new consent. Pending installation rows offer current-person continuation.
-Supporting modules remain visible through the catalogue toggle and installation
-detail. Their separate administrator path remains available, but is not a step
-in normal solution installation. Person/team roles are assigned separately in
-the existing Setup surface after activation.
+Supporting modules remain visible on `/admin/modules` and in installation
+detail. That administrator path remains available, but is not a step in normal
+solution installation.
+
+The only installer configuration is a team for each role the solution's offer
+declares: an existing organization team, or one created inline through
+`TeamService.CreateTeam` with the editable suggested name `<solution>-<role>`.
+A name already taken is surfaced with an explicit "Use existing" choice; it is
+never reused or created twice, and no member is added. The choices are intent
+kept per person, organization and solution in session storage
+(`service/team-choices.ts`), so they survive a pending installation, a retry and
+a remount. Install marks them approved by its operation and binds them to the
+installation it returns; nothing is granted then. The Setup surface grants each
+one through the canonical `GrantRole` only when the authority's own offer reports
+that installation active — automatically once for choices approved by Install,
+otherwise by an explicit Apply — and drops each choice as its grant succeeds, so
+a retry never repeats one. Choices made against another declaration digest or
+generation need an explicit confirmation first. Assignments stay editable in the
+same Setup surface afterwards.
+
+**Open.** The authority core at the accounts pin decides whether a team belongs
+to the organization from its members, so a grant to a team created here with
+nobody in it is refused (`"<team>" is not a team of <organization>`). The
+refusal is shown and the choice retained for retry. The accounts store already
+answers `TeamExists` from the team directory; the decision moves when the
+authority core reads it and accounts takes that pin.
 
 The combined review describes Accounts `namespaces` as event publication and
 `external_namespaces` as eligibility for declared external events to reach the

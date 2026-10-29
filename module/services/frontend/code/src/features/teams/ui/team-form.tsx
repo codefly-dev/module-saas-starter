@@ -64,7 +64,16 @@ export function TeamForm({
 							{error}
 						</p>
 					)}
-					{existingTeam && <Button type="button" variant="outline" disabled={isPending} onClick={existingTeam.onUse}>Use existing {existingTeam.name}</Button>}
+					{existingTeam && (
+						<Button
+							type="button"
+							variant="outline"
+							disabled={isPending}
+							onClick={existingTeam.onUse}
+						>
+							Use existing {existingTeam.name}
+						</Button>
+					)}
 					<div className="space-y-2">
 						<Label htmlFor="team-name">Name</Label>
 						<Input

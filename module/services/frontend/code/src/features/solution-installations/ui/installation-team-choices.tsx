@@ -1,51 +1,85 @@
 "use client";
 
-import { RoleTeamChoice } from "./role-team-choice";
-import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { teamQueries } from "@/features/teams/service/queries";
 import type { ReviewedOffer } from "@/gen/host/installation/v1/installation_pb";
 import { Button, DelayedLoading } from "@/shared/ui";
 import { offerScopeText } from "../model/install-review";
 import { hostRefusal } from "../model/installations";
-import { useInstallationTeamChoices } from "../service/team-choices";
+import {
+	choicesMatch,
+	type TeamChoice,
+	useInstallationTeamChoices,
+} from "../service/team-choices";
+import { RoleTeamChoice } from "./role-team-choice";
 
-/** The Setup picker stages explicit choices; it never grants while installing. */
+const sameChoice = (a: TeamChoice, b: TeamChoice) =>
+	a.teamId === b.teamId && a.role === b.role;
+
+/**
+ * One team per role the solution declares. Choosing or creating a team only
+ * stages the choice: `grant` is supplied by the Setup surface once the
+ * installation is active, so nothing here can confer access before activation.
+ */
 export function InstallationTeamChoices({
 	orgId,
 	targetId,
 	offer,
 	disabled = false,
-	onApply,
 	onBusyChange,
+	grant,
+	onApplied,
 }: {
 	orgId: string;
 	targetId: string;
 	offer: Pick<ReviewedOffer, "approval" | "roles" | "target" | "installation">;
 	disabled?: boolean;
 	onBusyChange?: (busy: boolean) => void;
-	onApply?: (choices: { teamId: string; role: string }[]) => Promise<void>;
+	/** The canonical role grant for one choice; absent until the installation is active. */
+	grant?: (choice: TeamChoice) => Promise<void>;
+	onApplied?: () => void;
 }) {
 	const teams = useQuery(teamQueries.list(orgId));
 	const draft = useInstallationTeamChoices(orgId, targetId);
-	const [failure, setFailure] = useState<string>();
-	const [busy, setBusy] = useState(false);
-	const started = useRef("");
-	const [applied, setApplied] = useState(false);
-	useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
+	const [creating, setCreating] = useState(false);
+	const apply = useMutation({
+		mutationFn: async () => {
+			if (!grant) return;
+			for (const choice of draft.current()?.choices ?? []) {
+				await grant(choice);
+				// A granted choice leaves the draft, so a retry never repeats it.
+				const value = draft.current();
+				const rest = value?.choices.filter((c) => !sameChoice(c, choice));
+				draft.save(value && rest?.length ? { ...value, choices: rest } : null);
+			}
+		},
+		onError: (error) => {
+			const value = draft.current();
+			if (value?.authorized)
+				draft.save({
+					...value,
+					authorized: { ...value.authorized, failure: hostRefusal(error) },
+				});
+		},
+		onSettled: () => onApplied?.(),
+	});
+	const busy = apply.isPending || creating;
+	useEffect(() => {
+		onBusyChange?.(busy);
+	}, [busy, onBusyChange]);
+
 	const choices = draft.value?.choices ?? [];
-	const generation = offer.approval?.generation.toString() ?? "";
 	const digest = offer.approval?.digest ?? "";
-	const changed = Boolean(
-		choices.length &&
-			(draft.value?.digest !== digest ||
-				draft.value?.generation !== generation),
-	);
+	const changed = !choicesMatch(draft.value, offer.approval);
 	const teamList = teams.isError ? [] : (teams.data?.teams ?? []);
 	const roles = offer.roles.map((role) => role.name);
-	const unavailable = choices.some(
-		(c) => !roles.includes(c.role) || !teamList.some((t) => t.id === c.teamId),
-	);
+	const unavailable =
+		teams.isSuccess &&
+		choices.some(
+			(c) =>
+				!roles.includes(c.role) || !teamList.some((t) => t.id === c.teamId),
+		);
 	const blocked =
 		disabled ||
 		busy ||
@@ -54,39 +88,58 @@ export function InstallationTeamChoices({
 		teams.isError ||
 		draft.loading ||
 		!digest;
-	const save = (next: typeof choices, confirm = false) =>
-		draft.save({
-			digest: changed && !confirm ? draft.value!.digest : digest,
-			generation: changed && !confirm ? draft.value!.generation : generation,
-			choices: next,
-		});
- const run = useCallback(async () => {
-  if (!onApply || !draft.value || blocked || changed || unavailable) return;
-  setBusy(true); setFailure(undefined);
-  try { await onApply(draft.value.choices); draft.save(null); setApplied(true); }
-  catch (error) {
-   const reason = hostRefusal(error); setFailure(reason);
-   if (draft.value.authorized) draft.save({...draft.value, authorized:{...draft.value.authorized,failure:reason}});
-  } finally { setBusy(false); }
- }, [onApply, draft, blocked, changed, unavailable]);
- useEffect(() => {
-  const approved = draft.value?.authorized;
-  if (!approved?.installationId || approved.failure || !onApply || blocked || approved.installationId !== offer.installation?.id) return;
-  const key = `${approved.operationId}:${approved.installationId}`;
-  if (started.current === key) return;
-  started.current = key;
-  if (changed || unavailable) {
-   draft.save({...draft.value!, authorized:{...approved, failure:"The selected team or role declaration changed. Review team choices again."}});
-  } else { void run(); }
- }, [draft, onApply, blocked, changed, unavailable, offer.installation?.id, run]);
- const pendingAuthorization = Boolean(draft.value?.authorized && !onApply);
- const shownFailure = failure || draft.value?.authorized?.failure;
+	const save = (next: TeamChoice[], confirm = false) => {
+		apply.reset();
+		draft.save(
+			next.length
+				? {
+						digest: changed && !confirm ? draft.value!.digest : digest,
+						generation:
+							changed && !confirm
+								? draft.value!.generation
+								: (offer.approval?.generation.toString() ?? ""),
+						choices: next,
+					}
+				: null,
+		);
+	};
 
+	// Choices approved by Install are applied once, when this installation is active.
+	const approved = draft.value?.authorized;
+	const autoKey =
+		approved?.installationId &&
+		!approved.failure &&
+		approved.installationId === offer.installation?.id
+			? `${approved.operationId}:${approved.installationId}`
+			: "";
+	const started = useRef("");
+	useEffect(() => {
+		if (!autoKey || !grant || blocked || started.current === autoKey) return;
+		started.current = autoKey;
+		const value = draft.current();
+		if (changed || unavailable) {
+			if (value?.authorized)
+				draft.save({
+					...value,
+					authorized: {
+						...value.authorized,
+						failure:
+							"The selected team or the solution's declared roles changed. Review the team choices again.",
+					},
+				});
+		} else apply.mutate();
+	}, [autoKey, grant, blocked, changed, unavailable, draft, apply]);
+
+	const failure = apply.error
+		? hostRefusal(apply.error)
+		: draft.value?.authorized?.failure;
 	return (
 		<section aria-label="Team access" className="space-y-3">
 			<h3 className="font-medium">Team access</h3>
 			<p>
-				Choose an existing team or create one for each role this solution declares. Install authorizes these choices; access is applied automatically after setup becomes active. No team members are added. You can change access later in Set up.
+				For each role this solution declares, choose an existing team or create
+				one. No team members are added. Access is granted only once setup is
+				active, and you can change it later in Set up.
 			</p>
 			<details>
 				<summary>What each declared role permits</summary>
@@ -107,8 +160,11 @@ export function InstallationTeamChoices({
 			{teams.isError && (
 				<p role="alert">Teams could not be read: {hostRefusal(teams.error)}</p>
 			)}
-			{!teams.isPending && !teams.isError && !teamList.length && (
-				<p>No teams are available. Create one for a declared role, or assign access later in Set up.</p>
+			{teams.isSuccess && !teamList.length && (
+				<p>
+					No teams exist yet. Create one for a declared role, or assign access
+					later in Set up.
+				</p>
 			)}
 			{choices.length > 0 && (
 				<ul aria-label="Chosen team roles" className="space-y-1">
@@ -119,8 +175,8 @@ export function InstallationTeamChoices({
 								type="button"
 								size="sm"
 								variant="ghost"
-								disabled={busy || pendingAuthorization}
-								onClick={() => save(choices.filter((x) => x !== c))}
+								disabled={disabled || busy}
+								onClick={() => save(choices.filter((x) => !sameChoice(x, c)))}
 							>
 								Remove {c.teamName} {c.role}
 							</Button>
@@ -134,13 +190,29 @@ export function InstallationTeamChoices({
 					choices before applying access.
 				</p>
 			)}
-			{unavailable && !teams.isPending && (
+			{unavailable && (
 				<p role="alert">
 					A chosen team or role is no longer available. Remove or replace that
 					choice.
 				</p>
 			)}
-   {offer.roles.map((role) => <RoleTeamChoice key={role.name} orgId={orgId} solution={offer.target} role={role.name} teams={teamList} disabled={blocked || pendingAuthorization} onWorking={setBusy} onChoose={(team) => save([...choices.filter((choice) => choice.role !== role.name), {teamId:team.id,teamName:team.name,role:role.name}])} />)}
+			{offer.roles.map((role) => (
+				<RoleTeamChoice
+					key={role.name}
+					orgId={orgId}
+					solution={offer.target}
+					role={role.name}
+					teams={teamList}
+					disabled={blocked}
+					onWorking={setCreating}
+					onChoose={(team) =>
+						save([
+							...choices.filter((c) => c.role !== role.name),
+							{ teamId: team.id, teamName: team.name, role: role.name },
+						])
+					}
+				/>
+			))}
 			{changed && (
 				<Button
 					type="button"
@@ -151,21 +223,29 @@ export function InstallationTeamChoices({
 					Confirm team choices for current declaration
 				</Button>
 			)}
-			{onApply && choices.length > 0 && (!draft.value?.authorized || shownFailure) && (
+			{grant && choices.length > 0 && (!approved || failure) && (
 				<Button
 					type="button"
 					disabled={blocked || changed || unavailable}
-					onClick={() => void run()}
+					onClick={() => apply.mutate()}
 				>
-					{busy ? "Applying team access…" : shownFailure ? "Retry team access" : "Apply team changes"}
+					Apply team access
 				</Button>
 			)}
-			{pendingAuthorization && <p role="status">Your selected teams are retained. Access will be applied after setup becomes active.</p>}
-   {busy && <p role="status">Applying selected team access…</p>}
-   {applied && <p role="status">Selected team access is applied.</p>}
-   {shownFailure && (
+			{!grant && choices.length > 0 && (
+				<p role="status">
+					Your team choices are kept. They are granted only after setup is
+					active.
+				</p>
+			)}
+			{apply.isPending && <p role="status">Applying team access…</p>}
+			{apply.isSuccess && !choices.length && (
+				<p role="status">Team access is applied.</p>
+			)}
+			{failure && (
 				<p role="alert">
-					Team access is incomplete: {shownFailure} Your team choices are retained; retry applying them.
+					Team access is incomplete: {failure} Your team choices are retained;
+					retry applying them.
 				</p>
 			)}
 		</section>

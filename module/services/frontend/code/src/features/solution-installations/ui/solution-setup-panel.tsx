@@ -77,21 +77,20 @@ export function SolutionSetupPanel({
 								orgId={organizationId}
 								targetId={targetId}
 								offer={offer}
-								onApply={
+								grant={
 									offer.installation?.id === installation.id &&
 									offer.installation.status === HostInstallationStatus.ACTIVE
-										? async (choices) => {
-												for (const choice of choices)
-													await clients.installations.grantRole({
-														organizationId,
-														installationId: installation.id,
-														teamId: choice.teamId,
-														role: choice.role,
-													});
-												reload();
+										? async (choice) => {
+												await clients.installations.grantRole({
+													organizationId,
+													installationId: installation.id,
+													teamId: choice.teamId,
+													role: choice.role,
+												});
 											}
 										: undefined
 								}
+								onApplied={reload}
 							/>
 						)
 					: undefined

@@ -2825,6 +2825,20 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/app/admin/modules/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/solution-installations",
+        "@/gen/saas/accounts/v1/frontend_catalog"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route entry for direct supporting-module administration; owns host routing only. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/app/admin/sso/page.tsx",
       "imports": [
         "@/features/sso-admin/ui/sso-admin-page"
@@ -5118,6 +5132,20 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/solution-installations/ui/install-module-dialog.tsx",
+      "imports": [
+        "@/shared/ui",
+        "../model/installations",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the explicit supporting-module installation form outside normal solution installation. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/solution-installations/ui/installation-setup-page.tsx",
       "imports": [
         "lucide-react",
@@ -5141,6 +5169,47 @@
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/installation-team-choices.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "react",
+        "@/features/teams/service/queries",
+        "@/gen/host/installation/v1/installation_pb",
+        "@/shared/ui",
+        "../model/install-review",
+        "../model/installations",
+        "../service/team-choices",
+        "./role-team-choice"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the staged team-per-declared-role choices and when they are granted through the canonical GrantRole. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/role-team-choice.tsx",
+      "imports": [
+        "@codefly-dev/saas-ui/solution",
+        "@tanstack/react-query",
+        "react",
+        "@/features/teams/model/schemas",
+        "@/features/teams/service/mutations",
+        "@/features/teams/service/queries",
+        "@/features/teams/ui/team-form",
+        "@/gen/saas/accounts/v1/common_pb",
+        "@/shared/ui",
+        "../model/installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Binds one declared role to an existing organization team or one created through the organization's CreateTeam; the picker is the kit's SolutionRoleGrantForm.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required; the picker is the kit's SolutionRoleGrantForm."
     },
     {
       "source": "src/features/solution-installations/ui/solution-installations-page.tsx",

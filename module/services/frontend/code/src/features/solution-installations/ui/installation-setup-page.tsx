@@ -47,7 +47,8 @@ import { SolutionSetupPanel } from "./solution-setup-panel";
  * what it still needs from a person, and who may reach it.
  *
  * It answers those three questions and nothing else. Installing, uninstalling
- * and the catalogue stay on `Admin → Modules & solutions`, which is where a
+ * and the catalogue stay on `Admin → Solutions` (supporting modules on
+ * `/admin/modules`), which is where a
  * person arrives from; this page exists because a row cannot carry a list of
  * unmet conditions, each with its own owner and its own act, for ten
  * installations at once — which is exactly the information that was missing.
@@ -74,11 +75,17 @@ export function InstallationSetupPage({
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="space-y-1">
 					<Link
-						href="/admin/solutions"
+						href={
+							row?.target?.kind === "module"
+								? "/admin/modules"
+								: "/admin/solutions"
+						}
 						className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
 					>
 						<ArrowLeft className="h-3 w-3" />
-						Solutions
+						{row?.target?.kind === "module"
+							? "Supporting modules"
+							: "Solutions"}
 					</Link>
 					<h1 data-slot="page-title" className="type-page-title">
 						{row?.target?.routeAlias || "This installation"}

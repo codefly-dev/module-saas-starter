@@ -150,10 +150,18 @@ function SolutionInstallationsForOrganization({
 						{showModules ? "Supporting module administration" : "Solutions"}
 					</h1>
 					<p className="text-muted-foreground">
-						Choose a solution and review its access and supporting modules
-						together. Choose team roles during review; access is applied only
-						after setup completes.
+						{showModules
+							? "Supporting modules install and converge with the solutions that require them. This page is for administering one directly."
+							: "Choose a solution and review its access and supporting modules together. Choose a team for each of its roles during review; access is granted only once setup is active."}
 					</p>
+					{!showModules && (
+						<Link
+							href="/admin/modules"
+							className="text-sm text-muted-foreground hover:underline"
+						>
+							Supporting module administration
+						</Link>
+					)}
 				</div>
 				<div className="flex items-center gap-3">
 					<OrgSelector />

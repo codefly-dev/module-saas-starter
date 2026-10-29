@@ -27,8 +27,10 @@ import {
 	offerScopeText,
 } from "../model/install-review";
 import { hostRefusal, releaseText } from "../model/installations";
-
-import { useInstallationTeamChoices } from "../service/team-choices";
+import {
+	choicesMatch,
+	useInstallationTeamChoices,
+} from "../service/team-choices";
 import { InstallationTeamChoices } from "./installation-team-choices";
 
 const offers = createClient(OfferService, apiTransport);
@@ -188,6 +190,7 @@ export function InstallSolutionDialog({
 							targetId={solution.targetId}
 							offer={data.offer}
 							disabled={isPending}
+							onBusyChange={setTeamBusy}
 						/>
 						<label className="flex items-start gap-2">
 							<input
@@ -195,7 +198,6 @@ export function InstallSolutionDialog({
 								checked={approved}
 								onChange={(event) => setApproved(event.target.checked)}
 								disabled={isPending}
-							 onBusyChange={setTeamBusy}
 							/>
 							I approve this solution and the required module access shown
 							above.
@@ -224,10 +226,19 @@ export function InstallSolutionDialog({
 						Review again
 					</Button>
 					<Button
-						disabled={!data || !approved || isPending || teamBusy || teamChoices.loading || Boolean(teamChoices.value?.choices.length && (teamChoices.value.digest !== data?.offer.approval?.digest || teamChoices.value.generation !== data?.offer.approval?.generation.toString()))}
+						disabled={
+							!data ||
+							!approved ||
+							isPending ||
+							teamBusy ||
+							teamChoices.loading ||
+							!choicesMatch(teamChoices.value, data.offer.approval)
+						}
 						onClick={() => {
 							if (data) {
 								setSubmitted(true);
+								// Staged team choices ride on this Install's consent and are
+								// granted only once the installation it creates is active.
 								teamChoices.authorize(data.consent.approval?.operationId ?? "");
 								onSubmit(data.consent);
 							}

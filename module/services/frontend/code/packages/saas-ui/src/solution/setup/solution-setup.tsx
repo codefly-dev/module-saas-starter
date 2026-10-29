@@ -572,25 +572,29 @@ export function SolutionRoleGrantForm({
 				});
 			}}
 		>
-			{fixedRole ? <p>Role: {fixedRole}</p> : <Field label="Role">
-				{(control) => (
-					<select
-						{...control}
-						required
-						value={role}
-						onChange={(event) => setRole(event.target.value)}
-					>
-						<option value="" disabled>
-							Choose a role…
-						</option>
-						{roles.map((r) => (
-							<option key={r} value={r}>
-								{r}
+			{fixedRole ? (
+				<p>Role: {fixedRole}</p>
+			) : (
+				<Field label="Role">
+					{(control) => (
+						<select
+							{...control}
+							required
+							value={role}
+							onChange={(event) => setRole(event.target.value)}
+						>
+							<option value="" disabled>
+								Choose a role…
 							</option>
-						))}
-					</select>
-				)}
-			</Field>}
+							{roles.map((r) => (
+								<option key={r} value={r}>
+									{r}
+								</option>
+							))}
+						</select>
+					)}
+				</Field>
+			)}
 			{named ? (
 				<Field label={subjectLabel}>
 					{(control) => (

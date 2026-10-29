@@ -269,6 +269,14 @@ it, and a link, an act, or a note). Nothing else is host-specific: no host
 context, no host role gate, and only this kit's own components and tokens, so
 it renders identically in any shell.
 
+A host may also pass `renderAccessChoices(offer, clients, reload)`, drawn
+beside the roles from the same reviewed offer and the same generated clients,
+for host-owned choices such as which team holds each declared role; whatever it
+grants still goes through `GrantRole` and is the authority's decision.
+`SolutionRoleGrantForm` is the component's own grant form, exported so such a
+slot offers only listed subjects (`allowUnlistedSubjects={false}`) or one fixed
+role (`fixedRole`) without a second picker.
+
 `useSolutionSetup(transport, organizationId, target)` and `setupClients` are the
 same reads without the UI. Stories (`stories/solution-setup.stories.tsx`) render
 each section from a local-authority-shaped and a SaaS-shaped answer — the same

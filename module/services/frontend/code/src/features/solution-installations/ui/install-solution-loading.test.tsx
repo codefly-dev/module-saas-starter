@@ -14,8 +14,20 @@ import {
 } from "@/gen/saas/accounts/v1/installations_pb";
 import { InstallSolutionDialog } from "./install-solution-dialog";
 
+// This suite times the review's own read; the staged team choices are covered
+// by installation-team-choices.container.test.tsx.
 vi.mock("./installation-team-choices", () => ({
 	InstallationTeamChoices: () => null,
+}));
+vi.mock("../service/team-choices", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../service/team-choices")>()),
+	useInstallationTeamChoices: () => ({
+		value: null,
+		loading: false,
+		current: () => null,
+		save: vi.fn(),
+		authorize: vi.fn(),
+	}),
 }));
 
 const query = vi.hoisted(() => ({ isFetching: true }));

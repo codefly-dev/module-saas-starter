@@ -1,11 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReviewedSolutionInstall } from "@/gen/saas/accounts/v1/installations_pb";
+import { useAuth } from "@/lib/auth";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 import { parseList } from "../model/installations";
 import type { InstallSolutionValues } from "../model/schemas";
-import { useAuth } from "@/lib/auth";
-import { acknowledgeTeamChoices } from "./team-choices";
 import { solutionInstallationKeys } from "./queries";
+import { acknowledgeTeamChoices } from "./team-choices";
 
 /**
  * Installs one available target. The target is the immutable identity the
@@ -136,7 +136,15 @@ export function useInstallReviewedSolution(orgId: string) {
 	return useMutation({
 		mutationFn: (review: ReviewedSolutionInstall) =>
 			service.installReviewedSolution({ orgId, review }),
-		onSuccess: (installation, review) => acknowledgeTeamChoices(queryClient, user?.id ?? "", orgId, review.targetId, review.approval?.operationId ?? "", installation.id),
+		onSuccess: (installation, review) =>
+			acknowledgeTeamChoices(
+				queryClient,
+				user?.id ?? "",
+				orgId,
+				review.targetId,
+				review.approval?.operationId ?? "",
+				installation.id,
+			),
 		onSettled: () => invalidate(queryClient, orgId),
 	});
 }
