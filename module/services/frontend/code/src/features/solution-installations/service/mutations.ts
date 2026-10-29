@@ -3,6 +3,8 @@ import type { ReviewedSolutionInstall } from "@/gen/saas/accounts/v1/installatio
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 import { parseList } from "../model/installations";
 import type { InstallSolutionValues } from "../model/schemas";
+import { useAuth } from "@/lib/auth";
+import { acknowledgeTeamChoices } from "./team-choices";
 import { solutionInstallationKeys } from "./queries";
 
 /**
@@ -129,10 +131,12 @@ function invalidate(
 /** Submit the original server review, including each supporting consent. */
 export function useInstallReviewedSolution(orgId: string) {
 	const service = useInstallationService();
+	const { user } = useAuth();
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: (review: ReviewedSolutionInstall) =>
 			service.installReviewedSolution({ orgId, review }),
+		onSuccess: (installation, review) => acknowledgeTeamChoices(queryClient, user?.id ?? "", orgId, review.targetId, review.approval?.operationId ?? "", installation.id),
 		onSettled: () => invalidate(queryClient, orgId),
 	});
 }

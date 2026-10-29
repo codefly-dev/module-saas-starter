@@ -14,6 +14,10 @@ import {
 } from "@/gen/saas/accounts/v1/installations_pb";
 import { InstallSolutionDialog } from "./install-solution-dialog";
 
+vi.mock("./installation-team-choices", () => ({
+	InstallationTeamChoices: () => null,
+}));
+
 const query = vi.hoisted(() => ({ isFetching: true }));
 vi.mock("@tanstack/react-query", () => ({
 	useQuery: () => ({ ...query, isError: false, data, refetch: vi.fn() }),

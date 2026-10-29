@@ -39,8 +39,8 @@ import {
 } from "../service/mutations";
 import { useInstallations } from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
-import { SolutionSetupPanel } from "./solution-setup-panel";
 import { Fact } from "./solution-installations-page";
+import { SolutionSetupPanel } from "./solution-setup-panel";
 
 /**
  * One module's or one solution's setup page: what it is and whether it is ready,
@@ -78,7 +78,7 @@ export function InstallationSetupPage({
 						className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
 					>
 						<ArrowLeft className="h-3 w-3" />
-						Modules &amp; solutions
+						Solutions
 					</Link>
 					<h1 data-slot="page-title" className="type-page-title">
 						{row?.target?.routeAlias || "This installation"}
@@ -108,7 +108,7 @@ export function InstallationSetupPage({
 				<EmptyState
 					icon={Layers}
 					title="This organization has no such installation"
-					description="It may have been uninstalled, or it belongs to another organization. Go back to Modules & solutions."
+					description="It may have been uninstalled, or it belongs to another organization. Go back to Solutions."
 				/>
 			) : (
 				<InstallationSetup orgId={orgId} row={row} />
@@ -184,149 +184,167 @@ function InstallationSetup({
 				</Banner>
 			)}
 
-			<SolutionSetupPanel target={target} conditions={conditions} />
+			<SolutionSetupPanel
+				target={target}
+				conditions={conditions}
+				targetId={
+					row.target?.kind === "solution"
+						? row.installation?.targetId
+						: undefined
+				}
+				installation={row.installation}
+			/>
 
-			{hasHostScopeRoot ? <Card>
-				<CardHeader>
-					<CardTitle className="text-base">Team access on this host</CardTitle>
-					<CardDescription>
-						This host&apos;s own installation record and the teams it admits
-						to the solution, at which role. A team granted here holds everything
-						that role permits beneath this installation&apos;s authority root; a
-						team reaching it from a grant above is real reach that was not
-						granted here. The solution&apos;s own roles are granted above.
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-3">
-					<dl className="grid gap-3 sm:grid-cols-4">
-						<div>
-							<dt className="text-xs uppercase text-muted-foreground">
-								Release
-							</dt>
-							<dd className="mt-1">
-								{fact ? <Fact view={fact.revision} /> : null}
-							</dd>
-						</div>
-						<div>
-							<dt className="text-xs uppercase text-muted-foreground">
-								Lifecycle
-							</dt>
-							<dd className="mt-1">
-								{fact ? <Fact view={fact.lifecycle} /> : null}
-							</dd>
-						</div>
-						<div>
-							<dt className="text-xs uppercase text-muted-foreground">
-								Record health
-							</dt>
-							<dd className="mt-1">
-								{fact ? <Fact view={fact.health} /> : null}
-							</dd>
-						</div>
-						<div>
-							<dt className="text-xs uppercase text-muted-foreground">
-								Readiness
-							</dt>
-							<dd className="mt-1">
-								<Badge tone={summary.tone} dot aria-label="Readiness">
-									{summary.text}
-								</Badge>
-							</dd>
-						</div>
-					</dl>
-					{fact && fact.grantedTeams.length === 0 && (
-						<p className="text-sm text-muted-foreground">
-							No team is granted here, so no member reaches it through this
-							installation.
-						</p>
-					)}
-					{fact && fact.grantedTeams.length > 0 && (
-						<ul className="space-y-1" aria-label="Teams granted here">
-							{fact.grantedTeams.map((team) => (
-								<li key={team.key} className="text-sm">
-									<span className="font-medium">{team.team}</span>
-									<span className="text-muted-foreground"> · {team.role}</span>
-									<span className="ml-2 font-mono text-xs text-muted-foreground">
-										{team.scopePath}
-									</span>
-								</li>
-							))}
-						</ul>
-					)}
-					{fact && fact.inheritedTeams.length > 0 && (
-						<p className="text-sm text-muted-foreground">
-							Inherited from above:{" "}
-							{fact.inheritedTeams.map((team) => team.team).join(", ")}
-						</p>
-					)}
-					{offers.length > 0 && (
-						<Banner
-							tone="info"
-							title="A grant here also carries the modules this reaches"
-						>
-							{entryKindText(row)} {name} reaches{" "}
-							{offers.map((offer) => offer.label).join(", ")} on the asking
-							person&apos;s own session, from its own applied declaration. A
-							grant carries each of them: what {name} declares it consumes
-							there, intersected with the role you choose — never the whole role
-							— written at that module&apos;s own authority root and revoked
-							with this grant. There is no per-module step to perform.
-						</Banner>
-					)}
-					{carried && (
-						<Banner
-							tone={carried.unmet.length > 0 ? "warning" : "success"}
-							title="What that grant carried"
-							onDismiss={() => setCarried(null)}
-						>
-							<div className="space-y-2">
-								{carried.carried.length > 0 ? (
-									<ul className="list-disc space-y-1 pl-4">
-										{carried.carried.map((entry) => (
-											<li key={entry.audience}>
-												{entry.audience}: {entry.scopes.join(", ")}
-											</li>
-										))}
-									</ul>
-								) : (
-									<p>It carried no module access.</p>
-								)}
-								{carried.unmet.map((condition) => (
-									<p key={`${condition.kind}-${condition.subject}`}>
-										<span className="font-medium">
-											{conditionHeading(condition.kind)}
-											{condition.subject ? ` — ${condition.subject}` : ""}:
-										</span>{" "}
-										{condition.detail} {clearedByText(condition.clearedBy)}
-									</p>
-								))}
+			{hasHostScopeRoot ? (
+				<Card>
+					<CardHeader>
+						<CardTitle className="text-base">
+							Team access on this host
+						</CardTitle>
+						<CardDescription>
+							This host&apos;s own installation record and the teams it admits
+							to the solution, at which role. A team granted here holds
+							everything that role permits beneath this installation&apos;s
+							authority root; a team reaching it from a grant above is real
+							reach that was not granted here. The solution&apos;s own roles are
+							granted above.
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-3">
+						<dl className="grid gap-3 sm:grid-cols-4">
+							<div>
+								<dt className="text-xs uppercase text-muted-foreground">
+									Release
+								</dt>
+								<dd className="mt-1">
+									{fact ? <Fact view={fact.revision} /> : null}
+								</dd>
 							</div>
-						</Banner>
-					)}
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={
-							grant.isPending ||
-							row.installation?.status !== InstallationStatus.ACTIVE
-						}
-						onClick={() => {
-							grant.reset();
-							setGranting(true);
-						}}
-					>
-						Grant a team
-					</Button>
-					{row.installation?.status !== InstallationStatus.ACTIVE && (
-						<p className="text-sm text-muted-foreground">
-							A grant is available once the installation is active.
-						</p>
-					)}
-				</CardContent>
-			</Card> : (
+							<div>
+								<dt className="text-xs uppercase text-muted-foreground">
+									Lifecycle
+								</dt>
+								<dd className="mt-1">
+									{fact ? <Fact view={fact.lifecycle} /> : null}
+								</dd>
+							</div>
+							<div>
+								<dt className="text-xs uppercase text-muted-foreground">
+									Record health
+								</dt>
+								<dd className="mt-1">
+									{fact ? <Fact view={fact.health} /> : null}
+								</dd>
+							</div>
+							<div>
+								<dt className="text-xs uppercase text-muted-foreground">
+									Readiness
+								</dt>
+								<dd className="mt-1">
+									<Badge tone={summary.tone} dot aria-label="Readiness">
+										{summary.text}
+									</Badge>
+								</dd>
+							</div>
+						</dl>
+						{fact && fact.grantedTeams.length === 0 && (
+							<p className="text-sm text-muted-foreground">
+								No team is granted here, so no member reaches it through this
+								installation.
+							</p>
+						)}
+						{fact && fact.grantedTeams.length > 0 && (
+							<ul className="space-y-1" aria-label="Teams granted here">
+								{fact.grantedTeams.map((team) => (
+									<li key={team.key} className="text-sm">
+										<span className="font-medium">{team.team}</span>
+										<span className="text-muted-foreground">
+											{" "}
+											· {team.role}
+										</span>
+										<span className="ml-2 font-mono text-xs text-muted-foreground">
+											{team.scopePath}
+										</span>
+									</li>
+								))}
+							</ul>
+						)}
+						{fact && fact.inheritedTeams.length > 0 && (
+							<p className="text-sm text-muted-foreground">
+								Inherited from above:{" "}
+								{fact.inheritedTeams.map((team) => team.team).join(", ")}
+							</p>
+						)}
+						{offers.length > 0 && (
+							<Banner
+								tone="info"
+								title="A grant here also carries the modules this reaches"
+							>
+								{entryKindText(row)} {name} reaches{" "}
+								{offers.map((offer) => offer.label).join(", ")} on the asking
+								person&apos;s own session, from its own applied declaration. A
+								grant carries each of them: what {name} declares it consumes
+								there, intersected with the role you choose — never the whole
+								role — written at that module&apos;s own authority root and
+								revoked with this grant. There is no per-module step to perform.
+							</Banner>
+						)}
+						{carried && (
+							<Banner
+								tone={carried.unmet.length > 0 ? "warning" : "success"}
+								title="What that grant carried"
+								onDismiss={() => setCarried(null)}
+							>
+								<div className="space-y-2">
+									{carried.carried.length > 0 ? (
+										<ul className="list-disc space-y-1 pl-4">
+											{carried.carried.map((entry) => (
+												<li key={entry.audience}>
+													{entry.audience}: {entry.scopes.join(", ")}
+												</li>
+											))}
+										</ul>
+									) : (
+										<p>It carried no module access.</p>
+									)}
+									{carried.unmet.map((condition) => (
+										<p key={`${condition.kind}-${condition.subject}`}>
+											<span className="font-medium">
+												{conditionHeading(condition.kind)}
+												{condition.subject ? ` — ${condition.subject}` : ""}:
+											</span>{" "}
+											{condition.detail} {clearedByText(condition.clearedBy)}
+										</p>
+									))}
+								</div>
+							</Banner>
+						)}
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={
+								grant.isPending ||
+								row.installation?.status !== InstallationStatus.ACTIVE
+							}
+							onClick={() => {
+								grant.reset();
+								setGranting(true);
+							}}
+						>
+							Grant a team
+						</Button>
+						{row.installation?.status !== InstallationStatus.ACTIVE && (
+							<p className="text-sm text-muted-foreground">
+								A grant is available once the installation is active.
+							</p>
+						)}
+					</CardContent>
+				</Card>
+			) : (
 				<p className="text-sm text-muted-foreground">
 					Assign people and teams using the solution roles above. Installing a
-					solution does not grant anyone access or change their module permissions.
+					solution does not grant anyone access or change their module
+					permissions.
 				</p>
 			)}
 

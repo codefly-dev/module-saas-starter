@@ -25,6 +25,7 @@ interface TeamFormProps {
 	onCancel: () => void;
 	isPending: boolean;
 	error?: string;
+	existingTeam?: { name: string; onUse: () => void };
 }
 
 export function TeamForm({
@@ -35,6 +36,7 @@ export function TeamForm({
 	onCancel,
 	isPending,
 	error,
+	existingTeam,
 }: TeamFormProps) {
 	const editing = mode === "edit";
 	const form = useForm({
@@ -62,6 +64,7 @@ export function TeamForm({
 							{error}
 						</p>
 					)}
+					{existingTeam && <Button type="button" variant="outline" disabled={isPending} onClick={existingTeam.onUse}>Use existing {existingTeam.name}</Button>}
 					<div className="space-y-2">
 						<Label htmlFor="team-name">Name</Label>
 						<Input

@@ -2,6 +2,7 @@
 
 import { Layers, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
@@ -111,14 +112,30 @@ export function Fact({ view }: { view: FactView }) {
  * install, expose to a team, uninstall. Each act is the host's to accept or
  * refuse, and a refusal is shown as the host words it.
  */
-export function SolutionInstallationsPage() {
+export function SolutionInstallationsPage({
+	supportingModules = false,
+}: {
+	supportingModules?: boolean;
+}) {
 	const { organizationId: orgId = "" } = useAuth();
-	return <SolutionInstallationsForOrganization key={orgId} orgId={orgId} />;
+	return (
+		<SolutionInstallationsForOrganization
+			key={orgId}
+			orgId={orgId}
+			showModules={supportingModules}
+		/>
+	);
 }
 
-function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
+function SolutionInstallationsForOrganization({
+	orgId,
+	showModules,
+}: {
+	orgId: string;
+	showModules: boolean;
+}) {
+	const router = useRouter();
 	const [installing, setInstalling] = useState<AvailableSolution | null>(null);
-	const [showModules, setShowModules] = useState(false);
 	const available = useAvailableSolutions(orgId);
 	const installed = useInstallations(orgId);
 	// This owner survives dismissal of the form and reports every host result.
@@ -130,12 +147,12 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div>
 					<h1 data-slot="page-title" className="type-page-title">
-						Modules &amp; solutions
+						{showModules ? "Supporting module administration" : "Solutions"}
 					</h1>
 					<p className="text-muted-foreground">
 						Choose a solution and review its access and supporting modules
-						together. After installation, choose the people and teams who can
-						use it.
+						together. Choose team roles during review; access is applied only
+						after setup completes.
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
@@ -159,14 +176,17 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 			{!orgId ? (
 				<EmptyState
 					icon={Layers}
-					title="Select an organization to manage its modules and solutions"
+					title={
+						showModules
+							? "Select an organization to manage its modules and solutions"
+							: "Select an organization to manage its solutions"
+					}
 					description="Installations belong to one organization at a time. Pick one from the selector above."
 				/>
 			) : (
 				<>
 					<AvailableSection
 						showModules={showModules}
-						setShowModules={setShowModules}
 						query={available}
 						installing={
 							install.isPending ||
@@ -203,10 +223,11 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 							onSuccess: (installation) => {
 								toast.success(
 									installation.status === InstallationStatus.ACTIVE
-										? "Solution installed. Choose who can use it in Set up."
-										: "Setup is pending. Continue from its installation.",
+										? "Setup active. Completing selected team access in Set up."
+										: "Setup is pending. Your selected team roles are retained.",
 								);
 								setInstalling(null);
+								router.push(`/admin/solutions/${installation.id}`);
 							},
 							onError: (error) => toast.error(hostRefusal(error)),
 						})
@@ -259,13 +280,11 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 
 function AvailableSection({
 	showModules,
-	setShowModules,
 	query,
 	installing,
 	onInstall,
 }: {
 	showModules: boolean;
-	setShowModules: (show: boolean) => void;
 	query: ReturnType<typeof useAvailableSolutions>;
 	installing: boolean;
 	onInstall: (solution: AvailableSolution) => void;
@@ -278,7 +297,7 @@ function AvailableSection({
 		? []
 		: availableRows(
 				(query.data ?? []).filter(
-					(target) => showModules || target.kind !== "module",
+					(target) => showModules || target.kind === "solution",
 				),
 			);
 
@@ -286,14 +305,6 @@ function AvailableSection({
 		<Card>
 			<CardHeader>
 				<CardTitle className="text-base">Available</CardTitle>
-				<label className="flex items-center gap-2 text-sm">
-					<input
-						type="checkbox"
-						checked={showModules}
-						onChange={(event) => setShowModules(event.target.checked)}
-					/>
-					Show supporting modules
-				</label>
 				<CardDescription>
 					What this host offers this organization right now, at the release it
 					has applied.
@@ -310,7 +321,9 @@ function AvailableSection({
 						{readOutcomeMessage(
 							outcome,
 							"the available modules and solutions",
-							"No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list.",
+							showModules
+								? "No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list."
+								: "No solution is available to this organization. Ask your platform operator to make one available, then refresh this list.",
 						)}
 						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
@@ -321,10 +334,18 @@ function AvailableSection({
 								{stale} {hostRefusal(query.error)}
 							</p>
 						)}
-						<Table aria-label="Available modules and solutions">
+						<Table
+							aria-label={
+								showModules
+									? "Available modules and solutions"
+									: "Available solutions"
+							}
+						>
 							<TableHeader>
 								<TableRow>
-									<TableHead>Module or solution</TableHead>
+									<TableHead>
+										{showModules ? "Module or solution" : "Solution"}
+									</TableHead>
 									<TableHead>Release</TableHead>
 									<TableHead>Generation</TableHead>
 									<TableHead>State</TableHead>
@@ -398,7 +419,7 @@ function InstalledSection({
 		? []
 		: installedRows(
 				(query.data ?? []).filter(
-					(row) => showModules || row.target?.kind !== "module",
+					(row) => showModules || row.target?.kind === "solution",
 				),
 			);
 
@@ -480,7 +501,9 @@ function InstalledSection({
 						{readOutcomeMessage(
 							outcome,
 							"the installed modules and solutions",
-							"Nothing is installed in this organization. Once a module or solution is available above, choose it to install it.",
+							showModules
+								? "Nothing is installed in this organization. Once a module or solution is available above, choose it to install it."
+								: "Nothing is installed in this organization. Once a solution is available above, choose it to install it.",
 						)}
 						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
@@ -491,10 +514,18 @@ function InstalledSection({
 								{stale} {hostRefusal(query.error)}
 							</p>
 						)}
-						<Table aria-label="Installed modules and solutions">
+						<Table
+							aria-label={
+								showModules
+									? "Installed modules and solutions"
+									: "Installed solutions"
+							}
+						>
 							<TableHeader>
 								<TableRow>
-									<TableHead>Module or solution</TableHead>
+									<TableHead>
+										{showModules ? "Module or solution" : "Solution"}
+									</TableHead>
 									<TableHead>Revision</TableHead>
 									<TableHead>Status</TableHead>
 									<TableHead>Ready</TableHead>

@@ -72,6 +72,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
+      "path": "/admin/modules",
+      "source_path": "src/app/admin/modules/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
       "path": "/admin/organizations",
       "source_path": "src/app/admin/organizations/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -707,7 +713,7 @@
     {
       "id": "admin-solutions",
       "plugin": "core-users",
-      "label": "Modules & solutions",
+      "label": "Solutions",
       "path": "/admin/solutions",
       "icon": "Layers",
       "group": "Integrations",

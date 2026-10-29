@@ -28,6 +28,9 @@ import {
 } from "../model/install-review";
 import { hostRefusal, releaseText } from "../model/installations";
 
+import { useInstallationTeamChoices } from "../service/team-choices";
+import { InstallationTeamChoices } from "./installation-team-choices";
+
 const offers = createClient(OfferService, apiTransport);
 
 /** The cached review survives dismissal; only an explicit new review replaces it. */
@@ -47,6 +50,8 @@ export function InstallSolutionDialog({
 	onClose: () => void;
 }) {
 	const service = useInstallationService();
+	const teamChoices = useInstallationTeamChoices(orgId, solution.targetId);
+	const [teamBusy, setTeamBusy] = useState(false);
 	const { user } = useAuth();
 	const [approved, setApproved] = useState(false);
 	const [submitted, setSubmitted] = useState(false);
@@ -178,16 +183,19 @@ export function InstallSolutionDialog({
 								installed.
 							</p>
 						</section>
-						<p>
-							People and teams receive no access automatically. After setup
-							completes, choose their declared roles in Set up.
-						</p>
+						<InstallationTeamChoices
+							orgId={orgId}
+							targetId={solution.targetId}
+							offer={data.offer}
+							disabled={isPending}
+						/>
 						<label className="flex items-start gap-2">
 							<input
 								type="checkbox"
 								checked={approved}
 								onChange={(event) => setApproved(event.target.checked)}
 								disabled={isPending}
+							 onBusyChange={setTeamBusy}
 							/>
 							I approve this solution and the required module access shown
 							above.
@@ -216,10 +224,11 @@ export function InstallSolutionDialog({
 						Review again
 					</Button>
 					<Button
-						disabled={!data || !approved || isPending}
+						disabled={!data || !approved || isPending || teamBusy || teamChoices.loading || Boolean(teamChoices.value?.choices.length && (teamChoices.value.digest !== data?.offer.approval?.digest || teamChoices.value.generation !== data?.offer.approval?.generation.toString()))}
 						onClick={() => {
 							if (data) {
 								setSubmitted(true);
+								teamChoices.authorize(data.consent.approval?.operationId ?? "");
 								onSubmit(data.consent);
 							}
 						}}
