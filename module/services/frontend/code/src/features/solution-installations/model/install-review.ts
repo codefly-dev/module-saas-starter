@@ -55,12 +55,12 @@ const scope = z
 const audience = z
 	.object({
 		audience: z.string(),
-		scopes: z.array(scope).optional(),
+		scopes: z.array(scope).nullish(),
 		delegation_mode: z.string().optional(),
-		invoke_scopes: z.array(scope).optional(),
-		lookup_scopes: z.array(scope).optional(),
-		headless_scopes: z.array(scope).optional(),
-		source_delegation_scopes: z.array(scope).optional(),
+		invoke_scopes: z.array(scope).nullish(),
+		lookup_scopes: z.array(scope).nullish(),
+		headless_scopes: z.array(scope).nullish(),
+		source_delegation_scopes: z.array(scope).nullish(),
 	})
 	.strict();
 const consent = z

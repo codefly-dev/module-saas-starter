@@ -28,6 +28,24 @@ describe("installation access review", () => {
 			),
 		).toContain("none are attached yet");
 	});
+	it("reads Go's null operation lists as empty without hiding declared operations", () => {
+		const lines = moduleConsentText(
+			JSON.stringify({
+				capabilities: true,
+				operation_audiences: {
+					search: {
+						audience: "records",
+						invoke_scopes: null,
+						lookup_scopes: [{ resource_kind: "document", actions: ["read"] }],
+						headless_scopes: null,
+					},
+				},
+			}),
+		);
+		expect(lines.join(" ")).toContain("Look up information through records");
+		expect(lines.join(" ")).not.toContain("Perform operations through");
+	});
+
 	it("does not silently hide unknown access axes or malformed consent", () => {
 		expect(() =>
 			moduleConsentText('{"capabilities":true,"new_grant":["all"]}'),
