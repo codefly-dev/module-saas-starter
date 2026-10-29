@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { ReviewedSolutionInstall } from "@/gen/saas/accounts/v1/installations_pb";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 import { parseList } from "../model/installations";
 import type { InstallSolutionValues } from "../model/schemas";
@@ -10,7 +11,7 @@ import { solutionInstallationKeys } from "./queries";
  * empty so the host records the calling administrator, which it requires to be
  * a current one.
  */
-export function useInstallSolution(orgId: string) {
+export function useInstallModule(orgId: string) {
 	const service = useInstallationService();
 	const queryClient = useQueryClient();
 	return useMutation({
@@ -123,4 +124,15 @@ function invalidate(
 			queryKey: solutionInstallationKeys.installed(orgId),
 		}),
 	]);
+}
+
+/** Submit the original server review, including each supporting consent. */
+export function useInstallReviewedSolution(orgId: string) {
+	const service = useInstallationService();
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (review: ReviewedSolutionInstall) =>
+			service.installReviewedSolution({ orgId, review }),
+		onSettled: () => invalidate(queryClient, orgId),
+	});
 }

@@ -1,0 +1,76 @@
+import { clone, create } from "@bufbuild/protobuf";
+import { describe, expect, it } from "vitest";
+import {
+	OfferScopeSchema,
+	ReviewedOfferSchema,
+} from "@/gen/host/installation/v1/installation_pb";
+import { ReviewedSolutionInstallSchema } from "@/gen/saas/accounts/v1/installations_pb";
+import {
+	assertMatchingOffer,
+	moduleConsentText,
+	offerScopeText,
+} from "./install-review";
+
+describe("installation access review", () => {
+	it("distinguishes unrestricted module resource IDs from no attached solution items", () => {
+		expect(
+			moduleConsentText(
+				'{"capabilities":true,"operation_audiences":{"use":{"audience":"records","invoke_scopes":[{"resource_kind":"record","actions":["read"]}]}}}',
+			).join(" "),
+		).toContain("all items of this type");
+		expect(
+			offerScopeText(
+				create(OfferScopeSchema, {
+					resourceKind: "record",
+					actions: ["read"],
+					attachedOnly: true,
+				}),
+			),
+		).toContain("none are attached yet");
+	});
+	it("does not silently hide unknown access axes or malformed consent", () => {
+		expect(() =>
+			moduleConsentText('{"capabilities":true,"new_grant":["all"]}'),
+		).toThrow();
+		expect(() => moduleConsentText("not json")).toThrow();
+		expect(moduleConsentText('{"capabilities":false}')).toEqual([
+			"No host feature access.",
+		]);
+	});
+	it("binds machine access to the exact signed approval and named declaration", () => {
+		const approval = {
+			targetId: "principal",
+			digest: "digest",
+			generation: BigInt(2),
+			expectedRevision: BigInt(3),
+		};
+		const review = create(ReviewedSolutionInstallSchema, {
+			target: "example",
+			installationRole: "reader",
+			approval,
+		});
+		const offer = create(ReviewedOfferSchema, {
+			target: "example",
+			installationRole: "reader",
+			approval,
+			roles: [{ name: "reader" }],
+		});
+		expect(() => assertMatchingOffer(review, offer)).not.toThrow();
+		for (const changed of [
+			{ targetId: "other" },
+			{ digest: "other" },
+			{ generation: BigInt(3) },
+			{ expectedRevision: BigInt(4) },
+		]) {
+			const changedOffer = clone(ReviewedOfferSchema, offer);
+			Object.assign(changedOffer.approval!, changed);
+			expect(() => assertMatchingOffer(review, changedOffer)).toThrow();
+		}
+		expect(() =>
+			assertMatchingOffer(
+				review,
+				create(ReviewedOfferSchema, { ...offer, roles: [] }),
+			),
+		).toThrow();
+	});
+});

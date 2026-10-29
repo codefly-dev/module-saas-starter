@@ -342,3 +342,10 @@ qualification; deployed browser confirmation remains separate. The ordinary
 combined review UI remains a required consumer of the API above. The API docs
 viewer is not a qualified manual route until its served specification and
 current-session transport are available.
+
+A combined review reads the supporting module installation history, including
+revoked rows, and binds its latest revision into a fresh module approval. The
+existing module installer alone creates the replacement installation and agent;
+it never revives a revoked principal. A concurrent module lifecycle change
+invalidates the review. Repeating the original successful request preserves its
+receipt, and a newly delivered release still requires its own current review.

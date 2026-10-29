@@ -123,17 +123,70 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 		edges = append(edges, modulecontract.EdgeDependency{Module: principal, Presence: "required"})
 	}
 	reused := map[string]business.ModuleInstallationPrerequisite{}
-	for _, outcome := range []string{"refuse", "ack", "delayed", "fail"} {
+	for _, outcome := range []string{"refuse", "ack", "delayed", "fail", "revoked", "new-release"} {
 		t.Run(outcome, func(t *testing.T) {
+			api := &InstallationServer{}
+			personContext := stampVerifiedIdentity(ctx, caller.ID, fixtureOrganization, auth.Assurance{})
+			historical := outcome == "revoked" || outcome == "new-release"
+			var historicalTarget string
+			var historicalRevision uint64
+			revokeSupport := func() {
+				target, err := svc.ResolveInstallationPrincipal(ctx, fixtureOrganization, "example-support")
+				require.NoError(t, err)
+				var installed *gen.Installation
+				if previous, ok := reused[target.TargetID]; ok {
+					installed, _, err = svc.GetInstallation(ctx, fixtureOrganization, previous.InstallationID)
+				} else {
+					installed, _, err = svc.InstallFixtureTarget(ctx, caller.ID, fixtureOrganization, "example-support", "", "")
+				}
+				require.NoError(t, err)
+				_, err = api.UninstallSolution(personContext, &gen.UninstallSolutionRequest{OrgId: fixtureOrganization, InstallationId: installed.Id})
+				require.NoError(t, err)
+				row, _, err := svc.GetInstallation(ctx, fixtureOrganization, installed.Id)
+				require.NoError(t, err)
+				require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_REVOKED, row.Status)
+				historicalTarget, historicalRevision = row.TargetId, row.Revision
+				delete(reused, row.TargetId)
+			}
+			if historical {
+				revokeSupport()
+				if outcome == "new-release" {
+					deliverModule(t, ctx, conn, signer, conformanceModule{alias: "example-support", generation: 2, releaseVersion: "0.2.0", installationRole: "none"})
+				}
+			}
 			alias := "example-setup-" + outcome
 			deliverSolution(t, ctx, conn, signer, conformanceSolution{alias: alias, generation: 1, installationRole: "none", ceilings: []*authorityv1.WorkScopeV1{wireScope("example.item", "read")}, roles: map[string][]*authorityv1.WorkScopeV1{"installer": {wireScope("example.item", "read")}}, edges: edges})
 			target, err := svc.ResolveInstallationPrincipal(ctx, fixtureOrganization, alias)
 			require.NoError(t, err)
-			api := &InstallationServer{}
-			personContext := stampVerifiedIdentity(ctx, caller.ID, fixtureOrganization, auth.Assurance{})
 			review, err := api.ReviewSolutionInstall(personContext, &gen.ReviewSolutionInstallRequest{OrgId: fixtureOrganization, TargetId: target.TargetID})
 			require.NoError(t, err)
 			require.Len(t, review.Modules, 4)
+			if historical {
+				for _, module := range review.Modules {
+					if module.TargetId != historicalTarget {
+						continue
+					}
+					if module.Approval.ExpectedRevision == 0 {
+						_, refusal := api.InstallReviewedSolution(personContext, &gen.InstallReviewedSolutionRequest{OrgId: fixtureOrganization, Review: review})
+						require.ErrorContains(t, refusal, "INSTALLATION_APPROVAL_REVISION_CHANGED")
+						t.Log("negative control: public review offered zero and public install refused historical revision")
+					}
+					require.Equal(t, historicalRevision, module.Approval.ExpectedRevision)
+					require.Empty(t, module.ReuseInstallationId)
+				}
+				if outcome == "revoked" {
+					revokeSupport()
+					_, err = api.InstallReviewedSolution(personContext, &gen.InstallReviewedSolutionRequest{OrgId: fixtureOrganization, Review: review})
+					require.ErrorContains(t, err, "review changed")
+					review, err = api.ReviewSolutionInstall(personContext, &gen.ReviewSolutionInstallRequest{OrgId: fixtureOrganization, TargetId: target.TargetID})
+					require.NoError(t, err)
+					for _, module := range review.Modules {
+						if module.TargetId == historicalTarget {
+							require.Equal(t, historicalRevision, module.Approval.ExpectedRevision)
+						}
+					}
+				}
+			}
 			// The generated JSON shape is the manual API request, including
 			// uint64 approvals and the unchanged module scope string.
 			wire, err := protojson.Marshal(&gen.InstallReviewedSolutionRequest{OrgId: fixtureOrganization, Review: review})
@@ -149,7 +202,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 				}
 			}
 			receiverOutcome := outcome
-			if outcome == "delayed" {
+			if outcome == "delayed" || historical {
 				receiverOutcome = "ack"
 			}
 			receiver, record := startCanonicalReceiver(t, binary, review.Approval.TargetId, listener.Addr().String(), receiverOutcome)
@@ -159,8 +212,20 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 			}
 			resultCh := make(chan result, 1)
 			go func() {
-				inst, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review)
-				resultCh <- result{inst, err}
+				if !historical {
+					inst, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review)
+					resultCh <- result{inst, err}
+					return
+				}
+				_, installErr := api.InstallReviewedSolution(personContext, decoded)
+				rows, readErr := core.Installations(ctx, caller, fixtureOrganization)
+				for _, inst := range rows {
+					if inst.Target == alias {
+						resultCh <- result{inst, installErr}
+						return
+					}
+				}
+				resultCh <- result{err: fmt.Errorf("public install: %v; canonical read: %v", installErr, readErr)}
 			}()
 			var claim canonicalProcessClaim
 			deadline := time.Now().Add(25 * time.Second)
@@ -190,9 +255,9 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 				timedOut = &ended
 			}
 			status, reason := deliverCanonicalClaim(t, receiver, claim)
-			expected := map[string]int{"ack": 204, "delayed": 204, "refuse": 409, "fail": 503}[outcome]
+			expected := map[string]int{"ack": 204, "delayed": 204, "refuse": 409, "fail": 503, "revoked": 204, "new-release": 204}[outcome]
 			require.Equal(t, expected, status, reason)
-			if outcome == "ack" {
+			if outcome == "ack" || historical {
 				again, _ := deliverCanonicalClaim(t, receiver, claim)
 				require.Equal(t, 204, again)
 			}
@@ -204,7 +269,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 			} else {
 				done = <-resultCh
 			}
-			if outcome == "ack" {
+			if outcome == "ack" || historical {
 				require.NoError(t, done.err)
 				require.Equal(t, domain.Active, done.inst.Status)
 			} else {
@@ -237,7 +302,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 				require.Equal(t, domain.Active, resumed.Status)
 				require.Equal(t, done.inst.Consent, resumed.Consent)
 				done = result{resumed, nil}
-			} else if outcome != "ack" {
+			} else if outcome != "ack" && !historical {
 				// The current administrator resumes the SAME review. Neither a
 				// worker nor a successful job impersonates the approving user.
 				recovered, _ := startCanonicalReceiver(t, binary, review.Approval.TargetId, listener.Addr().String(), "ack")
@@ -283,7 +348,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 			require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, projection.Status)
 			quiet, body := callCanonicalQueue(t, queue.URL, "claim", map[string]any{"worker": "example-process"})
 			require.Equal(t, 204, quiet, string(body))
-			if outcome == "ack" {
+			if outcome == "ack" || historical {
 				after, _ := deliverCanonicalClaim(t, receiver, claim)
 				require.Equal(t, 503, after, "active credentials cannot replay cached setup ACK")
 				require.NoError(t, core.Uninstall(ctx, caller, fixtureOrganization, done.inst.ID))

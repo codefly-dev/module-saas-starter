@@ -105,6 +105,7 @@ func deliverSolution(t *testing.T, ctx context.Context, conn grpc.ClientConnInte
 // with the actions it serves, and its bindings. A module checks resource
 // owners, so it declares owner-aware checking.
 type conformanceModule struct {
+	releaseVersion   string
 	installationRole string
 	alias            string
 	ceilings         []*authorityv1.WorkScopeV1
@@ -119,8 +120,12 @@ type conformanceModule struct {
 func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterface, signer *solutionhost.InMemorySigner, m conformanceModule) {
 	t.Helper()
 	generation := max(m.generation, 1)
+	version := m.releaseVersion
+	if version == "" {
+		version = "0.1.0"
+	}
 	manifest := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: m.alias, Alias: m.alias, Kind: solutionhost.KindModule, Generation: generation,
-		Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: m.alias, Version: "0.1.0"},
+		Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: m.alias, Version: version},
 		Workloads: []solutionhost.Workload{{Service: m.alias, Container: "app"}}, Authority: &solutionhost.Authority{Principal: m.alias, Bindings: m.bindings, InstallationRole: m.installationRole}}
 	for _, ceiling := range m.ceilings {
 		manifest.Authority.ResourceKinds = append(manifest.Authority.ResourceKinds, ceiling.GetResourceKind())

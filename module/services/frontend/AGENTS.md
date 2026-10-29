@@ -441,3 +441,17 @@ headless or absent from the advertised manifest. The gateway owns historical
 version admission and live target checks; the proxy validates the version shape,
 forwards it from a fresh header set and preserves its Cache-Control and errors.
 Historical identities never open data routes or grant organisation access.
+
+## Combined installation review
+
+The normal catalogue defaults to solutions. Its existing install dialog reads
+`ReviewSolutionInstall` and the matching shared `ReviewOffer` through the normal
+session transport, presents the exact release, machine access and supporting
+module consent, and submits `InstallReviewedSolution` unchanged. A mismatched
+shared offer or unreadable consent prevents submission. Closing the dialog does
+not replace the cached operation; retries retain it, and Review again explicitly
+requests new consent. Pending installation rows offer current-person continuation.
+Supporting modules remain visible through the catalogue toggle and installation
+detail. Their separate administrator path remains available, but is not a step
+in normal solution installation. Person/team roles are assigned separately in
+the existing Setup surface after activation.

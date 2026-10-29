@@ -133,6 +133,22 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 			entry.ReuseInstallationId, entry.Approval.ExpectedRevision, scope = inst.Id, state.Revision, state.Scope
 		} else if entry.InstallationRole != domain.NoInstallationRole {
 			return nil, domain.NotNow("module %q cannot be installed automatically: its installation authority is absent or unsupported", dependency.Principal)
+		} else {
+			// Revoked history still owns the revision a fresh consent must name.
+			for token := ""; ; {
+				page, err := s.ListInstallations(ctx, &gen.ListInstallationsRequest{OrgId: org, PageToken: token, PageSize: listInstallationsMaxPageSize})
+				if err != nil {
+					return nil, err
+				}
+				for _, row := range page.Installations {
+					if inst := row.GetInstallation(); inst.GetTargetId() == target.TargetID {
+						entry.Approval.ExpectedRevision = max(entry.Approval.ExpectedRevision, inst.GetRevision())
+					}
+				}
+				if token = page.NextPageToken; token == "" {
+					break
+				}
+			}
 		}
 		raw, err := json.Marshal(scope)
 		if err != nil {

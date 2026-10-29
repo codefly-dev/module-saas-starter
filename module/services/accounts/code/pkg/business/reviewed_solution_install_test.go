@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"fmt"
 	"testing"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -21,13 +22,28 @@ import (
 
 type reviewedInstallStore struct {
 	Store
-	targets []*AvailableSolutionTarget
-	records map[string]*SolutionHostBindingRecord
-	plan    SolutionInstallationPlan
+	InstallationStore
+	targets    []*AvailableSolutionTarget
+	records    map[string]*SolutionHostBindingRecord
+	history    []*gen.InstallationSummary
+	historyErr error
+	plan       SolutionInstallationPlan
 }
 
 func (s *reviewedInstallStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
+}
+func (s *reviewedInstallStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+func (s *reviewedInstallStore) ListInstallations(_ context.Context, _ string, _ gen.InstallationStatus, cursor string, limit int) ([]*gen.InstallationSummary, error) {
+	var page []*gen.InstallationSummary
+	for _, row := range s.history {
+		if row.Installation.Id > cursor && len(page) < limit {
+			page = append(page, row)
+		}
+	}
+	return page, s.historyErr
 }
 func (s *reviewedInstallStore) ListAvailableSolutionTargets(ctx context.Context, q AvailableSolutionQuery) ([]*AvailableSolutionTarget, error) {
 	return (availableInstallationStore{targets: s.targets}).ListAvailableSolutionTargets(ctx, q)
@@ -281,4 +297,31 @@ func TestPlanFreezeClonesOnlyItsReferenceFields(t *testing.T) {
 	empty, _ := SolutionInstallationPlanFromContext(WithSolutionInstallationPlan(context.Background(), SolutionInstallationPlan{}))
 	require.Nil(t, empty.Dependencies)
 	require.Nil(t, empty.Review)
+}
+
+func TestCombinedReviewUsesExactTargetHistoryAcrossPages(t *testing.T) {
+	s, host, _, caller, target := reviewedInstallFixture(t, true)
+	moduleTarget := host.targets[1].TargetID
+	for i := 0; i < 503; i++ {
+		row := &gen.Installation{Id: fmt.Sprintf("00000000-0000-4000-8000-%012d", i), OrgId: caller.Organization,
+			TargetId: "another-target", Revision: 999, Status: gen.InstallationStatus_INSTALLATION_STATUS_REVOKED}
+		if i == 0 {
+			row.TargetId, row.Revision = moduleTarget, 3
+		}
+		if i == 501 {
+			row.TargetId, row.Revision = moduleTarget, 17
+		}
+		host.history = append(host.history, &gen.InstallationSummary{Installation: row})
+	}
+	review, err := s.ReviewSolutionInstall(context.Background(), caller, caller.Organization, target)
+	require.NoError(t, err)
+	for _, module := range review.Modules {
+		if module.Required {
+			require.Equal(t, uint64(17), module.Approval.ExpectedRevision)
+			require.Empty(t, module.ReuseInstallationId)
+		}
+	}
+	host.historyErr = errors.New("history unavailable")
+	_, err = s.ReviewSolutionInstall(context.Background(), caller, caller.Organization, target)
+	require.ErrorContains(t, err, "history unavailable")
 }

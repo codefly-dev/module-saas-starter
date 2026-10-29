@@ -56,13 +56,15 @@ import {
 import { readinessSummary } from "../model/readiness";
 import {
 	useGrantInstallationToTeam,
-	useInstallSolution,
+	useInstallModule,
+	useInstallReviewedSolution,
 	useRetryInstallation,
 	useRevokeInstallationFromTeam,
 	useUninstallSolution,
 } from "../service/mutations";
 import { useAvailableSolutions, useInstallations } from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
+import { InstallModuleDialog } from "./install-module-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
 
 /**
@@ -116,10 +118,12 @@ export function SolutionInstallationsPage() {
 
 function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 	const [installing, setInstalling] = useState<AvailableSolution | null>(null);
+	const [showModules, setShowModules] = useState(false);
 	const available = useAvailableSolutions(orgId);
 	const installed = useInstallations(orgId);
 	// This owner survives dismissal of the form and reports every host result.
-	const install = useInstallSolution(orgId);
+	const install = useInstallModule(orgId);
+	const combinedInstall = useInstallReviewedSolution(orgId);
 
 	return (
 		<div className="space-y-6">
@@ -129,9 +133,9 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 						Modules &amp; solutions
 					</h1>
 					<p className="text-muted-foreground">
-						Install the modules and solutions this organization may use, review
-						their status and release, and choose which teams can access each
-						one.
+						Choose a solution and review its access and supporting modules
+						together. After installation, choose the people and teams who can
+						use it.
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
@@ -161,21 +165,57 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 			) : (
 				<>
 					<AvailableSection
+						showModules={showModules}
+						setShowModules={setShowModules}
 						query={available}
 						installing={
-							install.isPending || !installed.isSuccess || installed.isFetching
+							install.isPending ||
+							combinedInstall.isPending ||
+							!installed.isSuccess ||
+							installed.isFetching
 						}
 						onInstall={(solution) => {
 							install.reset();
+							combinedInstall.reset();
 							setInstalling(solution);
 						}}
 					/>
-					<InstalledSection orgId={orgId} query={installed} />
+					<InstalledSection
+						orgId={orgId}
+						query={installed}
+						showModules={showModules}
+					/>
 				</>
 			)}
 
-			{installing && (
+			{installing && installing.kind !== "module" && (
 				<InstallSolutionDialog
+					orgId={orgId}
+					solution={installing}
+					isPending={combinedInstall.isPending}
+					error={
+						combinedInstall.isError
+							? hostRefusal(combinedInstall.error)
+							: undefined
+					}
+					onSubmit={(review) =>
+						combinedInstall.mutate(review, {
+							onSuccess: (installation) => {
+								toast.success(
+									installation.status === InstallationStatus.ACTIVE
+										? "Solution installed. Choose who can use it in Set up."
+										: "Setup is pending. Continue from its installation.",
+								);
+								setInstalling(null);
+							},
+							onError: (error) => toast.error(hostRefusal(error)),
+						})
+					}
+					onClose={() => setInstalling(null)}
+				/>
+			)}
+			{installing?.kind === "module" && (
+				<InstallModuleDialog
 					orgId={orgId}
 					solution={installing}
 					isPending={install.isPending}
@@ -218,10 +258,14 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 }
 
 function AvailableSection({
+	showModules,
+	setShowModules,
 	query,
 	installing,
 	onInstall,
 }: {
+	showModules: boolean;
+	setShowModules: (show: boolean) => void;
 	query: ReturnType<typeof useAvailableSolutions>;
 	installing: boolean;
 	onInstall: (solution: AvailableSolution) => void;
@@ -230,12 +274,26 @@ function AvailableSection({
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the available modules and solutions");
-	const rows = withheld ? [] : availableRows(query.data ?? []);
+	const rows = withheld
+		? []
+		: availableRows(
+				(query.data ?? []).filter(
+					(target) => showModules || target.kind !== "module",
+				),
+			);
 
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle className="text-base">Available</CardTitle>
+				<label className="flex items-center gap-2 text-sm">
+					<input
+						type="checkbox"
+						checked={showModules}
+						onChange={(event) => setShowModules(event.target.checked)}
+					/>
+					Show supporting modules
+				</label>
 				<CardDescription>
 					What this host offers this organization right now, at the release it
 					has applied.
@@ -314,11 +372,13 @@ function AvailableSection({
 }
 
 function InstalledSection({
+	showModules,
 	orgId,
 	query,
 }: {
 	orgId: string;
 	query: ReturnType<typeof useInstallations>;
+	showModules: boolean;
 }) {
 	const uninstall = useUninstallSolution(orgId);
 	const retry = useRetryInstallation(orgId);
@@ -334,7 +394,13 @@ function InstalledSection({
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the installed modules and solutions");
-	const rows = withheld ? [] : installedRows(query.data ?? []);
+	const rows = withheld
+		? []
+		: installedRows(
+				(query.data ?? []).filter(
+					(row) => showModules || row.target?.kind !== "module",
+				),
+			);
 
 	const name = (row: InstalledRow) =>
 		row.solution.kind === "value" ? row.solution.text : "this installation";
@@ -469,17 +535,23 @@ function InstalledSection({
 										</TableCell>
 										<TableCell>
 											{row.status === InstallationStatus.ACTIVE ? (
-												row.hasHostScopeRoot ? <TeamExposure
-													row={row}
-													name={name(row)}
-													revoking={revoke.isPending}
-													granting={grant.isPending}
-													onGrant={() => {
-														grant.reset();
-														setGranting(row);
-													}}
-													onRevoke={(team) => runRevoke(row, team)}
-												/> : <Link href={`/admin/solutions/${row.installationId}`}>Manage solution roles</Link>
+												row.hasHostScopeRoot ? (
+													<TeamExposure
+														row={row}
+														name={name(row)}
+														revoking={revoke.isPending}
+														granting={grant.isPending}
+														onGrant={() => {
+															grant.reset();
+															setGranting(row);
+														}}
+														onRevoke={(team) => runRevoke(row, team)}
+													/>
+												) : (
+													<Link href={`/admin/solutions/${row.installationId}`}>
+														Manage solution roles
+													</Link>
+												)
 											) : (
 												<span className="text-sm text-muted-foreground">
 													Available after activation
@@ -490,7 +562,9 @@ function InstalledSection({
 											{formatDate(row.installedAt)}
 										</TableCell>
 										<TableCell className="text-right">
-											{(row.status === InstallationStatus.FAILED || (row.status === InstallationStatus.PENDING && !row.hasHostScopeRoot)) && (
+											{(row.status === InstallationStatus.FAILED ||
+												(row.status === InstallationStatus.PENDING &&
+													!row.hasHostScopeRoot)) && (
 												<Button
 													variant="outline"
 													size="sm"
@@ -538,8 +612,8 @@ function InstalledSection({
 							Uninstall {confirming ? name(confirming) : ""}
 						</AlertDialogTitle>
 						<AlertDialogDescription>
-							Its agent is revoked and its standing grant removed. The record
-							and its audit trail remain.
+							Access through this installation is revoked. Its record and audit
+							trail remain. Shared supporting module installations are kept.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
