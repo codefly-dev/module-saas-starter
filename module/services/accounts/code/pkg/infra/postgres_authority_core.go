@@ -33,6 +33,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/scope"
 	resources "github.com/codefly-dev/authority/libraries/resources/go"
+	modulecontract "github.com/codefly-dev/core/contracts/module"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/google/uuid"
@@ -358,16 +359,18 @@ func (t coreTx) grantedRole(role domain.OrgRole, query string, args ...any) (dom
 
 // moduleDocument is a module's declarations as stored.
 type moduleDocument struct {
-	ResourceKinds    []storedScope            `json:"resource_kinds,omitempty"`
-	Bindings         map[string]storedBinding `json:"bindings,omitempty"`
-	Roles            map[string][]storedScope `json:"roles,omitempty"`
-	OwnedRoles       map[string][]storedScope `json:"owned_roles,omitempty"`
-	OwnerAware       bool                     `json:"owner_aware,omitempty"`
-	Methods          map[string]storedMethod  `json:"methods,omitempty"`
-	HasRoles         bool                     `json:"has_roles,omitempty"`
-	HasMethods       bool                     `json:"has_methods,omitempty"`
-	InstallationRole string                   `json:"installation_role,omitempty"`
-	EdgeDependencies []domain.EdgeDependency  `json:"edge_dependencies,omitempty"`
+	Setup                   []modulecontract.ResolvedSetup `json:"setup,omitempty"`
+	OwnerAwareResourceKinds []string                       `json:"owner_aware_resource_kinds,omitempty"`
+	ResourceKinds           []storedScope                  `json:"resource_kinds,omitempty"`
+	Bindings                map[string]storedBinding       `json:"bindings,omitempty"`
+	Roles                   map[string][]storedScope       `json:"roles,omitempty"`
+	OwnedRoles              map[string][]storedScope       `json:"owned_roles,omitempty"`
+	OwnerAware              bool                           `json:"owner_aware,omitempty"`
+	Methods                 map[string]storedMethod        `json:"methods,omitempty"`
+	HasRoles                bool                           `json:"has_roles,omitempty"`
+	HasMethods              bool                           `json:"has_methods,omitempty"`
+	InstallationRole        string                         `json:"installation_role,omitempty"`
+	EdgeDependencies        []domain.EdgeDependency        `json:"edge_dependencies,omitempty"`
 }
 
 type storedScope struct {
@@ -409,7 +412,7 @@ func loadScopes(in []storedScope) []*basev0.WorkScopeV1 {
 }
 
 func encodeModule(m domain.Module) ([]byte, error) {
-	doc := moduleDocument{ResourceKinds: storeScopes(m.ResourceKinds), OwnerAware: m.OwnerAware, HasRoles: m.Roles != nil, HasMethods: m.Methods != nil,
+	doc := moduleDocument{Setup: m.Setup, OwnerAwareResourceKinds: m.OwnerAwareResourceKinds, ResourceKinds: storeScopes(m.ResourceKinds), OwnerAware: m.OwnerAware, HasRoles: m.Roles != nil, HasMethods: m.Methods != nil,
 		InstallationRole: m.InstallationRole, EdgeDependencies: m.EdgeDependencies}
 	if len(m.Bindings) > 0 {
 		doc.Bindings = map[string]storedBinding{}
@@ -443,6 +446,7 @@ func decodeModule(m *domain.Module, raw []byte) error {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return fmt.Errorf("module %s: stored declarations do not read: %w", m.Name, err)
 	}
+	m.Setup, m.OwnerAwareResourceKinds = doc.Setup, doc.OwnerAwareResourceKinds
 	m.ResourceKinds, m.OwnerAware = loadScopes(doc.ResourceKinds), doc.OwnerAware
 	m.InstallationRole, m.EdgeDependencies = doc.InstallationRole, doc.EdgeDependencies
 	m.Bindings = map[string]domain.Binding{}

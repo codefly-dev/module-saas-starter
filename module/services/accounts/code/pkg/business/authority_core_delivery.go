@@ -14,6 +14,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	coredelivered "github.com/codefly-dev/authority/libraries/authority-core/go/delivered"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	modulecontract "github.com/codefly-dev/core/contracts/module"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/core/wool"
@@ -43,7 +44,10 @@ func coreModuleOf(manifest *solutionhost.ModuleManifest, carrierDocument []byte,
 // documentOf reads this host's binding of the authority's document as the core's.
 func documentOf(in *compositionv1.AuthorityManifestV1) *coredelivered.Document {
 	doc := &coredelivered.Document{Module: in.GetModule(), Generation: in.GetGeneration(), CoreManifestDigest: in.GetCoreManifestDigest(),
-		ScopeCeilings: wireScopes(in.GetScopeCeilings()), OwnerAware: in.GetOwnerAware(), InstallationRole: in.GetInstallationRole()}
+		ScopeCeilings: wireScopes(in.GetScopeCeilings()), OwnerAware: in.GetOwnerAware(), OwnerAwareResourceKinds: in.GetOwnerAwareResourceKinds(), InstallationRole: in.GetInstallationRole()}
+	for _, setup := range in.GetSetup() {
+		doc.Setup = append(doc.Setup, modulecontract.ResolvedSetup{Binding: setup.GetBinding(), Methods: setup.GetMethods(), Scopes: setup.GetScopes()})
+	}
 	for _, edge := range in.GetEdgeDependencies() {
 		doc.EdgeDependencies = append(doc.EdgeDependencies, domain.EdgeDependency{Module: edge.GetModule(), Presence: edge.GetPresence()})
 	}
