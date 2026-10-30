@@ -107,6 +107,10 @@ export interface SolutionBinding {
 	 * The stable key the host's entitlements answer for this viewer. It
 	 * partitions what a page keeps per viewer — a draft, a conversation — and
 	 * authorizes nothing. Absent on the same terms as `organizationId`.
+	 *
+	 * It is the EFFECTIVE viewer: while an administrator impersonates someone it
+	 * is the impersonated person's key, as the entitlements are theirs, so what
+	 * the administrator keeps under it lands in that person's partition.
 	 */
 	viewerKey?: string;
 	/**
@@ -115,6 +119,8 @@ export interface SolutionBinding {
 	 * applied, joined to the verified viewer's own entitlements. A module the
 	 * page declares but the viewer cannot reach has no entry, so a remote reads
 	 * an absent alias as "not reachable here" and never supplies one itself.
+	 * An entry is not admission: the module still admits each call, and refuses
+	 * one whose binding the platform withheld, with its reason.
 	 *
 	 * Optional, and absent as a whole on an older host or while resolving:
 	 * that is "the host does not tell me", not "this page reaches nothing".

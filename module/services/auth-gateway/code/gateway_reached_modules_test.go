@@ -1,6 +1,10 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
@@ -32,19 +36,48 @@ func reachingBinding(t *testing.T, alias, principal string, bindings ...solution
 func TestARecordReachesTheModulesItDeclaresItInvokes(t *testing.T) {
 	invoke := map[string][]string{"invoke": {"record:read"}}
 	page := reachingBinding(t, "people", "people-runtime",
-		solutionhost.AuthorityBinding{ID: "rows", Audience: "record-store", Operations: invoke},
-		solutionhost.AuthorityBinding{ID: "rows-again", Audience: "record-store", Operations: invoke},
+		solutionhost.AuthorityBinding{ID: "rows", Audience: "rows-runtime", Operations: invoke},
+		solutionhost.AuthorityBinding{ID: "rows-again", Audience: "rows-runtime", Operations: invoke},
 		solutionhost.AuthorityBinding{ID: "self", Audience: "people-runtime", Operations: invoke},
 		solutionhost.AuthorityBinding{ID: "sweep", Audience: "documents-runtime", Operations: map[string][]string{"headless": {"document:read"}}},
 		solutionhost.AuthorityBinding{ID: "ghost", Audience: "not-applied", Operations: invoke},
+		solutionhost.AuthorityBinding{ID: "notes", Audience: "notes-runtime", Operations: invoke},
 	)
-	records := reachingBinding(t, "records", "record-store")
-	documents := reachingBinding(t, "documents", "documents-runtime")
-	var registrations []*accountsv1.SolutionRegistration
-	for _, b := range []*accountsv1.SolutionHostBindingState{page, records, documents} {
-		registrations = append(registrations, b.Registration)
+	bindings := []*accountsv1.SolutionHostBindingState{
+		page,
+		reachingBinding(t, "records", "rows-runtime"),
+		reachingBinding(t, "documents", "documents-runtime"),
+		// Two aliases carrying one principal: neither is the module reached.
+		reachingBinding(t, "notes-b", "notes-runtime"),
+		reachingBinding(t, "notes-a", "notes-runtime"),
 	}
-	s := snapshotFromAppliedBindings(&accountsv1.ListSolutionRegistrationsResponse{Registrations: registrations},
-		&accountsv1.ListSolutionHostBindingsResponse{Bindings: []*accountsv1.SolutionHostBindingState{page, records, documents}})
-	require.Equal(t, map[string][]string{"people": {"records"}}, s.reaches)
+	s := (&appliedBindingsRegistry{bindings: bindings})
+	snapshot, err := s.List(context.Background(), nil)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]string{"people": {"records"}}, snapshot.reaches)
+	require.Equal(t, map[string][]string{"notes-runtime": {"notes-a", "notes-b"}}, snapshot.sharedPrincipals)
+}
+
+// The frontend reads a record's reach from the registry snapshot route, so the
+// route — not only the join behind it — has to carry it.
+func TestTheRegistrySnapshotRouteCarriesARecordsReach(t *testing.T) {
+	invoke := map[string][]string{"invoke": {"record:read"}}
+	gw, _, _, _ := newGatewayHarness(t)
+	gw.solutions.client = &appliedBindingsRegistry{bindings: []*accountsv1.SolutionHostBindingState{
+		reachingBinding(t, "people", "people-runtime", solutionhost.AuthorityBinding{ID: "rows", Audience: "rows-runtime", Operations: invoke}),
+		reachingBinding(t, "records", "rows-runtime"),
+	}}
+	require.NoError(t, gw.solutions.refresh(context.Background()))
+	req := httptest.NewRequest(http.MethodGet, "/solutions/_registry", nil)
+	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var snapshot solutionRegistryProjection
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &snapshot))
+	reaches := map[string][]string{}
+	for _, record := range snapshot.Solutions {
+		reaches[record.ID] = record.Reaches
+	}
+	require.Equal(t, map[string][]string{"people": {"records"}, "records": nil}, reaches)
 }

@@ -151,7 +151,12 @@ the viewer's installation of each module the record declares it consumes
 `entitledSolutions` join as the menu, and `404` for a solution that is not
 registered or not entitled to the viewer alike. The declared consumption is the
 gateway registry snapshot's `reaches`: the aliases of the modules the applied
-manifest's invoke bindings name as audiences. The solution outlet reads the
+manifest's invoke bindings name as audiences, other than its own principal. It is
+the declared half of accounts' reached-module rule: a binding the derived module
+registry withheld (an envelope narrowing) is still listed, because that registry
+is accounts' alone, and the module refuses those calls with its reason. A
+principal two aliases carry resolves to no reach and is logged. `viewerKey` is
+the effective viewer: the impersonated person's while an impersonation is active. The solution outlet reads the
 route with the viewer's session and hands the answer to the page as
 `SolutionBinding.installationId`, `organizationId`, `viewerKey` and `reach`.
 A page never names an installation itself: one it chose could be another
