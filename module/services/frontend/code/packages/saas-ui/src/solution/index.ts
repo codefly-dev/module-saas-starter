@@ -1,5 +1,6 @@
 export type { DeclaredSource } from "../datasources/declared-source.js";
 export {
+	type ReachedInstallation,
 	requestBinding,
 	type SolutionBinding,
 	SolutionBindingError,

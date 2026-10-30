@@ -177,6 +177,7 @@ export {
 	PrincipalNamesProvider,
 	type PrincipalNamesProviderProps,
 	refusalOf,
+	type ReachedInstallation,
 	requestBinding,
 	resolveTraceExportEndpoint,
 	type SetupClients,

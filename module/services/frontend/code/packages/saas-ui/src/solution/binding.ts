@@ -94,6 +94,37 @@ export interface SolutionBinding {
 	 * "no installation to act in", never fall back to a value of its own.
 	 */
 	installationId?: string;
+	/**
+	 * The organization the host VERIFIED this viewer acting in — the gateway's
+	 * answer for the credential, never one the page or a token claim chose. A
+	 * remote scopes a call to the organization with it; it grants nothing.
+	 *
+	 * Optional and absent while resolving, on an older host, and when the viewer
+	 * is not entitled, on the same terms as `installationId`.
+	 */
+	organizationId?: string;
+	/**
+	 * The stable key the host's entitlements answer for this viewer. It
+	 * partitions what a page keeps per viewer — a draft, a conversation — and
+	 * authorizes nothing. Absent on the same terms as `organizationId`.
+	 */
+	viewerKey?: string;
+	/**
+	 * The modules this page declared it consumes, by alias, each with the
+	 * viewer organization's installation of it: the declaration the host
+	 * applied, joined to the verified viewer's own entitlements. A module the
+	 * page declares but the viewer cannot reach has no entry, so a remote reads
+	 * an absent alias as "not reachable here" and never supplies one itself.
+	 *
+	 * Optional, and absent as a whole on an older host or while resolving:
+	 * that is "the host does not tell me", not "this page reaches nothing".
+	 */
+	reach?: Readonly<Record<string, ReachedInstallation>>;
+}
+
+/** One module a page reaches, as the host resolved it for this viewer. */
+export interface ReachedInstallation {
+	installationId: string;
 }
 
 /**

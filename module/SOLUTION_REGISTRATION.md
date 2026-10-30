@@ -145,10 +145,15 @@ organization taken from there is one the caller chose.
 
 `GET /api/solutions/<id>/installation` is the third projection, and the one
 a solution PAGE consumes. It answers the verified viewer organization's active
-installation of the routed solution (`{installationId, healthy}`), through the same
+installation of the routed solution, the verified organization and viewer, and
+the viewer's installation of each module the record declares it consumes
+(`{installationId, healthy, organizationId, viewerKey, reach}`), through the same
 `entitledSolutions` join as the menu, and `404` for a solution that is not
-registered or not entitled to the viewer alike. The solution outlet reads it with
-the viewer's session and hands the id to the page as `SolutionBinding.installationId`.
+registered or not entitled to the viewer alike. The declared consumption is the
+gateway registry snapshot's `reaches`: the aliases of the modules the applied
+manifest's invoke bindings name as audiences. The solution outlet reads the
+route with the viewer's session and hands the answer to the page as
+`SolutionBinding.installationId`, `organizationId`, `viewerKey` and `reach`.
 A page never names an installation itself: one it chose could be another
 organization's. The gateway's `/solutions/_entitlements` entries carry
 `installationId` for this; the authority already returned it and the gateway used

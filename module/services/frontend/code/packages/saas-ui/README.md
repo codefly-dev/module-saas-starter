@@ -52,6 +52,15 @@ components:
   never asks a person for one. Undefined while resolving, on an older host and
   when the viewer is not entitled: treat absence as "no installation to act in",
   never substitute a value.
+- `organizationId?: string`, `viewerKey?: string` — the organization and the
+  viewer the gateway verified for this credential, from the same answer. Scope a
+  call with the first; partition per-viewer state (a draft, a conversation) with
+  the second. Neither authorizes anything.
+- `reach?: Record<alias, { installationId }>` — the modules this page declared
+  it consumes, each with the viewer organization's installation of it: the
+  applied declaration joined to the viewer's own entitlements. A declared module
+  the viewer cannot open has no entry; read an absent alias as "not reachable
+  here", and an absent `reach` as "the host does not tell me".
 - `solutionFetch(binding, path, init)` / `solutionJson<T>(binding, path, init)` —
   a request to the solution's own backend at `apiBase + path`, same-origin,
   through the host's `authedFetch` (refresh-then-retry on a 401) with the bearer

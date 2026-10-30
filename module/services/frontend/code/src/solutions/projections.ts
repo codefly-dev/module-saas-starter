@@ -283,3 +283,46 @@ export function surfacesProjection(
 		})),
 	};
 }
+
+/** What the host hands one mounted page about where, and for whom, it acts. */
+export interface PageBinding {
+	installationId: string;
+	healthy: boolean;
+	organizationId: string;
+	viewerKey: string;
+	reach: Record<string, { installationId: string }>;
+}
+
+/**
+ * The binding facts for the page registered under `id`, from the two reads the
+ * navigation already makes: the registry (what the record declares it
+ * consumes) and the gateway-verified viewer's entitlements (which installations
+ * this viewer may act in). Null when the viewer has no installation of the page.
+ *
+ * A declared module joins to an installation only through the viewer's own
+ * entitlement for that module's target, by the same join as the menu, so a page
+ * is never told an installation its viewer could not open directly.
+ */
+export function pageBinding(
+	registered: SolutionManifest[],
+	entitlements: ViewerEntitlements,
+	id: string,
+): PageBinding | null {
+	const entitled = new Map(
+		entitledSolutions(registered, entitlements).map(({ manifest, entitlement }) => [manifest.id, { manifest, entitlement }]),
+	);
+	const page = entitled.get(id);
+	if (!page || page.entitlement.installationId === "") return null;
+	const reach: PageBinding["reach"] = {};
+	for (const alias of page.manifest.reaches ?? []) {
+		const installationId = entitled.get(alias)?.entitlement.installationId;
+		if (installationId) reach[alias] = { installationId };
+	}
+	return {
+		installationId: page.entitlement.installationId,
+		healthy: page.entitlement.healthy,
+		organizationId: entitlements.org,
+		viewerKey: entitlements.viewer,
+		reach,
+	};
+}
