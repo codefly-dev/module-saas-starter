@@ -22,7 +22,9 @@ function manifest(id: string): string {
 }
 
 /** The registry, and the gateway-verified entitlement read for the viewer. */
-function gatewayServing(registered: string[], entitled: Array<{ id: string; installationId?: string; healthy?: boolean }>) {
+type Registered = string | { id: string; kind: "module" | "solution"; reaches?: string[] };
+
+function gatewayServing(registered: Registered[], entitled: Array<{ id: string; installationId?: string; healthy?: boolean }>) {
 	return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
 		const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
 		if (path === "/solutions/_entitlements") {
@@ -43,7 +45,10 @@ function gatewayServing(registered: string[], entitled: Array<{ id: string; inst
 		if (path === "/solutions/_registry") {
 			return Response.json({
 				revision: 1,
-				solutions: registered.map((id) => ({ id, status: "active", targetId: `target-${id}`, manifest: manifest(id) })),
+				solutions: registered.map((entry) => {
+					const record = typeof entry === "string" ? { id: entry } : entry;
+					return { ...record, status: "active", targetId: `target-${record.id}`, manifest: manifest(record.id) };
+				}),
 			});
 		}
 		return new Response("unexpected", { status: 500 });
@@ -82,7 +87,44 @@ describe("solution installation route", () => {
 		]));
 		const res = await call("solution-a");
 		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual({ installationId: "inst-a", healthy: true });
+		expect(await res.json()).toEqual({ installationId: "inst-a", healthy: true, organizationId: "org-acme", viewerKey: "viewer-1", reach: {} });
+	});
+
+	it("hands a module page each module it declares it consumes, by the viewer's installation of it", async () => {
+		vi.stubGlobal("fetch", gatewayServing([
+			{ id: "people", kind: "module", reaches: ["records", "documents", "assistant"] },
+			{ id: "records", kind: "module" },
+			{ id: "documents", kind: "module" },
+			{ id: "assistant", kind: "module" },
+			{ id: "unrelated", kind: "module" },
+		], [
+			{ id: "people", installationId: "inst-people" },
+			{ id: "records", installationId: "inst-records" },
+			{ id: "documents", installationId: "inst-documents" },
+			{ id: "unrelated", installationId: "inst-unrelated" },
+		]));
+		expect(await (await call("people")).json()).toEqual({
+			installationId: "inst-people",
+			healthy: true,
+			organizationId: "org-acme",
+			viewerKey: "viewer-1",
+			// The assistant is declared but this viewer cannot open it, and the
+			// unrelated module is open but undeclared: neither is reach.
+			reach: { records: { installationId: "inst-records" }, documents: { installationId: "inst-documents" } },
+		});
+	});
+
+	it("hands a solution the same binding, reaching only what it declares", async () => {
+		vi.stubGlobal("fetch", gatewayServing([
+			{ id: "solution-a", kind: "solution", reaches: ["records"] },
+			{ id: "records", kind: "module" },
+		], [
+			{ id: "solution-a", installationId: "inst-a" },
+			{ id: "records", installationId: "inst-records" },
+		]));
+		const body = await (await call("solution-a")).json();
+		expect(body).toMatchObject({ installationId: "inst-a", organizationId: "org-acme", viewerKey: "viewer-1" });
+		expect(body.reach).toEqual({ records: { installationId: "inst-records" } });
 	});
 
 	it("answers 404 for a registered solution the viewer is not entitled to", async () => {

@@ -462,6 +462,11 @@ type solutionRegistrationProjection struct {
 	// the frontend block of the applied presence plus the host's own constants
 	// (solutionManifest). Absent until the presence declares one.
 	Manifest *string `json:"manifest,omitempty"`
+	// Reaches are the aliases of the modules this record's applied manifest
+	// declares it consumes on a person's session. A statement, never a grant:
+	// the frontend joins each to the viewer's own entitlement before a page
+	// is told an installation to act in.
+	Reaches []string `json:"reaches,omitempty"`
 	// Refusal is why this replica dropped the record's applied manifest, as a
 	// class only: the full reason is in the gateway's log, because it can quote
 	// what the manifest carries, an address among it. The registration stays
@@ -483,7 +488,7 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	records, revision, loaded, refusals := g.solutions.snapshot()
+	records, revision, loaded, refusals, reaches := g.solutions.snapshot()
 	if !loaded {
 		httpError(w, http.StatusServiceUnavailable, "solution registry unavailable")
 		return
@@ -499,6 +504,7 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 			Revision:  record.GetRevision(),
 			Status:    solutionRegistryStatusLabel(record),
 			TargetID:  record.GetDeclared().GetTargetId(),
+			Reaches:   reaches[record.GetSolutionId()],
 		}
 		switch {
 		case declaredModuleKind(record):
