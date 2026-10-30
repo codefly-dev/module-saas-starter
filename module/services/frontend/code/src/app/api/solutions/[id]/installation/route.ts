@@ -1,5 +1,5 @@
 import { entitlementFailureResponse, isEntitlementFailure, viewerEntitlements } from "@/solutions/entitlements";
-import { pageBinding } from "@/solutions/projections";
+import { entitledSolutions, pageBinding } from "@/solutions/projections";
 import { loadSolutionsWithRevision } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
 	}
 	// The navigation's own join, over the whole registry, so this answer and the
 	// menu can never disagree about which solutions the viewer may use.
-	const binding = pageBinding(registered.solutions, entitlements, id);
+	const binding = pageBinding(entitledSolutions(registered.solutions, entitlements), entitlements, id);
 	if (!binding) {
 		return Response.json({ error: "not_installed" }, { status: 404, headers: { "cache-control": "no-store" } });
 	}

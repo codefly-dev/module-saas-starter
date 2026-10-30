@@ -295,27 +295,27 @@ export interface PageBinding {
 
 /**
  * The binding facts for the page registered under `id`, from the two reads the
- * navigation already makes: the registry (what the record declares it
- * consumes) and the gateway-verified viewer's entitlements (which installations
- * this viewer may act in). Null when the viewer has no installation of the page.
+ * navigation already makes, joined as the navigation joins them: `entitled` is
+ * `entitledSolutions(registry, entitlements)`, so the record's declared
+ * consumption and each module it reaches are read only through the verified
+ * viewer's own entitlements. Null when the viewer has no installation of the
+ * page.
  *
  * A declared module joins to an installation only through the viewer's own
- * entitlement for that module's target, by the same join as the menu, so a page
- * is never told an installation its viewer could not open directly.
+ * entitlement for that module's target, so a page is never told an
+ * installation its viewer could not open directly.
  */
 export function pageBinding(
-	registered: SolutionManifest[],
+	entitled: ReturnType<typeof entitledSolutions>,
 	entitlements: ViewerEntitlements,
 	id: string,
 ): PageBinding | null {
-	const entitled = new Map(
-		entitledSolutions(registered, entitlements).map(({ manifest, entitlement }) => [manifest.id, { manifest, entitlement }]),
-	);
-	const page = entitled.get(id);
+	const byAlias = new Map(entitled.map((pair) => [pair.manifest.id, pair]));
+	const page = byAlias.get(id);
 	if (!page || page.entitlement.installationId === "") return null;
 	const reach: PageBinding["reach"] = {};
 	for (const alias of page.manifest.reaches ?? []) {
-		const installationId = entitled.get(alias)?.entitlement.installationId;
+		const installationId = byAlias.get(alias)?.entitlement.installationId;
 		if (installationId) reach[alias] = { installationId };
 	}
 	return {
