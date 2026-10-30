@@ -5257,6 +5257,23 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required; the presentation is the kit's SolutionSetup, with its own stories."
     },
     {
+      "source": "src/features/solution-installations/ui/when-roles-declared.tsx",
+      "imports": [
+        "@connectrpc/connect",
+        "@tanstack/react-query",
+        "react",
+        "@/gen/host/installation/v1/installation_pb",
+        "@/lib/auth",
+        "@/lib/connect/transport"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Renders the Setup tab only for a target whose installation roles the authority's offer review names: every solution, and a module page that declares roles. It draws nothing of its own.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/sso-admin/ui/sso-admin-page.tsx",
       "imports": [
         "@tanstack/react-query",
