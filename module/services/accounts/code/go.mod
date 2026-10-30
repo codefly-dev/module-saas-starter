@@ -7,9 +7,9 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.1
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.1.1-0.20261029092314-21ce6d9284ed
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261029174910-666ea1f97f80
-	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261029174910-666ea1f97f80
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.1.1-0.20261030115242-67586be6ccb9
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261030115242-67586be6ccb9
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261030115242-67586be6ccb9
 	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261028224835-f82a98e093ef
 	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261028224835-f82a98e093ef
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
