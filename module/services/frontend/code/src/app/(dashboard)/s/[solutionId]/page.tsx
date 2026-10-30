@@ -11,6 +11,7 @@ import {
 	solutionProxyBase,
 	solutionModuleApiBase,
 } from "@/solutions/registry";
+import SolutionNotFound from "./not-found";
 
 export const dynamic = "force-dynamic";
 
@@ -69,13 +70,23 @@ export default async function SolutionPage({
 	// while another tab is open, so switching back keeps its state (an open
 	// chat, a half-typed question).
 	//
-	// Every solution has a Setup tab: its roles, what each grants (operations
-	// and agent tools) and who holds them — the one Setup UI every host renders
-	// (`<SolutionSetup>`), answered by the authority through the host
-	// installation interface. The solution is named by its target, which is the
-	// route alias it is registered under.
+	// A record whose delivery declares installation roles has a Setup tab: its
+	// roles, what each grants (operations and agent tools) and who holds them —
+	// the one Setup UI every host renders (`<SolutionSetup>`), answered by the
+	// authority through the host installation interface. The solution is named
+	// by its target, which is the route alias it is registered under.
+	//
+	// The record's kind is that declaration today: the shared authority core
+	// composes a solution only with an installer role and refuses roles on a
+	// module (codefly-dev/authority `decide.ValidateModule`), so a module page
+	// has no roles to show and offers no tab that could only fail.
+	const declaresRoles = solution.kind === "solution";
 	return (
-		<SolutionLivePage id={solution.id} assetVersion={solution.assetVersion}>
+		<SolutionLivePage
+			id={solution.id}
+			assetVersion={solution.assetVersion}
+			denied={<SolutionNotFound />}
+		>
 			<div className="flex flex-col gap-4 p-6">
 				<h1 data-slot="page-title" className="type-page-title">
 					{solution.nav.title}
@@ -86,7 +97,9 @@ export default async function SolutionPage({
 						{solution.dashboard?.dashboards?.length ? (
 							<TabsTrigger value="dashboard">Dashboard</TabsTrigger>
 						) : null}
-						<TabsTrigger value="setup">Setup</TabsTrigger>
+						{declaresRoles ? (
+							<TabsTrigger value="setup">Setup</TabsTrigger>
+						) : null}
 					</TabsList>
 					<TabsContent value="app" keepMounted>
 						{app}
@@ -99,9 +112,11 @@ export default async function SolutionPage({
 							/>
 						</TabsContent>
 					) : null}
-					<TabsContent value="setup">
-						<SolutionSetupPanel target={solution.id} />
-					</TabsContent>
+					{declaresRoles ? (
+						<TabsContent value="setup">
+							<SolutionSetupPanel target={solution.id} />
+						</TabsContent>
+					) : null}
 				</Tabs>
 			</div>
 		</SolutionLivePage>

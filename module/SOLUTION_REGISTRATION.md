@@ -113,11 +113,14 @@ boundary is deliberate:
 **What uninstalling does, stated plainly:** it revokes that organization's agent
 authority — the principal and its standing grant — withdraws that organization's
 viewers from the projections, and refuses that organization's traffic at the
-solution proxy. It does **not** remove the solution's page for that organization,
-because `/s/{id}` server-renders from the registry and this origin cannot read a
-verified viewer server-side without rotating a refresh token per render; the page
-discloses a nav title and a manifest URL the public asset surface already serves,
-and every call it makes goes through the gated proxy. Other
+solution proxy. The server render of `/s/{id}` still reads the registry alone,
+because this origin cannot read a verified viewer server-side without rotating a
+refresh token per render; its payload carries a nav title and a manifest URL the
+public asset surface already serves. What the page mounts — the remote, its
+Setup and Dashboard tabs — waits for the viewer's own navigation projection and
+appears only when that projection names the page; a viewer it does not name gets
+the page's not-found answer, the same as for an id nothing is registered under.
+Every call the page makes still goes through the gated proxy. Other
 tenants are unaffected either way, because installation state is per-org.
 
 ### What the projections answer (issue #949)

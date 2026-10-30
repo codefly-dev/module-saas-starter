@@ -5,7 +5,9 @@ import { buttonVariants } from "@/shared/ui";
 
 /**
  * A solution slug the registry does not know: none registered under that id, or
- * one registered but not serving. Rendered inside the product shell, so the
+ * one registered but not serving. It is also what a viewer sees for a page they
+ * are not entitled to (SolutionLivePage's `denied`), so an id answers the same
+ * whether it exists for someone else or not at all. Rendered inside the product shell, so the
  * navigation — which lists every solution that IS available — stays in reach.
  * A registry this host cannot read is not this page: that is an error, because
  * the solution may well exist.

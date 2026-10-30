@@ -1,7 +1,11 @@
 import { render, screen, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
-	current: [{ id: "example", assetVersion: "old", available: true }],
+	current: [{ id: "example", assetVersion: "old", available: true }] as Array<{
+		id: string;
+		assetVersion?: string;
+		available?: boolean;
+	}>,
 	loaded: true,
 	router: { refresh: vi.fn() },
 }));
@@ -10,6 +14,10 @@ vi.mock("../SolutionsMenu", () => ({
 	useRegisteredSolutions: () => state.current,
 	useRegisteredSolutionsLoaded: () => state.loaded,
 }));
+vi.mock("server-only", () => ({}));
+import type { ViewerEntitlements } from "../entitlements";
+import { entitledSolutions, navProjection } from "../projections";
+import type { SolutionManifest } from "../registry";
 import { SolutionLivePage } from "../SolutionLivePage";
 beforeEach(() => {
 	state.current = [{ id: "example", assetVersion: "old", available: true }];
@@ -88,4 +96,44 @@ it("does not open an unentitled sibling even when a visible solution shares its 
 		</SolutionLivePage>,
 	);
 	expect(screen.queryByText("denied page")).toBeNull();
+});
+
+// A module's page reaches a member only through what the authority answers for
+// that member: the module's installation, and a grant there that reaches them.
+// Two members of one organization, the same registered module record, one
+// granted: the navigation projection names it for that one alone, and the page
+// mounts for that one alone — the other gets the page's not-found answer.
+it("gives a module page to the granted member and the not-found answer to another member of the organization", () => {
+	const moduleRecord = {
+		id: "ledger",
+		kind: "module",
+		targetId: "target-ledger",
+		nav: { title: "Ledger", path: "/s/ledger" },
+		assetVersion: "v1",
+	} as unknown as SolutionManifest;
+	const viewer = (id: string, granted: boolean): ViewerEntitlements => ({
+		org: "org-acme",
+		viewer: id,
+		byTarget: new Map(
+			granted
+				? [["target-ledger", { targetId: "target-ledger", healthy: true, scopeNodeId: "node-ledger", installationId: "inst-ledger" }]]
+				: [],
+		),
+		revision: granted ? "1" : "0",
+	});
+	const page = (
+		<SolutionLivePage id="ledger" assetVersion="v1" denied={<p>Solution not found</p>}>
+			module page
+		</SolutionLivePage>
+	);
+	for (const [member, granted] of [["member-granted", true], ["member-other", false]] as const) {
+		cleanup();
+		state.current = entitledSolutions([moduleRecord], viewer(member, granted)).map(
+			({ manifest, entitlement }) => navProjection(manifest, entitlement),
+		);
+		expect(state.current.map((entry) => entry.id)).toEqual(granted ? ["ledger"] : []);
+		render(page);
+		expect(screen.queryByText("module page") !== null).toBe(granted);
+		expect(screen.queryByText("Solution not found") !== null).toBe(!granted);
+	}
 });

@@ -38,8 +38,9 @@ import SolutionPage from "../page";
 
 afterEach(cleanup);
 
-const solution = (dashboard?: object) => ({
+const solution = (dashboard?: object, kind: "module" | "solution" = "solution") => ({
 	id: "example-solution",
+	kind,
 	nav: { title: "Example" },
 	frontend: { exposedModule: "./Page" },
 	...(dashboard ? { dashboard } : {}),
@@ -76,7 +77,7 @@ describe("the solution page", () => {
 		expect(screen.queryByRole("tab", { name: "Dashboard" })).toBeNull();
 	});
 
-	// Every solution has a Setup tab beside its app: the roles it declares, what
+	// A solution has a Setup tab beside its app: the roles it declares, what
 	// each grants, and who holds them.
 	it.each([
 		["without a dashboard", undefined],
@@ -88,6 +89,16 @@ describe("the solution page", () => {
 		expect(screen.queryByTestId("setup")).toBeNull();
 		fireEvent.click(screen.getByRole("tab", { name: "Setup" }));
 		expect((await screen.findByTestId("setup")).textContent).toBe("example-solution");
+		expect(screen.getByTestId("remote")).toBeTruthy();
+	});
+
+	// A module declares no installation roles, so its page offers no Setup tab
+	// whose every answer would be a refusal.
+	it("gives a module page no Setup tab", async () => {
+		findSolution.mockResolvedValue(solution(undefined, "module"));
+		await renderPage();
+		expect(screen.getByRole("tab", { name: "App" })).toBeTruthy();
+		expect(screen.queryByRole("tab", { name: "Setup" })).toBeNull();
 		expect(screen.getByTestId("remote")).toBeTruthy();
 	});
 });
