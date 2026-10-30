@@ -17,11 +17,11 @@ module ceiling. The complete regeneration includes these additions and the calla
 
 ## Current surface
 
-The accounts projection contains 172 descriptor routes across 30 services,
+The accounts projection contains 175 descriptor routes across 30 services,
 counted from `generated/rest-surface.json`:
 
-- 18 public routes and 154 authenticated routes;
-- 145 OpenAPI paths and 172 operations;
+- 18 public routes and 157 authenticated routes;
+- 148 OpenAPI paths and 175 operations;
 - zero internal RPCs;
 - fifteen explicit non-protobuf extensions loaded by auth-gateway: magic-link
   request/verification, the billing and Resend email webhooks, the two GitHub
@@ -29,7 +29,7 @@ counted from `generated/rest-surface.json`:
   checkout, free-plan, portal, and the four OAuth 2 authorization-server routes
   (metadata, authorize validation, authorize grant, token).
 
-The generated runtime therefore authorizes 187 REST routes in total. Descriptor
+The generated runtime therefore authorizes 190 REST routes in total. Descriptor
 routes and extensions remain separate so an extension can never be mistaken
 for a protobuf procedure or inherit policy by path similarity.
 
@@ -205,3 +205,13 @@ Input schema refusals from Invoke include BadRequest FieldViolation JSON
 pointers; provider refusals carry their known decimal `provider_status` in
 ErrorInfo metadata. The `SOURCE_OPERATION_OUTCOME_UNKNOWN` reason distinguishes
 an unresolved, non-redispatchable effect from an ordinary provider refusal.
+
+### Reviewed solution installation
+
+`POST /v1/solution-installations/review` accepts the organization and a live
+catalogue target UUID and returns the complete release/access/dependency review.
+`POST /v1/solution-installations` accepts that unchanged review. Both require a
+current organization administrator and use the same handlers as Connect
+`InstallationService.ReviewSolutionInstall` and `InstallReviewedSolution`.
+Retain the review for retries. Setup failure remains pending; the installation
+read exposes its exact durable setup outcome and the required continuation.

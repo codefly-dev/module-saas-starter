@@ -31,6 +31,7 @@ pkg/business/audit.go: (*Service).AggregateAuditLog: WithControlPlane
 pkg/business/audit.go: (*Service).QueryAuditLog: WithControlPlane
 pkg/business/authority_core_delivery.go: (*Service).composeAppliedDelivery: WithControlPlane
 pkg/business/authority_delivery.go: (*Service).verifyAppliedAuthorityDocument: WithControlPlane
+pkg/business/canonical_solution_reads.go: (*Service).canonicalSolutionEntitlements: WithControlPlane
 pkg/business/connector_credentials.go: (*Service).SourceSigningSecret: WithControlPlane
 pkg/business/current_installation.go: (*Service).ModuleCurrentInstallation: WithControlPlane
 pkg/business/datasource_budget.go: (datasourceScheduler).Acquire: WithControlPlane
@@ -63,6 +64,7 @@ pkg/business/hop_admission_keys.go: (*Service).RegisterAdmissionKey: WithControl
 pkg/business/host_installation.go: (*Service).ReadHostInstallation: WithControlPlane
 pkg/business/installation_exposure.go: (*Service).ListOrganizationInstallations: WithControlPlane
 pkg/business/installation_jobs.go: (*Service).RetryInstallation: WithControlPlane
+pkg/business/installation_principal_target.go: (*Service).ResolveInstallationPrincipal: WithControlPlane
 pkg/business/installation_registry.go: (*Service).prepareInstallation: WithControlPlane
 pkg/business/installations.go: (*Service).ListAvailableSolutions: WithControlPlane
 pkg/business/installations.go: (*Service).resolveInstallableTarget: WithControlPlane
@@ -131,6 +133,8 @@ pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
+pkg/business/reviewed_solution_install.go: (*Service).reviewSolutionInstall: WithControlPlane
+pkg/business/reviewed_solution_install.go: (*Service).reviewedTargetDelivery: WithControlPlane
 pkg/business/service.go: (*Service).AssignRole: WithControlPlane
 pkg/business/service.go: (*Service).CheckPermission: WithControlPlane
 pkg/business/service.go: (*Service).CreateRole: WithControlPlane
@@ -181,6 +185,11 @@ pkg/infra/postgres_authority_core.go: (AuthorityCoreReplay).Consume: withControl
 pkg/infra/postgres_authority_core.go: (AuthorityCoreReplay).PurgeExpiredAuthorityReplays: WithControlPlane
 pkg/infra/postgres_authority_core.go: (AuthorityCoreStore).Read: withControlPlaneTx
 pkg/infra/postgres_authority_core.go: (AuthorityCoreStore).Write: withControlPlaneTx
+pkg/infra/postgres_canonical_installation_setup.go: (*PostgresStore).EnqueueCanonicalInstallationStep: WithControlPlane
+pkg/infra/postgres_canonical_installation_setup.go: (*PostgresStore).ModuleInstallationPrerequisite: WithControlPlane
+pkg/infra/postgres_canonical_installation_setup.go: (*PostgresStore).RecordSolutionPrerequisites: WithControlPlane
+pkg/infra/postgres_canonical_installation_setup.go: (*PostgresStore).SolutionInstallationPlan: WithControlPlane
+pkg/infra/postgres_canonical_solution_reads.go: (*PostgresStore).CanonicalSolutionSummaries: WithControlPlane
 pkg/infra/postgres_client_authorization.go: (*PostgresStore).ConsumeClientAuthorizationCode: WithControlPlane
 pkg/infra/postgres_datasource_sources.go: (*PostgresStore).GetDatasourceSourceByID: WithControlPlane
 pkg/infra/postgres_installation_jobs.go: (*PostgresStore).InstallationStepLeaseValid: WithControlPlane

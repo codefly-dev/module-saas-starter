@@ -2,6 +2,7 @@
 
 import { Layers, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
@@ -56,13 +57,15 @@ import {
 import { readinessSummary } from "../model/readiness";
 import {
 	useGrantInstallationToTeam,
-	useInstallSolution,
+	useInstallModule,
+	useInstallReviewedSolution,
 	useRetryInstallation,
 	useRevokeInstallationFromTeam,
 	useUninstallSolution,
 } from "../service/mutations";
 import { useAvailableSolutions, useInstallations } from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
+import { InstallModuleDialog } from "./install-module-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
 
 /**
@@ -109,30 +112,56 @@ export function Fact({ view }: { view: FactView }) {
  * install, expose to a team, uninstall. Each act is the host's to accept or
  * refuse, and a refusal is shown as the host words it.
  */
-export function SolutionInstallationsPage() {
+export function SolutionInstallationsPage({
+	supportingModules = false,
+}: {
+	supportingModules?: boolean;
+}) {
 	const { organizationId: orgId = "" } = useAuth();
-	return <SolutionInstallationsForOrganization key={orgId} orgId={orgId} />;
+	return (
+		<SolutionInstallationsForOrganization
+			key={orgId}
+			orgId={orgId}
+			showModules={supportingModules}
+		/>
+	);
 }
 
-function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
+function SolutionInstallationsForOrganization({
+	orgId,
+	showModules,
+}: {
+	orgId: string;
+	showModules: boolean;
+}) {
+	const router = useRouter();
 	const [installing, setInstalling] = useState<AvailableSolution | null>(null);
 	const available = useAvailableSolutions(orgId);
 	const installed = useInstallations(orgId);
 	// This owner survives dismissal of the form and reports every host result.
-	const install = useInstallSolution(orgId);
+	const install = useInstallModule(orgId);
+	const combinedInstall = useInstallReviewedSolution(orgId);
 
 	return (
 		<div className="space-y-6">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div>
 					<h1 data-slot="page-title" className="type-page-title">
-						Modules &amp; solutions
+						{showModules ? "Supporting module administration" : "Solutions"}
 					</h1>
 					<p className="text-muted-foreground">
-						Install the modules and solutions this organization may use, review
-						their status and release, and choose which teams can access each
-						one.
+						{showModules
+							? "Supporting modules install and converge with the solutions that require them. This page is for administering one directly."
+							: "Choose a solution and review its access and supporting modules together. Choose a team for each of its roles during review; access is granted only once setup is active."}
 					</p>
+					{!showModules && (
+						<Link
+							href="/admin/modules"
+							className="text-sm text-muted-foreground hover:underline"
+						>
+							Supporting module administration
+						</Link>
+					)}
 				</div>
 				<div className="flex items-center gap-3">
 					<OrgSelector />
@@ -155,27 +184,67 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 			{!orgId ? (
 				<EmptyState
 					icon={Layers}
-					title="Select an organization to manage its modules and solutions"
+					title={
+						showModules
+							? "Select an organization to manage its modules and solutions"
+							: "Select an organization to manage its solutions"
+					}
 					description="Installations belong to one organization at a time. Pick one from the selector above."
 				/>
 			) : (
 				<>
 					<AvailableSection
+						showModules={showModules}
 						query={available}
 						installing={
-							install.isPending || !installed.isSuccess || installed.isFetching
+							install.isPending ||
+							combinedInstall.isPending ||
+							!installed.isSuccess ||
+							installed.isFetching
 						}
 						onInstall={(solution) => {
 							install.reset();
+							combinedInstall.reset();
 							setInstalling(solution);
 						}}
 					/>
-					<InstalledSection orgId={orgId} query={installed} />
+					<InstalledSection
+						orgId={orgId}
+						query={installed}
+						showModules={showModules}
+					/>
 				</>
 			)}
 
-			{installing && (
+			{installing && installing.kind !== "module" && (
 				<InstallSolutionDialog
+					orgId={orgId}
+					solution={installing}
+					isPending={combinedInstall.isPending}
+					error={
+						combinedInstall.isError
+							? hostRefusal(combinedInstall.error)
+							: undefined
+					}
+					onSubmit={(review) =>
+						combinedInstall.mutate(review, {
+							onSuccess: (installation) => {
+								toast.success(
+									installation.status === InstallationStatus.ACTIVE
+										? "Setup active. Completing selected team access in Set up."
+										: "Setup is pending. Your selected team roles are retained.",
+								);
+								setInstalling(null);
+								router.push(`/admin/solutions/${installation.id}`);
+							},
+							onError: (error) => toast.error(hostRefusal(error)),
+						})
+					}
+					onClose={() => setInstalling(null)}
+				/>
+			)}
+			{installing?.kind === "module" && (
+				<InstallModuleDialog
 					orgId={orgId}
 					solution={installing}
 					isPending={install.isPending}
@@ -218,10 +287,12 @@ function SolutionInstallationsForOrganization({ orgId }: { orgId: string }) {
 }
 
 function AvailableSection({
+	showModules,
 	query,
 	installing,
 	onInstall,
 }: {
+	showModules: boolean;
 	query: ReturnType<typeof useAvailableSolutions>;
 	installing: boolean;
 	onInstall: (solution: AvailableSolution) => void;
@@ -230,7 +301,13 @@ function AvailableSection({
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the available modules and solutions");
-	const rows = withheld ? [] : availableRows(query.data ?? []);
+	const rows = withheld
+		? []
+		: availableRows(
+				(query.data ?? []).filter(
+					(target) => showModules || target.kind === "solution",
+				),
+			);
 
 	return (
 		<Card>
@@ -252,7 +329,9 @@ function AvailableSection({
 						{readOutcomeMessage(
 							outcome,
 							"the available modules and solutions",
-							"No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list.",
+							showModules
+								? "No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list."
+								: "No solution is available to this organization. Ask your platform operator to make one available, then refresh this list.",
 						)}
 						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
@@ -263,10 +342,18 @@ function AvailableSection({
 								{stale} {hostRefusal(query.error)}
 							</p>
 						)}
-						<Table aria-label="Available modules and solutions">
+						<Table
+							aria-label={
+								showModules
+									? "Available modules and solutions"
+									: "Available solutions"
+							}
+						>
 							<TableHeader>
 								<TableRow>
-									<TableHead>Module or solution</TableHead>
+									<TableHead>
+										{showModules ? "Module or solution" : "Solution"}
+									</TableHead>
 									<TableHead>Release</TableHead>
 									<TableHead>Generation</TableHead>
 									<TableHead>State</TableHead>
@@ -314,11 +401,13 @@ function AvailableSection({
 }
 
 function InstalledSection({
+	showModules,
 	orgId,
 	query,
 }: {
 	orgId: string;
 	query: ReturnType<typeof useInstallations>;
+	showModules: boolean;
 }) {
 	const uninstall = useUninstallSolution(orgId);
 	const retry = useRetryInstallation(orgId);
@@ -334,7 +423,13 @@ function InstalledSection({
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the installed modules and solutions");
-	const rows = withheld ? [] : installedRows(query.data ?? []);
+	const rows = withheld
+		? []
+		: installedRows(
+				(query.data ?? []).filter(
+					(row) => showModules || row.target?.kind === "solution",
+				),
+			);
 
 	const name = (row: InstalledRow) =>
 		row.solution.kind === "value" ? row.solution.text : "this installation";
@@ -414,7 +509,9 @@ function InstalledSection({
 						{readOutcomeMessage(
 							outcome,
 							"the installed modules and solutions",
-							"Nothing is installed in this organization. Once a module or solution is available above, choose it to install it.",
+							showModules
+								? "Nothing is installed in this organization. Once a module or solution is available above, choose it to install it."
+								: "Nothing is installed in this organization. Once a solution is available above, choose it to install it.",
 						)}
 						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
@@ -425,10 +522,18 @@ function InstalledSection({
 								{stale} {hostRefusal(query.error)}
 							</p>
 						)}
-						<Table aria-label="Installed modules and solutions">
+						<Table
+							aria-label={
+								showModules
+									? "Installed modules and solutions"
+									: "Installed solutions"
+							}
+						>
 							<TableHeader>
 								<TableRow>
-									<TableHead>Module or solution</TableHead>
+									<TableHead>
+										{showModules ? "Module or solution" : "Solution"}
+									</TableHead>
 									<TableHead>Revision</TableHead>
 									<TableHead>Status</TableHead>
 									<TableHead>Ready</TableHead>
@@ -469,17 +574,23 @@ function InstalledSection({
 										</TableCell>
 										<TableCell>
 											{row.status === InstallationStatus.ACTIVE ? (
-												<TeamExposure
-													row={row}
-													name={name(row)}
-													revoking={revoke.isPending}
-													granting={grant.isPending}
-													onGrant={() => {
-														grant.reset();
-														setGranting(row);
-													}}
-													onRevoke={(team) => runRevoke(row, team)}
-												/>
+												row.hasHostScopeRoot ? (
+													<TeamExposure
+														row={row}
+														name={name(row)}
+														revoking={revoke.isPending}
+														granting={grant.isPending}
+														onGrant={() => {
+															grant.reset();
+															setGranting(row);
+														}}
+														onRevoke={(team) => runRevoke(row, team)}
+													/>
+												) : (
+													<Link href={`/admin/solutions/${row.installationId}`}>
+														Manage solution roles
+													</Link>
+												)
 											) : (
 												<span className="text-sm text-muted-foreground">
 													Available after activation
@@ -490,7 +601,9 @@ function InstalledSection({
 											{formatDate(row.installedAt)}
 										</TableCell>
 										<TableCell className="text-right">
-											{row.status === InstallationStatus.FAILED && (
+											{(row.status === InstallationStatus.FAILED ||
+												(row.status === InstallationStatus.PENDING &&
+													!row.hasHostScopeRoot)) && (
 												<Button
 													variant="outline"
 													size="sm"
@@ -538,8 +651,8 @@ function InstalledSection({
 							Uninstall {confirming ? name(confirming) : ""}
 						</AlertDialogTitle>
 						<AlertDialogDescription>
-							Its agent is revoked and its standing grant removed. The record
-							and its audit trail remain.
+							Access through this installation is revoked. Its record and audit
+							trail remain. Shared supporting module installations are kept.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

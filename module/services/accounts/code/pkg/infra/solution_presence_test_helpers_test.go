@@ -54,6 +54,10 @@ func fixtureDigest(seed string) string {
 // target would therefore produce an uninstallable target and a confusing failure
 // far from its cause.
 func declarePresence(t *testing.T, bindingID, alias string) string {
+	return declarePresenceKind(t, bindingID, alias, business.SolutionDeclaredKindSolution)
+}
+
+func declarePresenceKind(t *testing.T, bindingID, alias string, kind business.SolutionDeclaredKind) string {
 	t.Helper()
 	now := time.Now().UTC()
 	var targetID string
@@ -63,7 +67,7 @@ func declarePresence(t *testing.T, bindingID, alias string) string {
 			return err
 		}
 		targetID = target.ID
-		return testStore.SaveSolutionHostBinding(ctx, appliedPresenceRecord(t, bindingID, alias, 1, now, false))
+		return testStore.SaveSolutionHostBinding(ctx, appliedPresenceRecordKind(t, bindingID, alias, 1, now, false, string(kind)))
 	}))
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		revision, err := testStore.NextSolutionRegistryRevision(ctx)
@@ -72,7 +76,7 @@ func declarePresence(t *testing.T, bindingID, alias string) string {
 		}
 		return testStore.SaveSolutionRegistration(ctx, &business.SolutionRegistration{
 			SolutionID: alias, Publisher: "solution:" + alias, Revision: revision, UpdatedAt: now,
-			Declared: &business.SolutionDeclaredBinding{BindingID: bindingID, TargetID: targetID, Generation: 1, Release: "acme/" + alias + "@1.0.0", Kind: business.SolutionDeclaredKindSolution},
+			Declared: &business.SolutionDeclaredBinding{BindingID: bindingID, TargetID: targetID, Generation: 1, Release: "acme/" + alias + "@1.0.0", Kind: kind},
 		})
 	}))
 	return targetID
@@ -86,8 +90,13 @@ func declarePresence(t *testing.T, bindingID, alias string) string {
 func appliedPresenceRecord(
 	t *testing.T, bindingID, alias string, generation uint64, now time.Time, removed bool,
 ) *business.SolutionHostBindingRecord {
+	return appliedPresenceRecordKind(t, bindingID, alias, generation, now, removed, string(solutionhost.KindSolution))
+}
+
+func appliedPresenceRecordKind(t *testing.T, bindingID, alias string, generation uint64, now time.Time, removed bool, kind string) *business.SolutionHostBindingRecord {
 	t.Helper()
 	document := productionPathManifest(t, alias, generation)
+	document.Kind = solutionhost.Kind(kind)
 	document.Binding = bindingID
 	document.Host = solutionhost.HostTarget{Coordinate: "acme/local/host", Domain: "alpha"}
 	document.Release.Version = "1.0.0"

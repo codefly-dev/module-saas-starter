@@ -189,6 +189,8 @@ func runHostInterfaceFixture(t *testing.T) {
 	require.NoError(t, svc.ConfigureAuthorityCore(ctx, "https://accounts.conformance.test", "conformance-1", key))
 	core, err := svc.AuthorityCore()
 	require.NoError(t, err)
+	acknowledgeSetup := canonicalConformanceStep(t, ctx, svc, store)
+	svc.SetAuthorityInstallStep(acknowledgeSetup)
 
 	// The Connect listener is the catalog-complete one and speaks the gRPC
 	// protocol over h2c, so the suite dials it with a plain gRPC client.
@@ -309,11 +311,11 @@ func runHostInterfaceFixture(t *testing.T) {
 	installed := func(target string) string { return authority.StableInstallationID(fixtureOrganization, target) }
 	proposals, assistant := installed("conformance-proposals"), installed("conformance-assistant")
 	finance := teamNamed(t, ctx, svc, fixtureOrganization, "Finance")
-	// Ivy, a member and no administrator, installs both owned solutions as the
-	// host's setup and holds their installer role; Maya's finance team holds
+	// Alex explicitly installs for Ivy, a member and no administrator, who
+	// holds the separately declared installer role; Maya's finance team holds
 	// A's viewer role and nothing of B's.
 	for _, owned := range []string{"conformance-owner-a", "conformance-owner-b"} {
-		_, err := core.InstallAsHost(ctx, fixtureOrganization, owned, "viewer", conformanceIvy, nil)
+		_, err := installConformanceSolution(ctx, svc, core, owned, "viewer", conformanceIvy)
 		require.NoError(t, err)
 		_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed(owned), Role: domain.InstallerRole, PersonID: conformanceIvy})
 		require.NoError(t, err)
@@ -408,16 +410,16 @@ func runHostInterfaceFixture(t *testing.T) {
 			Target: "conformance-lifecycle", Credential: credential("conformance-lifecycle"), Kind: "conformance-lifecycle.page", Team: finance,
 			PauseInstall: func() func() {
 				release := make(chan struct{})
-				svc.SetAuthorityInstallStep(func(ctx context.Context, _ domain.Installation) error {
+				svc.SetAuthorityInstallStep(func(ctx context.Context, inst domain.Installation) error {
 					select {
 					case <-release:
-						return nil
+						return acknowledgeSetup(ctx, inst)
 					case <-ctx.Done():
 						return ctx.Err()
 					}
 				})
 				var once sync.Once
-				return func() { once.Do(func() { close(release); svc.SetAuthorityInstallStep(nil) }) }
+				return func() { once.Do(func() { close(release); svc.SetAuthorityInstallStep(acknowledgeSetup) }) }
 			},
 			Revoke: func(ctx context.Context, id string) error { return core.Uninstall(ctx, alex, fixtureOrganization, id) },
 			SetAdministrator: func(ctx context.Context, enabled bool) error {
@@ -483,6 +485,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		LegacyStore: "principal-legacy-store", LegacyStoreCredential: credential("principal-legacy-store"), LegacyKind: "principal.legacy",
 		Admin: "fixture-alex", Viewer: "fixture-maya", Editor: "fixture-remi", Member: "fixture-no-roles", Installer: "fixture-principal-installer",
 		Team: teamNamed(t, ctx, svc, fixtureOrganization, "Principal team"), TeamMember: "fixture-principal-team-member", TeamLeaver: "fixture-principal-team-leaver",
+		EmptyTeam: teamNamed(t, ctx, svc, fixtureOrganization, "Principal empty team"),
 		OrgLeaver: "fixture-principal-org-leaver", Administrator: "fixture-store-administrator", Reader: "fixture-store-reader", NoteReader: "fixture-principal-note-reader",
 		OtherAdmin: "fixture-zoe", OtherMember: "fixture-omar", OtherTeam: teamNamed(t, ctx, svc, globexOrganization, "Ops"),
 		Existing:  "store-x",
@@ -632,7 +635,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		declared := conformanceSolution{alias: target, generation: 1, ceilings: scopes,
 			roles: map[string][]*authorityv1.WorkScopeV1{"installer": scopes, "viewer": scopes}}
 		deliverSolution(t, ctx, conn, signer, declared)
-		_, err := core.InstallAsHost(ctx, fixtureOrganization, target, "viewer", conformanceAlex, nil)
+		_, err := installConformanceSolution(ctx, svc, core, target, "viewer", conformanceAlex)
 		require.NoError(t, err)
 		reviewed, err := core.ReviewOffer(ctx, alex, fixtureOrganization, target)
 		require.NoError(t, err)
@@ -929,16 +932,16 @@ func runHostInterfaceFixture(t *testing.T) {
 		}
 		release := make(chan struct{})
 		started := make(chan struct{}, 4)
-		svc.SetAuthorityInstallStep(func(ctx context.Context, _ domain.Installation) error {
+		svc.SetAuthorityInstallStep(func(ctx context.Context, inst domain.Installation) error {
 			started <- struct{}{}
 			select {
 			case <-release:
-				return nil
+				return acknowledgeSetup(ctx, inst)
 			case <-ctx.Done():
 				return ctx.Err()
 			}
 		})
-		t.Cleanup(func() { svc.SetAuthorityInstallStep(nil) })
+		t.Cleanup(func() { svc.SetAuthorityInstallStep(acknowledgeSetup) })
 		install := func(approval *installationv1.ConsentApproval) chan error {
 			done := make(chan error, 1)
 			go func() {

@@ -66,6 +66,12 @@ export type SolutionSetupProps = SolutionSetupTransport & {
 	conditions?: readonly SetupCondition[];
 	/** People and teams the host can name, for granting and naming holders. */
 	subjects?: readonly SetupSubject[];
+	/** Host-owned choices, using this same current offer and grant client. */
+	renderAccessChoices?: (
+		offer: ReviewedOffer,
+		clients: SetupClients,
+		reload: () => void,
+	) => ReactNode;
 	className?: string;
 };
 
@@ -106,6 +112,8 @@ export function SolutionSetup(props: SolutionSetupProps) {
 						offerError={state.offerError}
 						conditions={props.conditions}
 					/>
+					{state.offer &&
+						props.renderAccessChoices?.(state.offer, clients, reload)}
 					<RolesSection offer={state.offer} offerError={state.offerError} />
 					<HoldersSection
 						organizationId={props.organizationId}
@@ -497,7 +505,7 @@ function HoldersSection({
 							</List>
 						)}
 						{installation.status === HostInstallationStatus.ACTIVE ? (
-							<GrantForm
+							<SolutionRoleGrantForm
 								roles={offer.roles.map((r) => r.name)}
 								subjects={subjects}
 								busy={busy}
@@ -517,28 +525,44 @@ function HoldersSection({
 	);
 }
 
-function GrantForm({
+export function SolutionRoleGrantForm({
 	roles,
 	subjects,
 	busy,
 	onGrant,
+	allowUnlistedSubjects = true,
+	subjectLabel = "Person or team",
+	submitLabel = "Grant role",
+	fixedRole,
 }: {
 	roles: string[];
 	subjects?: readonly SetupSubject[];
 	busy: boolean;
 	onGrant: (grant: { role: string; personId: string; teamId: string }) => void;
+	allowUnlistedSubjects?: boolean;
+	subjectLabel?: string;
+	submitLabel?: string;
+	fixedRole?: string;
 }) {
-	const [role, setRole] = useState("");
+	const [selectedRole, setRole] = useState("");
+	const role = fixedRole ?? selectedRole;
 	const [subject, setSubject] = useState("");
 	const [kind, setKind] = useState<"person" | "team">("person");
 	const [id, setId] = useState("");
-	const named = subjects && subjects.length > 0;
+	const named = !allowUnlistedSubjects || Boolean(subjects?.length);
 	const chosen = named ? subject : id.trim() ? subjectKey(kind, id.trim()) : "";
 	return (
 		<form
 			className="flex flex-col gap-3"
 			onSubmit={(event) => {
 				event.preventDefault();
+				if (
+					busy ||
+					!roles.includes(role) ||
+					!chosen ||
+					(named && !subjects?.some((s) => subjectKey(s.kind, s.id) === chosen))
+				)
+					return;
 				const [k, ...rest] = chosen.split(":");
 				const value = rest.join(":");
 				onGrant({
@@ -548,27 +572,31 @@ function GrantForm({
 				});
 			}}
 		>
-			<Field label="Role">
-				{(control) => (
-					<select
-						{...control}
-						required
-						value={role}
-						onChange={(event) => setRole(event.target.value)}
-					>
-						<option value="" disabled>
-							Choose a role…
-						</option>
-						{roles.map((r) => (
-							<option key={r} value={r}>
-								{r}
+			{fixedRole ? (
+				<p>Role: {fixedRole}</p>
+			) : (
+				<Field label="Role">
+					{(control) => (
+						<select
+							{...control}
+							required
+							value={role}
+							onChange={(event) => setRole(event.target.value)}
+						>
+							<option value="" disabled>
+								Choose a role…
 							</option>
-						))}
-					</select>
-				)}
-			</Field>
+							{roles.map((r) => (
+								<option key={r} value={r}>
+									{r}
+								</option>
+							))}
+						</select>
+					)}
+				</Field>
+			)}
 			{named ? (
-				<Field label="Person or team">
+				<Field label={subjectLabel}>
 					{(control) => (
 						<select
 							{...control}
@@ -577,9 +605,9 @@ function GrantForm({
 							onChange={(event) => setSubject(event.target.value)}
 						>
 							<option value="" disabled>
-								Choose a person or team…
+								Choose {subjectLabel.toLowerCase()}…
 							</option>
-							{subjects.map((s) => (
+							{subjects?.map((s) => (
 								<option
 									key={subjectKey(s.kind, s.id)}
 									value={subjectKey(s.kind, s.id)}
@@ -620,7 +648,7 @@ function GrantForm({
 			)}
 			<div>
 				<Button type="submit" disabled={busy || !role || !chosen}>
-					Grant role
+					{submitLabel}
 				</Button>
 			</div>
 		</form>

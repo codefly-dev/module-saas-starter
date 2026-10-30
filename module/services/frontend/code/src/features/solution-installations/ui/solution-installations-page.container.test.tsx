@@ -10,12 +10,16 @@ import {
 import { HttpResponse, http, type JsonBodyType } from "msw";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import Page from "@/app/admin/solutions/page";
+import Page from "@/app/admin/modules/page";
 import { FRONTEND_NAVIGATION } from "@/gen/saas/frontend/v1/plugin_catalog";
 import type { OrgRole, PlatformRole } from "@/lib/auth-session";
 import { canPresent } from "@/lib/plugins/presentation";
-import { renderInApp, rpc } from "@/test/container";
+import { renderInApp as renderApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
+
+// Existing explicit module administration retains its owner form. Normal
+// solution installation is exercised in the combined-review tests.
+const renderInApp = renderApp;
 
 const session = vi.hoisted(() => ({
 	organizationId: "org-1",
@@ -24,6 +28,7 @@ const session = vi.hoisted(() => ({
 	platformRole: undefined as PlatformRole | undefined,
 	switchOrganization: async () => {},
 }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => session }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -68,6 +73,7 @@ const SUPPORT_TEAM = "eeeeeeee-0000-4000-8000-000000000002";
 const available = {
 	solutions: [
 		{
+			kind: "module",
 			targetId: EXPENSES_TARGET,
 			bindingId: "binding-expenses",
 			routeAlias: "expenses",
@@ -79,6 +85,7 @@ const available = {
 			installed: true,
 		},
 		{
+			kind: "module",
 			targetId: LEDGER_TARGET,
 			bindingId: "binding-ledger",
 			routeAlias: "ledger",
@@ -689,7 +696,7 @@ describe("SolutionInstallationsPage admin container", () => {
 						{
 							code: "failed_precondition",
 							message:
-								"cannot revoke installation from team: role \"viewer\" is not granted to that team here",
+								'cannot revoke installation from team: role "viewer" is not granted to that team here',
 						},
 						{ status: 400 },
 					);
@@ -711,7 +718,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBeTruthy();
 		expect(
 			screen.getByText(
-				"cannot revoke installation from team: role \"viewer\" is not granted to that team here",
+				'cannot revoke installation from team: role "viewer" is not granted to that team here',
 			),
 		).toBeTruthy();
 		expect(toast.success).not.toHaveBeenCalled();
@@ -949,6 +956,7 @@ describe("organization administration boundary", () => {
 				</QueryClientProvider>,
 			);
 			await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+			expect(screen.queryByLabelText("Show supporting modules")).toBeNull();
 			expect(
 				within(
 					await screen.findByRole("table", {

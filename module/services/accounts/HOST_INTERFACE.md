@@ -163,12 +163,46 @@ behavior-preserving rollback.
 
 ## Not yet
 
-- No uninstall RPC exists for a solution's host-interface installation, in
-  either host (`codefly.dev/installation` declares none); the core's
-  `Uninstall` is reached by host setup alone. A module's installation is
-  uninstalled through accounts' own product surface, and the core sees it at
-  once.
-- A solution's installation is recorded twice: by the product's own records
+The solution entitlement projection now reads the shared core's
+`HeldInstallations` decision. It pairs each active, explicitly held installation
+with the applied host target only when the signed principal and generation
+agree. The catalogue contributes identity, not permission: an installation's
+machine role and accountable owner do not implicitly grant a person access.
+Modules retain their existing scope-root admission. A canonical solution carries
+its shared installation ID and no invented legacy scope-node ID.
+
+Canonical solution setup uses the existing installation-step outbox. The host
+keeps its reviewed release/target pairing and prerequisite witnesses beside the
+canonical consent receipt; it writes no second solution installation. Enqueue
+and the receipt's job link commit together. A lease-bound setup credential is
+issued through the shared owner implementation and carries only installation
+setup authority. The receiver body is exactly `installation_id`,
+`organization_id`, and `revision`, without scope grants or persisted tokens.
+
+A successful queue job does not activate the installation. Core's final
+serializable write checks the same receipt and revision, the exact succeeded
+job, and locked module consent and durable delivery rows before writing active.
+Failure stays pending. An explicit retry preserves the original requested role,
+owner, approval and operation identity; core rechecks them before a dead-letter
+job may be replayed. A different administrator reviews afresh rather than
+impersonating the original approver. Uninstall calls core and leaves supporting
+module installations intact.
+
+The host's installation listings and point reads project canonical solution
+records alongside existing module records. Canonical solutions have no legacy
+scope root or team-exposure grants; their person/team roles remain the shared
+installation service's. The database encoder retains the owner's explicit
+installation selector and dependency declarations verbatim. Ordinary issuance
+and gateway entitlement checks continue to refuse pending installations.
+
+Source tests are not deployment qualification. The complete review form,
+dependency convergence, generated signed-carrier fields, SQL activation barrier
+and actual queue-to-receiver journey must be qualified together before delivery.
+
+- Accounts product `UninstallSolution` dispatches canonical solution records to
+  shared core `Uninstall`. It never removes supporting module installations.
+  Module uninstall remains the existing Accounts lifecycle, read live by core.
+- Existing fixture setup still records a solution twice: by the product's own records
   (`saas.accounts.v1.InstallationService`) and by the core; a fixture
   installation is performed in both. A module's is recorded once, in
   accounts' records, which the core reads.
@@ -197,3 +231,121 @@ to that revision. Accounts adds no local token-expiry enforcement. Migration 63
 must precede this adapter, and older adapters must not handle client-bearing
 state. Downgrading migration 63 discards client metadata and is not a safe
 behavior-preserving rollback after clients have been used.
+## Declared module machine authority
+
+A paired module declaration selecting `installation_role: none` records ordinary
+module installation consent and lifecycle without an agent standing grant. The
+host does not create an empty role or choose an organization role. The durable
+`no_standing_authority` consent marker is immutable; the store checks the current
+paired declaration under delivery locks before accepting it. A caller-supplied
+role is refused. Existing explicit-role module installations retain their path.
+
+The standing-role read returns empty role fields with the installation revision
+for this selection. Health does not diagnose its deliberately absent grant as
+missing. Team exposure must name a person/team role explicitly; installation
+does not grant anyone access. Named module installation-role declarations are
+currently refused as unsupported instead of mapped to a same-named organization
+role. Generated declaration carriage and SQL qualification must precede deployment
+of this path in a delivered host.
+
+The canonical solution activation transaction also reconstructs the dependency
+set from its locked paired declaration and referenced modules. Binding audiences
+and edge dependencies resolve by exact signed principal. The host UUID projection
+is compared separately; aliases, binding keys and release strings are not identity
+fallbacks. Omitted required modules, duplicate witnesses, unrelated additions or
+changed generations refuse activation. Ordered edge declarations are retained;
+presentation sorting never alters them. Per-module receipt operation, intent and
+revision are retained beside scope, standing selection and delivery witnesses.
+The combined review checks delivered incoming access compatibility and converges
+separate module consent before setup. The final transaction reconstructs the
+required union again; a callback-only check cannot fence concurrent revocation.
+
+### Combined reviewed installation API
+
+An organization administrator calls `ReviewSolutionInstall` with the catalogue
+target UUID, then sends its unchanged `ReviewedSolutionInstall` to
+`InstallReviewedSolution`. The review resolves signed principals through the
+existing catalogue to host targets/bindings, pairs exact releases and delivery
+digests, and retains the shared solution approval plus individual module
+approvals. The host derives identity and declared machine authority; it never
+selects an organization administrator role. Optional presence edges create no
+consent. A required module without a supported authority declaration refuses
+by principal. Existing sufficient module consent is reused without revision or
+receipt changes. Named module selector support remains explicitly unavailable.
+
+Incoming invoke, lookup and headless compatibility is checked separately through
+shared `decide.ScopesFor`, `decide.Served` and `scope.Attenuates`, against the exact
+reviewed module. Empty requirements add nothing. Module consent separately gates
+active installation and its outbound bindings; target compatibility does not
+grant a person or machine access. The final transaction reconstructs and checks
+the same graph and locks the durable prerequisite witnesses.
+
+A pending canonical record retains the original review before dependency work.
+Retry resubmits that review or uses `RetryInstallation`; current-person
+authorization remains mandatory. A setup ACK after the request's bounded wait
+is exposed as awaiting continuation, never activated by a queue worker. Fresh
+reads expose queued, running, retrying, refused, canceled and acknowledged setup
+outcomes from only the exact linked job. Only explicitly public bounded receiver
+refusals are shown; transport diagnostics stay private.
+
+Legacy product solution writes refuse on a configured canonical host. Legacy
+records remain visible as requiring fresh canonical review; their human grants
+are not copied. Existing module installation and revocation records retain their
+owner path. Source tests and generated routes are not queue/receiver, SQL or
+deployment qualification; see the delivery receipt for actual executed gates.
+
+
+The REST entry points are `POST /v1/solution-installations/review` with
+`{"orgId":"<organization UUID>","targetId":"<catalogue target UUID>"}`, then
+`POST /v1/solution-installations` with
+`{"orgId":"<same organization UUID>","review":<the complete returned review>}`.
+These use the current authenticated administrator. Preserve the returned review
+for retries; regenerate it only when intentionally requesting new consent. A new
+valid approval can supersede a pending operation with a new canonical revision;
+an old acknowledgement cannot activate that revision. An active replay does not
+enqueue setup or renew supporting module consent.
+
+Use the existing `OfferService.ReviewOffer` projection to present the solution's
+roles, operations and permission ceiling. Match its approval target, generation,
+revision and digest to the combined review before presenting consent; an
+unmatched projection requires a fresh review. The module consent `scope` is the
+existing owner's serialized input, not a replacement UI permission language.
+Person/team role assignment remains a separate explicit operation.
+
+The native SQL gate `TestCanonicalSolutionActivationFencesAcknowledgedPrerequisites`
+checks the final transaction after ACK against module revoke/redelivery and
+solution revoke, plus durable failure/retry/cancellation and wrong-attempt read
+projection. `TestCanonicalCombinedInstallQueueThroughRuntime` additionally takes
+`INSTALL_RECEIVER_BINARY`, built from the maintained solution runtime, and drives
+the combined review/install through real SQL, private HTTP claim/finish, Accounts
+Check and the runtime's `Serve` receiver. It covers refusal/recovery, retry,
+four separately consented supporting modules, late ACK awaiting current-person continuation, active replay, postactivation
+setup refusal and shared-module preservation. Its HTTP sender uses the gateway
+wire contract; deployed gateway/browser verification is separate.
+
+The existing shared single-target `Install` entry uses the same durable plan,
+queue and activation fence. It preserves the original caller, organization,
+role, owner and full approval, including empty inputs. It may reuse supporting
+module consent but cannot approve a new module; that requires the combined
+review. An absent solution selector retains the shared API's explicitly supplied
+legacy role. Changed inputs on the same operation refuse, active retries enqueue
+nothing, and fresh approval may supersede pending work. Fixture convergence uses
+its explicitly declared administrator to review and install for the intended
+owner; it does not impersonate a non-administrator or call `InstallAsHost` to
+bypass the reviewed plan. The shared host conformance suite covers this adapter.
+
+`TestIntegration_Gateway_CombinedInstallationAuthentication` executes real login,
+key verification, gateway routing and Accounts handlers for both REST and Connect
+entry points: missing/invalid sessions refuse, members cannot install, and an
+administrator reaches the reviewed-target/actor checks. This is local gateway
+qualification; deployed browser confirmation remains separate. The ordinary
+combined review UI remains a required consumer of the API above. The API docs
+viewer is not a qualified manual route until its served specification and
+current-session transport are available.
+
+A combined review reads the supporting module installation history, including
+revoked rows, and binds its latest revision into a fresh module approval. The
+existing module installer alone creates the replacement installation and agent;
+it never revives a revoked principal. A concurrent module lifecycle change
+invalidates the review. Repeating the original successful request preserves its
+receipt, and a newly delivered release still requires its own current review.

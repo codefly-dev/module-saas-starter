@@ -43,7 +43,10 @@ func coreModuleOf(manifest *solutionhost.ModuleManifest, carrierDocument []byte,
 // documentOf reads this host's binding of the authority's document as the core's.
 func documentOf(in *compositionv1.AuthorityManifestV1) *coredelivered.Document {
 	doc := &coredelivered.Document{Module: in.GetModule(), Generation: in.GetGeneration(), CoreManifestDigest: in.GetCoreManifestDigest(),
-		ScopeCeilings: wireScopes(in.GetScopeCeilings()), OwnerAware: in.GetOwnerAware()}
+		ScopeCeilings: wireScopes(in.GetScopeCeilings()), OwnerAware: in.GetOwnerAware(), InstallationRole: in.GetInstallationRole()}
+	for _, edge := range in.GetEdgeDependencies() {
+		doc.EdgeDependencies = append(doc.EdgeDependencies, domain.EdgeDependency{Module: edge.GetModule(), Presence: edge.GetPresence()})
+	}
 	for _, m := range in.GetMethods() {
 		doc.Methods = append(doc.Methods, coredelivered.Method{Method: m.GetMethod(), Requires: wireScopes(m.GetRequires()), AnyCheckedCaller: m.GetAnyCheckedCaller()})
 	}

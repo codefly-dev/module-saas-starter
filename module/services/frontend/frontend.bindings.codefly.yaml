@@ -268,7 +268,7 @@ navigation:
     order: 400
   - id: admin-solutions
     plugin: core-users
-    label: Modules & solutions
+    label: Solutions
     path: /admin/solutions
     icon: Layers
     group: Integrations

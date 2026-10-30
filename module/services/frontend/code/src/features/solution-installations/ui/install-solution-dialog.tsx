@@ -1,45 +1,41 @@
 "use client";
 
-import { Field } from "@codefly-dev/ui/layout";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm } from "react-hook-form";
-import { useRoles } from "@/features/roles/service/queries";
-import type { AvailableSolution } from "@/gen/saas/accounts/v1/installations_pb";
-import {
-	mayKeepRetainedRows,
-	readOutcome,
-	readOutcomeMessage,
-	staleReadNotice,
-} from "@/shared/lib/read-outcome";
+import { createClient } from "@connectrpc/connect";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { OfferService } from "@/gen/host/installation/v1/installation_pb";
+import type {
+	AvailableSolution,
+	ReviewedSolutionInstall,
+} from "@/gen/saas/accounts/v1/installations_pb";
+import { useAuth } from "@/lib/auth";
+import { apiTransport } from "@/lib/connect/transport";
+import { useInstallationService } from "@/lib/hooks/use-api-client";
 import {
 	Button,
+	DelayedLoading,
 	Dialog,
 	DialogContent,
 	DialogDescription,
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-	Input,
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-	Textarea,
 } from "@/shared/ui";
 import {
-	agentIdentifierFor,
-	generationText,
-	hostRefusal,
-	releaseText,
-	roleOptionLabel,
-} from "../model/installations";
+	assertMatchingOffer,
+	moduleConsentText,
+	offerScopeText,
+} from "../model/install-review";
+import { hostRefusal, releaseText } from "../model/installations";
 import {
-	type InstallSolutionValues,
-	installSolutionSchema,
-} from "../model/schemas";
+	choicesMatch,
+	useInstallationTeamChoices,
+} from "../service/team-choices";
+import { InstallationTeamChoices } from "./installation-team-choices";
 
-/** The page owns the operation so closing this form cannot discard a refusal. */
+const offers = createClient(OfferService, apiTransport);
+
+/** The cached review survives dismissal; only an explicit new review replaces it. */
 export function InstallSolutionDialog({
 	orgId,
 	solution,
@@ -50,200 +46,211 @@ export function InstallSolutionDialog({
 }: {
 	orgId: string;
 	solution: AvailableSolution;
-	onSubmit: (values: InstallSolutionValues) => void;
+	onSubmit: (review: ReviewedSolutionInstall) => void;
 	isPending: boolean;
 	error?: string;
 	onClose: () => void;
 }) {
-	const roles = useRoles(orgId);
-	const outcome = readOutcome(roles.isError, roles.error);
-	const withheld = !mayKeepRetainedRows(outcome);
-	const roleList = withheld ? [] : (roles.data ?? []);
-	const roleLabel = new Map(
-		roleList.map((role) => [role.id, roleOptionLabel(role)] as const),
-	);
-	const readError = roles.isError
-		? `${roleList.length ? staleReadNotice(outcome, "this organization's roles") : readOutcomeMessage(outcome, "this organization's roles", "No roles available.")} ${hostRefusal(roles.error)}`
-		: undefined;
-	const form = useForm<InstallSolutionValues>({
-		resolver: zodResolver(installSolutionSchema),
-		defaultValues: {
-			agentIdentifier: agentIdentifierFor(solution),
-			displayName: "",
-			rootScopeLabel: "",
-			roleId: "",
-			allowedAudiences: "",
-			allowedScopes: "",
+	const service = useInstallationService();
+	const teamChoices = useInstallationTeamChoices(orgId, solution.targetId);
+	const [teamBusy, setTeamBusy] = useState(false);
+	const { user } = useAuth();
+	const [approved, setApproved] = useState(false);
+	const [submitted, setSubmitted] = useState(false);
+	const review = useQuery({
+		queryKey: ["solution-install-review", orgId, user?.id, solution.targetId],
+		queryFn: async () => {
+			const consent = await service.reviewSolutionInstall({
+				orgId,
+				targetId: solution.targetId,
+			});
+			const offer = await offers.reviewOffer({
+				organizationId: orgId,
+				target: consent.target,
+			});
+			assertMatchingOffer(consent, offer);
+			const modules = consent.modules.map((module) => ({
+				module,
+				access: module.required ? moduleConsentText(module.scope) : [],
+			}));
+			return { consent, offer, modules };
 		},
+		staleTime: Infinity,
+		retry: false,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
 	});
-	const errors = form.formState.errors;
-	const submit = form.handleSubmit((values) => {
-		if (isPending || withheld || roles.isPending) return;
-		if (!roleLabel.has(values.roleId)) {
-			form.setError(
-				"roleId",
-				{ message: "Choose an available role" },
-				{ shouldFocus: true },
-			);
-			return;
-		}
-		onSubmit(values);
-	});
-
+	const data = !review.isError && !review.isFetching ? review.data : undefined;
+	const machineRole = data?.offer.roles.find(
+		(role) => role.name === data.consent.installationRole,
+	);
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent className="sm:max-w-[560px]">
+			<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[640px]">
 				<DialogHeader>
 					<DialogTitle>Install {solution.routeAlias}</DialogTitle>
 					<DialogDescription>
-						{releaseText(solution)} · {generationText(solution)}. You become its
-						owner of record.
+						{data?.consent.release ?? releaseText(solution)}. Review the
+						solution and its supporting modules together.
 					</DialogDescription>
 				</DialogHeader>
-				<form onSubmit={submit} className="space-y-4" noValidate>
-					<Field
-						label="Agent identifier"
-						description="The agent this module or solution acts as, as publisher/name:version."
-						error={errors.agentIdentifier?.message}
-					>
-						{(control) => (
-							<Input
-								{...control}
-								className="font-mono"
-								{...form.register("agentIdentifier")}
+				<DelayedLoading
+					active={review.isFetching}
+					label="Preparing required access"
+				/>
+				{review.isError && <p role="alert">{hostRefusal(review.error)}</p>}
+				{data && (
+					<div className="space-y-4 text-sm">
+						<section aria-label="Solution access" className="space-y-2">
+							<h3 className="font-medium">Solution access</h3>
+							{data.consent.installationRole === "none" ? (
+								<p>
+									This solution receives no standing machine access. Setup
+									receives only temporary permission to complete this
+									installation.
+								</p>
+							) : (
+								<>
+									<p>
+										The solution declares its installation access as “
+										{machineRole?.name}”.
+									</p>
+									<ul className="list-disc pl-5">
+										{machineRole?.scopes.map((scope, index) => (
+											<li key={index}>{offerScopeText(scope)}</li>
+										))}
+									</ul>
+									{machineRole?.scopes.length === 0 && (
+										<p>This declared role grants no data access.</p>
+									)}
+								</>
+							)}
+							{data.offer.ceiling.length > 0 && (
+								<>
+									<p>
+										Declared operations, still subject to the caller’s assigned
+										access:
+									</p>
+									<ul className="list-disc pl-5">
+										{data.offer.ceiling.map((binding) => (
+											<li key={binding.binding}>
+												{binding.module}:{" "}
+												{binding.scopes.map(offerScopeText).join("; ") ||
+													"no data access"}
+											</li>
+										))}
+									</ul>
+								</>
+							)}
+						</section>
+						<section aria-label="Supporting modules" className="space-y-3">
+							<h3 className="font-medium">Supporting modules</h3>
+							{data.modules.length === 0 && (
+								<p>No supporting modules are required.</p>
+							)}
+							{data.modules.map(({ module, access }) => (
+								<div
+									key={module.principal}
+									className="rounded border p-3 space-y-1"
+								>
+									<p className="font-medium">
+										{module.target || module.principal}
+									</p>
+									{module.release && <p>{module.release}</p>}
+									<p>
+										{!module.required
+											? "Optional — will not be installed."
+											: module.reuseInstallationId
+												? "Already installed — existing access will be reused unchanged."
+												: "Required — will be installed with its own consent record."}
+									</p>
+									{module.required && (
+										<>
+											{!module.reuseInstallationId &&
+												module.installationRole === "none" && (
+													<p>No standing machine access is granted.</p>
+												)}
+											<ul className="list-disc pl-5">
+												{access.map((line, index) => (
+													<li key={index}>{line}</li>
+												))}
+											</ul>
+										</>
+									)}
+								</div>
+							))}
+							<p>
+								Supporting modules keep their own installation and revocation
+								records. Uninstalling this solution keeps shared modules
+								installed.
+							</p>
+						</section>
+						<InstallationTeamChoices
+							orgId={orgId}
+							targetId={solution.targetId}
+							offer={data.offer}
+							disabled={isPending}
+							onBusyChange={setTeamBusy}
+						/>
+						<label className="flex items-start gap-2">
+							<input
+								type="checkbox"
+								checked={approved}
+								onChange={(event) => setApproved(event.target.checked)}
+								disabled={isPending}
 							/>
-						)}
-					</Field>
-					<div className="grid gap-4 sm:grid-cols-2">
-						<Field
-							label="Agent name (optional)"
-							error={errors.displayName?.message}
-						>
-							{(control) => (
-								<Input
-									{...control}
-									placeholder={agentIdentifierFor(solution)}
-									{...form.register("displayName")}
-								/>
-							)}
-						</Field>
-						<Field
-							label="Access boundary name (optional)"
-							error={errors.rootScopeLabel?.message}
-						>
-							{(control) => (
-								<Input
-									{...control}
-									placeholder={solution.routeAlias}
-									{...form.register("rootScopeLabel")}
-								/>
-							)}
-						</Field>
+							I approve this solution and the required module access shown
+							above.
+						</label>
 					</div>
-					<Controller
-						control={form.control}
-						name="roleId"
-						render={({ field }) => (
-							<Field
-								label="Agent role"
-								error={
-									readError && !roleList.length
-										? readError
-										: errors.roleId?.message
-								}
-								description={
-									<>
-										Granted to the solution&apos;s agent at its access boundary.
-										Choose the least it needs; widening it later is a separate,
-										audited action.
-										{readError && roleList.length > 0 && (
-											<span role="status" className="block">
-												{readError}
-											</span>
-										)}
-										{!roles.isPending && !roles.isError && !roleList.length && (
-											<span className="block">No roles available.</span>
-										)}
-									</>
-								}
-							>
-								{(control) => (
-									<Select
-										value={withheld ? "" : field.value}
-										onValueChange={(value) => field.onChange(value ?? "")}
-										disabled={withheld || roles.isPending || !roleList.length}
-									>
-										<SelectTrigger
-											{...control}
-											ref={field.ref}
-											onBlur={field.onBlur}
-											className="w-full"
-										>
-											<SelectValue placeholder="Choose a role…">
-												{!withheld && field.value
-													? roleLabel.get(field.value) || "Role unavailable"
-													: undefined}
-											</SelectValue>
-										</SelectTrigger>
-										<SelectContent>
-											{roleList.map((role) => (
-												<SelectItem key={role.id} value={role.id}>
-													{roleOptionLabel(role)}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								)}
-							</Field>
-						)}
-					/>
-					<div className="grid gap-4 sm:grid-cols-2">
-						<Field
-							label="Allowed audiences"
-							description="One per line. Empty leaves this solution's own work unrestricted. A credential delivered to a third party on a person's behalf (an MCP client) is held to the modules this solution's delivered authority names, as this installation consents to them now, and names here only narrow that. The host refuses an audience it does not serve and says which it does."
-							error={errors.allowedAudiences?.message}
-						>
-							{(control) => (
-								<Textarea
-									{...control}
-									rows={3}
-									className="font-mono text-sm"
-									{...form.register("allowedAudiences")}
-								/>
-							)}
-						</Field>
-						<Field
-							label="Allowed resource kinds"
-							description="One per line. Empty leaves this solution's own work unrestricted, and refuses a third-party-delivered credential's mint, as above."
-							error={errors.allowedScopes?.message}
-						>
-							{(control) => (
-								<Textarea
-									{...control}
-									rows={3}
-									className="font-mono text-sm"
-									{...form.register("allowedScopes")}
-								/>
-							)}
-						</Field>
-					</div>
-					{error && (
-						<p role="alert" className="text-sm text-destructive">
-							The host refused the install: {error}
-						</p>
-					)}
-					<DialogFooter>
-						<Button type="button" variant="outline" onClick={onClose}>
-							Cancel
-						</Button>
-						<Button
-							type="submit"
-							disabled={isPending || withheld || roles.isPending}
-						>
-							{isPending ? "Installing…" : "Install"}
-						</Button>
-					</DialogFooter>
-				</form>
+				)}
+				{error && (
+					<p role="alert">
+						{error} The original review is retained. Retry it after a temporary
+						failure, or review again if access has changed.
+					</p>
+				)}
+				<DialogFooter>
+					<Button variant="outline" onClick={onClose}>
+						Cancel
+					</Button>
+					<Button
+						variant="outline"
+						disabled={isPending || review.isFetching}
+						onClick={() => {
+							setApproved(false);
+							setSubmitted(false);
+							void review.refetch();
+						}}
+					>
+						Review again
+					</Button>
+					<Button
+						disabled={
+							!data ||
+							!approved ||
+							isPending ||
+							teamBusy ||
+							teamChoices.loading ||
+							!choicesMatch(teamChoices.value, data.offer.approval)
+						}
+						onClick={() => {
+							if (data) {
+								setSubmitted(true);
+								// Staged team choices ride on this Install's consent and are
+								// granted only once the installation it creates is active.
+								teamChoices.authorize(data.consent.approval?.operationId ?? "");
+								onSubmit(data.consent);
+							}
+						}}
+					>
+						{isPending
+							? "Installing…"
+							: submitted || error
+								? "Retry approved installation"
+								: "Install"}
+					</Button>
+				</DialogFooter>
 			</DialogContent>
 		</Dialog>
 	);

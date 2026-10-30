@@ -90,13 +90,6 @@ func (s *PostgresStore) WithInstallationStepAuthority(ctx context.Context, lease
 // EnqueueInstallationStep attaches the outbox job in the lifecycle transaction.
 // The row lock fences retries and revision changes; no credential is persisted.
 func (s *PostgresStore) EnqueueInstallationStep(ctx context.Context, orgID, id, run string) error {
-	bound, ok := txbind.Lookup(ctx)
-	if !ok {
-		return jobs.ErrTransactionRequired
-	}
-	if bound.Pool != txbind.ControlPlane && (bound.Pool != txbind.Request || bound.OrgID != orgID) {
-		return errors.New("installation enqueue requires its organization's transaction or the control plane")
-	}
 	executor := s.getQueryExecutor(ctx)
 	var revision uint64
 	if err := executor.QueryRow(ctx, `SELECT revision FROM installations
@@ -107,9 +100,27 @@ func (s *PostgresStore) EnqueueInstallationStep(ctx context.Context, orgID, id, 
 	if err != nil {
 		return err
 	}
-	prepared, err := prepareJobEnqueue(req)
+	job, err := insertInstallationJob(ctx, executor, orgID, req)
 	if err != nil {
 		return err
+	}
+	_, err = executor.Exec(ctx, `UPDATE installations SET install_job_id=$3, install_attempts=0 WHERE org_id=$1 AND id=$2`, orgID, id, job.GetJobId())
+	return err
+}
+
+// Both host installation paths reuse the same transactional outbox producer.
+// Their callers hold the applicable canonical or module installation lock.
+func insertInstallationJob(ctx context.Context, executor QueryExecutor, orgID string, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
+	bound, ok := txbind.Lookup(ctx)
+	if !ok {
+		return nil, jobs.ErrTransactionRequired
+	}
+	if bound.Pool != txbind.ControlPlane && (bound.Pool != txbind.Request || bound.OrgID != orgID) {
+		return nil, errors.New("installation enqueue requires its organization's transaction or the control plane")
+	}
+	prepared, err := prepareJobEnqueue(req)
+	if err != nil {
+		return nil, err
 	}
 	// Setup is host work for pending consent, not an active module's enqueue.
 	// The installation lock above is its authority and survives through commit.
@@ -119,26 +130,25 @@ func (s *PostgresStore) EnqueueInstallationStep(ctx context.Context, orgID, id, 
 	// No callback or product-table access runs while that role is selected.
 	if bound.Pool == txbind.ControlPlane {
 		if _, err := executor.Exec(ctx, "SET LOCAL ROLE app_job_worker"); err != nil {
-			return err
+			return nil, err
 		}
 		if err := bindRequestScope(ctx, bound.Tx, orgID, ""); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	job, err := insertPreparedJob(ctx, executor, prepared)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if bound.Pool == txbind.ControlPlane {
 		if err := bindRequestScope(ctx, bound.Tx, "", ""); err != nil {
-			return err
+			return nil, err
 		}
 		if _, err := executor.Exec(ctx, "SET LOCAL ROLE "+controlPlaneDatabaseRole); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	_, err = executor.Exec(ctx, `UPDATE installations SET install_job_id=$3, install_attempts=0 WHERE org_id=$1 AND id=$2`, orgID, id, job.GetJobId())
-	return err
+	return job, nil
 }
 
 func (s *PostgresStore) RetryInstallation(ctx context.Context, orgID, id string) (*gen.Installation, uint64, error) {

@@ -100,6 +100,12 @@ message Installation {
   string failure_reason = 13 [(buf.validate.field).string.max_len = 512];
   // Current consent/lifecycle revision, for an explicit re-install approval.
   uint64 revision = 14;
+  // Read-only outcome of the exact durable setup attempt. This is not the
+  // canonical installation status: an acknowledged setup stays pending until
+  // a current administrator resumes the original consent and activation passes.
+  string setup_state = 15;
+  // Public recovery guidance; transport diagnostics and credentials are omitted.
+  string setup_message = 16;
 }
 
 message InstallSolutionRequest {
@@ -263,7 +269,79 @@ message ListInstallationsResponse {
 // InstallationService composes and administers installations. The headless mint
 // that turns an installation into a short-lived Work Context is
 // WorkContextService.StartInstallationTask.
+// A host review binds the shared solution approval to its live delivery and
+// explicit supporting-module consents. Return this unchanged when installing.
+message ReviewedSolutionInstall {
+  string org_id = 1;
+  string actor_id = 2;
+  string target_id = 3;
+  string target = 4;
+  string binding_id = 5;
+  string release = 6;
+  string delivery_digest = 7;
+  host.installation.v1.ConsentApproval approval = 8;
+  string installation_role = 9;
+  repeated ReviewedSupportingModule modules = 10;
+}
+
+message ReviewedSupportingModule {
+  string principal = 1;
+  string target_id = 2;
+  string target = 3;
+  string binding_id = 4;
+  string release = 5;
+  string delivery_digest = 6;
+  string installation_role = 7;
+  // Nonempty means reuse this sufficient installation without rewriting consent.
+  string reuse_installation_id = 8;
+  // The existing module owner's exact consent scope; never a machine role grant.
+  string scope = 9;
+  host.installation.v1.ConsentApproval approval = 10;
+  bool required = 11;
+}
+
+message ReviewSolutionInstallRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string target_id = 2 [(buf.validate.field).string.uuid = true];
+}
+message InstallReviewedSolutionRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  ReviewedSolutionInstall review = 2 [(buf.validate.field).required = true];
+}
+
 service InstallationService {
+  // Review one solution release and its supporting module access before consent.
+  rpc ReviewSolutionInstall(ReviewSolutionInstallRequest) returns (ReviewedSolutionInstall) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID}
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {post: "/v1/solution-installations/review" body: "*"};
+  }
+  // Consent to the exact review; retries retain its original per-owner receipts.
+  rpc InstallReviewedSolution(InstallReviewedSolutionRequest) returns (Installation) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID}
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {post: "/v1/solution-installations" body: "*"};
+  }
   // InstallSolution composes an installation in one transaction: an idempotent
   // agent Principal with its ceiling, a solution scope node, the agent's standing
   // least-privilege grant at that node, and the installation row with its owner of

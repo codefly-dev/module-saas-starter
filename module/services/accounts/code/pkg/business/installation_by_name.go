@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -60,7 +62,20 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		return nil, false, err
 	}
 	var roleID string
-	if authority != nil {
+	declaration, err := s.moduleInstallationDeclaration(ctx, available)
+	if err != nil {
+		return nil, false, err
+	}
+	if role == domain.NoInstallationRole {
+		return nil, false, domain.Refuse("none is a declaration marker, not an installation role input")
+	}
+	if declaration.InstallationRole == domain.NoInstallationRole {
+		if role != "" {
+			return nil, false, domain.Refuse("the delivered module declares no standing machine authority")
+		}
+	} else if declaration.InstallationRole != "" {
+		return nil, false, domain.NotNow("INSTALLATION_MODULE_ROLE_UNSUPPORTED: module %q declares role %q; the module standing-role owner must support that declaration before installation", declaration.Principal, declaration.InstallationRole)
+	} else if authority != nil {
 		roleID, err = s.solutionRoleID(ctx, orgID, available.TargetID, available.RouteAlias, authority, role)
 	} else {
 		roleID, err = s.organizationRoleNamed(ctx, orgID, role)
@@ -83,6 +98,29 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		return nil, false, err
 	}
 	return installation, true, nil
+}
+
+// The shared paired delivery owns the selector. An unconfigured legacy host
+// retains its explicit caller-role path; it cannot invent a declaration.
+func (s *Service) moduleInstallationDeclaration(ctx context.Context, target *AvailableSolutionTarget) (domain.Module, error) {
+	if target.Kind != "module" {
+		return domain.Module{}, nil
+	}
+	core, err := s.AuthorityCore()
+	if errors.Is(err, ErrAuthorityCoreUnconfigured) {
+		return domain.Module{}, nil
+	}
+	if err != nil {
+		return domain.Module{}, err
+	}
+	m, err := core.Composed(ctx, target.RouteAlias)
+	if err != nil {
+		return m, err
+	}
+	if m.Kind != domain.KindModule || m.Generation != target.AppliedGeneration {
+		return m, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: the paired module declaration is not current")
+	}
+	return m, nil
 }
 
 // availableTargetNamed is the organisation's catalogue entry whose route alias
@@ -108,8 +146,19 @@ func (s *Service) availableTargetNamed(ctx context.Context, orgID, target string
 }
 
 // heldTargetInstallation is the organisation's installation of targetID that is
-// not revoked, read through ListInstallations page by page.
+// not revoked, for a target the catalogue says it holds.
 func (s *Service) heldTargetInstallation(ctx context.Context, orgID, targetID string) (*gen.Installation, error) {
+	installation, err := s.findHeldTargetInstallation(ctx, orgID, targetID)
+	if err == nil && installation == nil {
+		return nil, fmt.Errorf("the catalogue says organization %s holds target %s, and its installations hold none that is not revoked", orgID, targetID)
+	}
+	return installation, err
+}
+
+// findHeldTargetInstallation is the organisation's installation of targetID
+// that is not revoked, read through ListInstallations page by page; nil when
+// it holds none.
+func (s *Service) findHeldTargetInstallation(ctx context.Context, orgID, targetID string) (*gen.Installation, error) {
 	token := ""
 	for page := 0; page < activeTargetInstallationPageLimit; page++ {
 		resp, err := s.ListInstallations(ctx, &gen.ListInstallationsRequest{OrgId: orgID, PageSize: listInstallationsMaxPageSize, PageToken: token})
@@ -123,7 +172,7 @@ func (s *Service) heldTargetInstallation(ctx context.Context, orgID, targetID st
 			}
 		}
 		if token = resp.GetNextPageToken(); token == "" {
-			return nil, fmt.Errorf("the catalogue says organization %s holds target %s, and its installations hold none that is not revoked", orgID, targetID)
+			return nil, nil
 		}
 	}
 	return nil, fmt.Errorf("installations of organization %s did not end within %d pages", orgID, activeTargetInstallationPageLimit)

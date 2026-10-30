@@ -22,6 +22,14 @@ import (
 // installation, and the solution's root scope path.
 func installFixture(t *testing.T, resourceKind, action string, configure ...func(*business.InstallSolutionParams)) (orgID, ownerID, roleID string, installation *gen.Installation, rootPath string) {
 	t.Helper()
+	return installFixtureKind(t, business.SolutionDeclaredKindSolution, resourceKind, action, configure...)
+}
+
+// installFixtureKind is installFixture for a target delivered as kind: a
+// module's installation is the module half the store's entitlement read
+// answers for.
+func installFixtureKind(t *testing.T, kind business.SolutionDeclaredKind, resourceKind, action string, configure ...func(*business.InstallSolutionParams)) (orgID, ownerID, roleID string, installation *gen.Installation, rootPath string) {
+	t.Helper()
 	ownerID = seedUser(t)
 	seedHumanPrincipal(t, ownerID, "Installer Admin")
 	orgID = seedOrg(t, ownerID)
@@ -44,7 +52,7 @@ func installFixture(t *testing.T, resourceKind, action string, configure ...func
 	// and this package shares one database.
 	alias := uniqueAlias("acme-solution")
 	binding := "acme.test." + alias
-	targetID := declarePresence(t, binding, alias)
+	targetID := declarePresenceKind(t, binding, alias, kind)
 	var revision uint64
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		var err error
@@ -66,6 +74,9 @@ func installFixture(t *testing.T, resourceKind, action string, configure ...func
 			GrantedBy:         ownerID,
 			RegistryBindingID: binding,
 			EnvelopeRevision:  revision,
+		}
+		if kind == business.SolutionDeclaredKindModule {
+			params.Kind = string(kind)
 		}
 		for _, apply := range configure {
 			apply(params)

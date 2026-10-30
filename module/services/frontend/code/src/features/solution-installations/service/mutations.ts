@@ -1,8 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { ReviewedSolutionInstall } from "@/gen/saas/accounts/v1/installations_pb";
+import { useAuth } from "@/lib/auth";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 import { parseList } from "../model/installations";
 import type { InstallSolutionValues } from "../model/schemas";
 import { solutionInstallationKeys } from "./queries";
+import { acknowledgeTeamChoices } from "./team-choices";
 
 /**
  * Installs one available target. The target is the immutable identity the
@@ -10,7 +13,7 @@ import { solutionInstallationKeys } from "./queries";
  * empty so the host records the calling administrator, which it requires to be
  * a current one.
  */
-export function useInstallSolution(orgId: string) {
+export function useInstallModule(orgId: string) {
 	const service = useInstallationService();
 	const queryClient = useQueryClient();
 	return useMutation({
@@ -123,4 +126,25 @@ function invalidate(
 			queryKey: solutionInstallationKeys.installed(orgId),
 		}),
 	]);
+}
+
+/** Submit the original server review, including each supporting consent. */
+export function useInstallReviewedSolution(orgId: string) {
+	const service = useInstallationService();
+	const { user } = useAuth();
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (review: ReviewedSolutionInstall) =>
+			service.installReviewedSolution({ orgId, review }),
+		onSuccess: (installation, review) =>
+			acknowledgeTeamChoices(
+				queryClient,
+				user?.id ?? "",
+				orgId,
+				review.targetId,
+				review.approval?.operationId ?? "",
+				installation.id,
+			),
+		onSettled: () => invalidate(queryClient, orgId),
+	});
 }

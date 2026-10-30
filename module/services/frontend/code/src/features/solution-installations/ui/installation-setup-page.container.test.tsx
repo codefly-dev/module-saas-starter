@@ -85,6 +85,15 @@ const docsInstallation = {
 	readiness: { ready: true, unmet: [] },
 };
 
+it("uses shared solution roles without offering a legacy host grant", async () => {
+	const grants = serve({ installations: [installation({ rootScopePath: "", readiness: { ready: true, unmet: [] } })] });
+	render();
+	expect(await screen.findByText(/Assign people and teams using the solution roles above/)).toBeTruthy();
+	expect(screen.queryByText("Team access on this host")).toBeNull();
+	expect(screen.queryByRole("button", { name: "Grant a team" })).toBeNull();
+	expect(grants).toHaveLength(0);
+});
+
 const roles = {
 	roles: [
 		{

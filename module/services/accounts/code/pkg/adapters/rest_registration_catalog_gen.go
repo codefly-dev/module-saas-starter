@@ -198,6 +198,8 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/roles":                           {},
 	"POST /v1/scope-grants":                    {},
 	"POST /v1/scope-nodes":                     {},
+	"POST /v1/solution-installations":          {},
+	"POST /v1/solution-installations/review":   {},
 	"POST /v1/sso/disable":                     {},
 	"POST /v1/sso/setup":                       {},
 	"POST /v1/user/settings":                   {},

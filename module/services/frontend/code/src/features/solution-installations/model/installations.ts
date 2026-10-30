@@ -143,6 +143,7 @@ export interface TeamGrantRow {
 export interface InstalledRow {
 	installationId: string;
 	targetId: string;
+	hasHostScopeRoot: boolean;
 	solution: FactView;
 	revision: FactView;
 	health: FactView;
@@ -204,6 +205,7 @@ export function installedRows(
 			grantedTeams,
 			inheritedTeams,
 			readiness,
+			rootScopePath,
 		}) => {
 			if (!installation || installation.status === InstallationStatus.REVOKED)
 				return [];
@@ -211,6 +213,7 @@ export function installedRows(
 				{
 					installationId: installation.id,
 					targetId: installation.targetId,
+					hasHostScopeRoot: Boolean(rootScopePath),
 					solution: target
 						? { kind: "value", text: target.routeAlias }
 						: NOT_OFFERED,
@@ -224,7 +227,7 @@ export function installedRows(
 					health: healthView(health),
 					status: installation.status,
 					lifecycle: installationStatusView(installation.status),
-					failureReason: installation.failureReason,
+					failureReason: installation.setupMessage || installation.failureReason,
 					installedAt: installation.createdAt
 						? timestampDate(installation.createdAt).toISOString()
 						: undefined,
