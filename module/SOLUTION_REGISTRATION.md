@@ -115,11 +115,13 @@ authority — the principal and its standing grant — withdraws that organizati
 viewers from the projections, and refuses that organization's traffic at the
 solution proxy. The server render of `/s/{id}` still reads the registry alone,
 because this origin cannot read a verified viewer server-side without rotating a
-refresh token per render; its payload carries a nav title and a manifest URL the
-public asset surface already serves. What the page mounts — the remote, its
+refresh token per render; its payload carries the record's nav title, manifest
+URL, declared sources and dashboard declaration — the bundle the public asset
+surface already serves without a credential. What the page mounts — the remote, its
 Setup and Dashboard tabs — waits for the viewer's own navigation projection and
-appears only when that projection names the page; a viewer it does not name gets
-the page's not-found answer, the same as for an id nothing is registered under.
+appears only when that projection names the page; a viewer it does not name sees
+the page's not-found state, in a 200 that still carries the public declaration
+above, where an id nothing is registered under is a 404.
 Every call the page makes still goes through the gated proxy. Other
 tenants are unaffected either way, because installation state is per-org.
 

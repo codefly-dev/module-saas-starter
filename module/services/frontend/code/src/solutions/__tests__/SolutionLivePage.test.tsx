@@ -137,3 +137,17 @@ it("gives a module page to the granted member and the not-found answer to anothe
 		expect(screen.queryByText("Solution not found") !== null).toBe(!granted);
 	}
 });
+
+// Entitled, but the installation does not serve: the viewer is told it is
+// unavailable now, not that it is not theirs.
+it("says an entitled page whose installation is unhealthy is not available right now", () => {
+	state.current = [{ id: "example", assetVersion: "old", available: false }];
+	render(
+		<SolutionLivePage id="example" assetVersion="old" denied={<p>Solution not found</p>}>
+			remote page
+		</SolutionLivePage>,
+	);
+	expect(screen.queryByText("This page is not available right now.")).not.toBeNull();
+	expect(screen.queryByText("Solution not found")).toBeNull();
+	expect(screen.queryByText("remote page")).toBeNull();
+});

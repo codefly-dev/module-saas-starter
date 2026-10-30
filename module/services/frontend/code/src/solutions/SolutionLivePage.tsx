@@ -15,8 +15,14 @@ import {
  * its target and who holds a grant there. The server render cannot decide that
  * — it holds no verified viewer (SOLUTION_REGISTRATION.md §4) — so nothing the
  * page mounts (the remote, its Setup tab, its dashboard) is rendered until the
- * projection names it, and a viewer it never names sees `denied`: the same
- * answer as an id nothing is registered under, so neither discloses the other.
+ * projection names it, and a viewer it never names sees `denied`.
+ *
+ * This withholds what the page mounts, not that the page exists. An id nothing
+ * is registered under is a real 404; a registered id the viewer is not entitled
+ * to is a 200 whose server render already carries the record's title, manifest
+ * URL, declared sources and dashboard declaration — the same public bundle the
+ * asset surface serves without a credential. Its data stays behind the gated
+ * proxy and the authority hop, not behind this component.
  */
 export function SolutionLivePage({
 	id,

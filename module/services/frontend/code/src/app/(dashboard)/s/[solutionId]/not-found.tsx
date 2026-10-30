@@ -5,9 +5,11 @@ import { buttonVariants } from "@/shared/ui";
 
 /**
  * A solution slug the registry does not know: none registered under that id, or
- * one registered but not serving. It is also what a viewer sees for a page they
- * are not entitled to (SolutionLivePage's `denied`), so an id answers the same
- * whether it exists for someone else or not at all. Rendered inside the product shell, so the
+ * one registered but not serving. The same state is also shown to a viewer
+ * for a page they are not entitled to (SolutionLivePage's `denied`), but that
+ * answer is not indistinguishable: it arrives in a 200 whose server render
+ * carries the registered record's public declaration, where an unknown id is a
+ * 404. Rendered inside the product shell, so the
  * navigation — which lists every solution that IS available — stays in reach.
  * A registry this host cannot read is not this page: that is an error, because
  * the solution may well exist.

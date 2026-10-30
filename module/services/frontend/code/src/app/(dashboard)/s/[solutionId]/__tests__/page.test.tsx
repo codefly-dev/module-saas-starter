@@ -22,10 +22,12 @@ vi.mock("@/solutions/SolutionDashboard", () => ({
 vi.mock("@/features/solution-installations", () => ({
 	SolutionSetupPanel: ({ target }: { target: string }) => <div data-testid="setup">{target}</div>,
 }));
-// The live delivery gate has its own polling and router tests. This page test
-// exercises only the server page's dashboard/tab placement.
+// The live delivery gate has its own polling and router tests. Here it stands
+// in for the viewer's projection: entitled renders the page, not entitled
+// renders whatever the page passed as `denied`.
+const live = vi.hoisted(() => ({ entitled: true }));
 vi.mock("@/solutions/SolutionLivePage", () => ({
-	SolutionLivePage: ({ children }: { children: ReactNode }) => <>{children}</>,
+	SolutionLivePage: ({ children, denied }: { children: ReactNode; denied?: ReactNode }) => <>{live.entitled ? children : denied}</>,
 }));
 // The page wrapper refreshes the App Router when a delivered generation
 // changes. These tests render the server page directly, outside Next's router
@@ -36,7 +38,10 @@ vi.mock("next/navigation", () => ({
 
 import SolutionPage from "../page";
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	live.entitled = true;
+});
 
 const solution = (dashboard?: object, kind: "module" | "solution" = "solution") => ({
 	id: "example-solution",
@@ -100,5 +105,16 @@ describe("the solution page", () => {
 		expect(screen.getByRole("tab", { name: "App" })).toBeTruthy();
 		expect(screen.queryByRole("tab", { name: "Setup" })).toBeNull();
 		expect(screen.getByTestId("remote")).toBeTruthy();
+	});
+
+	// A viewer the projection does not list gets the page's not-found state,
+	// and nothing the page mounts.
+	it("hands the live gate the not-found state for a viewer it does not list", async () => {
+		live.entitled = false;
+		findSolution.mockResolvedValue(solution());
+		await renderPage();
+		expect(screen.getByText("Solution not found")).toBeTruthy();
+		expect(screen.queryByTestId("remote")).toBeNull();
+		expect(screen.queryByRole("tab", { name: "Setup" })).toBeNull();
 	});
 });
