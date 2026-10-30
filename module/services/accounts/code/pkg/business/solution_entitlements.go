@@ -113,7 +113,16 @@ func (s *Service) ListSolutionEntitlements(ctx context.Context, req *gen.ListSol
 	if err != nil {
 		return nil, w.Wrapf(err, "cannot read canonical solution entitlements")
 	}
+	listed := map[string]bool{}
+	for _, entry := range entitlements {
+		listed[entry.GetInstallationId()] = true
+	}
 	for _, entry := range canonical {
+		// A module page's installation may be listed by both halves: by a
+		// team's grant at its root, and by a role its installation grants.
+		if listed[entry.GetInstallationId()] {
+			continue
+		}
 		if req.GetPageToken() == "" || entry.GetInstallationId() > req.GetPageToken() {
 			entitlements = append(entitlements, entry)
 		}

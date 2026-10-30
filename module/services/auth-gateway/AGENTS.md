@@ -44,9 +44,13 @@ publisher, revision, declared target and kind, status (`active`, `pending`,
 its page from — built here (`solutionManifest`) from the `frontend` block of
 the applied presence, which accounts copies onto the record's frontend half,
 plus the host's own constants: the asset path, the backend alias, the
-capability path. It exposes no address: where a solution's backend is reached
-is resolved in this process and stays here. The frontend reads it with the
-cluster-internal credential.
+capability path. A record whose applied manifest this gateway dropped carries
+`refusal`: the applied generation and the class — rejected by the parser, or
+naming another binding, generation or alias. The full reason goes to the log
+once at WARN, and again only when it changes. A later readable generation clears
+it. It exposes no address: where a solution's backend is reached is resolved in
+this process and stays here, which is why `refusal` never carries the parser's
+text. The frontend reads it with the cluster-internal credential.
 
 The route snapshot also carries `authority.principal` from that exact applied
 manifest, beside its endpoints and registration. An alias is not a principal:

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/solutionhost"
@@ -14,6 +17,34 @@ import (
 // and only when the registration, the applied generation and the parsed
 // manifest name the same binding and generation.
 func appliedManifest(binding *accountsv1.SolutionHostBindingState) (*solutionhost.ModuleManifest, bool) {
+	manifest, refusal := readAppliedManifest(binding)
+	return manifest, manifest != nil && refusal == nil
+}
+
+// The classes of refusal. The class is what the operator snapshot projects; the
+// full reason, which can quote what the manifest carries (an endpoint address
+// among it), is logged and never projected.
+var (
+	errManifestUnparsable = errors.New("the applied manifest is rejected by this gateway's parser")
+	errManifestMismatch   = errors.New("the applied manifest names another binding, generation or alias than its registration")
+)
+
+// refusalClass is the projectable class of a readAppliedManifest refusal.
+func refusalClass(refusal error) string {
+	for _, class := range []error{errManifestUnparsable, errManifestMismatch} {
+		if errors.Is(refusal, class) {
+			return class.Error()
+		}
+	}
+	return "the applied manifest is refused"
+}
+
+// readAppliedManifest tells the two reasons for no manifest apart. Nil and nil:
+// nothing applied matches the registration yet, which reconciliation settles on
+// its own. A refusal: a matching generation WAS applied and this gateway cannot
+// use its document — the parser rejects it, or it names another binding,
+// generation or alias. A refusal does not settle itself, so the caller reports it.
+func readAppliedManifest(binding *accountsv1.SolutionHostBindingState) (*solutionhost.ModuleManifest, error) {
 	applied := binding.GetApplied()
 	record := binding.GetRegistration()
 	declared := record.GetDeclared()
@@ -21,14 +52,17 @@ func appliedManifest(binding *accountsv1.SolutionHostBindingState) (*solutionhos
 		declared.GetBindingId() != binding.GetBindingId() ||
 		declared.GetGeneration() != applied.GetGeneration().GetGeneration() ||
 		applied.GetSolutionId() != record.GetSolutionId() || record.GetTombstonedAt() != nil {
-		return nil, false
+		return nil, nil
 	}
 	manifest, err := solutionhost.Parse([]byte(applied.GetGeneration().GetDocument()))
-	if err != nil || manifest.Binding != declared.GetBindingId() || manifest.Generation != declared.GetGeneration() ||
-		manifest.Alias != record.GetSolutionId() {
-		return nil, false
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errManifestUnparsable, err)
 	}
-	return manifest, true
+	if manifest.Binding != declared.GetBindingId() || manifest.Generation != declared.GetGeneration() ||
+		manifest.Alias != record.GetSolutionId() {
+		return nil, fmt.Errorf("%w: it names binding %q generation %d alias %q", errManifestMismatch, manifest.Binding, manifest.Generation, manifest.Alias)
+	}
+	return manifest, nil
 }
 
 // routeGatewayAPIs are the APIs a declared route is served on: the REST surface

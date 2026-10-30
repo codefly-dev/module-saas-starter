@@ -60,6 +60,18 @@ type solutionRegistrySnapshot struct {
 	routeEndpoints map[string][]moduleEndpoint
 	// principals come from the same applied manifest as the route endpoints.
 	principals map[string]string
+	// refusals are, per alias, why its applied manifest was dropped
+	// (readAppliedManifest). The registration stays; nothing routes on it.
+	refusals map[string]manifestRefusal
+}
+
+// manifestRefusal is why one applied generation's manifest was not used.
+// Class is projected to the operator snapshot; Reason, the full text, is
+// logged only.
+type manifestRefusal struct {
+	Generation uint64
+	Class      string
+	Reason     string
 }
 
 // solutionRegistryClient is the registry surface used by the cache and handlers.
@@ -97,7 +109,7 @@ func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.Lis
 }
 
 func snapshotFromAppliedBindings(resp *accountsv1.ListSolutionRegistrationsResponse, bindings *accountsv1.ListSolutionHostBindingsResponse) *solutionRegistrySnapshot {
-	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, routeEndpoints: make(map[string][]moduleEndpoint), principals: make(map[string]string)}
+	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, routeEndpoints: make(map[string][]moduleEndpoint), principals: make(map[string]string), refusals: make(map[string]manifestRefusal)}
 	for _, record := range resp.GetRegistrations() {
 		for _, binding := range bindings.GetBindings() {
 			// These reads may straddle reconciliation. Never attach a successor's
@@ -105,8 +117,14 @@ func snapshotFromAppliedBindings(resp *accountsv1.ListSolutionRegistrationsRespo
 			if !proto.Equal(record, binding.GetRegistration()) {
 				continue
 			}
-			manifest, ok := appliedManifest(binding)
-			if !ok {
+			manifest, refusal := readAppliedManifest(binding)
+			if refusal != nil {
+				out.refusals[record.GetSolutionId()] = manifestRefusal{
+					Generation: binding.GetApplied().GetGeneration().GetGeneration(), Class: refusalClass(refusal), Reason: refusal.Error(),
+				}
+				continue
+			}
+			if manifest == nil {
 				continue
 			}
 			if manifest.Authority != nil {
@@ -186,6 +204,8 @@ type solutionRegistryCache struct {
 	// record with another's address.
 	upstreams  map[string]*url.URL
 	principals map[string]string
+	// manifestRefusals is the snapshot's dropped manifests, for the diagnostic.
+	manifestRefusals map[string]manifestRefusal
 	// routeRefusals remembers, per alias, the last refusal reason logged.
 	routeRefusals sync.Map
 	revision      int64
@@ -295,6 +315,7 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 	c.records = records
 	c.upstreams = upstreams
 	c.principals = maps.Clone(resp.principals)
+	c.noteManifestRefusals(resp.refusals)
 	c.frontends = frontends
 	c.revision = resp.GetRegistryRevision()
 	c.loaded = true
@@ -374,6 +395,19 @@ func (c *solutionRegistryCache) noteRouteRefusal(alias, reason string) {
 		return
 	}
 	log.Printf("solution registry: %q is not routed: %s", alias, reason)
+}
+
+// noteManifestRefusals holds the snapshot's dropped manifests and logs each one
+// when it first appears or its reason changes: a dropped manifest leaves its
+// registration declared and unroutable, and must never be a silent fact.
+// The caller holds c.mu.
+func (c *solutionRegistryCache) noteManifestRefusals(refusals map[string]manifestRefusal) {
+	for alias, refusal := range refusals {
+		if previous, seen := c.manifestRefusals[alias]; !seen || previous != refusal {
+			log.Printf("WARN: solution registry: applied manifest dropped: alias=%q generation=%d reason=%q", alias, refusal.Generation, refusal.Reason)
+		}
+	}
+	c.manifestRefusals = maps.Clone(refusals)
 }
 
 // noteRouteRouted forgets an alias's last refusal, so a later one is logged.
@@ -651,8 +685,9 @@ func solutionRecordActive(record *accountsv1.SolutionRegistration) bool {
 }
 
 // snapshot returns the cached records ordered by id, along with the registry
-// revision they were read at and whether a snapshot has ever loaded.
-func (c *solutionRegistryCache) snapshot() ([]*accountsv1.SolutionRegistration, int64, bool) {
+// revision they were read at, whether a snapshot has ever loaded, and the
+// manifests the same read dropped.
+func (c *solutionRegistryCache) snapshot() ([]*accountsv1.SolutionRegistration, int64, bool, map[string]manifestRefusal) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	records := make([]*accountsv1.SolutionRegistration, 0, len(c.records))
@@ -660,7 +695,7 @@ func (c *solutionRegistryCache) snapshot() ([]*accountsv1.SolutionRegistration, 
 		records = append(records, record)
 	}
 	sortSolutionRecords(records)
-	return records, c.revision, c.loaded
+	return records, c.revision, c.loaded, c.manifestRefusals
 }
 
 func sortSolutionRecords(records []*accountsv1.SolutionRegistration) {
