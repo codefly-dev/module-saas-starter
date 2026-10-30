@@ -24,13 +24,13 @@ import {
 import {
 	assertMatchingOffer,
 	moduleConsentText,
-	offerScopeText,
 } from "../model/install-review";
 import { hostRefusal, releaseText } from "../model/installations";
 import {
 	choicesMatch,
 	useInstallationTeamChoices,
 } from "../service/team-choices";
+import { DeclaredAccess } from "./declared-access";
 import { InstallationTeamChoices } from "./installation-team-choices";
 
 const offers = createClient(OfferService, apiTransport);
@@ -81,9 +81,6 @@ export function InstallSolutionDialog({
 		refetchOnReconnect: false,
 	});
 	const data = !review.isError && !review.isFetching ? review.data : undefined;
-	const machineRole = data?.offer.roles.find(
-		(role) => role.name === data.consent.installationRole,
-	);
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
 			<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[640px]">
@@ -101,48 +98,11 @@ export function InstallSolutionDialog({
 				{review.isError && <p role="alert">{hostRefusal(review.error)}</p>}
 				{data && (
 					<div className="space-y-4 text-sm">
-						<section aria-label="Solution access" className="space-y-2">
-							<h3 className="font-medium">Solution access</h3>
-							{data.consent.installationRole === "none" ? (
-								<p>
-									This solution receives no standing machine access. Setup
-									receives only temporary permission to complete this
-									installation.
-								</p>
-							) : (
-								<>
-									<p>
-										The solution declares its installation access as “
-										{machineRole?.name}”.
-									</p>
-									<ul className="list-disc pl-5">
-										{machineRole?.scopes.map((scope, index) => (
-											<li key={index}>{offerScopeText(scope)}</li>
-										))}
-									</ul>
-									{machineRole?.scopes.length === 0 && (
-										<p>This declared role grants no data access.</p>
-									)}
-								</>
-							)}
-							{data.offer.ceiling.length > 0 && (
-								<>
-									<p>
-										Declared operations, still subject to the caller’s assigned
-										access:
-									</p>
-									<ul className="list-disc pl-5">
-										{data.offer.ceiling.map((binding) => (
-											<li key={binding.binding}>
-												{binding.module}:{" "}
-												{binding.scopes.map(offerScopeText).join("; ") ||
-													"no data access"}
-											</li>
-										))}
-									</ul>
-								</>
-							)}
-						</section>
+						<DeclaredAccess
+							subject="solution"
+							installationRole={data.consent.installationRole}
+							offer={data.offer}
+						/>
 						<section aria-label="Supporting modules" className="space-y-3">
 							<h3 className="font-medium">Supporting modules</h3>
 							{data.modules.length === 0 && (
@@ -171,8 +131,8 @@ export function InstallSolutionDialog({
 													<p>No standing machine access is granted.</p>
 												)}
 											<ul className="list-disc pl-5">
-												{access.map((line, index) => (
-													<li key={index}>{line}</li>
+												{access.map((line) => (
+													<li key={line}>{line}</li>
 												))}
 											</ul>
 										</>

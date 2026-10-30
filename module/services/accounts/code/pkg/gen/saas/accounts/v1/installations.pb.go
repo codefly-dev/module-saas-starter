@@ -566,7 +566,10 @@ type InstallSolutionRequest struct {
 	RootScopeLabel string `protobuf:"bytes,6,opt,name=root_scope_label,json=rootScopeLabel,proto3" json:"root_scope_label,omitempty"`
 	// The least-privilege role granted to the agent at the root node. This is
 	// deliberately NOT the full "<namespace>:catalog" role; widening is a separate,
-	// audited admin action.
+	// audited admin action. Empty when the delivered module declares its own
+	// installation role: the host selects a named one, and "none" grants the
+	// agent no standing role at all. A role given for "none" is refused, and an
+	// empty one is refused for a target that declares no installation role.
 	RoleId string `protobuf:"bytes,7,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
 	// The accountable human of record. Must be a current org admin. Empty defaults
 	// to the calling admin.
@@ -2650,14 +2653,14 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\vsetup_state\x18\x0f \x01(\tR\n" +
 	"setupState\x12#\n" +
 	"\rsetup_message\x18\x10 \x01(\tR\fsetupMessageB\r\n" +
-	"\v_revoked_atJ\x04\b\x04\x10\x05R\x13solution_identifier\"\xb9\x05\n" +
+	"\v_revoked_atJ\x04\b\x04\x10\x05R\x13solution_identifier\"\xbc\x05\n" +
 	"\x16InstallSolutionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x125\n" +
 	"\x10agent_identifier\x18\x02 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x0fagentIdentifier\x12+\n" +
 	"\fdisplay_name\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\vdisplayName\x122\n" +
-	"\x10root_scope_label\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\x0erootScopeLabel\x12!\n" +
-	"\arole_id\x18\a \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x129\n" +
+	"\x10root_scope_label\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\x0erootScopeLabel\x12$\n" +
+	"\arole_id\x18\a \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06roleId\x129\n" +
 	"\x12owner_principal_id\x18\b \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x10ownerPrincipalId\x12D\n" +
 	"\x16co_owner_principal_ids\x18\t \x03(\tB\x0f\xbaH\f\x92\x01\t\x10 \"\x05r\x03\xb0\x01\x01R\x13coOwnerPrincipalIds\x12<\n" +
 	"\x11allowed_audiences\x18\n" +

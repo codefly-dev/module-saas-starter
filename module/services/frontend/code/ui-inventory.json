@@ -5132,6 +5132,40 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/solution-installations/ui/declared-access.tsx",
+      "imports": [
+        "@/gen/host/installation/v1/installation_pb",
+        "../model/install-review"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "States an installation's declared machine access and call ceiling from the authority's offer, once, for both the solution review and the module page review.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/install-module-page-dialog.tsx",
+      "imports": [
+        "@connectrpc/connect",
+        "@tanstack/react-query",
+        "react",
+        "@/gen/host/installation/v1/installation_pb",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/lib/connect/transport",
+        "@/shared/ui",
+        "../model/install-review",
+        "../model/installations",
+        "./declared-access"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Reviews a module page that declares roles from the authority's offer and installs it with no agent role; its roles take teams in Setup. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/solution-installations/ui/install-module-dialog.tsx",
       "imports": [
         "@/shared/ui",

@@ -463,7 +463,15 @@ not replace the cached operation; retries retain it, and Review again explicitly
 requests new consent. Pending installation rows offer current-person continuation.
 Supporting modules remain visible on `/admin/modules` and in installation
 detail. That administrator path remains available, but is not a step in normal
-solution installation.
+solution installation. There, which form Install opens is the authority's
+answer, not the target's kind (`useRolesDeclared`): a module page whose offer
+names roles is reviewed from that offer (its machine access and what each role
+permits), installed through `InstallSolution` with no agent role, because its
+signed `installation_role` selects one (or none), and then opened at its Setup
+page, where each role takes a team. The shared core installs only solutions, so
+a module page stays this host's installation and carries no consent tuple. A
+module whose offer the authority refuses (it declares no roles) keeps the
+agent-role form.
 
 The only installer configuration is a team for each role the solution's offer
 declares: an existing organization team, or one created inline through

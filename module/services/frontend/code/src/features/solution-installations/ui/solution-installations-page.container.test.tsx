@@ -28,7 +28,8 @@ const session = vi.hoisted(() => ({
 	platformRole: undefined as PlatformRole | undefined,
 	switchOrganization: async () => {},
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+const push = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => session }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -55,6 +56,8 @@ afterEach(() => {
 		expect(actual).toEqual(expected);
 });
 
+const REVIEW_OFFER =
+	"http://localhost:3000/host.installation.v1.OfferService/ReviewOffer";
 const EXPENSES_TARGET = "aaaaaaaa-0000-4000-8000-000000000001";
 const LEDGER_TARGET = "aaaaaaaa-0000-4000-8000-000000000002";
 // The consent the page sends: the reviewed target and generation, a zero
@@ -221,6 +224,17 @@ function serve({
 			reads.teams++;
 			return HttpResponse.json(teamsBody);
 		}),
+		// A module that declares no roles: the authority refuses its offer.
+		http.post(REVIEW_OFFER, () =>
+			HttpResponse.json(
+				{
+					code: "not_found",
+					message:
+						"not a composed solution or a module page declaring roles; a module is installed by composition",
+				},
+				{ status: 404 },
+			),
+		),
 	);
 	return reads;
 }
@@ -1551,6 +1565,145 @@ describe("accessible validation and host text", () => {
 		);
 		expect(document.querySelector("img, script")).toBeNull();
 		expect(toast.success).not.toHaveBeenCalled();
+	});
+});
+
+describe("installing a module: the form follows its declared roles, not its kind", () => {
+	it("opens the agent-role form for a module whose offer the authority refuses", async () => {
+		let asked: unknown;
+		serve();
+		server.use(
+			http.post(REVIEW_OFFER, async ({ request }) => {
+				asked = await request.json();
+				return HttpResponse.json(
+					{ code: "not_found", message: "declares no roles" },
+					{ status: 404 },
+				);
+			}),
+		);
+		renderInApp(<Page />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Install ledger" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		expect(
+			within(dialog).getByRole("combobox", { name: "Agent role" }),
+		).toBeTruthy();
+		expect(within(dialog).queryByText("Module access")).toBeNull();
+		expect(asked).toEqual({ organizationId: "org-1", target: "ledger" });
+	});
+
+	it("reviews a module page that declares roles, installs it with no agent role, and opens its Set up", async () => {
+		let installed: unknown;
+		serve();
+		server.use(
+			http.post(REVIEW_OFFER, () =>
+				HttpResponse.json({
+					target: "ledger",
+					installationRole: "none",
+					roles: [
+						{
+							name: "installer",
+							scopes: [{ resourceKind: "entry", actions: ["write"] }],
+						},
+						{ name: "viewer", scopes: [] },
+					],
+				}),
+			),
+			http.post(
+				rpc("InstallationService", "InstallSolution"),
+				async ({ request }) => {
+					installed = await request.json();
+					return HttpResponse.json({
+						id: "bbbbbbbb-0000-4000-8000-000000000002",
+						orgId: "org-1",
+						targetId: LEDGER_TARGET,
+						status: "INSTALLATION_STATUS_ACTIVE",
+					});
+				},
+			),
+		);
+		renderInApp(<Page />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Install ledger" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		await within(dialog).findByText("Module access");
+		// The module's own declaration decides its standing access; nothing
+		// asks for an organisation role.
+		expect(
+			within(dialog).getByText(
+				"This module receives no standing machine access.",
+			),
+		).toBeTruthy();
+		expect(
+			within(dialog).queryByRole("combobox", { name: "Agent role" }),
+		).toBeNull();
+		const roles = within(dialog).getByRole("region", { name: "Roles" });
+		expect(within(roles).getByText(/installer:/)).toBeTruthy();
+		expect(
+			within(roles).getByText("viewer: No data access declared."),
+		).toBeTruthy();
+
+		const install = within(dialog).getByRole("button", {
+			name: "Install",
+		}) as HTMLButtonElement;
+		expect(install.disabled).toBe(true);
+		fireEvent.click(within(dialog).getByRole("checkbox"));
+		expect(install.disabled).toBe(false);
+		fireEvent.click(install);
+
+		await waitFor(() => expect(installed).toBeDefined());
+		expect(installed).toEqual({
+			orgId: "org-1",
+			targetId: LEDGER_TARGET,
+			approval: LEDGER_APPROVAL,
+			agentIdentifier: "acme/ledger:0.9.1",
+		});
+		await waitFor(() =>
+			expect(push).toHaveBeenCalledWith(
+				"/admin/solutions/bbbbbbbb-0000-4000-8000-000000000002",
+			),
+		);
+	});
+
+	it("keeps a long role label inside the form so Install stays in view", async () => {
+		const long = {
+			id: "cccccccc-0000-4000-8000-000000000003",
+			name: "Module viewer",
+			orgId: "org-1",
+			permissions: Array.from({ length: 12 }, (_, index) => ({
+				resource: `resource-with-a-long-name-${index}`,
+				action: "read",
+			})),
+		};
+		const label = `Module viewer — ${long.permissions
+			.map((p) => `${p.resource}:${p.action}`)
+			.join(", ")}`;
+		serve({ rolesBody: { roles: [...roles.roles, long] } });
+		renderInApp(<Page />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Install ledger" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		await choose(dialog, "Agent role", label);
+		const trigger = within(dialog).getByRole("combobox", {
+			name: "Agent role",
+		});
+		// happy-dom computes no layout, so this holds the CSS that bounds it:
+		// the form may shrink inside the dialog's grid, the trigger may shrink
+		// inside the form, and the label truncates with its full text on hover.
+		expect(trigger.closest("form")?.classList.contains("min-w-0")).toBe(true);
+		expect(trigger.classList.contains("min-w-0")).toBe(true);
+		expect(trigger.getAttribute("title")).toBe(label);
+		const shown = within(trigger).getByText(label);
+		expect(shown.classList.contains("truncate")).toBe(true);
+		expect(shown.closest('[data-slot="select-value"]')?.classList).toContain(
+			"min-w-0",
+		);
+		expect(
+			within(dialog).getByRole("button", { name: "Install" }).closest("form"),
+		).toBe(trigger.closest("form"));
 	});
 });
 

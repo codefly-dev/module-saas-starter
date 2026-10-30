@@ -208,7 +208,7 @@ func TestDynamicInstallationTenancyFiltersBeforePaginationAndInstall(t *testing.
 	require.Empty(t, next)
 	_, err = s.prepareInstallation(context.Background(), &InstallSolutionParams{OrgID: "org-a", TargetID: "1"})
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
-	_, err = s.prepareInstallation(context.Background(), &InstallSolutionParams{OrgID: "org-b", TargetID: "1"})
+	_, err = s.prepareInstallation(context.Background(), &InstallSolutionParams{OrgID: "org-b", TargetID: "1", RoleID: "role-id"})
 	require.NoError(t, err)
 }
 

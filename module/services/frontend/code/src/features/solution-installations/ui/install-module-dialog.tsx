@@ -100,7 +100,9 @@ export function InstallModuleDialog({
 						owner of record.
 					</DialogDescription>
 				</DialogHeader>
-				<form onSubmit={submit} className="space-y-4" noValidate>
+				{/* min-w-0: the dialog is a grid, and a long role label must not
+				    widen its track past the dialog and push Install off-screen. */}
+				<form onSubmit={submit} className="min-w-0 space-y-4" noValidate>
 					<Field
 						label="Agent identifier"
 						description="The agent this module or solution acts as, as publisher/name:version."
@@ -177,12 +179,20 @@ export function InstallModuleDialog({
 											{...control}
 											ref={field.ref}
 											onBlur={field.onBlur}
-											className="w-full"
+											className="w-full min-w-0"
+											title={
+												(!withheld && roleLabel.get(field.value)) || undefined
+											}
 										>
-											<SelectValue placeholder="Choose a role…">
-												{!withheld && field.value
-													? roleLabel.get(field.value) || "Role unavailable"
-													: undefined}
+											<SelectValue
+												placeholder="Choose a role…"
+												className="min-w-0"
+											>
+												{!withheld && field.value ? (
+													<span className="truncate">
+														{roleLabel.get(field.value) || "Role unavailable"}
+													</span>
+												) : undefined}
 											</SelectValue>
 										</SelectTrigger>
 										<SelectContent>
