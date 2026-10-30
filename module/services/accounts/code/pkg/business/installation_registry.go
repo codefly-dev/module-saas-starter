@@ -93,6 +93,11 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 		}
 		params.RoleID = role
 	}
+	// Only the delivered declaration may leave the caller's role out: a named
+	// installation_role is selected above, and "none" grants no standing role.
+	if !params.NoStandingAuthority && params.RoleID == "" {
+		return nil, NewStoreError(fmt.Errorf("role_id is required: %s declares no installation role for this host to select", target.RouteAlias), ErrTypeValidation)
+	}
 	if params.Kind == "module" && target.Installed && params.OwnerPrincipalID == "" {
 		existing, err := s.heldTargetInstallation(ctx, params.OrgID, params.TargetID)
 		if err != nil {

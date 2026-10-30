@@ -201,10 +201,13 @@ function InstallationSetup({
 			<SolutionSetupPanel
 				target={target}
 				conditions={conditions}
-				// A team per declared role is offered wherever the authority's
-				// offer names roles: every solution, and a module page that
-				// declares them. A module it refuses offers none.
-				targetId={row.installation?.targetId}
+				// Staged team-per-role choices bind to the offer's consent digest,
+				// which only a solution's carries. A module page's roles are
+				// granted through Setup's own role grant form, so it offers no
+				// picker that could only stay disabled.
+				targetId={
+					row.target?.kind === "module" ? undefined : row.installation?.targetId
+				}
 				installation={row.installation}
 			/>
 

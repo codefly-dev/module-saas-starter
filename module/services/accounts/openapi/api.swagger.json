@@ -2552,7 +2552,7 @@
           "type": "string"
         },
         "roleId": {
-          "description": "The least-privilege role granted to the agent at the root node. This is\ndeliberately NOT the full \"<namespace>:catalog\" role; widening is a separate,\naudited admin action.",
+          "description": "The least-privilege role granted to the agent at the root node. This is\ndeliberately NOT the full \"<namespace>:catalog\" role; widening is a separate,\naudited admin action. Empty when the delivered module declares its own\ninstallation role: the host selects a named one, and \"none\" grants the\nagent no standing role at all. A role given for \"none\" is refused, and an\nempty one is refused for a target that declares no installation role.",
           "type": "string"
         },
         "rootScopeLabel": {

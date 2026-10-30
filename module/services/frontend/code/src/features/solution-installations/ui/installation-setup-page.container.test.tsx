@@ -86,9 +86,20 @@ const docsInstallation = {
 };
 
 it("uses shared solution roles without offering a legacy host grant", async () => {
-	const grants = serve({ installations: [installation({ rootScopePath: "", readiness: { ready: true, unmet: [] } })] });
+	const grants = serve({
+		installations: [
+			installation({
+				rootScopePath: "",
+				readiness: { ready: true, unmet: [] },
+			}),
+		],
+	});
 	render();
-	expect(await screen.findByText(/Assign people and teams using the solution roles above/)).toBeTruthy();
+	expect(
+		await screen.findByText(
+			/Assign people and teams using the solution roles above/,
+		),
+	).toBeTruthy();
 	expect(screen.queryByText("Team access on this host")).toBeNull();
 	expect(screen.queryByRole("button", { name: "Grant a team" })).toBeNull();
 	expect(grants).toHaveLength(0);
@@ -119,8 +130,13 @@ function serve(installationsBody: JsonBodyType) {
 		),
 		http.post(rpc("TeamService", "ListTeams"), () => HttpResponse.json(teams)),
 		// The shared Setup UI's read; a test about it answers it itself.
-		http.post("http://localhost:3000/host.installation.v1.OfferService/ReviewOffer", () =>
-			HttpResponse.json({ code: "not_found", message: '"suite" is not delivered here' }, { status: 404 }),
+		http.post(
+			"http://localhost:3000/host.installation.v1.OfferService/ReviewOffer",
+			() =>
+				HttpResponse.json(
+					{ code: "not_found", message: '"suite" is not delivered here' },
+					{ status: 404 },
+				),
 		),
 		http.post(
 			rpc("InstallationService", "GrantInstallationToTeam"),
@@ -317,45 +333,78 @@ it("grants once, and reports what that grant carried", async () => {
 // authority's answer through the host installation interface, at the
 // organization the session is at, beside this host's own team access.
 it("shows the solution's roles, what they grant and who holds them, from the authority", async () => {
-	serve({ installations: [installation({ readiness: { ready: true, unmet: [] } })] });
+	serve({
+		installations: [installation({ readiness: { ready: true, unmet: [] } })],
+	});
 	const asked: { procedure: string; body: unknown }[] = [];
 	const host = (procedure: string, answer: JsonBodyType) =>
-		http.post(`http://localhost:3000/host.installation.v1.${procedure}`, async ({ request }) => {
-			asked.push({ procedure, body: await request.json() });
-			return HttpResponse.json(answer);
-		});
+		http.post(
+			`http://localhost:3000/host.installation.v1.${procedure}`,
+			async ({ request }) => {
+				asked.push({ procedure, body: await request.json() });
+				return HttpResponse.json(answer);
+			},
+		);
 	server.use(
 		host("OfferService/ReviewOffer", {
 			target: "suite",
 			approval: { targetId: "suite", generation: "3", digest: "sha256:suite" },
-			installation: { id: "core-suite", organizationId: "org-1", target: "suite", status: "STATUS_ACTIVE", revision: "2", role: "viewer" },
-			ceiling: [{ binding: "documents", module: "documents", scopes: [{ resourceKind: "example-records", actions: ["read"] }] }],
+			installation: {
+				id: "core-suite",
+				organizationId: "org-1",
+				target: "suite",
+				status: "STATUS_ACTIVE",
+				revision: "2",
+				role: "viewer",
+			},
+			ceiling: [
+				{
+					binding: "documents",
+					module: "documents",
+					scopes: [{ resourceKind: "example-records", actions: ["read"] }],
+				},
+			],
 			roles: [
 				{
 					name: "viewer",
 					scopes: [{ resourceKind: "suite.page", actions: ["read"] }],
-					capabilities: [{ module: "suite", operation: "GET /pages/{id}", requires: [{ resourceKind: "suite.page", actions: ["read"] }] }],
+					capabilities: [
+						{
+							module: "suite",
+							operation: "GET /pages/{id}",
+							requires: [{ resourceKind: "suite.page", actions: ["read"] }],
+						},
+					],
 				},
 			],
 		}),
-		host("InstallationService/ListRoleGrants", { grants: [{ role: "viewer", teamId: SUPPORT_TEAM }] }),
+		host("InstallationService/ListRoleGrants", {
+			grants: [{ role: "viewer", teamId: SUPPORT_TEAM }],
+		}),
 	);
 	render();
 
-	expect(await screen.findByRole("heading", { name: "Role: viewer" })).toBeTruthy();
+	expect(
+		await screen.findByRole("heading", { name: "Role: viewer" }),
+	).toBeTruthy();
 	expect(await screen.findByText("GET /pages/{id}")).toBeTruthy();
 	expect(await screen.findByText("viewer · Team Support")).toBeTruthy();
 	expect(screen.getByText("Team access on this host")).toBeTruthy();
-	expect(asked[0]).toEqual({ procedure: "OfferService/ReviewOffer", body: { organizationId: "org-1", target: "suite" } });
+	expect(asked[0]).toEqual({
+		procedure: "OfferService/ReviewOffer",
+		body: { organizationId: "org-1", target: "suite" },
+	});
 	expect(asked[1]).toEqual({
 		procedure: "InstallationService/ListRoleGrants",
 		body: { organizationId: "org-1", installationId: "core-suite" },
 	});
 });
 
-// A module page that declares roles is set up as a solution is: the authority
-// reviews its offer, and a team is offered for each role it declares.
-it("offers a module page that declares roles a team per role, as a solution", async () => {
+// A module page that declares roles is set up through its roles, as a
+// solution is. Its offer carries no consent digest (the authority installs no
+// module), so it has no staged team picker: Setup's role grant form, the
+// authority's GrantRole, is how each role takes a team.
+it("sets up a module page that declares roles through Setup's role grant form", async () => {
 	serve({
 		installations: [
 			installation({
@@ -365,26 +414,44 @@ it("offers a module page that declares roles a team per role, as a solution", as
 		],
 	});
 	server.use(
-		http.post("http://localhost:3000/host.installation.v1.OfferService/ReviewOffer", () =>
-			HttpResponse.json({
-				target: "suite",
-				approval: { targetId: "suite", generation: "3", digest: "sha256:suite" },
-				installation: { id: "core-suite", organizationId: "org-1", target: "suite", status: "STATUS_ACTIVE", revision: "2" },
-				roles: [
-					{ name: "installer", scopes: [{ resourceKind: "suite.page", actions: ["read", "write"] }] },
-					{ name: "viewer", scopes: [{ resourceKind: "suite.page", actions: ["read"] }] },
-				],
-			}),
+		http.post(
+			"http://localhost:3000/host.installation.v1.OfferService/ReviewOffer",
+			() =>
+				HttpResponse.json({
+					target: "suite",
+					installationRole: "none",
+					installation: {
+						id: "core-suite",
+						organizationId: "org-1",
+						target: "suite",
+						status: "STATUS_ACTIVE",
+						revision: "2",
+					},
+					roles: [
+						{
+							name: "installer",
+							scopes: [
+								{ resourceKind: "suite.page", actions: ["read", "write"] },
+							],
+						},
+						{
+							name: "viewer",
+							scopes: [{ resourceKind: "suite.page", actions: ["read"] }],
+						},
+					],
+				}),
 		),
-		http.post("http://localhost:3000/host.installation.v1.InstallationService/ListRoleGrants", () =>
-			HttpResponse.json({ grants: [] }),
+		http.post(
+			"http://localhost:3000/host.installation.v1.InstallationService/ListRoleGrants",
+			() => HttpResponse.json({ grants: [] }),
 		),
 	);
 	render();
 
-	const access = await screen.findByRole("region", { name: "Team access" });
-	expect(within(access).getByText(/For each role this solution declares/)).toBeTruthy();
-	expect(within(access).getByText(/viewer:/)).toBeTruthy();
+	expect(
+		await screen.findByRole("button", { name: "Grant role" }),
+	).toBeTruthy();
+	expect(screen.queryByRole("region", { name: "Team access" })).toBeNull();
 	// Its roles are the one grant form: no host team access card beside them.
 	expect(screen.queryByText("Team access on this host")).toBeNull();
 	expect(screen.queryByRole("button", { name: "Grant a team" })).toBeNull();

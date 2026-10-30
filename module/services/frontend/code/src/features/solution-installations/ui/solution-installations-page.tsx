@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
 import {
 	type AvailableSolution,
+	type Installation,
 	InstallationStatus,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import { useAuth } from "@/lib/auth";
@@ -37,6 +38,7 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	DelayedLoading,
 	Spinner,
 	Table,
 	TableBody,
@@ -47,6 +49,7 @@ import {
 	useLoadingPhase,
 } from "@/shared/ui";
 import {
+	agentIdentifierFor,
 	availableRows,
 	type FactView,
 	hostRefusal,
@@ -55,6 +58,7 @@ import {
 	type TeamGrantRow,
 } from "../model/installations";
 import { readinessSummary } from "../model/readiness";
+import type { InstallSolutionValues } from "../model/schemas";
 import {
 	useGrantInstallationToTeam,
 	useInstallModule,
@@ -66,7 +70,9 @@ import {
 import { useAvailableSolutions, useInstallations } from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
 import { InstallModuleDialog } from "./install-module-dialog";
+import { InstallModulePageDialog } from "./install-module-page-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
+import { useRolesDeclaredReview } from "./when-roles-declared";
 
 /**
  * One fact. A gap reads as its label in muted italics with what it means on
@@ -127,6 +133,20 @@ export function SolutionInstallationsPage({
 	);
 }
 
+/** A module page's install: its release's agent and no agent role, which its declaration selects. */
+function moduleWithoutAgentRole(
+	target: AvailableSolution,
+): InstallSolutionValues {
+	return {
+		agentIdentifier: agentIdentifierFor(target),
+		displayName: "",
+		rootScopeLabel: "",
+		roleId: "",
+		allowedAudiences: "",
+		allowedScopes: "",
+	};
+}
+
 function SolutionInstallationsForOrganization({
 	orgId,
 	showModules,
@@ -141,6 +161,39 @@ function SolutionInstallationsForOrganization({
 	// This owner survives dismissal of the form and reports every host result.
 	const install = useInstallModule(orgId);
 	const combinedInstall = useInstallReviewedSolution(orgId);
+	// A target that declares roles installs through a review of them, as a
+	// solution does; a module that declares none keeps its agent-role form.
+	const {
+		declared: rolesDeclared,
+		error: rolesUnread,
+		retry: readRolesAgain,
+	} = useRolesDeclaredReview(installing?.routeAlias ?? "", installing?.kind);
+	const installModule = (
+		target: AvailableSolution,
+		values: InstallSolutionValues,
+		{ onSuccess }: { onSuccess: (installation: Installation) => void },
+	) =>
+		install.mutate(
+			{
+				targetId: target.targetId,
+				generation: target.appliedGeneration,
+				expectedRevision: (installed.data ?? []).reduce(
+					(revision, row) =>
+						row.installation?.targetId === target.targetId &&
+						row.installation.revision > revision
+							? row.installation.revision
+							: revision,
+					BigInt(0),
+				),
+				operationId: crypto.randomUUID(),
+				values,
+			},
+			{
+				onSuccess,
+				onError: (error) =>
+					toast.error(`The host refused the install: ${hostRefusal(error)}`),
+			},
+		);
 
 	return (
 		<div className="space-y-6">
@@ -197,6 +250,7 @@ function SolutionInstallationsForOrganization({
 						showModules={showModules}
 						query={available}
 						installing={
+							(Boolean(installing) && rolesDeclared === undefined) ||
 							install.isPending ||
 							combinedInstall.isPending ||
 							!installed.isSuccess ||
@@ -216,7 +270,27 @@ function SolutionInstallationsForOrganization({
 				</>
 			)}
 
-			{installing && installing.kind !== "module" && (
+			{/* A module's roles are read before its form opens: which form is
+			    the authority's answer, not the target's kind. */}
+			<DelayedLoading
+				active={
+					Boolean(installing) && rolesDeclared === undefined && !rolesUnread
+				}
+				label="Reading the roles this module declares"
+			/>
+			{installing && rolesUnread !== undefined && (
+				<Banner
+					tone="danger"
+					title={`The roles ${installing.routeAlias} declares could not be read`}
+					onDismiss={() => setInstalling(null)}
+				>
+					{hostRefusal(rolesUnread)} Which install form applies depends on them.{" "}
+					<Button size="sm" variant="outline" onClick={readRolesAgain}>
+						Try again
+					</Button>
+				</Banner>
+			)}
+			{installing?.kind === "solution" && (
 				<InstallSolutionDialog
 					orgId={orgId}
 					solution={installing}
@@ -243,42 +317,43 @@ function SolutionInstallationsForOrganization({
 					onClose={() => setInstalling(null)}
 				/>
 			)}
-			{installing?.kind === "module" && (
+			{installing?.kind === "module" && rolesDeclared === true && (
+				<InstallModulePageDialog
+					orgId={orgId}
+					solution={installing}
+					isPending={install.isPending}
+					error={install.isError ? hostRefusal(install.error) : undefined}
+					onSubmit={() =>
+						// The module's signed installation role decides its standing
+						// access, so no agent role is sent; its roles are granted to
+						// teams in Set up, where the installation now lands.
+						installModule(installing, moduleWithoutAgentRole(installing), {
+							onSuccess: (installation) => {
+								toast.success(
+									`${installing.routeAlias} installation ${installation.status === InstallationStatus.ACTIVE ? "active" : "pending"}. Choose a team for each role in Set up.`,
+								);
+								setInstalling(null);
+								router.push(`/admin/solutions/${installation.id}`);
+							},
+						})
+					}
+					onClose={() => setInstalling(null)}
+				/>
+			)}
+			{installing?.kind === "module" && rolesDeclared === false && (
 				<InstallModuleDialog
 					orgId={orgId}
 					solution={installing}
 					isPending={install.isPending}
 					error={install.isError ? hostRefusal(install.error) : undefined}
-					onSubmit={(values) => {
-						install.mutate(
-							{
-								targetId: installing.targetId,
-								generation: installing.appliedGeneration,
-								expectedRevision: (installed.data ?? []).reduce(
-									(revision, row) =>
-										row.installation?.targetId === installing.targetId &&
-										row.installation.revision > revision
-											? row.installation.revision
-											: revision,
-									BigInt(0),
-								),
-								operationId: crypto.randomUUID(),
-								values,
+					onSubmit={(values) =>
+						installModule(installing, values, {
+							onSuccess: () => {
+								toast.success(`${installing.routeAlias} installation pending`);
+								setInstalling(null);
 							},
-							{
-								onSuccess: () => {
-									toast.success(
-										`${installing.routeAlias} installation pending`,
-									);
-									setInstalling(null);
-								},
-								onError: (error) =>
-									toast.error(
-										`The host refused the install: ${hostRefusal(error)}`,
-									),
-							},
-						);
-					}}
+						})
+					}
 					onClose={() => setInstalling(null)}
 				/>
 			)}

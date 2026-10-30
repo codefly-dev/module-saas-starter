@@ -24,6 +24,7 @@ func TestModuleNoStandingSelectionRequiresCurrentPairedDeclaration(t *testing.T)
 		{"caller literal none refused", "none", "none", false, true, false},
 		{"old generation", "none", "", true, true, false},
 		{"legacy stays explicit", "", "role-id", false, false, false},
+		{"legacy without a role refused", "", "", false, true, false},
 		{"named module cannot become catalogue role", "reader", "catalogue-role-id", false, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
