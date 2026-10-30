@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"errors"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -92,9 +93,17 @@ func (s *Service) roleGatedInstallation(ctx context.Context, org string, module 
 		installation, health, err = s.installationStore().GetInstallation(ctx, org, held.ID)
 		return err
 	}); err != nil {
+		var missing *StoreError
+		if errors.As(err, &missing) && missing.StoreErrorType == ErrTypeNotFound {
+			return nil, nil
+		}
 		return nil, err
 	}
-	if installation.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE || health != gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY {
+	// The core reads a module installation's revision as accounts' plus the
+	// narrowings it raised, never less: a record ahead of what the core read
+	// changed after the held decision, so it is not this one.
+	if installation.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE || health != gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY ||
+		installation.GetRevision() > held.Revision {
 		return nil, nil
 	}
 	return installation, nil

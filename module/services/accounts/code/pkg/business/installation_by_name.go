@@ -85,6 +85,8 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 			role = declaration.InstallationRole
 		}
 		roleID, err = s.solutionRoleID(ctx, orgID, available.TargetID, available.RouteAlias, authority, role)
+	} else if declaration.InstallationRole != "" {
+		return nil, false, declarationDiverged(declaration)
 	} else {
 		roleID, err = s.organizationRoleNamed(ctx, orgID, role)
 	}
@@ -142,6 +144,26 @@ func undeclaredInstallationRole(m domain.Module) error {
 		return nil
 	}
 	return domain.Missing("role %q is not one %s declares", m.InstallationRole, m.Name)
+}
+
+// declarationDiverged is why a module whose paired declaration names an
+// installation role cannot be installed while this host reads no role
+// declaration for it: the two deliveries disagree until the next pass.
+func declarationDiverged(m domain.Module) error {
+	return domain.NotNow("INSTALLATION_DELIVERY_CHANGED: module %q declares installation role %q and this host reads no role declaration for it", m.Name, m.InstallationRole)
+}
+
+// declaredInstallationRoleID is the id of the standing role m's signed
+// installation_role selects at orgID's installation of target.
+func (s *Service) declaredInstallationRoleID(ctx context.Context, orgID string, target *AvailableSolutionTarget, m domain.Module) (string, error) {
+	authority, _, err := s.deliveredTargetAuthority(ctx, target)
+	if err != nil {
+		return "", err
+	}
+	if authority == nil {
+		return "", declarationDiverged(m)
+	}
+	return s.solutionRoleID(ctx, orgID, target.TargetID, target.RouteAlias, authority, m.InstallationRole)
 }
 
 // availableTargetNamed is the organisation's catalogue entry whose route alias

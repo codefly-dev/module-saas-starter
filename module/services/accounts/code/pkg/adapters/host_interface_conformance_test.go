@@ -1132,6 +1132,41 @@ func runHostInterfaceFixture(t *testing.T) {
 		withoutRoles.roles, withoutRoles.generation = nil, 2
 		deliverModule(t, ctx, conn, signer, withoutRoles)
 		require.False(t, listed(nora), "a module page without roles is listed by no role")
+
+		// A module page's signed installation_role selects its standing role,
+		// as the core selects a solution's: neither a role name nor a role id
+		// overrides it.
+		const selected = "conformance-module-page-selected"
+		selectedNote := wireScope(selected+".note", "read")
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: selected, ceilings: []*authorityv1.WorkScopeV1{selectedNote}, page: page, installationRole: "viewer",
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {selectedNote}, "viewer": {selectedNote}}})
+		_, _, err = svc.InstallFixtureTarget(ctx, conformanceAlex, fixtureOrganization, selected, "installer", conformanceAlex)
+		require.ErrorContains(t, err, `role "installer" cannot override `+selected+`'s installation_role declaration`)
+		available, _, err := svc.ListAvailableSolutions(ctx, fixtureOrganization, "", 500)
+		require.NoError(t, err)
+		var target *business.AvailableSolutionTarget
+		for _, entry := range available {
+			if entry.RouteAlias == selected {
+				target = entry
+			}
+		}
+		require.NotNil(t, target)
+		roles, err := svc.ListRoles(ctx, &gen.ListRolesRequest{OrgId: fixtureOrganization})
+		require.NoError(t, err)
+		var catalogue string
+		for _, role := range roles.GetRoles() {
+			if role.GetName() == "Use org-directory" {
+				catalogue = role.GetId()
+			}
+		}
+		require.NotEmpty(t, catalogue)
+		_, err = svc.InstallSolution(ctx, conformanceAlex, &business.InstallSolutionParams{OrgID: fixtureOrganization, TargetID: target.TargetID,
+			AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, DisplayName: selected, RootScopeLabel: selected,
+			RoleID: catalogue, OwnerPrincipalID: conformanceAlex})
+		require.ErrorContains(t, err, "cannot override "+selected+"'s installation_role declaration")
+		installation, _, err := svc.InstallFixtureTarget(ctx, conformanceAlex, fixtureOrganization, selected, "", conformanceAlex)
+		require.NoError(t, err, "the declared role installs it")
+		require.NoError(t, completeInstallStep(ctx, store, installation))
 	})
 
 	// Last, because the envelope it writes becomes every module's ceiling: a
