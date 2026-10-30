@@ -44,6 +44,13 @@ func NewConnectServer(c *Configuration, grpc *GrpcServer) (*ConnectServer, error
 	}, nil
 }
 
+// NewOTelInterceptor is the Connect server's tracing and request-metrics
+// interceptor. It drops the caller's address and port: the port is new on
+// every connection, so each connection would start new metric series.
+func NewOTelInterceptor() (*otelconnect.Interceptor, error) {
+	return otelconnect.NewInterceptor(otelconnect.WithoutServerPeerAttributes())
+}
+
 func (s *ConnectServer) Run(ctx context.Context) error {
 	if s.config.EndpointConnectPort == nil {
 		return nil
@@ -72,7 +79,7 @@ func (s *ConnectServer) Run(ctx context.Context) error {
 	// TracerProvider is registered (global tracer is a noop). First
 	// in the chain so every later interceptor's logs/spans land under
 	// the request's trace.
-	otelIc, otelErr := otelconnect.NewInterceptor()
+	otelIc, otelErr := NewOTelInterceptor()
 	if otelErr != nil {
 		return fmt.Errorf("otelconnect: %w", otelErr)
 	}
