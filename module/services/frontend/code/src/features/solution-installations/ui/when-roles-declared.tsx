@@ -1,6 +1,6 @@
 "use client";
 
-import { createClient } from "@connectrpc/connect";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { OfferService } from "@/gen/host/installation/v1/installation_pb";
@@ -10,16 +10,18 @@ import { apiTransport } from "@/lib/connect/transport";
 const offers = createClient(OfferService, apiTransport);
 
 /**
- * Whether a target declares installation roles. A solution always does: the
- * shared authority core composes none without an installer role. A module
- * does only when it declares a page and roles; the authority's offer review
- * is the answer, and a module it refuses (one that declares no roles) does
- * not. Undefined while a module's answer is still being read.
+ * Whether a target declares installation roles, with the read's own failure.
+ * A solution always does: the shared authority core composes none without an
+ * installer role. A module does only when it declares a page and roles; the
+ * authority's offer review is the answer, and only its NotFound (a module
+ * that declares no roles) means it does not. Any other failure is not an
+ * answer: `declared` stays undefined and `error` says why, so a transient
+ * refusal never passes a module page off as one without roles.
  */
-export function useRolesDeclared(
+export function useRolesDeclaredReview(
 	target: string,
 	kind?: string,
-): boolean | undefined {
+): { declared: boolean | undefined; error: unknown; retry: () => void } {
 	const { organizationId = "" } = useAuth();
 	const review = useQuery({
 		queryKey: ["solution-declares-roles", organizationId, target],
@@ -29,9 +31,26 @@ export function useRolesDeclared(
 		retry: false,
 		refetchOnWindowFocus: false,
 	});
-	if (kind !== "module") return kind === "solution";
-	if (review.isError) return false;
-	return review.data;
+	const retry = () => void review.refetch();
+	if (kind !== "module")
+		return { declared: kind === "solution", error: undefined, retry };
+	if (review.isError) {
+		const declaresNone = ConnectError.from(review.error).code === Code.NotFound;
+		return {
+			declared: declaresNone ? false : undefined,
+			error: declaresNone ? undefined : review.error,
+			retry,
+		};
+	}
+	return { declared: review.data, error: undefined, retry };
+}
+
+/** Whether a target declares installation roles; undefined while unknown. */
+export function useRolesDeclared(
+	target: string,
+	kind?: string,
+): boolean | undefined {
+	return useRolesDeclaredReview(target, kind).declared;
 }
 
 /**

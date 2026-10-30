@@ -1593,6 +1593,37 @@ describe("installing a module: the form follows its declared roles, not its kind
 		expect(asked).toEqual({ organizationId: "org-1", target: "ledger" });
 	});
 
+	it("shows a failed read of a module's roles instead of guessing its form, and reads again", async () => {
+		let reads = 0;
+		serve();
+		server.use(
+			http.post(REVIEW_OFFER, () => {
+				reads++;
+				return reads === 1
+					? HttpResponse.json(
+							{ code: "unavailable", message: "authority restarting" },
+							{ status: 503 },
+						)
+					: HttpResponse.json(
+							{ code: "not_found", message: "declares no roles" },
+							{ status: 404 },
+						);
+			}),
+		);
+		renderInApp(<Page />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Install ledger" }),
+		);
+		expect(await screen.findByText(/authority restarting/)).toBeTruthy();
+		expect(screen.queryByRole("dialog")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+		const dialog = await screen.findByRole("dialog");
+		expect(
+			within(dialog).getByRole("combobox", { name: "Agent role" }),
+		).toBeTruthy();
+		expect(reads).toBe(2);
+	});
+
 	it("reviews a module page that declares roles, installs it with no agent role, and opens its Set up", async () => {
 		let installed: unknown;
 		serve();

@@ -1164,9 +1164,32 @@ func runHostInterfaceFixture(t *testing.T) {
 			AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, DisplayName: selected, RootScopeLabel: selected,
 			RoleID: catalogue, OwnerPrincipalID: conformanceAlex})
 		require.ErrorContains(t, err, "cannot override "+selected+"'s installation_role declaration")
-		installation, _, err := svc.InstallFixtureTarget(ctx, conformanceAlex, fixtureOrganization, selected, "", conformanceAlex)
-		require.NoError(t, err, "the declared role installs it")
+		// The administrator's install with no role, as the module page review
+		// sends it: the signed installation_role selects the standing role.
+		installation, err := svc.InstallSolution(ctx, conformanceAlex, &business.InstallSolutionParams{OrgID: fixtureOrganization, TargetID: target.TargetID,
+			AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, DisplayName: selected, RootScopeLabel: selected,
+			OwnerPrincipalID: conformanceAlex})
+		require.NoError(t, err, "an empty role installs a module page as its declared installation_role")
 		require.NoError(t, completeInstallStep(ctx, store, installation))
+		var standing []string
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			rows, err := storetx.Tx(ctx).Query(ctx, `SELECT r.derived_from FROM public.scope_grants g JOIN public.roles r ON r.id = g.role_id
+				WHERE g.org_id = $1 AND g.subject_kind = 'principal' AND g.subject_id = $2`, fixtureOrganization, installation.GetAgentPrincipalId())
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var from string
+				if err := rows.Scan(&from); err != nil {
+					return err
+				}
+				standing = append(standing, from)
+			}
+			return rows.Err()
+		}))
+		require.Equal(t, []string{"org=" + fixtureOrganization + ";solution=" + target.TargetID + ";role=viewer"}, standing,
+			"the agent's one standing grant is the declared viewer role")
 	})
 
 	// Last, because the envelope it writes becomes every module's ceiling: a

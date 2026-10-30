@@ -1,4 +1,5 @@
 import { create } from "@bufbuild/protobuf";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,7 +18,10 @@ vi.mock("@/lib/auth", () => ({
 	useAuth: () => ({ organizationId: "example-org" }),
 }));
 
-import { WhenRolesDeclared } from "./when-roles-declared";
+import {
+	useRolesDeclaredReview,
+	WhenRolesDeclared,
+} from "./when-roles-declared";
 
 afterEach(() => {
 	cleanup();
@@ -64,10 +68,44 @@ describe("WhenRolesDeclared", () => {
 	// The authority refuses the offer of a module that declares no roles.
 	it("shows nothing for a module whose offer the authority refuses", async () => {
 		reviewOffer.mockRejectedValue(
-			new Error("not a composed solution or a module page declaring roles"),
+			new ConnectError(
+				"not a composed solution or a module page declaring roles",
+				Code.NotFound,
+			),
 		);
 		renderGate("module");
 		await vi.waitFor(() => expect(reviewOffer).toHaveBeenCalled());
 		expect(screen.queryByText("Setup")).toBeNull();
 	});
+
+	// Only NotFound means "declares no roles"; any other failure is no answer.
+	it.each([
+		["NotFound", Code.NotFound, "declared: false"],
+		["Unavailable", Code.Unavailable, "declared: unknown, error: try later"],
+	])(
+		"reads %s as an answer only when it is NotFound",
+		async (_name, code, expected) => {
+			reviewOffer.mockRejectedValue(new ConnectError("try later", code));
+			function Probe() {
+				const { declared, error } = useRolesDeclaredReview(
+					"example-target",
+					"module",
+				);
+				if (declared === undefined && !error) return <span>reading</span>;
+				return (
+					<span>
+						{declared === undefined
+							? `declared: unknown, error: ${ConnectError.from(error).rawMessage}`
+							: `declared: ${declared}`}
+					</span>
+				);
+			}
+			render(
+				<QueryClientProvider client={new QueryClient()}>
+					<Probe />
+				</QueryClientProvider>,
+			);
+			expect(await screen.findByText(expected)).toBeTruthy();
+		},
+	);
 });

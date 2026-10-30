@@ -72,7 +72,7 @@ import { GrantTeamDialog } from "./grant-team-dialog";
 import { InstallModuleDialog } from "./install-module-dialog";
 import { InstallModulePageDialog } from "./install-module-page-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
-import { useRolesDeclared } from "./when-roles-declared";
+import { useRolesDeclaredReview } from "./when-roles-declared";
 
 /**
  * One fact. A gap reads as its label in muted italics with what it means on
@@ -163,10 +163,11 @@ function SolutionInstallationsForOrganization({
 	const combinedInstall = useInstallReviewedSolution(orgId);
 	// A target that declares roles installs through a review of them, as a
 	// solution does; a module that declares none keeps its agent-role form.
-	const rolesDeclared = useRolesDeclared(
-		installing?.routeAlias ?? "",
-		installing?.kind,
-	);
+	const {
+		declared: rolesDeclared,
+		error: rolesUnread,
+		retry: readRolesAgain,
+	} = useRolesDeclaredReview(installing?.routeAlias ?? "", installing?.kind);
 	const installModule = (
 		target: AvailableSolution,
 		values: InstallSolutionValues,
@@ -272,9 +273,23 @@ function SolutionInstallationsForOrganization({
 			{/* A module's roles are read before its form opens: which form is
 			    the authority's answer, not the target's kind. */}
 			<DelayedLoading
-				active={Boolean(installing) && rolesDeclared === undefined}
+				active={
+					Boolean(installing) && rolesDeclared === undefined && !rolesUnread
+				}
 				label="Reading the roles this module declares"
 			/>
+			{installing && rolesUnread !== undefined && (
+				<Banner
+					tone="danger"
+					title={`The roles ${installing.routeAlias} declares could not be read`}
+					onDismiss={() => setInstalling(null)}
+				>
+					{hostRefusal(rolesUnread)} Which install form applies depends on them.{" "}
+					<Button size="sm" variant="outline" onClick={readRolesAgain}>
+						Try again
+					</Button>
+				</Banner>
+			)}
 			{installing?.kind === "solution" && (
 				<InstallSolutionDialog
 					orgId={orgId}
