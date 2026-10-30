@@ -35,10 +35,12 @@ be carried. There is no per-module grant step for a person to perform
 ([MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md#a-grant-of-a-solution-carries-the-module-access-it-declares-it-consumes)).
 The platform catalogue explains the delivery prerequisite. Headless components
 contribute no page.
-For a module page, relative data requests through the injected `apiBase` reach
-`/v1/<alias>/<suffix>`; for a solution they reach `/solutions/<alias>/<suffix>`.
-Public GET/HEAD assets use the common `/solutions/<alias>/assets` surface for
-both kinds. Platform Connect procedures still reach the gateway root.
+Relative data requests through the injected `apiBase` reach
+`/v1/<alias>/<suffix>` for a module page and a solution alike, through the
+gateway's hop, which carries the person's Work Context and keeps the path
+unchanged. Public GET/HEAD reads of `assets` and `.well-known` use the common
+`/solutions/<alias>/…` surface for both kinds. Platform Connect procedures
+still reach the gateway root.
 
 Direct generated module clients use the optional `moduleApiBase` page binding
 and the kit's `moduleTransport`. The base is a same-origin `/_browser` suffix on
