@@ -11,11 +11,14 @@ import (
 	"log"
 	"maps"
 	"net/url"
+	"slices"
 	"sync"
 	"time"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	modulecontract "github.com/codefly-dev/core/contracts/module"
+	"github.com/codefly-dev/core/solutionhost"
 	"github.com/codefly-dev/module-saas-starter/module/frontendpayload"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -60,6 +63,12 @@ type solutionRegistrySnapshot struct {
 	routeEndpoints map[string][]moduleEndpoint
 	// principals come from the same applied manifest as the route endpoints.
 	principals map[string]string
+	// reaches are, per alias, the aliases of the modules its applied manifest
+	// declares it consumes (reachedModuleAliases).
+	reaches map[string][]string
+	// sharedPrincipals are the principals more than one alias carries, with
+	// those aliases; no reach resolves to one (principalCarriers).
+	sharedPrincipals map[string][]string
 	// refusals are, per alias, why its applied manifest was dropped
 	// (readAppliedManifest). The registration stays; nothing routes on it.
 	refusals map[string]manifestRefusal
@@ -109,7 +118,8 @@ func (c *accountsSolutionRegistry) List(ctx context.Context, req *accountsv1.Lis
 }
 
 func snapshotFromAppliedBindings(resp *accountsv1.ListSolutionRegistrationsResponse, bindings *accountsv1.ListSolutionHostBindingsResponse) *solutionRegistrySnapshot {
-	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, routeEndpoints: make(map[string][]moduleEndpoint), principals: make(map[string]string), refusals: make(map[string]manifestRefusal)}
+	out := &solutionRegistrySnapshot{ListSolutionRegistrationsResponse: resp, routeEndpoints: make(map[string][]moduleEndpoint), principals: make(map[string]string), reaches: make(map[string][]string), refusals: make(map[string]manifestRefusal)}
+	applied := make(map[string]*solutionhost.ModuleManifest)
 	for _, record := range resp.GetRegistrations() {
 		for _, binding := range bindings.GetBindings() {
 			// These reads may straddle reconciliation. Never attach a successor's
@@ -129,13 +139,74 @@ func snapshotFromAppliedBindings(resp *accountsv1.ListSolutionRegistrationsRespo
 			}
 			if manifest.Authority != nil {
 				out.principals[record.GetSolutionId()] = manifest.Authority.Principal
+				applied[record.GetSolutionId()] = manifest
 			}
 			if endpoints := manifestRouteEndpoints(manifest); len(endpoints) > 0 {
 				out.routeEndpoints[record.GetSolutionId()] = endpoints
 			}
 		}
 	}
+	aliasOf, shared := principalCarriers(out.principals)
+	out.sharedPrincipals = shared
+	for alias, manifest := range applied {
+		if reached := reachedModuleAliases(manifest, aliasOf); len(reached) > 0 {
+			out.reaches[alias] = reached
+		}
+	}
 	return out
+}
+
+// principalCarriers answers, per principal, the one alias whose applied
+// manifest carries it. A principal two aliases carry names no module a page
+// can key on, so it resolves to nothing — never to whichever alias a map
+// iteration reached first — and is returned, with its aliases sorted, for the
+// cache to report.
+func principalCarriers(principals map[string]string) (map[string]string, map[string][]string) {
+	carriers := map[string][]string{}
+	for alias, principal := range principals {
+		carriers[principal] = append(carriers[principal], alias)
+	}
+	aliasOf := make(map[string]string, len(carriers))
+	shared := map[string][]string{}
+	for principal, aliases := range carriers {
+		if len(aliases) == 1 {
+			aliasOf[principal] = aliases[0]
+			continue
+		}
+		slices.Sort(aliases)
+		shared[principal] = aliases
+	}
+	return aliasOf, shared
+}
+
+// reachedModuleAliases is what an applied manifest declares it consumes, named
+// by the aliases a page can key on: the audience of every binding that invokes
+// on the asking person's session, other than the record's own principal.
+//
+// It mirrors the declared half of accounts' reached-module rule
+// (accounts pkg/business/installation_readiness.go, readinessFor), not the
+// whole of it: accounts also drops a binding its DERIVED module registry
+// withheld (grant.OperationAudiences — the manifest's ask narrowed by any
+// module envelope), and that registry lives in accounts alone; no read this
+// gateway makes carries it. So a binding an envelope withheld is still listed
+// here, and the module's authority hop refuses those calls with its reason,
+// while the installation's readiness reports the binding as omitted. An
+// audience no single applied record carries as its principal resolves to
+// nothing and is left out, so a page sees it as not composed.
+func reachedModuleAliases(manifest *solutionhost.ModuleManifest, aliasOf map[string]string) []string {
+	own := manifest.Authority.Principal
+	seen := map[string]bool{}
+	var reached []string
+	for _, binding := range manifest.Authority.Bindings {
+		alias, known := aliasOf[binding.Audience]
+		if binding.Audience == own || len(binding.Operations[modulecontract.OperationInvoke]) == 0 || !known || seen[alias] {
+			continue
+		}
+		seen[alias] = true
+		reached = append(reached, alias)
+	}
+	slices.Sort(reached)
+	return reached
 }
 
 // Historical assets are read by identity, never broadcast in the route snapshot.
@@ -204,6 +275,10 @@ type solutionRegistryCache struct {
 	// record with another's address.
 	upstreams  map[string]*url.URL
 	principals map[string]string
+	// reaches is each alias's declared module consumption, from the same read.
+	reaches map[string][]string
+	// sharedPrincipals is the last reported set of ambiguous principals.
+	sharedPrincipals map[string][]string
 	// manifestRefusals is the snapshot's dropped manifests, for the diagnostic.
 	manifestRefusals map[string]manifestRefusal
 	// routeRefusals remembers, per alias, the last refusal reason logged.
@@ -315,6 +390,8 @@ func (c *solutionRegistryCache) load(ctx context.Context) error {
 	c.records = records
 	c.upstreams = upstreams
 	c.principals = maps.Clone(resp.principals)
+	c.reaches = maps.Clone(resp.reaches)
+	c.noteSharedPrincipals(resp.sharedPrincipals)
 	c.noteManifestRefusals(resp.refusals)
 	c.frontends = frontends
 	c.revision = resp.GetRegistryRevision()
@@ -408,6 +485,17 @@ func (c *solutionRegistryCache) noteManifestRefusals(refusals map[string]manifes
 		}
 	}
 	c.manifestRefusals = maps.Clone(refusals)
+}
+
+// noteSharedPrincipals logs a principal more than one alias carries when it
+// first appears or its aliases change, not on every refresh.
+func (c *solutionRegistryCache) noteSharedPrincipals(shared map[string][]string) {
+	for principal, aliases := range shared {
+		if !slices.Equal(c.sharedPrincipals[principal], aliases) {
+			log.Printf("WARN: solution registry: principal %q is carried by aliases %q; no page reach resolves to it", principal, aliases)
+		}
+	}
+	c.sharedPrincipals = maps.Clone(shared)
 }
 
 // noteRouteRouted forgets an alias's last refusal, so a later one is logged.
@@ -687,7 +775,7 @@ func solutionRecordActive(record *accountsv1.SolutionRegistration) bool {
 // snapshot returns the cached records ordered by id, along with the registry
 // revision they were read at, whether a snapshot has ever loaded, and the
 // manifests the same read dropped.
-func (c *solutionRegistryCache) snapshot() ([]*accountsv1.SolutionRegistration, int64, bool, map[string]manifestRefusal) {
+func (c *solutionRegistryCache) snapshot() ([]*accountsv1.SolutionRegistration, int64, bool, map[string]manifestRefusal, map[string][]string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	records := make([]*accountsv1.SolutionRegistration, 0, len(c.records))
@@ -695,7 +783,7 @@ func (c *solutionRegistryCache) snapshot() ([]*accountsv1.SolutionRegistration, 
 		records = append(records, record)
 	}
 	sortSolutionRecords(records)
-	return records, c.revision, c.loaded, c.manifestRefusals
+	return records, c.revision, c.loaded, c.manifestRefusals, c.reaches
 }
 
 func sortSolutionRecords(records []*accountsv1.SolutionRegistration) {

@@ -56,6 +56,14 @@ Connect headers, streaming, cancellation and the host's credential handling.
 Versioned asset routes cannot open this entry. Existing `apiBase`/path relays
 remain unchanged; the module connection adds no installation or permission.
 
+The page binding also carries `organizationId`, `viewerKey` and `reach`
+(alias → the viewer's installation of each module the record declares it
+consumes), from `GET /api/solutions/<id>/installation`
+([SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md)). `viewerKey` is the
+EFFECTIVE viewer: during impersonation it is the impersonated person's key, so an
+administrator's drafts and conversations land in that person's partition. It
+partitions state and authorizes nothing.
+
 These declarations grant no access to content. The solution page reads the full
 manifest in process; browser projections carry only the fields described below.
 

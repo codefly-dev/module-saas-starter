@@ -526,12 +526,12 @@ func TestGateway_Solution_ReplicasConvergeOnSameRevision(t *testing.T) {
 
 	declareSolution(t, gw, "audit", "http://10.0.0.7:8080")
 
-	_, otherRevision, _, _ := other.snapshot()
-	_, writerRevision, _, _ := gw.solutions.snapshot()
+	_, otherRevision, _, _, _ := other.snapshot()
+	_, writerRevision, _, _, _ := gw.solutions.snapshot()
 	require.NotEqual(t, writerRevision, otherRevision, "the second replica has not seen the write yet")
 
 	require.NoError(t, other.refresh(context.Background()))
-	_, otherRevision, loaded, _ := other.snapshot()
+	_, otherRevision, loaded, _, _ := other.snapshot()
 	require.True(t, loaded)
 	require.Equal(t, writerRevision, otherRevision, "both replicas converge on one registry revision")
 

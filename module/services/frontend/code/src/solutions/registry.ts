@@ -39,6 +39,13 @@ export interface SolutionManifest {
 	 */
 	targetId: string;
 	/**
+	 * Aliases of the modules this record's applied manifest declares it
+	 * consumes on a person's session. Stamped from the gateway's record, like
+	 * `targetId`, never parsed from the remote's manifest; a statement, never a
+	 * grant: `pageBinding` joins each to the viewer's own entitlements.
+	 */
+	reaches?: string[];
+	/**
 	 * Major of the manifest wire shape this solution was built against.
 	 * Validated by `checkRuntimeCompatibility` before the read projection renders it.
 	 */
@@ -369,6 +376,8 @@ interface GatewayRegistryEntry {
 	 * able to name the identity an organisation consented to.
 	 */
 	targetId?: unknown;
+	/** Aliases of the modules the applied manifest declares it consumes. */
+	reaches?: unknown;
 }
 
 /**
@@ -418,6 +427,10 @@ function manifestsFromSnapshot(payload: unknown): {
 		manifests.push({
 			...parsed,
 			targetId: typeof entry.targetId === "string" ? entry.targetId : "",
+			...(Array.isArray(entry.reaches) &&
+			entry.reaches.every((alias) => typeof alias === "string")
+				? { reaches: entry.reaches as string[] }
+				: {}),
 			...(typeof entry.assetVersion === "string" &&
 			/^[a-f0-9]{64}$/.test(entry.assetVersion)
 				? { assetVersion: entry.assetVersion }
