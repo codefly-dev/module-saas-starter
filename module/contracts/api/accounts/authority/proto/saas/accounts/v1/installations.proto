@@ -133,8 +133,14 @@ message InstallSolutionRequest {
   string root_scope_label = 6 [(buf.validate.field).string.max_len = 512];
   // The least-privilege role granted to the agent at the root node. This is
   // deliberately NOT the full "<namespace>:catalog" role; widening is a separate,
-  // audited admin action.
-  string role_id = 7 [(buf.validate.field).string.uuid = true];
+  // audited admin action. Empty when the delivered module declares its own
+  // installation role: the host selects a named one, and "none" grants the
+  // agent no standing role at all. A role given for "none" is refused, and an
+  // empty one is refused for a target that declares no installation role.
+  string role_id = 7 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
   // The accountable human of record. Must be a current org admin. Empty defaults
   // to the calling admin.
   string owner_principal_id = 8 [
