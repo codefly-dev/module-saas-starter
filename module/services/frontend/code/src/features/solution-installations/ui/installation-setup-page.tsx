@@ -194,11 +194,10 @@ function InstallationSetup({
 			<SolutionSetupPanel
 				target={target}
 				conditions={conditions}
-				targetId={
-					row.target?.kind === "solution"
-						? row.installation?.targetId
-						: undefined
-				}
+				// A team per declared role is offered wherever the authority's
+				// offer names roles: every solution, and a module page that
+				// declares them. A module it refuses offers none.
+				targetId={row.installation?.targetId}
 				installation={row.installation}
 			/>
 

@@ -87,10 +87,11 @@ The browser cache tests do not qualify that producer/deployment boundary.
 
 A `/s/<id>` page whose record declares installation roles has a Setup tab beside
 App (and Dashboard): the solution's roles, what each grants (scopes → module
-operations → agent tools, and the permission ceiling) and who holds them. Today
-that is every solution record and no module record: the shared authority core
-requires a solution's `installer` role and refuses roles on a module, so a
-module page shows App (and Dashboard) only. It renders the kit's `<SolutionSetup>`
+operations → agent tools, and the permission ceiling) and who holds them. That
+is every solution record (the shared authority core requires a solution's
+`installer` role) and a module record whose page declares roles, which
+`WhenRolesDeclared` learns from the authority's offer review; a module page that
+declares none shows App (and Dashboard) only. It renders the kit's `<SolutionSetup>`
 (`@codefly-dev/saas-ui/solution`) through `SolutionSetupPanel`, which adds
 only what this host knows: the
 session's organization, the people and teams it can name, and, on the admin

@@ -18,9 +18,14 @@ vi.mock("@/solutions/SolutionDashboard", () => ({
 	SolutionDashboards: () => <div data-testid="dashboard">dashboards</div>,
 }));
 // The Setup UI is the kit's `<SolutionSetup>`, tested in its package; what is
-// pinned here is that every solution has the tab, naming its target.
+// pinned here is that every solution has the tab, naming its target. Whether a
+// module declares roles is the authority's offer review (WhenRolesDeclared,
+// tested beside it); here it stands in as `moduleRoles.declared`.
+const moduleRoles = vi.hoisted(() => ({ declared: false }));
 vi.mock("@/features/solution-installations", () => ({
 	SolutionSetupPanel: ({ target }: { target: string }) => <div data-testid="setup">{target}</div>,
+	WhenRolesDeclared: ({ kind, children }: { kind?: string; children: ReactNode }) =>
+		kind === "solution" || moduleRoles.declared ? <>{children}</> : null,
 }));
 // The live delivery gate has its own polling and router tests. Here it stands
 // in for the viewer's projection: entitled renders the page, not entitled
@@ -41,6 +46,7 @@ import SolutionPage from "../page";
 afterEach(() => {
 	cleanup();
 	live.entitled = true;
+	moduleRoles.declared = false;
 });
 
 const solution = (dashboard?: object, kind: "module" | "solution" = "solution") => ({
@@ -97,9 +103,18 @@ describe("the solution page", () => {
 		expect(screen.getByTestId("remote")).toBeTruthy();
 	});
 
-	// A module declares no installation roles, so its page offers no Setup tab
+	// A module page that declares installation roles has the same Setup tab.
+	it("gives a module page that declares roles a Setup tab for its own target", async () => {
+		moduleRoles.declared = true;
+		findSolution.mockResolvedValue(solution(undefined, "module"));
+		await renderPage();
+		fireEvent.click(screen.getByRole("tab", { name: "Setup" }));
+		expect((await screen.findByTestId("setup")).textContent).toBe("example-solution");
+	});
+
+	// A module page that declares no installation roles offers no Setup tab
 	// whose every answer would be a refusal.
-	it("gives a module page no Setup tab", async () => {
+	it("gives a module page that declares no roles no Setup tab", async () => {
 		findSolution.mockResolvedValue(solution(undefined, "module"));
 		await renderPage();
 		expect(screen.getByRole("tab", { name: "App" })).toBeTruthy();
