@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
@@ -20,6 +21,24 @@ func appliedManifest(binding *accountsv1.SolutionHostBindingState) (*solutionhos
 	return manifest, manifest != nil && refusal == nil
 }
 
+// The classes of refusal. The class is what the operator snapshot projects; the
+// full reason, which can quote what the manifest carries (an endpoint address
+// among it), is logged and never projected.
+var (
+	errManifestUnparsable = errors.New("the applied manifest is rejected by this gateway's parser")
+	errManifestMismatch   = errors.New("the applied manifest names another binding, generation or alias than its registration")
+)
+
+// refusalClass is the projectable class of a readAppliedManifest refusal.
+func refusalClass(refusal error) string {
+	for _, class := range []error{errManifestUnparsable, errManifestMismatch} {
+		if errors.Is(refusal, class) {
+			return class.Error()
+		}
+	}
+	return "the applied manifest is refused"
+}
+
 // readAppliedManifest tells the two reasons for no manifest apart. Nil and nil:
 // nothing applied matches the registration yet, which reconciliation settles on
 // its own. A refusal: a matching generation WAS applied and this gateway cannot
@@ -37,11 +56,11 @@ func readAppliedManifest(binding *accountsv1.SolutionHostBindingState) (*solutio
 	}
 	manifest, err := solutionhost.Parse([]byte(applied.GetGeneration().GetDocument()))
 	if err != nil {
-		return nil, fmt.Errorf("this gateway's parser refuses the applied manifest: %w", err)
+		return nil, fmt.Errorf("%w: %w", errManifestUnparsable, err)
 	}
 	if manifest.Binding != declared.GetBindingId() || manifest.Generation != declared.GetGeneration() ||
 		manifest.Alias != record.GetSolutionId() {
-		return nil, fmt.Errorf("the applied manifest names binding %q generation %d alias %q, not the registration's", manifest.Binding, manifest.Generation, manifest.Alias)
+		return nil, fmt.Errorf("%w: it names binding %q generation %d alias %q", errManifestMismatch, manifest.Binding, manifest.Generation, manifest.Alias)
 	}
 	return manifest, nil
 }

@@ -462,9 +462,10 @@ type solutionRegistrationProjection struct {
 	// the frontend block of the applied presence plus the host's own constants
 	// (solutionManifest). Absent until the presence declares one.
 	Manifest *string `json:"manifest,omitempty"`
-	// Refusal is why this replica dropped the record's applied manifest: the
-	// registration stays declared and nothing routes on it until a generation
-	// this gateway can read is applied.
+	// Refusal is why this replica dropped the record's applied manifest, as a
+	// class only: the full reason is in the gateway's log, because it can quote
+	// what the manifest carries, an address among it. The registration stays
+	// declared and nothing routes on it until a readable generation is applied.
 	Refusal string `json:"refusal,omitempty"`
 }
 
@@ -510,7 +511,7 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 			projection.AssetVersion = frontendAssetVersion(record)
 		}
 		if refusal, ok := refusals[record.GetSolutionId()]; ok {
-			projection.Refusal = fmt.Sprintf("generation %d: %s", refusal.Generation, refusal.Reason)
+			projection.Refusal = fmt.Sprintf("generation %d: %s", refusal.Generation, refusal.Class)
 		}
 		out.Solutions = append(out.Solutions, projection)
 	}

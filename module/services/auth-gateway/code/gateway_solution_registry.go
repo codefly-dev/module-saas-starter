@@ -66,8 +66,11 @@ type solutionRegistrySnapshot struct {
 }
 
 // manifestRefusal is why one applied generation's manifest was not used.
+// Class is projected to the operator snapshot; Reason, the full text, is
+// logged only.
 type manifestRefusal struct {
 	Generation uint64
+	Class      string
 	Reason     string
 }
 
@@ -116,7 +119,9 @@ func snapshotFromAppliedBindings(resp *accountsv1.ListSolutionRegistrationsRespo
 			}
 			manifest, refusal := readAppliedManifest(binding)
 			if refusal != nil {
-				out.refusals[record.GetSolutionId()] = manifestRefusal{Generation: binding.GetApplied().GetGeneration().GetGeneration(), Reason: refusal.Error()}
+				out.refusals[record.GetSolutionId()] = manifestRefusal{
+					Generation: binding.GetApplied().GetGeneration().GetGeneration(), Class: refusalClass(refusal), Reason: refusal.Error(),
+				}
 				continue
 			}
 			if manifest == nil {
