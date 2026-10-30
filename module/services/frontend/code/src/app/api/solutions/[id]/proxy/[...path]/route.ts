@@ -59,8 +59,8 @@ function sameOrigin(request: Request, hostOrigin: string | undefined): boolean {
 
 /**
  * Generic solution proxy. Forwards a browser request to the API gateway's
- * root for platform Connect procedures, /v1/{alias}/… for module data, or
- * /solutions/{alias}/… for solution data and shared assets, attaching first-party
+ * root for platform Connect procedures, /v1/{alias}/… for a module's or a
+ * solution's data, or /solutions/{alias}/… for public assets, attaching first-party
  * trust headers and carrying the caller's identity (bearer and/or session
  * cookie). The browser never reaches a solution service directly, and this route
  * names no specific solution — it only resolves whatever registered at runtime.
@@ -144,15 +144,19 @@ async function handler(
 		/^saas\.[A-Za-z_][A-Za-z0-9_]*\.v1\.[A-Za-z_][A-Za-z0-9_]*\/[A-Za-z_][A-Za-z0-9_]*$/.test(
 			suffix,
 		) || isHostSetupProcedure(`/${suffix}`);
-	// Both kinds use the same page and asset loader. A module's data requests
-	// stay on the module gateway surface, preserving its audience and checks.
+	// Both kinds use the same page and asset loader, and the same data route.
+	// The runtime serves a module page and a solution alike: public assets and
+	// `.well-known` at its root, every other route under /v1/<alias>, where it
+	// is published (its interface artifact and the runnable bindings derived
+	// from it) and reached with the person's Work Context. The gateway's
+	// /solutions/<alias>/ data route strips that prefix and carries no Work
+	// Context, so a data request sent there reaches no route the runtime serves.
 	// The gateway independently restricts the common asset route to public
 	// GET/HEAD paths; this choice grants no exemption here.
 	const publicAsset =
 		(request.method === "GET" || request.method === "HEAD") &&
 		/^(?:assets|\.well-known)(?:\/|$)/.test(suffix);
-	const routePrefix =
-		solution?.kind === "module" && !publicAsset ? "v1" : "solutions";
+	const routePrefix = publicAsset ? "solutions" : "v1";
 	// Preserve the marker: only the gateway's terminal public-only dispatch
 	// may remove it. Sending an arbitrary suffix to the root would expose its
 	// internal exchanges under this proxy's trust context.

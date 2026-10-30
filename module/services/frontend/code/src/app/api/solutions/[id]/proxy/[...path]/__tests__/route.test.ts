@@ -175,7 +175,7 @@ describe("solution proxy passthrough", () => {
 		expect(res.status).toBe(200);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const [target, init] = fetchMock.mock.calls[0];
-		expect(target).toBe(`${GATEWAY_BASE}/solutions/audit-backend/records`);
+		expect(target).toBe(`${GATEWAY_BASE}/v1/audit-backend/records`);
 		expect((init.headers as Headers).get("authorization")).toBe(
 			"Bearer caller-token",
 		);
@@ -294,7 +294,7 @@ describe("solution proxy passthrough", () => {
 
 			const target = fetchMock.mock.calls[0][0] as string;
 			expect(target).toBe(`${GATEWAY_BASE}/${procedure}`);
-			expect(target).not.toContain("/solutions/audit-backend/");
+			expect(target).not.toContain("audit-backend");
 		},
 	);
 
@@ -324,7 +324,7 @@ describe("solution proxy passthrough", () => {
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(fetchMock.mock.calls[0][0]).toBe(
-			`${GATEWAY_BASE}/solutions/audit-backend/${path}`,
+			`${GATEWAY_BASE}/v1/audit-backend/${path}`,
 		);
 	});
 
@@ -584,7 +584,7 @@ describe("solution proxy passthrough", () => {
 
 		const [target] = fetchMock.mock.calls[0];
 		expect(target).toBe(
-			`${GATEWAY_BASE}/solutions/audit-backend/a%20b/c%3Fd%3De`,
+			`${GATEWAY_BASE}/v1/audit-backend/a%20b/c%3Fd%3De`,
 		);
 	});
 
@@ -602,7 +602,7 @@ describe("solution proxy passthrough", () => {
 
 		const [target] = fetchMock.mock.calls[0];
 		expect(target).toBe(
-			`${GATEWAY_BASE}/solutions/audit-backend/records?limit=10&cursor=abc`,
+			`${GATEWAY_BASE}/v1/audit-backend/records?limit=10&cursor=abc`,
 		);
 	});
 
@@ -1033,20 +1033,35 @@ describe("solution proxy trace context", () => {
 });
 
 
-describe("shared module frontend", () => {
- it.each([
-  ["records", "v1"],
-  ["assets/mf-manifest.json", "solutions"],
-  [".well-known/capabilities", "solutions"],
- ])("routes %s through its owning gateway surface", async (path, prefix) => {
-  withGateway();
-  registerAudit("shared-example", "module");
-  const res = await GET(proxyRequest(`http://frontend/api/solutions/audit/proxy/${path}`, {
-   headers: { authorization: "Bearer caller-token" },
-  }), context("audit", path.split("/")));
-  expect(res.status).toBe(200);
-  expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/${prefix}/shared-example/${path}`);
-  expect((fetchMock.mock.calls[0][1].headers as Headers).get("authorization")).toBe("Bearer caller-token");
+describe("module and solution data routes", () => {
+ // The runtime serves a module page and a solution alike: public assets and
+ // `.well-known` at its root, every other route under /v1/<alias> with the
+ // person's Work Context. The gateway's /solutions/<alias>/ data route strips
+ // that prefix, so a solution's data request sent there reached no route.
+ it.each(["module", "solution"] as const)("routes a %s's data and assets through their owning gateway surfaces", async (kind) => {
+  for (const [method, path, prefix] of [
+   ["GET", "records", "v1"],
+   ["GET", "settings/upload", "v1"],
+   ["POST", "modules/store/store.v1.StoreService/ListItems", "v1"],
+   ["GET", "assets/mf-manifest.json", "solutions"],
+   ["HEAD", "assets/remoteEntry.js", "solutions"],
+   ["GET", ".well-known/capabilities", "solutions"],
+   // Only a read of a public path is public: a write under it is data.
+   ["POST", "assets/upload", "v1"],
+  ] as const) {
+   withGateway();
+   registerAudit("shared-example", kind);
+   fetchMock.mockClear();
+   const handler = method === "POST" ? POST : GET;
+   const res = await handler(proxyRequest(`http://frontend/api/solutions/audit/proxy/${path}`, {
+    method,
+    headers: { authorization: "Bearer caller-token" },
+    ...(method === "POST" ? { body: "{}" } : {}),
+   }), context("audit", path.split("/")));
+   expect(res.status).toBe(200);
+   expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/${prefix}/shared-example/${path}`);
+   expect((fetchMock.mock.calls[0][1].headers as Headers).get("authorization")).toBe("Bearer caller-token");
+  }
  });
  it("preserves a live installation refusal from the module gateway", async () => {
   withGateway();
