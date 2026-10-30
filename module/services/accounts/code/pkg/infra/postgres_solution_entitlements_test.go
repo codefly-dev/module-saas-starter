@@ -14,9 +14,16 @@ import (
 )
 
 // These are the acceptance cases of issue #949, at the layer that decides them.
-// A viewer sees the solutions their organization installed and their teams were
-// granted, and nothing else — so the tests that matter are the ones where two
-// subjects in ONE organization, over ONE registered set, read different answers.
+// A viewer sees what their organization installed and their teams were granted,
+// and nothing else — so the tests that matter are the ones where two subjects in
+// ONE organization, over ONE registered set, read different answers.
+//
+// The store answers the module half of that read: module installations whose
+// authority root a subject's grants reach. A solution's holders are the
+// authority core's role grants, which business merges from HeldInstallations;
+// a scope grant at a legacy solution's root entitles nobody
+// (TestListSolutionEntitlements_LegacySolutionGrantEntitlesNobody). So the
+// entitlement cases below install modules.
 
 // solutionRole creates a role permitting (solution, use) — the pair a
 // solution-visibility question is asked in.
@@ -74,6 +81,45 @@ func installSolutionTarget(t *testing.T, orgID, ownerID, roleID, label, targetID
 		return err
 	}))
 	acknowledgeInstallation(t, installation)
+	return installation
+}
+
+// installModule declares a module's presence and installs it with an explicit
+// standing role, the module installation the store's entitlement read answers
+// for. A module's consent is active at once, with its standing grant at its
+// root node and no team grant.
+func installModule(t *testing.T, orgID, ownerID, roleID, identifier string) *gen.Installation {
+	t.Helper()
+	alias := uniqueAlias(identifier)
+	binding := "acme.test." + alias
+	targetID := declarePresenceKind(t, binding, alias, business.SolutionDeclaredKindModule)
+	var revision uint64
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		revision, err = testStore.LatestModuleEnvelopeRevision(ctx)
+		return err
+	}))
+	var installation *gen.Installation
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		var err error
+		installation, err = testStore.InstallSolution(ctx, &business.InstallSolutionParams{
+			OrgID:               orgID,
+			AgentIdentifier:     "acme.example/" + identifier + ":1.0.0",
+			TargetID:            targetID,
+			RouteAlias:          identifier,
+			RootScopeLabel:      identifier,
+			RoleID:              roleID,
+			OwnerPrincipalID:    ownerID,
+			GrantedBy:           ownerID,
+			Kind:                "module",
+			RegistryBindingID:   binding,
+			RegistryPrincipalID: business.ModulePrincipalID(alias),
+			Scope:               &business.InstallationScope{Capabilities: true},
+			EnvelopeRevision:    revision,
+		})
+		return err
+	}))
+	require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, installation.GetStatus())
 	return installation
 }
 
@@ -149,8 +195,8 @@ func entitlementOrg(t *testing.T) (orgID, ownerID, roleID string) {
 // the projection is still deployment-wide.
 func TestListSolutionEntitlements_TwoTeamsReadDifferentSolutions(t *testing.T) {
 	orgID, ownerID, roleID := entitlementOrg(t)
-	audit := installSolution(t, orgID, ownerID, roleID, "audit")
-	ledger := installSolution(t, orgID, ownerID, roleID, "ledger")
+	audit := installModule(t, orgID, ownerID, roleID, "audit")
+	ledger := installModule(t, orgID, ownerID, roleID, "ledger")
 
 	reviewer := seedUser(t)
 	seedHumanPrincipal(t, reviewer, "Reviewer")
@@ -173,7 +219,7 @@ func TestListSolutionEntitlements_TwoTeamsReadDifferentSolutions(t *testing.T) {
 // — there is no implicit or inherited admission.
 func TestListSolutionEntitlements_FreshInstallReachesNoTeam(t *testing.T) {
 	orgID, ownerID, roleID := entitlementOrg(t)
-	installSolution(t, orgID, ownerID, roleID, "audit")
+	installModule(t, orgID, ownerID, roleID, "audit")
 
 	member := seedUser(t)
 	seedHumanPrincipal(t, member, "Member")
@@ -184,12 +230,31 @@ func TestListSolutionEntitlements_FreshInstallReachesNoTeam(t *testing.T) {
 		"a newly installed solution must reach no team until a grant is written")
 }
 
+// A scope grant at a legacy solution's root entitles nobody: a solution's
+// holders are the authority core's role grants, and the store reads modules
+// alone. The module granted to the same team beside it is the positive control.
+func TestListSolutionEntitlements_LegacySolutionGrantEntitlesNobody(t *testing.T) {
+	orgID, ownerID, roleID := entitlementOrg(t)
+	legacy := installSolution(t, orgID, ownerID, roleID, "legacy")
+	module := installModule(t, orgID, ownerID, roleID, "records")
+
+	member := seedUser(t)
+	seedHumanPrincipal(t, member, "Member")
+	seedOrgMember(t, orgID, member)
+	team := seedTeamWith(t, orgID, member)
+	grantAtNode(t, orgID, team, roleID, legacy)
+	grantAtNode(t, orgID, team, roleID, module)
+
+	require.Equal(t, []string{module.GetTargetId()}, entitledIdentifiers(t, orgID, member),
+		"a legacy solution scope grant must not substitute for a canonical role grant")
+}
+
 // The projection narrows when a grant is revoked, with nothing about the
 // registration or the installation changing.
 func TestListSolutionEntitlements_NarrowsAfterRevocation(t *testing.T) {
 	orgID, ownerID, roleID := entitlementOrg(t)
-	audit := installSolution(t, orgID, ownerID, roleID, "audit")
-	ledger := installSolution(t, orgID, ownerID, roleID, "ledger")
+	audit := installModule(t, orgID, ownerID, roleID, "audit")
+	ledger := installModule(t, orgID, ownerID, roleID, "ledger")
 
 	member := seedUser(t)
 	seedHumanPrincipal(t, member, "Member")
@@ -210,7 +275,7 @@ func TestListSolutionEntitlements_NarrowsAfterRevocation(t *testing.T) {
 // a grant written for some other purpose from quietly adding a menu entry.
 func TestListSolutionEntitlements_UnrelatedRoleRevealsNothing(t *testing.T) {
 	orgID, ownerID, roleID := entitlementOrg(t)
-	audit := installSolution(t, orgID, ownerID, roleID, "audit")
+	audit := installModule(t, orgID, ownerID, roleID, "audit")
 
 	member := seedUser(t)
 	seedHumanPrincipal(t, member, "Member")
@@ -235,7 +300,7 @@ func TestListSolutionEntitlements_UnrelatedRoleRevealsNothing(t *testing.T) {
 // leaks.
 func TestListSolutionEntitlements_UninstalledIsInvisibleDespiteALingeringGrant(t *testing.T) {
 	orgID, ownerID, roleID := entitlementOrg(t)
-	audit := installSolution(t, orgID, ownerID, roleID, "audit")
+	audit := installModule(t, orgID, ownerID, roleID, "audit")
 
 	member := seedUser(t)
 	seedHumanPrincipal(t, member, "Member")
@@ -258,7 +323,7 @@ func TestListSolutionEntitlements_UninstalledIsInvisibleDespiteALingeringGrant(t
 // and simply not routed as serving.
 func TestListSolutionEntitlements_UnhealthyStaysEntitled(t *testing.T) {
 	orgID, ownerID, roleID := entitlementOrg(t)
-	audit := installSolution(t, orgID, ownerID, roleID, "audit")
+	audit := installModule(t, orgID, ownerID, roleID, "audit")
 
 	member := seedUser(t)
 	seedHumanPrincipal(t, member, "Member")
@@ -293,7 +358,7 @@ func TestListSolutionEntitlements_UnhealthyStaysEntitled(t *testing.T) {
 // exist. The org predicate plus the RLS floor both pin it.
 func TestListSolutionEntitlements_IsTenantIsolated(t *testing.T) {
 	orgA, ownerA, roleA := entitlementOrg(t)
-	installedA := installSolution(t, orgA, ownerA, roleA, "audit")
+	installedA := installModule(t, orgA, ownerA, roleA, "audit")
 	memberA := seedUser(t)
 	seedHumanPrincipal(t, memberA, "Member A")
 	seedOrgMember(t, orgA, memberA)
@@ -301,7 +366,7 @@ func TestListSolutionEntitlements_IsTenantIsolated(t *testing.T) {
 	grantAtNode(t, orgA, teamA, roleA, installedA)
 
 	orgB, ownerB, roleB := entitlementOrg(t)
-	installSolution(t, orgB, ownerB, roleB, "ledger")
+	installModule(t, orgB, ownerB, roleB, "ledger")
 
 	require.Equal(t, []string{installedA.GetTargetId()}, entitledIdentifiers(t, orgA, memberA))
 	// Asked about org B, the SAME viewer is entitled to nothing: they hold no
@@ -547,7 +612,7 @@ func TestInstallationListingHealthMatchesGetInstallation(t *testing.T) {
 // such a revision would not move here, and a cached menu would outlive the grant.
 func TestListSolutionEntitlements_NarrowsWhenAGrantExpiresWithoutAnyWrite(t *testing.T) {
 	orgID, ownerID, roleID := entitlementOrg(t)
-	audit := installSolution(t, orgID, ownerID, roleID, "audit")
+	audit := installModule(t, orgID, ownerID, roleID, "audit")
 
 	member := seedUser(t)
 	seedHumanPrincipal(t, member, "Member")

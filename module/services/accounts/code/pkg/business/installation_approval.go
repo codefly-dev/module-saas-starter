@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -66,6 +67,17 @@ func (s *Service) InstallFixtureTarget(ctx context.Context, actorID, orgID, targ
 	if available.Installed && available.Kind != "module" {
 		existing, err := s.heldTargetInstallation(ctx, orgID, available.TargetID)
 		return existing, false, err
+	}
+	// The catalogue counts a solution as installed only through its canonical
+	// record. A host without the authority core still keeps legacy solution
+	// records, so the fixture finds its own here: installing it again would
+	// resolve the role afresh and be refused as a changed immutable attribute
+	// once the solution has delivered roles of its own.
+	if _, err := s.AuthorityCore(); available.Kind != "module" && errors.Is(err, ErrAuthorityCoreUnconfigured) {
+		existing, err := s.findHeldTargetInstallation(ctx, orgID, available.TargetID)
+		if err != nil || existing != nil {
+			return existing, false, err
+		}
 	}
 	approval := &InstallationApproval{TargetID: available.TargetID, Generation: available.AppliedGeneration, OperationID: uuid.NewString()}
 	for token := ""; ; {

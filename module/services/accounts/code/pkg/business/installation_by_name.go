@@ -146,8 +146,19 @@ func (s *Service) availableTargetNamed(ctx context.Context, orgID, target string
 }
 
 // heldTargetInstallation is the organisation's installation of targetID that is
-// not revoked, read through ListInstallations page by page.
+// not revoked, for a target the catalogue says it holds.
 func (s *Service) heldTargetInstallation(ctx context.Context, orgID, targetID string) (*gen.Installation, error) {
+	installation, err := s.findHeldTargetInstallation(ctx, orgID, targetID)
+	if err == nil && installation == nil {
+		return nil, fmt.Errorf("the catalogue says organization %s holds target %s, and its installations hold none that is not revoked", orgID, targetID)
+	}
+	return installation, err
+}
+
+// findHeldTargetInstallation is the organisation's installation of targetID
+// that is not revoked, read through ListInstallations page by page; nil when
+// it holds none.
+func (s *Service) findHeldTargetInstallation(ctx context.Context, orgID, targetID string) (*gen.Installation, error) {
 	token := ""
 	for page := 0; page < activeTargetInstallationPageLimit; page++ {
 		resp, err := s.ListInstallations(ctx, &gen.ListInstallationsRequest{OrgId: orgID, PageSize: listInstallationsMaxPageSize, PageToken: token})
@@ -161,7 +172,7 @@ func (s *Service) heldTargetInstallation(ctx context.Context, orgID, targetID st
 			}
 		}
 		if token = resp.GetNextPageToken(); token == "" {
-			return nil, fmt.Errorf("the catalogue says organization %s holds target %s, and its installations hold none that is not revoked", orgID, targetID)
+			return nil, nil
 		}
 	}
 	return nil, fmt.Errorf("installations of organization %s did not end within %d pages", orgID, activeTargetInstallationPageLimit)
