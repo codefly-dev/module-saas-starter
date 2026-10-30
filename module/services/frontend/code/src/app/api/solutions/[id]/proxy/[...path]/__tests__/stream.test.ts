@@ -151,7 +151,7 @@ describe("authenticated solution stream carrier", () => {
 		expect(calls).toEqual(
 			[undefined, "saved-run:2"].map((resume) => ({
 				method: "GET",
-				path: "/solutions/example-backend/runs/saved-run/events",
+				path: "/v1/example-backend/runs/saved-run/events",
 				resume,
 				auth: "Bearer fixture-user",
 			})),
@@ -195,7 +195,7 @@ describe("authenticated solution stream carrier", () => {
 		});
 		vi.spyOn(console, "error").mockImplementation(() => {});
 		expect((await GET(request(), context)).status).toBe(502);
-		expect(paths).toEqual(["/solutions/example-backend/runs/saved-run/events"]);
+		expect(paths).toEqual(["/v1/example-backend/runs/saved-run/events"]);
 	});
 
 	it("keeps an authorization denial intact without reconnecting", async () => {
