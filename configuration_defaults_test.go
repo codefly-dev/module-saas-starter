@@ -107,6 +107,18 @@ func envValue(raw string) string {
 	return strings.TrimSpace(v)
 }
 
+// envFileValue returns the value an env file assigns key, and whether it
+// declares the key at all.
+func envFileValue(data []byte, key string) (string, bool) {
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if k, raw, ok := strings.Cut(trimmed, "="); ok && !strings.HasPrefix(trimmed, "#") && strings.TrimSpace(k) == key {
+			return envValue(raw), true
+		}
+	}
+	return "", false
+}
+
 // moduleDefaultFiles returns the default file names (e.g. "legal.env",
 // "internal-auth.secret.env") that group actually ships under
 // moduleConfigLocalDir. A group may ship a non-secret file, a secret file, or
@@ -275,22 +287,29 @@ func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 			continue
 		}
 		// hop names the modules the gateway stands in front of, which only a
-		// composition knows. The module subtree ships no default, because a
-		// base-synced consumer inherits it and it would collide with the hop
-		// group that consumer authors — the same group the authority module's
-		// hop reads. The repo root is this repository's OWN composition, which
-		// composes no module behind a hop, so it states that there rather than
-		// leaving the gateway's declared dependency unresolved.
+		// composition knows. The repo root is this repository's OWN
+		// composition, which composes no module behind a hop, so it states that
+		// there rather than leaving the gateway's declared dependency
+		// unresolved. Codefly offers that root to every composing workspace
+		// too, and overlays the consumer's own hop group on it per key,
+		// refusing a key the root does not declare (#1279). So the root
+		// declares every key a composition's hop group sets, each empty.
 		if group == "hop" {
+			data, err := os.ReadFile(filepath.Join(workspaceConfigLocalDir, group+".env"))
+			if err != nil {
+				t.Errorf("this workspace's own composition must state %s at %s/%s.env: it composes no module behind a hop, and the gateway declares the group: %v",
+					group, workspaceConfigLocalDir, group, err)
+			}
+			for _, key := range []string{"MODULES", "ENDPOINT", "ENFORCEMENT"} {
+				if value, ok := envFileValue(data, key); !ok || value != "" {
+					t.Errorf("%s/%s.env must declare %s empty, so a composing workspace's hop group may set it", workspaceConfigLocalDir, group, key)
+				}
+			}
 			for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
 				path := filepath.Join(moduleConfigLocalDir, group+suffix)
 				if _, err := os.Lstat(path); !os.IsNotExist(err) {
 					t.Errorf("composition-owned group %s must have no base-synced default at %s", group, path)
 				}
-			}
-			if _, err := os.Lstat(filepath.Join(workspaceConfigLocalDir, group+".env")); err != nil {
-				t.Errorf("this workspace's own composition must state %s at %s/%s.env: it composes no module behind a hop, and the gateway declares the group",
-					group, workspaceConfigLocalDir, group)
 			}
 			continue
 		}
