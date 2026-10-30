@@ -319,3 +319,20 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `org_member`: 57
 - `platform_admin`: 29
 - `public`: 32
+
+## Three vocabularies
+
+Three sets of role words appear on this host. They answer different questions,
+and a word in one never means the same-spelled word in another.
+
+| Vocabulary | Words | What it decides | Declared in |
+|---|---|---|---|
+| Organisation role | `owner`, `admin`, `member` | Who administers the organisation. The `org_admin` tier admits `owner` and `admin` (and a platform `super_admin`); `org_member` admits any member. The `/admin` pages gate on it. | the organisation membership; the session's `or` claim |
+| Catalogue built-in role | `admin`, `editor`, `viewer` | Which `<resource>:<action>` permissions (the Permission / scope column above) a role assignment carries on this host's own resources. | `servicePermissionVocabulary` in `pkg/business/service_vocabulary.go` |
+| Installation role | `installer`, `editor`, `viewer`, and any a solution adds | What a person holds through one installation of a solution: its page, its navigation entry, its Setup tab, and what a Work Context at its audience carries. The installation's owner holds `installer`. | the solution's signed authority document; granted per installation to a person or a team |
+
+The `/s/<id>` page, the solution navigation and the Setup tab speak only
+installation roles. A module declares none: the shared authority core refuses
+roles on a module, so a module's page is reached through the organisation's
+installation of it and a team grant at that installation, and what a person
+holds at a module's audience is decided by their organisation roles.
