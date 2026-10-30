@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	stdpath "path"
@@ -461,6 +462,10 @@ type solutionRegistrationProjection struct {
 	// the frontend block of the applied presence plus the host's own constants
 	// (solutionManifest). Absent until the presence declares one.
 	Manifest *string `json:"manifest,omitempty"`
+	// Refusal is why this replica dropped the record's applied manifest: the
+	// registration stays declared and nothing routes on it until a generation
+	// this gateway can read is applied.
+	Refusal string `json:"refusal,omitempty"`
 }
 
 // handleSolutionRegistrySnapshot serves this replica's view of the registry to
@@ -477,7 +482,7 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	records, revision, loaded := g.solutions.snapshot()
+	records, revision, loaded, refusals := g.solutions.snapshot()
 	if !loaded {
 		httpError(w, http.StatusServiceUnavailable, "solution registry unavailable")
 		return
@@ -503,6 +508,9 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 		if manifest, ok := solutionManifest(record, g.solutions.frontendPrepared(record)); ok {
 			projection.Manifest = &manifest
 			projection.AssetVersion = frontendAssetVersion(record)
+		}
+		if refusal, ok := refusals[record.GetSolutionId()]; ok {
+			projection.Refusal = fmt.Sprintf("generation %d: %s", refusal.Generation, refusal.Reason)
 		}
 		out.Solutions = append(out.Solutions, projection)
 	}

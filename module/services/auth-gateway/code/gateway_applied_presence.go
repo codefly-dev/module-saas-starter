@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/solutionhost"
@@ -14,6 +16,16 @@ import (
 // and only when the registration, the applied generation and the parsed
 // manifest name the same binding and generation.
 func appliedManifest(binding *accountsv1.SolutionHostBindingState) (*solutionhost.ModuleManifest, bool) {
+	manifest, refusal := readAppliedManifest(binding)
+	return manifest, manifest != nil && refusal == nil
+}
+
+// readAppliedManifest tells the two reasons for no manifest apart. Nil and nil:
+// nothing applied matches the registration yet, which reconciliation settles on
+// its own. A refusal: a matching generation WAS applied and this gateway cannot
+// use its document — the parser rejects it, or it names another binding,
+// generation or alias. A refusal does not settle itself, so the caller reports it.
+func readAppliedManifest(binding *accountsv1.SolutionHostBindingState) (*solutionhost.ModuleManifest, error) {
 	applied := binding.GetApplied()
 	record := binding.GetRegistration()
 	declared := record.GetDeclared()
@@ -21,14 +33,17 @@ func appliedManifest(binding *accountsv1.SolutionHostBindingState) (*solutionhos
 		declared.GetBindingId() != binding.GetBindingId() ||
 		declared.GetGeneration() != applied.GetGeneration().GetGeneration() ||
 		applied.GetSolutionId() != record.GetSolutionId() || record.GetTombstonedAt() != nil {
-		return nil, false
+		return nil, nil
 	}
 	manifest, err := solutionhost.Parse([]byte(applied.GetGeneration().GetDocument()))
-	if err != nil || manifest.Binding != declared.GetBindingId() || manifest.Generation != declared.GetGeneration() ||
-		manifest.Alias != record.GetSolutionId() {
-		return nil, false
+	if err != nil {
+		return nil, fmt.Errorf("this gateway's parser refuses the applied manifest: %w", err)
 	}
-	return manifest, true
+	if manifest.Binding != declared.GetBindingId() || manifest.Generation != declared.GetGeneration() ||
+		manifest.Alias != record.GetSolutionId() {
+		return nil, fmt.Errorf("the applied manifest names binding %q generation %d alias %q, not the registration's", manifest.Binding, manifest.Generation, manifest.Alias)
+	}
+	return manifest, nil
 }
 
 // routeGatewayAPIs are the APIs a declared route is served on: the REST surface
