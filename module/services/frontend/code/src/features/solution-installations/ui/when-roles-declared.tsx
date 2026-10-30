@@ -10,12 +10,33 @@ import { apiTransport } from "@/lib/connect/transport";
 const offers = createClient(OfferService, apiTransport);
 
 /**
- * Renders its children only for a target that declares installation roles,
- * the only target a Setup tab can answer for. A solution always does: the
+ * Whether a target declares installation roles. A solution always does: the
  * shared authority core composes none without an installer role. A module
  * does only when it declares a page and roles; the authority's offer review
- * is the answer, and a module it refuses (one that declares no roles) shows
- * nothing.
+ * is the answer, and a module it refuses (one that declares no roles) does
+ * not. Undefined while a module's answer is still being read.
+ */
+export function useRolesDeclared(
+	target: string,
+	kind?: string,
+): boolean | undefined {
+	const { organizationId = "" } = useAuth();
+	const review = useQuery({
+		queryKey: ["solution-declares-roles", organizationId, target],
+		queryFn: async () =>
+			(await offers.reviewOffer({ organizationId, target })).roles.length > 0,
+		enabled: kind === "module" && organizationId !== "",
+		retry: false,
+		refetchOnWindowFocus: false,
+	});
+	if (kind !== "module") return kind === "solution";
+	if (review.isError) return false;
+	return review.data;
+}
+
+/**
+ * Renders its children only for a target that declares installation roles,
+ * the only target a Setup tab can answer for (`useRolesDeclared`).
  */
 export function WhenRolesDeclared({
 	target,
@@ -26,15 +47,5 @@ export function WhenRolesDeclared({
 	kind?: "module" | "solution";
 	children: ReactNode;
 }) {
-	const { organizationId = "" } = useAuth();
-	const review = useQuery({
-		queryKey: ["solution-declares-roles", organizationId, target],
-		queryFn: async () =>
-			(await offers.reviewOffer({ organizationId, target })).roles.length > 0,
-		enabled: kind === "module" && organizationId !== "",
-		retry: false,
-		refetchOnWindowFocus: false,
-	});
-	const declared = kind === "solution" || review.data === true;
-	return declared ? <>{children}</> : null;
+	return useRolesDeclared(target, kind) ? <>{children}</> : null;
 }

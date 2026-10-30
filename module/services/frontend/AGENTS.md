@@ -114,7 +114,9 @@ page and the solution proxy from a remote's `apiBase`, both to the gateway
 root; Install and Current are not forwarded. ListHeld reads the signed-in
 member’s own held roles; ListRoleGrants still requires the authority’s
 admin/installer standing to list everyone’s grants. The admin installation page keeps
-this host's own team access card only for a record carrying a host scope root.
+this host's own team access card only for a record carrying a host scope root
+and no declared roles; a module page that declares roles is set up through them
+alone (`useRolesDeclared`).
 Canonical solutions use the shared component's person/team roles; their absent
 legacy root must not offer a second grant form or imply that nobody has access.
 

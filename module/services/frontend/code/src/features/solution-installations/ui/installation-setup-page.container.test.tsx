@@ -385,4 +385,22 @@ it("offers a module page that declares roles a team per role, as a solution", as
 	const access = await screen.findByRole("region", { name: "Team access" });
 	expect(within(access).getByText(/For each role this solution declares/)).toBeTruthy();
 	expect(within(access).getByText(/viewer:/)).toBeTruthy();
+	// Its roles are the one grant form: no host team access card beside them.
+	expect(screen.queryByText("Team access on this host")).toBeNull();
+	expect(screen.queryByRole("button", { name: "Grant a team" })).toBeNull();
+});
+
+// A module that declares no roles keeps this host's own team access card.
+it("keeps the host team access card for a module the authority reads no roles of", async () => {
+	serve({
+		installations: [
+			installation({
+				target: { ...suiteTarget, kind: "module" },
+				readiness: { ready: true, unmet: [] },
+			}),
+		],
+	});
+	render();
+	expect(await screen.findByText("Team access on this host")).toBeTruthy();
+	expect(screen.queryByRole("region", { name: "Team access" })).toBeNull();
 });
