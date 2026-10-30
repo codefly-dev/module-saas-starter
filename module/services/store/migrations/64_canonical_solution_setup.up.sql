@@ -1,5 +1,8 @@
 -- A canonical solution setup job is linked to its shared consent receipt.
 -- This is a job-custody predicate, not authority to activate the installation.
+-- Owned by app_control_plane (migration 36): only its owner may replace it.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
+SET LOCAL ROLE app_control_plane;
 CREATE OR REPLACE FUNCTION public.installation_step_job_current(job uuid, stamp jsonb)
 RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path = public, pg_temp AS $$
     SELECT CASE WHEN stamp->>'canonical.installation' = 'true' THEN
@@ -19,14 +22,24 @@ RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path = public, pg_temp 
           AND i.status IN ('pending','active'))
     END;
 $$;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 
 -- Durable success stays on the job. Only Authority Install, after its final
 -- serializable prerequisite check, may activate a canonical solution.
+-- The trigger is the table owner's; its function is app_control_plane's, so
+-- the migrator holds EXECUTE on it only while it recreates the trigger.
+SET LOCAL ROLE app_control_plane;
+GRANT EXECUTE ON FUNCTION public.record_installation_step() TO SESSION_USER;
+RESET ROLE;
 DROP TRIGGER record_installation_step ON public.job_messages;
 CREATE TRIGGER record_installation_step AFTER UPDATE OF state ON public.job_messages
     FOR EACH ROW WHEN (NEW.state IS DISTINCT FROM OLD.state
         AND COALESCE(NEW.attributes->>'canonical.installation','') <> 'true')
     EXECUTE FUNCTION public.record_installation_step();
+SET LOCAL ROLE app_control_plane;
+REVOKE EXECUTE ON FUNCTION public.record_installation_step() FROM SESSION_USER;
+RESET ROLE;
 -- Declared no-standing authority is consent metadata, not an empty grant.
 -- It is immutable for this installation; changing machine authority requires
 -- a separately reviewed lifecycle change, never a marker update.
