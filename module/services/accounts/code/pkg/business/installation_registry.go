@@ -79,8 +79,19 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 			return nil, domain.Refuse("the delivered module declares no standing machine authority")
 		}
 		params.NoStandingAuthority = true
+	} else if err := undeclaredInstallationRole(declaration); err != nil {
+		return nil, err
 	} else if declaration.InstallationRole != "" {
-		return nil, domain.NotNow("INSTALLATION_MODULE_ROLE_UNSUPPORTED: module %q declares role %q; the module standing-role owner must support that declaration before installation", declaration.Principal, declaration.InstallationRole)
+		// A module page's signed installation_role selects its standing role,
+		// as the core selects a solution's: a role_id may only name it.
+		role, err := s.declaredInstallationRoleID(ctx, params.OrgID, target, declaration)
+		if err != nil {
+			return nil, err
+		}
+		if params.RoleID != "" && params.RoleID != role {
+			return nil, domain.Refuse("role %q cannot override %s's installation_role declaration", params.RoleID, declaration.Name)
+		}
+		params.RoleID = role
 	}
 	if params.Kind == "module" && target.Installed && params.OwnerPrincipalID == "" {
 		existing, err := s.heldTargetInstallation(ctx, params.OrgID, params.TargetID)

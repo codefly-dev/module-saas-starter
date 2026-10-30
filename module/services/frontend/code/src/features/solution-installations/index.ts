@@ -3,5 +3,6 @@ export {
 	useInstallations,
 } from "./service/queries";
 export { InstallationSetupPage } from "./ui/installation-setup-page";
-export { SolutionSetupPanel } from "./ui/solution-setup-panel";
 export { SolutionInstallationsPage } from "./ui/solution-installations-page";
+export { SolutionSetupPanel } from "./ui/solution-setup-panel";
+export { WhenRolesDeclared } from "./ui/when-roles-declared";

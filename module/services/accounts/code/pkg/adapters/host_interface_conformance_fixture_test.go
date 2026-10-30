@@ -10,15 +10,21 @@ package adapters
 // cluster stands in (executiontest).
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"maps"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/codefly-dev/core/composition"
 	modulecontract "github.com/codefly-dev/core/contracts/module"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
@@ -112,6 +118,9 @@ type conformanceModule struct {
 	bindings         []solutionhost.AuthorityBinding
 	// generation is the delivery's generation; zero delivers the first.
 	generation uint64
+	// page is core's manifest's frontend, and roles the roles a page declares.
+	page  *solutionhost.Frontend
+	roles map[string][]*authorityv1.WorkScopeV1
 }
 
 // deliverModule delivers m as the CLI does: core's manifest signed with the
@@ -126,15 +135,20 @@ func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterf
 	}
 	manifest := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: m.alias, Alias: m.alias, Kind: solutionhost.KindModule, Generation: generation,
 		Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: m.alias, Version: version},
-		Workloads: []solutionhost.Workload{{Service: m.alias, Container: "app"}}, Authority: &solutionhost.Authority{Principal: m.alias, Bindings: m.bindings, InstallationRole: m.installationRole}}
+		Workloads: []solutionhost.Workload{{Service: m.alias, Container: "app"}}, Authority: &solutionhost.Authority{Principal: m.alias, Bindings: m.bindings, InstallationRole: m.installationRole},
+		Frontend: m.page}
 	for _, ceiling := range m.ceilings {
 		manifest.Authority.ResourceKinds = append(manifest.Authority.ResourceKinds, ceiling.GetResourceKind())
 	}
 	raw, err := solutionhost.SignedPayload(manifest)
 	require.NoError(t, err)
 	sum := sha256.Sum256(raw)
-	doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(&compositionv1.AuthorityManifestV1{Module: m.alias, Generation: generation,
-		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, OwnerAware: true, InstallationRole: m.installationRole})
+	document := &compositionv1.AuthorityManifestV1{Module: m.alias, Generation: generation,
+		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, OwnerAware: true, InstallationRole: m.installationRole}
+	for _, name := range slices.Sorted(maps.Keys(m.roles)) {
+		document.Roles = append(document.Roles, &compositionv1.RoleV1{Name: name, Scopes: m.roles[name]})
+	}
+	doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(document)
 	require.NoError(t, err)
 	envelope, err := delivery.Sign(doc, signer.KeyID(), signer.Sign)
 	require.NoError(t, err)
@@ -172,8 +186,30 @@ func teamNamed(t *testing.T, ctx context.Context, svc *business.Service, orgID, 
 func consentModule(ctx context.Context, svc *business.Service, store *infra.PostgresStore, org, admin, module string) error {
 	// One role per module and organization: a consent given again keeps the
 	// role the installation holds, which is immutable.
+	// A module page declaring roles is installed holding one of its own, as a
+	// solution is.
+	authority, err := svc.DeliveredSolutionAuthority(ctx, module)
+	if err != nil {
+		return err
+	}
 	role := "Use " + module
-	if err := store.WithOrgTx(ctx, org, func(ctx context.Context) error {
+	if authority == nil {
+		// A module page that has since dropped its roles keeps the role it
+		// was installed holding, one of the roles it declared then: no
+		// consent names that role again, so there is none to give.
+		if id, err := svc.WorkContextAudienceInstallation(ctx, org, module); err == nil {
+			held, err := svc.ReadHostInstallation(ctx, org, id)
+			if err != nil {
+				return err
+			}
+			if held.Role == business.InstallerRole {
+				return nil
+			}
+		}
+	}
+	if authority != nil {
+		role = business.InstallerRole
+	} else if err := store.WithOrgTx(ctx, org, func(ctx context.Context) error {
 		return store.CreateRole(ctx, &gen.Role{Id: business.NewIDString(), OrgId: org, Name: role, Permissions: []*gen.Permission{{Resource: "solution", Action: "use"}}})
 	}); err != nil && !strings.Contains(err.Error(), "roles_org_id_name_key") {
 		return err
@@ -226,4 +262,35 @@ func completeInstallStep(ctx context.Context, store *infra.PostgresStore, instal
 		return nil
 	}
 	return fmt.Errorf("installation %s never completed its step", installation.GetId())
+}
+
+// conformancePageSource serves the one signed page payload the suite's module
+// page declares: this host applies a page only once its signed payload is
+// prepared, so the suite delivers this payload (Fixture.PagePayload).
+type conformancePageSource struct {
+	digest solutionhost.PayloadDigest
+	data   []byte
+}
+
+func (s conformancePageSource) Open(_ context.Context, digest solutionhost.PayloadDigest) (io.ReadCloser, error) {
+	if digest != s.digest {
+		return nil, fmt.Errorf("no page payload %s", digest)
+	}
+	return io.NopCloser(bytes.NewReader(s.data)), nil
+}
+
+// conformancePage is a page payload exposing ./Page, and its source.
+func conformancePage(t *testing.T) (*solutionhost.FrontendPayload, conformancePageSource) {
+	t.Helper()
+	dir := t.TempDir()
+	for name, value := range map[string]string{
+		"mf-manifest.json": `{"metaData":{"globalName":"conformance","publicPath":"auto","remoteEntry":{"name":"entry.js","type":"global"}},"exposes":[{"path":"./Page","assets":{"js":{"async":["page.js"]}}}]}`,
+		"entry.js":         "import('./page.js')", "page.js": "export default null",
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(value), 0o600))
+	}
+	data, digest, err := composition.CanonicalArchive(dir)
+	require.NoError(t, err)
+	return &solutionhost.FrontendPayload{Artifact: "frontend", Digest: solutionhost.PayloadDigest(digest), MediaType: "application/x-tar"},
+		conformancePageSource{digest: solutionhost.PayloadDigest(digest), data: data}
 }

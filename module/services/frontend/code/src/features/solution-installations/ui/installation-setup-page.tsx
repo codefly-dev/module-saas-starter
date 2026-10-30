@@ -41,6 +41,7 @@ import { useInstallations } from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
 import { Fact } from "./solution-installations-page";
 import { SolutionSetupPanel } from "./solution-setup-panel";
+import { useRolesDeclared } from "./when-roles-declared";
 
 /**
  * One module's or one solution's setup page: what it is and whether it is ready,
@@ -147,7 +148,13 @@ function InstallationSetup({
 		useState<GrantInstallationToTeamResponse | null>(null);
 	const name = row.target?.routeAlias || "this installation";
 	const target = row.target?.routeAlias ?? "";
-	const hasHostScopeRoot = Boolean(row.rootScopePath);
+	// This host's own team access card is for a record carrying a host scope
+	// root and no declared roles: a module page that declares roles is set up
+	// through them alone, as a solution is, so it offers no second grant form.
+	const rolesDeclared = useRolesDeclared(target, row.target?.kind);
+	const hasHostScopeRoot =
+		Boolean(row.rootScopePath) &&
+		(row.target?.kind !== "module" || rolesDeclared === false);
 	// The host's own unmet conditions, in the words of whoever owns each, handed
 	// to the shared Setup UI: it renders them beside the authority's answers.
 	const conditions: SetupCondition[] = (row.readiness?.unmet ?? []).map(
@@ -194,11 +201,10 @@ function InstallationSetup({
 			<SolutionSetupPanel
 				target={target}
 				conditions={conditions}
-				targetId={
-					row.target?.kind === "solution"
-						? row.installation?.targetId
-						: undefined
-				}
+				// A team per declared role is offered wherever the authority's
+				// offer names roles: every solution, and a module page that
+				// declares them. A module it refuses offers none.
+				targetId={row.installation?.targetId}
 				installation={row.installation}
 			/>
 

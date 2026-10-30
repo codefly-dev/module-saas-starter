@@ -113,11 +113,16 @@ boundary is deliberate:
 **What uninstalling does, stated plainly:** it revokes that organization's agent
 authority — the principal and its standing grant — withdraws that organization's
 viewers from the projections, and refuses that organization's traffic at the
-solution proxy. It does **not** remove the solution's page for that organization,
-because `/s/{id}` server-renders from the registry and this origin cannot read a
-verified viewer server-side without rotating a refresh token per render; the page
-discloses a nav title and a manifest URL the public asset surface already serves,
-and every call it makes goes through the gated proxy. Other
+solution proxy. The server render of `/s/{id}` still reads the registry alone,
+because this origin cannot read a verified viewer server-side without rotating a
+refresh token per render; its payload carries the record's nav title, manifest
+URL, declared sources and dashboard declaration — the bundle the public asset
+surface already serves without a credential. What the page mounts — the remote, its
+Setup and Dashboard tabs — waits for the viewer's own navigation projection and
+appears only when that projection names the page; a viewer it does not name sees
+the page's not-found state, in a 200 that still carries the public declaration
+above, where an id nothing is registered under is a 404.
+Every call the page makes still goes through the gated proxy. Other
 tenants are unaffected either way, because installation state is per-org.
 
 ### What the projections answer (issue #949)
@@ -151,7 +156,10 @@ to drop it.
 
 The authority answer is `SolutionEntitlementService.ListSolutionEntitlements`,
 which reads the installation set and the scope grant + share union in **one**
-transaction, so the two can never describe different moments. The join key is the
+transaction, so the two can never describe different moments, and adds the
+installations whose roles decide: a solution's, and a module page's that declares
+roles, wherever the shared authority core says the viewer holds one of them (a
+module without a page declares none, so it is never listed that way). The join key is the
 immutable solution target: `installations.target_id` is the target a
 registration record was **declared** under, which the registry projection carries
 as `targetId`.
