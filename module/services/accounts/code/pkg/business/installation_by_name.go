@@ -73,9 +73,17 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		if role != "" {
 			return nil, false, domain.Refuse("the delivered module declares no standing machine authority")
 		}
-	} else if declaration.InstallationRole != "" {
-		return nil, false, domain.NotNow("INSTALLATION_MODULE_ROLE_UNSUPPORTED: module %q declares role %q; the module standing-role owner must support that declaration before installation", declaration.Principal, declaration.InstallationRole)
+	} else if undeclared := undeclaredInstallationRole(declaration); undeclared != nil {
+		return nil, false, undeclared
 	} else if authority != nil {
+		// A module page's signed installation_role selects its standing role
+		// as the core selects a solution's.
+		if declaration.InstallationRole != "" {
+			if role != "" && role != declaration.InstallationRole {
+				return nil, false, domain.Refuse("role %q cannot override %s's installation_role declaration", role, declaration.Name)
+			}
+			role = declaration.InstallationRole
+		}
 		roleID, err = s.solutionRoleID(ctx, orgID, available.TargetID, available.RouteAlias, authority, role)
 	} else {
 		roleID, err = s.organizationRoleNamed(ctx, orgID, role)
@@ -121,6 +129,19 @@ func (s *Service) moduleInstallationDeclaration(ctx context.Context, target *Ava
 		return m, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: the paired module declaration is not current")
 	}
 	return m, nil
+}
+
+// undeclaredInstallationRole refuses, with the core's reason, a module whose
+// signed installation_role names a role it does not declare. Only a module
+// that declares a page declares roles, so one without a page names none.
+func undeclaredInstallationRole(m domain.Module) error {
+	if m.InstallationRole == "" || m.InstallationRole == domain.NoInstallationRole {
+		return nil
+	}
+	if _, ok := m.Roles[m.InstallationRole]; ok {
+		return nil
+	}
+	return domain.Missing("role %q is not one %s declares", m.InstallationRole, m.Name)
 }
 
 // availableTargetNamed is the organisation's catalogue entry whose route alias

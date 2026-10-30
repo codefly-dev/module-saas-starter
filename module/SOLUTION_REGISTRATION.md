@@ -156,7 +156,10 @@ to drop it.
 
 The authority answer is `SolutionEntitlementService.ListSolutionEntitlements`,
 which reads the installation set and the scope grant + share union in **one**
-transaction, so the two can never describe different moments. The join key is the
+transaction, so the two can never describe different moments, and adds the
+installations whose roles decide: a solution's, and a module page's that declares
+roles, wherever the shared authority core says the viewer holds one of them (a
+module without a page declares none, so it is never listed that way). The join key is the
 immutable solution target: `installations.target_id` is the target a
 registration record was **declared** under, which the registry projection carries
 as `targetId`.

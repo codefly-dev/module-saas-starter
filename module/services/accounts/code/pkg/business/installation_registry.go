@@ -79,8 +79,8 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 			return nil, domain.Refuse("the delivered module declares no standing machine authority")
 		}
 		params.NoStandingAuthority = true
-	} else if declaration.InstallationRole != "" {
-		return nil, domain.NotNow("INSTALLATION_MODULE_ROLE_UNSUPPORTED: module %q declares role %q; the module standing-role owner must support that declaration before installation", declaration.Principal, declaration.InstallationRole)
+	} else if err := undeclaredInstallationRole(declaration); err != nil {
+		return nil, err
 	}
 	if params.Kind == "module" && target.Installed && params.OwnerPrincipalID == "" {
 		existing, err := s.heldTargetInstallation(ctx, params.OrgID, params.TargetID)

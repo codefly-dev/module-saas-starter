@@ -165,6 +165,8 @@ func runHostInterfaceFixture(t *testing.T) {
 	})
 	svc.SetModuleEnvelopeStore(store)
 	svc.SetAdmissionKeyStore(store)
+	pagePayload, pageSource := conformancePage(t)
+	svc.SetFrontendArtifactSource(pageSource)
 	reconciler, err := business.NewSolutionHostBindingReconciler(svc, business.SolutionHostBindingReconcilerConfig{
 		Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host",
 	})
@@ -342,6 +344,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
 		DeliveryCredential: func(module string) string { return "delivery:" + module },
 		InstallModule:      installModule,
+		PagePayload:        pagePayload,
 		// accounts serves OfferService from the same core, so the declaration
 		// case compares the reviewed offer here too: a solution's roles and the
 		// permissions they carry are its declaration on either host.
@@ -1076,6 +1079,59 @@ func runHostInterfaceFixture(t *testing.T) {
 			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "conformance-late"})
 		require.NoError(t, err, "a member of the declared team holds the solution's role")
 		require.NotEmpty(t, issued.GetContext().GetAuthorityScopes())
+	})
+
+	// A module page that declares roles reaches the navigation of a person
+	// holding one of them, and of no other member of the organization, as a
+	// solution does; its page's audience answers the same way. Redelivered
+	// without roles, it leaves the role holder's navigation: what lists it
+	// then is the organization's installation and a team's grant, as for any
+	// module.
+	t.Run("a module page's roles decide who is listed for it", func(t *testing.T) {
+		const module = "conformance-module-page"
+		note := wireScope(module+".note", "read")
+		page := &solutionhost.Frontend{Title: "Module page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload}
+		withRoles := conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{note}, page: page,
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}}
+		deliverModule(t, ctx, conn, signer, withRoles)
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		installations, err := core.Installations(ctx, alex, fixtureOrganization)
+		require.NoError(t, err)
+		var inst domain.Installation
+		for _, candidate := range installations {
+			if candidate.Target == module {
+				inst = candidate
+			}
+		}
+		require.Equal(t, domain.Active, inst.Status, "the module page is installed at Acme")
+		const nora, remi = "00000000-0000-7000-8000-0000000000b8", "00000000-0000-7000-8000-0000000000b2"
+		_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: "viewer", PersonID: nora})
+		require.NoError(t, err)
+		listed := func(person string) bool {
+			t.Helper()
+			entitled, err := svc.ListSolutionEntitlements(ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: person})
+			require.NoError(t, err)
+			for _, entitlement := range entitled.GetEntitlements() {
+				if entitlement.GetInstallationId() == inst.ID {
+					return true
+				}
+			}
+			return false
+		}
+		require.True(t, listed(nora), "the viewer's navigation lists the module page")
+		require.False(t, listed(remi), "another member's does not")
+		issue := func(token string) error {
+			_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(signIn(token), &authorityv1.IssueRequest{
+				As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: module})
+			return err
+		}
+		require.NoError(t, issue("fixture-no-roles"), "the viewer is issued a capability at the page's audience")
+		require.Equal(t, codes.PermissionDenied, status.Code(issue("fixture-remi")), "another member is not")
+
+		withoutRoles := withRoles
+		withoutRoles.roles, withoutRoles.generation = nil, 2
+		deliverModule(t, ctx, conn, signer, withoutRoles)
+		require.False(t, listed(nora), "a module page without roles is listed by no role")
 	})
 
 	// Last, because the envelope it writes becomes every module's ceiling: a
