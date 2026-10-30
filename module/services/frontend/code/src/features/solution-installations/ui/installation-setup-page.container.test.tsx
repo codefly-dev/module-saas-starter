@@ -352,3 +352,55 @@ it("shows the solution's roles, what they grant and who holds them, from the aut
 		body: { organizationId: "org-1", installationId: "core-suite" },
 	});
 });
+
+// A module page that declares roles is set up as a solution is: the authority
+// reviews its offer, and a team is offered for each role it declares.
+it("offers a module page that declares roles a team per role, as a solution", async () => {
+	serve({
+		installations: [
+			installation({
+				target: { ...suiteTarget, kind: "module" },
+				readiness: { ready: true, unmet: [] },
+			}),
+		],
+	});
+	server.use(
+		http.post("http://localhost:3000/host.installation.v1.OfferService/ReviewOffer", () =>
+			HttpResponse.json({
+				target: "suite",
+				approval: { targetId: "suite", generation: "3", digest: "sha256:suite" },
+				installation: { id: "core-suite", organizationId: "org-1", target: "suite", status: "STATUS_ACTIVE", revision: "2" },
+				roles: [
+					{ name: "installer", scopes: [{ resourceKind: "suite.page", actions: ["read", "write"] }] },
+					{ name: "viewer", scopes: [{ resourceKind: "suite.page", actions: ["read"] }] },
+				],
+			}),
+		),
+		http.post("http://localhost:3000/host.installation.v1.InstallationService/ListRoleGrants", () =>
+			HttpResponse.json({ grants: [] }),
+		),
+	);
+	render();
+
+	const access = await screen.findByRole("region", { name: "Team access" });
+	expect(within(access).getByText(/For each role this solution declares/)).toBeTruthy();
+	expect(within(access).getByText(/viewer:/)).toBeTruthy();
+	// Its roles are the one grant form: no host team access card beside them.
+	expect(screen.queryByText("Team access on this host")).toBeNull();
+	expect(screen.queryByRole("button", { name: "Grant a team" })).toBeNull();
+});
+
+// A module that declares no roles keeps this host's own team access card.
+it("keeps the host team access card for a module the authority reads no roles of", async () => {
+	serve({
+		installations: [
+			installation({
+				target: { ...suiteTarget, kind: "module" },
+				readiness: { ready: true, unmet: [] },
+			}),
+		],
+	});
+	render();
+	expect(await screen.findByText("Team access on this host")).toBeTruthy();
+	expect(screen.queryByRole("region", { name: "Team access" })).toBeNull();
+});

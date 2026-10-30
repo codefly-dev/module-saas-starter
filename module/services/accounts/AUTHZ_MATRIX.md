@@ -319,3 +319,24 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `org_member`: 57
 - `platform_admin`: 29
 - `public`: 32
+
+## Three vocabularies
+
+Three sets of role words appear on this host. They answer different questions,
+and a word in one never means the same-spelled word in another.
+
+| Vocabulary | Words | What it decides | Declared in |
+|---|---|---|---|
+| Organisation role | `owner`, `admin`, `member` | Who administers the organisation. The `org_admin` tier admits `owner` and `admin` (and a platform `super_admin`); `org_member` admits any member. The `/admin` pages gate on `roles:write`, which admits the same people (`owner`, `admin`, a platform `super_admin`) as the API's org-admin check. | the organisation membership; the session's `or` claim |
+| Catalogue built-in role | `admin`, `editor`, `viewer` | Which `<resource>:<action>` permissions (the Permission / scope column above) a role assignment carries on this host's own resources. | `servicePermissionVocabulary` in `pkg/business/service_vocabulary.go` |
+| Installation role | `installer`, and whatever else a solution or a module page declares (the proposed standard adds `editor`, `viewer`) | What a person holds through one installation of a solution or of a module page that declares roles: its page, its navigation entry, its Setup tab, and what a Work Context at its audience carries. The shared authority core requires every solution, and every module page that declares roles, to declare `installer`; `editor` and `viewer` are the standard an open handbook proposal sets, checked by nothing yet. The installation's owner holds `installer`. | the signed authority document of the solution or module page; granted per installation to a person or a team |
+
+The `/s/<id>` page, the solution navigation and the Setup tab speak only
+installation roles. A module page (a module whose signed manifest declares a
+frontend) may declare installation roles too: then they gate its page, its
+navigation entry and its audience exactly as a solution's, and the
+organisation's roles no longer apply there. A module that declares no roles,
+which every module without a page is, keeps the organisation's roles at its
+audience, and its page is reached through the organisation's installation of
+it and a team grant at that installation. The shared authority core refuses
+roles on a module without a page.
