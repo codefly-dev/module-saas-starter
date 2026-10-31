@@ -16,7 +16,7 @@ import (
 // All returns the list of registered plugins.
 //
 // **Wiring note for operators.** The permissions plugin is
-// constructed without signing keys here so registry_gen.go has
+// constructed without signing keys here so this registry has
 // no dependency on operator config. main.go (or work.go) is
 // responsible for configuring the shared instance via
 // Plugin.WithHMACSecret / Plugin.WithEd25519Key before NewServer.
