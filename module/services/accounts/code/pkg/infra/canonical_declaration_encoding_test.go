@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	modulecontract "github.com/codefly-dev/core/contracts/module"
 )
 
 func TestCanonicalDeclarationStorageRetainsOwnerValues(t *testing.T) {
 	for _, role := range []string{"", "none", "reader"} {
-		m := domain.Module{InstallationRole: role, EdgeDependencies: []domain.EdgeDependency{
+		m := domain.Module{OwnerAwareResourceKinds: []string{"example.items"}, Setup: []modulecontract.ResolvedSetup{{Binding: "schemas", Methods: []string{"/store.v1.Store/Define"}, Scopes: []string{"records.types:define"}}}, InstallationRole: role, EdgeDependencies: []domain.EdgeDependency{
 			{Module: "acme.records", Presence: "required"}, {Module: "acme.annotations", Presence: "optional"},
 		}}
 		raw, err := encodeModule(m)
@@ -21,7 +22,7 @@ func TestCanonicalDeclarationStorageRetainsOwnerValues(t *testing.T) {
 		if err := decodeModule(&got, raw); err != nil {
 			t.Fatal(err)
 		}
-		if got.InstallationRole != role || !reflect.DeepEqual(got.EdgeDependencies, m.EdgeDependencies) {
+		if !reflect.DeepEqual(got.Setup, m.Setup) || !reflect.DeepEqual(got.OwnerAwareResourceKinds, m.OwnerAwareResourceKinds) || got.InstallationRole != role || !reflect.DeepEqual(got.EdgeDependencies, m.EdgeDependencies) {
 			t.Fatalf("owner declaration changed in storage: %+v", got)
 		}
 		var fields map[string]json.RawMessage

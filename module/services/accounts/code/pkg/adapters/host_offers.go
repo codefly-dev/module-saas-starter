@@ -114,6 +114,9 @@ func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev
 		return nil, coreStatus(err)
 	}
 	out := &installationv1.ReviewedOffer{Target: projected.Target, ToolsComposed: projected.ToolsComposed, InstallationRole: projected.InstallationRole}
+	for _, setup := range projected.Setup {
+		out.Setup = append(out.Setup, &installationv1.OfferSetup{Binding: setup.Binding, Module: setup.Module, Methods: setup.Methods, Scopes: offerScopesToWire(setup.Scopes)})
+	}
 	for _, edge := range projected.EdgeDependencies {
 		out.EdgeDependencies = append(out.EdgeDependencies, &installationv1.OfferDependency{Module: edge.Module, Presence: edge.Presence})
 	}
