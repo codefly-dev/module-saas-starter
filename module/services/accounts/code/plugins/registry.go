@@ -1,10 +1,11 @@
-// Package plugins is accounts' plugin registry, and it is hand-written.
+// Package plugins is accounts' plugin registry.
 //
-// Accounts owns its adapters: no proto under proto/ declares a single
-// AccountsService for the go-grpc scaffold to adapt, so the agent's Sync keeps
-// only code/main.go current and never renders a plugin registry here (the
-// agent renders one from plugins/plugins.yaml only alongside its scaffold, and
-// refuses a plugins.yaml it cannot render). Add a plugin by adding it to All.
+// STOPGAP (codefly-dev/service-go-grpc#223): this file should be the agent's
+// plugins/registry_gen.go, rendered from plugins/plugins.yaml. The agent renders
+// a registry only alongside its scaffold, and the scaffold needs a single
+// AccountsService that this multi-service layout does not have. The agent
+// refuses a plugins.yaml it cannot render, so the registry is hand-written
+// until #223 lands. Add a plugin by adding it to All.
 package plugins
 
 import (

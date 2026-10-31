@@ -15,8 +15,9 @@
 //
 // **Operator integration steps** (one-time, post this PR):
 //
-//  1. List New() in plugins.All (plugins/registry.go). Accounts owns
-//     its adapters, so that registry is hand-written, not rendered.
+//  1. List New() in plugins.All (plugins/registry.go). That registry is
+//     hand-written until codefly-dev/service-go-grpc#223 lets the agent
+//     render it from plugins.yaml.
 //
 //  2. Configure the signing secret via the Plugin's With*
 //     helpers in main.go.

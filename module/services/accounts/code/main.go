@@ -1,11 +1,15 @@
 package main
 
-// This entrypoint is hand-written: it serves the module authority listener
-// declared in service.codefly.yaml and finishes the work wiring before any
-// listener opens, neither of which the go-grpc agent's entrypoint does. It
-// carries no generated-code marker, so the agent's Sync leaves it alone, as it
-// leaves this service's adapters and plugins/registry.go. Service logic goes
-// in work.go, registered with WithWork.
+// STOPGAP (codefly-dev/service-go-grpc#223): this entrypoint should be the
+// go-grpc agent's generated output, and it is hand-maintained only until the
+// agent can generate it for this service's shape. The agent's main-only
+// refresh would drop the module authority listener declared in
+// service.codefly.yaml (it resolves one listener per API), and it would start
+// the server before work's wiring completes. So this file carries no
+// generated-code marker, and the agent's Sync leaves it alone, as it leaves
+// this service's adapters and plugins/registry.go. Restore the marker and
+// adopt the generated main when #223 lands. Service logic goes in work.go,
+// registered with WithWork.
 
 import (
 	"accounts/pkg/adapters"
