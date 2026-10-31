@@ -15,16 +15,10 @@
 //
 // **Operator integration steps** (one-time, post this PR):
 //
-//  1. Edit `plugins/plugins.yaml`:
-//     plugins:
-//     - name: permissions
-//     import: "accounts/pkg/permissionsplugin"
+//  1. List New() in plugins.All (plugins/registry.go). Accounts owns
+//     its adapters, so that registry is hand-written, not rendered.
 //
-//  2. Trigger codefly Sync to regenerate registry_gen.go (or
-//     update by hand to match the regen output — see
-//     plugins/registry.go in this PR).
-//
-//  3. Configure the signing secret via the Plugin's With*
+//  2. Configure the signing secret via the Plugin's With*
 //     helpers in main.go.
 package permissionsplugin
 
@@ -49,7 +43,7 @@ type Plugin struct {
 
 // defaultPlugin is the singleton instance returned by New.
 //
-// **Why a singleton.** registry_gen.go calls New() to populate
+// **Why a singleton.** plugins/registry.go calls New() to populate
 // plugins.All(), but main.go also needs a handle to the plugin
 // to wire signing keys via WithHMACSecret / WithEd25519Key
 // before NewServer builds the generated transport registrations. A fresh

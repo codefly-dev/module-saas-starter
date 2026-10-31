@@ -12,7 +12,10 @@ agent:
     # service resolve its own address (service-go-grpc#165).
     # 0.1.58 builds with Go 1.27.3, including the GO-2026-6613 and GO-2026-6809
     # fixes.
-    version: 0.1.58
+    # 0.1.72 hands a native process each environment variable once
+    # (service-go-grpc#220); through 0.1.71 the inherited environment was
+    # appended twice, so accounts refused to start with a ~1 MB environment.
+    version: 0.1.72
     publisher: codefly.dev
 service-dependencies:
     - name: cache
