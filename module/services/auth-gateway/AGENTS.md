@@ -97,7 +97,12 @@ instance reloads; the owner's prepublication overlap requirement still applies.
   (ext_authz, revocation included), the call is metered on the organization's
   budget, the authority's `Issue` gives the person's Work Context at the module
   whose published routes resolve the path (held until shortly before it
-  lapses), and the call goes through the same HTTP face in-process with that
+  lapses). An authority Check refusal evicts only that same cached context;
+  the response is returned without replay, and a later explicit call issues
+  again. A downstream refusal after Check does not evict; a later Check must
+  observe stale authority first. Recovery is per-instance best effort, not a
+  cross-replica or next-request guarantee.
+  The call goes through the same HTTP face in-process with that
   context and nothing else: no `Authorization`, no `Cookie`, no identity header,
   no caller `x-codefly-*` header. A path published by two modules is refused
   (409); a module route under a `/v1/` prefix the catalog owns is refused (403).
