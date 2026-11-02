@@ -1662,6 +1662,37 @@ service DatasourceService {
     };
   }
 
+  // VerifySourceOperationReceipt conditionally reads retained output using the
+  // exact original Invoke request, including a nonempty declaration precondition.
+  // Committed means the normalized request and admitted declaration match the
+  // stored attempt. Unknown remains unresolved; this method never redispatches.
+  // Current actor, tenant and stored-source read authority apply before comparison.
+  // This is independent of the paired Runnable Lookup contract above.
+  rpc VerifySourceOperationReceipt(InvokeSourceOperationRequest) returns (InvokeSourceOperationResponse) {
+    option (google.api.http) = {
+      post: "/v1/datasource-operation-receipts/verify"
+      body: "*"
+    };
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "datasource:read"
+      scopes: "datasource:read"
+      resource_bindings: {
+        request_field: "effect_id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
   // ListSourceOperations reads the currently admitted declarations under source authority.
   rpc ListSourceOperations(ListSourceOperationsRequest) returns (ListSourceOperationsResponse) {
     option (google.api.http) = {get: "/v1/organizations/{org_id}/datasources/{source_id}/operations"};

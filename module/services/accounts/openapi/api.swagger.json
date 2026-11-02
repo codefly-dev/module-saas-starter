@@ -2757,6 +2757,31 @@
       },
       "type": "object"
     },
+    "v1InvokeSourceOperationRequest": {
+      "description": "InvokeSourceOperationRequest carries exactly one JSON object in input_json.\neffect_id must match x-codefly-effect-id; either location may supply it.",
+      "properties": {
+        "effectId": {
+          "type": "string"
+        },
+        "expectedDeclarationDigest": {
+          "description": "Optional for legacy callers. A caller that admitted a declaration supplies\nits canonical digest; a replacement is refused before provider dispatch.\nThis precondition participates in the receipt request fingerprint.",
+          "type": "string"
+        },
+        "inputJson": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "sourceId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1InvokeSourceOperationResponse": {
       "properties": {
         "outputJson": {
@@ -7489,6 +7514,40 @@
         },
         "tags": [
           "ConsentService"
+        ]
+      }
+    },
+    "/v1/datasource-operation-receipts/verify": {
+      "post": {
+        "operationId": "DatasourceService_VerifySourceOperationReceipt",
+        "parameters": [
+          {
+            "description": "InvokeSourceOperationRequest carries exactly one JSON object in input_json.\neffect_id must match x-codefly-effect-id; either location may supply it.",
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1InvokeSourceOperationRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1InvokeSourceOperationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "summary": "VerifySourceOperationReceipt conditionally reads retained output using the\nexact original Invoke request, including a nonempty declaration precondition.\nCommitted means the normalized request and admitted declaration match the\nstored attempt. Unknown remains unresolved; this method never redispatches.\nCurrent actor, tenant and stored-source read authority apply before comparison.\nThis is independent of the paired Runnable Lookup contract above.",
+        "tags": [
+          "DatasourceService"
         ]
       }
     },

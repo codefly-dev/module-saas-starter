@@ -78,6 +78,51 @@ binding are recovered from verified identity and durable attempt metadata.
 
 ## Receipts and uncertain outcomes
 
+### Conditional receipt verification (local owner candidate)
+
+`VerifySourceOperationReceipt` is a proposed additional read, not an accepted
+release contract. It takes the complete original `InvokeSourceOperationRequest`
+through Connect/gRPC/gRPC-Web or POST
+`/v1/datasource-operation-receipts/verify` with the whole request in the body.
+It has no input-bearing GET or query binding. Its request and response are secret.
+
+The caller must preserve exact `input_json` text and supply the original nonempty
+`expected_declaration_digest`. The host normalizes the effect header/field exactly
+as Invoke does and applies the same 65,536-byte complete normalized protojson
+request bound. Matching headers are allowed; conflicting or empty carriers refuse.
+Under the verified tenant, the original actor must still hold read authority to
+the **stored** source, including current delegation, membership, boundary and
+personal-source checks. Supplied source metadata never grants authority.
+
+Only after those checks, the host compares the admitted declaration digest and
+the complete normalized request with the permanent attempt's SDK request digest.
+This reuses `receipts.RequestDigest` and its `codefly.effect-receipt.request.digest/v1`
+format; optional-field presence and exact JSON text participate. There is no second
+consumer-side fingerprint. A future digest-format change needs an owner migration
+that preserves verification of retained attempts; silently rehashing old markers
+would not be compatible. No supplied input is newly persisted or logged.
+
+A committed result means that invocation and admitted declaration match the
+stored attempt, and contains the retained response under its existing 1 MiB wire
+bound. It says nothing about output correctness, currentness or indefinite retention.
+Mismatch returns a generic FailedPrecondition with no output; omitted or empty
+declaration preconditions are InvalidArgument. An absent attempt is NotFound;
+a matching attempt without retained output is `unknown` with `{}` output and
+never authorizes redispatch. Removed/replaced declarations do not prevent the read;
+removed sources or revoked authority can refuse it. Legacy invocations that never
+pinned a declaration remain recoverable only through the original Lookup.
+
+Old servers answer Unimplemented. Consumers must refuse unsupported, missing,
+malformed, unknown or failed verification; ordinary Lookup success is not a
+substitute. Legacy Lookup's request/response and paired Runnable recovery remain
+unchanged. This method neither reads a replacement declaration nor contacts a
+provider, and introduces no Runnable, ledger, queue or retry mechanism. Its
+actor-bound, bounded retention does not provide permanent cross-reviewer evidence.
+Owner acceptance, composition qualification and any durable sharing/retention
+contract remain separate prerequisites for adoption.
+
+### Existing receipt lifecycle
+
 The SDK receipts guard serializes `(tenant, effect_id, method)` and verifies the
 request digest. Its Postgres reads use the request pool under tenant RLS.
 `receipts.Record` writes the full response using the exact org transaction that
@@ -402,3 +447,18 @@ is not release qualification. The CLI preserves scope
 slots in operation documents and resolves composition selections during
 preparation, checking that the called endpoint serves both Invoke and Lookup.
 A passing generation drift check alone does not qualify the delivery path.
+
+The conditional receipt candidate additionally has an isolated ingress test.
+With the documented CLI on `PATH`, run from accounts/code:
+
+```sh
+GOWORK=off go test -race -tags integration ./pkg/adapters -run '^TestSourceOperationVerifyPostgresIngress$' -count=1 -timeout=15m
+```
+
+It uses the owner's Codefly dependency harness, Postgres/Vault, real signed
+sessions, generated Connect client and HTTP POST gateway. It qualifies real
+Invoke persistence, caller response loss, binding refusals, legacy Lookup,
+current read access, pruning and receipt-pool reopening. Only outbound provider
+transport and the retention clock use test seams. It does not qualify a complete
+process restart, module-delegation composition, external gateway/proxy deployment,
+TypeScript consumer adoption, or production raw body limits.

@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"accounts/pkg/auth"
@@ -12,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 // Use the real mint and verifier: a hand-stamped delegation key cannot prove
@@ -35,7 +37,7 @@ func TestSourceOperationDelegatedRefusalAudited(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, requireSourceOperationScope(ctx, delegationOrg, borrowed, "invoke"))
 
-	for _, method := range []string{"invoke", "lookup", "prune", "lookup-prune"} {
+	for _, method := range []string{"invoke", "lookup", "verify", "prune", "lookup-prune"} {
 		t.Run(method, func(t *testing.T) {
 			store := &sourceRefusalStore{sourceWireStore: &sourceWireStore{role: gen.OrgRole_ORG_ROLE_ADMIN,
 				attempt: &business.SourceOperationAttempt{OrgID: delegationOrg, ActorID: delegationPerson, SourceID: other, Operation: "read_item", EffectID: "refused-effect"}}}
@@ -52,6 +54,8 @@ func TestSourceOperationDelegatedRefusalAudited(t *testing.T) {
 				_, err = h.InvokeSourceOperation(ctx, connect.NewRequest(&gen.InvokeSourceOperationRequest{OrgId: delegationOrg, SourceId: other, Operation: "read_item", InputJson: `{"private":"must not enter audit"}`, EffectId: "refused-effect"}))
 			case "lookup":
 				_, err = h.LookupInvokeSourceOperation(ctx, connect.NewRequest(&gen.LookupInvokeSourceOperationRequest{EffectId: "refused-effect"}))
+			case "verify":
+				_, err = h.VerifySourceOperationReceipt(ctx, connect.NewRequest(&gen.InvokeSourceOperationRequest{OrgId: delegationOrg, SourceId: borrowed, Operation: "read_item", InputJson: `{"private":"must not enter audit"}`, EffectId: "refused-effect", ExpectedDeclarationDigest: proto.String("sha256:" + strings.Repeat("a", 64))}))
 			case "prune":
 				_, err = h.PruneSourceOperationReceipts(ctx, connect.NewRequest(&gen.PruneSourceOperationReceiptsRequest{OrgId: delegationOrg, SourceId: other, EffectId: "refused-effect"}))
 			case "lookup-prune":

@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/authority/contract.binpb",
-      "digest": "sha256:606e52170c2e55688ce163eb1d54c347f0d19ac40915d7fb6252f2034b787c0e",
+      "digest": "sha256:7e1acbb32e08f5a5a41c5da10fb73b4436c4cb53c991af657d7d80a2648e862e",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -66,7 +66,7 @@
       "kind": "protobuf",
       "package": "",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:606e52170c2e55688ce163eb1d54c347f0d19ac40915d7fb6252f2034b787c0e",
+      "digest": "sha256:7e1acbb32e08f5a5a41c5da10fb73b4436c4cb53c991af657d7d80a2648e862e",
       "services": [
         {
           "name": "ArtifactService",
@@ -259,7 +259,8 @@
             "/saas.accounts.v1.DatasourceService/SyncSource",
             "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",
             "/saas.accounts.v1.DatasourceService/UpdateSource",
-            "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain"
+            "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain",
+            "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt"
           ]
         },
         {

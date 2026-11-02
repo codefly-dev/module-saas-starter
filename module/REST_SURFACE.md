@@ -17,11 +17,11 @@ module ceiling. The complete regeneration includes these additions and the calla
 
 ## Current surface
 
-The accounts projection contains 175 descriptor routes across 30 services,
+The accounts projection contains 176 descriptor routes across 30 services,
 counted from `generated/rest-surface.json`:
 
-- 18 public routes and 157 authenticated routes;
-- 148 OpenAPI paths and 175 operations;
+- 18 public routes and 158 authenticated routes;
+- 149 OpenAPI paths and 176 operations;
 - zero internal RPCs;
 - fifteen explicit non-protobuf extensions loaded by auth-gateway: magic-link
   request/verification, the billing and Resend email webhooks, the two GitHub
@@ -29,7 +29,7 @@ counted from `generated/rest-surface.json`:
   checkout, free-plan, portal, and the four OAuth 2 authorization-server routes
   (metadata, authorize validation, authorize grant, token).
 
-The generated runtime therefore authorizes 190 REST routes in total. Descriptor
+The generated runtime therefore authorizes 191 REST routes in total. Descriptor
 routes and extensions remain separate so an extension can never be mistaken
 for a protobuf procedure or inherit policy by path similarity.
 
@@ -118,6 +118,13 @@ and public documents both have 172 operations; pruning reduces definitions
 from 327 to 324.
 
 ## Regeneration
+
+The local candidate `VerifySourceOperationReceipt` is POST-only at
+`/v1/datasource-operation-receipts/verify`, with the complete original Invoke
+request in its body. It has no query binding, classifies both directions as secret,
+and reuses current stored-source read authority and bounded receipt recovery.
+See [conditional verification](./CALLABLE_SOURCES.md#conditional-receipt-verification-local-owner-candidate)
+for strict declaration, committed/unknown/refusal semantics and adoption limits.
 
 Run from `module/services/accounts`, with Docker running and a Codefly CLI at
 or above 0.1.160:

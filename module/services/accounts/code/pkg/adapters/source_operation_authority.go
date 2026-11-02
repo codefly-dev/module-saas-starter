@@ -38,6 +38,7 @@ func sourceOperationProcedure(method string) bool {
 	case business.SourceOperationMethod,
 		"/saas.accounts.v1.DatasourceService/ListSourceOperations",
 		"/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation",
+		"/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt",
 		business.SourceReceiptRetentionMethod,
 		"/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts",
 		business.ReconcileSourceMethod,

@@ -46,6 +46,9 @@ const (
 	// DatasourceServiceLookupInvokeSourceOperationProcedure is the fully-qualified name of the
 	// DatasourceService's LookupInvokeSourceOperation RPC.
 	DatasourceServiceLookupInvokeSourceOperationProcedure = "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation"
+	// DatasourceServiceVerifySourceOperationReceiptProcedure is the fully-qualified name of the
+	// DatasourceService's VerifySourceOperationReceipt RPC.
+	DatasourceServiceVerifySourceOperationReceiptProcedure = "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt"
 	// DatasourceServiceListSourceOperationsProcedure is the fully-qualified name of the
 	// DatasourceService's ListSourceOperations RPC.
 	DatasourceServiceListSourceOperationsProcedure = "/saas.accounts.v1.DatasourceService/ListSourceOperations"
@@ -162,6 +165,13 @@ type DatasourceServiceClient interface {
 	// Once an attempt exists, retained receipt evidence survives declaration
 	// removal or replacement. Current source read authority still applies.
 	LookupInvokeSourceOperation(context.Context, *connect.Request[v1.LookupInvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
+	// VerifySourceOperationReceipt conditionally reads retained output using the
+	// exact original Invoke request, including a nonempty declaration precondition.
+	// Committed means the normalized request and admitted declaration match the
+	// stored attempt. Unknown remains unresolved; this method never redispatches.
+	// Current actor, tenant and stored-source read authority apply before comparison.
+	// This is independent of the paired Runnable Lookup contract above.
+	VerifySourceOperationReceipt(context.Context, *connect.Request[v1.InvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(context.Context, *connect.Request[v1.ListSourceOperationsRequest]) (*connect.Response[v1.ListSourceOperationsResponse], error)
 	// DeclareSourceOperations atomically replaces the source operation set, as an administrator.
@@ -336,6 +346,12 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+DatasourceServiceLookupInvokeSourceOperationProcedure,
 			connect.WithSchema(datasourceServiceMethods.ByName("LookupInvokeSourceOperation")),
+			connect.WithClientOptions(opts...),
+		),
+		verifySourceOperationReceipt: connect.NewClient[v1.InvokeSourceOperationRequest, v1.InvokeSourceOperationResponse](
+			httpClient,
+			baseURL+DatasourceServiceVerifySourceOperationReceiptProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("VerifySourceOperationReceipt")),
 			connect.WithClientOptions(opts...),
 		),
 		listSourceOperations: connect.NewClient[v1.ListSourceOperationsRequest, v1.ListSourceOperationsResponse](
@@ -527,6 +543,7 @@ type datasourceServiceClient struct {
 	lookupPruneSourceOperationReceipts *connect.Client[v1.LookupPruneSourceOperationReceiptsRequest, v1.PruneSourceOperationReceiptsResponse]
 	invokeSourceOperation              *connect.Client[v1.InvokeSourceOperationRequest, v1.InvokeSourceOperationResponse]
 	lookupInvokeSourceOperation        *connect.Client[v1.LookupInvokeSourceOperationRequest, v1.InvokeSourceOperationResponse]
+	verifySourceOperationReceipt       *connect.Client[v1.InvokeSourceOperationRequest, v1.InvokeSourceOperationResponse]
 	listSourceOperations               *connect.Client[v1.ListSourceOperationsRequest, v1.ListSourceOperationsResponse]
 	declareSourceOperations            *connect.Client[v1.DeclareSourceOperationsRequest, v1.DeclareSourceOperationsResponse]
 	addGitHubSource                    *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
@@ -579,6 +596,12 @@ func (c *datasourceServiceClient) InvokeSourceOperation(ctx context.Context, req
 // LookupInvokeSourceOperation calls saas.accounts.v1.DatasourceService.LookupInvokeSourceOperation.
 func (c *datasourceServiceClient) LookupInvokeSourceOperation(ctx context.Context, req *connect.Request[v1.LookupInvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error) {
 	return c.lookupInvokeSourceOperation.CallUnary(ctx, req)
+}
+
+// VerifySourceOperationReceipt calls
+// saas.accounts.v1.DatasourceService.VerifySourceOperationReceipt.
+func (c *datasourceServiceClient) VerifySourceOperationReceipt(ctx context.Context, req *connect.Request[v1.InvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error) {
+	return c.verifySourceOperationReceipt.CallUnary(ctx, req)
 }
 
 // ListSourceOperations calls saas.accounts.v1.DatasourceService.ListSourceOperations.
@@ -757,6 +780,13 @@ type DatasourceServiceHandler interface {
 	// Once an attempt exists, retained receipt evidence survives declaration
 	// removal or replacement. Current source read authority still applies.
 	LookupInvokeSourceOperation(context.Context, *connect.Request[v1.LookupInvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
+	// VerifySourceOperationReceipt conditionally reads retained output using the
+	// exact original Invoke request, including a nonempty declaration precondition.
+	// Committed means the normalized request and admitted declaration match the
+	// stored attempt. Unknown remains unresolved; this method never redispatches.
+	// Current actor, tenant and stored-source read authority apply before comparison.
+	// This is independent of the paired Runnable Lookup contract above.
+	VerifySourceOperationReceipt(context.Context, *connect.Request[v1.InvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(context.Context, *connect.Request[v1.ListSourceOperationsRequest]) (*connect.Response[v1.ListSourceOperationsResponse], error)
 	// DeclareSourceOperations atomically replaces the source operation set, as an administrator.
@@ -927,6 +957,12 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 		DatasourceServiceLookupInvokeSourceOperationProcedure,
 		svc.LookupInvokeSourceOperation,
 		connect.WithSchema(datasourceServiceMethods.ByName("LookupInvokeSourceOperation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceVerifySourceOperationReceiptHandler := connect.NewUnaryHandler(
+		DatasourceServiceVerifySourceOperationReceiptProcedure,
+		svc.VerifySourceOperationReceipt,
+		connect.WithSchema(datasourceServiceMethods.ByName("VerifySourceOperationReceipt")),
 		connect.WithHandlerOptions(opts...),
 	)
 	datasourceServiceListSourceOperationsHandler := connect.NewUnaryHandler(
@@ -1119,6 +1155,8 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 			datasourceServiceInvokeSourceOperationHandler.ServeHTTP(w, r)
 		case DatasourceServiceLookupInvokeSourceOperationProcedure:
 			datasourceServiceLookupInvokeSourceOperationHandler.ServeHTTP(w, r)
+		case DatasourceServiceVerifySourceOperationReceiptProcedure:
+			datasourceServiceVerifySourceOperationReceiptHandler.ServeHTTP(w, r)
 		case DatasourceServiceListSourceOperationsProcedure:
 			datasourceServiceListSourceOperationsHandler.ServeHTTP(w, r)
 		case DatasourceServiceDeclareSourceOperationsProcedure:
@@ -1202,6 +1240,10 @@ func (UnimplementedDatasourceServiceHandler) InvokeSourceOperation(context.Conte
 
 func (UnimplementedDatasourceServiceHandler) LookupInvokeSourceOperation(context.Context, *connect.Request[v1.LookupInvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.LookupInvokeSourceOperation is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) VerifySourceOperationReceipt(context.Context, *connect.Request[v1.InvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.VerifySourceOperationReceipt is not implemented"))
 }
 
 func (UnimplementedDatasourceServiceHandler) ListSourceOperations(context.Context, *connect.Request[v1.ListSourceOperationsRequest]) (*connect.Response[v1.ListSourceOperationsResponse], error) {

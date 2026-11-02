@@ -1092,6 +1092,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.DatasourceService/VerifySourceOperationReceipt",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.DelegationService/DecideDelegation",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.DelegationService/DecideDelegation",
@@ -4935,6 +4951,22 @@
       "path": "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8983,6 +9015,22 @@
       "path": "/v1/consent/terms",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.ConsentService/AcceptTerms",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/datasource-operation-receipts/verify",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

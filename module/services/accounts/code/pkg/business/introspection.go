@@ -81,6 +81,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"DatasourceService/LookupReconcileSource":                      "Read back the receipt of one reconcile pass.",
 	"DatasourceService/InvokeSourceOperation":                      "Call a declared source operation under current authority and an effect receipt.",
 	"DatasourceService/LookupInvokeSourceOperation":                "Read the current authorized outcome of a source effect without redispatching it.",
+	"DatasourceService/VerifySourceOperationReceipt":               "Read a source receipt only when the original invocation and admitted declaration match.",
 	"DatasourceService/DeclareSourceOperations":                    "Atomically replace an API source's declared operations as an organization administrator.",
 	"DatasourceService/ListSourceOperations":                       "Read an API source's declared operations under current source authority.",
 	"ModuleCapabilitiesService/GetCurrentInstallation":             "Read current active installation identity as a verified organization member through an authenticated module.",

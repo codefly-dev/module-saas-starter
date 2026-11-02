@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **301 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **302 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -106,6 +106,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.group_unbound | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Remove a provider group binding. |
 | `/saas.accounts.v1.DatasourceService/UpdateSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.source.updated | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Change what a connected source fetches — its branch and path and file-type filters — keeping its credential, history and collection. |
 | `/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.domain_verified | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Verify a claimed domain by its DNS TXT record. |
+| `/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt` | unary | `POST /v1/datasource-operation-receipts/verify` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=datasource:read; scope=datasource:read | effect_id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_READ | SECRET → SECRET | Read a source receipt only when the original invocation and admitted declaration match. |
 | `/saas.accounts.v1.DelegationService/DecideDelegation` | unary | `POST /v1/delegations/{id}:decide` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.delegation.approved, saas.delegation.denied | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Approve or deny a delegation request. |
 | `/saas.accounts.v1.DelegationService/ListPendingDelegations` | unary | `GET /v1/delegations:pending` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List pending organization delegations. |
 | `/saas.accounts.v1.DelegationService/RequestDelegation` | unary | `POST /v1/delegations` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.delegation.requested, saas.delegation.auto_approved | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Request a scoped authority delegation. |
@@ -316,7 +317,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `internal`: 55
 - `mfa`: 5
 - `org_admin`: 71
-- `org_member`: 57
+- `org_member`: 58
 - `platform_admin`: 29
 - `public`: 32
 

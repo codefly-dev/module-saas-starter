@@ -107,6 +107,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/auth/token", Procedure: "/saas.accounts.v1.AuthService/ExchangeClientToken"},
 		{Service: "accounts", Method: "POST", Path: "/v1/billing/connect/portal", Procedure: "/saas.accounts.v1.BillingService/OpenPortal"},
 		{Service: "accounts", Method: "POST", Path: "/v1/consent/terms", Procedure: "/saas.accounts.v1.ConsentService/AcceptTerms"},
+		{Service: "accounts", Method: "POST", Path: "/v1/datasource-operation-receipts/verify", Procedure: "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt"},
 		{Service: "accounts", Method: "POST", Path: "/v1/delegations", Procedure: "/saas.accounts.v1.DelegationService/RequestDelegation"},
 		{Service: "accounts", Method: "POST", Path: "/v1/delegations/{id}:decide", Procedure: "/saas.accounts.v1.DelegationService/DecideDelegation"},
 		{Service: "accounts", Method: "POST", Path: "/v1/gdpr/delete", Procedure: "/saas.accounts.v1.GDPRService/RequestDeletion"},

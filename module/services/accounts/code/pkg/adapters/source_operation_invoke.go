@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -144,6 +145,48 @@ func (h *datasourceConnectHandler) LookupInvokeSourceOperation(ctx context.Conte
 	if err := Validate(req.Msg); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	attempt, err := h.authorizedSourceOperationAttempt(ctx, req.Header(), req.Msg.EffectId)
+	if err != nil {
+		return nil, err
+	}
+	return h.retainedSourceOperationResponse(ctx, attempt)
+}
+
+// VerifySourceOperationReceipt is a conditional read, not an invocation or a
+// paired Runnable lookup. Only the stored source can supply its authority.
+func (h *datasourceConnectHandler) VerifySourceOperationReceipt(ctx context.Context, req *connect.Request[gen.InvokeSourceOperationRequest]) (*connect.Response[gen.InvokeSourceOperationResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	if err := Validate(req.Msg); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if req.Msg.GetExpectedDeclarationDigest() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("source declaration precondition required"))
+	}
+	effect, err := sourceEffectID(req.Header(), req.Msg.EffectId)
+	if err != nil {
+		return nil, err
+	}
+	normalized := proto.CloneOf(req.Msg)
+	normalized.EffectId = effect
+	if !sourceWireFits(normalized, sourceInputEnvelopeBytes) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("source input exceeds wire bound"))
+	}
+	attempt, err := h.authorizedSourceOperationAttempt(ctx, req.Header(), effect)
+	if err != nil {
+		return nil, err
+	}
+	digest, err := receipts.RequestDigest(normalized)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("source request invalid"))
+	}
+	org, _, _ := auth.VerifiedDatabaseIdentity(ctx) // Established by the shared authorization above.
+	if normalized.OrgId != org || normalized.OrgId != attempt.OrgID || normalized.SourceId != attempt.SourceID || normalized.Operation != attempt.Operation || normalized.GetExpectedDeclarationDigest() != attempt.DeclarationDigest || !bytes.Equal(digest, attempt.RequestDigest) {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("source receipt verification refused"))
+	}
+	return h.retainedSourceOperationResponse(ctx, attempt)
+}
+
+func (h *datasourceConnectHandler) authorizedSourceOperationAttempt(ctx context.Context, header http.Header, field string) (*business.SourceOperationAttempt, error) {
 	actor, err := callerID(ctx)
 	if err != nil {
 		return nil, err
@@ -155,7 +198,7 @@ func (h *datasourceConnectHandler) LookupInvokeSourceOperation(ctx context.Conte
 	if err = requireOrgMember(ctx, actor, org); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	effect, err := sourceEffectID(req.Header(), req.Msg.EffectId)
+	effect, err := sourceEffectID(header, field)
 	if err != nil {
 		return nil, err
 	}
@@ -172,16 +215,21 @@ func (h *datasourceConnectHandler) LookupInvokeSourceOperation(ctx context.Conte
 	if _, _, err = h.svc.SourceOperationAuthority(ctx, actor, org, attempt.SourceID, attempt.Operation, effect, "", true); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	return attempt, nil
+}
+
+func (h *datasourceConnectHandler) retainedSourceOperationResponse(ctx context.Context, attempt *business.SourceOperationAttempt) (*connect.Response[gen.InvokeSourceOperationResponse], error) {
+	org, _, _ := auth.VerifiedDatabaseIdentity(ctx) // Keep receipt reads under verified identity.
 	store, _ := h.svc.SourceOperationReceipts()
 	if store == nil {
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("source receipts unavailable"))
 	}
-	saved, found, err := store.Lookup(ctx, org, effect, business.SourceOperationMethod)
+	saved, found, err := store.Lookup(ctx, org, attempt.EffectID, business.SourceOperationMethod)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("source receipt unavailable"))
 	}
 	if !found {
-		return connect.NewResponse(sourceUnknownResponse(effect)), nil
+		return connect.NewResponse(sourceUnknownResponse(attempt.EffectID)), nil
 	}
 	out := &gen.InvokeSourceOperationResponse{}
 	if proto.Unmarshal(saved.Response, out) != nil || !sourceWireFits(out, sourceOutputEnvelopeBytes) {

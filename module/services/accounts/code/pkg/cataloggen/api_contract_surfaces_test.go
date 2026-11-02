@@ -48,7 +48,7 @@ func TestAPIContractSurfacesAreDeterministicCurrentAndListenerScoped(t *testing.
 		}
 	}
 	require.Equal(t, business.ModuleAuthorityProcedures(), authority)
-	for _, method := range []string{"InvokeSourceOperation", "LookupInvokeSourceOperation", "PruneSourceOperationReceipts", "LookupPruneSourceOperationReceipts"} {
+	for _, method := range []string{"InvokeSourceOperation", "LookupInvokeSourceOperation", "VerifySourceOperationReceipt", "PruneSourceOperationReceipts", "LookupPruneSourceOperationReceipts"} {
 		procedure := "/saas.accounts.v1.DatasourceService/" + method
 		require.NotContains(t, authority, procedure)
 		require.Contains(t, connectProcedures, procedure)
