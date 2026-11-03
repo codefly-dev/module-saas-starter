@@ -373,9 +373,9 @@ jobs:
   # the pinned revision runs with accounts' tests in the quality phases.
   # Before the suite, the declaration gate (`module-package
   # verify-host-interfaces`): every interface version module.codefly.yaml
-  # declares is at or below the version that interface publishes at the pinned
-  # authority revision, so a declaration names nothing the pinned suite did not
-  # prove.
+  # declares is the version that interface publishes at the pinned authority
+  # revision, or a patch below it within the same major.minor, so a declaration
+  # names no suite the pin did not run.
   host-interface-conformance:
     name: Host interface conformance (authority main)
     runs-on: ubuntu-latest

@@ -83,8 +83,29 @@ require (
 	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261030222015-dea37afac9ad
 	github.com/codefly-dev/authority/libraries/authority-client/go v0.1.1-0.20261030222015-dea37afac9ad
 	github.com/codefly-dev/authority/libraries/hop/go v0.0.0-20261027154629-b57068f61a0f // indirect
+	github.com/example/other v1.2.0
 )
+
+replace github.com/example/other => ../other
 `},
+		"a replaced library": {goMod: `module accounts
+
+require (
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261030222015-dea37afac9ad
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261030222015-dea37afac9ad
+)
+
+replace github.com/codefly-dev/authority/libraries/conformance/go => ../../../../../libraries/conformance/go
+`, want: "replaces github.com/codefly-dev/authority/libraries/conformance/go with ../../../../../libraries/conformance/go"},
+		"an excluded library": {goMod: `module accounts
+
+require (
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261030222015-dea37afac9ad
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261030222015-dea37afac9ad
+)
+
+exclude github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261026111022-6870db87da8b
+`, want: "excludes github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261026111022-6870db87da8b"},
 		"two revisions": {goMod: `module accounts
 
 require (
@@ -170,13 +191,15 @@ func TestCompareHostInterfacesJudgesEachDeclaration(t *testing.T) {
 	}
 	findings := CompareHostInterfaces([]HostInterfaceDeclaration{
 		declare("authority", "0.3.5"),    // equal: ok
-		declare("session", "0.2.0"),      // below: a notice
+		declare("session", "0.2.0"),      // a patch below, same major.minor: a notice
 		declare("installation", "0.5.0"), // above: not proven
+		declare("installation", "0.3.0"), // another major.minor below: no 0.3 suite ran
+		declare("authority", "0.2.9"),    // another major.minor below, higher patch: no 0.2 suite ran
 		declare("artifact", "0.1.0"),     // not published at the pin
 		declare("composition", "0.2"),    // not semver
 		{Service: "accounts", Publisher: "example.com", Name: "other", Version: "1.0.0"},
 	}, published, nil)
-	if len(findings) != 6 {
+	if len(findings) != 8 {
 		t.Fatalf("%d findings: %+v", len(findings), findings)
 	}
 	expect := []struct {
@@ -186,6 +209,8 @@ func TestCompareHostInterfacesJudgesEachDeclaration(t *testing.T) {
 		{false, ""},
 		{false, "the pinned suite proves 0.2.1"},
 		{true, "claims a version the pinned suite does not prove"},
+		{true, "no 0.3 suite ran"},
+		{true, "no 0.2 suite ran"},
 		{true, "publishes no such interface"},
 		{true, "not semver"},
 		{false, "not published by codefly-dev/authority"},

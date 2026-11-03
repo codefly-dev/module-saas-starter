@@ -166,17 +166,21 @@ behavior-preserving rollback.
   verify-host-interfaces` (in `module/tools`, with its own tests in
   `modulepackage/host_interfaces_test.go`). It reads
   `interfaces/<name>/interface.codefly.yaml` at the pinned authority commit,
-  fetched by its full id from the clone the job already makes, and refuses: a
-  version `module/module.codefly.yaml` declares above the one published there
-  (a claim no suite proved); an interface the pin does not publish; authority
-  libraries pinned at two revisions (`go.mod` pins the suite, the core it
-  decides with, the client, delivery and resources at one commit); and an
-  opening sentence of this document naming another version than the manifest.
-  A declared version below the published one is a notice, never a failure:
-  the pin may move to run a newer suite before the declaration follows it,
-  and the declaration never moves first. The half that needs no network, one
-  revision in `go.mod` and this document agreeing with the manifest, also
-  runs with the `module/tools` tests in the module-package job.
+  resolved in the clone the job already makes (a pin on an unmerged authority
+  branch is fetched by its full id instead), and refuses: a version
+  `module/module.codefly.yaml` declares above the one published there (a
+  claim no suite proved); a version in another major.minor than the published
+  one (passing 0.5.0's suite runs no 0.4.0 suite); an interface the pin does
+  not publish; authority libraries pinned at two revisions, replaced or
+  excluded (`go.mod` pins the suite, the core it decides with, the client,
+  delivery and resources at one commit, and the require line must be what
+  runs); and an opening sentence of this document naming another version than
+  the manifest. A declared patch below the published one, within the same
+  major.minor, is a notice, never a failure: the pin may move to run a newer
+  patch's suite before the declaration follows it, and the declaration never
+  moves first. The half that needs no network, one revision in `go.mod` and
+  this document agreeing with the manifest, also runs with the `module/tools`
+  tests in the module-package job.
 - Last recorded run: authority `dea37afac9ad` (its main on 2026-10-30, the
   revision `go.mod` pins for all five authority libraries), from
   `module/services/accounts/code`, on 2026-11-03:

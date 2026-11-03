@@ -4,10 +4,12 @@ package modulepackage
 // service implements (`implements: codefly.dev/<interface>@<version>`), and the
 // service's go.mod pins the codefly-dev/authority revision whose conformance
 // suite its tests run. The two are one fact only if each declared version is
-// at or below the version the interface publishes at that revision: a
-// declaration above it names a version no suite proved. A declaration below it
-// under-claims, which is reported and never failed, because moving the pin to
-// run a newer suite must not force the declaration before that suite is green.
+// the version the interface publishes at that revision, or a patch below it
+// within the same major.minor: a declaration above it names a version no suite
+// proved, and a declaration in another major.minor names a suite that did not
+// run (passing 0.5.0's suite says nothing about 0.4.0's). A patch below is
+// reported and never failed, because moving the pin to run a newer patch's
+// suite must not force the declaration before that suite is green.
 
 import (
 	"context"
@@ -139,15 +141,28 @@ func parseDeclaration(service, entry string) (HostInterfaceDeclaration, error) {
 // ReadAuthorityPin reads the authority revision a go.mod pins: every direct
 // requirement under AuthorityLibraryPrefix must be a pseudo-version, and all of
 // them must abbreviate one commit, because the suite, the core it decides
-// with and the client are run together.
+// with and the client are run together. A replace or an exclude of an
+// authority library is refused: the require line would then name nothing the
+// suite runs (authority's own services replace these libraries with local
+// directories, which is right there and never here).
 func ReadAuthorityPin(goModPath string) (AuthorityPin, error) {
 	data, err := os.ReadFile(goModPath)
 	if err != nil {
 		return AuthorityPin{}, err
 	}
-	file, err := modfile.ParseLax(goModPath, data, nil)
+	file, err := modfile.Parse(goModPath, data, nil)
 	if err != nil {
 		return AuthorityPin{}, err
+	}
+	for _, replace := range file.Replace {
+		if strings.HasPrefix(replace.Old.Path, AuthorityLibraryPrefix) {
+			return AuthorityPin{}, fmt.Errorf("%s replaces %s with %s, so its require line names nothing the suite runs; a replaced authority library is refused", goModPath, replace.Old.Path, strings.TrimSpace(replace.New.Path+" "+replace.New.Version))
+		}
+	}
+	for _, exclude := range file.Exclude {
+		if strings.HasPrefix(exclude.Mod.Path, AuthorityLibraryPrefix) {
+			return AuthorityPin{}, fmt.Errorf("%s excludes %s %s, which moves the authority libraries away from the revision the require lines name; an excluded authority library is refused", goModPath, exclude.Mod.Path, exclude.Mod.Version)
+		}
 	}
 	var pin AuthorityPin
 	revisions := map[string][]string{}
@@ -249,9 +264,11 @@ func DocumentedHostInterfaces(path string) (map[string][]string, error) {
 
 // CompareHostInterfaces judges each declaration against what the pinned
 // revision publishes and what the service's document says. A failure is a
-// declared version above the published one, an interface the revision does
-// not publish, a version that is not semver, or a document naming another
-// version; a declared version below the published one is a notice.
+// declared version above the published one, a declared version in another
+// major.minor than the published one (no suite of that minor ran), an
+// interface the revision does not publish, a version that is not semver, or a
+// document naming another version; a declared patch below the published one,
+// within the same major.minor, is a notice.
 func CompareHostInterfaces(declared []HostInterfaceDeclaration, published map[string]PublishedInterface, documented map[string][]string) []HostInterfaceFinding {
 	var findings []HostInterfaceFinding
 	for _, d := range declared {
@@ -288,7 +305,13 @@ func CompareHostInterfaces(declared []HostInterfaceDeclaration, published map[st
 			finding.Failure = true
 			finding.Reason = "the declaration claims a version the pinned suite does not prove; move the pin to a revision publishing it and pass that suite first"
 		case -1:
-			finding.Reason = fmt.Sprintf("the pinned suite proves %s; declaring it is a manifest change backed by this pin", p.Version)
+			if declaredVersion.Major() != publishedVersion.Major() || declaredVersion.Minor() != publishedVersion.Minor() {
+				finding.Failure = true
+				finding.Reason = fmt.Sprintf("the pinned suite is %s's and no %d.%d suite ran, so the declaration is unproven; pin a revision publishing %d.%d, or declare %s once its suite is green",
+					p.Version, declaredVersion.Major(), declaredVersion.Minor(), declaredVersion.Major(), declaredVersion.Minor(), p.Version)
+			} else {
+				finding.Reason = fmt.Sprintf("the pinned suite proves %s, a patch above the declaration; declaring it is a manifest change backed by this pin", p.Version)
+			}
 		}
 		if versions, ok := documented[d.ID()]; ok {
 			if len(versions) != 1 || versions[0] != d.Version {

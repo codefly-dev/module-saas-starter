@@ -11,22 +11,16 @@
 # (`implements: codefly.dev/<interface>@<version>`) are held to the version each
 # interface publishes at the pinned revision, the revision whose suite accounts'
 # own tests run. "Declares 0.3.5" and "passes 0.3.5's suite" are one fact, or
-# this job is red.
+# this job is red: a declaration above the published version, or in another
+# major.minor than it, names a suite that did not run. A patch below it, within
+# the same major.minor, is a notice.
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo_root/module/services/accounts/code"
 export GOWORK=off
 
 pinned="$(go list -m -f '{{.Version}}' github.com/codefly-dev/authority/libraries/authority-core/go)"
-# The commit the pseudo-version abbreviates, in full, from the module cache's
-# origin record: GitHub serves a commit by its full id alone, and the record is
-# written when the module is downloaded, so this reads nothing new.
-pinned_commit="$(go mod download -json "github.com/codefly-dev/authority/libraries/authority-core/go@${pinned}" \
-  | sed -n 's/^[[:space:]]*"Hash": *"\([0-9a-f]\{40\}\)".*$/\1/p')"
-if [ -z "$pinned_commit" ]; then
-  echo "::error::cannot resolve the commit behind the authority pin ${pinned}"
-  exit 1
-fi
+pinned_short="${pinned##*-}"
 # Ancestry is read from a blobless clone of authority's main, never from the
 # GitHub API: an unauthenticated API call shares a small per-address budget on
 # hosted runners, and a check that fails when that budget runs out is a flake.
@@ -45,13 +39,23 @@ for attempt in 1 2 3; do
   fi
   sleep $((attempt * 10))
 done
-# The pinned commit itself, whether or not main contains it: a pin on an
-# unmerged branch is reachable through that branch, and GitHub serves any
-# reachable commit by its full id. A commit authority no longer carries leaves
+# The pinned commit in full. A pin main contains resolves in the clone. A pin
+# on an unmerged authority branch does not: its full id is then read from the
+# module cache's origin record (written when the module was downloaded, so
+# this reads nothing new) and the commit is fetched by that id, which GitHub
+# serves for any reachable commit. A commit authority no longer carries leaves
 # the declaration unprovable at its source, which is a red, not a skip.
-if ! git -C "$authority/main.git" fetch -q --filter=blob:none origin "$pinned_commit"; then
-  echo "::error::codefly-dev/authority no longer carries the pinned commit ${pinned_commit}; the declared interface versions cannot be read at the pin"
-  exit 1
+if ! pinned_commit="$(git -C "$authority/main.git" rev-parse --verify --quiet "${pinned_short}^{commit}")"; then
+  pinned_commit="$(go mod download -json "github.com/codefly-dev/authority/libraries/authority-core/go@${pinned}" \
+    | sed -n 's/^[[:space:]]*"Hash": *"\([0-9a-f]\{40\}\)".*$/\1/p')"
+  if [ -z "$pinned_commit" ]; then
+    echo "::error::cannot resolve the commit behind the authority pin ${pinned}: main does not contain ${pinned_short} and the module cache records no origin for it"
+    exit 1
+  fi
+  if ! git -C "$authority/main.git" fetch -q --filter=blob:none origin "$pinned_commit"; then
+    echo "::error::codefly-dev/authority no longer carries the pinned commit ${pinned_commit}; the declared interface versions cannot be read at the pin"
+    exit 1
+  fi
 fi
 main_sha="$(git -C "$authority/main.git" rev-parse --short=12 HEAD)"
 if git -C "$authority/main.git" merge-base --is-ancestor "$pinned_commit" "$main_sha"; then
@@ -64,7 +68,7 @@ echo "authority pinned at ${pinned_commit:0:12}; main at ${main_sha}; main is ${
 
 # The declaration gate reads interfaces/<name>/interface.codefly.yaml at the
 # pin; the blobless clone fetches those few blobs on demand.
-mkdir "$authority/pinned"
+mkdir -p "$authority/pinned"
 git -C "$authority/main.git" archive --format=tar "$pinned_commit" interfaces | tar -x -C "$authority/pinned"
 (cd "$repo_root/module/tools" && go run ./cmd/module-package verify-host-interfaces --module .. --interfaces "$authority/pinned/interfaces" --revision "$pinned_commit")
 
