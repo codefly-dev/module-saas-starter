@@ -222,13 +222,25 @@ is silent — the person presses "sign out", presses "sign in", and is back in
 without being asked anything. Closing that is two independent halves, and a
 provider offers each on its own, so each is wired on its own evidence.
 
-**RP-initiated logout (the host asks the client to finish).** `Logout` returns
+**RP-initiated logout (the host asks the client to finish).**
+`GetProviderSignOut` (`POST /v1/auth/provider-sign-out`) returns
 `end_session_url`: the provider's `end_session_endpoint` with
 `post_logout_redirect_uri`, and with the client's `id_token_hint` when it
 supplied one or the host's `client_id` when it did not (OpenID Connect
 RP-Initiated Logout 1.0 §2 allows that substitution precisely for the case where
-no hint is available). The client sends the person's browser there after the
+no hint is available). The client sends the person's browser there once the
 host session has ended.
+
+It is a **separate public call**, not a field on the `Logout` response, for two
+reasons. `saas.accounts.v1` is additive: an RPC's response type is never changed
+([CONTRACT_VERSIONING.md](./CONTRACT_VERSIONING.md)), and `Logout` has always
+answered `google.protobuf.Empty`, so every client generated against it would
+have to be rebuilt. And asking separately sequences better — a client can hold
+the URL *before* it signs out, so it has somewhere to send the person the moment
+the session ends, and it is not presenting a bearer that the very call it is
+making has just revoked. Public for the same reason `GetJWKS` is: everything it
+answers with — the deployment's client id, its registered post-logout redirect —
+is already public.
 
 The hint is **client-supplied** and the host stores no provider `id_token`: it
 has no other use for one, and retaining a provider credential to hand back later
@@ -363,7 +375,7 @@ their next owning change.
 | Session list + revoke               | ✅    | Stable per-device family ids, device context, idle/absolute expiry, whole-family revoke |
 | Session lifetime policy             | ✅    | Configurable fixed absolute TTL, idle TTL, and serialized active-device cap |
 | Logout                              | ✅    | Revokes the presented device family, the presented access token and the verified session's access half; the browser's cookie is the credential carrier, so an empty body is a complete sign-out |
-| RP-initiated logout                 | ✅    | `Logout` returns the provider's `end_session_endpoint` with `id_token_hint`/`client_id` and the deployment's registered `post_logout_redirect_uri`; empty when the provider publishes none |
+| RP-initiated logout                 | ✅    | `GetProviderSignOut` returns the provider's `end_session_endpoint` with `id_token_hint`/`client_id` and the deployment's registered `post_logout_redirect_uri`; empty when the provider publishes none. A separate additive call rather than a field on `Logout`, whose response type `saas.accounts.v1` may not change |
 | Back-channel logout                 | ✅    | `POST /v1/auth/backchannel-logout` verifies the provider's logout token against its JWKS and revokes every host session of the named subject, access half included. Mounted only when the provider can verify one. A `sid`-only token answers 501: provider session ids are not recorded |
 | OAuth state / CSRF                  | ✅    | Server-signed state bound to (provider, redirect_uri), single-use: the nonce is consumed on first verification and the state is refused when single use cannot be recorded |
 | OAuth PKCE                          | ❌    | Comments mention PKCE but exchanger uses `client_secret` (acceptable for confidential server-side; PKCE adds defense for SPA-driven flows) |

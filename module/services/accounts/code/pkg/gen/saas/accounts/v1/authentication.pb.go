@@ -926,17 +926,8 @@ func (x *SwitchOrganizationResponse) GetExpiresIn() int64 {
 }
 
 type LogoutRequest struct {
-	state        protoimpl.MessageState `protogen:"open.v1"`
-	RefreshToken string                 `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
-	// id_token_hint is the provider's id_token for the session being ended, as
-	// the client still holds it. It is optional and client-supplied on purpose:
-	// the host never retains a provider id_token — it has no other use for one,
-	// and storing a provider credential to hand back later is a liability, not a
-	// feature. When it is absent the end-session URL carries `client_id` instead,
-	// which OpenID Connect RP-Initiated Logout 1.0 §2 allows exactly for the case
-	// where no hint is available. The provider may then ask the person to confirm
-	// which session they are ending.
-	IdTokenHint   string `protobuf:"bytes,2,opt,name=id_token_hint,json=idTokenHint,proto3" json:"id_token_hint,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RefreshToken  string                 `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -978,45 +969,42 @@ func (x *LogoutRequest) GetRefreshToken() string {
 	return ""
 }
 
-func (x *LogoutRequest) GetIdTokenHint() string {
-	if x != nil {
-		return x.IdTokenHint
-	}
-	return ""
-}
-
-// LogoutResponse carries what the host cannot do on the person's behalf. The
-// host ends its own session unconditionally; reaching the identity provider
-// requires the person's own user agent, because the provider's session cookie
-// is in their browser and not in any request accounts can make.
-type LogoutResponse struct {
+// GetProviderSignOutRequest asks for the URL that ends the session at the
+// identity provider. It is a separate call rather than a field on the Logout
+// response because `saas.accounts.v1` is additive: an RPC's response type is
+// never changed (module/CONTRACT_VERSIONING.md), and every client generated
+// against `Logout` returning Empty would have to be rebuilt. Asking separately
+// also sequences better — a client can hold the URL before it signs out, so it
+// has somewhere to send the person the moment the host session ends.
+type GetProviderSignOutRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// end_session_url is the provider's `end_session_endpoint` with the
-	// RP-initiated logout parameters already applied, for the client to send the
-	// person's browser to after the host session has ended. Empty when this
-	// deployment's provider publishes no `end_session_endpoint`, or when the
-	// configured provider has no OIDC sign-out at all (the development fixture):
-	// an empty value is the whole answer, and a client must treat it as "nothing
-	// further to do" rather than as a failure.
-	EndSessionUrl string `protobuf:"bytes,1,opt,name=end_session_url,json=endSessionUrl,proto3" json:"end_session_url,omitempty"`
+	// id_token_hint is the provider's id_token for the session being ended, as
+	// the client still holds it. It is optional and client-supplied on purpose:
+	// the host never retains a provider id_token — it has no other use for one,
+	// and storing a provider credential to hand back later is a liability, not a
+	// feature. When it is absent the end-session URL carries `client_id` instead,
+	// which OpenID Connect RP-Initiated Logout 1.0 §2 allows exactly for the case
+	// where no hint is available. The provider may then ask the person to confirm
+	// which session they are ending.
+	IdTokenHint   string `protobuf:"bytes,1,opt,name=id_token_hint,json=idTokenHint,proto3" json:"id_token_hint,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *LogoutResponse) Reset() {
-	*x = LogoutResponse{}
+func (x *GetProviderSignOutRequest) Reset() {
+	*x = GetProviderSignOutRequest{}
 	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *LogoutResponse) String() string {
+func (x *GetProviderSignOutRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*LogoutResponse) ProtoMessage() {}
+func (*GetProviderSignOutRequest) ProtoMessage() {}
 
-func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
+func (x *GetProviderSignOutRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1028,12 +1016,67 @@ func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use LogoutResponse.ProtoReflect.Descriptor instead.
-func (*LogoutResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetProviderSignOutRequest.ProtoReflect.Descriptor instead.
+func (*GetProviderSignOutRequest) Descriptor() ([]byte, []int) {
 	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *LogoutResponse) GetEndSessionUrl() string {
+func (x *GetProviderSignOutRequest) GetIdTokenHint() string {
+	if x != nil {
+		return x.IdTokenHint
+	}
+	return ""
+}
+
+// GetProviderSignOutResponse carries what the host cannot do on the person's
+// behalf. The host ends its own session itself; reaching the identity provider
+// requires the person's own user agent, because the provider's session cookie
+// is in their browser and not in any request accounts can make.
+type GetProviderSignOutResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// end_session_url is the provider's `end_session_endpoint` with the
+	// RP-initiated logout parameters already applied, for the client to send the
+	// person's browser to once the host session has ended. Empty when this
+	// deployment's provider publishes no `end_session_endpoint`, or when the
+	// configured provider has no OIDC sign-out at all (the development fixture):
+	// an empty value is the whole answer, and a client must treat it as "nothing
+	// further to do" rather than as a failure.
+	EndSessionUrl string `protobuf:"bytes,1,opt,name=end_session_url,json=endSessionUrl,proto3" json:"end_session_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProviderSignOutResponse) Reset() {
+	*x = GetProviderSignOutResponse{}
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProviderSignOutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProviderSignOutResponse) ProtoMessage() {}
+
+func (x *GetProviderSignOutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProviderSignOutResponse.ProtoReflect.Descriptor instead.
+func (*GetProviderSignOutResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *GetProviderSignOutResponse) GetEndSessionUrl() string {
 	if x != nil {
 		return x.EndSessionUrl
 	}
@@ -1049,7 +1092,7 @@ type JWKSResponse struct {
 
 func (x *JWKSResponse) Reset() {
 	*x = JWKSResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[16]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1061,7 +1104,7 @@ func (x *JWKSResponse) String() string {
 func (*JWKSResponse) ProtoMessage() {}
 
 func (x *JWKSResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[16]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1074,7 +1117,7 @@ func (x *JWKSResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JWKSResponse.ProtoReflect.Descriptor instead.
 func (*JWKSResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{16}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *JWKSResponse) GetKeysJson() string {
@@ -1099,7 +1142,7 @@ type BeginOAuthRequest struct {
 
 func (x *BeginOAuthRequest) Reset() {
 	*x = BeginOAuthRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[17]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1111,7 +1154,7 @@ func (x *BeginOAuthRequest) String() string {
 func (*BeginOAuthRequest) ProtoMessage() {}
 
 func (x *BeginOAuthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[17]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1124,7 +1167,7 @@ func (x *BeginOAuthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginOAuthRequest.ProtoReflect.Descriptor instead.
 func (*BeginOAuthRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{17}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *BeginOAuthRequest) GetProvider() string {
@@ -1152,7 +1195,7 @@ type BeginOAuthResponse struct {
 
 func (x *BeginOAuthResponse) Reset() {
 	*x = BeginOAuthResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[18]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1164,7 +1207,7 @@ func (x *BeginOAuthResponse) String() string {
 func (*BeginOAuthResponse) ProtoMessage() {}
 
 func (x *BeginOAuthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[18]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1177,7 +1220,7 @@ func (x *BeginOAuthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginOAuthResponse.ProtoReflect.Descriptor instead.
 func (*BeginOAuthResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{18}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *BeginOAuthResponse) GetState() string {
@@ -1205,7 +1248,7 @@ type ClientAuthorizationRequest struct {
 
 func (x *ClientAuthorizationRequest) Reset() {
 	*x = ClientAuthorizationRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[19]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1217,7 +1260,7 @@ func (x *ClientAuthorizationRequest) String() string {
 func (*ClientAuthorizationRequest) ProtoMessage() {}
 
 func (x *ClientAuthorizationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[19]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1230,7 +1273,7 @@ func (x *ClientAuthorizationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientAuthorizationRequest.ProtoReflect.Descriptor instead.
 func (*ClientAuthorizationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{19}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ClientAuthorizationRequest) GetClientId() string {
@@ -1270,7 +1313,7 @@ type ValidateClientAuthorizationRequest struct {
 
 func (x *ValidateClientAuthorizationRequest) Reset() {
 	*x = ValidateClientAuthorizationRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[20]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1282,7 +1325,7 @@ func (x *ValidateClientAuthorizationRequest) String() string {
 func (*ValidateClientAuthorizationRequest) ProtoMessage() {}
 
 func (x *ValidateClientAuthorizationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[20]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1295,7 +1338,7 @@ func (x *ValidateClientAuthorizationRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ValidateClientAuthorizationRequest.ProtoReflect.Descriptor instead.
 func (*ValidateClientAuthorizationRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{20}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ValidateClientAuthorizationRequest) GetAuthorization() *ClientAuthorizationRequest {
@@ -1317,7 +1360,7 @@ type ValidateClientAuthorizationResponse struct {
 
 func (x *ValidateClientAuthorizationResponse) Reset() {
 	*x = ValidateClientAuthorizationResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[21]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1329,7 +1372,7 @@ func (x *ValidateClientAuthorizationResponse) String() string {
 func (*ValidateClientAuthorizationResponse) ProtoMessage() {}
 
 func (x *ValidateClientAuthorizationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[21]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1342,7 +1385,7 @@ func (x *ValidateClientAuthorizationResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ValidateClientAuthorizationResponse.ProtoReflect.Descriptor instead.
 func (*ValidateClientAuthorizationResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{21}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ValidateClientAuthorizationResponse) GetClientName() string {
@@ -1361,7 +1404,7 @@ type IssueClientAuthorizationCodeRequest struct {
 
 func (x *IssueClientAuthorizationCodeRequest) Reset() {
 	*x = IssueClientAuthorizationCodeRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[22]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1373,7 +1416,7 @@ func (x *IssueClientAuthorizationCodeRequest) String() string {
 func (*IssueClientAuthorizationCodeRequest) ProtoMessage() {}
 
 func (x *IssueClientAuthorizationCodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[22]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1386,7 +1429,7 @@ func (x *IssueClientAuthorizationCodeRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use IssueClientAuthorizationCodeRequest.ProtoReflect.Descriptor instead.
 func (*IssueClientAuthorizationCodeRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{22}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *IssueClientAuthorizationCodeRequest) GetAuthorization() *ClientAuthorizationRequest {
@@ -1408,7 +1451,7 @@ type IssueClientAuthorizationCodeResponse struct {
 
 func (x *IssueClientAuthorizationCodeResponse) Reset() {
 	*x = IssueClientAuthorizationCodeResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[23]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1420,7 +1463,7 @@ func (x *IssueClientAuthorizationCodeResponse) String() string {
 func (*IssueClientAuthorizationCodeResponse) ProtoMessage() {}
 
 func (x *IssueClientAuthorizationCodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[23]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1433,7 +1476,7 @@ func (x *IssueClientAuthorizationCodeResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use IssueClientAuthorizationCodeResponse.ProtoReflect.Descriptor instead.
 func (*IssueClientAuthorizationCodeResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{23}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *IssueClientAuthorizationCodeResponse) GetCode() string {
@@ -1464,7 +1507,7 @@ type AuthorizationCodeGrant struct {
 
 func (x *AuthorizationCodeGrant) Reset() {
 	*x = AuthorizationCodeGrant{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[24]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1476,7 +1519,7 @@ func (x *AuthorizationCodeGrant) String() string {
 func (*AuthorizationCodeGrant) ProtoMessage() {}
 
 func (x *AuthorizationCodeGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[24]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1489,7 +1532,7 @@ func (x *AuthorizationCodeGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthorizationCodeGrant.ProtoReflect.Descriptor instead.
 func (*AuthorizationCodeGrant) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{24}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AuthorizationCodeGrant) GetCode() string {
@@ -1525,7 +1568,7 @@ type ClientRefreshTokenGrant struct {
 
 func (x *ClientRefreshTokenGrant) Reset() {
 	*x = ClientRefreshTokenGrant{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[25]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1537,7 +1580,7 @@ func (x *ClientRefreshTokenGrant) String() string {
 func (*ClientRefreshTokenGrant) ProtoMessage() {}
 
 func (x *ClientRefreshTokenGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[25]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1550,7 +1593,7 @@ func (x *ClientRefreshTokenGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientRefreshTokenGrant.ProtoReflect.Descriptor instead.
 func (*ClientRefreshTokenGrant) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{25}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ClientRefreshTokenGrant) GetRefreshToken() string {
@@ -1574,7 +1617,7 @@ type ExchangeClientTokenRequest struct {
 
 func (x *ExchangeClientTokenRequest) Reset() {
 	*x = ExchangeClientTokenRequest{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[26]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1586,7 +1629,7 @@ func (x *ExchangeClientTokenRequest) String() string {
 func (*ExchangeClientTokenRequest) ProtoMessage() {}
 
 func (x *ExchangeClientTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[26]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1599,7 +1642,7 @@ func (x *ExchangeClientTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeClientTokenRequest.ProtoReflect.Descriptor instead.
 func (*ExchangeClientTokenRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{26}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ExchangeClientTokenRequest) GetClientId() string {
@@ -1664,7 +1707,7 @@ type ExchangeClientTokenResponse struct {
 
 func (x *ExchangeClientTokenResponse) Reset() {
 	*x = ExchangeClientTokenResponse{}
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[27]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1676,7 +1719,7 @@ func (x *ExchangeClientTokenResponse) String() string {
 func (*ExchangeClientTokenResponse) ProtoMessage() {}
 
 func (x *ExchangeClientTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[27]
+	mi := &file_saas_accounts_v1_authentication_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1689,7 +1732,7 @@ func (x *ExchangeClientTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeClientTokenResponse.ProtoReflect.Descriptor instead.
 func (*ExchangeClientTokenResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{27}
+	return file_saas_accounts_v1_authentication_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ExchangeClientTokenResponse) GetAccessToken() string {
@@ -1792,11 +1835,12 @@ const file_saas_accounts_v1_authentication_proto_rawDesc = "" +
 	"\x1aSwitchOrganizationResponse\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x02 \x01(\x03R\texpiresIn\"a\n" +
+	"expires_in\x18\x02 \x01(\x03R\texpiresIn\"=\n" +
 	"\rLogoutRequest\x12,\n" +
-	"\rrefresh_token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\frefreshToken\x12\"\n" +
-	"\rid_token_hint\x18\x02 \x01(\tR\vidTokenHint\"8\n" +
-	"\x0eLogoutResponse\x12&\n" +
+	"\rrefresh_token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\frefreshToken\"?\n" +
+	"\x19GetProviderSignOutRequest\x12\"\n" +
+	"\rid_token_hint\x18\x01 \x01(\tR\vidTokenHint\"D\n" +
+	"\x1aGetProviderSignOutResponse\x12&\n" +
 	"\x0fend_session_url\x18\x01 \x01(\tR\rendSessionUrl\"+\n" +
 	"\fJWKSResponse\x12\x1b\n" +
 	"\tkeys_json\x18\x01 \x01(\tR\bkeysJson\"d\n" +
@@ -1839,7 +1883,7 @@ const file_saas_accounts_v1_authentication_proto_rawDesc = "" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12#\n" +
 	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x03 \x01(\x03R\texpiresIn2\xaf\x12\n" +
+	"expires_in\x18\x03 \x01(\x03R\texpiresIn2\xd6\x13\n" +
 	"\vAuthService\x12\x90\x01\n" +
 	"\n" +
 	"BeginOAuth\x12#.saas.accounts.v1.BeginOAuthRequest\x1a$.saas.accounts.v1.BeginOAuthResponse\"7\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x03X\x04`\x01\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/auth/oauth/begin\x12\xc9\x01\n" +
@@ -1857,8 +1901,9 @@ const file_saas_accounts_v1_authentication_proto_rawDesc = "" +
 	"\x16saas.mfa.webauthn_used\x10\x02@\x01H\x02P\x04X\x04`\x01h\x01\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/auth/mfa/webauthn/complete\x12\x92\x01\n" +
 	"\fRefreshToken\x12%.saas.accounts.v1.RefreshTokenRequest\x1a&.saas.accounts.v1.RefreshTokenResponse\"3\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x04X\x04`\x01\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/auth/refresh\x12\xd1\x01\n" +
 	"\x12SwitchOrganization\x12+.saas.accounts.v1.SwitchOrganizationRequest\x1a,.saas.accounts.v1.SwitchOrganizationResponse\"`\xc2\xf3\x185\b\x02\x10\x010\x01:#\n" +
-	"\x1fsaas.auth.organization_switched\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/auth/switch-organization\x12\x7f\n" +
-	"\x06Logout\x12\x1f.saas.accounts.v1.LogoutRequest\x1a .saas.accounts.v1.LogoutResponse\"2\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x04X\x03`\x01\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/auth/logout\x12\x81\x01\n" +
+	"\x1fsaas.auth.organization_switched\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/auth/switch-organization\x12u\n" +
+	"\x06Logout\x12\x1f.saas.accounts.v1.LogoutRequest\x1a\x16.google.protobuf.Empty\"2\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x04X\x03`\x01\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/auth/logout\x12\xae\x01\n" +
+	"\x12GetProviderSignOut\x12+.saas.accounts.v1.GetProviderSignOutRequest\x1a,.saas.accounts.v1.GetProviderSignOutResponse\"=\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x04X\x03`\x01\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/auth/provider-sign-out\x12\x81\x01\n" +
 	"\aGetJWKS\x12\x16.google.protobuf.Empty\x1a\x1e.saas.accounts.v1.JWKSResponse\">\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x01P\x01X\x01`\x01\x82\xd3\xe4\x93\x02 \x12\x1e/v1/auth/.well-known/jwks.json\x12\xc8\x01\n" +
 	"\x1bValidateClientAuthorization\x124.saas.accounts.v1.ValidateClientAuthorizationRequest\x1a5.saas.accounts.v1.ValidateClientAuthorizationResponse\"<\xc2\xf3\x18\x14\b\x01\x10\x010\x01:\x02\x10\x01@\x01H\x02P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1e:\x01*\"\x19/v1/auth/clients/validate\x12\xe9\x01\n" +
 	"\x1cIssueClientAuthorizationCode\x125.saas.accounts.v1.IssueClientAuthorizationCodeRequest\x1a6.saas.accounts.v1.IssueClientAuthorizationCodeResponse\"Z\xc2\xf3\x181\b\x02\x10\x010\x01:\x1f\n" +
@@ -1879,7 +1924,7 @@ func file_saas_accounts_v1_authentication_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_authentication_proto_rawDescData
 }
 
-var file_saas_accounts_v1_authentication_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_saas_accounts_v1_authentication_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_saas_accounts_v1_authentication_proto_goTypes = []any{
 	(*OAuthCodeAuthentication)(nil),              // 0: saas.accounts.v1.OAuthCodeAuthentication
 	(*FixtureAuthentication)(nil),                // 1: saas.accounts.v1.FixtureAuthentication
@@ -1896,35 +1941,36 @@ var file_saas_accounts_v1_authentication_proto_goTypes = []any{
 	(*SwitchOrganizationRequest)(nil),            // 12: saas.accounts.v1.SwitchOrganizationRequest
 	(*SwitchOrganizationResponse)(nil),           // 13: saas.accounts.v1.SwitchOrganizationResponse
 	(*LogoutRequest)(nil),                        // 14: saas.accounts.v1.LogoutRequest
-	(*LogoutResponse)(nil),                       // 15: saas.accounts.v1.LogoutResponse
-	(*JWKSResponse)(nil),                         // 16: saas.accounts.v1.JWKSResponse
-	(*BeginOAuthRequest)(nil),                    // 17: saas.accounts.v1.BeginOAuthRequest
-	(*BeginOAuthResponse)(nil),                   // 18: saas.accounts.v1.BeginOAuthResponse
-	(*ClientAuthorizationRequest)(nil),           // 19: saas.accounts.v1.ClientAuthorizationRequest
-	(*ValidateClientAuthorizationRequest)(nil),   // 20: saas.accounts.v1.ValidateClientAuthorizationRequest
-	(*ValidateClientAuthorizationResponse)(nil),  // 21: saas.accounts.v1.ValidateClientAuthorizationResponse
-	(*IssueClientAuthorizationCodeRequest)(nil),  // 22: saas.accounts.v1.IssueClientAuthorizationCodeRequest
-	(*IssueClientAuthorizationCodeResponse)(nil), // 23: saas.accounts.v1.IssueClientAuthorizationCodeResponse
-	(*AuthorizationCodeGrant)(nil),               // 24: saas.accounts.v1.AuthorizationCodeGrant
-	(*ClientRefreshTokenGrant)(nil),              // 25: saas.accounts.v1.ClientRefreshTokenGrant
-	(*ExchangeClientTokenRequest)(nil),           // 26: saas.accounts.v1.ExchangeClientTokenRequest
-	(*ExchangeClientTokenResponse)(nil),          // 27: saas.accounts.v1.ExchangeClientTokenResponse
-	nil,                                          // 28: saas.accounts.v1.AuthenticateRequest.ProfileEntry
-	(*User)(nil),                                 // 29: saas.accounts.v1.User
-	(*emptypb.Empty)(nil),                        // 30: google.protobuf.Empty
+	(*GetProviderSignOutRequest)(nil),            // 15: saas.accounts.v1.GetProviderSignOutRequest
+	(*GetProviderSignOutResponse)(nil),           // 16: saas.accounts.v1.GetProviderSignOutResponse
+	(*JWKSResponse)(nil),                         // 17: saas.accounts.v1.JWKSResponse
+	(*BeginOAuthRequest)(nil),                    // 18: saas.accounts.v1.BeginOAuthRequest
+	(*BeginOAuthResponse)(nil),                   // 19: saas.accounts.v1.BeginOAuthResponse
+	(*ClientAuthorizationRequest)(nil),           // 20: saas.accounts.v1.ClientAuthorizationRequest
+	(*ValidateClientAuthorizationRequest)(nil),   // 21: saas.accounts.v1.ValidateClientAuthorizationRequest
+	(*ValidateClientAuthorizationResponse)(nil),  // 22: saas.accounts.v1.ValidateClientAuthorizationResponse
+	(*IssueClientAuthorizationCodeRequest)(nil),  // 23: saas.accounts.v1.IssueClientAuthorizationCodeRequest
+	(*IssueClientAuthorizationCodeResponse)(nil), // 24: saas.accounts.v1.IssueClientAuthorizationCodeResponse
+	(*AuthorizationCodeGrant)(nil),               // 25: saas.accounts.v1.AuthorizationCodeGrant
+	(*ClientRefreshTokenGrant)(nil),              // 26: saas.accounts.v1.ClientRefreshTokenGrant
+	(*ExchangeClientTokenRequest)(nil),           // 27: saas.accounts.v1.ExchangeClientTokenRequest
+	(*ExchangeClientTokenResponse)(nil),          // 28: saas.accounts.v1.ExchangeClientTokenResponse
+	nil,                                          // 29: saas.accounts.v1.AuthenticateRequest.ProfileEntry
+	(*User)(nil),                                 // 30: saas.accounts.v1.User
+	(*emptypb.Empty)(nil),                        // 31: google.protobuf.Empty
 }
 var file_saas_accounts_v1_authentication_proto_depIdxs = []int32{
-	28, // 0: saas.accounts.v1.AuthenticateRequest.profile:type_name -> saas.accounts.v1.AuthenticateRequest.ProfileEntry
+	29, // 0: saas.accounts.v1.AuthenticateRequest.profile:type_name -> saas.accounts.v1.AuthenticateRequest.ProfileEntry
 	0,  // 1: saas.accounts.v1.AuthenticateRequest.oauth_code:type_name -> saas.accounts.v1.OAuthCodeAuthentication
 	1,  // 2: saas.accounts.v1.AuthenticateRequest.fixture:type_name -> saas.accounts.v1.FixtureAuthentication
 	2,  // 3: saas.accounts.v1.AuthenticateRequest.header_jwt:type_name -> saas.accounts.v1.HeaderJWTAuthentication
-	29, // 4: saas.accounts.v1.AuthenticateResponse.user:type_name -> saas.accounts.v1.User
-	29, // 5: saas.accounts.v1.CompleteMFAChallengeResponse.user:type_name -> saas.accounts.v1.User
-	19, // 6: saas.accounts.v1.ValidateClientAuthorizationRequest.authorization:type_name -> saas.accounts.v1.ClientAuthorizationRequest
-	19, // 7: saas.accounts.v1.IssueClientAuthorizationCodeRequest.authorization:type_name -> saas.accounts.v1.ClientAuthorizationRequest
-	24, // 8: saas.accounts.v1.ExchangeClientTokenRequest.authorization_code:type_name -> saas.accounts.v1.AuthorizationCodeGrant
-	25, // 9: saas.accounts.v1.ExchangeClientTokenRequest.refresh_token:type_name -> saas.accounts.v1.ClientRefreshTokenGrant
-	17, // 10: saas.accounts.v1.AuthService.BeginOAuth:input_type -> saas.accounts.v1.BeginOAuthRequest
+	30, // 4: saas.accounts.v1.AuthenticateResponse.user:type_name -> saas.accounts.v1.User
+	30, // 5: saas.accounts.v1.CompleteMFAChallengeResponse.user:type_name -> saas.accounts.v1.User
+	20, // 6: saas.accounts.v1.ValidateClientAuthorizationRequest.authorization:type_name -> saas.accounts.v1.ClientAuthorizationRequest
+	20, // 7: saas.accounts.v1.IssueClientAuthorizationCodeRequest.authorization:type_name -> saas.accounts.v1.ClientAuthorizationRequest
+	25, // 8: saas.accounts.v1.ExchangeClientTokenRequest.authorization_code:type_name -> saas.accounts.v1.AuthorizationCodeGrant
+	26, // 9: saas.accounts.v1.ExchangeClientTokenRequest.refresh_token:type_name -> saas.accounts.v1.ClientRefreshTokenGrant
+	18, // 10: saas.accounts.v1.AuthService.BeginOAuth:input_type -> saas.accounts.v1.BeginOAuthRequest
 	3,  // 11: saas.accounts.v1.AuthService.Authenticate:input_type -> saas.accounts.v1.AuthenticateRequest
 	5,  // 12: saas.accounts.v1.AuthService.CompleteMFAChallenge:input_type -> saas.accounts.v1.CompleteMFAChallengeRequest
 	7,  // 13: saas.accounts.v1.AuthService.BeginWebAuthnMFAChallenge:input_type -> saas.accounts.v1.BeginWebAuthnMFAChallengeRequest
@@ -1932,24 +1978,26 @@ var file_saas_accounts_v1_authentication_proto_depIdxs = []int32{
 	10, // 15: saas.accounts.v1.AuthService.RefreshToken:input_type -> saas.accounts.v1.RefreshTokenRequest
 	12, // 16: saas.accounts.v1.AuthService.SwitchOrganization:input_type -> saas.accounts.v1.SwitchOrganizationRequest
 	14, // 17: saas.accounts.v1.AuthService.Logout:input_type -> saas.accounts.v1.LogoutRequest
-	30, // 18: saas.accounts.v1.AuthService.GetJWKS:input_type -> google.protobuf.Empty
-	20, // 19: saas.accounts.v1.AuthService.ValidateClientAuthorization:input_type -> saas.accounts.v1.ValidateClientAuthorizationRequest
-	22, // 20: saas.accounts.v1.AuthService.IssueClientAuthorizationCode:input_type -> saas.accounts.v1.IssueClientAuthorizationCodeRequest
-	26, // 21: saas.accounts.v1.AuthService.ExchangeClientToken:input_type -> saas.accounts.v1.ExchangeClientTokenRequest
-	18, // 22: saas.accounts.v1.AuthService.BeginOAuth:output_type -> saas.accounts.v1.BeginOAuthResponse
-	4,  // 23: saas.accounts.v1.AuthService.Authenticate:output_type -> saas.accounts.v1.AuthenticateResponse
-	6,  // 24: saas.accounts.v1.AuthService.CompleteMFAChallenge:output_type -> saas.accounts.v1.CompleteMFAChallengeResponse
-	8,  // 25: saas.accounts.v1.AuthService.BeginWebAuthnMFAChallenge:output_type -> saas.accounts.v1.BeginWebAuthnMFAChallengeResponse
-	6,  // 26: saas.accounts.v1.AuthService.CompleteWebAuthnMFAChallenge:output_type -> saas.accounts.v1.CompleteMFAChallengeResponse
-	11, // 27: saas.accounts.v1.AuthService.RefreshToken:output_type -> saas.accounts.v1.RefreshTokenResponse
-	13, // 28: saas.accounts.v1.AuthService.SwitchOrganization:output_type -> saas.accounts.v1.SwitchOrganizationResponse
-	15, // 29: saas.accounts.v1.AuthService.Logout:output_type -> saas.accounts.v1.LogoutResponse
-	16, // 30: saas.accounts.v1.AuthService.GetJWKS:output_type -> saas.accounts.v1.JWKSResponse
-	21, // 31: saas.accounts.v1.AuthService.ValidateClientAuthorization:output_type -> saas.accounts.v1.ValidateClientAuthorizationResponse
-	23, // 32: saas.accounts.v1.AuthService.IssueClientAuthorizationCode:output_type -> saas.accounts.v1.IssueClientAuthorizationCodeResponse
-	27, // 33: saas.accounts.v1.AuthService.ExchangeClientToken:output_type -> saas.accounts.v1.ExchangeClientTokenResponse
-	22, // [22:34] is the sub-list for method output_type
-	10, // [10:22] is the sub-list for method input_type
+	15, // 18: saas.accounts.v1.AuthService.GetProviderSignOut:input_type -> saas.accounts.v1.GetProviderSignOutRequest
+	31, // 19: saas.accounts.v1.AuthService.GetJWKS:input_type -> google.protobuf.Empty
+	21, // 20: saas.accounts.v1.AuthService.ValidateClientAuthorization:input_type -> saas.accounts.v1.ValidateClientAuthorizationRequest
+	23, // 21: saas.accounts.v1.AuthService.IssueClientAuthorizationCode:input_type -> saas.accounts.v1.IssueClientAuthorizationCodeRequest
+	27, // 22: saas.accounts.v1.AuthService.ExchangeClientToken:input_type -> saas.accounts.v1.ExchangeClientTokenRequest
+	19, // 23: saas.accounts.v1.AuthService.BeginOAuth:output_type -> saas.accounts.v1.BeginOAuthResponse
+	4,  // 24: saas.accounts.v1.AuthService.Authenticate:output_type -> saas.accounts.v1.AuthenticateResponse
+	6,  // 25: saas.accounts.v1.AuthService.CompleteMFAChallenge:output_type -> saas.accounts.v1.CompleteMFAChallengeResponse
+	8,  // 26: saas.accounts.v1.AuthService.BeginWebAuthnMFAChallenge:output_type -> saas.accounts.v1.BeginWebAuthnMFAChallengeResponse
+	6,  // 27: saas.accounts.v1.AuthService.CompleteWebAuthnMFAChallenge:output_type -> saas.accounts.v1.CompleteMFAChallengeResponse
+	11, // 28: saas.accounts.v1.AuthService.RefreshToken:output_type -> saas.accounts.v1.RefreshTokenResponse
+	13, // 29: saas.accounts.v1.AuthService.SwitchOrganization:output_type -> saas.accounts.v1.SwitchOrganizationResponse
+	31, // 30: saas.accounts.v1.AuthService.Logout:output_type -> google.protobuf.Empty
+	16, // 31: saas.accounts.v1.AuthService.GetProviderSignOut:output_type -> saas.accounts.v1.GetProviderSignOutResponse
+	17, // 32: saas.accounts.v1.AuthService.GetJWKS:output_type -> saas.accounts.v1.JWKSResponse
+	22, // 33: saas.accounts.v1.AuthService.ValidateClientAuthorization:output_type -> saas.accounts.v1.ValidateClientAuthorizationResponse
+	24, // 34: saas.accounts.v1.AuthService.IssueClientAuthorizationCode:output_type -> saas.accounts.v1.IssueClientAuthorizationCodeResponse
+	28, // 35: saas.accounts.v1.AuthService.ExchangeClientToken:output_type -> saas.accounts.v1.ExchangeClientTokenResponse
+	23, // [23:36] is the sub-list for method output_type
+	10, // [10:23] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
 	10, // [10:10] is the sub-list for extension extendee
 	0,  // [0:10] is the sub-list for field type_name
@@ -1966,7 +2014,7 @@ func file_saas_accounts_v1_authentication_proto_init() {
 		(*AuthenticateRequest_Fixture)(nil),
 		(*AuthenticateRequest_HeaderJwt)(nil),
 	}
-	file_saas_accounts_v1_authentication_proto_msgTypes[26].OneofWrappers = []any{
+	file_saas_accounts_v1_authentication_proto_msgTypes[27].OneofWrappers = []any{
 		(*ExchangeClientTokenRequest_AuthorizationCode)(nil),
 		(*ExchangeClientTokenRequest_RefreshToken)(nil),
 	}
@@ -1976,7 +2024,7 @@ func file_saas_accounts_v1_authentication_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_authentication_proto_rawDesc), len(file_saas_accounts_v1_authentication_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   29,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -117,6 +117,7 @@
         "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
         "/saas.accounts.v1.AuthService/ExchangeClientToken",
         "/saas.accounts.v1.AuthService/GetJWKS",
+        "/saas.accounts.v1.AuthService/GetProviderSignOut",
         "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode",
         "/saas.accounts.v1.AuthService/Logout",
         "/saas.accounts.v1.AuthService/RefreshToken",
@@ -2846,6 +2847,57 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.AuthService/GetProviderSignOut",
+      "service": "AuthService",
+      "full_service": "saas.accounts.v1.AuthService",
+      "method": "GetProviderSignOut",
+      "input_type": "saas.accounts.v1.GetProviderSignOutRequest",
+      "output_type": "saas.accounts.v1.GetProviderSignOutResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authentication.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/auth/provider-sign-out",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "The identity provider's RP-initiated logout URL, for a client to end the provider's own session.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode",
       "service": "AuthService",
       "full_service": "saas.accounts.v1.AuthService",
@@ -2904,7 +2956,7 @@
       "full_service": "saas.accounts.v1.AuthService",
       "method": "Logout",
       "input_type": "saas.accounts.v1.LogoutRequest",
-      "output_type": "saas.accounts.v1.LogoutResponse",
+      "output_type": "google.protobuf.Empty",
       "client_streaming": false,
       "server_streaming": false,
       "deprecated": false,

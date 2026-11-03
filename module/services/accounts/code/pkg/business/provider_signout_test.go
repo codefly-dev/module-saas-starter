@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 const testEndSession = "https://idp.example.com/oidc/logout"
@@ -91,6 +92,41 @@ func TestTheFixtureProviderOffersNoProviderSignOut(t *testing.T) {
 	_, err := svc.BackchannelLogout(context.Background(), "any.logout.token")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "verifies logout tokens")
+}
+
+// The RPC answers an empty URL rather than an error when there is no provider
+// sign-out, and it needs no session: a client asks for it around a sign-out,
+// when the credential it would otherwise present is the one just revoked.
+func TestGetProviderSignOutAnswersTheURLOrAnEmptyOne(t *testing.T) {
+	configured := signOutService(ProviderSignOut{
+		EndSessionEndpoint:    testEndSession,
+		ClientID:              "acme-host",
+		PostLogoutRedirectURI: "https://app.example.com/signed-out",
+	})
+	response, err := configured.GetProviderSignOut(context.Background(),
+		&gen.GetProviderSignOutRequest{IdTokenHint: "the-provider-id-token"})
+	require.NoError(t, err)
+	parsed, err := url.Parse(response.GetEndSessionUrl())
+	require.NoError(t, err)
+	require.Equal(t, "the-provider-id-token", parsed.Query().Get("id_token_hint"))
+	require.Equal(t, "https://app.example.com/signed-out", parsed.Query().Get("post_logout_redirect_uri"))
+
+	// No hint, and no provider at all: an empty URL both times, never an error.
+	response, err = configured.GetProviderSignOut(context.Background(), &gen.GetProviderSignOutRequest{})
+	require.NoError(t, err)
+	require.Equal(t, "acme-host", mustQuery(t, response.GetEndSessionUrl(), "client_id"))
+
+	response, err = signOutService(ProviderSignOut{}).GetProviderSignOut(
+		context.Background(), &gen.GetProviderSignOutRequest{IdTokenHint: "a-hint"})
+	require.NoError(t, err)
+	require.Empty(t, response.GetEndSessionUrl())
+}
+
+func mustQuery(t *testing.T, raw, key string) string {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	require.NoError(t, err)
+	return parsed.Query().Get(key)
 }
 
 // A verified token that names only the provider's own session id is a request

@@ -17,11 +17,11 @@ module ceiling. The complete regeneration includes these additions and the calla
 
 ## Current surface
 
-The accounts projection contains 175 descriptor routes across 30 services,
+The accounts projection contains 176 descriptor routes across 30 services,
 counted from `generated/rest-surface.json`:
 
-- 18 public routes and 157 authenticated routes;
-- 148 OpenAPI paths and 175 operations;
+- 19 public routes and 157 authenticated routes;
+- 149 OpenAPI paths and 176 operations;
 - zero internal RPCs;
 - the explicit non-protobuf extensions loaded by auth-gateway: magic-link
   request/verification, the billing and Resend email webhooks, the two GitHub

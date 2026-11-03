@@ -170,7 +170,16 @@ message SwitchOrganizationResponse {
 
 message LogoutRequest {
   string refresh_token = 1 [(buf.validate.field).string.min_len = 1];
+}
 
+// GetProviderSignOutRequest asks for the URL that ends the session at the
+// identity provider. It is a separate call rather than a field on the Logout
+// response because `saas.accounts.v1` is additive: an RPC's response type is
+// never changed (module/CONTRACT_VERSIONING.md), and every client generated
+// against `Logout` returning Empty would have to be rebuilt. Asking separately
+// also sequences better — a client can hold the URL before it signs out, so it
+// has somewhere to send the person the moment the host session ends.
+message GetProviderSignOutRequest {
   // id_token_hint is the provider's id_token for the session being ended, as
   // the client still holds it. It is optional and client-supplied on purpose:
   // the host never retains a provider id_token — it has no other use for one,
@@ -179,17 +188,17 @@ message LogoutRequest {
   // which OpenID Connect RP-Initiated Logout 1.0 §2 allows exactly for the case
   // where no hint is available. The provider may then ask the person to confirm
   // which session they are ending.
-  string id_token_hint = 2;
+  string id_token_hint = 1;
 }
 
-// LogoutResponse carries what the host cannot do on the person's behalf. The
-// host ends its own session unconditionally; reaching the identity provider
+// GetProviderSignOutResponse carries what the host cannot do on the person's
+// behalf. The host ends its own session itself; reaching the identity provider
 // requires the person's own user agent, because the provider's session cookie
 // is in their browser and not in any request accounts can make.
-message LogoutResponse {
+message GetProviderSignOutResponse {
   // end_session_url is the provider's `end_session_endpoint` with the
   // RP-initiated logout parameters already applied, for the client to send the
-  // person's browser to after the host session has ended. Empty when this
+  // person's browser to once the host session has ended. Empty when this
   // deployment's provider publishes no `end_session_endpoint`, or when the
   // configured provider has no OIDC sign-out at all (the development fixture):
   // an empty value is the whole answer, and a client must treat it as "nothing
@@ -483,10 +492,7 @@ service AuthService {
     };
   }
 
-  // Logout ends the host session and, when the identity provider publishes an
-  // `end_session_endpoint`, returns the RP-initiated logout URL for the client
-  // to complete. See module/AUTHENTICATION.md "Signing out".
-  rpc Logout(LogoutRequest) returns (LogoutResponse) {
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_PUBLIC
       tenant: TENANT_REQUIREMENT_NONE
@@ -500,6 +506,33 @@ service AuthService {
     };
     option (google.api.http) = {
       post: "/v1/auth/logout"
+      body: "*"
+    };
+  }
+
+  // GetProviderSignOut returns the identity provider's RP-initiated logout URL,
+  // so a client can complete the half of a sign-out the host cannot: ending the
+  // provider's own session, which needs the person's browser. Public, like
+  // GetJWKS, because everything it answers with is already public — the
+  // deployment's client id and its registered post-logout redirect — and
+  // because a client needs it on a sign-out that has already ended the session
+  // whose bearer it would otherwise present. Empty when this provider offers no
+  // RP-initiated sign-out. See FEATURES.md "Signing out of the identity
+  // provider".
+  rpc GetProviderSignOut(GetProviderSignOutRequest) returns (GetProviderSignOutResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/provider-sign-out"
       body: "*"
     };
   }

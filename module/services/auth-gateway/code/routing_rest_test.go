@@ -24,7 +24,18 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 			publicCount++
 		}
 	}
-	require.Equal(t, 18, publicCount)
+	// A route becoming public is the thing this number exists to catch, so it
+	// stays a literal — there is no exhaustive inventory here to derive it from,
+	// only the spot checks below. It moved 18 → 19 for exactly one route, and
+	// that route is named immediately after, so the figure is anchored to a
+	// claim rather than floating free.
+	require.Equal(t, 19, publicCount)
+	// GetProviderSignOut: public like the JWKS, because everything it answers
+	// with is already public (the deployment's client id, its registered
+	// post-logout redirect), and because a client asks for it around a sign-out
+	// — when the bearer it would otherwise present is the one just revoked.
+	require.NotNil(t, paths["POST /v1/auth/provider-sign-out"])
+	require.False(t, paths["POST /v1/auth/provider-sign-out"].Protected)
 	require.NotNil(t, paths["GET /v1/.well-known/service-info"])
 	require.NotNil(t, paths["GET /v1/public/plans"])
 	require.False(t, paths["GET /v1/public/plans"].Protected)

@@ -110,6 +110,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"AuthService/CompleteMFAChallenge":                             "Consume a one-use MFA login transaction and issue the session.",
 	"AuthService/CompleteWebAuthnMFAChallenge":                     "Verify WebAuthn and atomically consume the MFA login transaction.",
 	"AuthService/GetJWKS":                                          "Public JWKS for JWT signature verification.",
+	"AuthService/GetProviderSignOut":                               "The identity provider's RP-initiated logout URL, for a client to end the provider's own session.",
 	"AuthService/Logout":                                           "Revoke the caller's session and its refresh-token family.",
 	"AuthService/RefreshToken":                                     "Exchange a refresh token for a new access token, rotating the refresh token.",
 	"AuthService/SwitchOrganization":                               "Exchange the active device session for an access token scoped to another current membership.",

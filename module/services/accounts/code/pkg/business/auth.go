@@ -498,11 +498,11 @@ func (s *Service) BeginOAuth(ctx context.Context, provider, redirectURI string) 
 // returned directly, so a failed access-marker write cannot discard the durable
 // half. Work that succeeded is kept — each step is idempotent, so a retry
 // completes the remainder rather than starting over.
-func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToken, sessionID string) (*gen.LogoutResponse, error) {
+func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToken, sessionID string) error {
 	w := wool.Get(ctx).In("Logout")
 
 	if s.minter == nil {
-		return nil, w.NewError("auth path not wired: minter missing")
+		return w.NewError("auth path not wired: minter missing")
 	}
 	var incomplete []string
 	if accessToken != "" {
@@ -518,23 +518,32 @@ func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToke
 		}
 	}
 	if err := s.minter.Revoke(ctx, req.RefreshToken); err != nil {
-		return nil, err
+		return err
 	}
 	if len(incomplete) > 0 {
 		// The family is revoked, so nothing can be refreshed; what is still live is
 		// the access half, until its natural expiry. The caller is told, because the
 		// difference between "signed out" and "signed out except for a few minutes"
 		// is theirs to act on.
-		return nil, fmt.Errorf("%w: %s", ErrLogoutIncomplete, strings.Join(incomplete, " and "))
+		return fmt.Errorf("%w: %s", ErrLogoutIncomplete, strings.Join(incomplete, " and "))
 	}
-	// The host session has ended. Ending the session at the identity provider
-	// needs the person's own browser — the provider's session cookie is there
-	// and in nothing accounts can send — so the complete answer is the URL for
-	// the client to send them to, and an empty one when this provider publishes
-	// no end_session_endpoint. It is computed only after every revocation held:
-	// a client told "now go here" while its host session is still live would
-	// sign out of the provider and stay signed in here.
-	return &gen.LogoutResponse{EndSessionUrl: s.endSessionURL(ctx, req.GetIdTokenHint())}, nil
+	// Ending the session at the identity provider is the other half, and it is
+	// not this call's to do: the provider's session cookie is in the person's
+	// browser and in nothing accounts can send. GetProviderSignOut answers the
+	// URL that does it.
+	return nil
+}
+
+// GetProviderSignOut answers the identity provider's RP-initiated logout URL,
+// with the client-supplied id_token_hint applied, or an empty one when this
+// deployment's provider offers no such sign-out. It reads only configuration
+// and the hint the caller passed, so it needs no session — which is the point:
+// a client asks for it around a sign-out, when the credential it would
+// otherwise present is exactly the one that has just been revoked.
+func (s *Service) GetProviderSignOut(ctx context.Context, req *gen.GetProviderSignOutRequest) (*gen.GetProviderSignOutResponse, error) {
+	return &gen.GetProviderSignOutResponse{
+		EndSessionUrl: s.endSessionURL(ctx, req.GetIdTokenHint()),
+	}, nil
 }
 
 // ErrLogoutIncomplete reports a sign-out whose refresh family was revoked while an

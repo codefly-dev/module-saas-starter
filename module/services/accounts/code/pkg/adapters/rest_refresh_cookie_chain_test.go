@@ -16,6 +16,7 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/gen/saas/accounts/v1/accountsv1connect"
@@ -50,11 +51,11 @@ func (h *chainAuthHandler) RefreshToken(ctx context.Context, req *connect.Reques
 	})
 }
 
-func (h *chainAuthHandler) Logout(ctx context.Context, req *connect.Request[gen.LogoutRequest]) (*connect.Response[gen.LogoutResponse], error) {
+func (h *chainAuthHandler) Logout(ctx context.Context, req *connect.Request[gen.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
 	refreshTokenFromCookie(req.Header(), req.Msg.GetRefreshToken(), func(token string) { req.Msg.RefreshToken = token })
-	return unary(ctx, req, func(_ context.Context, msg *gen.LogoutRequest) (*gen.LogoutResponse, error) {
+	return unary(ctx, req, func(_ context.Context, msg *gen.LogoutRequest) (*emptypb.Empty, error) {
 		h.saw("logout", msg.GetRefreshToken())
-		return &gen.LogoutResponse{}, nil
+		return &emptypb.Empty{}, nil
 	})
 }
 

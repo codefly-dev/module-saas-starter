@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **301 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **302 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -54,6 +54,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge` | unary | `POST /v1/auth/mfa/webauthn/complete` | `public` | exposure=PUBLIC; tenant=NONE; authentication_factor_attempt=true | — | — | SUCCESS: saas.auth.login, saas.auth.mfa_challenge_completed, saas.mfa.webauthn_used | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Verify WebAuthn and atomically consume the MFA login transaction. |
 | `/saas.accounts.v1.AuthService/ExchangeClientToken` | unary | `POST /v1/auth/token` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.auth.login | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Exchange a registered client's authorization code or rotating refresh token for tokens. |
 | `/saas.accounts.v1.AuthService/GetJWKS` | unary | `GET /v1/auth/.well-known/jwks.json` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / PUBLIC | PUBLIC → PUBLIC | Public JWKS for JWT signature verification. |
+| `/saas.accounts.v1.AuthService/GetProviderSignOut` | unary | `POST /v1/auth/provider-sign-out` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / AUTHENTICATION | SECRET → CONFIDENTIAL | The identity provider's RP-initiated logout URL, for a client to end the provider's own session. |
 | `/saas.accounts.v1.AuthService/IssueClientAuthorizationCode` | unary | `POST /v1/auth/clients/authorize` | `auth` | exposure=AUTHENTICATED; tenant=NONE | — | — | SUCCESS: saas.auth.client_authorized | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Issue the one-time code the host redirects back to a registered client with. |
 | `/saas.accounts.v1.AuthService/Logout` | unary | `POST /v1/auth/logout` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / AUTHENTICATION | SECRET → CONFIDENTIAL | Revoke the caller's session and its refresh-token family. |
 | `/saas.accounts.v1.AuthService/RefreshToken` | unary | `POST /v1/auth/refresh` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Exchange a refresh token for a new access token, rotating the refresh token. |
@@ -318,7 +319,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `org_admin`: 71
 - `org_member`: 57
 - `platform_admin`: 29
-- `public`: 32
+- `public`: 33
 
 ## Three vocabularies
 

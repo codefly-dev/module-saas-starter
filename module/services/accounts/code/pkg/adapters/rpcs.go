@@ -1308,7 +1308,7 @@ func (s *AuthServer) BeginOAuth(ctx context.Context, req *gen.BeginOAuthRequest)
 	return &gen.BeginOAuthResponse{State: state}, nil
 }
 
-func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*gen.LogoutResponse, error) {
+func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*emptypb.Empty, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -1324,8 +1324,7 @@ func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*gen.L
 	if sessionID, ok := auth.VerifiedSessionID(ctx); ok {
 		verifiedSession = sessionID.String()
 	}
-	response, err := service.Logout(ctx, req, accessToken, verifiedSession)
-	if err != nil {
+	if err := service.Logout(ctx, req, accessToken, verifiedSession); err != nil {
 		// An incomplete sign-out is reported as retryable rather than as success:
 		// the family is revoked, so nothing refreshes, but an already-issued access
 		// token stays usable until it expires and the caller may want to retry.
@@ -1335,7 +1334,14 @@ func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*gen.L
 		}
 		return nil, err
 	}
-	return response, nil
+	return &emptypb.Empty{}, nil
+}
+
+// GetProviderSignOut answers the provider's RP-initiated logout URL. No
+// Validate call: the one field is an optional opaque hint with no shape this
+// host asserts, and a request carrying none is the ordinary case.
+func (s *AuthServer) GetProviderSignOut(ctx context.Context, req *gen.GetProviderSignOutRequest) (*gen.GetProviderSignOutResponse, error) {
+	return service.GetProviderSignOut(ctx, req)
 }
 
 // bearerFromContext extracts the bearer token from the incoming

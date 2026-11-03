@@ -870,13 +870,13 @@
     },
     "/v1/auth/logout": {
       "post": {
-        "summary": "Logout ends the host session and, when the identity provider publishes an\n`end_session_endpoint`, returns the RP-initiated logout URL for the client\nto complete. See module/AUTHENTICATION.md \"Signing out\".",
         "operationId": "AuthService_Logout",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1LogoutResponse"
+              "type": "object",
+              "properties": {}
             }
           },
           "default": {
@@ -1027,6 +1027,40 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/v1BeginOAuthRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/provider-sign-out": {
+      "post": {
+        "summary": "GetProviderSignOut returns the identity provider's RP-initiated logout URL,\nso a client can complete the half of a sign-out the host cannot: ending the\nprovider's own session, which needs the person's browser. Public, like\nGetJWKS, because everything it answers with is already public — the\ndeployment's client id and its registered post-logout redirect — and\nbecause a client needs it on a sign-out that has already ended the session\nwhose bearer it would otherwise present. Empty when this provider offers no\nRP-initiated sign-out. See FEATURES.md \"Signing out of the identity\nprovider\".",
+        "operationId": "AuthService_GetProviderSignOut",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetProviderSignOutResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "GetProviderSignOutRequest asks for the URL that ends the session at the\nidentity provider. It is a separate call rather than a field on the Logout\nresponse because `saas.accounts.v1` is additive: an RPC's response type is\nnever changed (module/CONTRACT_VERSIONING.md), and every client generated\nagainst `Logout` returning Empty would have to be rebuilt. Asking separately\nalso sequences better — a client can hold the URL before it signs out, so it\nhas somewhere to send the person the moment the host session ends.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GetProviderSignOutRequest"
             }
           }
         ],
@@ -9093,6 +9127,26 @@
         }
       }
     },
+    "v1GetProviderSignOutRequest": {
+      "type": "object",
+      "properties": {
+        "idTokenHint": {
+          "type": "string",
+          "description": "id_token_hint is the provider's id_token for the session being ended, as\nthe client still holds it. It is optional and client-supplied on purpose:\nthe host never retains a provider id_token — it has no other use for one,\nand storing a provider credential to hand back later is a liability, not a\nfeature. When it is absent the end-session URL carries `client_id` instead,\nwhich OpenID Connect RP-Initiated Logout 1.0 §2 allows exactly for the case\nwhere no hint is available. The provider may then ask the person to confirm\nwhich session they are ending."
+        }
+      },
+      "description": "GetProviderSignOutRequest asks for the URL that ends the session at the\nidentity provider. It is a separate call rather than a field on the Logout\nresponse because `saas.accounts.v1` is additive: an RPC's response type is\nnever changed (module/CONTRACT_VERSIONING.md), and every client generated\nagainst `Logout` returning Empty would have to be rebuilt. Asking separately\nalso sequences better — a client can hold the URL before it signs out, so it\nhas somewhere to send the person the moment the host session ends."
+    },
+    "v1GetProviderSignOutResponse": {
+      "type": "object",
+      "properties": {
+        "endSessionUrl": {
+          "type": "string",
+          "description": "end_session_url is the provider's `end_session_endpoint` with the\nRP-initiated logout parameters already applied, for the client to send the\nperson's browser to once the host session has ended. Empty when this\ndeployment's provider publishes no `end_session_endpoint`, or when the\nconfigured provider has no OIDC sign-out at all (the development fixture):\nan empty value is the whole answer, and a client must treat it as \"nothing\nfurther to do\" rather than as a failure."
+        }
+      },
+      "description": "GetProviderSignOutResponse carries what the host cannot do on the person's\nbehalf. The host ends its own session itself; reaching the identity provider\nrequires the person's own user agent, because the provider's session cookie\nis in their browser and not in any request accounts can make."
+    },
     "v1GetSelfResponse": {
       "type": "object",
       "properties": {
@@ -10600,22 +10654,8 @@
       "properties": {
         "refreshToken": {
           "type": "string"
-        },
-        "idTokenHint": {
-          "type": "string",
-          "description": "id_token_hint is the provider's id_token for the session being ended, as\nthe client still holds it. It is optional and client-supplied on purpose:\nthe host never retains a provider id_token — it has no other use for one,\nand storing a provider credential to hand back later is a liability, not a\nfeature. When it is absent the end-session URL carries `client_id` instead,\nwhich OpenID Connect RP-Initiated Logout 1.0 §2 allows exactly for the case\nwhere no hint is available. The provider may then ask the person to confirm\nwhich session they are ending."
         }
       }
-    },
-    "v1LogoutResponse": {
-      "type": "object",
-      "properties": {
-        "endSessionUrl": {
-          "type": "string",
-          "description": "end_session_url is the provider's `end_session_endpoint` with the\nRP-initiated logout parameters already applied, for the client to send the\nperson's browser to after the host session has ended. Empty when this\ndeployment's provider publishes no `end_session_endpoint`, or when the\nconfigured provider has no OIDC sign-out at all (the development fixture):\nan empty value is the whole answer, and a client must treat it as \"nothing\nfurther to do\" rather than as a failure."
-        }
-      },
-      "description": "LogoutResponse carries what the host cannot do on the person's behalf. The\nhost ends its own session unconditionally; reaching the identity provider\nrequires the person's own user agent, because the provider's session cookie\nis in their browser and not in any request accounts can make."
     },
     "v1MFADevice": {
       "type": "object",

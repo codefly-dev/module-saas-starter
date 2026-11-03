@@ -1837,6 +1837,43 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
+      "procedure": "/saas.accounts.v1.AuthService/GetProviderSignOut",
+      "full_service": "saas.accounts.v1.AuthService",
+      "method": "GetProviderSignOut",
+      "input_type": "saas.accounts.v1.GetProviderSignOutRequest",
+      "output_type": "saas.accounts.v1.GetProviderSignOutResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/authentication.proto",
+      "policy_sha256": "4b5e14d05eaf05e0a219de44c1a72d125aa0a333b1be7d49a0f87e4dfb001f5d",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_CLOSED"
+    },
+    {
       "procedure": "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode",
       "full_service": "saas.accounts.v1.AuthService",
       "method": "IssueClientAuthorizationCode",
@@ -1880,7 +1917,7 @@
       "full_service": "saas.accounts.v1.AuthService",
       "method": "Logout",
       "input_type": "saas.accounts.v1.LogoutRequest",
-      "output_type": "saas.accounts.v1.LogoutResponse",
+      "output_type": "google.protobuf.Empty",
       "client_streaming": false,
       "server_streaming": false,
       "policy": {
