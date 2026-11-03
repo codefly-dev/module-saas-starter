@@ -364,7 +364,7 @@ func TestResolver_Signup_CreatesOrg(t *testing.T) {
 	require.Equal(t, "owner", id.OrgRole)
 
 	// organizations is RLS-protected (Phase 2F). Reading via the
-	// raw pool runs as app_tenant with no app.current_org_id set
+	// raw pool runs as app_tenant with no codefly.current_tenant_id set
 	// → zero rows. Wrap in WithControlPlane + use the tx from ctx for
 	// the assertion read.
 	var name, slug string

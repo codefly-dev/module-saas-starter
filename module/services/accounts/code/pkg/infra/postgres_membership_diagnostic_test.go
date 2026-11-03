@@ -314,7 +314,7 @@ func TestMembershipDiagnosticReportsAnInactiveOwnerWhileAnotherAdministratorRema
 // The migration ran the scan directly under the store owner-connection. That
 // principal is a plain table owner, and organizations / organization_members are
 // FORCE ROW LEVEL SECURITY — which binds the owner too — with policies scoped to
-// app.current_org_id and no bypass clause. On managed Postgres, where the owner
+// codefly.current_tenant_id and no bypass clause. On managed Postgres, where the owner
 // is neither superuser nor BYPASSRLS, the scan therefore saw zero organizations,
 // recorded nothing, and returned 0: the same answer a healthy platform gives.
 //

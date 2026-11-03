@@ -92,7 +92,7 @@ func installationHeldBy(t *testing.T, orgID, installationID string) bool {
 }
 
 // setupRowExists reads through the tenant transaction rather than the pool: a
-// fresh pooled connection carries no app.current_org_id, so RLS would hide every
+// fresh pooled connection carries no codefly.current_tenant_id, so RLS would hide every
 // row and the answer would be false for the wrong reason.
 func setupRowExists(t *testing.T, orgID, stateHash string) bool {
 	t.Helper()

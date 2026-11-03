@@ -45,7 +45,7 @@ func insertDatasourceSource(t *testing.T, ctx context.Context, orgID, repo strin
 
 // TestRLS_DatasourceSources_CrossTenantBlocked mirrors the direct-org_id RLS
 // tests: each org sees only its own datasource rows, a cross-tenant read is
-// hidden even when the id is known, and an un-wrapped read (no app.current_org_id)
+// hidden even when the id is known, and an un-wrapped read (no codefly.current_tenant_id)
 // returns nothing — RLS fail-closed. The unauthenticated webhook by-id lookup,
 // which runs through the control-plane role, still resolves the row.
 func TestRLS_DatasourceSources_CrossTenantBlocked(t *testing.T) {

@@ -707,7 +707,7 @@ func retentionOwnerRows(t *testing.T, ctx context.Context, conn *pgxpool.Conn, t
 	tx, err := conn.Begin(ctx)
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback(ctx) }()
-	_, err = tx.Exec(ctx, `SELECT set_config('app.current_org_id', $1, true)`, org)
+	_, err = tx.Exec(ctx, `SELECT set_config('codefly.current_tenant_id', $1, true)`, org)
 	require.NoError(t, err)
 	var rows int64
 	require.NoError(t, tx.QueryRow(ctx, `SELECT count(*) FROM public.`+pgx.Identifier{table}.Sanitize()).Scan(&rows))

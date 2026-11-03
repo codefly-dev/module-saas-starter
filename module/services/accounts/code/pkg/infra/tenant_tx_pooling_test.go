@@ -18,7 +18,7 @@ import (
 )
 
 // TestWithOrgTx_OrgIDIsTransactionLocal_NoPoolLeak pins the single
-// highest-consequence multi-tenant RLS footgun: app.current_org_id MUST
+// highest-consequence multi-tenant RLS footgun: codefly.current_tenant_id MUST
 // be transaction-scoped (set via set_config(..., is_local => true) /
 // SET LOCAL), never session-scoped. A session-scoped GUC survives on the
 // physical connection after the transaction ends, so the next checkout —
@@ -47,7 +47,7 @@ func TestWithOrgTx_OrgIDIsTransactionLocal_NoPoolLeak(t *testing.T) {
 	// Inside the transaction the GUC is set — the RLS policies read it.
 	require.NoError(t, single.WithOrgTx(testCtx, orgA, func(ctx context.Context) error {
 		require.Equal(t, orgA, currentOrgID(t, txFromCtx(t, ctx)),
-			"app.current_org_id must be visible to the policy inside WithOrgTx")
+			"codefly.current_tenant_id must be visible to the policy inside WithOrgTx")
 		return nil
 	}))
 
@@ -55,7 +55,7 @@ func TestWithOrgTx_OrgIDIsTransactionLocal_NoPoolLeak(t *testing.T) {
 	// pool. The next borrower on that exact connection MUST see no tenant
 	// context — a bare (un-wrapped) query is fail-closed.
 	require.Empty(t, currentOrgID(t, single.Pool()),
-		"app.current_org_id leaked past its transaction onto the pooled connection")
+		"codefly.current_tenant_id leaked past its transaction onto the pooled connection")
 
 	// A second tenant reuses the same connection. The in-tx read only
 	// confirms the mechanism re-engages for orgB — a leaked session GUC
@@ -69,7 +69,7 @@ func TestWithOrgTx_OrgIDIsTransactionLocal_NoPoolLeak(t *testing.T) {
 		return nil
 	}))
 	require.Empty(t, currentOrgID(t, single.Pool()),
-		"orgB's app.current_org_id leaked past its transaction onto the pooled connection")
+		"orgB's codefly.current_tenant_id leaked past its transaction onto the pooled connection")
 }
 
 // singleConnStore opens a dedicated store over the request login whose pool
@@ -106,7 +106,7 @@ func currentOrgID(t *testing.T, q orgIDQuerier) string {
 	t.Helper()
 	var got string
 	require.NoError(t, q.QueryRow(testCtx,
-		"SELECT coalesce(current_setting('app.current_org_id', true), '')").Scan(&got))
+		"SELECT coalesce(current_setting('codefly.current_tenant_id', true), '')").Scan(&got))
 	return got
 }
 
@@ -121,7 +121,7 @@ func currentUserID(t *testing.T, q orgIDQuerier) string {
 	t.Helper()
 	var got string
 	require.NoError(t, q.QueryRow(testCtx,
-		"SELECT coalesce(current_setting('app.current_user_id', true), '')").Scan(&got))
+		"SELECT coalesce(current_setting('codefly.current_user_id', true), '')").Scan(&got))
 	return got
 }
 
@@ -132,7 +132,7 @@ func currentUserID(t *testing.T, q orgIDQuerier) string {
 func poisonSession(t *testing.T, store *infra.PostgresStore, orgID, userID string) {
 	t.Helper()
 	_, err := store.Pool().Exec(testCtx,
-		"SELECT set_config('app.current_org_id', $1, false), set_config('app.current_user_id', $2, false)", orgID, userID)
+		"SELECT set_config('codefly.current_tenant_id', $1, false), set_config('codefly.current_user_id', $2, false)", orgID, userID)
 	require.NoError(t, err)
 	require.Equal(t, orgID, currentOrgID(t, store.Pool()), "the session binding really did survive its statement")
 	require.Equal(t, userID, currentUserID(t, store.Pool()))
@@ -195,7 +195,7 @@ func TestRequestTransactionsClearTheBindingTheyDoNotCarry(t *testing.T) {
 
 // A request connection comes back to the pool carrying no request binding,
 // whatever its borrower left at session level. RESET ROLE alone would return
-// the role and keep app.current_org_id and app.current_user_id, so the next
+// the role and keep codefly.current_tenant_id and codefly.current_user_id, so the next
 // borrower's un-wrapped reads — and any transaction that binds only half the
 // scope — would run as the previous caller.
 func TestRequestConnectionCarriesNoBindingAfterRelease(t *testing.T) {
@@ -207,7 +207,7 @@ func TestRequestConnectionCarriesNoBindingAfterRelease(t *testing.T) {
 	require.NoError(t, err)
 	pid := conn.Conn().PgConn().PID()
 	_, err = conn.Exec(testCtx,
-		"SELECT set_config('app.current_org_id', $1, false), set_config('app.current_user_id', $2, false)", staleOrg, staleUser)
+		"SELECT set_config('codefly.current_tenant_id', $1, false), set_config('codefly.current_user_id', $2, false)", staleOrg, staleUser)
 	require.NoError(t, err)
 	conn.Release()
 

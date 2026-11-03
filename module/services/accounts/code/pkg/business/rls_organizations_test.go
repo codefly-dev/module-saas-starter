@@ -79,7 +79,7 @@ func TestRLS_Organizations_ListForUser_BypassesPolicy(t *testing.T) {
 
 	// ListOrganizations must return both. Without bypass, the
 	// self-referential policy would match at most one (whichever
-	// app.current_org_id pointed at).
+	// codefly.current_tenant_id pointed at).
 	resp, err := testService.ListOrganizations(ctx, userA)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(resp.Organizations), 2,

@@ -52,7 +52,7 @@ func TestApprovals_RLS_CrossTenantBlocked(t *testing.T) {
 	reqID := seedApprovalRequest(t, orgA, 1)
 
 	// Acting as orgB, try to read orgA's row (even naming orgA as the filter):
-	// RLS keys on app.current_org_id = orgB, so the row is invisible → NotFound.
+	// RLS keys on codefly.current_tenant_id = orgB, so the row is invisible → NotFound.
 	var miss *business.ApprovalRequest
 	err := testStore.As(business.Identity{OrgID: orgB}).Within(testCtx, func(ctx context.Context) error {
 		var e error

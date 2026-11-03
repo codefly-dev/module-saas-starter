@@ -26,6 +26,60 @@ rewrites the provenance. Never edit the baseline by hand: the provenance digest
 refuses it (`qualification/managed-database/stage.py`), and so does the
 reference gate.
 
+### Replacing a function the baseline reassigned
+
+A migration runs as the principal that installs the ledger, and that principal
+does **not** own every function in the schema: the baseline hands many of them
+to an application role (`ALTER FUNCTION ... OWNER TO app_control_plane`, and
+one to `app_job_worker`). `CREATE OR REPLACE FUNCTION` on one of those needs
+to be the owner *and* to hold `CREATE` on the schema, which an application
+role is deliberately not left holding. So replace it as its owner, granting
+that privilege for the statement and taking it back:
+
+```sql
+GRANT CREATE ON SCHEMA public TO app_control_plane;
+SET LOCAL ROLE app_control_plane;
+CREATE OR REPLACE FUNCTION public.example(...) ...;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
+```
+
+Migration 64 established the idiom and migration 65 generates it. Replacing
+the function preserves its owner and its grants, so this changes nothing but
+who executes the statement.
+
+**A local run will not catch getting this wrong.** A developer database is
+installed by a superuser, which owns nothing and may replace everything, so
+the migration applies cleanly and every test passes. The principal a managed
+install actually gets is `NOSUPERUSER NOBYPASSRLS CREATEROLE` and `NOINHERIT`,
+which refuses with `must be owner of function ...`. What proves it either way
+is the managed-database qualification, which installs the same ledger as both
+principals and requires one catalog from both:
+
+```sh
+python3 qualification/managed-database/ci.py /tmp/managed-database-qualification.json
+```
+
+It needs only Docker and Go. Run it for any migration that replaces a
+function, changes a grant, or touches ownership.
+
+## The two settings a policy reads
+
+A tenant-scoped policy reads `codefly.current_tenant_id`, and a user-scoped one
+`codefly.current_user_id`. These are not names this repository chose: they are
+the defaults of the platform's Postgres library
+(codefly-dev/service-postgres, `libs/go/store.go`), which is what binds them for
+a transaction opened through its scoped factory, and what every other store on
+the platform reads back. `65_library_scope_settings` renamed the host's own
+`app.current_org_id` / `app.current_user_id` onto them, over the 75 policies, 6
+audit partitions and 9 function bodies that read them.
+
+A consumer's own migration must use the same two names. A policy on any other
+setting fails **quietly**: nothing binds it, `current_setting(…, true)` returns
+NULL, the predicate is false, and the relation reads as empty for every caller
+rather than raising. `../../../tools/rls-migration-gate.mjs` is what refuses
+that, and it accepts only these two.
+
 ## What CI proves
 
 The required **Base manifest integrity** context runs

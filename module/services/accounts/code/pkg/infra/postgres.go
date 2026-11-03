@@ -292,7 +292,8 @@ const requestReleaseTimeout = 5 * time.Second
 // sessionReset returns a released connection to its login's session defaults
 // and reads back what it returned to. RESET ROLE restores the per-role default
 // role, app_tenant for the request login. RESET ALL restores every other
-// session setting — app.current_org_id and app.current_user_id included, which
+// session setting — codefly.current_tenant_id and codefly.current_user_id
+// included, which
 // RESET ROLE leaves in place — and does not itself reset the role, so both are
 // needed. Neither deallocates prepared statements, so the statements pgx caches
 // per connection stay valid on the reused connection, which DISCARD ALL would
@@ -302,8 +303,8 @@ const requestReleaseTimeout = 5 * time.Second
 // Unlike DISCARD ALL it may run inside the implicit transaction a multi-statement
 // message opens. The four statements travel in one simple-protocol message.
 const sessionReset = `RESET ROLE; RESET ALL; DISCARD TEMP; SELECT current_user::text,
-	coalesce(current_setting('app.current_org_id', true), ''),
-	coalesce(current_setting('app.current_user_id', true), '')`
+	coalesce(current_setting('` + TenantScopeSetting + `', true), ''),
+	coalesce(current_setting('` + UserScopeSetting + `', true), '')`
 
 // resetSession runs sessionReset on a released connection. It returns the role
 // the session came back to, and false if the reset failed or left a request
@@ -322,7 +323,8 @@ func resetSession(conn *pgx.Conn) (string, bool) {
 // returnsToTenantRole is the request pool's AfterRelease. A session-level change
 // a borrower leaves behind would reach the next borrower until the connection is
 // recycled: `SET ROLE NONE` hands it the bare login, and a session-level
-// app.current_org_id or app.current_user_id hands it the previous caller's
+// codefly.current_tenant_id or codefly.current_user_id hands it the previous
+// caller's
 // scope, which every un-wrapped read runs under. The reset clears both; a
 // connection that does not come back as app_tenant with no binding is
 // discarded rather than reused.
@@ -765,7 +767,10 @@ func openScopedBoundaryAs(ctx context.Context, readOnlyConnection, readWriteConn
 		return nil, nil, errors.New("reader and writer require distinct private identity sockets")
 	}
 	options := []scopedpostgres.Option{
-		scopedpostgres.WithScopeSettings("app.current_org_id", "app.current_user_id"),
+		// No WithScopeSettings: the library's own defaults are
+		// codefly.current_tenant_id and codefly.current_user_id, which is what
+		// the policies read (migration 65). An override here would be a second
+		// place to keep the two names in step.
 		scopedpostgres.WithOperationTimeout(scopedBoundaryOperationTimeout),
 		// service-postgres judges both scoped pools on every new physical
 		// connection and again on every checkout: it refuses a session whose
@@ -849,7 +854,7 @@ func configureConnection(connectionURL string, hook beforeConnectHook) (*pgxpool
 // The one credential must hold SET membership in both app_tenant and
 // app_control_plane — the migration principal does. A checkout hook selects
 // app_tenant on every connection, so an un-wrapped Store call returns zero rows
-// from a tenant table when no app.current_org_id is set (fail-closed), WithOrgTx
+// from a tenant table when no codefly.current_tenant_id is set (fail-closed), WithOrgTx
 // adds the transaction-local org, and WithControlPlane assumes app_control_plane
 // on the same pool for its transaction. AfterRelease resets the role and every
 // session setting before the connection returns to the pool. If app_tenant does
@@ -1398,7 +1403,7 @@ func (s *PostgresStore) ClearAll(ctx context.Context) error {
 	w := wool.Get(ctx).In("ClearAll")
 
 	// Most tables here are RLS-protected (Phase 2B-2F). A bare DELETE
-	// under app_tenant with no app.current_org_id set returns ZERO
+	// under app_tenant with no codefly.current_tenant_id set returns ZERO
 	// rows — that's fail-closed for production but sabotages test
 	// cleanup. Wrap in WithControlPlane so the deletes actually fire across
 	// every tenant.

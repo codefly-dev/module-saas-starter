@@ -123,7 +123,7 @@ are database constraints rather than worker conventions.
 - `app_tenant` has no direct rights on any job relation. Its only capability is
   `EXECUTE` on `enqueue_job_message`. That security-definer operation accepts
   outbox work only and independently verifies that tenant scope matches
-  `app.current_org_id` or subject scope matches `app.current_user_id`. Forced
+  `codefly.current_tenant_id` or subject scope matches `codefly.current_user_id`. Forced
   insert RLS remains defense in depth. Request traffic cannot append global or
   inbox work, inspect payloads, claim, finalize, or write history.
 - `app_job_worker` is `NOLOGIN`, `NOINHERIT`, and `BYPASSRLS`. It has only

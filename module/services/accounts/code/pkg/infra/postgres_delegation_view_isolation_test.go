@@ -84,7 +84,7 @@ func connectAs(t *testing.T, connection string) *pgx.Conn {
 // orgID is empty. Session-level, on the probe's own connection.
 func bindScope(t *testing.T, conn *pgx.Conn, orgID string) {
 	t.Helper()
-	_, err := conn.Exec(testCtx, `SELECT set_config('app.current_org_id', $1, false)`, orgID)
+	_, err := conn.Exec(testCtx, `SELECT set_config('codefly.current_tenant_id', $1, false)`, orgID)
 	require.NoError(t, err)
 }
 

@@ -150,7 +150,7 @@ func TestEnsuringAuditPartitionsReSecuresPartitionsOutsideTheWindow(t *testing.T
 		_, err = tx.Exec(ctx, `
 			ALTER POLICY audit_events_tenant ON public.audit_events
 			    USING (org_id IS NOT NULL
-			           AND org_id::text = current_setting('app.current_org_id', true)
+			           AND org_id::text = current_setting('codefly.current_tenant_id', true)
 			           AND resource IS NOT NULL)`)
 		require.NoError(t, err)
 		require.NotEqual(t, relationPolicies(t, ctx, tx, parent), relationPolicies(t, ctx, tx, probe),
@@ -214,7 +214,7 @@ func TestReadOnlyLoginSeesOnlyTheBoundOrganizationInAnAuditPartition(t *testing.
 		var orgs []string
 		require.NoError(t, pgx.BeginFunc(testCtx, reader, func(tx pgx.Tx) error {
 			if boundOrg != "" {
-				if _, err := tx.Exec(testCtx, `SELECT set_config('app.current_org_id', $1, true)`, boundOrg); err != nil {
+				if _, err := tx.Exec(testCtx, `SELECT set_config('codefly.current_tenant_id', $1, true)`, boundOrg); err != nil {
 					return err
 				}
 			}

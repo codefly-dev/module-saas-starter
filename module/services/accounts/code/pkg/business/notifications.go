@@ -335,8 +335,8 @@ type resourceRef struct {
 // org-scoped call per (org, resource_type) rather than a point check per item.
 //
 // Visibility is resolved in its own pass rather than as a join with the inbox:
-// `notifications` is gated by app.current_user_id and the scope tree by
-// app.current_org_id, each helper sets only its own GUC and neither may nest, so
+// `notifications` is gated by codefly.current_user_id and the scope tree by
+// codefly.current_tenant_id, each helper sets only its own GUC and neither may nest, so
 // a single statement spanning both would fail closed on one side.
 //
 // A reference carrying no org cannot be resolved against a scope tree at all, so

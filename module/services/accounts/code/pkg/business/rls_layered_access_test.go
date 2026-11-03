@@ -83,7 +83,7 @@ func TestRLS_LayeredAccess_CrossTenantAndFailClosed(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, crossShares.GetShares(), "RLS must hide orgA's share from orgB")
 
-	// Fail-closed: an un-wrapped connection (no app.current_org_id) sees nothing.
+	// Fail-closed: an un-wrapped connection (no codefly.current_tenant_id) sees nothing.
 	require.False(t, access("", true), "un-wrapped CheckAccess must fail closed")
 	noWrapShares, err := testStore.ListShares(context.Background(), orgA, "doc", "shared-a")
 	require.NoError(t, err)

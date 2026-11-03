@@ -100,7 +100,7 @@ func newReaderFixture(t *testing.T, ctx context.Context) readerFixture {
  ALTER TABLE reader_rows ENABLE ROW LEVEL SECURITY;
  ALTER TABLE reader_rows FORCE ROW LEVEL SECURITY;
  CREATE POLICY reader_scope ON reader_rows TO ra_reader, app_tenant
-   USING (org_id::text = current_setting('app.current_org_id', true));
+   USING (org_id::text = current_setting('codefly.current_tenant_id', true));
  CREATE POLICY reader_control ON reader_rows TO app_control_plane USING (true);
  GRANT SELECT ON reader_rows TO ra_reader, app_tenant, app_control_plane;
  INSERT INTO reader_rows(org_id,user_id,secret) VALUES
@@ -169,7 +169,7 @@ func TestScopedReaderWithBypassRLSIsRefused(t *testing.T) {
 	widened, err := pgx.Connect(ctx, rawReader.String())
 	require.NoError(t, err)
 	defer widened.Close(context.Background()) //nolint:errcheck
-	_, err = widened.Exec(ctx, `SELECT set_config('app.current_org_id', $1, false)`, readerOrgA)
+	_, err = widened.Exec(ctx, `SELECT set_config('codefly.current_tenant_id', $1, false)`, readerOrgA)
 	require.NoError(t, err)
 	var visible int
 	require.NoError(t, widened.QueryRow(ctx, `SELECT count(*) FROM reader_rows`).Scan(&visible))
