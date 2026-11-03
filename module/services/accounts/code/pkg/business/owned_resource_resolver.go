@@ -37,6 +37,7 @@ var ownedResourceResolvers = map[string]ownedResourceResolver{
 	SourceReceiptRetentionMethod: resolveSourceOperationOrg,
 	"/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts": resolveSourceEffectOrg,
 	"/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation":        resolveSourceEffectOrg,
+	"/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt":       resolveSourceEffectOrg,
 	"/saas.accounts.v1.DatasourceService/LookupReconcileSource":              resolveSourceEffectOrg,
 	"/saas.accounts.v1.DatasourceService/ReconcileSource":                    resolveSourceOperationOrg,
 	"/saas.accounts.v1.DashboardService/DeleteDashboard":                     resolveDashboardOrg,

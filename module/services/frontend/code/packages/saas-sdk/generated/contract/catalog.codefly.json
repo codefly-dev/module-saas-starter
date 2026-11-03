@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "",
       "path": "contract.binpb",
-      "digest": "sha256:da3be80f4ed222b07d24e2b23d5eb797a36b1334fef560b24aeecf2850ac48d6",
+      "digest": "sha256:4d0ed4cb2d252595ca1c0cd5a8ec61d8aa015948f493701a737aaa76d24304a4",
       "services": [
         {
           "name": "AccessibleScopeService",
@@ -66,7 +66,8 @@
             "/saas.accounts.v1.DatasourceService/SyncSource",
             "/saas.accounts.v1.DatasourceService/UnbindDatasourceGroup",
             "/saas.accounts.v1.DatasourceService/UpdateSource",
-            "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain"
+            "/saas.accounts.v1.DatasourceService/VerifyDatasourceDomain",
+            "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt"
           ]
         },
         {

@@ -59,7 +59,7 @@ provider.
 
 ## Regenerate
 
-Requires released Codefly CLI **v0.1.219** (the CI pin). From the repository root:
+Use the released Codefly CLI selected by the [CI installer](../../scripts/ci/install-codefly.sh). From the repository root:
 
 ```sh
 codefly generate client --from saas-starter/accounts/authority --name source-read-sdk \

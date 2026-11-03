@@ -24,6 +24,7 @@ const (
 	DatasourceService_LookupPruneSourceOperationReceipts_FullMethodName = "/saas.accounts.v1.DatasourceService/LookupPruneSourceOperationReceipts"
 	DatasourceService_InvokeSourceOperation_FullMethodName              = "/saas.accounts.v1.DatasourceService/InvokeSourceOperation"
 	DatasourceService_LookupInvokeSourceOperation_FullMethodName        = "/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperation"
+	DatasourceService_VerifySourceOperationReceipt_FullMethodName       = "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt"
 	DatasourceService_ListSourceOperations_FullMethodName               = "/saas.accounts.v1.DatasourceService/ListSourceOperations"
 	DatasourceService_DeclareSourceOperations_FullMethodName            = "/saas.accounts.v1.DatasourceService/DeclareSourceOperations"
 	DatasourceService_AddGitHubSource_FullMethodName                    = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
@@ -82,6 +83,15 @@ type DatasourceServiceClient interface {
 	// Once an attempt exists, retained receipt evidence survives declaration
 	// removal or replacement. Current source read authority still applies.
 	LookupInvokeSourceOperation(ctx context.Context, in *LookupInvokeSourceOperationRequest, opts ...grpc.CallOption) (*InvokeSourceOperationResponse, error)
+	// VerifySourceOperationReceipt conditionally reads retained output using the
+	// exact original Invoke request, including a nonempty declaration precondition.
+	// Committed means the normalized request and admitted declaration match the
+	// stored attempt. Unknown remains unresolved; this method never redispatches.
+	// Current actor, tenant and stored-source read authority apply before comparison.
+	// Source-scope refusals emit the existing failure audit; successful reads do not
+	// record another invocation or change the retained receipt.
+	// This is independent of the paired Runnable Lookup contract above.
+	VerifySourceOperationReceipt(ctx context.Context, in *InvokeSourceOperationRequest, opts ...grpc.CallOption) (*InvokeSourceOperationResponse, error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(ctx context.Context, in *ListSourceOperationsRequest, opts ...grpc.CallOption) (*ListSourceOperationsResponse, error)
 	// DeclareSourceOperations atomically replaces the source operation set, as an administrator.
@@ -265,6 +275,16 @@ func (c *datasourceServiceClient) LookupInvokeSourceOperation(ctx context.Contex
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(InvokeSourceOperationResponse)
 	err := c.cc.Invoke(ctx, DatasourceService_LookupInvokeSourceOperation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) VerifySourceOperationReceipt(ctx context.Context, in *InvokeSourceOperationRequest, opts ...grpc.CallOption) (*InvokeSourceOperationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InvokeSourceOperationResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_VerifySourceOperationReceipt_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -597,6 +617,15 @@ type DatasourceServiceServer interface {
 	// Once an attempt exists, retained receipt evidence survives declaration
 	// removal or replacement. Current source read authority still applies.
 	LookupInvokeSourceOperation(context.Context, *LookupInvokeSourceOperationRequest) (*InvokeSourceOperationResponse, error)
+	// VerifySourceOperationReceipt conditionally reads retained output using the
+	// exact original Invoke request, including a nonempty declaration precondition.
+	// Committed means the normalized request and admitted declaration match the
+	// stored attempt. Unknown remains unresolved; this method never redispatches.
+	// Current actor, tenant and stored-source read authority apply before comparison.
+	// Source-scope refusals emit the existing failure audit; successful reads do not
+	// record another invocation or change the retained receipt.
+	// This is independent of the paired Runnable Lookup contract above.
+	VerifySourceOperationReceipt(context.Context, *InvokeSourceOperationRequest) (*InvokeSourceOperationResponse, error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
 	ListSourceOperations(context.Context, *ListSourceOperationsRequest) (*ListSourceOperationsResponse, error)
 	// DeclareSourceOperations atomically replaces the source operation set, as an administrator.
@@ -757,6 +786,9 @@ func (UnimplementedDatasourceServiceServer) InvokeSourceOperation(context.Contex
 }
 func (UnimplementedDatasourceServiceServer) LookupInvokeSourceOperation(context.Context, *LookupInvokeSourceOperationRequest) (*InvokeSourceOperationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method LookupInvokeSourceOperation not implemented")
+}
+func (UnimplementedDatasourceServiceServer) VerifySourceOperationReceipt(context.Context, *InvokeSourceOperationRequest) (*InvokeSourceOperationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifySourceOperationReceipt not implemented")
 }
 func (UnimplementedDatasourceServiceServer) ListSourceOperations(context.Context, *ListSourceOperationsRequest) (*ListSourceOperationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSourceOperations not implemented")
@@ -937,6 +969,24 @@ func _DatasourceService_LookupInvokeSourceOperation_Handler(srv interface{}, ctx
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DatasourceServiceServer).LookupInvokeSourceOperation(ctx, req.(*LookupInvokeSourceOperationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_VerifySourceOperationReceipt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InvokeSourceOperationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).VerifySourceOperationReceipt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_VerifySourceOperationReceipt_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).VerifySourceOperationReceipt(ctx, req.(*InvokeSourceOperationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1503,6 +1553,10 @@ var DatasourceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LookupInvokeSourceOperation",
 			Handler:    _DatasourceService_LookupInvokeSourceOperation_Handler,
+		},
+		{
+			MethodName: "VerifySourceOperationReceipt",
+			Handler:    _DatasourceService_VerifySourceOperationReceipt_Handler,
 		},
 		{
 			MethodName: "ListSourceOperations",

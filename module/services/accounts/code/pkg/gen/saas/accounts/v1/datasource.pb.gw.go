@@ -151,6 +151,33 @@ func local_request_DatasourceService_LookupInvokeSourceOperation_0(ctx context.C
 	return msg, metadata, err
 }
 
+func request_DatasourceService_VerifySourceOperationReceipt_0(ctx context.Context, marshaler runtime.Marshaler, client DatasourceServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq InvokeSourceOperationRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.VerifySourceOperationReceipt(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_DatasourceService_VerifySourceOperationReceipt_0(ctx context.Context, marshaler runtime.Marshaler, server DatasourceServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq InvokeSourceOperationRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.VerifySourceOperationReceipt(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 func request_DatasourceService_ListSourceOperations_0(ctx context.Context, marshaler runtime.Marshaler, client DatasourceServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
 		protoReq ListSourceOperationsRequest
@@ -313,6 +340,26 @@ func RegisterDatasourceServiceHandlerServer(ctx context.Context, mux *runtime.Se
 		}
 		forward_DatasourceService_LookupInvokeSourceOperation_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_DatasourceService_VerifySourceOperationReceipt_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt", runtime.WithHTTPPathPattern("/v1/datasource-operation-receipts/verify"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_DatasourceService_VerifySourceOperationReceipt_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DatasourceService_VerifySourceOperationReceipt_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	mux.Handle(http.MethodGet, pattern_DatasourceService_ListSourceOperations_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -427,6 +474,23 @@ func RegisterDatasourceServiceHandlerClient(ctx context.Context, mux *runtime.Se
 		}
 		forward_DatasourceService_LookupInvokeSourceOperation_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_DatasourceService_VerifySourceOperationReceipt_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.DatasourceService/VerifySourceOperationReceipt", runtime.WithHTTPPathPattern("/v1/datasource-operation-receipts/verify"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_DatasourceService_VerifySourceOperationReceipt_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DatasourceService_VerifySourceOperationReceipt_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	mux.Handle(http.MethodGet, pattern_DatasourceService_ListSourceOperations_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -465,15 +529,17 @@ func RegisterDatasourceServiceHandlerClient(ctx context.Context, mux *runtime.Se
 }
 
 var (
-	pattern_DatasourceService_InvokeSourceOperation_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4, 2, 5, 1, 0, 4, 1, 5, 6}, []string{"v1", "organizations", "org_id", "datasources", "source_id", "operations", "operation"}, "invoke"))
-	pattern_DatasourceService_LookupInvokeSourceOperation_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "datasource-operation-receipts", "effect_id"}, ""))
-	pattern_DatasourceService_ListSourceOperations_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4, 2, 5}, []string{"v1", "organizations", "org_id", "datasources", "source_id", "operations"}, ""))
-	pattern_DatasourceService_DeclareSourceOperations_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4, 2, 5}, []string{"v1", "organizations", "org_id", "datasources", "source_id", "operations"}, ""))
+	pattern_DatasourceService_InvokeSourceOperation_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4, 2, 5, 1, 0, 4, 1, 5, 6}, []string{"v1", "organizations", "org_id", "datasources", "source_id", "operations", "operation"}, "invoke"))
+	pattern_DatasourceService_LookupInvokeSourceOperation_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "datasource-operation-receipts", "effect_id"}, ""))
+	pattern_DatasourceService_VerifySourceOperationReceipt_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "datasource-operation-receipts", "verify"}, ""))
+	pattern_DatasourceService_ListSourceOperations_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4, 2, 5}, []string{"v1", "organizations", "org_id", "datasources", "source_id", "operations"}, ""))
+	pattern_DatasourceService_DeclareSourceOperations_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4, 2, 5}, []string{"v1", "organizations", "org_id", "datasources", "source_id", "operations"}, ""))
 )
 
 var (
-	forward_DatasourceService_InvokeSourceOperation_0       = runtime.ForwardResponseMessage
-	forward_DatasourceService_LookupInvokeSourceOperation_0 = runtime.ForwardResponseMessage
-	forward_DatasourceService_ListSourceOperations_0        = runtime.ForwardResponseMessage
-	forward_DatasourceService_DeclareSourceOperations_0     = runtime.ForwardResponseMessage
+	forward_DatasourceService_InvokeSourceOperation_0        = runtime.ForwardResponseMessage
+	forward_DatasourceService_LookupInvokeSourceOperation_0  = runtime.ForwardResponseMessage
+	forward_DatasourceService_VerifySourceOperationReceipt_0 = runtime.ForwardResponseMessage
+	forward_DatasourceService_ListSourceOperations_0         = runtime.ForwardResponseMessage
+	forward_DatasourceService_DeclareSourceOperations_0      = runtime.ForwardResponseMessage
 )
