@@ -115,7 +115,7 @@ describe("human-readable identity", () => {
 			target: { value: "jane" },
 		});
 		fireEvent.click(
-			await screen.findByRole("button", {
+			await screen.findByRole("option", {
 				name: "Jane Doe (jane@example.com)",
 			}),
 		);

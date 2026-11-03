@@ -133,18 +133,42 @@ describe("Is it ready?", () => {
 });
 
 describe("Roles and what they grant", () => {
-	it("lists each role's scopes, operations and tools, and the ceiling (a local-authority answer)", async () => {
+	// One row per operation with a column per role, not one full table per
+	// role: the roles differ by a few scopes, and three copies of the same
+	// fifty rows hid that.
+	const openModule = (roles: ReturnType<typeof within>, module: string) => {
+		fireEvent.click(
+			roles.getByRole("button", {
+				name: new RegExp(`^${module} · \\d+ operations?`),
+			}),
+		);
+		return within(
+			roles.getByRole("table", { name: `Operations of ${module}` }),
+		);
+	};
+
+	it("lists each role's scopes, the operations they share, their tools and the ceiling (a local-authority answer)", async () => {
 		await mounted(setupFixture({ offer: reviewedOffer({ tools: true }) }));
 		const roles = within(section("Roles and what they grant"));
-		expect(roles.getByRole("heading", { name: "Role: editor" })).toBeTruthy();
+		const declared = within(roles.getByRole("list", { name: "Roles" }));
+		expect(declared.getByText("editor")).toBeTruthy();
+		expect(declared.getByText("viewer")).toBeTruthy();
 		expect(
 			roles.getByText(
 				"example-pages.page: read, write · what this installation owns",
 			),
 		).toBeTruthy();
-		const editor = roles.getByRole("table", { name: "What editor reaches" });
-		expect(within(editor).getByText("POST /items/{id}")).toBeTruthy();
-		expect(within(editor).getByText("write_item · changes data")).toBeTruthy();
+		const table = openModule(roles, exampleTarget);
+		expect(table.getByText("POST /items/{id}")).toBeTruthy();
+		expect(table.getByText("write_item · changes data")).toBeTruthy();
+		// The write operation is the editor's and not the viewer's, which the
+		// role columns say on the one row rather than by its absence from a
+		// second table.
+		const write = table.getByText("POST /items/{id}").closest("tr");
+		const cells = [...(write?.querySelectorAll("td") ?? [])].map(
+			(cell) => cell.textContent,
+		);
+		expect(cells.slice(2, 4)).toEqual(["Yes", "—"]);
 		const ceiling = roles.getByRole("list", { name: "Permission ceiling" });
 		expect(within(ceiling).getByText("documents")).toBeTruthy();
 		expect(
@@ -153,17 +177,42 @@ describe("Roles and what they grant", () => {
 		expect(roles.queryByText(/Tool exposure is unavailable/)).toBeNull();
 	});
 
-	it("renders a host that composes no tools from the same message, saying so (a SaaS answer)", async () => {
+	it("says once that a host composes no tools, and carries no column that could only repeat it", async () => {
 		await mounted(setupFixture({ offer: reviewedOffer({ tools: false }) }));
 		const roles = within(section("Roles and what they grant"));
 		expect(
 			roles.getByText("Tool exposure is unavailable from this host."),
 		).toBeTruthy();
-		const editor = roles.getByRole("table", { name: "What editor reaches" });
-		expect(within(editor).getByText("POST /items/{id}")).toBeTruthy();
+		const table = openModule(roles, exampleTarget);
+		expect(table.getByText("POST /items/{id}")).toBeTruthy();
 		expect(
-			within(editor).getAllByText("Tool exposure unavailable"),
-		).toHaveLength(2);
+			table.queryByRole("columnheader", { name: "Agent tools" }),
+		).toBeNull();
+		expect(roles.queryByText("Tool exposure unavailable")).toBeNull();
+	});
+
+	it("says what a ceiling entry with no scope of its own means", async () => {
+		const offer = reviewedOffer({ tools: true });
+		await mounted(
+			setupFixture({
+				offer: {
+					...offer,
+					ceiling: [
+						...offer.ceiling,
+						{ binding: "evaluation", module: "evaluation", scopes: [] },
+					],
+				},
+			}),
+		);
+		const ceiling = within(
+			within(section("Roles and what they grant")).getByRole("list", {
+				name: "Permission ceiling",
+			}),
+		);
+		expect(ceiling.getByText("evaluation")).toBeTruthy();
+		expect(
+			ceiling.getByText("Reached, but granted no scope of its own."),
+		).toBeTruthy();
 	});
 
 	it("shows a member holding a role what it grants, without the consent tuple and read-only", async () => {
@@ -177,9 +226,11 @@ describe("Roles and what they grant", () => {
 		expect(ready.getByText("Installed")).toBeTruthy();
 		expect(ready.getByText("—", { selector: "dd" })).toBeTruthy(); // no generation without the tuple
 		expect(
-			within(section("Roles and what they grant")).getByRole("heading", {
-				name: "Role: editor",
-			}),
+			within(
+				within(section("Roles and what they grant")).getByRole("list", {
+					name: "Roles",
+				}),
+			).getByText("editor"),
 		).toBeTruthy();
 		const holders = within(section("Who holds them"));
 		expect(

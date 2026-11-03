@@ -4,6 +4,7 @@ import {
 	HostInstallationStatus,
 	type OfferRole,
 	type OfferScope,
+	type OfferTool,
 	type ReviewedOffer,
 	type RoleGrant,
 } from "@codefly-dev/saas-sdk";
@@ -12,6 +13,7 @@ import {
 	Banner,
 	Button,
 	Card,
+	Disclosure,
 	Field,
 	Input,
 	List,
@@ -292,6 +294,68 @@ function Scopes({
 	);
 }
 
+/**
+ * One grouped view of what every role reaches, in place of one full table per
+ * role.
+ *
+ * The three tables this replaced were near-copies: the operations a solution
+ * composes are the same set, and a role differs from its neighbour by a handful
+ * of scopes. Three copies of fifty rows hid that difference in 150 rows; one
+ * row per operation with a column per role shows it.
+ *
+ * `operation` is a wire path, which is a developer's artefact and not what an
+ * administrator came to read, so operations are grouped by their module and each
+ * group is closed until asked for, with its count and required scopes on the
+ * line that opens it.
+ */
+interface ReachRow {
+	module: string;
+	operation: string;
+	requires: readonly OfferScope[];
+	tools: readonly OfferTool[];
+	roles: Set<string>;
+}
+
+interface ReachGroup {
+	module: string;
+	rows: ReachRow[];
+	scopes: OfferScope[];
+}
+
+function reach(roles: readonly OfferRole[]): ReachGroup[] {
+	const rows = new Map<string, ReachRow>();
+	for (const role of roles) {
+		for (const c of role.capabilities) {
+			const key = `${c.module}\u0000${c.operation}`;
+			const row = rows.get(key) ?? {
+				module: c.module,
+				operation: c.operation,
+				requires: c.requires,
+				tools: c.tools,
+				roles: new Set<string>(),
+			};
+			row.roles.add(role.name);
+			rows.set(key, row);
+		}
+	}
+	const groups = new Map<string, ReachGroup>();
+	for (const row of rows.values()) {
+		const group = groups.get(row.module) ?? {
+			module: row.module,
+			rows: [],
+			scopes: [],
+		};
+		group.rows.push(row);
+		for (const scope of row.requires) {
+			const text = scopeText(scope, false);
+			if (!group.scopes.some((s) => scopeText(s, false) === text))
+				group.scopes.push(scope);
+		}
+		groups.set(row.module, group);
+	}
+	return [...groups.values()];
+}
+
 function RolesSection({
 	offer,
 	offerError,
@@ -299,10 +363,15 @@ function RolesSection({
 	offer?: ReviewedOffer;
 	offerError?: unknown;
 }) {
+	const groups = offer ? reach(offer.roles) : [];
+	// A column that can only ever repeat one sentence is not a column. When no
+	// tool is exposed anywhere, the banner above says so once and the column is
+	// gone, rather than printing the same words in every cell.
+	const anyTools = groups.some((g) => g.rows.some((r) => r.tools.length > 0));
 	return (
 		<Card
 			title="Roles and what they grant"
-			description="What each role grants, limited to what this installation owns, the module operations that covers, and the agent tools those operations are. The authority checks them again on every call."
+			description="What each role grants, limited to what this installation owns, and the module operations that covers. The authority checks them again on every call."
 		>
 			{!offer ? (
 				<Refusal error={offerError} what="the roles" />
@@ -312,7 +381,10 @@ function RolesSection({
 						<Banner
 							tone="info"
 							title="Tool exposure is unavailable from this host."
-						/>
+						>
+							No operation below can be shown as an agent tool, and nothing
+							about this installation is wrong.
+						</Banner>
 					)}
 					<div>
 						<p className="type-emphasis">Permission ceiling</p>
@@ -326,7 +398,18 @@ function RolesSection({
 								{offer.ceiling.map((c) => (
 									<ListItem
 										key={c.binding}
-										description={<Scopes scopes={c.scopes} confined={false} />}
+										description={
+											// A module with no scope under it read as a bare name, which
+											// looks like a value still loading. It is a real answer and
+											// says so.
+											c.scopes.length === 0 ? (
+												<span className="text-muted-foreground">
+													Reached, but granted no scope of its own.
+												</span>
+											) : (
+												<Scopes scopes={c.scopes} confined={false} />
+											)
+										}
 									>
 										{c.module}
 									</ListItem>
@@ -337,13 +420,46 @@ function RolesSection({
 					{offer.roles.length === 0 ? (
 						<p>This solution declares no role.</p>
 					) : (
-						offer.roles.map((role) => (
-							<RoleCard
-								key={role.name}
-								role={role}
-								toolsComposed={offer.toolsComposed}
-							/>
-						))
+						<>
+							<div>
+								<p className="type-emphasis">Roles</p>
+								<List variant="divided" label="Roles">
+									{offer.roles.map((role) => (
+										<ListItem
+											key={role.name}
+											description={<Scopes scopes={role.scopes} confined />}
+											meta={`${role.capabilities.length} operations`}
+										>
+											{role.name}
+										</ListItem>
+									))}
+								</List>
+							</div>
+							<div className="flex flex-col gap-2">
+								<p className="type-emphasis">What the roles reach</p>
+								{groups.length === 0 ? (
+									<p>No composed operation is covered by any role.</p>
+								) : (
+									groups.map((group) => (
+										<Disclosure
+											key={group.module}
+											headingLevel={4}
+											title={`${group.module} · ${group.rows.length} ${
+												group.rows.length === 1 ? "operation" : "operations"
+											} · requires ${group.scopes
+												.map((s) => scopeText(s, false))
+												.join("; ")}`}
+										>
+											<ReachTable
+												group={group}
+												roles={offer.roles}
+												showTools={anyTools}
+											/>
+										</Disclosure>
+									))
+								)}
+							</div>
+						</>
 					)}
 				</div>
 			)}
@@ -351,69 +467,65 @@ function RolesSection({
 	);
 }
 
-function RoleCard({
-	role,
-	toolsComposed,
+function ReachTable({
+	group,
+	roles,
+	showTools,
 }: {
-	role: OfferRole;
-	toolsComposed: boolean;
+	group: ReachGroup;
+	roles: readonly OfferRole[];
+	showTools: boolean;
 }) {
 	return (
-		<Card
-			titleAs="h4"
-			title={`Role: ${role.name}`}
-			description={<Scopes scopes={role.scopes} confined />}
-		>
-			{role.capabilities.length === 0 ? (
-				<p>No composed operation is covered by this role.</p>
-			) : (
-				<Table aria-label={`What ${role.name} reaches`}>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Module</TableHead>
-							<TableHead>Operation</TableHead>
-							<TableHead>Requires</TableHead>
-							<TableHead>Agent tools</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{role.capabilities.map((c) => (
-							<TableRow key={c.module + c.operation}>
-								<TableCell>{c.module}</TableCell>
-								<TableCell className="whitespace-normal break-words">
-									<code>{c.operation}</code>
-								</TableCell>
-								<TableCell className="whitespace-normal">
-									<Scopes scopes={c.requires} confined={false} />
-								</TableCell>
-								<TableCell className="whitespace-normal">
-									{c.tools.length === 0 ? (
-										toolsComposed ? (
-											"Not exposed as a tool"
-										) : (
-											"Tool exposure unavailable"
-										)
-									) : (
-										<span className="inline-flex flex-wrap gap-1.5">
-											{c.tools.map((t) => (
-												<Badge
-													key={t.binding}
-													tone={t.write ? "warning" : "info"}
-													title={t.binding}
-												>
-													{t.name}
-													{t.write ? " · changes data" : ""}
-												</Badge>
-											))}
-										</span>
-									)}
-								</TableCell>
-							</TableRow>
+		<Table aria-label={`Operations of ${group.module}`}>
+			<TableHeader>
+				<TableRow>
+					<TableHead>Operation</TableHead>
+					<TableHead>Requires</TableHead>
+					{roles.map((role) => (
+						<TableHead key={role.name}>{role.name}</TableHead>
+					))}
+					{showTools && <TableHead>Agent tools</TableHead>}
+				</TableRow>
+			</TableHeader>
+			<TableBody>
+				{group.rows.map((row) => (
+					<TableRow key={row.operation}>
+						<TableCell className="whitespace-normal break-words">
+							<code>{row.operation}</code>
+						</TableCell>
+						<TableCell className="whitespace-normal">
+							<Scopes scopes={row.requires} confined={false} />
+						</TableCell>
+						{roles.map((role) => (
+							<TableCell key={role.name}>
+								{row.roles.has(role.name) ? "Yes" : "—"}
+							</TableCell>
 						))}
-					</TableBody>
-				</Table>
-			)}
-		</Card>
+						{showTools && (
+							<TableCell className="whitespace-normal">
+								{row.tools.length === 0 ? (
+									"Not exposed as a tool"
+								) : (
+									<span className="inline-flex flex-wrap gap-1.5">
+										{row.tools.map((t) => (
+											<Badge
+												key={t.binding}
+												tone={t.write ? "warning" : "info"}
+												title={t.binding}
+											>
+												{t.name}
+												{t.write ? " · changes data" : ""}
+											</Badge>
+										))}
+									</span>
+								)}
+							</TableCell>
+						)}
+					</TableRow>
+				))}
+			</TableBody>
+		</Table>
 	);
 }
 

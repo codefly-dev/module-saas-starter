@@ -384,9 +384,17 @@ it("shows the solution's roles, what they grant and who holds them, from the aut
 	);
 	render();
 
+	// One list of the declared roles, and the operations they reach grouped by
+	// module, closed until asked for: a wire path is not what an administrator
+	// opened this page to read.
 	expect(
-		await screen.findByRole("heading", { name: "Role: viewer" }),
+		within(await screen.findByRole("list", { name: "Roles" })).getByText(
+			"viewer",
+		),
 	).toBeTruthy();
+	fireEvent.click(
+		await screen.findByRole("button", { name: /^suite · 1 operation/ }),
+	);
 	expect(await screen.findByText("GET /pages/{id}")).toBeTruthy();
 	expect(await screen.findByText("viewer · Team Support")).toBeTruthy();
 	expect(screen.getByText("Team access on this host")).toBeTruthy();

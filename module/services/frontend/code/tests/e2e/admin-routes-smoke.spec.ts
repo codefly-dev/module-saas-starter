@@ -35,7 +35,6 @@ const ROUTES: AdminRoute[] = [
 	{ path: "/admin/api-keys", heading: /^API Keys$/ },
 	{ path: "/admin/entitlements", heading: /^Entitlements$/ },
 	{ path: "/admin/sessions", heading: /Active Sessions/ },
-	{ path: "/admin/platform", platformGated: true },
 	{
 		path: "/admin/platform/waitlist",
 		heading: /Waitlist/,

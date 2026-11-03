@@ -37,7 +37,25 @@ export {
 	CardTitle,
 } from "@codefly-dev/ui/layout";
 export { Checkbox } from "@codefly-dev/ui/layout";
+// The removable token a confirmed choice reads as, so a selection is visible
+// and reversible rather than a string left sitting in a search box.
+export { Chip, ChipGroup, type ChipProps } from "@codefly-dev/ui/layout";
+// The kit's filter list (Base UI Autocomplete): combobox and listbox roles,
+// arrow keys, Enter and active-descendant. A surface choosing one row out of
+// many composes this instead of stacking buttons under an Input.
+export {
+	Command,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+	useCommandFilter,
+} from "@codefly-dev/ui/layout";
 export { ErrorState, type ErrorStateProps } from "@codefly-dev/ui/layout";
+// The label, description and error of one control, and the `aria-describedby`
+// wiring between them, so no call site invents its own.
+export { Field, type FieldControlProps } from "@codefly-dev/ui/layout";
 export {
 	Dialog,
 	DialogContent,
