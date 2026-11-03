@@ -170,6 +170,8 @@ type DatasourceServiceClient interface {
 	// Committed means the normalized request and admitted declaration match the
 	// stored attempt. Unknown remains unresolved; this method never redispatches.
 	// Current actor, tenant and stored-source read authority apply before comparison.
+	// Source-scope refusals emit the existing failure audit; successful reads do not
+	// record another invocation or change the retained receipt.
 	// This is independent of the paired Runnable Lookup contract above.
 	VerifySourceOperationReceipt(context.Context, *connect.Request[v1.InvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.
@@ -785,6 +787,8 @@ type DatasourceServiceHandler interface {
 	// Committed means the normalized request and admitted declaration match the
 	// stored attempt. Unknown remains unresolved; this method never redispatches.
 	// Current actor, tenant and stored-source read authority apply before comparison.
+	// Source-scope refusals emit the existing failure audit; successful reads do not
+	// record another invocation or change the retained receipt.
 	// This is independent of the paired Runnable Lookup contract above.
 	VerifySourceOperationReceipt(context.Context, *connect.Request[v1.InvokeSourceOperationRequest]) (*connect.Response[v1.InvokeSourceOperationResponse], error)
 	// ListSourceOperations reads the currently admitted declarations under source authority.

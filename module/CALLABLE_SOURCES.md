@@ -93,6 +93,10 @@ request bound. Matching headers are allowed; conflicting or empty carriers refus
 Under the verified tenant, the original actor must still hold read authority to
 the **stored** source, including current delegation, membership, boundary and
 personal-source checks. Supplied source metadata never grants authority.
+The method declares failure-only audit for the existing source-scope/delegation
+refusal event (`saas.datasource.operation.invoked`); successful receipt reads
+emit no new invocation event. This metadata does not turn verification into a
+source mutation or add audit records for every validation or lookup failure.
 
 Only after those checks, the host compares the admitted declaration digest and
 the complete normalized request with the permanent attempt's SDK request digest.

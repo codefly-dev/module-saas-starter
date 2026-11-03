@@ -4143,8 +4143,10 @@
         ],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.datasource.operation.invoked"
+          ],
+          "emission": "AUDIT_EMISSION_FAILURE"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
@@ -4161,7 +4163,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "12b8912362191baf4b79eb43a93ff269d625872ea953ddd1d1b82c2f020aa73d",
+      "policy_sha256": "27c9767570b03f81aa5dea977fb442ce9e9221412445a159d927b843738c80a8",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

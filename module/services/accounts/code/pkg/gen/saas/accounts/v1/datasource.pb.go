@@ -8121,7 +8121,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"+SOURCE_DELEGATION_REVOCATION_MEMBER_REMOVED\x10\x04\x120\n" +
 	",SOURCE_DELEGATION_REVOCATION_PERMISSION_LOST\x10\x05\x12.\n" +
 	"*SOURCE_DELEGATION_REVOCATION_USER_INACTIVE\x10\x06\x120\n" +
-	",SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED\x10\a2\xb3;\n" +
+	",SOURCE_DELEGATION_REVOCATION_BINDING_CHANGED\x10\a2\xd7;\n" +
 	"\x11DatasourceService\x12\xb9\x03\n" +
 	"\x1cPruneSourceOperationReceipts\x125.saas.accounts.v1.PruneSourceOperationReceiptsRequest\x1a6.saas.accounts.v1.PruneSourceOperationReceiptsResponse\"\xa9\x02\xc2\xf3\x18l\b\x02\x10\x03\x1a\x11datasource:invoke\"\x11datasource:invoke*\x0f\n" +
 	"\tsource_id\x10\x04\x18\x030\x01:#\n" +
@@ -8136,9 +8136,10 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x02\b<\x12\x03\b\xd8\x04\x18\x05\"\x02\b\x02*\vUNAVAILABLE*\x12RESOURCE_EXHAUSTED*\aABORTED2\x0fsaas-datasourceJ?/saas.accounts.v1.DatasourceService/LookupInvokeSourceOperationP\x80\x80\x04X\x80\x80@`\x01r\x18\n" +
 	"\x06source\x12\x06invoke\x12\x04read\x18\x01\x82\xd3\xe4\x93\x02U:\x01*\"P/v1/organizations/{org_id}/datasources/{source_id}/operations/{operation}:invoke\x12\x87\x02\n" +
 	"\x1bLookupInvokeSourceOperation\x124.saas.accounts.v1.LookupInvokeSourceOperationRequest\x1a/.saas.accounts.v1.InvokeSourceOperationResponse\"\x80\x01\xc2\xf3\x18G\b\x02\x10\x03\x1a\x0fdatasource:read\"\x0fdatasource:read*\x0f\n" +
-	"\teffect_id\x10\x04\x18\x030\x01:\x02\x10\x01@\x01H\x03P\x03X\x04`\x01\x82\xd3\xe4\x93\x02/\x12-/v1/datasource-operation-receipts/{effect_id}\x12\xff\x01\n" +
-	"\x1cVerifySourceOperationReceipt\x12..saas.accounts.v1.InvokeSourceOperationRequest\x1a/.saas.accounts.v1.InvokeSourceOperationResponse\"~\xc2\xf3\x18G\b\x02\x10\x03\x1a\x0fdatasource:read\"\x0fdatasource:read*\x0f\n" +
-	"\teffect_id\x10\x04\x18\x030\x01:\x02\x10\x01@\x01H\x03P\x04X\x04`\x01\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/datasource-operation-receipts/verify\x12\x85\x02\n" +
+	"\teffect_id\x10\x04\x18\x030\x01:\x02\x10\x01@\x01H\x03P\x03X\x04`\x01\x82\xd3\xe4\x93\x02/\x12-/v1/datasource-operation-receipts/{effect_id}\x12\xa3\x02\n" +
+	"\x1cVerifySourceOperationReceipt\x12..saas.accounts.v1.InvokeSourceOperationRequest\x1a/.saas.accounts.v1.InvokeSourceOperationResponse\"\xa1\x01\xc2\xf3\x18j\b\x02\x10\x03\x1a\x0fdatasource:read\"\x0fdatasource:read*\x0f\n" +
+	"\teffect_id\x10\x04\x18\x030\x01:%\n" +
+	"!saas.datasource.operation.invoked\x10\x03@\x01H\x03P\x04X\x04`\x01\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/datasource-operation-receipts/verify\x12\x85\x02\n" +
 	"\x14ListSourceOperations\x12-.saas.accounts.v1.ListSourceOperationsRequest\x1a..saas.accounts.v1.ListSourceOperationsResponse\"\x8d\x01\xc2\xf3\x18D\b\x02\x10\x03\x1a\x0fdatasource:read\"\x0fdatasource:read*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02?\x12=/v1/organizations/{org_id}/datasources/{source_id}/operations\x12\x93\x02\n" +
 	"\x17DeclareSourceOperations\x120.saas.accounts.v1.DeclareSourceOperationsRequest\x1a1.saas.accounts.v1.DeclareSourceOperationsResponse\"\x92\x01\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +

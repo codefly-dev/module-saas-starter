@@ -115,6 +115,24 @@ func TestSourceOperationVerifyExactRequest(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSourceOperationVerifyAuditPolicyMatchesRead(t *testing.T) {
+	h, ctx, original, _ := sourceVerificationFixture(t)
+	audit := &sourceWireAudit{}
+	h.svc.SetAuditEmitter(audit)
+	response, err := h.VerifySourceOperationReceipt(ctx, connect.NewRequest(original))
+	require.NoError(t, err)
+	require.Equal(t, "committed", response.Msg.GetReceipt().GetStatus())
+	require.Empty(t, audit.events, "reading retained output must not record another invocation")
+
+	// Source-scope refusals emit this event through the shared owner path, as
+	// exercised with a real delegated Work Context by
+	// TestSourceOperationDelegatedRefusalAudited/verify.
+	policy, ok := business.LookupRPCPolicy(accountsv1connect.DatasourceServiceVerifySourceOperationReceiptProcedure)
+	require.True(t, ok)
+	require.Equal(t, policyv1.AuditEmission_AUDIT_EMISSION_FAILURE, policy.MethodPolicy.GetAudit().GetEmission())
+	require.Equal(t, []string{string(business.EventDatasourceOperationInvoked)}, policy.MethodPolicy.GetAudit().GetEvents())
+}
+
 func TestSourceOperationVerifyCurrentAuthorityAndRetention(t *testing.T) {
 	h, ctx, original, store := sourceVerificationFixture(t)
 	// Read-only source authority suffices; the supplied source never grants it.

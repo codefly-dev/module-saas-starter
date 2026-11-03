@@ -1402,7 +1402,7 @@
     },
     "/v1/datasource-operation-receipts/verify": {
       "post": {
-        "summary": "VerifySourceOperationReceipt conditionally reads retained output using the\nexact original Invoke request, including a nonempty declaration precondition.\nCommitted means the normalized request and admitted declaration match the\nstored attempt. Unknown remains unresolved; this method never redispatches.\nCurrent actor, tenant and stored-source read authority apply before comparison.\nThis is independent of the paired Runnable Lookup contract above.",
+        "summary": "VerifySourceOperationReceipt conditionally reads retained output using the\nexact original Invoke request, including a nonempty declaration precondition.\nCommitted means the normalized request and admitted declaration match the\nstored attempt. Unknown remains unresolved; this method never redispatches.\nCurrent actor, tenant and stored-source read authority apply before comparison.\nSource-scope refusals emit the existing failure audit; successful reads do not\nrecord another invocation or change the retained receipt.\nThis is independent of the paired Runnable Lookup contract above.",
         "operationId": "DatasourceService_VerifySourceOperationReceipt",
         "responses": {
           "200": {

@@ -1667,6 +1667,8 @@ service DatasourceService {
   // Committed means the normalized request and admitted declaration match the
   // stored attempt. Unknown remains unresolved; this method never redispatches.
   // Current actor, tenant and stored-source read authority apply before comparison.
+  // Source-scope refusals emit the existing failure audit; successful reads do not
+  // record another invocation or change the retained receipt.
   // This is independent of the paired Runnable Lookup contract above.
   rpc VerifySourceOperationReceipt(InvokeSourceOperationRequest) returns (InvokeSourceOperationResponse) {
     option (google.api.http) = {
@@ -1684,7 +1686,10 @@ service DatasourceService {
         lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
       }
       mfa: MFA_REQUIREMENT_NONE
-      audit: {emission: AUDIT_EMISSION_NONE}
+      audit: {
+        events: "saas.datasource.operation.invoked"
+        emission: AUDIT_EMISSION_FAILURE
+      }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
       rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
       request_sensitivity: SENSITIVITY_SECRET

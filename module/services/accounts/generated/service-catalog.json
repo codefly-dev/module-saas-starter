@@ -5601,8 +5601,10 @@
         ],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.datasource.operation.invoked"
+          ],
+          "emission": "AUDIT_EMISSION_FAILURE"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
