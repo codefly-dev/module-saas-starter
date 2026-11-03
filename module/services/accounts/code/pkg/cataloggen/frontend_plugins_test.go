@@ -63,7 +63,6 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 		"/admin/organizations",
 		"/admin/organizations/settings",
 		"/admin/permissions",
-		"/admin/platform",
 		"/admin/platform/admins",
 		"/admin/platform/catalogue",
 		"/admin/platform/events",
@@ -126,7 +125,9 @@ func TestFrontendPageDiscoveryPinsAccessAndMatch(t *testing.T) {
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_ADMIN, byPath["/admin/modules"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/admin/teams"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_AUTHENTICATED, byPath["/admin/teams/{teamId}"].GetAccess())
-	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform"].GetAccess())
+	// There is no `/admin/platform` page: it re-listed by hand what the catalog
+	// already holds and `/admin` renders. The `/admin/platform/…` prefix is
+	// still what makes a page super-admin, which its children pin.
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/jobs"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/events"].GetAccess())
 	require.Equal(t, catalogv1.FrontendRouteAccess_FRONTEND_ROUTE_ACCESS_SUPER_ADMIN, byPath["/admin/platform/catalogue"].GetAccess())
