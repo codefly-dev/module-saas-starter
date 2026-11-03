@@ -91,13 +91,15 @@ this key, and refuses rather than presenting an origin accounts will refuse.
 ## security
 
 Session, MFA and WebAuthn policy, plus three operator switches whose empty value
-is the shipped behaviour:
+is the shipped behaviour. Every one of the three is empty-means-strict: the
+shipped behaviour is the stricter reading, and a deployment reaches the weaker
+one only by naming it.
 
 | Key | Empty means | Set to |
 | --- | --- | --- |
 | `TRUSTED_PROXY_CIDRS` | no forwarding header is trusted, so every per-IP budget buckets on the peer — behind an ingress and a frontend hop, one bucket for the whole cell | the cell's ingress and frontend ranges, comma-separated exact IPs or CIDRs. A malformed entry fails the boot rather than trusting a spoofable header. Distinct from the identically named key in the `gateway` group, which is auth-gateway's own edge and which a deployed gateway refuses to start without |
 | `ACCOUNTS_REVOCATION_FAIL_OPEN` | a token whose revocation status cannot be read is denied — fail **closed** | `true`, only when fronting accounts directly with no auth-gateway, to keep the direct verify path serving through a revocation-store outage at the cost of a revoked token's remaining TTL |
-| `RBAC_CENTRAL_ENFORCEMENT` | `shadow`: request-time central RBAC admission classifies only | `enforce` to hard-deny. Any other value fails the boot, so a typo cannot leave enforcement off |
+| `RBAC_CENTRAL_ENFORCEMENT` | `enforce`: request-time central RBAC admission hard-denies a call whose declared org-tenant floor the caller does not satisfy | `shadow` to classify only and deny nothing — an explicit opt-out the boot warns about by name, every boot. Any other value fails the boot, so a typo cannot leave enforcement off |
 
 ## internal-transport
 

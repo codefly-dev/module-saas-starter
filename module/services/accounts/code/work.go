@@ -881,7 +881,14 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	if err != nil {
 		return nil, err
 	}
-	adapters.SetCentralEnforcementMode(centralEnforcement)
+	if !centralEnforcement.Enforcing() {
+		// Say the opt-out by name, at boot, every boot. A deployment running the
+		// classify-only floor looks identical to one enforcing it until a call
+		// that should have been denied is served, so the only place this can be
+		// read is the boot log of the process that chose it.
+		w.Warn("RBAC_CENTRAL_ENFORCEMENT=shadow: request-time central RBAC admission classifies only and denies nothing; unset this key to enforce")
+	}
+	adapters.SetCentralEnforcementMode(centralEnforcement.Enforcing())
 
 	// /v1/status — public health probe surface. Probes run in parallel
 	// with a 2s budget each; overall status is the worst result. The
@@ -1589,18 +1596,39 @@ func configuredMFAStepUpMaxAge() (time.Duration, error) {
 	return maxAge, nil
 }
 
+// centralEnforcementMode is the request-time central RBAC admission a
+// deployment selected. It is an enum rather than a bool so the boot can tell
+// "nobody configured this" from "an operator asked for classify-only": the two
+// now mean different things, and collapsing them onto an unset value is exactly
+// how the classify-only reading became every deployment's default.
+type centralEnforcementMode uint8
+
+const (
+	// centralEnforcementEnforce denies at admission. It is the default.
+	centralEnforcementEnforce centralEnforcementMode = iota
+	// centralEnforcementShadow classifies only and denies nothing. It is
+	// reachable only by naming it in the configuration.
+	centralEnforcementShadow
+)
+
+// Enforcing reports whether the interceptors hard-deny.
+func (m centralEnforcementMode) Enforcing() bool { return m == centralEnforcementEnforce }
+
 // configuredCentralEnforcement selects request-time central RBAC admission from
-// the security configuration. "enforce" turns hard-deny on; "shadow" (and an
-// unset value) keeps the classify-only fallback. Any other value fails the boot
-// so a typo cannot silently leave enforcement off.
-func configuredCentralEnforcement() (bool, error) {
+// the security configuration. An unset value enforces: the central tenant floor
+// is a redundant floor beneath the per-call authority Check and the handlers'
+// own require* sites, so a deployment that says nothing gets the stricter of the
+// two readings rather than the weaker one. "shadow" is an explicit opt-out that
+// the boot warns about by name; any other value fails the boot so a typo cannot
+// silently leave enforcement off.
+func configuredCentralEnforcement() (centralEnforcementMode, error) {
 	switch strings.ToLower(strings.TrimSpace(workspaceEnv("security", "RBAC_CENTRAL_ENFORCEMENT"))) {
-	case "", "shadow":
-		return false, nil
-	case "enforce":
-		return true, nil
+	case "", "enforce":
+		return centralEnforcementEnforce, nil
+	case "shadow":
+		return centralEnforcementShadow, nil
 	default:
-		return false, fmt.Errorf(`RBAC_CENTRAL_ENFORCEMENT must be "shadow" or "enforce"`)
+		return centralEnforcementEnforce, fmt.Errorf(`RBAC_CENTRAL_ENFORCEMENT must be "shadow" or "enforce"`)
 	}
 }
 

@@ -172,6 +172,30 @@ bypass on sensitive ops, IP/key floods.
 up the wrong row (e.g., `getWebhook(id)` without filtering by orgID).
 That's L2 + L3.
 
+### The central floor beneath the handler gates
+
+Before any handler runs, the interceptors apply the same org-member/org-admin
+tenant the descriptor declares, against the caller's *verified* organization
+(`enforceCentralPolicy`, `business.CentralTenantEnforcement`). It is a redundant
+floor: it is never stricter than the `require*` site that still runs after it,
+and it resolves only the subset it can decide without reading the request body —
+no declared permission, platform role, MFA requirement, team or owned-resource
+binding, no global-scope escape (`globalScopeEscapeMethods`) and no
+shape-authenticated method (`business.ShapeAuthenticated`, whose caller's
+credential is *in* the request body, so admission has no verified organization to
+resolve against). Everything else stays with the handler gates above.
+
+**It enforces by default.** `RBAC_CENTRAL_ENFORCEMENT` unset means enforce;
+`shadow` is an explicit opt-out that classifies only, and the boot warns naming
+it on every start; any other value refuses to boot. The coverage classification
+that drove the rollout (`saas.accounts.rpc_policy.coverage`) keeps running, since
+what it measures is the part this floor still cannot reach.
+
+Refusals are counted on `saas.accounts.rpc_policy.denied`, labelled by `method`
+and by the gate that refused (`reason`) — see
+[module/MEASUREMENT_RUNBOOKS.md](module/MEASUREMENT_RUNBOOKS.md) under
+`authorization-denials`.
+
 ## Layer 2 — Permissions (RBAC, business layer)
 
 **Where:** `pkg/business/service.go:CheckPermission` + the
