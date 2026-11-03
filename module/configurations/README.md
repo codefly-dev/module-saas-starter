@@ -88,6 +88,24 @@ that endpoint is loopback, cluster-internal (`*.svc`, `*.cluster.local`, a
 single-label name) or plain http: it logs what it found and that it expected
 this key, and refuses rather than presenting an origin accounts will refuse.
 
+## audit-archive
+
+Where the daily audit archive is written. Not a credential group: the bucket's
+credentials belong to the composed object-storage service, which is also the
+reason this group names no bucket.
+
+| Key | Empty means | Set to |
+| --- | --- | --- |
+| `AUDIT_ARCHIVE_URI` | no archive: nothing is scheduled, no worker runs, and the audit log's only copy is the database — which the boot says out loud | a key **prefix** inside the composed object-storage service's own bucket (`audit/archive`). A value naming a bucket, a host or a scheme (`s3://…`) fails the boot rather than writing somewhere the operator did not choose; so does a prefix with no object-storage service composed |
+
+Each complete UTC day becomes one object under that prefix, with a receipt in
+the audit log carrying the object key, its digest and the byte and event counts.
+The write is create-if-absent, so an archived day's bytes cannot be replaced by
+a later run — which makes the archive tamper-**evident**, not immutable. The
+object-lock policy that would make it immutable belongs to the infrastructure
+that provisions the bucket; [../../AUTHZ.md](../../AUTHZ.md) states exactly what
+is and is not proven.
+
 ## security
 
 Session, MFA and WebAuthn policy, plus three operator switches whose empty value
