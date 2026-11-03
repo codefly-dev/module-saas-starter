@@ -105,7 +105,7 @@ func (s *RegistrySource) Open(ctx context.Context, digest solutionhost.PayloadDi
 		return nil, unavailable(err)
 	}
 	if descriptor.Digest.String() != string(digest) || descriptor.Size < 0 || descriptor.Size > MaxBundleBytes {
-		reader.Close()
+		_ = reader.Close()
 		return nil, errors.New("frontend artifact descriptor differs from the admitted bundle")
 	}
 	return reader, nil

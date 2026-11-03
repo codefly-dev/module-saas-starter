@@ -411,6 +411,63 @@ jobs:
       - name: Build marketing in an isolated context
         run: node module/tools/marketing-extraction.mjs
 
+  # The repository has carried `.golangci.yml` since the config was written —
+  # with hand-written exclusions for protoc output and the agent-generated
+  # listeners — and no workflow has ever invoked it. `go vet`, which the Go jobs
+  # do run, answers "is this likely wrong", not "is this well formed": it passes
+  # the aliasing, dead-code and unchecked-error classes this config catches.
+  #
+  # No baseline and no only-new-issues: the rule is that a covered module's full
+  # run is clean at the head, and a pre-existing finding is fixed by the change
+  # that meets it. (The action's only-new-issues mode asks GitHub for the pull
+  # request's patch and, past 20,000 lines, gets a refusal and reports the whole
+  # backlog as new — a gate that answers about the diff on a small change and
+  # about the backlog on a large one is not a gate.)
+  #
+  # COVERAGE IS PARTIAL AND THE REMAINDER IS MEASURED, NOT HIDDEN. The five
+  # modules below are clean at this commit. The three service modules are not,
+  # and their counts under this same config on 2026-11-03 are:
+  #   module/services/accounts/code      51 (errcheck 16, staticcheck 20, unused 13, ineffassign 2)
+  #   module/services/store/code         11 (errcheck 11, all on rows.Close)
+  #   module/services/auth-gateway/code   9 (errcheck 4, staticcheck 1, unused 4)
+  # Adding one is a single line here once its backlog is worked down; `unused`
+  # findings in particular are dead-code deletions that need a judgement per
+  # site rather than a sweep.
+  go-lint:
+    name: Go lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - .
+          - module/tools
+          - module/frontendpayload
+          - libraries/source-read-sdk/go
+          - qualification/module-authority
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache: false
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.14.0
+          # Build the linter under this module's own toolchain rather than
+          # downloading a prebuilt binary built with an older Go, which refuses
+          # to lint a module targeting a newer one ("the Go language version
+          # used to build golangci-lint is lower than the targeted Go version").
+          install-mode: goinstall
+          only-new-issues: false
+          working-directory: ${{ matrix.module }}
+        env:
+          # Each module is its own graph; the workspace file would pull the
+          # others into every run.
+          GOWORK: "off"
+
   sdk-boundary:
     name: Codefly SDK boundary
     runs-on: ubuntu-latest
