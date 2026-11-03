@@ -33,7 +33,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 		}
 		require.NotEqual(t, policyv1.Exposure_EXPOSURE_INTERNAL, route.GetExposure())
 	}
-	require.Equal(t, 63, publicCount) // +3: the artifact interface's Approve, Authorize and Revoke (authenticated by the module's workload credential and its parent); +5: the authority interface's Keys, Check and ListResources (authenticated by the token they check) and the session interface's SignIn and ListFixturePeople (before anyone signs in); +1: the installation interface's Current (authenticated by the module's workload credential and its parent); ApplyManifest is public on accounts' own listener but never routed (ServedInClusterOnly)
+	require.Equal(t, 66, publicCount) // +3: AuthService/GetProviderSignOut on all three spellings it is routed under (REST /v1/auth/provider-sign-out and both Connect procedures) — public because the client id and registered post-logout redirect it echoes are already public, and a caller asking after a sign-out has no session left to present; +3: the artifact interface's Approve, Authorize and Revoke (authenticated by the module's workload credential and its parent); +5: the authority interface's Keys, Check and ListResources (authenticated by the token they check) and the session interface's SignIn and ListFixturePeople (before anyone signs in); +1: the installation interface's Current (authenticated by the module's workload credential and its parent); ApplyManifest is public on accounts' own listener but never routed (ServedInClusterOnly)
 
 	require.Nil(t, byMatch["POST /saas.accounts.v1.APIKeyService/ValidateAPIKey"])
 	require.Equal(t, policyv1.Exposure_EXPOSURE_PUBLIC, byMatch["POST /saas.accounts.v1.AuthService/BeginOAuth"].GetExposure())

@@ -671,7 +671,7 @@ type Store interface {
 	// session-revocation marker per id and kill the access half immediately.
 	RevokeSession(ctx context.Context, deviceSessionID string, reason string) ([]string, error)
 	RevokeSessionFamily(ctx context.Context, familyID string, reason string) error
-	RevokeAllUserSessions(ctx context.Context, userID string, reason string) error
+	RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]string, error)
 	UpdateSessionActivity(ctx context.Context, sessionID string) error
 
 	// Webhooks

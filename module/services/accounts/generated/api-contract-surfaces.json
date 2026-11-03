@@ -157,6 +157,7 @@
         "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
         "/saas.accounts.v1.AuthService/ExchangeClientToken",
         "/saas.accounts.v1.AuthService/GetJWKS",
+        "/saas.accounts.v1.AuthService/GetProviderSignOut",
         "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode",
         "/saas.accounts.v1.AuthService/Logout",
         "/saas.accounts.v1.AuthService/RefreshToken",

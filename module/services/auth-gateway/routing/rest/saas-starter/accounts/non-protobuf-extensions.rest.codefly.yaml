@@ -118,6 +118,26 @@ routes:
         exposed: true
         protected: false
         rate-limit-class: RATE_LIMIT_CLASS_AUTHENTICATION
+    # The OpenID Connect back-channel logout receiver (accounts
+    # pkg/adapters/backchannel_logout_http.go). Not a protobuf RPC because
+    # Back-Channel Logout 1.0 §2.5 fixes the shape: a form-encoded
+    # `logout_token` parameter, a bare 200, and a 400 with no cause — none of
+    # which grpc-gateway produces, and the caller is the provider's own client
+    # rather than any code of ours.
+    #
+    # Unprotected because the caller is the identity provider's back channel: it
+    # holds no session, no bearer and no API key here, and the signed logout
+    # token IS the credential, verified against the provider's JWKS with the
+    # same issuer and audience binding that admits a sign-in. accounts mounts
+    # the route only when a provider that can verify such a token is configured,
+    # so on a deployment without one the gateway route leads nowhere and the
+    # endpoint does not exist.
+    - path: /v1/auth/backchannel-logout
+      method: POST
+      extension:
+        exposed: true
+        protected: false
+        rate-limit-class: RATE_LIMIT_CLASS_AUTHENTICATION
     # The code is issued from the signed-in person's own host session, so this
     # one is protected: the full ext_authz bearer path runs and accounts reads
     # the forwarded identity beside the gateway credential.

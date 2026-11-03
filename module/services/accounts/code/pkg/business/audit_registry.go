@@ -433,6 +433,14 @@ const (
 	// release key. Its actor is the system: the signer, its ownership domain
 	// and the payload digest name who stated the ceiling.
 	EventModuleEnvelopeDelivered EventType = "saas.platform.module_envelope_delivered"
+	// EventAuditArchiveExported records that one complete UTC day of the whole
+	// platform's audit log was written to the configured archive. It is the
+	// archive's receipt, and it is in the audit log on purpose: "was yesterday
+	// archived, and is the object in the bucket the object we wrote" is then
+	// answerable from the trail rather than only from the bucket, which is the
+	// thing the archive exists to stop being the single copy. Its actor is the
+	// system — a scheduled export is nobody's request.
+	EventAuditArchiveExported EventType = "saas.audit.archive_exported"
 	// EventHopAdmissionKeyPublished records that Keys began publishing a hop
 	// admission key, the key every module behind the hop trusts to have
 	// admitted a call. Its actor is the system: the hop proved itself by its
@@ -747,6 +755,16 @@ var auditEventCatalog = []AuditEventDefinition{
 		// no pod is refused before anything is published.
 		PayloadField{Name: "instance", Kind: FieldString, Required: true},
 		PayloadField{Name: "expires_at", Kind: FieldString, Required: true}),
+	mutation(EventAuditArchiveExported, CategorySecurity, "A day of the audit log was written to the configured archive.",
+		PayloadField{Name: "day", Kind: FieldString, Required: true},
+		PayloadField{Name: "object_key", Kind: FieldString, Required: true},
+		PayloadField{Name: "digest", Kind: FieldString, Required: true},
+		PayloadField{Name: "bytes", Kind: FieldInt, Required: true},
+		PayloadField{Name: "events", Kind: FieldInt, Required: true},
+		// The store's own version identifier for the object it wrote. Optional:
+		// a backend that reports none is not a failed archive, and demanding it
+		// would make the receipt depend on which store the composition chose.
+		PayloadField{Name: "etag", Kind: FieldString}),
 	mutation(EventModuleEnvelopeDelivered, CategorySecurity, "A release-signed revision of the module envelope was delivered.",
 		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},

@@ -86,10 +86,13 @@ from the audited platform, so read the mapping carefully.
   proto+codegen instead of JSON+symlink. [module/AUTHORIZATION_CATALOG.md](./module/AUTHORIZATION_CATALOG.md),
   [module/METHOD_POLICY.md](./module/METHOD_POLICY.md).
 - **Enforce-by-default, ✅:** the audit's headline mistake was `RBAC_MODE`
-  defaulting to shadow and *failing open*. The starter has **no shadow mode** —
-  it is deny-by-default, always-enforce. That is the audit's recommendation
-  already in force; do not add a fail-open shadow toggle without a boot-validated
-  enum.
+  defaulting to shadow and *failing open*. The starter is deny-by-default and
+  enforces by default: exposure, impersonation and API-key-scope admission have
+  no off switch at all, and the central org-tenant floor enforces unless a
+  deployment names `RBAC_CENTRAL_ENFORCEMENT=shadow`, which the boot warns about
+  by name on every start. The enum is boot-validated — an unknown value refuses
+  to start — so no typo can turn enforcement off. Do not add a switch that
+  weakens authorization without both of those properties.
 - **Agent/machine principals, ✅:** `principals` table with kinds
   `human`/`service`/`agent` (`pkg/business/principals.go`); agents are
   human-owned (`publisher/name:version`); `SubjectKind_PRINCIPAL` is canonical.
@@ -293,8 +296,10 @@ as designed, not proven, until exercised end to end.
 1. **One source of truth, generated into every consumer** — proto `MethodPolicy`
    → `authz-methods.json` → ext_authz + gateway + REST, drift-checked in CI. The
    starter's analog of "one policy file, two runtimes".
-2. **Enforce-by-default, deny-by-default** — no fail-open shadow mode; missing
-   policy fails generation. This is the audit's #1 mistake pre-avoided.
+2. **Enforce-by-default, deny-by-default** — the one classify-only switch
+   (`RBAC_CENTRAL_ENFORCEMENT`) defaults to enforcing, is boot-validated, and
+   names itself in a boot warning when an operator opts out; missing policy
+   fails generation. This is the audit's #1 mistake pre-avoided.
 3. **Structural CI gates over review discipline** — authz/audit coverage, RLS
    coverage, permission no-broadening, header lockstep (§5).
 4. **Two-token S2S** with attenuating, audience-bound, hash-chained actor
@@ -311,8 +316,12 @@ as designed, not proven, until exercised end to end.
 
 Drawn from the audit's "what's bad" list, filtered to what applies here:
 
-1. **Don't add a fail-open shadow mode.** If a migration ever needs one,
-   boot-validate the enum and refuse to start on unknown values.
+1. **Don't add a fail-open shadow mode.** If a migration ever needs one, give
+   it the three properties `RBAC_CENTRAL_ENFORCEMENT` has: the strict reading is
+   the default an unset value selects, the enum is boot-validated so an unknown
+   value refuses to start, and the weak reading logs a warning naming itself at
+   every boot. An operator switch whose unset value is the permissive reading is
+   the same mistake under a different name.
 2. **Make any background-automation kill switch per-tenant**, never
    deployment-global (§1.5).
 3. **Keep read-only/support authority server-enforced**, never cosmetic — the

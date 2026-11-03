@@ -102,6 +102,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/auth/mfa/webauthn/begin", Procedure: "/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge"},
 		{Service: "accounts", Method: "POST", Path: "/v1/auth/mfa/webauthn/complete", Procedure: "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge"},
 		{Service: "accounts", Method: "POST", Path: "/v1/auth/oauth/begin", Procedure: "/saas.accounts.v1.AuthService/BeginOAuth"},
+		{Service: "accounts", Method: "POST", Path: "/v1/auth/provider-sign-out", Procedure: "/saas.accounts.v1.AuthService/GetProviderSignOut"},
 		{Service: "accounts", Method: "POST", Path: "/v1/auth/refresh", Procedure: "/saas.accounts.v1.AuthService/RefreshToken"},
 		{Service: "accounts", Method: "POST", Path: "/v1/auth/switch-organization", Procedure: "/saas.accounts.v1.AuthService/SwitchOrganization"},
 		{Service: "accounts", Method: "POST", Path: "/v1/auth/token", Procedure: "/saas.accounts.v1.AuthService/ExchangeClientToken"},

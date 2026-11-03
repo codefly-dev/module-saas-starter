@@ -1,6 +1,7 @@
 package business
 
 import (
+	"slices"
 	"testing"
 
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
@@ -245,4 +246,56 @@ func TestSelfServiceUserWritesDeclareNoOrgPermission(t *testing.T) {
 		require.True(t, ok, method)
 		require.Emptyf(t, policy.MethodPolicy.GetPermissions(), "%s must not declare an org permission for a tenant USER method", method)
 	}
+}
+
+// The central floor's one exemption, held to its exact extent.
+//
+// `Issue` declares TENANT_REQUIREMENT_ORG_MEMBER and is nonetheless outside the
+// floor, because its caller's credential is in the request body and admission
+// never reads the body. That is sound only because something else refuses a
+// cross-organisation call, and because the exemption covers exactly the methods
+// whose authentication really is in their shape — a third method quietly
+// joining the set would leave a declared org tenant enforced by nothing.
+//
+// Where the cross-organisation refusal is actually proven, both against a live
+// store through the booted harness:
+//
+//   - the shared suite's "an installation issue cannot name a different
+//     organization": an installation credential for the installed organisation,
+//     naming a foreign one, is PermissionDenied with reason "organization";
+//   - this repository's own "a module workload is issued only where it is
+//     installed, within its pin, until uninstalled"
+//     (adapters/host_interface_conformance_test.go): `issue(globexOrganization)`
+//     is refused while the module is installed only at Acme, and refused again
+//     by the module envelope's pin after Globex installs it.
+//
+// Both were among the cases that went red when enforcement was turned on and
+// green again once this exemption was declared, so they exercise the exempted
+// path rather than some neighbouring one.
+func TestTheCentralFloorExemptsExactlyTheShapeAuthenticatedMethods(t *testing.T) {
+	exempted := []string{HostIssueMethod, HostGetDelegationMethod}
+	for _, method := range exempted {
+		require.Truef(t, ShapeAuthenticated(method), "%s is shape-authenticated", method)
+	}
+
+	// Nothing else is. The set is two constants rather than a lookup, so this
+	// is the only place a third entry would be noticed.
+	for _, policy := range RPCPolicies() {
+		if slices.Contains(exempted, policy.FullMethod) {
+			continue
+		}
+		require.Falsef(t, ShapeAuthenticated(policy.FullMethod),
+			"%s became shape-authenticated; the central tenant floor now exempts it, so its declared tenant is enforced only by its handler — say so here deliberately",
+			policy.FullMethod)
+	}
+
+	// Issue declares an org tenant and the floor still declines it; that is the
+	// exemption, and it is what the conformance cases above then backstop.
+	issue, ok := LookupRPCPolicy(HostIssueMethod)
+	require.True(t, ok, "the host interface's Issue is classified")
+	require.Equal(t, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_MEMBER, issue.MethodPolicy.GetTenant())
+	_, enforced := CentralTenantEnforcement(issue)
+	require.False(t, enforced, "a shape-authenticated method is outside the central floor")
+	require.Equal(t, CoverageGap, ClassifyCentralCoverage(issue),
+		"and the coverage classifier must agree, or the two halves disagree per method")
 }

@@ -88,16 +88,36 @@ that endpoint is loopback, cluster-internal (`*.svc`, `*.cluster.local`, a
 single-label name) or plain http: it logs what it found and that it expected
 this key, and refuses rather than presenting an origin accounts will refuse.
 
+## audit-archive
+
+Where the daily audit archive is written. Not a credential group: the bucket's
+credentials belong to the composed object-storage service, which is also the
+reason this group names no bucket.
+
+| Key | Empty means | Set to |
+| --- | --- | --- |
+| `AUDIT_ARCHIVE_URI` | no archive: nothing is scheduled, no worker runs, and the audit log's only copy is the database — which the boot says out loud | a key **prefix** inside the composed object-storage service's own bucket (`audit/archive`). A value naming a bucket, a host or a scheme (`s3://…`) fails the boot rather than writing somewhere the operator did not choose; so does a prefix with no object-storage service composed |
+
+Each complete UTC day becomes one object under that prefix, with a receipt in
+the audit log carrying the object key, its digest and the byte and event counts.
+The write is create-if-absent, so an archived day's bytes cannot be replaced by
+a later run — which makes the archive tamper-**evident**, not immutable. The
+object-lock policy that would make it immutable belongs to the infrastructure
+that provisions the bucket; [../../AUTHZ.md](../../AUTHZ.md) states exactly what
+is and is not proven.
+
 ## security
 
 Session, MFA and WebAuthn policy, plus three operator switches whose empty value
-is the shipped behaviour:
+is the shipped behaviour. Every one of the three is empty-means-strict: the
+shipped behaviour is the stricter reading, and a deployment reaches the weaker
+one only by naming it.
 
 | Key | Empty means | Set to |
 | --- | --- | --- |
 | `TRUSTED_PROXY_CIDRS` | no forwarding header is trusted, so every per-IP budget buckets on the peer — behind an ingress and a frontend hop, one bucket for the whole cell | the cell's ingress and frontend ranges, comma-separated exact IPs or CIDRs. A malformed entry fails the boot rather than trusting a spoofable header. Distinct from the identically named key in the `gateway` group, which is auth-gateway's own edge and which a deployed gateway refuses to start without |
 | `ACCOUNTS_REVOCATION_FAIL_OPEN` | a token whose revocation status cannot be read is denied — fail **closed** | `true`, only when fronting accounts directly with no auth-gateway, to keep the direct verify path serving through a revocation-store outage at the cost of a revoked token's remaining TTL |
-| `RBAC_CENTRAL_ENFORCEMENT` | `shadow`: request-time central RBAC admission classifies only | `enforce` to hard-deny. Any other value fails the boot, so a typo cannot leave enforcement off |
+| `RBAC_CENTRAL_ENFORCEMENT` | `enforce`: request-time central RBAC admission hard-denies a call whose declared org-tenant floor the caller does not satisfy | `shadow` to classify only and deny nothing — an explicit opt-out the boot warns about by name, every boot. Any other value fails the boot, so a typo cannot leave enforcement off |
 
 ## internal-transport
 

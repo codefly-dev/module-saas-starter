@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -67,19 +68,20 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		ctx, err := authorizer.authorize(ctx, info.FullMethod)
 		if err != nil {
-			return nil, err
+			return nil, recordPolicyDenial(ctx, info.FullMethod, denialReasonAdmission, err)
 		}
 		if err := enforceImpersonationPolicy(ctx, info.FullMethod); err != nil {
-			return nil, err
+			return nil, recordPolicyDenial(ctx, info.FullMethod, denialReasonImpersonation, err)
 		}
 		if err := enforceAPIKeyScopePolicy(ctx, info.FullMethod); err != nil {
-			return nil, err
+			return nil, recordPolicyDenial(ctx, info.FullMethod, denialReasonAPIKeyScope, err)
 		}
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
-			return nil, err
+			return nil, recordPolicyDenial(ctx, info.FullMethod, denialReasonCentral, err)
 		}
 		shadowPolicyCoverage(ctx, info.FullMethod)
-		return handler(business.WithModuleEnvelopeRevisionMemo(ctx), req)
+		response, err := handler(business.WithModuleEnvelopeRevisionMemo(ctx), req)
+		return response, recordPolicyDenial(ctx, info.FullMethod, denialReasonHandler, err)
 	}
 }
 
@@ -88,26 +90,120 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx, err := authorizer.authorize(stream.Context(), info.FullMethod)
 		if err != nil {
-			return err
+			return recordPolicyDenial(ctx, info.FullMethod, denialReasonAdmission, err)
 		}
 		if err := enforceImpersonationPolicy(ctx, info.FullMethod); err != nil {
-			return err
+			return recordPolicyDenial(ctx, info.FullMethod, denialReasonImpersonation, err)
 		}
 		if err := enforceAPIKeyScopePolicy(ctx, info.FullMethod); err != nil {
-			return err
+			return recordPolicyDenial(ctx, info.FullMethod, denialReasonAPIKeyScope, err)
 		}
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
-			return err
+			return recordPolicyDenial(ctx, info.FullMethod, denialReasonCentral, err)
 		}
 		shadowPolicyCoverage(ctx, info.FullMethod)
-		return handler(srv, &contextServerStream{ServerStream: stream, ctx: ctx})
+		return recordPolicyDenial(ctx, info.FullMethod, denialReasonHandler,
+			handler(srv, &contextServerStream{ServerStream: stream, ctx: ctx}))
 	}
 }
 
 var (
 	coverageCounterOnce sync.Once
 	coverageCounter     metric.Int64Counter
+	denialCounterOnce   sync.Once
+	denialCounter       metric.Int64Counter
 )
+
+// The reasons rpcPolicyDeniedCounter is labelled with. A closed set of
+// constants, never an error message: the message carries the organization and
+// the permission, which would make the label set unbounded and put tenant
+// identifiers in a metrics backend. What a denial was is the reason; who it was
+// about is the audit log's and the request log's.
+const (
+	// denialReasonAdmission: authorize refused before any policy gate — an
+	// unclassified method, a malformed or ambiguous forwarded identity, a
+	// missing internal/module credential, an invalid or expired bearer.
+	denialReasonAdmission = "admission"
+	// denialReasonImpersonation: the method is withheld from a session acting
+	// as another user.
+	denialReasonImpersonation = "impersonation_restricted"
+	// denialReasonAPIKeyScope: an API key was presented to a method that
+	// accepts none, or whose declared scopes the key does not cover.
+	denialReasonAPIKeyScope = "api_key_scope"
+	// denialReasonCentral: central admission denied the method's declared
+	// org-tenant floor. This is the count that says what flipping
+	// RBAC_CENTRAL_ENFORCEMENT to enforce actually refuses.
+	denialReasonCentral = "central_admission"
+	// denialReasonHandler: the handler's own require* site refused, after
+	// admission admitted the call.
+	denialReasonHandler = "handler"
+)
+
+// isPolicyRefusal reports whether err is a refusal, in either representation
+// the same gate produces: a gRPC status on the gRPC path, a connect.Error on
+// the Connect path, where some gates are translated before this sees them and
+// some (the admission gate) refuse as connect errors in the first place.
+// Checking only one of the two would count a refusal on one transport and
+// silently drop the identical refusal on the other, which is the failure a
+// metric meant for alerting can least afford.
+func isPolicyRefusal(err error) bool {
+	switch status.Code(err) {
+	case codes.PermissionDenied, codes.Unauthenticated:
+		return true
+	}
+	var connectErr *connect.Error
+	if errors.As(err, &connectErr) {
+		switch connectErr.Code() {
+		case connect.CodePermissionDenied, connect.CodeUnauthenticated:
+			return true
+		}
+	}
+	return false
+}
+
+// rpcPolicyDeniedCounter lazily binds the denial counter, on first use and for
+// the same reason as rpcPolicyCoverageCounter: startup installs the real meter
+// provider after this package is linked, so an instrument created at init would
+// be a permanent no-op. A creation error leaves it nil and recording is skipped
+// rather than failing a request — a metric must never be the reason a refusal
+// does not reach its caller.
+func rpcPolicyDeniedCounter() metric.Int64Counter {
+	denialCounterOnce.Do(func() {
+		counter, err := otel.Meter("github.com/codefly-dev/module-saas-starter/accounts").Int64Counter(
+			"saas.accounts.rpc_policy.denied",
+			metric.WithDescription("Authorization refusals per RPC, by the gate that refused."),
+		)
+		if err != nil {
+			return
+		}
+		denialCounter = counter
+	})
+	return denialCounter
+}
+
+// recordPolicyDenial counts err as an authorization refusal attributed to
+// reason, and returns err unchanged so a call site stays a one-line wrap of the
+// error it already returned. A nil error, and an error that is not a refusal,
+// are not counted: the interceptor sees every handler error pass through, and
+// counting an Internal or an InvalidArgument here would make the metric a
+// general error rate under an authorization name.
+//
+// Unauthenticated is counted alongside PermissionDenied because the central
+// floor returns it for a call carrying no verified database scope, which is a
+// refusal of exactly the kind this metric exists to make alertable; leaving it
+// out would silently drop that branch.
+func recordPolicyDenial(ctx context.Context, fullMethod, reason string, err error) error {
+	if err == nil || !isPolicyRefusal(err) {
+		return err
+	}
+	if counter := rpcPolicyDeniedCounter(); counter != nil {
+		counter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("method", fullMethod),
+			attribute.String("reason", reason),
+		))
+	}
+	return err
+}
 
 // rpcPolicyCoverageCounter lazily binds the shadow-coverage counter. It is
 // created on first use — after startup has installed the real meter provider —
@@ -118,7 +214,7 @@ func rpcPolicyCoverageCounter() metric.Int64Counter {
 	coverageCounterOnce.Do(func() {
 		counter, err := otel.Meter("github.com/codefly-dev/module-saas-starter/accounts").Int64Counter(
 			"saas.accounts.rpc_policy.coverage",
-			metric.WithDescription("Central authorization coverage classification per admitted RPC call (shadow mode)."),
+			metric.WithDescription("Central authorization coverage classification per admitted RPC call."),
 		)
 		if err != nil {
 			return
@@ -130,11 +226,13 @@ func rpcPolicyCoverageCounter() metric.Int64Counter {
 
 // shadowPolicyCoverage classifies how completely the central interceptor could
 // enforce the method's declared policy floor and records the outcome on a
-// counter for every admitted call. It changes no admission decision: this is
-// the measurement half of the shadow-mode rollout. Every outcome — including
-// ok — is recorded so that the absence of gap/unsupported over real traffic is
-// provably "no such traffic" rather than a silent instrument, which is the
-// precondition for turning enforcement on.
+// counter for every admitted call. It changes no admission decision: it is the
+// measurement half, and it keeps running now that enforcement is the default,
+// because what it measures is the part central admission still cannot reach.
+// Every outcome — including ok — is recorded, so a deployment reporting no
+// gap/unsupported is provably serving no such traffic rather than running a
+// silent instrument. Refusals are counted separately, by
+// rpcPolicyDeniedCounter.
 //
 // Classification is static: it reads only the declared policy and never touches
 // the store. An owned-resource method whose org the interceptor can resolve
@@ -159,16 +257,24 @@ func shadowPolicyCoverage(ctx context.Context, fullMethod string) {
 	))
 }
 
-// centralEnforcement selects request-time RBAC admission. When false (the
-// default, shadow mode) the interceptors record coverage but change no admission
-// decision. When true they additionally deny a call whose declared org-tenant
-// floor the caller does not satisfy. Set once at startup before the servers
-// register their interceptors.
-var centralEnforcement bool
+// centralEnforcement selects request-time RBAC admission. When true — the
+// default — the interceptors deny a call whose declared org-tenant floor the
+// caller does not satisfy, as well as recording coverage. When false (shadow
+// mode, which a deployment reaches only by naming it in
+// RBAC_CENTRAL_ENFORCEMENT) they record coverage and change no admission
+// decision. Set once at startup before the servers register their interceptors.
+//
+// It is initialized to the enforcing value rather than to Go's zero value so
+// that the package default and the configured default are the same reading. A
+// zero value meaning shadow is what made every test in this package — and every
+// caller that reaches an interceptor without going through startup — exercise
+// the weaker of the two admissions while the configuration claimed the stricter.
+var centralEnforcement = true
 
 // SetCentralEnforcementMode turns request-time central RBAC enforcement on or
-// off. Shadow (false) is the fallback; enforce (true) denies at admission. Call
-// before the gRPC and Connect servers register their interceptors.
+// off. Enforce (true) is the default and denies at admission; shadow (false) is
+// the explicit opt-out. Call before the gRPC and Connect servers register their
+// interceptors.
 func SetCentralEnforcementMode(enforce bool) { centralEnforcement = enforce }
 
 // enforceCentralPolicy denies a call whose declared org-member/admin tenant the

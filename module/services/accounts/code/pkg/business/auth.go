@@ -527,7 +527,23 @@ func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToke
 		// is theirs to act on.
 		return fmt.Errorf("%w: %s", ErrLogoutIncomplete, strings.Join(incomplete, " and "))
 	}
+	// Ending the session at the identity provider is the other half, and it is
+	// not this call's to do: the provider's session cookie is in the person's
+	// browser and in nothing accounts can send. GetProviderSignOut answers the
+	// URL that does it.
 	return nil
+}
+
+// GetProviderSignOut answers the identity provider's RP-initiated logout URL,
+// with the client-supplied id_token_hint applied, or an empty one when this
+// deployment's provider offers no such sign-out. It reads only configuration
+// and the hint the caller passed, so it needs no session — which is the point:
+// a client asks for it around a sign-out, when the credential it would
+// otherwise present is exactly the one that has just been revoked.
+func (s *Service) GetProviderSignOut(ctx context.Context, req *gen.GetProviderSignOutRequest) (*gen.GetProviderSignOutResponse, error) {
+	return &gen.GetProviderSignOutResponse{
+		EndSessionUrl: s.endSessionURL(ctx, req.GetIdTokenHint()),
+	}, nil
 }
 
 // ErrLogoutIncomplete reports a sign-out whose refresh family was revoked while an

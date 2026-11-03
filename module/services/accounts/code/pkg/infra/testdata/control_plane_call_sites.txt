@@ -29,6 +29,7 @@ pkg/auth/pg/session_store.go: (*SessionStore).RotateRefresh: WithControlPlane
 pkg/business/audit.go: (*DurableAuditEmitter).Emit: WithControlPlane
 pkg/business/audit.go: (*Service).AggregateAuditLog: WithControlPlane
 pkg/business/audit.go: (*Service).QueryAuditLog: WithControlPlane
+pkg/business/audit_archive.go: (*Service).archiveAuditDay: WithControlPlane
 pkg/business/authority_core_delivery.go: (*Service).composeAppliedDelivery: WithControlPlane
 pkg/business/authority_delivery.go: (*Service).verifyAppliedAuthorityDocument: WithControlPlane
 pkg/business/canonical_solution_reads.go: (*Service).canonicalSolutionEntitlements: WithControlPlane
@@ -127,6 +128,7 @@ pkg/business/privacy_jobs.go: (*Service).parkUnexecutablePrivacyJob: WithControl
 pkg/business/privacy_jobs.go: (*Service).runPrivacyWorkflow: WithControlPlane
 pkg/business/privacy_jobs.go: (*Service).runPrivacyWorkflow: WithControlPlane
 pkg/business/privacy_jobs.go: (*Service).runPrivacyWorkflow: WithControlPlane
+pkg/business/provider_signout.go: (*Service).BackchannelLogout: WithControlPlane
 pkg/business/retention.go: (*Service).PurgeExpiredWorkContextReplays: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane

@@ -168,6 +168,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/auth/mfa/webauthn/begin":         {},
 	"POST /v1/auth/mfa/webauthn/complete":      {},
 	"POST /v1/auth/oauth/begin":                {},
+	"POST /v1/auth/provider-sign-out":          {},
 	"POST /v1/auth/refresh":                    {},
 	"POST /v1/auth/switch-organization":        {},
 	"POST /v1/auth/token":                      {},
