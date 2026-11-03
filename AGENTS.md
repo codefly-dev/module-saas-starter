@@ -200,7 +200,8 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
   module verification job, authorization coverage, the release-gate contract,
   interface docs and story tests, the kit's version, marketing isolation, the
   SDK boundary, the immutable module package, the scoped pools' database
-  authority, and the shared host-interface conformance suite at authority main. [RELEASE_GATES.md § Repository-specific
+  authority, and the shared host-interface conformance suite at authority main
+  with the declared interface versions held to the pinned suite. [RELEASE_GATES.md § Repository-specific
   gates](./RELEASE_GATES.md#repository-specific-gates) says what each runs, and
   `release-gates.test.mjs` holds this prose to the enforced set.
 - More checks run as *steps* inside the `base-integrity` job than as gates of their

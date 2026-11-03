@@ -1,10 +1,14 @@
 # The host interfaces, served by accounts
 
 accounts implements the host interfaces published by `codefly-dev/authority`:
-`codefly.dev/authority@0.3.5`, `codefly.dev/composition@0.2.0`,
-`codefly.dev/installation@0.3.0` and `codefly.dev/session@0.2.0`. The local
-authority implements the same four on a laptop. The shared conformance suite
-(`libraries/conformance/go`) proves that the two agree.
+`codefly.dev/artifact@0.1.0`, `codefly.dev/authority@0.3.5`,
+`codefly.dev/composition@0.2.0`, `codefly.dev/installation@0.4.0` and
+`codefly.dev/session@0.2.1`, as `module/module.codefly.yaml` declares them. The
+local authority implements the same five on a laptop. The shared conformance
+suite (`libraries/conformance/go`) proves that the two agree, and the
+declaration gate (`module-package verify-host-interfaces`, under Proof below)
+holds each version named here and in the manifest to the version the interface
+publishes at the authority revision `go.mod` pins.
 
 ## One authority core, two thin hosts
 
@@ -156,7 +160,35 @@ behavior-preserving rollback.
 - `.github/workflows/ci.yml` (`host-interface-conformance`, the required
   context "Host interface conformance (authority main)" and a release gate)
   runs the suite at authority main, whenever main contains the pinned revision,
-  on every pull request and merge-queue entry.
+  on every pull request and merge-queue entry; the same suite at the pinned
+  revision runs with accounts' tests in the Codefly quality phase.
+- Before that suite, the same job runs the declaration gate, `module-package
+  verify-host-interfaces` (in `module/tools`, with its own tests in
+  `modulepackage/host_interfaces_test.go`). It reads
+  `interfaces/<name>/interface.codefly.yaml` at the pinned authority commit,
+  fetched by its full id from the clone the job already makes, and refuses: a
+  version `module/module.codefly.yaml` declares above the one published there
+  (a claim no suite proved); an interface the pin does not publish; authority
+  libraries pinned at two revisions (`go.mod` pins the suite, the core it
+  decides with, the client, delivery and resources at one commit); and an
+  opening sentence of this document naming another version than the manifest.
+  A declared version below the published one is a notice, never a failure:
+  the pin may move to run a newer suite before the declaration follows it,
+  and the declaration never moves first. The half that needs no network, one
+  revision in `go.mod` and this document agreeing with the manifest, also
+  runs with the `module/tools` tests in the module-package job.
+- Last recorded run: authority `dea37afac9ad` (its main on 2026-10-30, the
+  revision `go.mod` pins for all five authority libraries), from
+  `module/services/accounts/code`, on 2026-11-03:
+
+      GOWORK=off go test -count=1 -timeout 30m -run '^TestAccountsPassesTheHostInterfaceConformanceSuite$' -v ./pkg/adapters
+
+  passed 94 cases (the shared suite, the solution-principal target and the
+  cases beyond the suite, as `go test -v` lists them one level under the
+  test), 294 subtests at every depth; failed 0; skipped 0; 74 s. The
+  admission-key case ("only the hop registers an admission key, published
+  apart from the Work Context keys") is among them, with the fixture's
+  `HopCredential`. The section below carries no red line from this run.
 - The core's store contract (`authority-core/go/storetest`) runs against this
   Postgres store in `pkg/infra/postgres_authority_core_test.go`.
 - The core's own decisions are unit tested in `codefly-dev/authority`.

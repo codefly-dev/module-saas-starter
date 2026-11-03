@@ -743,6 +743,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventHopAdmissionKeyPublished, CategorySecurity, "Keys began publishing a hop admission key, registered by the hop's attested workload.",
 		PayloadField{Name: "key_id", Kind: FieldString, Required: true},
 		PayloadField{Name: "workload", Kind: FieldString, Required: true},
+		// The hop instance (its pod) the key is pinned to; a credential naming
+		// no pod is refused before anything is published.
+		PayloadField{Name: "instance", Kind: FieldString, Required: true},
 		PayloadField{Name: "expires_at", Kind: FieldString, Required: true}),
 	mutation(EventModuleEnvelopeDelivered, CategorySecurity, "A release-signed revision of the module envelope was delivered.",
 		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
