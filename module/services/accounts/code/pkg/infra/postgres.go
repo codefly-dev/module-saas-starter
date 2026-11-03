@@ -645,7 +645,7 @@ func (a loginAuthority) beyond(boundary loginBoundary) []string {
 			{role.Replication, "REPLICATION"},
 			{role.OwnsRelation, "owns a relation"},
 			{role.OwnsSchema, "owns a schema"},
-			{role.OwnsFunction && !(isDeclared && boundary.RolesOwnFunctions), "owns a function"},
+			{role.OwnsFunction && (!isDeclared || !boundary.RolesOwnFunctions), "owns a function"},
 			{role.OwnsDatabase, "owns a database"},
 		} {
 			if attribute.held {

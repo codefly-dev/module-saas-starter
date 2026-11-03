@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -120,20 +119,6 @@ func (s stubResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr
 		addrs[i] = net.IPAddr{IP: ip}
 	}
 	return addrs, nil
-}
-
-func mustPort(t *testing.T, rawURL string) string {
-	t.Helper()
-	u, err := url.Parse(rawURL)
-	require.NoError(t, err)
-	return u.Port()
-}
-
-func mustHost(t *testing.T, rawURL string) string {
-	t.Helper()
-	u, err := url.Parse(rawURL)
-	require.NoError(t, err)
-	return u.Host
 }
 
 // The module secret header is gone with the secret (#1056) and nothing reads it,

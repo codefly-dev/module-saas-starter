@@ -320,7 +320,7 @@ func (s *Service) deliverFollowNotification(ctx context.Context, delivery follow
 func followDeliveryKey(eventID, resourceType, resourceID, userID string, channel NotificationChannel) string {
 	digest := sha256.New()
 	for _, part := range []string{eventID, resourceType, resourceID, userID, string(channel)} {
-		fmt.Fprintf(digest, "%d:%s", len(part), part)
+		_, _ = fmt.Fprintf(digest, "%d:%s", len(part), part)
 	}
 	return "follow:" + hex.EncodeToString(digest.Sum(nil))
 }

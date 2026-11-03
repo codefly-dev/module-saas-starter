@@ -57,7 +57,7 @@ func TestMigrationUpgrade(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { db.Close() })
+		t.Cleanup(func() { _ = db.Close() })
 		deadline := time.Now().Add(30 * time.Second)
 		for db.Ping() != nil {
 			if time.Now().After(deadline) {
@@ -246,7 +246,7 @@ func TestMigrationUpgrade(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if fmt.Sprint(actual) != fmt.Sprint(expected) {
 		t.Fatalf("executed versions %v, want %v", actual, expected)
 	}
@@ -322,7 +322,7 @@ func foreignKeyOrder(t *testing.T, db *sql.DB) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
 		var line string
@@ -378,7 +378,7 @@ func seedCatalog(t *testing.T, db *sql.DB) string {
 			}
 			remap[id] = "seed:" + entry.table + ":" + key
 		}
-		rows.Close()
+		_ = rows.Close()
 	}
 	var out []string
 	for _, table := range []string{"audit_event_types", "bootstrap_state", "data_retention_policies", "email_templates", "identity_providers", "plan_entitlements", "plans", "role_permissions", "roles"} {

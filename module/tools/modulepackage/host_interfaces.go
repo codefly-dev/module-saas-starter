@@ -372,7 +372,7 @@ func VerifyHostInterfaces(options HostInterfaceOptions, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "%s: host interfaces declared by %s, held to authority %s (%s)\n", service, goMod, pin.Revision, strings.Join(shortLibraries(pin.Libraries), ", "))
+		_, _ = fmt.Fprintf(out, "%s: host interfaces declared by %s, held to authority %s (%s)\n", service, goMod, pin.Revision, strings.Join(shortLibraries(pin.Libraries), ", "))
 		for _, finding := range CompareHostInterfaces(byService[service], published, documented) {
 			verdict := "ok"
 			switch {
@@ -382,7 +382,7 @@ func VerifyHostInterfaces(options HostInterfaceOptions, out io.Writer) error {
 			case finding.Reason != "":
 				verdict = "notice: " + finding.Reason
 			}
-			fmt.Fprintf(out, "  %-28s declared %-8s published %-8s %s\n", finding.Interface, finding.Declared, orNone(finding.Published), verdict)
+			_, _ = fmt.Fprintf(out, "  %-28s declared %-8s published %-8s %s\n", finding.Interface, finding.Declared, orNone(finding.Published), verdict)
 		}
 	}
 	if len(failures) > 0 {

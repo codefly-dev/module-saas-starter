@@ -538,14 +538,6 @@ func routableUpstream(raw string) (*url.URL, bool) {
 	return &url.URL{Scheme: upstream.Scheme, Host: upstream.Host}, true
 }
 
-// lookup reads the cached record without touching the network. stale reports a
-// snapshot past the revocation lease, which holds records and authorises none
-// of them.
-func (c *solutionRegistryCache) lookup(id string) (record *accountsv1.SolutionRegistration, upstream *url.URL, found, loaded, stale bool) {
-	read := c.lookupSnapshot(id)
-	return read.record, read.upstream, read.found, read.loaded, read.stale
-}
-
 func (c *solutionRegistryCache) lookupSnapshot(id string) solutionLookup {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -749,7 +741,7 @@ func (c *solutionRegistryCache) resolveRoutingOfKind(
 	// endpoint the applied presence declares, for a solution exactly as for a
 	// module. No address means the composition handed this gateway no carrier
 	// for it, which is "not serving" and not "not registered".
-	if read.upstream == nil && surface != retainedFrontendSurface && !(surface == frontendSurface && frontendRequiresPreparation(record)) {
+	if read.upstream == nil && surface != retainedFrontendSurface && (surface != frontendSurface || !frontendRequiresPreparation(record)) {
 		return nil, solutionNotActive
 	}
 	return &solutionRouting{

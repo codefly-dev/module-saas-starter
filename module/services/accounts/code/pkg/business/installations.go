@@ -435,52 +435,6 @@ func (s *Service) uninstallSolutionTx(ctx context.Context, actorID, actorType, o
 // generation is not a present one.
 var ErrSolutionTargetNotInstallable = errors.New("solution target is not installable")
 
-// resolveInstallableTarget confirms a target is live and ACCEPTED, and returns
-// the route alias it currently serves.
-//
-// Accepted means the host has an applied, non-tombstone generation for the
-// target's binding. A target whose newest DESIRED generation was refused is
-// still installable at the release that WAS applied, which is the correct answer:
-// the host is serving that release, and refusing the install would make a bad
-// delivery pipeline run look like a withdrawn solution.
-//
-// It reads through the same catalogue query the listing serves, so there is no
-// second predicate that means to agree with it — an administrator cannot install
-// something the catalogue would not have offered.
-func (s *Service) resolveInstallableTarget(ctx context.Context, targetID string) (string, error) {
-	if targetID == "" {
-		return "", NewStoreError(
-			fmt.Errorf("%w: no target was named", ErrSolutionTargetNotInstallable),
-			ErrTypeValidation)
-	}
-	var alias string
-	var found bool
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		// The SAME query the catalogue listing serves, narrowed to one target.
-		// One statement, one acceptance predicate: an administrator cannot
-		// install something the catalogue would not have offered, and there is
-		// no second predicate here that means to agree with that one.
-		available, err := s.store.ListAvailableSolutionTargets(ctx,
-			AvailableSolutionQuery{TargetID: targetID, Limit: 1})
-		if err != nil {
-			return err
-		}
-		if len(available) == 1 {
-			alias, found = available[0].RouteAlias, true
-		}
-		return nil
-	}); err != nil {
-		return "", err
-	}
-	if !found {
-		return "", NewStoreError(
-			fmt.Errorf("%w: %s is withdrawn, unknown, or has no applied present generation",
-				ErrSolutionTargetNotInstallable, targetID),
-			ErrTypeValidation)
-	}
-	return alias, nil
-}
-
 // ListAvailableSolutions is the catalogue an administrator installs from:
 // accepted applied state, never the diagnostic binding listing.
 //

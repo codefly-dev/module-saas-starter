@@ -14,7 +14,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,36 +29,55 @@ import (
 func declaredPurposes(t *testing.T) map[string]string {
 	t.Helper()
 	fileSet := token.NewFileSet()
-	packages, err := parser.ParseDir(fileSet, "../business", func(info fs.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, 0)
-	require.NoError(t, err)
-
 	found := map[string]string{}
-	for _, pkg := range packages {
-		for path, file := range pkg.Files {
-			ast.Inspect(file, func(node ast.Node) bool {
-				switch declaration := node.(type) {
-				case *ast.ValueSpec:
-					for i, name := range declaration.Names {
-						if !strings.HasSuffix(name.Name, "Purpose") || i >= len(declaration.Values) {
-							continue
-						}
-						if literal, ok := declaration.Values[i].(*ast.BasicLit); ok && literal.Kind == token.STRING {
-							found[name.Name] = path
-						}
+	for path, file := range parseNonTestGoFiles(t, fileSet, "../business") {
+		ast.Inspect(file, func(node ast.Node) bool {
+			switch declaration := node.(type) {
+			case *ast.ValueSpec:
+				for i, name := range declaration.Names {
+					if !strings.HasSuffix(name.Name, "Purpose") || i >= len(declaration.Values) {
+						continue
 					}
-				case *ast.FuncDecl:
-					if declaration.Recv == nil && strings.HasSuffix(declaration.Name.Name, "Purpose") {
-						found[declaration.Name.Name] = path
+					if literal, ok := declaration.Values[i].(*ast.BasicLit); ok && literal.Kind == token.STRING {
+						found[name.Name] = path
 					}
 				}
-				return true
-			})
-		}
+			case *ast.FuncDecl:
+				if declaration.Recv == nil && strings.HasSuffix(declaration.Name.Name, "Purpose") {
+					found[declaration.Name.Name] = path
+				}
+			}
+			return true
+		})
 	}
 	require.NotEmpty(t, found, "the parser found no purposes at all, so this gate is not checking anything")
 	return found
+}
+
+// parseNonTestGoFiles parses every non-test .go file in dir, keyed by its path.
+//
+// go/parser.ParseDir is deprecated for not honouring build tags when it groups
+// files into packages. This scan asks a purely syntactic question — what does
+// this directory DECLARE — and never asks which build a file belongs to, so
+// reading the directory and parsing each file is the same work without the
+// deprecated call. go/packages, the suggested replacement, would type-check a
+// whole package to answer it.
+func parseNonTestGoFiles(t *testing.T, fileSet *token.FileSet, dir string) map[string]*ast.File {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	files := map[string]*ast.File{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		file, parseErr := parser.ParseFile(fileSet, path, nil, 0)
+		require.NoError(t, parseErr)
+		files[path] = file
+	}
+	return files
 }
 
 // prefixConstants are the per-purpose prefixes each *Purpose function is built

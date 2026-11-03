@@ -122,7 +122,7 @@ func TestInstallationLifecycleRefusalRetryAndAcknowledgement(t *testing.T) {
 	job = claimInstallationFor(t, worker, i.installation.Id)
 	require.NotEqual(t, lease.JobId, job.Id)
 	require.NoError(t, svc.FinishInstallationStep(testCtx, installationLease(job), job.AttemptCount, 204, ""))
-	current, revision, attempts = readLifecycle(t, i)
+	current, revision, _ = readLifecycle(t, i)
 	require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, current.Status)
 	require.Equal(t, uint64(1), revision)
 	// An active narrowing gets a fresh revision/run without losing availability.

@@ -445,16 +445,6 @@ func (r *ClientMetadataResolver) awaitFetch(
 	}
 }
 
-func (r *ClientMetadataResolver) fromCache(clientID string) (RegisteredClient, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	entry, ok := r.cached[clientID]
-	if !ok || !r.now().Before(entry.expiresAt) {
-		return RegisteredClient{}, false
-	}
-	return entry.client, true
-}
-
 // remember caches a VALID document only. Nothing records a failure, so a
 // refusal is never served from here.
 func (r *ClientMetadataResolver) remember(clientID string, client RegisteredClient, ttl time.Duration) {

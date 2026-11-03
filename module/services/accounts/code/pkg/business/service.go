@@ -182,9 +182,6 @@ type Service struct {
 	frontendSource         frontendpayload.Source
 	frontendLazyLoadWindow time.Duration
 
-	// policyClock is the clock narrowing-dependent reads judge time by; nil means time.Now.
-	policyClock func() time.Time
-
 	// The live-authority reads enforcement at use depends on. Nil means this
 	// host cannot re-read, and AuthorizeModuleCapability then refuses every
 	// capability rather than authorizing on the declared ceiling alone — which

@@ -216,7 +216,7 @@ func (s *Service) CheckModuleOperationContextRevision(
 	// The confirmation is a decision about current authority like the mint,
 	// so it is judged from one snapshot fenced against the committed envelope:
 	// a stale replica must not confirm what a committed narrowing revoked.
-	grant, isModule, snapshot, err := s.currentModuleGrantIn(ctx, ownerPrincipalID)
+	_, isModule, snapshot, err := s.currentModuleGrantIn(ctx, ownerPrincipalID)
 	if err != nil {
 		return true, err
 	}
@@ -227,7 +227,7 @@ func (s *Service) CheckModuleOperationContextRevision(
 	if err != nil {
 		return true, err
 	}
-	grant = installed.Grant
+	grant := installed.Grant
 	if !moduleAvailableToOrganization(grant, orgID) || revision != ModuleOperationContextRevision(grant) || len(subjects) == 0 {
 		return true, ErrModuleOperationContextStale
 	}

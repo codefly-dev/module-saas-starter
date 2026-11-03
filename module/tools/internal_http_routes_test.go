@@ -671,7 +671,7 @@ func blankNonCode(source string) (string, []string) {
 			index = end
 		case current == '/' && next == '*':
 			end := index + 2
-			for end+1 < len(buffer) && !(buffer[end] == '*' && buffer[end+1] == '/') {
+			for end+1 < len(buffer) && (buffer[end] != '*' || buffer[end+1] != '/') {
 				end++
 			}
 			end = min(end+2, len(buffer))

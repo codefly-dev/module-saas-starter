@@ -176,7 +176,7 @@ func (s *PostgresStore) installSolution(ctx context.Context, params *business.In
 		params.OrgID, params.TargetID))
 	if err == nil {
 		if existing.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE &&
-			!(existing.Status == gen.InstallationStatus_INSTALLATION_STATUS_PENDING && params.Approval != nil) {
+			(existing.Status != gen.InstallationStatus_INSTALLATION_STATUS_PENDING || params.Approval == nil) {
 			return nil, installerConflict("installation already exists; retry a failed installation or uninstall it")
 		}
 		if e := reconcileExistingInstallation(ctx, executor, existing, params); e != nil {

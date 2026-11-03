@@ -179,7 +179,7 @@ func TestAppRoleLoginRefusalFailsClosedWithoutTheBody(t *testing.T) {
 	// would carry the credential. A bare status is undiagnostic in a crash loop,
 	// so the refusal names the two keys and what to do about them instead.
 	for _, want := range []string{
-		"Vault answered 403",
+		"unexpected status 403 from Vault",
 		"VAULT_APPROLE_ROLE_ID",
 		"VAULT_APPROLE_SECRET_ID",
 		"`vault` secret group",

@@ -22,8 +22,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 // The accounts half of the module-authority contract host
@@ -216,7 +214,8 @@ func TestModuleAuthorityContractHost(t *testing.T) {
 	internalListener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	internal := &http.Server{
-		Handler:           h2c.NewHandler(multiplexInternalGRPC(servers.internalGRPC, http.NotFoundHandler()), &http2.Server{}),
+		Handler:           multiplexInternalGRPC(servers.internalGRPC, http.NotFoundHandler()),
+		Protocols:         unencryptedHTTP2(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() { _ = internal.Serve(internalListener) }()
@@ -389,7 +388,7 @@ func serveContractConnectTier(t *testing.T, servers *GrpcServer, gatewayToken st
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	server := &http.Server{Handler: h2c.NewHandler(mux, &http2.Server{}), ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Handler: mux, Protocols: unencryptedHTTP2(), ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
 	return listener.Addr().String()

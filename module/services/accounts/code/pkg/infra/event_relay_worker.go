@@ -70,7 +70,7 @@ func (w *EventRelayWorker) Start(parent context.Context) {
 			// A tick drains until empty; a failure is logged and retried next tick,
 			// because unpublished rows stay unpublished when a batch rolls back.
 			if _, err := w.drainer.RelayOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				wool.Get(ctx).In("events.relay").Warn("relay iteration failed", wool.ErrField(err))
+				wool.Get(ctx).In(eventsRelayQueue).Warn("relay iteration failed", wool.ErrField(err))
 			}
 		}
 		drain()

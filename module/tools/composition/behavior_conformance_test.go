@@ -33,7 +33,7 @@ func contractByID(t *testing.T, contracts *updatev0.BehavioralContracts, id stri
 // exact assertion it is holding the implementation to.
 func at(t *testing.T, content *structpb.Struct, path ...string) *structpb.Value {
 	t.Helper()
-	var value *structpb.Value = structpb.NewStructValue(content)
+	value := structpb.NewStructValue(content)
 	for i, field := range path {
 		object := value.GetStructValue()
 		if object == nil {

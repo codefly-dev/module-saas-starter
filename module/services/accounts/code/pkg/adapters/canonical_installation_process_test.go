@@ -111,7 +111,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 	defer server.Stop()
 	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	queue := httptest.NewServer(NewInstallationStepHandler(svc))
 	defer queue.Close()
 	caller := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
@@ -381,7 +381,7 @@ func callCanonicalQueue(t *testing.T, base, method string, value any) (int, []by
 	req.Header.Set("X-Codefly-Internal-Token", "example-install-worker")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var buf bytes.Buffer
 	_, err = buf.ReadFrom(resp.Body)
 	require.NoError(t, err)
@@ -399,7 +399,7 @@ func deliverCanonicalClaim(t *testing.T, base string, claim canonicalProcessClai
 	req.Header.Set("x-codefly-installation-revision", strconv.FormatUint(step.Revision, 10))
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var refusal struct {
 		Reason string `json:"reason"`
 	}
@@ -439,6 +439,6 @@ func startCanonicalReceiver(t *testing.T, binary, principal, authorityAddr, outc
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatal(fmt.Sprintf("receiver %s did not start; log %s", outcome, log.Name()))
+	t.Fatalf("receiver %s did not start; log %s", outcome, log.Name())
 	return "", ""
 }

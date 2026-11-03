@@ -32,7 +32,7 @@ func TestMigration26ColdCutoverFromZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var existing int
 	if err := db.QueryRow(`SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
 		WHERE n.nspname='public' AND c.relkind IN ('r','p')`).Scan(&existing); err != nil {

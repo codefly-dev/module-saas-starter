@@ -1,14 +1,10 @@
 package accounts
 
 import (
-	"context"
-	"crypto/tls"
-	"net"
 	"net/http"
 	"net/url"
 
 	"connectrpc.com/connect"
-	"golang.org/x/net/http2"
 )
 
 type internalGateway struct {
@@ -43,12 +39,18 @@ func InternalGateway(baseURL string) (Gateway, error) {
 	if (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" || endpoint.User != nil {
 		return nil, &url.Error{Op: "parse", URL: baseURL, Err: errInvalidInternalEndpoint{}}
 	}
-	transport := &http2.Transport{}
+	// HTTP/2 only, both ways, through net/http's own protocol selection:
+	// `SetUnencryptedHTTP2` is h2c for http:// inside the mesh, and `SetHTTP2`
+	// alone forces h2 over verified TLS for https:// rather than letting ALPN
+	// fall back to HTTP/1.1. This is the same declaration the package's own
+	// test makes on the server side. golang.org/x/net/http2.Transport, with
+	// AllowHTTP and a plaintext DialTLSContext, is the pre-1.24 spelling of
+	// exactly this and is deprecated.
+	transport := &http.Transport{Protocols: new(http.Protocols)}
 	if endpoint.Scheme == "http" {
-		transport.AllowHTTP = true
-		transport.DialTLSContext = func(ctx context.Context, network, address string, _ *tls.Config) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, network, address)
-		}
+		transport.Protocols.SetUnencryptedHTTP2(true)
+	} else {
+		transport.Protocols.SetHTTP2(true)
 	}
 	return internalGateway{url: baseURL, client: &http.Client{Transport: transport}}, nil
 }

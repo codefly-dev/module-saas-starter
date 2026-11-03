@@ -23,8 +23,6 @@ import (
 
 	"connectrpc.com/connect"
 	"connectrpc.com/otelconnect"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
@@ -1273,7 +1271,7 @@ func serveConnect(t *testing.T, ctx context.Context, grpcServer *GrpcServer) uin
 		}), rateLimitInterceptor(rateLimiter)))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	server := &http.Server{Handler: h2c.NewHandler(mux, &http2.Server{}), ReadHeaderTimeout: 10 * time.Second,
+	server := &http.Server{Handler: mux, Protocols: unencryptedHTTP2(), ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return ctx }}
 	ran := make(chan error, 1)
 	go func() { ran <- server.Serve(listener) }()

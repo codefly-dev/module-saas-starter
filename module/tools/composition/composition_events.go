@@ -462,7 +462,7 @@ func resolveProtoMessage(protoRoot, schema string) ([]eventField, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open proto %q: %w", path, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	proto, err := protoparser.Parse(file)
 	if err != nil {

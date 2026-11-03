@@ -68,7 +68,7 @@ func loadModuleClientsConfig(t *testing.T, moduleRoot string) map[string]endpoin
 	if err != nil {
 		t.Fatalf("read %s: %v", moduleClientsConfigFileName, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	decoder := yaml.NewDecoder(file)
 	decoder.KnownFields(true)

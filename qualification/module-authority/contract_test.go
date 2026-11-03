@@ -206,7 +206,7 @@ func TestTheGatewayDoesNotServeTheCapabilitySurface(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			body, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode != http.StatusNotFound {
 				t.Fatalf("POST %s at the gateway: %d %q, want 404", procedure, resp.StatusCode, body)

@@ -56,7 +56,7 @@ func TestProjectedTokenRotatesUnderTheProcess(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if got := <-tokens; got != want {
 			t.Fatal("wrong projected token")
 		}
@@ -481,7 +481,7 @@ func TestLoadBuildsTheHostedBindingFromValuesAndOneSecret(t *testing.T) {
 	if strings.Contains(err.Error(), "refusing cleartext") {
 		t.Fatalf("the asserted in-cluster address was refused on its address: %v", err)
 	}
-	requireRefusal(t, err, "Vault approle login")
+	requireRefusal(t, err, "approle login at Vault mount")
 
 	// Without the assertion the same three groups are refused on the address,
 	// so the assertion is load-bearing rather than incidental.

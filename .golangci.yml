@@ -2,6 +2,32 @@ version: "2"
 
 linters:
   exclusions:
+    # TWO ARGUED EXCLUSIONS, both to ST1005, both because the rule is answering
+    # about a string that is NOT a wrapped Go error.
+    #
+    # ST1005 forbids a capital first letter and trailing punctuation because an
+    # error gets wrapped ("doing x: Message.") and reads wrong mid-sentence.
+    # Neither string below is ever wrapped, and lowercasing or truncating them
+    # would make them wrong:
+    #
+    #  - "Work Context authority is not configured" names a product concept
+    #    whose capitalisation is part of the term, and the same sentence appears
+    #    verbatim in three `status.Error` calls that ST1005 does not see. Making
+    #    the `errors.New` copy differ from those three is the defect this would
+    #    introduce.
+    #  - The datasource scope-change sentence is rendered to a person in a form,
+    #    and the frontend asserts its opening words
+    #    (saas-ui/src/datasources/__tests__/edit-source.test.tsx). It is a
+    #    message, not an error fragment, so it is a sentence and ends like one.
+    rules:
+      - linters:
+          - staticcheck
+        text: 'ST1005.*'
+        source: 'Work Context authority is not configured'
+      - linters:
+          - staticcheck
+        text: 'ST1005.*'
+        source: "This source's branch or filters changed"
     # Machine-generated Go is not hand-editable: protoc output (*.pb.go) and the
     # agent-generated Connect/REST/gRPC listeners (*_gen.go) carry non-standard
     # generation markers that golangci-lint's generated-file detection misses, so

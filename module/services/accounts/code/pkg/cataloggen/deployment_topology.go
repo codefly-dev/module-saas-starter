@@ -10,7 +10,6 @@ import (
 
 	"github.com/codefly-dev/core/resources"
 	"google.golang.org/protobuf/encoding/protojson"
-	"gopkg.in/yaml.v3"
 
 	"accounts/pkg/business"
 	catalogv1 "accounts/pkg/gen/saas/catalog/v1"
@@ -733,15 +732,6 @@ type manifestEndpointReference struct {
 }
 
 type manifestEndpoint = resources.Endpoint
-
-func marshalGeneratedYAML(source string, value any) ([]byte, error) {
-	document, err := yaml.Marshal(value)
-	if err != nil {
-		return nil, fmt.Errorf("render generated YAML: %w", err)
-	}
-	header := fmt.Sprintf("# Code generated from %s. DO NOT EDIT.\n", source)
-	return append([]byte(header), document...), nil
-}
 
 // serviceServesHTTP reports whether a service exposes an endpoint an HTTP path
 // policy can be matched against. A route on a service that speaks TCP renders a
