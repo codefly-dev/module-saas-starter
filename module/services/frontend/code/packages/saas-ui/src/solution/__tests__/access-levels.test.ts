@@ -33,7 +33,7 @@ describe("the access one operation demands", () => {
 	});
 
 	it("lists every changing action a module declares, without ranking them", () => {
-		expect(accessLevel([scope("wiki.page", "publish", "create")])).toBe(
+		expect(accessLevel([scope("example-pages.page", "publish", "create")])).toBe(
 			"create, publish",
 		);
 	});
