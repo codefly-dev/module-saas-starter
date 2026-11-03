@@ -191,6 +191,56 @@ describe("Roles and what they grant", () => {
 		expect(roles.queryByText("Tool exposure unavailable")).toBeNull();
 	});
 
+	// "Why has the installer so many permissions" is answered by the split, so
+	// the role's own line and the module's summary both carry it, and the rows
+	// are banded by it. A total alone said only "fifty-two".
+	it("splits a role's breadth and a module's operations by the access they demand", async () => {
+		await mounted(setupFixture({ offer: reviewedOffer({ tools: true }) }));
+		const roles = within(section("Roles and what they grant"));
+		const declared = within(roles.getByRole("list", { name: "Roles" }));
+		expect(declared.getByText("2 operations · 1 read, 1 write")).toBeTruthy();
+		expect(declared.getByText("1 operation · 1 read")).toBeTruthy();
+		expect(
+			roles.getByRole("button", {
+				name: `${exampleTarget} · 2 operations · 1 read, 1 write`,
+			}),
+		).toBeTruthy();
+		const table = openModule(roles, exampleTarget);
+		// One band per access level, each counted, reads first.
+		expect(
+			table
+				.getAllByRole("rowheader")
+				.map((header) => header.textContent?.trim()),
+		).toEqual(["read · 1 operation", "write · 1 operation"]);
+	});
+
+	// Two roles reaching the same operations in a module is otherwise found only
+	// by diffing two columns over fifty rows.
+	it("says when two roles reach exactly the same operations in a module", async () => {
+		const offer = reviewedOffer({ tools: true });
+		const editor = offer.roles[0];
+		await mounted(
+			setupFixture({
+				offer: {
+					...offer,
+					roles: [
+						editor,
+						{ ...editor, name: "installer" },
+						...offer.roles.slice(1),
+					],
+				},
+			}),
+		);
+		const roles = within(section("Roles and what they grant"));
+		// On the closed line: the reader never has to open the module to learn
+		// that these two columns would be identical.
+		expect(
+			roles.getByText(
+				"editor and installer reach exactly the same operations here.",
+			),
+		).toBeTruthy();
+	});
+
 	it("says what a ceiling entry with no scope of its own means", async () => {
 		const offer = reviewedOffer({ tools: true });
 		await mounted(

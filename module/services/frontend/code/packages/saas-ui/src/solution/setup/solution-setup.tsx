@@ -28,13 +28,17 @@ import {
 	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
 import type { Transport } from "@connectrpc/connect";
-import { type ReactNode, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import type { SolutionRequestBinding } from "../binding.js";
 import { solutionTransport } from "../transport.js";
 import {
+	accessLevel,
+	accessMix,
+	byAccess,
 	holderName,
 	installed,
 	isDenied,
+	nameList,
 	refusalOf,
 	type SetupCondition,
 	type SetupSubject,
@@ -305,8 +309,13 @@ function Scopes({
  *
  * `operation` is a wire path, which is a developer's artefact and not what an
  * administrator came to read, so operations are grouped by their module and each
- * group is closed until asked for, with its count and required scopes on the
- * line that opens it.
+ * group is closed until asked for, with its count and access mix on the line
+ * that opens it.
+ *
+ * Inside a module the rows are banded by the access they demand, because the
+ * question a reader brings is "why has this role so many permissions" and the
+ * answer is never the total: forty-one reads and eleven writes are not the same
+ * breadth, and a flat list of fifty-two rows says only "fifty-two".
  */
 interface ReachRow {
 	module: string;
@@ -316,10 +325,18 @@ interface ReachRow {
 	roles: Set<string>;
 }
 
+/** One access level inside a module, with the operations that demand it. */
+interface AccessBand {
+	level: string;
+	rows: ReachRow[];
+}
+
 interface ReachGroup {
 	module: string;
 	rows: ReachRow[];
-	scopes: OfferScope[];
+	bands: AccessBand[];
+	/** Roles reaching exactly the same operations here, named together. */
+	coinciding: string[][];
 }
 
 function reach(roles: readonly OfferRole[]): ReachGroup[] {
@@ -343,15 +360,41 @@ function reach(roles: readonly OfferRole[]): ReachGroup[] {
 		const group = groups.get(row.module) ?? {
 			module: row.module,
 			rows: [],
-			scopes: [],
+			bands: [],
+			coinciding: [],
 		};
 		group.rows.push(row);
-		for (const scope of row.requires) {
-			const text = scopeText(scope, false);
-			if (!group.scopes.some((s) => scopeText(s, false) === text))
-				group.scopes.push(scope);
-		}
 		groups.set(row.module, group);
+	}
+	for (const group of groups.values()) {
+		// Reads and writes apart. "Why has this role so many permissions" is
+		// answered by the split, never by the total: forty reads and eleven
+		// writes are not the same breadth, and a flat list of fifty-two rows
+		// says only "fifty-two".
+		const bands = new Map<string, ReachRow[]>();
+		for (const row of group.rows) {
+			const level = accessLevel(row.requires);
+			bands.set(level, [...(bands.get(level) ?? []), row]);
+		}
+		group.bands = [...bands.entries()]
+			.sort(([a], [b]) => byAccess(a, b))
+			.map(([level, rows]) => ({ level, rows }));
+		// Two roles reaching the same operations in a module is the fact a
+		// reader would otherwise have to find by diffing two columns over fifty
+		// rows. It is stated instead.
+		const signatures = new Map<string, string[]>();
+		for (const role of roles) {
+			const reached = group.rows
+				.filter((row) => row.roles.has(role.name))
+				.map((row) => row.operation)
+				.sort()
+				.join("\u0000");
+			if (!reached) continue;
+			signatures.set(reached, [...(signatures.get(reached) ?? []), role.name]);
+		}
+		group.coinciding = [...signatures.values()].filter(
+			(names) => names.length > 1,
+		);
 	}
 	return [...groups.values()];
 }
@@ -428,7 +471,19 @@ function RolesSection({
 										<ListItem
 											key={role.name}
 											description={<Scopes scopes={role.scopes} confined />}
-											meta={`${role.capabilities.length} operations`}
+											// The total alone is what made the installer's breadth
+											// unreadable; the split is the answer.
+											meta={
+												role.capabilities.length === 0
+													? "No operation"
+													: `${role.capabilities.length} ${
+															role.capabilities.length === 1
+																? "operation"
+																: "operations"
+														} · ${accessMix(
+															role.capabilities.map((c) => c.requires),
+														)}`
+											}
 										>
 											{role.name}
 										</ListItem>
@@ -444,11 +499,29 @@ function RolesSection({
 										<Disclosure
 											key={group.module}
 											headingLevel={4}
-											title={`${group.module} · ${group.rows.length} ${
-												group.rows.length === 1 ? "operation" : "operations"
-											} · requires ${group.scopes
-												.map((s) => scopeText(s, false))
-												.join("; ")}`}
+											// "requires documents: read" understated a module whose
+											// fifty-two operations include eleven writes. The line
+											// names every access level in it, counted.
+											title={
+												<span>
+													{`${group.module} · ${group.rows.length} ${
+														group.rows.length === 1 ? "operation" : "operations"
+													} · ${accessMix(
+														group.rows.map((row) => row.requires),
+													)}`}
+													{/* On the closed line, because the point of saying
+													    it is that the reader does not have to open the
+													    module and diff two columns over fifty rows. */}
+													{group.coinciding.map((names) => (
+														<span
+															key={names.join()}
+															className="block type-card-description text-muted-foreground"
+														>
+															{`${nameList(names)} reach exactly the same operations here.`}
+														</span>
+													))}
+												</span>
+											}
 										>
 											<ReachTable
 												group={group}
@@ -476,6 +549,8 @@ function ReachTable({
 	roles: readonly OfferRole[];
 	showTools: boolean;
 }) {
+	// The expander's columns: operation, requires, one per role, and tools.
+	const columns = 2 + roles.length + (showTools ? 1 : 0);
 	return (
 		<Table aria-label={`Operations of ${group.module}`}>
 			<TableHeader>
@@ -489,40 +564,50 @@ function ReachTable({
 				</TableRow>
 			</TableHeader>
 			<TableBody>
-				{group.rows.map((row) => (
-					<TableRow key={row.operation}>
-						<TableCell className="whitespace-normal break-words">
-							<code>{row.operation}</code>
-						</TableCell>
-						<TableCell className="whitespace-normal">
-							<Scopes scopes={row.requires} confined={false} />
-						</TableCell>
-						{roles.map((role) => (
-							<TableCell key={role.name}>
-								{row.roles.has(role.name) ? "Yes" : "—"}
-							</TableCell>
-						))}
-						{showTools && (
-							<TableCell className="whitespace-normal">
-								{row.tools.length === 0 ? (
-									"Not exposed as a tool"
-								) : (
-									<span className="inline-flex flex-wrap gap-1.5">
-										{row.tools.map((t) => (
-											<Badge
-												key={t.binding}
-												tone={t.write ? "warning" : "info"}
-												title={t.binding}
-											>
-												{t.name}
-												{t.write ? " · changes data" : ""}
-											</Badge>
-										))}
-									</span>
+				{group.bands.map((band) => (
+					<Fragment key={band.level}>
+						<TableRow>
+							<TableHead colSpan={columns} scope="rowgroup">
+								{band.level} · {band.rows.length}{" "}
+								{band.rows.length === 1 ? "operation" : "operations"}
+							</TableHead>
+						</TableRow>
+						{band.rows.map((row) => (
+							<TableRow key={row.operation}>
+								<TableCell className="whitespace-normal break-words">
+									<code>{row.operation}</code>
+								</TableCell>
+								<TableCell className="whitespace-normal">
+									<Scopes scopes={row.requires} confined={false} />
+								</TableCell>
+								{roles.map((role) => (
+									<TableCell key={role.name}>
+										{row.roles.has(role.name) ? "Yes" : "—"}
+									</TableCell>
+								))}
+								{showTools && (
+									<TableCell className="whitespace-normal">
+										{row.tools.length === 0 ? (
+											"Not exposed as a tool"
+										) : (
+											<span className="inline-flex flex-wrap gap-1.5">
+												{row.tools.map((t) => (
+													<Badge
+														key={t.binding}
+														tone={t.write ? "warning" : "info"}
+														title={t.binding}
+													>
+														{t.name}
+														{t.write ? " · changes data" : ""}
+													</Badge>
+												))}
+											</span>
+										)}
+									</TableCell>
 								)}
-							</TableCell>
-						)}
-					</TableRow>
+							</TableRow>
+						))}
+					</Fragment>
 				))}
 			</TableBody>
 		</Table>
