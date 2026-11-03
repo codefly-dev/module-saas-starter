@@ -424,15 +424,16 @@ jobs:
   # backlog as new — a gate that answers about the diff on a small change and
   # about the backlog on a large one is not a gate.)
   #
-  # COVERAGE IS PARTIAL AND THE REMAINDER IS MEASURED, NOT HIDDEN. The five
-  # modules below are clean at this commit. The three service modules are not,
-  # and their counts under this same config on 2026-11-03 are:
-  #   module/services/accounts/code      51 (errcheck 16, staticcheck 20, unused 13, ineffassign 2)
-  #   module/services/store/code         11 (errcheck 11, all on rows.Close)
-  #   module/services/auth-gateway/code   9 (errcheck 4, staticcheck 1, unused 4)
-  # Adding one is a single line here once its backlog is worked down; `unused`
-  # findings in particular are dead-code deletions that need a judgement per
-  # site rather than a sweep.
+  # EVERY Go module in the repository is covered, and every one is clean at this
+  # commit. A module added here must be clean the day it is added; the list is
+  # the coverage claim, so nothing is linted "later".
+  #
+  # The caps are off on purpose. golangci-lint defaults to
+  # max-same-issues: 3 and max-issues-per-linter: 50, which TRUNCATE the
+  # report: the first measurement of these modules read 71 findings where there
+  # were 95, because 24 identical `errcheck` messages were suppressed. A gate is
+  # pass/fail either way, but a truncated report sends whoever reads it after a
+  # backlog that is a third larger than it looks.
   go-lint:
     name: Go lint
     runs-on: ubuntu-latest
@@ -446,6 +447,9 @@ jobs:
           - module/frontendpayload
           - libraries/source-read-sdk/go
           - qualification/module-authority
+          - module/services/accounts/code
+          - module/services/auth-gateway/code
+          - module/services/store/code
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -463,6 +467,7 @@ jobs:
           install-mode: goinstall
           only-new-issues: false
           working-directory: ${{ matrix.module }}
+          args: --max-issues-per-linter=0 --max-same-issues=0
         env:
           # Each module is its own graph; the workspace file would pull the
           # others into every run.

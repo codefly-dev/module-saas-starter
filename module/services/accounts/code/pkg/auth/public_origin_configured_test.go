@@ -92,8 +92,8 @@ func TestAMalformedOriginIsRefusedWhateverIsPinned(t *testing.T) {
 func pin(t *testing.T, origin string) {
 	t.Helper()
 	previous, _ := auth.ConfiguredPublicOrigin()
-	t.Cleanup(func() { auth.SetConfiguredPublicOrigin(previous) })
-	auth.SetConfiguredPublicOrigin(origin)
+	t.Cleanup(func() { _ = auth.SetConfiguredPublicOrigin(previous) })
+	_ = auth.SetConfiguredPublicOrigin(origin)
 }
 
 // An explicit DEFAULT port is the same origin as none, and the two sides spell it

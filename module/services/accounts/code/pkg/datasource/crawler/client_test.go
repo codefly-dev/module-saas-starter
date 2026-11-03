@@ -44,15 +44,15 @@ func TestListAndFetchHappyPath(t *testing.T) {
 
 	mux.HandleFunc("/sitemap.xml", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
-		fmt.Fprint(w, sitemapXML(server.URL+"/a", server.URL+"/b"))
+		_, _ = fmt.Fprint(w, sitemapXML(server.URL+"/a", server.URL+"/b"))
 	})
 	mux.HandleFunc("/a", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, "page a body")
+		_, _ = fmt.Fprint(w, "page a body")
 	})
 	mux.HandleFunc("/b", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprint(w, "page b body")
+		_, _ = fmt.Fprint(w, "page b body")
 	})
 
 	c := New(Config{SitemapURL: server.URL + "/sitemap.xml"})
@@ -107,7 +107,7 @@ func TestListRespectsMaxPages(t *testing.T) {
 	}
 	mux.HandleFunc("/sitemap.xml", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
-		fmt.Fprint(w, sitemapXML(locs...))
+		_, _ = fmt.Fprint(w, sitemapXML(locs...))
 	})
 
 	c := New(Config{SitemapURL: server.URL + "/sitemap.xml", MaxPages: 2})
@@ -147,7 +147,7 @@ func TestFetchReportsTooLargePage(t *testing.T) {
 	defer server.Close()
 
 	mux.HandleFunc("/big", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write(make([]byte, maxResponseBytes+1))
+		_, _ = w.Write(make([]byte, maxResponseBytes+1))
 	})
 
 	c := New(Config{SitemapURL: server.URL + "/sitemap.xml"})

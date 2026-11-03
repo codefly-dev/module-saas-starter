@@ -69,7 +69,7 @@ func TestMigration36InstallationPendingAndDown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer runner.Close()
+	defer func() { _, _ = runner.Close() }()
 	if err := runner.Steps(-1); err != nil {
 		t.Fatalf("migration 36 down: %v", err)
 	}

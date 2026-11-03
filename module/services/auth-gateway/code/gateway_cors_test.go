@@ -408,7 +408,7 @@ func TestCORS_StreamedResponseCarriesTheGrantWithItsFirstChunk(t *testing.T) {
 	solution := newSolutionTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: one\n\n"))
-		http.NewResponseController(w).Flush()
+		_ = http.NewResponseController(w).Flush()
 		<-release
 	}))
 	t.Cleanup(solution.Close)

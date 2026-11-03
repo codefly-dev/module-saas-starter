@@ -82,17 +82,11 @@ func declarePresenceKind(t *testing.T, bindingID, alias string, kind business.So
 	return targetID
 }
 
-// appliedPresenceRecord is the binding row an applied generation leaves. The
+// appliedPresenceRecordKind is the binding row an applied generation leaves. The
 // ownership domain is non-empty deliberately: core refuses an applied record
 // without one, and an empty string passes a whole-or-absent constraint while
 // being exactly the value it rejects — so a helper that left it blank would
 // produce rows that store fine and freeze a reconciler.
-func appliedPresenceRecord(
-	t *testing.T, bindingID, alias string, generation uint64, now time.Time, removed bool,
-) *business.SolutionHostBindingRecord {
-	return appliedPresenceRecordKind(t, bindingID, alias, generation, now, removed, string(solutionhost.KindSolution))
-}
-
 func appliedPresenceRecordKind(t *testing.T, bindingID, alias string, generation uint64, now time.Time, removed bool, kind string) *business.SolutionHostBindingRecord {
 	t.Helper()
 	document := productionPathManifest(t, alias, generation)

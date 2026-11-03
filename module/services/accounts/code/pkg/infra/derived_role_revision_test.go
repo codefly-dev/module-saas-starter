@@ -141,8 +141,8 @@ func TestRacingEnsuresOfADerivedRoleEndAtTheLastDeclaration(t *testing.T) {
 	select {
 	case err := <-second:
 		close(release)
-		<-first
-		t.Fatalf("the second ensure did not wait for the first to commit (err=%v)", err)
+		firstErr := <-first
+		t.Fatalf("the second ensure did not wait for the first to commit (err=%v, first=%v)", err, firstErr)
 	case <-time.After(500 * time.Millisecond):
 	}
 

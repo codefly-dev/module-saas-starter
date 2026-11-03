@@ -87,7 +87,6 @@ func (s *PostgresStore) projectCanonicalSetup(ctx context.Context, i *gen.Instal
 	}
 	state, code, reason, err := readCanonicalSetupJob(ctx, s.getQueryExecutor(ctx), domain.Installation{ID: i.Id, Organization: i.OrgId, Revision: i.Revision, Consent: plan.Receipt}, plan.SetupJobID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		err = nil
 		return nil
 	}
 	if err != nil {

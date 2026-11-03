@@ -333,8 +333,8 @@ const (
 	viewerSolutionUndecidable
 )
 
-// admitViewerSolution asks the authority whether the solution TARGET the
-// request's resolution named is in the viewer's entitled set.
+// admitViewerSolutionInstallation asks the authority whether the solution TARGET
+// the request's resolution named is in the viewer's entitled set.
 //
 // The comparison is between identities, never between aliases. An alias is
 // deliberately reusable — a withdrawn one may be claimed by another binding — so
@@ -367,17 +367,8 @@ const (
 // answer changes with no write at all — a grant's expires_at passes, a member
 // leaves a team, a role loses a permission, an owner is demoted — so a cache
 // keyed on any revision a write advances would route on an expired grant.
-// admitViewerSolution answers the admission alone, for the two call sites that
-// need nothing else.
-func (g *Gateway) admitViewerSolution(
-	ctx context.Context, org, viewer string, routing *solutionRouting,
-) viewerSolutionAdmission {
-	admission, _ := g.admitViewerSolutionInstallation(ctx, org, viewer, routing)
-	return admission
-}
-
-// admitViewerSolutionInstallation also returns WHICH installation admitted the
-// viewer, empty on any answer other than admitted.
+// It also returns WHICH installation admitted the viewer, empty on any answer
+// other than admitted.
 //
 // It comes from the entitlement that matched, on the same answer that decided
 // admission — never from a second read. The installation is the consent an

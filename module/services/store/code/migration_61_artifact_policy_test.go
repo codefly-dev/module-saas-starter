@@ -39,7 +39,7 @@ func TestMigration61PreservesIndependentPolicyReceiptsOnRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer runner.Close()
+	defer func() { _, _ = runner.Close() }()
 	// A compatible rollback retains existing consent and restores old uniqueness.
 	if err := runner.Steps(-1); err != nil {
 		t.Fatal(err)

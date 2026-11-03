@@ -44,7 +44,7 @@ func NewModuleInstallationHTTPHandler(service *business.Service, policyPath stri
 		if err != nil {
 			return nil, err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		return business.ParseInstallerPolicy(f)
 	}
 	if _, err := load(); err != nil {
@@ -165,9 +165,10 @@ func (h *ModuleInstallationHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http
 	}
 	if mode == "verify" && result.State != "ready" {
 		reason := "installation is absent; apply the approved declaration"
-		if result.State == "pending" {
+		switch result.State {
+		case "pending":
 			reason = "installation is pending acknowledgement"
-		} else if result.State == "failed" {
+		case "failed":
 			reason = "installation failed; an organization administrator must retry or uninstall it"
 		}
 		installerError(w, http.StatusConflict, reason)

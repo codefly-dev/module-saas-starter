@@ -143,7 +143,7 @@ func readLedgerNames(databaseURL string) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database to read the ledger names: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var comment sql.NullString
 	err = db.QueryRow(`SELECT obj_description(to_regclass('public.schema_migrations'), 'pg_class')`).Scan(&comment)
 	if err != nil {
@@ -187,7 +187,7 @@ func recordLedgerNames(runner *migrate.Migrate, databaseURL string, names map[st
 	if err != nil {
 		return fmt.Errorf("open database to record the ledger names: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.Exec(`COMMENT ON TABLE public.schema_migrations IS ` + quoteLiteral(ledgerNamesPrefix+string(body))); err != nil {
 		return fmt.Errorf("record the ledger names: %w", err)
 	}
@@ -216,7 +216,7 @@ func refuseForeignLedger(runner *migrate.Migrate, sourceURL, databaseURL string)
 	if err != nil {
 		return fmt.Errorf("open migration source: %w", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 	if _, _, err := src.ReadUp(version); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("database is at migration %d (dirty=%t), which this ledger does not contain: it was installed by an earlier ledger and the store carries no upgrade path; recreate the database", version, dirty)
@@ -253,7 +253,7 @@ func refuseForeignBaseline(sourceURL, databaseURL string) error {
 	if err != nil {
 		return fmt.Errorf("open database to read the baseline stamp: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var stamp sql.NullString
 	if err := db.QueryRow("SELECT obj_description('public'::regnamespace, 'pg_namespace')").Scan(&stamp); err != nil {
 		return fmt.Errorf("read the baseline stamp: %w", err)

@@ -47,7 +47,9 @@ func TestClientCredentialsTerminalAndGuards(t *testing.T) {
 	var reached bool
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached = true }))
 	defer other.Close()
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, other.URL, 307) }))
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL, http.StatusTemporaryRedirect)
+	}))
 	defer redirect.Close()
 	_, err = (&oauth2Refresher{http: &http.Client{CheckRedirect: checkRedirect}}).clientCredentials(t.Context(), OAuth2Config{TokenURL: redirect.URL}, "secret")
 	if err == nil || reached {
@@ -112,7 +114,7 @@ func TestNoCredentialByteSequenceLeaks(t *testing.T) {
 				case "429":
 					w.WriteHeader(429)
 				case "redirect":
-					http.Redirect(w, r, "http://example.invalid/"+secret, 307)
+					http.Redirect(w, r, "http://example.invalid/"+secret, http.StatusTemporaryRedirect)
 					return
 				case "timeout":
 					<-r.Context().Done()

@@ -30,7 +30,7 @@ func TestDeletedRegistrationRPCsAreUnimplemented(t *testing.T) {
 				response := httptest.NewRecorder()
 				transport.ServeHTTP(response, req)
 				result := response.Result()
-				defer result.Body.Close()
+				defer func() { _ = result.Body.Close() }()
 				code := result.Trailer.Get("Grpc-Status")
 				if code == "" {
 					code = result.Header.Get("Grpc-Status")

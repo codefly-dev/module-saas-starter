@@ -421,7 +421,7 @@ func (p *PostgresEventTransport) recordRelayFailure(ctx context.Context, tx pgx.
 		return false, fmt.Errorf("events: record relay failure for event %s: %w", e.GetId(), err)
 	}
 	if parked {
-		wool.Get(ctx).In("events.relay").Warn("domain event dead-lettered after exhausting relay attempts",
+		wool.Get(ctx).In(eventsRelayQueue).Warn("domain event dead-lettered after exhausting relay attempts",
 			wool.Field("event_id", e.GetId()),
 			wool.Field("event_type", e.GetType()),
 			wool.Field("partition_key", e.GetPartitionKey()),
@@ -520,7 +520,7 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 	// from looking like it re-delivered to endpoints when it delivered to none:
 	// ReplayDelivery is the RPC that actually re-sends one.
 	if deduplicated > 0 {
-		wool.Get(ctx).In("events.relay").Info("webhook deliveries deduplicated as already present",
+		wool.Get(ctx).In(eventsRelayQueue).Info("webhook deliveries deduplicated as already present",
 			wool.Field("event_id", e.GetId()),
 			wool.Field("event_type", e.GetType()),
 			wool.Field("deduplicated", deduplicated))
@@ -528,7 +528,7 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 	// An endpoint deleted mid-fan-out is not a replay deduplicating; reporting it
 	// as one would tell an operator the deliveries were already made.
 	if endpointsGone > 0 {
-		wool.Get(ctx).In("events.relay").Warn("webhook subscriptions vanished during fan-out",
+		wool.Get(ctx).In(eventsRelayQueue).Warn("webhook subscriptions vanished during fan-out",
 			wool.Field("event_id", e.GetId()),
 			wool.Field("event_type", e.GetType()),
 			wool.Field("endpoints_gone", endpointsGone))

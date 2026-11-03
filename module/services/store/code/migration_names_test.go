@@ -37,7 +37,7 @@ func TestMigrationLedgerWhoseNamesMovedIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	for i := 0; ; i++ {
 		if err = db.Ping(); err == nil {
 			break
@@ -45,7 +45,7 @@ func TestMigrationLedgerWhoseNamesMovedIsRefused(t *testing.T) {
 		if i > 120 {
 			t.Fatalf("postgres did not come up: %v", err)
 		}
-		exec.Command("sleep", "0.5").Run()
+		_ = exec.Command("sleep", "0.5").Run()
 	}
 	ledger := func(files map[string]string) string {
 		dir := t.TempDir()

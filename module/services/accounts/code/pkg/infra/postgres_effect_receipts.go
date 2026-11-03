@@ -56,6 +56,6 @@ func (t receiptTx) ExecContext(ctx context.Context, query string, args ...any) (
 type receiptResult struct{ tag pgconn.CommandTag }
 
 func (r receiptResult) LastInsertId() (int64, error) {
-	return 0, errors.New("Postgres does not support LastInsertId")
+	return 0, errors.New("LastInsertId is not supported by Postgres")
 }
 func (r receiptResult) RowsAffected() (int64, error) { return r.tag.RowsAffected(), nil }

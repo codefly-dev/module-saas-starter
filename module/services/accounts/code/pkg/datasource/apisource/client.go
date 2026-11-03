@@ -212,7 +212,7 @@ func (c *Client) Do(ctx context.Context, method, target string, body []byte) (*R
 	if err != nil {
 		return nil, transportFailure(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, responseFailure(resp)
 	}
@@ -396,7 +396,7 @@ func (r *oauth2Refresher) exchange(ctx context.Context, cfg OAuth2Config, client
 	if err != nil {
 		return nil, transportFailure(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, transportFailure(err)

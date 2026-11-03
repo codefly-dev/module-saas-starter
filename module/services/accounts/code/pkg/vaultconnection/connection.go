@@ -106,7 +106,7 @@ func Load(ctx context.Context) (*Connection, error) {
 		}
 		address, err = codefly.For(ctx).Service("vault").Configuration("vault", "address")
 		if err != nil {
-			return nil, errors.New("Vault address projection unavailable")
+			return nil, errors.New("the Vault address projection is unavailable")
 		}
 	}
 	switch method := groupValue(ctx, "VAULT_AUTH_METHOD"); method {
@@ -131,7 +131,7 @@ func Load(ctx context.Context) (*Connection, error) {
 	if tokenFile == "" {
 		token, err = codefly.For(ctx).Service("vault").Secret("vault", "token")
 		if err != nil {
-			return nil, errors.New("Vault token projection unavailable")
+			return nil, errors.New("the Vault token projection is unavailable")
 		}
 	}
 	return New(Config{
@@ -165,7 +165,7 @@ func New(config Config) (*Connection, error) {
 	switch config.Runtime {
 	case RuntimeLocal, RuntimeDeployed:
 	default:
-		return nil, errors.New("Vault connection requires a stated runtime: local or deployed")
+		return nil, errors.New("a Vault connection requires a stated runtime: local or deployed")
 	}
 	deployed := config.Runtime == RuntimeDeployed
 	// The address must be a bare origin. Anything else — credentials in the
@@ -196,7 +196,7 @@ func New(config Config) (*Connection, error) {
 	}
 	if config.AppRole != nil {
 		if config.AppRole.RoleID == "" || config.AppRole.SecretID == "" {
-			return nil, errors.New("Vault approle auth requires VAULT_APPROLE_ROLE_ID and VAULT_APPROLE_SECRET_ID in the `vault` secret group")
+			return nil, errors.New("approle auth requires VAULT_APPROLE_ROLE_ID and VAULT_APPROLE_SECRET_ID in the `vault` secret group")
 		}
 	}
 	// The token rides every request, the login carries the AppRole credential,
@@ -214,7 +214,7 @@ func New(config Config) (*Connection, error) {
 	// is the in-memory store this whole binding exists to stop, and it would
 	// reach it without the composition asserting anything at all. So a deployed
 	// runtime has one admission rule and loopback is not an exception to it.
-	if u.Scheme == "http" && !(loopback && !deployed) && !meshtransport.Admits(config.MeshProtected, config.Address) {
+	if u.Scheme == "http" && (!loopback || deployed) && !meshtransport.Admits(config.MeshProtected, config.Address) {
 		return nil, fmt.Errorf("refusing cleartext http to a Vault at %q: %s", u.Host, meshtransport.Remedy)
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -228,7 +228,7 @@ func New(config Config) (*Connection, error) {
 	if config.dial != nil {
 		transport.DialContext = config.dial
 	}
-	c := &Connection{Address: strings.TrimSuffix(config.Address, "/"), MeshProtected: config.MeshProtected, token: config.Token, tokenFile: config.TokenFile, Client: &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("Vault redirect denied") }}}
+	c := &Connection{Address: strings.TrimSuffix(config.Address, "/"), MeshProtected: config.MeshProtected, token: config.Token, tokenFile: config.TokenFile, Client: &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("refusing to follow a Vault redirect") }}}
 	if config.AppRole != nil {
 		auth := *config.AppRole
 		if auth.Mount == "" {
@@ -291,16 +291,16 @@ func ReadProjection(path string) ([]byte, error) {
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, errors.New("Vault projection unavailable")
+		return nil, errors.New("the Vault projection is unavailable")
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0027 != 0 || info.Size() > 128<<10 {
-		return nil, errors.New("Vault projection must be a bounded private file")
+		return nil, errors.New("the Vault projection must be a bounded private file")
 	}
 	data, err := io.ReadAll(io.LimitReader(file, (128<<10)+1))
 	if err != nil || len(data) > 128<<10 {
-		return nil, errors.New("Vault projection unreadable")
+		return nil, errors.New("the Vault projection is unreadable")
 	}
 	return data, nil
 }
