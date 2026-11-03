@@ -371,6 +371,11 @@ jobs:
   # case the suite adds or a rule the authority core changes reaches accounts on
   # its next pull request, never silently on the next re-pin. The same suite at
   # the pinned revision runs with accounts' tests in the quality phases.
+  # Before the suite, the declaration gate (`module-package
+  # verify-host-interfaces`): every interface version module.codefly.yaml
+  # declares is the version that interface publishes at the pinned authority
+  # revision, or a patch below it within the same major.minor, so a declaration
+  # names no suite the pin did not run.
   host-interface-conformance:
     name: Host interface conformance (authority main)
     runs-on: ubuntu-latest
@@ -380,10 +385,12 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27.3"
-          cache-dependency-path: module/services/accounts/code/go.sum
+          cache-dependency-path: |
+            module/services/accounts/code/go.sum
+            module/tools/go.sum
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
-      - name: Run the shared suite at authority main against accounts
+      - name: Hold the declared interface versions to the pin, then run the shared suite at authority main against accounts
         run: bash scripts/ci/host-interface-conformance-main.sh
 
   marketing:

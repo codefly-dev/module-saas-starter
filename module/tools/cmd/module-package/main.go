@@ -19,9 +19,22 @@ func main() {
 
 func run(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("usage: module-package <validate|build|sign-provenance|run-generators|sync-embedded-fixtures|run-conformance|verify-release-policy|verify-release-ref|verify-release-ancestry>")
+		return fmt.Errorf("usage: module-package <validate|build|sign-provenance|run-generators|sync-embedded-fixtures|run-conformance|verify-host-interfaces|verify-release-policy|verify-release-ref|verify-release-ancestry>")
 	}
 	switch arguments[0] {
+	case "verify-host-interfaces":
+		flags := flag.NewFlagSet("verify-host-interfaces", flag.ContinueOnError)
+		moduleRoot := flags.String("module", ".", "module package root")
+		interfaces := flags.String("interfaces", "", "codefly-dev/authority's interfaces/ tree at the revision the services' go.mod pin")
+		revision := flags.String("revision", "", "the commit that tree was read at, held to the go.mod pin (optional)")
+		if err := flags.Parse(arguments[1:]); err != nil {
+			return err
+		}
+		return modulepackage.VerifyHostInterfaces(modulepackage.HostInterfaceOptions{
+			ModuleRoot:    *moduleRoot,
+			InterfacesDir: *interfaces,
+			Revision:      *revision,
+		}, os.Stdout)
 	case "validate":
 		flags := flag.NewFlagSet("validate", flag.ContinueOnError)
 		moduleRoot := flags.String("module", ".", "module package root")

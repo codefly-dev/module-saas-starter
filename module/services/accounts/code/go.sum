@@ -62,12 +62,12 @@ github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-202610302220
 github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261030222015-dea37afac9ad/go.mod h1:Cdk+10ebRh0tZA9ze2dDIrfQC34E+Y7LMi6UjSQ2dQU=
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261030222015-dea37afac9ad h1:DZt68NLXwaGYWXo1RUM0+JrvuXt/za/EyeHMGYFSix8=
 github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261030222015-dea37afac9ad/go.mod h1:or3dd9bqacXWMjke/n81l/QxRaLwq2lq/hL4V2qtAZo=
-github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261028224835-f82a98e093ef h1:Mso6TDL7zLY5HwR+gq0pRSNN/zO8fv89F9kzcPf+qI4=
-github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261028224835-f82a98e093ef/go.mod h1:XsOFnO2MQdr37vM3ULa0Uwi8ZWptyVx7hRSUyIdaZ1Q=
+github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261030222015-dea37afac9ad h1:gq8WatMLdoqsfwafxj2ihYSl0jIEw/d7ZMTGRWu9qpo=
+github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261030222015-dea37afac9ad/go.mod h1:XsOFnO2MQdr37vM3ULa0Uwi8ZWptyVx7hRSUyIdaZ1Q=
 github.com/codefly-dev/authority/libraries/hop/go v0.0.0-20261027154629-b57068f61a0f h1:llYwKOBeCB6kS4faxICrR5YYlwnhiV+0qXjuT3IwBd4=
 github.com/codefly-dev/authority/libraries/hop/go v0.0.0-20261027154629-b57068f61a0f/go.mod h1:/SZab4/ll1nAKTucP3h30rpcXo56BHmJWLkvs2ayaMs=
-github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261028224835-f82a98e093ef h1:oJN5L6PkQB+VTVn1zsgXzSwiCO7eFUrd67PCkncrFI4=
-github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261028224835-f82a98e093ef/go.mod h1:1rmjrVyr0h7zOuwOHS9i+BoeS9dr3XNvtupLZFwY6As=
+github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261030222015-dea37afac9ad h1:ZuYv+9r6U08xLQ5c+AOSBzhkF7h3lqUj6kMa0S2OKKE=
+github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261030222015-dea37afac9ad/go.mod h1:1rmjrVyr0h7zOuwOHS9i+BoeS9dr3XNvtupLZFwY6As=
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc h1:olDnVJ1A1Retn0z9A59YMwDRmDLgkV2y1lbl+HzNrj8=
 github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc/go.mod h1:VWPYY3FH4te7SzdN2xl9odNpWidJ1Grl/Hjs1SNoEF8=
 github.com/codefly-dev/core v0.19.17-0.20261029043538-2aa2e9aaf950 h1:U5HeCDUfftwVFbMYN1HGPUL+9HO+ske3nkExu1C2kYY=

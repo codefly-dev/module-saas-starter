@@ -184,6 +184,11 @@ func TestTheHopsRegisteredKeyIsPublishedApartFromTheWorkContextKeys(t *testing.T
 	require.Equal(t, id, published.ResourceID)
 	require.Equal(t, id, published.Payload["key_id"])
 	require.Equal(t, "authority/hop", published.Payload["workload"])
+	require.NotEmpty(t, published.Payload["instance"], "the hop instance the key is pinned to")
+	// The durable emitter writes the row and drops the whole payload when a
+	// key is not declared for the event, with a warning and nothing failing;
+	// the production check runs here so the declaration cannot drift.
+	require.NoError(t, business.ValidatePayload(published.EventType, published.Payload))
 
 	// A restart registers the same key again: one entry, renewed, and a
 	// renewal is not an event.

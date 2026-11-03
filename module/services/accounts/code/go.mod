@@ -10,8 +10,8 @@ require (
 	github.com/codefly-dev/authority/libraries/authority-client/go v0.1.1-0.20261030222015-dea37afac9ad
 	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261030222015-dea37afac9ad
 	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261030222015-dea37afac9ad
-	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261028224835-f82a98e093ef
-	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261028224835-f82a98e093ef
+	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261030222015-dea37afac9ad
+	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261030222015-dea37afac9ad
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
 	github.com/codefly-dev/core v0.19.17-0.20261029043538-2aa2e9aaf950
 	github.com/codefly-dev/interface-cache/go/cache v0.4.1
