@@ -536,6 +536,13 @@ CREATE POLICY work_context_replay_tenant ON public.work_context_replay
 
 -- The function bodies that read the settings directly.
 
+-- public.enqueue_job_message is owned by app_job_worker, not by the
+-- principal that installs the ledger: only its owner may replace it, and
+-- CREATE OR REPLACE needs CREATE on the schema, which an application role
+-- is not left holding. Granted for this one statement and revoked again,
+-- which is the idiom migration 64 established for exactly this.
+GRANT CREATE ON SCHEMA public TO app_job_worker;
+SET LOCAL ROLE app_job_worker;
 CREATE OR REPLACE FUNCTION public.enqueue_job_message(p_direction text, p_scope_kind text, p_organization_id uuid, p_subject_id uuid, p_queue text, p_topic text, p_source text, p_idempotency_key text, p_ordering_key text, p_schema_version integer, p_payload bytea, p_content_type text, p_attributes jsonb, p_priority smallint, p_max_attempts integer, p_available_at timestamp with time zone, p_request_fingerprint bytea)
  RETURNS TABLE(job_id uuid, stored_fingerprint bytea, inserted boolean)
  LANGUAGE plpgsql
@@ -650,7 +657,17 @@ BEGIN
     END IF;
 END
 $function$;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM app_job_worker;
 
+-- public.identity_administered_organizations is owned by app_control_plane,
+-- not by the principal that installs the ledger: only its owner may replace
+-- it, and CREATE OR REPLACE needs CREATE on the schema, which an
+-- application role is not left holding. Granted for this one statement and
+-- revoked again, which is the idiom migration 64 established for exactly
+-- this.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
+SET LOCAL ROLE app_control_plane;
 CREATE OR REPLACE FUNCTION public.identity_administered_organizations(p_user_id uuid)
  RETURNS TABLE(administered_org_id uuid, eligible_administrators integer, other_active_members integer)
  LANGUAGE sql
@@ -685,7 +702,16 @@ AS $function$
       AND holder.status = 'active'
     ORDER BY held.org_id
 $function$;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 
+-- public.lock_module_job_authority is owned by app_control_plane, not by
+-- the principal that installs the ledger: only its owner may replace it,
+-- and CREATE OR REPLACE needs CREATE on the schema, which an application
+-- role is not left holding. Granted for this one statement and revoked
+-- again, which is the idiom migration 64 established for exactly this.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
+SET LOCAL ROLE app_control_plane;
 CREATE OR REPLACE FUNCTION public.lock_module_job_authority(stamp jsonb)
  RETURNS void
  LANGUAGE plpgsql
@@ -710,7 +736,16 @@ BEGIN
     IF NOT FOUND THEN RAISE EXCEPTION 'revoked_authority' USING ERRCODE = 'check_violation'; END IF;
 END;
 $function$;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 
+-- public.module_job_authority_current is owned by app_control_plane, not by
+-- the principal that installs the ledger: only its owner may replace it,
+-- and CREATE OR REPLACE needs CREATE on the schema, which an application
+-- role is not left holding. Granted for this one statement and revoked
+-- again, which is the idiom migration 64 established for exactly this.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
+SET LOCAL ROLE app_control_plane;
 CREATE OR REPLACE FUNCTION public.module_job_authority_current(stamp jsonb)
  RETURNS boolean
  LANGUAGE sql
@@ -733,7 +768,17 @@ AS $function$
                         AND m.user_id::text = NULLIF(current_setting('app.current_user_id', true), '')))))
     );
 $function$;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 
+-- public.organization_eligible_administrators is owned by
+-- app_control_plane, not by the principal that installs the ledger: only
+-- its owner may replace it, and CREATE OR REPLACE needs CREATE on the
+-- schema, which an application role is not left holding. Granted for this
+-- one statement and revoked again, which is the idiom migration 64
+-- established for exactly this.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
+SET LOCAL ROLE app_control_plane;
 CREATE OR REPLACE FUNCTION public.organization_eligible_administrators(p_org_id uuid)
  RETURNS SETOF uuid
  LANGUAGE sql
@@ -749,7 +794,17 @@ AS $function$
       AND member.role IN ('owner', 'admin')
       AND u.status = 'active'
 $function$;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 
+-- public.organization_member_primary_email is owned by app_control_plane,
+-- not by the principal that installs the ledger: only its owner may replace
+-- it, and CREATE OR REPLACE needs CREATE on the schema, which an
+-- application role is not left holding. Granted for this one statement and
+-- revoked again, which is the idiom migration 64 established for exactly
+-- this.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
+SET LOCAL ROLE app_control_plane;
 CREATE OR REPLACE FUNCTION public.organization_member_primary_email(p_user_id uuid)
  RETURNS text
  LANGUAGE sql
@@ -765,7 +820,16 @@ AS $function$
       AND u.status <> 'deleted'
     LIMIT 1
 $function$;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 
+-- public.publish_domain_event is owned by app_control_plane, not by the
+-- principal that installs the ledger: only its owner may replace it, and
+-- CREATE OR REPLACE needs CREATE on the schema, which an application role
+-- is not left holding. Granted for this one statement and revoked again,
+-- which is the idiom migration 64 established for exactly this.
+GRANT CREATE ON SCHEMA public TO app_control_plane;
+SET LOCAL ROLE app_control_plane;
 CREATE OR REPLACE FUNCTION public.publish_domain_event(p_id uuid, p_type text, p_source text, p_subject text, p_event_time timestamp with time zone, p_specversion text, p_datacontenttype text, p_dataschema text, p_data bytea, p_tenant_id uuid, p_boundary_id text, p_partition_key text, p_correlation_id text, p_causation_id text, p_actor_principal_id text, p_owner_principal_id text, p_traceparent text, p_schema_version integer, p_request_fingerprint bytea)
  RETURNS TABLE(event_id uuid, stored_fingerprint bytea, inserted boolean)
  LANGUAGE plpgsql
@@ -854,6 +918,8 @@ BEGIN
     END IF;
 END
 $function$;
+RESET ROLE;
+REVOKE CREATE ON SCHEMA public FROM app_control_plane;
 
 CREATE OR REPLACE FUNCTION public.record_membership_integrity_findings()
  RETURNS integer
