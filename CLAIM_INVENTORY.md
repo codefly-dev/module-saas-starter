@@ -47,6 +47,8 @@ must not be inferred from a row here. See
 | `GetServiceInfo`'s RLS catalog (`serviceRLSTables`) reports the current protected set | `pkg/business/introspection.go` | **stale**: 25 hand-maintained entries against 38 tenant + 13 user relations, sourced "store migrations through 60" | known drift, filed | #556 |
 | Scope-node role grants and installation identity ship | PLATFORM_REFERENCE.md §1.2 | `98_layered_access`, `112_installations`, `pkg/business/installations.go` | implemented | accounts |
 | RLS table→migration adoption table | AUTHZ.md § RLS coverage | names `audit_export_configs`, dropped by store migration 102 | historical (labelled) | #541 |
+| The tenant and user are bound and read under the platform Postgres library's own setting names, `codefly.current_tenant_id` / `codefly.current_user_id` | MODULE.md, AUTHZ.md, module/DATABASE_AUTHORITY.md, module/JOBS.md, module/services/accounts/AUTHZ.md | store migration `65_library_scope_settings`; `pkg/infra.TenantScopeSetting` / `UserScopeSetting`; `TestEveryScopedPolicyReadsTheLibrarySettings` fails on any policy or function still reading `app.current_*`; `rls-migration-gate.mjs` accepts only these two | implemented | #1293 |
+| ~~`app.current_org_id` / `app.current_user_id` as the host's RLS settings~~ | RLS_PLAN.md, APPROVALS_DESIGN.md, module/docs/adr/0003, docs/authorization/2-proposals/0001, docs/authorization/3-implementation/spikes/ltree-record-shares.md | renamed by store migration 65; these five keep the old names because each records a design or a decision as it was written (and each already names the long-gone `app.bypass`) | historical (not rewritten) | #1293 |
 
 ## Gateway hot path
 

@@ -130,8 +130,8 @@ func TestWorkerPoolRefusesAControlPlaneLoginBeyondItsDeclaredRoles(t *testing.T)
 func sessionState(t *testing.T, conn *pgxpool.Conn) (role, org, user string) {
 	t.Helper()
 	require.NoError(t, conn.QueryRow(testCtx, `SELECT current_user::text,
-		coalesce(current_setting('app.current_org_id', true), ''),
-		coalesce(current_setting('app.current_user_id', true), '')`).Scan(&role, &org, &user))
+		coalesce(current_setting('codefly.current_tenant_id', true), ''),
+		coalesce(current_setting('codefly.current_user_id', true), '')`).Scan(&role, &org, &user))
 	return role, org, user
 }
 
@@ -142,7 +142,7 @@ func leaveSessionState(t *testing.T, conn *pgxpool.Conn, role string) {
 	t.Helper()
 	_, err := conn.Exec(testCtx, "SET ROLE "+role)
 	require.NoError(t, err)
-	_, err = conn.Exec(testCtx, `SELECT set_config('app.current_org_id', $1, false), set_config('app.current_user_id', $2, false)`,
+	_, err = conn.Exec(testCtx, `SELECT set_config('codefly.current_tenant_id', $1, false), set_config('codefly.current_user_id', $2, false)`,
 		uuid.NewString(), uuid.NewString())
 	require.NoError(t, err)
 }

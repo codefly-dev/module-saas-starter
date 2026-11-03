@@ -987,7 +987,7 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 // Bootstrap path: at this moment the tenant doesn't exist yet, so
 // there's no org context to set. WithControlPlane (which keeps the
 // connection's session_user role) is correct here — the role-switch
-// in WithOrgTx would put us as app_tenant with no app.current_org_id,
+// in WithOrgTx would put us as app_tenant with no codefly.current_tenant_id,
 // and the WITH CHECK on organization_members would reject the insert.
 // User authz is at the handler — only authenticated users can create
 // orgs; abuse is rate-limited.

@@ -104,7 +104,7 @@ func TestOrganizationMemberEmailFunctionHasPinnedAuthority(t *testing.T) {
 		require.True(t, tenantCanExecute)
 		require.False(t, publicCanExecute)
 		require.Equal(t,
-			"((uuid)::text = current_setting('app.current_user_id'::text, true))",
+			"((uuid)::text = current_setting('codefly.current_user_id'::text, true))",
 			policyExpression,
 		)
 		return nil

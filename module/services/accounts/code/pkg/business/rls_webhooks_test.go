@@ -66,7 +66,7 @@ func TestRLS_WebhookSubscriptions_CrossTenantBlocked(t *testing.T) {
 		return nil
 	}))
 
-	// Un-wrapped: app_tenant role + no app.current_org_id → zero
+	// Un-wrapped: app_tenant role + no codefly.current_tenant_id → zero
 	// rows. Fail-closed.
 	noWrap, err := testStore.ListWebhookSubscriptions(context.Background(), orgA)
 	require.NoError(t, err)

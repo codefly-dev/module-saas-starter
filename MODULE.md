@@ -806,8 +806,8 @@ the playground that drives every shape is `/admin/platform/plugin-transport`.
    ALTER TABLE X ENABLE ROW LEVEL SECURITY;
    ALTER TABLE X FORCE  ROW LEVEL SECURITY;
    CREATE POLICY X_tenant ON X
-     USING (org_id::text = current_setting('app.current_org_id', true))
-     WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+     USING (org_id::text = current_setting('codefly.current_tenant_id', true))
+     WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));
    ```
 3. Add a `Store` method in `pkg/business/store.go`.
 4. Implement in `pkg/infra/postgres_X.go`. Use `s.getQueryExecutor(ctx)` so context-scoped tx (from `WithOrgTx`) is reused.

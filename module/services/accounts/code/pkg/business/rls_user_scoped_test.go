@@ -4,7 +4,7 @@ package business_test
 
 // Phase 2G — user-scoped RLS (notifications, mfa_devices,
 // mfa_backup_codes). Symmetric to the org-scoped tests but the GUC
-// is `app.current_user_id` and the helper is WithUserTx.
+// is `codefly.current_user_id` and the helper is WithUserTx.
 
 import (
 	"context"

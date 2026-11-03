@@ -4,7 +4,7 @@ import "context"
 
 // Identity is the principal a unit of data access acts as. A Store handle bound
 // to an Identity (see infra.PostgresStore.As) derives the RLS session context —
-// app.current_user_id and/or app.current_org_id — from it on every call, so the
+// codefly.current_user_id and/or codefly.current_tenant_id — from it on every call, so the
 // identity decision is made once (at the edge, from the authenticated caller)
 // rather than each call site choosing WithUserTx / WithOrgTx / WithControlPlane by hand.
 //
@@ -25,8 +25,9 @@ func System() Identity { return Identity{system: true} }
 func (i Identity) IsSystem() bool { return i.system }
 
 // Scoped is a Store handle bound to an Identity (see Store.As). Within runs fn
-// in one transaction carrying the identity's RLS context — app.current_user_id
-// and/or app.current_org_id, or the explicit bypass for System(). Existing Store
+// in one transaction carrying the identity's RLS context —
+// codefly.current_user_id and/or codefly.current_tenant_id, or the explicit
+// bypass for System(). Existing Store
 // methods called inside fn pick up the tx via the ctx, so identity is set once
 // at the entry. Promoted domain methods hang off Scoped as slices migrate; this
 // interface grows with them (it lives in business to avoid an infra import cycle;

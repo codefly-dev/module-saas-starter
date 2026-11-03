@@ -39,7 +39,7 @@ accountability are different questions:
 
 | Field | Answers | Used by |
 |---|---|---|
-| `EffectiveSubject` | "whose authority does this request run under?" | tenant membership, scoped roles, resource authority, the user-scoped RLS context (`app.current_user_id`) |
+| `EffectiveSubject` | "whose authority does this request run under?" | tenant membership, scoped roles, resource authority, the user-scoped RLS context (`codefly.current_user_id`) |
 | `RealActor` | "who is this request attributable to?" | audit (`impersonated_by`), and the platform-authority gates, which withhold platform authority whenever the two differ |
 
 For an ordinary session the two are the same id and nothing needs a special
@@ -219,7 +219,7 @@ same matrix.
 
 **Where:** Postgres `ROW LEVEL SECURITY` + policies on every per-tenant
 table. The api wraps every per-tenant request in a transaction that
-sets `app.current_org_id`. Workers that legitimately span tenants set
+sets `codefly.current_tenant_id`. Workers that legitimately span tenants set
 `app.bypass = '1'` instead.
 
 **What it asserts:** even if the SQL hitting Postgres has no WHERE
@@ -230,7 +230,7 @@ different tenant.
 -- Example policy (applies to every per-tenant table):
 CREATE POLICY tenant_isolation ON foo
 USING (
-    org_id::text = current_setting('app.current_org_id', true)
+    org_id::text = current_setting('codefly.current_tenant_id', true)
     OR current_setting('app.bypass', true) = '1'
 );
 ```
@@ -240,7 +240,7 @@ when the setting is missing. So:
 
 | Setting | Effect on a per-tenant query |
 |---|---|
-| `app.current_org_id = '<uuid>'` | Rows where `org_id = uuid` are visible. |
+| `codefly.current_tenant_id = '<uuid>'` | Rows where `org_id = uuid` are visible. |
 | `app.bypass = '1'` | All rows visible (workers + platform admin). |
 | Neither set | **Zero rows** — fail-closed. |
 
@@ -556,7 +556,7 @@ organization nobody can administer, so it asks whether there are any. An
 organization nobody else is in is left empty, not unadministrable.
 
 A user-scoped transaction can resolve none of this on its own:
-`organization_members` is scoped to `app.current_org_id`, which a deactivation
+`organization_members` is scoped to `codefly.current_tenant_id`, which a deactivation
 does not set, and `users` is readable only for the caller's own row. Both fail
 *silently* — zero rows, no error — and "administers nothing" is exactly the
 answer that lets the deactivation through. So request traffic resolves it through
@@ -780,7 +780,7 @@ the executable inventory by a test.
 
 The user-scoped half of this list is gone: `users`, `mfa_devices`,
 `notifications`, `sessions` and their siblings carry forced RLS policies today
-and enter through `WithUserTx` (`app.current_user_id`), so `WHERE user_id = $1`
+and enter through `WithUserTx` (`codefly.current_user_id`), so `WHERE user_id = $1`
 is no longer the safety property. `oauth_state` and `refresh_tokens` no longer
 exist at all. `role_permissions` gained a parent-visibility policy in
 `65_role_permissions_rls`.
@@ -810,8 +810,8 @@ changing codefly's Postgres plugin:
                               │                       ▼
                               ▼            SET LOCAL ROLE app_control_plane
               SET LOCAL                    (a named role with BYPASSRLS and
-              app.current_org_id = X        its own explicit grants — NOT
-              app.current_user_id = U       the session superuser)
+              codefly.current_tenant_id = X   its own explicit grants — NOT
+              codefly.current_user_id = U     the session superuser)
               (still app_tenant —
                policy filters by scope)
 
@@ -828,7 +828,7 @@ unwind on commit/rollback. `AfterRelease` does `RESET ROLE` as a
 safety net before the connection returns to the pool.
 
 The fail-closed property: a Store method called WITHOUT either
-wrapper runs as `app_tenant` with no `app.current_org_id` set.
+wrapper runs as `app_tenant` with no `codefly.current_tenant_id` set.
 RLS policies see neither match, return zero rows. A bug that forgot
 to wrap surfaces in tests as "expected 1 row, got 0" — loud, not
 silent.

@@ -256,7 +256,7 @@ func seedOrg(t *testing.T, ownerID string) string {
 }
 
 // seedOrgMember adds a membership row via the domain method as a tenant-scoped
-// identity — organization_members is RLS-gated (org_id = app.current_org_id), so
+// identity — organization_members is RLS-gated (org_id = codefly.current_tenant_id), so
 // the identity's OrgID satisfies the WITH CHECK. No raw SQL, no bypass.
 func seedOrgMember(t *testing.T, orgID, userID string) {
 	t.Helper()

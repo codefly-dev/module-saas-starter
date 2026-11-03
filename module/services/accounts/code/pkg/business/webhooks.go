@@ -232,7 +232,7 @@ func (s *Service) CreateSubscription(ctx context.Context, actor AuditActor, orgI
 	}
 
 	// RLS: write goes through WithOrgTx so the policy WITH CHECK
-	// passes (org_id matches the current_org_id setting).
+	// passes (org_id matches the tenant-scope setting).
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		if err := s.store.CreateWebhookSubscription(ctx, sub); err != nil {
 			return err
@@ -298,7 +298,7 @@ func (s *Service) ListSubscriptions(ctx context.Context, orgID string) ([]*Webho
 // ListDeliveries returns recent deliveries for a webhook subscription.
 //
 // orgID is the caller's org from the auth context. Required: under
-// RLS, ListWebhookDeliveries needs the tx's app.current_org_id set
+// RLS, ListWebhookDeliveries needs the tx's codefly.current_tenant_id set
 // or it returns zero rows. The subscription_id alone isn't enough —
 // the policy on webhook_deliveries joins to webhook_subscriptions to
 // check the parent's org_id matches.

@@ -25,7 +25,7 @@ func (s *PostgresStore) NewEffectReceipts() (*receipts.PostgresStore, func(), er
 	db := stdlib.OpenDBFromPool(s.pool)
 	db.SetMaxOpenConns(int(s.pool.Config().MaxConns / 2))
 	store, err := receipts.NewPostgresStore(db, receipts.WithTenantScope(func(ctx context.Context, tx *sql.Tx, tenant string) error {
-		_, err := tx.ExecContext(ctx, `SELECT set_config('app.current_org_id', $1, true), set_config('app.current_user_id', '', true)`, tenant)
+		_, err := tx.ExecContext(ctx, `SELECT set_config('`+TenantScopeSetting+`', $1, true), set_config('`+UserScopeSetting+`', '', true)`, tenant)
 		return err
 	}))
 	if err != nil {

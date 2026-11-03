@@ -112,7 +112,7 @@ func TestInstallationLifecycleRefusalRetryAndAcknowledgement(t *testing.T) {
 			require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_PENDING, retried.Status)
 			require.Empty(t, retried.FailureReason)
 			var role, org string
-			err = storetx.Tx(ctx).QueryRow(ctx, `SELECT current_user, coalesce(current_setting('app.current_org_id',true),'')`).Scan(&role, &org)
+			err = storetx.Tx(ctx).QueryRow(ctx, `SELECT current_user, coalesce(current_setting('codefly.current_tenant_id',true),'')`).Scan(&role, &org)
 			require.Equal(t, "app_control_plane", role, "enqueue restores the enclosing transaction's role")
 			require.Empty(t, org, "enqueue does not leave tenant state on the control plane")
 		}

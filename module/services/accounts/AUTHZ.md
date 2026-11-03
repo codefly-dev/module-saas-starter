@@ -106,7 +106,7 @@ A platform `super_admin` (a `platform_admins` row with that role) reads every
 scope node — every collection and every record placed under one — of whichever
 organization the request acts in, with no scope grant or record share. Any
 organization, but one tenant at a time: every oracle still runs under that
-tenant's `app.current_org_id`, so RLS and the queries' explicit `org_id`
+tenant's `codefly.current_tenant_id`, so RLS and the queries' explicit `org_id`
 predicates confine the answer to it (behaviour B2), exactly as they do for a
 grant. It is a third branch beside grant and share in every layered-access read
 oracle, all in

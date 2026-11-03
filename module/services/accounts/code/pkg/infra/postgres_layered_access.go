@@ -80,7 +80,7 @@ func layeredSubjectPredicate(kind gen.SubjectKind, alias string) (string, error)
 // scope therefore cannot authorize a resource that actually lives under a
 // different scope (RFC-0001 open-question 2).
 //
-// Runs inside WithOrgTx: app.current_org_id is set, so RLS confines every table
+// Runs inside WithOrgTx: codefly.current_tenant_id is set, so RLS confines every table
 // below to the caller's tenant.
 func (s *PostgresStore) CheckAccess(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, resourceID, action string) (bool, string, error) {
 	w := wool.Get(ctx).In("CheckAccess")

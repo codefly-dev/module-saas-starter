@@ -26,6 +26,23 @@ rewrites the provenance. Never edit the baseline by hand: the provenance digest
 refuses it (`qualification/managed-database/stage.py`), and so does the
 reference gate.
 
+## The two settings a policy reads
+
+A tenant-scoped policy reads `codefly.current_tenant_id`, and a user-scoped one
+`codefly.current_user_id`. These are not names this repository chose: they are
+the defaults of the platform's Postgres library
+(codefly-dev/service-postgres, `libs/go/store.go`), which is what binds them for
+a transaction opened through its scoped factory, and what every other store on
+the platform reads back. `65_library_scope_settings` renamed the host's own
+`app.current_org_id` / `app.current_user_id` onto them, over the 75 policies, 6
+audit partitions and 9 function bodies that read them.
+
+A consumer's own migration must use the same two names. A policy on any other
+setting fails **quietly**: nothing binds it, `current_setting(…, true)` returns
+NULL, the predicate is false, and the relation reads as empty for every caller
+rather than raising. `../../../tools/rls-migration-gate.mjs` is what refuses
+that, and it accepts only these two.
+
 ## What CI proves
 
 The required **Base manifest integrity** context runs

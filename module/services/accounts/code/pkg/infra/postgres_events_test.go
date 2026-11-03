@@ -158,7 +158,7 @@ func TestDomainEventsTenantIsolationUnderRLS(t *testing.T) {
 	require.Equal(t, 2, total, "both tenants' events must be durably seeded")
 
 	// Tenant A's request role sees only tenant A's event, even when tenant B's
-	// id is named explicitly: the policy filters on app.current_org_id, not on
+	// id is named explicitly: the policy filters on codefly.current_tenant_id, not on
 	// the query predicate.
 	require.NoError(t, testStore.WithOrgTx(testCtx, tenantA, func(ctx context.Context) error {
 		tx := txFromCtx(t, ctx)
@@ -172,12 +172,12 @@ func TestDomainEventsTenantIsolationUnderRLS(t *testing.T) {
 		return nil
 	}))
 
-	// A bare request connection carries no tenant context (app.current_org_id is
+	// A bare request connection carries no tenant context (codefly.current_tenant_id is
 	// unset). The policy's USING clause is then undefined, and the fail-closed
 	// contract at 114:77-79 must yield zero rows — never every row.
 	var leaked int
 	require.NoError(t, testStore.Pool().QueryRow(testCtx,
 		`SELECT count(*) FROM public.domain_events WHERE id = ANY($1::uuid[])`, seeded,
 	).Scan(&leaked))
-	require.Zero(t, leaked, "an unset app.current_org_id must fail closed, not expose every tenant's events")
+	require.Zero(t, leaked, "an unset codefly.current_tenant_id must fail closed, not expose every tenant's events")
 }

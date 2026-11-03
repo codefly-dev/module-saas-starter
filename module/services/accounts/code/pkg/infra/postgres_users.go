@@ -100,7 +100,7 @@ func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (*gen.
 // belongs to the transaction's current organization. The database function is
 // the intentionally narrow co-member directory surface: app_tenant cannot read
 // another user's full users row, and the function returns NULL when userID is
-// not a member of app.current_org_id.
+// not a member of codefly.current_tenant_id.
 func (s *PostgresStore) GetOrganizationMemberPrimaryEmail(ctx context.Context, userID string) (string, error) {
 	w := wool.Get(ctx).In("GetOrganizationMemberPrimaryEmail")
 	executor := s.getQueryExecutor(ctx)

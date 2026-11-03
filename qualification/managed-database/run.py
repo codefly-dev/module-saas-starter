@@ -150,7 +150,7 @@ INSERT INTO webhook_subscriptions(id,org_id,url,secret_encrypted) SELECT id,id,'
 INSERT INTO webhook_deliveries(id,subscription_id,event_id,event_type,payload) SELECT id,id,id,'saas.auth.login','{}' FROM organizations;
 """)
     check('request_only_login','CREATE ROLE example_request LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS; GRANT app_tenant TO example_request;')
-    tenant="BEGIN; SET LOCAL ROLE app_tenant; SET LOCAL app.current_org_id='20000000-0000-0000-0000-000000000001'; SET LOCAL app.current_user_id='10000000-0000-0000-0000-000000000001'; "
+    tenant="BEGIN; SET LOCAL ROLE app_tenant; SET LOCAL codefly.current_tenant_id='20000000-0000-0000-0000-000000000001'; SET LOCAL codefly.current_user_id='10000000-0000-0000-0000-000000000001'; "
     check('tenant_own_org',tenant+'SELECT count(*) FROM organizations; ROLLBACK;','1')
     check('tenant_cross_org_denied',tenant+"SELECT count(*) FROM organizations WHERE slug='example-two'; ROLLBACK;",'0')
     check('tenant_own_user',tenant+'SELECT count(*) FROM users; ROLLBACK;','1')
@@ -171,7 +171,7 @@ INSERT INTO webhook_deliveries(id,subscription_id,event_id,event_type,payload) S
     # while its current role is app_tenant. Only exact SET ROLE may do so.
     check('no_runtime_ddl',tenant+'CREATE TABLE public.denied(id int);',error='42501')
     check('accidental_tenant_grant_still_denied',"BEGIN; GRANT SELECT ON job_messages TO app_tenant; SET LOCAL ROLE app_tenant; SELECT count(*) FROM job_messages; ROLLBACK;",'0')
-    check('inherited_control_role_cannot_activate_policy',"BEGIN; GRANT app_control_plane TO app_tenant WITH INHERIT TRUE; SET LOCAL ROLE app_tenant; SET LOCAL app.current_org_id='20000000-0000-0000-0000-000000000001'; SET LOCAL app.current_user_id='10000000-0000-0000-0000-000000000001'; SELECT count(*) FROM users WHERE primary_email='two@example.com'; ROLLBACK;",'0')
+    check('inherited_control_role_cannot_activate_policy',"BEGIN; GRANT app_control_plane TO app_tenant WITH INHERIT TRUE; SET LOCAL ROLE app_tenant; SET LOCAL codefly.current_tenant_id='20000000-0000-0000-0000-000000000001'; SET LOCAL codefly.current_user_id='10000000-0000-0000-0000-000000000001'; SELECT count(*) FROM users WHERE primary_email='two@example.com'; ROLLBACK;",'0')
     for role in ROLES[1:]:
         login='example_'+role
         check('dedicated_'+role, 'CREATE ROLE '+login+' LOGIN NOINHERIT; GRANT '+role+' TO '+login+';')
@@ -193,7 +193,7 @@ SELECT count(*) FROM subscriptions; ROLLBACK;""",'2')
     wrong=enqueue.replace('20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002')
     check('tenant_enqueue_wrong_org_denied',tenant+'SELECT * FROM '+wrong+';',error='42501')
     subject=enqueue.replace("'tenant','20000000-0000-0000-0000-000000000001',NULL", "'subject',NULL,'10000000-0000-0000-0000-000000000001'")
-    for shape,call,setting in [('tenant',enqueue,'app.current_org_id'),('subject',subject,'app.current_user_id')]:
+    for shape,call,setting in [('tenant',enqueue,'codefly.current_tenant_id'),('subject',subject,'codefly.current_user_id')]:
         check(shape+'_enqueue_valid_context',tenant+'SELECT inserted FROM '+call+'; ROLLBACK;','t',user='example_request')
         check(shape+'_enqueue_missing_context','BEGIN; SET LOCAL ROLE app_tenant; SELECT * FROM '+call+';',error='42501',user='example_request')
         check(shape+'_enqueue_empty_context',tenant+'SET LOCAL '+setting+"=''; SELECT * FROM "+call+';',error='42501',user='example_request')
@@ -209,7 +209,7 @@ SELECT count(*) FROM subscriptions; ROLLBACK;""",'2')
     check('tenant_guarded_webhook_sync',tenant+'SELECT '+sync+'; SET LOCAL ROLE app_job_worker; SELECT count(*) FROM event_subscriptions; ROLLBACK;','1')
     check('tenant_guarded_webhook_remove',tenant+'SELECT '+sync+'; SELECT '+sync.replace("ARRAY['saas.auth.login']","ARRAY[]::text[]")+'; SET LOCAL ROLE app_job_worker; SELECT count(*) FROM event_subscriptions; ROLLBACK;','0')
     check('webhook_sync_missing_org_denied','BEGIN; SET LOCAL ROLE app_tenant; SELECT '+sync+';',error='42501',user='example_request')
-    check('webhook_sync_empty_org_denied',tenant+"SET LOCAL app.current_org_id=''; SELECT "+sync+';',error='42501',user='example_request')
+    check('webhook_sync_empty_org_denied',tenant+"SET LOCAL codefly.current_tenant_id=''; SELECT "+sync+';',error='42501',user='example_request')
     check('webhook_sync_cross_org_denied',tenant+'SELECT '+sync.replace('000000000001','000000000002')+';',error='42501')
     check('webhook_sync_wrong_endpoint_denied',tenant+"SELECT public.sync_webhook_event_subscriptions('20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002',ARRAY['saas.auth.login']);",error='42501')
     replay="public.replay_job_message((SELECT id FROM job_messages WHERE replay_of IS NULL),'example-replay',now(),decode(repeat('cc',32),'hex'))"
@@ -289,7 +289,7 @@ def main():
             for c,label in [(fresh,'principal'),(canonical,'superuser')]:
                 qualify(c,label,tests)
                 if args.package:
-                    scope="BEGIN; SET LOCAL app.current_org_id='20000000-0000-0000-0000-000000000001'; SET LOCAL app.current_user_id='10000000-0000-0000-0000-000000000001'; "
+                    scope="BEGIN; SET LOCAL codefly.current_tenant_id='20000000-0000-0000-0000-000000000001'; SET LOCAL codefly.current_user_id='10000000-0000-0000-0000-000000000001'; "
                     assert sql(c,scope+'SELECT count(*) FROM organization_authorization_revisions; ROLLBACK;',user='example_reader').stdout.strip()=='1'
                     assert sql(c,scope+"SELECT count(*) FROM organization_authorization_revisions WHERE org_id='20000000-0000-0000-0000-000000000002'; ROLLBACK;",user='example_reader').stdout.strip()=='0'
                     assert '42501' in sql(c,scope+'UPDATE organization_authorization_revisions SET revision=revision+1;',user='example_reader',check=False).stderr

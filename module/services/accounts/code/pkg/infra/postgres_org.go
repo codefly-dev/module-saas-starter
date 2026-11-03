@@ -71,7 +71,7 @@ func (s *PostgresStore) CreateOrganization(ctx context.Context, org *gen.Organiz
 	// so the org row WITHOUT the membership row is a leak). Reuse the
 	// caller's tx if one is on context — that's where WithOrgTx /
 	// WithControlPlane put it, and stacking a fresh BeginTxFunc would lose
-	// the SET LOCAL ROLE / app.current_org_id state. If no tx, open
+	// the SET LOCAL ROLE / codefly.current_tenant_id state. If no tx, open
 	// our own.
 	exec := func(ctx context.Context) error {
 		executor := s.getQueryExecutor(ctx)
@@ -207,7 +207,7 @@ func (s *PostgresStore) CountOrgAdministrators(ctx context.Context, orgID string
 
 	var scopedOrg string
 	if err := executor.QueryRow(ctx,
-		`SELECT coalesce(pg_catalog.current_setting('app.current_org_id', true), '')`,
+		`SELECT coalesce(pg_catalog.current_setting('`+TenantScopeSetting+`', true), '')`,
 	).Scan(&scopedOrg); err != nil {
 		return 0, 0, w.Wrapf(err, "failed to read tenant scope")
 	}
@@ -263,7 +263,7 @@ func (s *PostgresStore) CountOrgAdministrators(ctx context.Context, orgID string
 // and same reasoning, as migration 136's guard on
 // record_membership_integrity_findings().
 const identityScopeProbe = `
-	SELECT coalesce(pg_catalog.current_setting('app.current_user_id', true), ''),
+	SELECT coalesce(pg_catalog.current_setting('` + UserScopeSetting + `', true), ''),
 	       current_user::text = $1`
 
 // ListAdministeredOrganizations returns every organization the identity is an
@@ -272,7 +272,8 @@ const identityScopeProbe = `
 //
 // Same two audiences as CountOrgAdministrators and the same reason to branch on
 // the transaction's scope rather than fall back. A deactivation is not scoped to
-// one organization, so it reads organization_members with no app.current_org_id
+// one organization, so it reads organization_members with no
+// codefly.current_tenant_id
 // set and users outside the caller's own row — both of which return zero rows
 // rather than an error, and "administers nothing" is the answer that lets the
 // deactivation through. A request transaction therefore goes through the
@@ -447,8 +448,8 @@ func (s *PostgresStore) GetOrgMembership(ctx context.Context, orgID string, user
 			return load(ctx, executor, `
 				SELECT org_id, user_id, role, joined_at
 				FROM organization_members
-				WHERE org_id = current_setting('app.current_org_id', true)::uuid
-				  AND user_id = current_setting('app.current_user_id', true)::uuid`)
+				WHERE org_id = current_setting('`+TenantScopeSetting+`', true)::uuid
+				  AND user_id = current_setting('`+UserScopeSetting+`', true)::uuid`)
 		})
 		return membership, err
 	}

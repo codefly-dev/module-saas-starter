@@ -25,6 +25,18 @@ Context exchanges below; no secret does.
 The principal directory lists stored identities only. Declared module authority
 is read by the capability checks and does not create synthetic directory rows.
 
+**The two scope settings are named once.** A transaction's tenant and user are
+bound to `codefly.current_tenant_id` and `codefly.current_user_id` — the
+defaults of the platform's Postgres library, which installs them for any
+transaction opened through the scoped factory. Nothing here passes
+`WithScopeSettings`, and hand-written SQL names them from
+`pkg/infra.TenantScopeSetting` / `UserScopeSetting` rather than spelling the
+literal again. Only `pkg/infra` may bind them at all
+(`TestNoTenantRebindingOutsidePkgInfra`), and a policy or function body left on
+some other setting does not fail loudly: `current_setting(…, true)` returns
+NULL, the predicate is false, and the relation reads as empty for every caller
+(`TestEveryScopedPolicyReadsTheLibrarySettings` is what catches that).
+
 ## Forwarded Work Contexts on the organization directory
 
 `DirectoryService` on the Connect endpoint accepts a person-owned Work Context

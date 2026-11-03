@@ -93,7 +93,7 @@ func read(ctx context.Context, store Store) {
 
 // TestNoTenantRebindingOutsideInfra fails on a string literal, in a non-test Go
 // file outside pkg/infra, that binds or reads a transaction's request scope or
-// role: set_config(, SET [LOCAL|SESSION] ROLE, RESET ROLE or app.current_,
+// role: set_config(, SET [LOCAL|SESSION] ROLE, RESET ROLE or codefly.current_,
 // matched without regard to case or spacing. pkg/business, pkg/auth/pg and
 // pkg/billing/pg hold the raw transaction through storetx.Tx, and one such
 // statement on it would rebind the tenant — or leave app_tenant — under a
@@ -140,7 +140,7 @@ func TestNoTenantRebindingOutsideInfra(t *testing.T) {
 func TestTenantRebindingScanSeesEveryForm(t *testing.T) {
 	file, err := parser.ParseFile(token.NewFileSet(), "synthetic.go", `package business
 
-const bindOrg = "SELECT set_config('app.current_org_id', $1, true)"
+const bindOrg = "SELECT set_config('codefly.current_tenant_id', $1, true)"
 
 func escalate(ctx context.Context, tx pgx.Tx) {
 	_, _ = tx.Exec(ctx, "SET ROLE app_control_plane")
@@ -149,7 +149,7 @@ func escalate(ctx context.Context, tx pgx.Tx) {
 	_, _ = tx.Exec(ctx, "SET SESSION ROLE app_control_plane")
 	_, _ = tx.Exec(ctx, "reset role")
 	_, _ = tx.Exec(ctx, "SELECT pg_catalog.set_config ('role', 'app_control_plane', true)")
-	_, _ = tx.Exec(ctx, "SELECT current_setting('app.current_user_id', true)")
+	_, _ = tx.Exec(ctx, "SELECT current_setting('codefly.current_user_id', true)")
 	_, _ = tx.Exec(ctx, "SET LOCAL " + "ROLE " + role)
 	_, _ = tx.Exec(ctx, "UPDATE organization_members SET a = 1; SET role = 'app_control_plane'")
 }
@@ -169,13 +169,13 @@ func harmless(ctx context.Context, tx pgx.Tx) {
 	}
 	require.ElementsMatch(t, []string{
 		"(package level): set_config(",
-		"(package level): app.current_",
+		"(package level): codefly.current_",
 		"escalate: SET ROLE",
 		"escalate: SET ROLE",
 		"escalate: SET ROLE",
 		"escalate: RESET ROLE",
 		"escalate: set_config(",
-		"escalate: app.current_",
+		"escalate: codefly.current_",
 		"escalate: SET ROLE",
 		"escalate: SET ROLE",
 	}, got)
@@ -190,7 +190,7 @@ var tenantRebinding = []struct {
 	{"set_config(", regexp.MustCompile(`(?i)\bset_config\s*\(`)},
 	{"SET ROLE", regexp.MustCompile(`(?i)\bSET\s+(?:LOCAL\s+|SESSION\s+)?ROLE\b`)},
 	{"RESET ROLE", regexp.MustCompile(`(?i)\bRESET\s+ROLE\b`)},
-	{"app.current_", regexp.MustCompile(`(?i)\bapp\s*\.\s*current_`)},
+	{"codefly.current_", regexp.MustCompile(`(?i)\bcodefly\s*\.\s*current_`)},
 }
 
 var updateStatement = regexp.MustCompile(`(?i)\bUPDATE\b`)

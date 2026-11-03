@@ -139,7 +139,7 @@ func writeScope(kind, action, resourceID string) []business.WorkContextPermissio
 
 // getAgentPrincipal reads an agent under the org tenant floor; a bare pooled read
 // sees no principals row because the principals RLS policy filters on
-// app.current_org_id.
+// codefly.current_tenant_id.
 func getAgentPrincipal(t *testing.T, orgID, identifier string) *business.Principal {
 	t.Helper()
 	var agent *business.Principal
