@@ -84,6 +84,27 @@ without reading the service's source.
 | `saas.accounts.rpc_policy.denied` | calls | `method`, `reason` | every authorization refusal, on both the gRPC and the Connect transport |
 | `saas.accounts.rpc_policy.coverage` | calls | `method`, `coverage` | every **admitted** call, classified by how much of its declared floor central admission can enforce (`ok`, `gap`, `unsupported`) |
 
+**The name an alerting rule must target is not the name above.** Accounts
+exports over OTLP (`otlpmetricgrpc`), and a rule is written against the
+collector's Prometheus-normalised spelling: dots become underscores, and a
+monotonic counter gains `_total`. So, exactly:
+
+| OTel instrument | What a promql rule targets |
+| --- | --- |
+| `saas.accounts.rpc_policy.denied` | **`saas_accounts_rpc_policy_denied_total`** |
+| `saas.accounts.rpc_policy.coverage` | **`saas_accounts_rpc_policy_coverage_total`** |
+
+The attributes keep their names as labels: `method` and `reason` on the first,
+`method` and `coverage` on the second. This is the same transformation every
+other metric in this repository's own alert pack already relies on — compare
+`saas.jobs.completed` in this file with `saas_jobs_completed_total` in
+`services/accounts/code/pkg/metrics/slo_pack.json`, and `saas.retention.failing`
+with `saas_retention_failing`, which keeps no suffix because it is a gauge.
+
+A rule targeting the dotted form, or the undotted form without `_total`, matches
+nothing and fires never — which looks exactly like "no denials" and is the one
+failure mode an authorization alert cannot afford.
+
 `reason` is a closed set, never an error message — a message carries the
 organization and the permission, which would make the label unbounded and put
 tenant identifiers in a metrics backend:

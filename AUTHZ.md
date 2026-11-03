@@ -185,6 +185,16 @@ shape-authenticated method (`business.ShapeAuthenticated`, whose caller's
 credential is *in* the request body, so admission has no verified organization to
 resolve against). Everything else stays with the handler gates above.
 
+The shape-authenticated exemption is the one that needs its backstop named,
+because `Issue` declares an org tenant and is nonetheless outside the floor. A
+cross-organisation call is refused by the adapter instead, and that is proven
+against a live store in two harness cases: the shared suite's **"an installation
+issue cannot name a different organization"**, and this repository's own **"a
+module workload is issued only where it is installed, within its pin, until
+uninstalled"**. The exemption's *extent* — exactly `Issue` and `GetDelegation`,
+never a third method — is pinned by
+`TestTheCentralFloorExemptsExactlyTheShapeAuthenticatedMethods`.
+
 **It enforces by default.** `RBAC_CENTRAL_ENFORCEMENT` unset means enforce;
 `shadow` is an explicit opt-out that classifies only, and the boot warns naming
 it on every start; any other value refuses to boot. The coverage classification
@@ -192,9 +202,12 @@ that drove the rollout (`saas.accounts.rpc_policy.coverage`) keeps running, sinc
 what it measures is the part this floor still cannot reach.
 
 Refusals are counted on `saas.accounts.rpc_policy.denied`, labelled by `method`
-and by the gate that refused (`reason`) — see
-[module/MEASUREMENT_RUNBOOKS.md](module/MEASUREMENT_RUNBOOKS.md) under
-`authorization-denials`.
+and by the gate that refused (`reason`). An alerting rule targets the
+collector's normalised spelling of it,
+**`saas_accounts_rpc_policy_denied_total`**, not the dotted instrument name —
+see [module/MEASUREMENT_RUNBOOKS.md](module/MEASUREMENT_RUNBOOKS.md) under
+`authorization-denials`, which gives both spellings and why the distinction
+matters.
 
 ## Layer 2 — Permissions (RBAC, business layer)
 

@@ -32,7 +32,14 @@ func TestRESTSurfaceCompilationAndExposure(t *testing.T) {
 			publicCount++
 		}
 	}
-	require.Equal(t, 18, publicCount)
+	// +1 for AuthService/GetProviderSignOut (POST /v1/auth/provider-sign-out):
+	// the RP-initiated logout URL, public for the same reason GetJWKS is.
+	require.Equal(t, 19, publicCount)
+	require.Equal(t,
+		"/saas.accounts.v1.AuthService/GetProviderSignOut",
+		routes["POST /v1/auth/provider-sign-out"].GetProcedure())
+	require.Equal(t, policyv1.Exposure_EXPOSURE_PUBLIC,
+		routes["POST /v1/auth/provider-sign-out"].GetExposure())
 	require.Nil(t, routes["POST /v1/permissions:check"])
 	require.Nil(t, routes["POST /v1/api-keys:validate"])
 	require.Equal(t, "/saas.accounts.v1.UserService/RegisterUser", routes["POST /v1/users"].GetProcedure())
