@@ -274,3 +274,39 @@ func (e *recordingAuditEmitter) EmitTx(_ context.Context, entry AuditEntry) erro
 	e.entries = append(e.entries, entry)
 	return nil
 }
+
+// The store's audit window is inclusive at both ends, so a day's export must
+// stop one instant before the next midnight. Without that, an event written at
+// exactly 00:00:00.000000 lands in two consecutive days' archives — a
+// duplicated row in a trail whose whole value is that it is exact.
+func TestADaysWindowDoesNotOverlapTheNext(t *testing.T) {
+	store := &windowRecordingStore{}
+	svc := &Service{
+		auditArchive: AuditArchive{Prefix: "audit/archive", Store: &scriptedArchiveStore{}},
+		store:        store,
+	}
+
+	_, _, err := svc.auditDayExport(context.Background(), "2026-11-02")
+	require.NoError(t, err)
+	require.NotNil(t, store.from)
+	require.NotNil(t, store.to)
+	require.Equal(t, time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC), store.from.UTC())
+	require.Equal(t, time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC).Add(-time.Microsecond), store.to.UTC())
+	require.True(t, store.to.Before(time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)),
+		"the next day's first instant belongs to the next day's archive")
+}
+
+// windowRecordingStore captures the window the export asked for.
+type windowRecordingStore struct {
+	Store
+	from, to *time.Time
+}
+
+func (s *windowRecordingStore) WithControlPlane(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s *windowRecordingStore) QueryAuditLog(_ context.Context, q AuditQuery) ([]AuditEntry, string, int32, error) {
+	s.from, s.to = q.From, q.To
+	return nil, "", 0, nil
+}

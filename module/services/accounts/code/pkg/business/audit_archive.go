@@ -368,11 +368,17 @@ func (s *Service) auditDayExport(ctx context.Context, day string) ([]byte, int, 
 		return nil, 0, jobs.NewProcessingError("audit_archive.invalid_day", "not a day", false)
 	}
 	from = from.UTC()
+	// The store's window is inclusive at BOTH ends (`created_at >= From AND
+	// created_at <= To`), so the day's end is the last instant inside it and
+	// not the next midnight: an event written at exactly 00:00:00.000000 would
+	// otherwise land in two consecutive days' archives. Postgres timestamps are
+	// microsecond-resolution, so stepping back one microsecond is exact rather
+	// than a fudge.
+	until := from.AddDate(0, 0, 1).Add(-time.Microsecond)
 	resolver := s.AuditEventResolver()
 	entries := make([]auditExportEntry, 0, 256)
 	pageToken := ""
 	for {
-		until := from.AddDate(0, 0, 1)
 		page, next, _, err := s.QueryAuditLog(ctx, AuditQuery{
 			From:      &from,
 			To:        &until,
