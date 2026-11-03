@@ -67,7 +67,6 @@ pkg/business/installation_jobs.go: (*Service).RetryInstallation: WithControlPlan
 pkg/business/installation_principal_target.go: (*Service).ResolveInstallationPrincipal: WithControlPlane
 pkg/business/installation_registry.go: (*Service).prepareInstallation: WithControlPlane
 pkg/business/installations.go: (*Service).ListAvailableSolutions: WithControlPlane
-pkg/business/installations.go: (*Service).resolveInstallableTarget: WithControlPlane
 pkg/business/invitations.go: (*Service).AcceptInvitation: As(System())
 pkg/business/invitations.go: (*Service).CreateInvitation: As(System())
 pkg/business/invitations.go: (*Service).InspectInvitationByID: As(System())
