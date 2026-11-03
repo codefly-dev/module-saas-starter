@@ -27,6 +27,12 @@ type Discovery struct {
 	TokenEndpoint         string `json:"token_endpoint"`
 	JWKSURI               string `json:"jwks_uri"`
 	UserInfoEndpoint      string `json:"userinfo_endpoint"`
+	// EndSessionEndpoint is where a relying party sends the person's browser to
+	// end the session at the provider (OpenID Connect RP-Initiated Logout 1.0
+	// §2). It is OPTIONAL in the metadata: a provider that publishes none offers
+	// no RP-initiated sign-out, which is a fact about that provider and not a
+	// configuration error, so Discover does not require it.
+	EndSessionEndpoint string `json:"end_session_endpoint"`
 }
 
 // DiscoveryURL derives the well-known metadata URL from an issuer, per the

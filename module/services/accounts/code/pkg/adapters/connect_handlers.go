@@ -596,7 +596,7 @@ func (h *authConnectHandler) RefreshToken(ctx context.Context, req *connect.Requ
 func (h *authConnectHandler) SwitchOrganization(ctx context.Context, req *connect.Request[gen.SwitchOrganizationRequest]) (*connect.Response[gen.SwitchOrganizationResponse], error) {
 	return unary(ctx, req, h.inner.SwitchOrganization)
 }
-func (h *authConnectHandler) Logout(ctx context.Context, req *connect.Request[gen.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
+func (h *authConnectHandler) Logout(ctx context.Context, req *connect.Request[gen.LogoutRequest]) (*connect.Response[gen.LogoutResponse], error) {
 	refreshTokenFromCookie(req.Header(), req.Msg.GetRefreshToken(), func(token string) {
 		req.Msg.RefreshToken = token
 	})

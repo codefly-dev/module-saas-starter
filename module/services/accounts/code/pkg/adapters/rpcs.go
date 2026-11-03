@@ -1308,7 +1308,7 @@ func (s *AuthServer) BeginOAuth(ctx context.Context, req *gen.BeginOAuthRequest)
 	return &gen.BeginOAuthResponse{State: state}, nil
 }
 
-func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*emptypb.Empty, error) {
+func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*gen.LogoutResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
 	}
@@ -1324,7 +1324,8 @@ func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*empty
 	if sessionID, ok := auth.VerifiedSessionID(ctx); ok {
 		verifiedSession = sessionID.String()
 	}
-	if err := service.Logout(ctx, req, accessToken, verifiedSession); err != nil {
+	response, err := service.Logout(ctx, req, accessToken, verifiedSession)
+	if err != nil {
 		// An incomplete sign-out is reported as retryable rather than as success:
 		// the family is revoked, so nothing refreshes, but an already-issued access
 		// token stays usable until it expires and the caller may want to retry.
@@ -1334,7 +1335,7 @@ func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*empty
 		}
 		return nil, err
 	}
-	return &emptypb.Empty{}, nil
+	return response, nil
 }
 
 // bearerFromContext extracts the bearer token from the incoming

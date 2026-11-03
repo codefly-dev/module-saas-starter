@@ -211,8 +211,66 @@ binary (`grep -qF`) is how to tell without executing anything.
 | Rotation      | One locked transaction consumes the family, resolves current authorization, and inserts one successor |
 | Org exchange  | Authenticated target-only exchange; current membership/roles resolved under the active session lock; same device family and refresh credential |
 | Reuse defense | Reuse of a token consumed by rotation revokes every active user session; administrative revocation is not replay |
-| Logout        | The browser posts an empty body and its HttpOnly refresh cookie; the middleware moves the cookie's token into the request as it does for refresh, so the family is revoked without the credential ever reaching script. Deny-lists the presented access-token JTI and the verified session, so the access half dies on the strength of who is calling rather than of what the body carried |
+| Logout        | The browser posts an empty body and its HttpOnly refresh cookie; the middleware moves the cookie's token into the request as it does for refresh, so the family is revoked without the credential ever reaching script. Deny-lists the presented access-token JTI and the verified session, so the access half dies on the strength of who is calling rather than of what the body carried. The response carries the provider's RP-initiated logout URL when there is one — see [Signing out of the identity provider](#signing-out-of-the-identity-provider) |
 | Current state | Refresh requires current authorization; database triggers atomically revoke affected families on status, membership/role, platform-role, and verified-MFA changes |
+
+### Signing out of the identity provider
+
+Ending the host session does not end the session at the identity provider. The
+provider's own cookie is in the person's browser, so the next sign-in through it
+is silent — the person presses "sign out", presses "sign in", and is back in
+without being asked anything. Closing that is two independent halves, and a
+provider offers each on its own, so each is wired on its own evidence.
+
+**RP-initiated logout (the host asks the client to finish).** `Logout` returns
+`end_session_url`: the provider's `end_session_endpoint` with
+`post_logout_redirect_uri`, and with the client's `id_token_hint` when it
+supplied one or the host's `client_id` when it did not (OpenID Connect
+RP-Initiated Logout 1.0 §2 allows that substitution precisely for the case where
+no hint is available). The client sends the person's browser there after the
+host session has ended.
+
+The hint is **client-supplied** and the host stores no provider `id_token`: it
+has no other use for one, and retaining a provider credential to hand back later
+is a liability rather than a feature. The redirect is **never** taken from the
+request — the provider requires it to be registered, and reading it from the
+caller would make this host's own sign-out an open redirect — so it is the
+deployment's `IDENTITY_POST_LOGOUT_REDIRECT_URI`.
+
+`end_session_url` is empty when the provider publishes no `end_session_endpoint`
+(and on the development fixture, which has no provider session at all). A client
+reads an empty value as "nothing further to do", never as a failure. The
+endpoint comes from the provider's discovery document, or from an explicit
+`IDENTITY_END_SESSION_URL` pin for a provider configured from a preset rather
+than from an issuer; the boot says which, and says so when there is none.
+
+**Back-channel logout (the provider tells the host).** `POST
+/v1/auth/backchannel-logout` accepts an OpenID Connect back-channel logout token
+and revokes every host session of the person it names, including each session's
+access half. The route is unauthenticated at the perimeter and that is correct:
+the caller is the provider's back channel, which holds no session here, and the
+signed logout token *is* the credential — verified against the provider's JWKS
+with the same key material, issuer and audience binding that admits a sign-in,
+plus the checks that separate a logout token from every other token the same
+issuer signs (an `events` claim carrying the back-channel logout event, a `sub`
+or `sid`, **no** `nonce` — which is how an id_token substituted for a logout
+token is detected — and an `iat` within two minutes, so a token the provider
+gave no `exp` is not replayable for ever).
+
+The route is mounted only when the configured provider can verify such a token,
+so a deployment without one exposes no such surface rather than one whose only
+honest answer is a refusal. Two answers are deliberate and worth knowing:
+
+- a token for an identity this host has never seen revokes nothing and answers
+  **200**, because the provider is entitled to send one and whether this host
+  knows that person must not be learnable from the response;
+- a token naming only the provider's `sid` answers **501**. Nothing here records
+  a provider session id, so no host session can be matched to it, and answering
+  200 would tell the provider the sessions are gone when they are not.
+
+Replay is not tracked by `jti`: revoking an already-revoked session changes
+nothing, so the operation is idempotent by construction and the `iat` bound is
+what limits a token's life. There is no table behind this endpoint.
 
 ---
 
@@ -305,6 +363,8 @@ their next owning change.
 | Session list + revoke               | ✅    | Stable per-device family ids, device context, idle/absolute expiry, whole-family revoke |
 | Session lifetime policy             | ✅    | Configurable fixed absolute TTL, idle TTL, and serialized active-device cap |
 | Logout                              | ✅    | Revokes the presented device family, the presented access token and the verified session's access half; the browser's cookie is the credential carrier, so an empty body is a complete sign-out |
+| RP-initiated logout                 | ✅    | `Logout` returns the provider's `end_session_endpoint` with `id_token_hint`/`client_id` and the deployment's registered `post_logout_redirect_uri`; empty when the provider publishes none |
+| Back-channel logout                 | ✅    | `POST /v1/auth/backchannel-logout` verifies the provider's logout token against its JWKS and revokes every host session of the named subject, access half included. Mounted only when the provider can verify one. A `sid`-only token answers 501: provider session ids are not recorded |
 | OAuth state / CSRF                  | ✅    | Server-signed state bound to (provider, redirect_uri), single-use: the nonce is consumed on first verification and the state is refused when single use cannot be recorded |
 | OAuth PKCE                          | ❌    | Comments mention PKCE but exchanger uses `client_secret` (acceptable for confidential server-side; PKCE adds defense for SPA-driven flows) |
 | Account lockout (failed attempts)   | ❌    | No counter on user table                                         |

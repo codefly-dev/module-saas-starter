@@ -41,6 +41,7 @@ type Service struct {
 	devValidator              auth.TokenValidator // development only: allowlists explicit fixture identities
 	resolver                  auth.IdentityResolver
 	minter                    auth.JWTMinter
+	providerSignOut           ProviderSignOut  // what the identity provider offers for ending its own session
 	emailOutbox               *email.Outbox    // optional durable email producer; transport is worker-only
 	billing                   BillingClient    // optional: Stripe client for checkout/portal
 	billingURLs               BillingRedirects // server-owned Stripe return destinations

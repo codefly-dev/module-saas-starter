@@ -59,7 +59,10 @@ type AuthServiceClient interface {
 	// in the same device family. Membership and current role are resolved under
 	// the locked session row before the selected organization is persisted.
 	SwitchOrganization(ctx context.Context, in *SwitchOrganizationRequest, opts ...grpc.CallOption) (*SwitchOrganizationResponse, error)
-	Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Logout ends the host session and, when the identity provider publishes an
+	// `end_session_endpoint`, returns the RP-initiated logout URL for the client
+	// to complete. See module/AUTHENTICATION.md "Signing out".
+	Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*LogoutResponse, error)
 	GetJWKS(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*JWKSResponse, error)
 	// ValidateClientAuthorization checks a client's authorization request before
 	// any sign-in UI is rendered. Public RPC: this runs before the person has
@@ -158,9 +161,9 @@ func (c *authServiceClient) SwitchOrganization(ctx context.Context, in *SwitchOr
 	return out, nil
 }
 
-func (c *authServiceClient) Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *authServiceClient) Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*LogoutResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(emptypb.Empty)
+	out := new(LogoutResponse)
 	err := c.cc.Invoke(ctx, AuthService_Logout_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -232,7 +235,10 @@ type AuthServiceServer interface {
 	// in the same device family. Membership and current role are resolved under
 	// the locked session row before the selected organization is persisted.
 	SwitchOrganization(context.Context, *SwitchOrganizationRequest) (*SwitchOrganizationResponse, error)
-	Logout(context.Context, *LogoutRequest) (*emptypb.Empty, error)
+	// Logout ends the host session and, when the identity provider publishes an
+	// `end_session_endpoint`, returns the RP-initiated logout URL for the client
+	// to complete. See module/AUTHENTICATION.md "Signing out".
+	Logout(context.Context, *LogoutRequest) (*LogoutResponse, error)
 	GetJWKS(context.Context, *emptypb.Empty) (*JWKSResponse, error)
 	// ValidateClientAuthorization checks a client's authorization request before
 	// any sign-in UI is rendered. Public RPC: this runs before the person has
@@ -282,7 +288,7 @@ func (UnimplementedAuthServiceServer) RefreshToken(context.Context, *RefreshToke
 func (UnimplementedAuthServiceServer) SwitchOrganization(context.Context, *SwitchOrganizationRequest) (*SwitchOrganizationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SwitchOrganization not implemented")
 }
-func (UnimplementedAuthServiceServer) Logout(context.Context, *LogoutRequest) (*emptypb.Empty, error) {
+func (UnimplementedAuthServiceServer) Logout(context.Context, *LogoutRequest) (*LogoutResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Logout not implemented")
 }
 func (UnimplementedAuthServiceServer) GetJWKS(context.Context, *emptypb.Empty) (*JWKSResponse, error) {

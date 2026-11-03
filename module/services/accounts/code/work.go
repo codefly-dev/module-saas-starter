@@ -667,6 +667,29 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		service.SetTokenValidator(v)
 		service.SetCodeExchanger(ex)
 
+		// Signing out of this host does not sign the person out of the identity
+		// provider: the provider's session cookie is in their browser, and the
+		// next sign-in through it is silent. RP-initiated logout and
+		// back-channel logout are the two halves of closing that, and a provider
+		// offers them independently, so each is wired on its own evidence.
+		signOut := configuredProviderSignOut(ctx, authProvider)
+		if verifier, ok := v.(business.LogoutTokenVerifier); ok {
+			signOut.LogoutTokens = verifier
+		}
+		service.SetProviderSignOut(signOut)
+		if service.ProviderSignOutConfigured() {
+			adapters.RegisterHTTPRoute(adapters.BackchannelLogoutPath, adapters.NewBackchannelLogoutHandler(service))
+			w.Info("provider back-channel logout enabled", wool.Field("path", adapters.BackchannelLogoutPath))
+		} else {
+			// An unauthenticated route whose only honest answer is a refusal is
+			// worse than no route: it answers, so it looks implemented.
+			w.Info("the configured identity provider cannot verify a back-channel logout token; no such endpoint is mounted")
+		}
+		if signOut.EndSessionEndpoint == "" {
+			w.Info("the configured identity provider publishes no end_session_endpoint; a sign-out ends the host session only",
+				wool.Field("provider", authProvider))
+		}
+
 		// Per-org identity provider registry (issue #107). Orgs with an active
 		// row in org_identity_providers resolve to their own stack; every other
 		// org falls back to this global default (v, ex). Stacks build lazily on
@@ -2362,6 +2385,49 @@ func discoverOIDCValidator(provider string, defaultAudienceToClientID bool) (val
 			"identity provider %s published no token endpoint; set IDENTITY_TOKEN_URL", provider)
 	}
 	return v, tokenURL, clientID, clientSecret, nil
+}
+
+// configuredProviderSignOut resolves what the identity provider offers for
+// ending its own session. The endpoint comes from an explicit
+// IDENTITY_END_SESSION_URL pin, or from the provider's discovery document when
+// the deployment configured an issuer — the same two sources, in the same
+// order, as the JWKS and token endpoints.
+//
+// A discovery failure here is a warning and not a boot refusal, deliberately:
+// by the time this runs the login path has already discovered the same document
+// successfully (buildProviderStack would have failed the boot otherwise), so a
+// failure is transient, and refusing to start a host whose sign-in works because
+// its sign-out could not be enriched trades a working deployment for a
+// cosmetic one. The consequence is stated at boot instead: no end-session URL
+// is returned, and a sign-out ends the host session only.
+//
+// A provider configured from a preset rather than from an issuer (auth0,
+// google) reaches this with no IDENTITY_ISSUER and needs the explicit pin;
+// Google publishes no end_session_endpoint at all.
+func configuredProviderSignOut(ctx context.Context, provider string) business.ProviderSignOut {
+	signOut := business.ProviderSignOut{
+		ClientID:              identityEnv("IDENTITY_CLIENT_ID"),
+		PostLogoutRedirectURI: identityEnv("IDENTITY_POST_LOGOUT_REDIRECT_URI"),
+	}
+	if pinned := identityEnv("IDENTITY_END_SESSION_URL"); hasConfiguredValue(pinned) {
+		signOut.EndSessionEndpoint = pinned
+		return signOut
+	}
+	issuer := identityEnv("IDENTITY_ISSUER")
+	if !hasConfiguredValue(issuer) {
+		return signOut
+	}
+	discoverCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	discovered, err := oidc.Discover(discoverCtx, issuer, nil)
+	if err != nil {
+		wool.Get(ctx).In("configuredProviderSignOut").Warn(
+			"could not read the provider's end_session_endpoint; a sign-out ends the host session only",
+			wool.Field("provider", provider), wool.ErrField(err))
+		return signOut
+	}
+	signOut.EndSessionEndpoint = discovered.EndSessionEndpoint
+	return signOut
 }
 
 func identityEnvOrDefault(key, fallback string) string {

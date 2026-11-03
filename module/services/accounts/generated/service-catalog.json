@@ -2904,7 +2904,7 @@
       "full_service": "saas.accounts.v1.AuthService",
       "method": "Logout",
       "input_type": "saas.accounts.v1.LogoutRequest",
-      "output_type": "google.protobuf.Empty",
+      "output_type": "saas.accounts.v1.LogoutResponse",
       "client_streaming": false,
       "server_streaming": false,
       "deprecated": false,

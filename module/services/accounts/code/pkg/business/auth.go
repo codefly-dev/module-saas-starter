@@ -498,11 +498,11 @@ func (s *Service) BeginOAuth(ctx context.Context, provider, redirectURI string) 
 // returned directly, so a failed access-marker write cannot discard the durable
 // half. Work that succeeded is kept — each step is idempotent, so a retry
 // completes the remainder rather than starting over.
-func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToken, sessionID string) error {
+func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToken, sessionID string) (*gen.LogoutResponse, error) {
 	w := wool.Get(ctx).In("Logout")
 
 	if s.minter == nil {
-		return w.NewError("auth path not wired: minter missing")
+		return nil, w.NewError("auth path not wired: minter missing")
 	}
 	var incomplete []string
 	if accessToken != "" {
@@ -518,16 +518,23 @@ func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest, accessToke
 		}
 	}
 	if err := s.minter.Revoke(ctx, req.RefreshToken); err != nil {
-		return err
+		return nil, err
 	}
 	if len(incomplete) > 0 {
 		// The family is revoked, so nothing can be refreshed; what is still live is
 		// the access half, until its natural expiry. The caller is told, because the
 		// difference between "signed out" and "signed out except for a few minutes"
 		// is theirs to act on.
-		return fmt.Errorf("%w: %s", ErrLogoutIncomplete, strings.Join(incomplete, " and "))
+		return nil, fmt.Errorf("%w: %s", ErrLogoutIncomplete, strings.Join(incomplete, " and "))
 	}
-	return nil
+	// The host session has ended. Ending the session at the identity provider
+	// needs the person's own browser — the provider's session cookie is there
+	// and in nothing accounts can send — so the complete answer is the URL for
+	// the client to send them to, and an empty one when this provider publishes
+	// no end_session_endpoint. It is computed only after every revocation held:
+	// a client told "now go here" while its host session is still live would
+	// sign out of the provider and stay signed in here.
+	return &gen.LogoutResponse{EndSessionUrl: s.endSessionURL(ctx, req.GetIdTokenHint())}, nil
 }
 
 // ErrLogoutIncomplete reports a sign-out whose refresh family was revoked while an

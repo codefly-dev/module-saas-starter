@@ -90,7 +90,10 @@ type AuthServiceClient interface {
 	// in the same device family. Membership and current role are resolved under
 	// the locked session row before the selected organization is persisted.
 	SwitchOrganization(context.Context, *connect.Request[v1.SwitchOrganizationRequest]) (*connect.Response[v1.SwitchOrganizationResponse], error)
-	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[emptypb.Empty], error)
+	// Logout ends the host session and, when the identity provider publishes an
+	// `end_session_endpoint`, returns the RP-initiated logout URL for the client
+	// to complete. See module/AUTHENTICATION.md "Signing out".
+	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
 	GetJWKS(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.JWKSResponse], error)
 	// ValidateClientAuthorization checks a client's authorization request before
 	// any sign-in UI is rendered. Public RPC: this runs before the person has
@@ -164,7 +167,7 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("SwitchOrganization")),
 			connect.WithClientOptions(opts...),
 		),
-		logout: connect.NewClient[v1.LogoutRequest, emptypb.Empty](
+		logout: connect.NewClient[v1.LogoutRequest, v1.LogoutResponse](
 			httpClient,
 			baseURL+AuthServiceLogoutProcedure,
 			connect.WithSchema(authServiceMethods.ByName("Logout")),
@@ -206,7 +209,7 @@ type authServiceClient struct {
 	completeWebAuthnMFAChallenge *connect.Client[v1.CompleteWebAuthnMFAChallengeRequest, v1.CompleteMFAChallengeResponse]
 	refreshToken                 *connect.Client[v1.RefreshTokenRequest, v1.RefreshTokenResponse]
 	switchOrganization           *connect.Client[v1.SwitchOrganizationRequest, v1.SwitchOrganizationResponse]
-	logout                       *connect.Client[v1.LogoutRequest, emptypb.Empty]
+	logout                       *connect.Client[v1.LogoutRequest, v1.LogoutResponse]
 	getJWKS                      *connect.Client[emptypb.Empty, v1.JWKSResponse]
 	validateClientAuthorization  *connect.Client[v1.ValidateClientAuthorizationRequest, v1.ValidateClientAuthorizationResponse]
 	issueClientAuthorizationCode *connect.Client[v1.IssueClientAuthorizationCodeRequest, v1.IssueClientAuthorizationCodeResponse]
@@ -249,7 +252,7 @@ func (c *authServiceClient) SwitchOrganization(ctx context.Context, req *connect
 }
 
 // Logout calls saas.accounts.v1.AuthService.Logout.
-func (c *authServiceClient) Logout(ctx context.Context, req *connect.Request[v1.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
+func (c *authServiceClient) Logout(ctx context.Context, req *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error) {
 	return c.logout.CallUnary(ctx, req)
 }
 
@@ -293,7 +296,10 @@ type AuthServiceHandler interface {
 	// in the same device family. Membership and current role are resolved under
 	// the locked session row before the selected organization is persisted.
 	SwitchOrganization(context.Context, *connect.Request[v1.SwitchOrganizationRequest]) (*connect.Response[v1.SwitchOrganizationResponse], error)
-	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[emptypb.Empty], error)
+	// Logout ends the host session and, when the identity provider publishes an
+	// `end_session_endpoint`, returns the RP-initiated logout URL for the client
+	// to complete. See module/AUTHENTICATION.md "Signing out".
+	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error)
 	GetJWKS(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.JWKSResponse], error)
 	// ValidateClientAuthorization checks a client's authorization request before
 	// any sign-in UI is rendered. Public RPC: this runs before the person has
@@ -456,7 +462,7 @@ func (UnimplementedAuthServiceHandler) SwitchOrganization(context.Context, *conn
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuthService.SwitchOrganization is not implemented"))
 }
 
-func (UnimplementedAuthServiceHandler) Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
+func (UnimplementedAuthServiceHandler) Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[v1.LogoutResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuthService.Logout is not implemented"))
 }
 
