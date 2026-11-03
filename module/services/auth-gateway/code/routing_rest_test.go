@@ -49,12 +49,17 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	require.Nil(t, paths["POST /v1/permissions:check"])
 	require.False(t, paths["POST /v1/users"].Protected)
 
-	extensions, err := LoadRESTExtensionsFromDir(context.Background(), DefaultRoutingDir())
-	require.NoError(t, err)
-	require.Len(t, extensions, 15)
+	// Every explicit extension, and whether the full ext_authz bearer path runs
+	// for it. The loop below consumes each entry and the emptiness check after
+	// it refuses one this map does not name, so the map IS the inventory —
+	// which is why the length assertion derives from it rather than naming a
+	// number. A pinned literal is the shape where two branches each add a route
+	// and each bump the same figure, and the merge of both is a count that is
+	// silently wrong while every test is green.
 	wantExtensions := map[string]bool{
 		"POST /v1/auth/magic-link":                       false,
 		"POST /v1/auth/magic-link/verify":                false,
+		"POST /v1/auth/backchannel-logout":               false,
 		"POST /v1/billing/webhook":                       false,
 		"POST /v1/email/webhook/resend":                  false,
 		"POST /v1/datasource/github/webhook/{source_id}": false,
@@ -69,6 +74,10 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 		"POST /v1/oauth2/token":                          false,
 		"POST /v1/oauth2/authorize/grant":                true,
 	}
+
+	extensions, err := LoadRESTExtensionsFromDir(context.Background(), DefaultRoutingDir())
+	require.NoError(t, err)
+	require.Len(t, extensions, len(wantExtensions))
 	for _, entry := range extensions {
 		require.Empty(t, entry.Procedure)
 		// The upstream key is derived from the folder's {module, service}
@@ -96,6 +105,15 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	require.Nil(t, matcher.MatchREST(http.MethodPost, "/v1/permissions:check"))
 	require.Equal(t, "/v1/status", matcher.MatchREST(http.MethodGet, "/v1/status").Path)
 	require.False(t, matcher.MatchREST(http.MethodGet, "/v1/status").Protected)
+	// The back-channel logout receiver is routed, unprotected (the provider's
+	// signed logout token is the credential, and it holds no session here), and
+	// does not shadow the transcoded `/v1/auth/logout` beside it.
+	require.Equal(t, "/v1/auth/backchannel-logout",
+		matcher.MatchREST(http.MethodPost, "/v1/auth/backchannel-logout").Path)
+	require.False(t, matcher.MatchREST(http.MethodPost, "/v1/auth/backchannel-logout").Protected)
+	require.NotNil(t, matcher.MatchREST(http.MethodPost, "/v1/auth/logout"))
+	require.Empty(t, matcher.MatchREST(http.MethodPost, "/v1/auth/backchannel-logout").Procedure)
+	require.NotEmpty(t, matcher.MatchREST(http.MethodPost, "/v1/auth/logout").Procedure)
 }
 
 func TestRESTExtensionsRejectDescriptorRoutesAndDisabledEntries(t *testing.T) {
