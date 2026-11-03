@@ -354,6 +354,39 @@ ROLE`) with its own explicit grants, which a request transaction has no way to
 reach. Each entry is recorded (`recordControlPlane`), so the crossings are
 countable rather than merely greppable.
 
+### The daily archive, and what "sealed" currently means
+
+With `audit-archive/AUDIT_ARCHIVE_URI` set, the host writes one object per
+complete UTC day — the whole platform's audit log, every organisation plus the
+control plane — to the composed object-storage service's own bucket, and
+records a receipt for each archived day in the audit log itself: the day, the
+object key, its SHA-256 digest, and the byte and event counts
+(`saas.audit.archive_exported`). The host's daily sweep offers each day; a
+leased job performs the export. Two independent guards make it idempotent per
+day: the job's idempotency key is the day, and the write is create-if-absent, so
+even a job that outlived its own record cannot replace an archived day's bytes.
+
+**State plainly what this does and does not prove.**
+
+- It does prove the audit trail has a copy outside the database it was written
+  to, and that a later run of this host cannot silently rewrite an archived day.
+- It does prove a tampered object is *detectable*: the receipt's digest
+  describes exactly the bytes that were written, and the receipt is in the audit
+  log rather than only in the bucket.
+- It does **not** prove the object is immutable. That needs an object-lock or
+  retention policy on the bucket, which belongs to the infrastructure that
+  provisions the bucket and not to this module — accounts names a key prefix and
+  never a bucket, precisely so it makes no claim about a bucket's policy. Until
+  that lock exists, the archive is tamper-**evident** and not
+  tamper-**proof**, and anyone with write access to the bucket can replace an
+  object; what they cannot do is make the replacement agree with the receipt.
+- A day with no events is still archived, as an empty array. The absence of an
+  object means "not archived" and nothing else.
+
+A day older than the sweep's catch-up window is not archived automatically; it
+is `ExportAuditLog` for an operator to run. Unset, the key leaves the audit
+log's only copy in this database, and the boot says so.
+
 ## Removing an organization member: deleted vs. rendered ineffective
 
 Organization membership is the root of a member's authority in a tenant, and

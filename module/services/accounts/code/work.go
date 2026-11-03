@@ -372,6 +372,35 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 			wool.Get(ctx).Warn("the composed object-storage service cannot read a tenant's bucket; object-storage datasources are unavailable", wool.ErrField(err))
 		}
 	}
+	// The daily audit archive writes to the same composed object-storage
+	// service, but unbound: its Put carries no bucket, so it lands in that
+	// service's own configured bucket — the host's, not a tenant's. The prefix
+	// is accounts' to name and the bucket is the composition's, which is why
+	// AUDIT_ARCHIVE_URI is refused if it names one.
+	auditArchivePrefix, err := business.ParseAuditArchiveURI(workspaceEnv("audit-archive", "AUDIT_ARCHIVE_URI"))
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case auditArchivePrefix == "":
+		// Say it at boot. "Is the audit log archived off this database?" was
+		// otherwise answerable only by reading configuration on the box, and the
+		// answer that matters — no — looked exactly like a host that had one.
+		w.Info("no audit archive is configured (audit-archive/AUDIT_ARCHIVE_URI); the audit log's only copy is this database")
+	case objectStorage == nil:
+		// A configured destination with nothing to write it through is a
+		// misconfiguration, not a degraded mode: the operator asked for an
+		// archive and would otherwise get silence.
+		return nil, fmt.Errorf(
+			"audit-archive/AUDIT_ARCHIVE_URI is set to %q but no object-storage service is composed, so no day could ever be archived; compose one or clear the key",
+			auditArchivePrefix)
+	default:
+		service.SetAuditArchive(business.AuditArchive{
+			Prefix: auditArchivePrefix,
+			Store:  objectstore.NewHostStore(storagev0.NewObjectStorageClient(objectStorage)),
+		})
+		w.Info("daily audit archive enabled", wool.Field("prefix", auditArchivePrefix))
+	}
 	// Every provider credential's operations are metered in one window shared by
 	// every replica, so a sync a person starts is served before background work.
 	service.SetDatasourceBudgetStore(store)
@@ -1118,6 +1147,21 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, err
 	}
 
+	// The daily audit archive (issue #1296): a leased worker that writes one
+	// complete UTC day of the whole platform's audit log to the configured
+	// archive. Like the privacy worker it runs whether or not a destination is
+	// wired, so a day enqueued by a runtime that had one dead-letters visibly
+	// here instead of sitting pending after the key was cleared.
+	auditArchiveWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.AuditArchiveQueue,
+		Handler:    service.NewAuditArchiveJobHandler(),
+		RetryDelay: business.AuditArchiveRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// The change-set compiler (issue #487): a leased worker that turns each raw
 	// GitHub delivery — and each periodic/forced reconcile request — into a set of
 	// per-file ingest ops, holding the source's decrypted token so all GitHub
@@ -1278,12 +1322,30 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 			}
 		}
 
+		// The daily audit archive (issue #1296) offers every complete day in its
+		// catch-up window; the enqueue is deduplicated by day, so a tick that
+		// offers a day already archived costs one refused insert and nothing
+		// else. The export itself runs in the leased worker, off this tick: an
+		// object store that is slow or down must not hold the retention pass
+		// that shares it.
+		sweepAuditArchive := func() {
+			if !service.AuditArchiveConfigured() {
+				return
+			}
+			if n, err := service.ScheduleAuditArchive(retentionCtx, time.Now()); err != nil {
+				rw.Warn("audit archive scheduling failed", wool.ErrField(err))
+			} else if n > 0 {
+				rw.Info("offered audit archive days", wool.Field("count", n))
+			}
+		}
+
 		// Run once immediately on startup.
 		runRetention()
 		sweepReplay()
 		sweepPrivacyArtifacts()
 		sweepReconcile()
 		sweepInstallationRecheck()
+		sweepAuditArchive()
 
 		retentionTicker := time.NewTicker(24 * time.Hour)
 		replayTicker := time.NewTicker(time.Hour)
@@ -1297,6 +1359,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 				return
 			case <-retentionTicker.C:
 				runRetention()
+				sweepAuditArchive()
 			case <-replayTicker.C:
 				sweepReplay()
 				sweepPrivacyArtifacts()
@@ -1345,6 +1408,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
 	privacyWorker.Start(ctx)
+	auditArchiveWorker.Start(ctx)
 	datasourceDeliveryWorker.Start(ctx)
 	datasourceInstallationWorker.Start(ctx)
 	eventRelayWorker.Start(ctx)

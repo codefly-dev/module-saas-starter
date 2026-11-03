@@ -413,6 +413,49 @@ OpenTelemetry. Queue and bounded result/outcome are the only labels. Durable
 queue depth, oldest age, retries, terminal failures, and replay lineage remain
 in the generic Postgres operations projection.
 
+## Daily audit archive adapter
+
+The audit archive is the one workload the platform *schedules* rather than
+accepts from a request. The host's daily sweep offers every complete UTC day in
+a seven-day catch-up window on queue `audit_archive`, topic
+`audit.archive.export`, source `saas.audit`, schema version `1`, with the day
+itself as the idempotency key; a leased worker exports that day and writes a
+receipt. Nothing is offered or run unless `audit-archive/AUDIT_ARCHIVE_URI`
+names a destination.
+
+The day being the idempotency key is what makes the sweep safe to run on every
+tick for ever: the store admits the first offer of a day and drops every later
+one, so a tick after the first costs one refused insert. The window rather than
+only yesterday is what makes a host that was down over a weekend archive the
+days it missed instead of losing them silently, and it costs nothing because
+every day in it is already deduplicated. A day older than the window is an
+operator's `ExportAuditLog` to run by hand.
+
+The sweep only enqueues. Exporting inline would hold the daily tick for as long
+as the slowest object store takes, and an object-storage outage would then stall
+the retention pass that shares the tick.
+
+Failure classification, which is the part worth knowing:
+
+- a store refusal is **retryable**, on a schedule that spends the eight-attempt
+  budget over roughly four hours — long enough to outlast an ordinary
+  object-store incident, short enough to reach a dead letter the same day;
+- a key already present is a **success** with no second receipt. That is the
+  second idempotency guard — the one that holds after the job record has been
+  reaped — and the first archiving already wrote the receipt, so writing another
+  whose digest described bytes this run did not write would be a lie;
+- a malformed envelope, a day whose payload and idempotency key disagree, and a
+  job whose destination was cleared while it was queued are each **permanent**:
+  no amount of retrying makes any of them executable;
+- an object written whose receipt could not be recorded is **permanent** too,
+  and deliberately so: a retry re-runs the export, meets the create-if-absent
+  refusal and returns without a receipt, so retrying cannot repair it. It
+  dead-letters where an operator sees it.
+
+What "sealed" means, and does not, is in [../AUTHZ.md](../AUTHZ.md) § "The daily
+archive, and what \"sealed\" currently means". Short version: tamper-evident,
+not immutable.
+
 ## Privacy workflow adapter
 
 Privacy export and deletion run on this platform instead of a detached

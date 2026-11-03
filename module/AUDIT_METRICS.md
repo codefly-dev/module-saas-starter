@@ -13,6 +13,22 @@ must not join or JSON-encode the arrays into strings. Audit schema validation
 warnings are advisory and do not by themselves reject an installation or drop
 its audit record. Authorization and transaction failures remain separate.
 
+## The daily archive is not a metric, and not immutable either
+
+`audit-archive/AUDIT_ARCHIVE_URI` turns on a scheduled export of each complete
+UTC day's audit log to the composed object-storage service's own bucket, with a
+receipt per day in the audit log (`saas.audit.archive_exported`: the day, the
+object key, its digest, the byte and event counts). It is not part of the
+scoped-metric surface this document describes and nothing here reads it.
+
+It is named here only to keep one claim from being made by omission: the archive
+is tamper-**evident**, not tamper-**proof**. The write is create-if-absent and
+the receipt carries the digest, so a replaced object disagrees with the trail —
+but the object itself is immutable only once the bucket carries an object-lock
+or retention policy, which belongs to the infrastructure that provisions the
+bucket and not to this module. [AUTHZ.md](../AUTHZ.md) § "The daily archive, and
+what \"sealed\" currently means" is the full statement.
+
 ## Configuration recipes
 
 The SDK supplies `orgId`, `from`, and `to` through `runDashboard`'s viewer context.

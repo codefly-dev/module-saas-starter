@@ -37,6 +37,9 @@ workspace-configuration-dependencies:
     - abuse-protection
     - application
     - artifact-cache
+    # The daily audit archive's destination prefix. Unset means no archive is
+    # configured and none is scheduled (configurations/local/audit-archive.env).
+    - audit-archive
     - billing
     - datasource-keys
     - datasource-oauth

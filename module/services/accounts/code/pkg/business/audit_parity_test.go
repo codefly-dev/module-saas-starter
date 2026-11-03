@@ -14,6 +14,11 @@ import (
 // nothing can reach.
 var eventsEmittedOutsideRPC = []EventType{
 	EventActivationAchieved,
+	// The daily audit archive's receipt: written by a leased job the host's own
+	// sweep enqueues, with no request behind it. There is deliberately no RPC
+	// that archives a day — a scheduled, idempotent export is not something a
+	// caller asks for.
+	EventAuditArchiveExported,
 	// The authority core journals an uninstall in its own transaction; the
 	// host interfaces declare no uninstall RPC (codefly.dev/installation has
 	// none), so the host's own teardown is its one caller today.
