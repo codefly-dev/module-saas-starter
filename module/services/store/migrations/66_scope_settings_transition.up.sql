@@ -20,11 +20,13 @@
 -- depends on the month (the partitions of public.audit_events) and a consumer's
 -- own policies, which no generated file here could name.
 --
--- The window closes in a later migration — the one-line reverse of this one,
--- which tools/rls-scope-settings-transition.sql documents and
--- 66_scope_settings_transition.down.sql already performs — cut once no
--- deployable image binds the retired names. That is a release boundary, not a
--- cleanup: it must not ship beside this one.
+-- The window closes in a later migration: the same catalog-driven walk,
+-- rewriting the compatibility read back to a single read of the library's name.
+-- That text is 66_scope_settings_transition.down.sql, which the replay test
+-- already proves, renumbered above the frontier and cut once no deployable
+-- image binds the retired names. It is a release boundary, not a cleanup, and
+-- it must not ship beside this one -- together they are the one-step rename
+-- again.
 
 -- rls-scope-settings-transition — open the compatibility window on the two
 -- scope settings, over whatever this database's policies and routines read now.
