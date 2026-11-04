@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { Badge, Button } from "@/shared/ui";
+import { Badge, Button, Section } from "@/shared/ui";
 import { toOrgRole } from "../model/types";
 import { orgQueries } from "../service/queries";
 import { OrgMembersPanel } from "./org-members-panel";
@@ -55,29 +55,34 @@ export function OrganizationDetail({
 	const canLeave = source === "membership" && !organization.archived;
 
 	return (
-		<section
+		<Section
 			aria-label={`Organization ${organization.name}`}
-			className="mt-8 space-y-6"
-		>
-			<div className="flex items-center justify-between">
-				<div className="flex items-center gap-2">
-					<h2 className="text-xl font-semibold">{organization.name}</h2>
-					<span className="font-mono text-sm text-muted-foreground">
-						{organization.slug}
-					</span>
-					{organization.archived && <Badge variant="outline">Archived</Badge>}
-				</div>
-				{onClose && (
+			className="mt-8"
+			title={organization.name}
+			description={
+				<>
+					<span className="font-mono">{organization.slug}</span>
+					{organization.archived && (
+						<>
+							{" "}
+							<Badge variant="outline">Archived</Badge>
+						</>
+					)}
+				</>
+			}
+			actions={
+				onClose ? (
 					<Button
 						variant="ghost"
-						size="sm"
+						size="icon-sm"
 						onClick={onClose}
 						aria-label="Close organization"
 					>
-						<X className="h-4 w-4" />
+						<X />
 					</Button>
-				)}
-			</div>
+				) : undefined
+			}
+		>
 			{organization.archived ? (
 				<p className="text-sm text-muted-foreground">
 					This organization was deleted. It has no members and admits no
@@ -99,6 +104,6 @@ export function OrganizationDetail({
 					/>
 				</>
 			)}
-		</section>
+		</Section>
 	);
 }

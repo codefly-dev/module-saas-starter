@@ -2,10 +2,11 @@
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
 import { useAuth } from "@/lib/auth";
 import {
@@ -18,6 +19,9 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 	Button,
+	Page,
+	PageHeader,
+	Stack,
 } from "@/shared/ui";
 import type { Team } from "../model/types";
 import { teamMutations } from "../service/mutations";
@@ -117,32 +121,35 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 	const handleDelete = useCallback((team: Team) => setDeleteTarget(team), []);
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<h2 data-slot="page-title" className="type-page-title">
-					Teams
-				</h2>
-				<div className="flex items-center gap-3">
-					<OrgSelector />
-					{orgId && canManage && (
-						<Button onClick={() => setShowCreate(true)}>
-							<Plus className="mr-2 h-4 w-4" />
-							Create Team
-						</Button>
-					)}
-				</div>
-			</div>
+		<Page>
+			<PageHeader
+				title="Teams"
+				description="A team groups people so a role granted once reaches all of them."
+				actions={
+					<Stack direction="row" gap={3} align="center">
+						<OrgSelector />
+						{orgId && canManage && (
+							<Button onClick={() => setShowCreate(true)}>
+								<Plus />
+								Create team
+							</Button>
+						)}
+					</Stack>
+				}
+			/>
 
 			{!orgId ? (
-				<div className="flex h-48 items-center justify-center rounded-md border border-dashed">
-					<p className="text-muted-foreground">
-						Select an organization to view teams.
-					</p>
-				</div>
+				<EmptyState
+					icon={Users}
+					title="No organization selected"
+					description="Pick an organization above to see the teams in it."
+				/>
 			) : isError ? (
 				<div role="alert">
 					Couldn&apos;t load teams.{" "}
-					<Button onClick={() => void refetch()}>Retry</Button>
+					<Button variant="outline" onClick={() => void refetch()}>
+						Retry
+					</Button>
 				</div>
 			) : (
 				<TeamsTable
@@ -209,6 +216,6 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 					</AlertDialogContent>
 				</AlertDialog>
 			)}
-		</div>
+		</Page>
 	);
 }

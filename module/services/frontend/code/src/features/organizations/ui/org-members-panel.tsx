@@ -33,11 +33,20 @@ import {
 	AlertDialogTitle,
 	AlertDialogTrigger,
 	Button,
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	Label,
+	Section,
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Stack,
 } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import { roleLabel } from "../model/transforms";
@@ -78,6 +87,7 @@ export function OrgMembersPanel({
 }: OrgMembersPanelProps) {
 	const queryClient = useQueryClient();
 	const { platformRole } = useAuth();
+	const [adding, setAdding] = useState(false);
 	const [newUserId, setNewUserId] = useState("");
 	const [newRole, setNewRole] = useState<OrgRole>("member");
 
@@ -131,6 +141,7 @@ export function OrgMembersPanel({
 			toast.success("Member added");
 			invalidateRoster();
 			setNewUserId("");
+			setAdding(false);
 		},
 		onError: (error) =>
 			refusalToast(error, refusalMessage(error, "Failed to add member")),
@@ -287,58 +298,96 @@ export function OrgMembersPanel({
 	});
 
 	return (
-		<div className="space-y-4">
-			<div className="flex items-center justify-between">
-				<h3 className="text-lg font-semibold">
-					Members of <span className="text-muted-foreground">{orgName}</span>
-				</h3>
-				{onClose && (
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={onClose}
-						aria-label="Close"
-					>
-						<X className="h-4 w-4" />
-					</Button>
-				)}
-			</div>
-
-			{platformRole ? (
-				<div className="flex items-center gap-2">
-					<UserPicker
-						value={newUserId}
-						onChange={setNewUserId}
-						exclude={members.map((member) => member.userId)}
-					/>
-					<Select
-						items={ASSIGNABLE_ROLES}
-						value={newRole}
-						onValueChange={(v) => {
-							if (v) setNewRole(v as OrgRole);
-						}}
-					>
-						<SelectTrigger
-							className="w-32"
-							aria-label="Role for the new member"
+		<Section
+			title="Members"
+			description={`Everyone who can reach ${orgName}, and what they may do in it.`}
+			actions={
+				<Stack direction="row" gap={2} align="center">
+					{/* The add control is the section's action and stays pressable:
+					    inline, it was a picker, a role Select and a button disabled
+					    until the picker was filled — a greyed-out call to action
+					    sitting above the roster it adds to. */}
+					{platformRole && (
+						<Button size="sm" onClick={() => setAdding(true)}>
+							<UserPlus />
+							Add member
+						</Button>
+					)}
+					{onClose && (
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							onClick={onClose}
+							aria-label="Close"
 						>
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="member">Member</SelectItem>
-							<SelectItem value="admin">Admin</SelectItem>
-							<SelectItem value="owner">Owner</SelectItem>
-						</SelectContent>
-					</Select>
-					<Button
-						size="sm"
-						disabled={addMutation.isPending || !newUserId.trim()}
-						onClick={() => addMutation.mutate()}
-					>
-						<UserPlus className="mr-2 h-4 w-4" />
-						{addMutation.isPending ? "Adding..." : "Add"}
-					</Button>
-				</div>
+							<X />
+						</Button>
+					)}
+				</Stack>
+			}
+		>
+			{platformRole ? (
+				<Dialog
+					open={adding}
+					onOpenChange={(open) => {
+						if (!addMutation.isPending) setAdding(open);
+					}}
+				>
+					<DialogContent>
+						<DialogHeader>
+							<DialogTitle>Add a member</DialogTitle>
+							<DialogDescription>
+								{`Give someone access to ${orgName}. Their role here decides what they may do in it.`}
+							</DialogDescription>
+						</DialogHeader>
+						<Stack gap={4}>
+							<UserPicker
+								key={adding ? "open" : "closed"}
+								value={newUserId}
+								onChange={setNewUserId}
+								exclude={members.map((member) => member.userId)}
+							/>
+							<Stack gap={2}>
+								<Label htmlFor="new-org-role">Role</Label>
+								<Select
+									items={ASSIGNABLE_ROLES}
+									value={newRole}
+									onValueChange={(v) => {
+										if (v) setNewRole(v as OrgRole);
+									}}
+								>
+									<SelectTrigger
+										id="new-org-role"
+										className="w-full"
+										aria-label="Role for the new member"
+									>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="member">Member</SelectItem>
+										<SelectItem value="admin">Admin</SelectItem>
+										<SelectItem value="owner">Owner</SelectItem>
+									</SelectContent>
+								</Select>
+							</Stack>
+						</Stack>
+						<DialogFooter>
+							<Button
+								variant="outline"
+								disabled={addMutation.isPending}
+								onClick={() => setAdding(false)}
+							>
+								Cancel
+							</Button>
+							<Button
+								disabled={addMutation.isPending || !newUserId.trim()}
+								onClick={() => addMutation.mutate()}
+							>
+								{addMutation.isPending ? "Adding..." : "Add"}
+							</Button>
+						</DialogFooter>
+					</DialogContent>
+				</Dialog>
 			) : (
 				// An organization administrator does not search the platform's user
 				// directory; they invite by email, and get a link to share when the
@@ -363,6 +412,6 @@ export function OrgMembersPanel({
 					"No members in this organization.",
 				)}
 			/>
-		</div>
+		</Section>
 	);
 }

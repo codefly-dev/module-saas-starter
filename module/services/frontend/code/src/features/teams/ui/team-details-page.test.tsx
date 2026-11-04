@@ -208,13 +208,17 @@ describe("team details", () => {
 		expect(
 			await screen.findByText("No members in this team yet."),
 		).toBeTruthy();
+		// With no roster yet, the one "Add member" on the page is the empty
+		// state's own call to action; it opens the form rather than being a
+		// disabled button above the emptiness it answers.
+		fireEvent.click(screen.getByRole("button", { name: "Add member" }));
 		fireEvent.change(screen.getByPlaceholderText("Search members by email…"), {
 			target: { value: "newbie" },
 		});
 		fireEvent.click(
 			await screen.findByRole("button", { name: "newbie@example.com" }),
 		);
-		fireEvent.click(screen.getByRole("button", { name: "Add member" }));
+		fireEvent.click(screen.getByRole("button", { name: "Add to team" }));
 		// The mutation has to reach the service before the roster can refetch;
 		// waiting on the button proves nothing, it is there throughout.
 		await waitFor(() => expect(added).not.toBeNull());

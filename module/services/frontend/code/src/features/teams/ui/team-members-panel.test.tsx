@@ -87,6 +87,9 @@ describe("adding a member reports the write, not the read that follows it", () =
 				currentUserId="u-admin"
 			/>,
 		);
+		// The add form is an overlay now, so the roster's own call to action opens
+		// it and the dialog's footer button is what commits the write.
+		fireEvent.click(await screen.findByRole("button", { name: "Add member" }));
 		fireEvent.change(
 			await screen.findByPlaceholderText("Search members by email…"),
 			{ target: { value: "newbie" } },
@@ -94,7 +97,7 @@ describe("adding a member reports the write, not the read that follows it", () =
 		fireEvent.click(
 			await screen.findByRole("button", { name: "newbie@example.com" }),
 		);
-		fireEvent.click(await screen.findByRole("button", { name: "Add member" }));
+		fireEvent.click(await screen.findByRole("button", { name: "Add to team" }));
 		await waitFor(() => expect(rosterCalls).toBeGreaterThan(1));
 		return () => releaseRoster();
 	}
@@ -102,8 +105,9 @@ describe("adding a member reports the write, not the read that follows it", () =
 	it("settles the button while the roster is still being re-read", async () => {
 		const release = await addAMemberWithTheRosterHeld();
 		try {
-			// The write has landed and the refresh is still in flight. The button
-			// must be back to offering the next add, not reporting the read.
+			// The write has landed and the refresh is still in flight. The dialog
+			// must be closed and the roster back to offering the next add, not
+			// reporting the read.
 			await waitFor(() =>
 				expect(screen.queryByRole("button", { name: "Adding…" })).toBeNull(),
 			);

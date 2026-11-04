@@ -8,7 +8,14 @@ import { toast } from "sonner";
 
 import { refusalToast } from "@/features/auth/model/step-up";
 import { useAuth } from "@/lib/auth";
-import { Button, Input } from "@/shared/ui";
+import {
+	Button,
+	InputGroup,
+	InputGroupAddon,
+	InputGroupInput,
+	Page,
+	PageHeader,
+} from "@/shared/ui";
 import { toUserStatus, type User } from "../model/types";
 import { type UserEdit, userMutations } from "../service/mutations";
 import { userQueries } from "../service/queries";
@@ -125,19 +132,24 @@ export function UsersPage() {
 	);
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<h2 data-slot="page-title" className="type-page-title">Users</h2>
-				<div className="relative w-80">
-					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-					<Input
-						placeholder="Search by email or name..."
-						value={search}
-						onChange={(e) => setSearch(e.target.value)}
-						className="pl-9"
-					/>
-				</div>
-			</div>
+		<Page>
+			<PageHeader
+				title="Users"
+				description="Everyone the platform knows, across every organization."
+				actions={
+					<InputGroup className="w-80">
+						<InputGroupAddon>
+							<Search />
+						</InputGroupAddon>
+						<InputGroupInput
+							aria-label="Search users"
+							placeholder="Search by email or name..."
+							value={search}
+							onChange={(e) => setSearch(e.target.value)}
+						/>
+					</InputGroup>
+				}
+			/>
 
 			{isError ? (
 				<div
@@ -209,6 +221,6 @@ export function UsersPage() {
 					isPending={suspendMutation.isPending}
 				/>
 			)}
-		</div>
+		</Page>
 	);
 }
