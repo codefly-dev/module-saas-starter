@@ -4,7 +4,7 @@ import { OrgSelector } from "@/components/org-selector";
 import { PERMISSIONS } from "@/gen/saas/accounts/v1/frontend_catalog";
 import { useAuth } from "@/lib/auth";
 import { hasPermission, isSuperAdmin } from "@/lib/permissions";
-import { Button } from "@/shared/ui";
+import { Button, Page, PageHeader, Stack } from "@/shared/ui";
 import type { Role } from "../model/types";
 import { useRoles } from "../service/queries";
 import { RoleForm } from "./role-form";
@@ -32,23 +32,21 @@ function RolesPageForOrganization({
 	const { data: roles = [], isLoading, isError, refetch } = useRoles(orgId);
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 data-slot="page-title" className="type-page-title">
-						Roles
-					</h1>
-					<p className="text-muted-foreground">
-						{orgId
-							? "Manage roles and permissions for the selected organization."
-							: "Global roles. Select an organization to manage its roles."}
-					</p>
-				</div>
-				<div className="flex items-center gap-3">
-					<OrgSelector />
-					{canCreate && <RoleForm orgId={orgId} />}
-				</div>
-			</div>
+		<Page>
+			<PageHeader
+				title="Roles"
+				description={
+					orgId
+						? "Manage roles and permissions for the selected organization."
+						: "Global roles. Select an organization to manage its roles."
+				}
+				actions={
+					<Stack direction="row" gap={3} align="center">
+						<OrgSelector />
+						{canCreate && <RoleForm orgId={orgId} />}
+					</Stack>
+				}
+			/>
 
 			{!orgId && (
 				<p>Select an organization to create or manage its custom roles.</p>
@@ -63,6 +61,6 @@ function RolesPageForOrganization({
 			) : (
 				<RolesTable roles={roles as Role[]} isLoading={isLoading} />
 			)}
-		</div>
+		</Page>
 	);
 }

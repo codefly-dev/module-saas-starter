@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -11,7 +12,15 @@ import { useAuth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { readOutcome, readOutcomeMessage } from "@/shared/lib/read-outcome";
 import { formatDate } from "@/shared/lib/utils";
-import { Badge, Button, Spinner, useLoadingPhase } from "@/shared/ui";
+import {
+	Badge,
+	Button,
+	Page,
+	PageHeader,
+	Spinner,
+	Stack,
+	useLoadingPhase,
+} from "@/shared/ui";
 import { roleLabel } from "../model/transforms";
 import { toTeamRole } from "../model/types";
 import { teamMutations } from "../service/mutations";
@@ -46,16 +55,17 @@ function TeamDetailsForOrganization({
 		(item) => item.id === teamId && item.orgId === orgId,
 	);
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between gap-4">
+		<Page>
+			<Stack direction="row" justify="between" align="center" gap={4}>
 				<Link
 					href="/admin/teams"
-					className="text-sm text-primary hover:underline"
+					className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground hover:underline"
 				>
-					← All teams
+					<ArrowLeft className="size-4" />
+					All teams
 				</Link>
 				<OrgSelector />
-			</div>
+			</Stack>
 			{!orgId ? (
 				<p>Select an organization to view this team.</p>
 			) : quiet ? null : indicator ? (
@@ -63,19 +73,21 @@ function TeamDetailsForOrganization({
 			) : isError ? (
 				<div role="alert">
 					{readOutcomeMessage(readOutcome(true, error), "this team", "")}{" "}
-					<Button onClick={() => void refetch()}>Retry</Button>
+					<Button variant="outline" onClick={() => void refetch()}>
+						Retry
+					</Button>
 				</div>
 			) : !team ? (
 				<div role="alert">
-					<h1 className="text-2xl font-bold">Team unavailable</h1>
-					<p>
-						This team was deleted or isn&apos;t in your selected organization.
-					</p>
+					<PageHeader
+						title="Team unavailable"
+						description="This team was deleted or isn't in your selected organization."
+					/>
 				</div>
 			) : (
 				<TeamDetails team={team} />
 			)}
-		</div>
+		</Page>
 	);
 }
 
@@ -111,61 +123,70 @@ function TeamDetails({ team }: { team: Team }) {
 	});
 	return (
 		<>
-			<div className="flex items-start justify-between gap-4">
-				<div className="space-y-2">
-					<h1 className="text-2xl font-bold">{team.name}</h1>
-					<p className="text-muted-foreground">
-						{team.description || "No description yet."}
-					</p>
-					<p className="text-sm text-muted-foreground">
-						Created {formatDate(team.createdAt)}
-					</p>
-				</div>
-				{canManage && (
-					<Button variant="outline" onClick={() => setEditing(true)}>
-						Edit team
-					</Button>
-				)}
-			</div>
-			<section
-				aria-label="Your team access"
-				className="space-y-2 rounded-lg border p-4"
+			<PageHeader
+				title={team.name}
+				description={team.description || "No description yet."}
+				actions={
+					canManage ? (
+						<Button variant="outline" onClick={() => setEditing(true)}>
+							Edit team
+						</Button>
+					) : undefined
+				}
 			>
-				<h2 className="font-semibold">Your access</h2>
-				{accessQuiet ? null : accessIndicator ? (
-					<Spinner label="Checking your team role" />
-				) : members.isError ? (
-					<p>
-						{readOutcomeMessage(
-							readOutcome(true, members.error),
-							"your role in this team",
-							"",
-						)}
-					</p>
-				) : (
-					<>
-						<Badge variant={teamAdmin ? "default" : "outline"}>
-							{myRole
-								? `Team ${roleLabel(myRole).toLowerCase()}`
-								: "Not a team member"}
-						</Badge>
-						<p>
-							{teamAdmin
-								? "You are a team administrator."
-								: "You are not a team administrator."}
-						</p>
-						<p className="text-sm text-muted-foreground">
-							{platformRole === "super_admin"
-								? "Your platform super-admin access also allows you to manage this team."
-								: orgAdmin
-									? "Your organization admin access allows you to manage this team."
-									: teamAdmin
-										? "You can edit this team, add members, change member roles, and remove members."
-										: "You can view the roster. A team or organization administrator manages membership."}
-						</p>
-					</>
-				)}
-			</section>
+				{/* Who you are here, on one line under the title, rather than a
+				    bordered card of its own carrying the same weight as the roster.
+				    It was three stacked lines — a chip, "You are not a team
+				    administrator." and "Your platform super-admin access also allows
+				    you to manage this team." — which together say one thing: whether
+				    you can change anything on this page. */}
+				<Stack
+					direction="row"
+					gap={2}
+					align="center"
+					className="flex-wrap pt-1 text-sm text-muted-foreground"
+				>
+					{accessQuiet ? null : accessIndicator ? (
+						<Spinner label="Checking your team role" size="sm" />
+					) : members.isError ? (
+						<span>
+							{readOutcomeMessage(
+								readOutcome(true, members.error),
+								"your role in this team",
+								"",
+							)}
+						</span>
+					) : (
+						<>
+							<Badge variant={teamAdmin ? "default" : "outline"}>
+								{myRole
+									? `Team ${roleLabel(myRole).toLowerCase()}`
+									: "Not a team member"}
+							</Badge>
+							{/* One sentence, the most specific one that is true: a
+							    super-admin does not also need telling that they hold no
+							    team role, which the chip beside it already says. Each is
+							    its own element so it reads as one claim, not a paragraph. */}
+							<span>
+								{platformRole === "super_admin"
+									? "Your platform super-admin access also allows you to manage this team."
+									: orgAdmin
+										? "Your organization admin access allows you to manage this team."
+										: teamAdmin
+											? "You are a team administrator."
+											: "You are not a team administrator."}
+							</span>
+							{!teamAdmin && !orgAdmin && platformRole !== "super_admin" && (
+								<span>
+									A team or organization administrator manages membership.
+								</span>
+							)}
+							<span>·</span>
+							<span>Created {formatDate(team.createdAt)}</span>
+						</>
+					)}
+				</Stack>
+			</PageHeader>
 			<TeamMembersPanel
 				orgId={team.orgId}
 				teamId={team.id}
@@ -179,26 +200,24 @@ function TeamDetails({ team }: { team: Team }) {
 				canGrant={hasPermission(platformRole, orgRole, PERMISSIONS.ROLES_WRITE)}
 			/>
 			{editing && (
-				<>
-					<TeamForm
-						open
-						mode="edit"
-						initial={{ name: team.name, description: team.description }}
-						onSubmit={(values) => update.mutate(values)}
-						onCancel={() => {
-							if (!update.isPending) {
-								setEditing(false);
-								update.reset();
-							}
-						}}
-						isPending={update.isPending}
-						error={
-							update.isError
-								? `Couldn't update the team: ${update.error.message}`
-								: undefined
+				<TeamForm
+					open
+					mode="edit"
+					initial={{ name: team.name, description: team.description }}
+					onSubmit={(values) => update.mutate(values)}
+					onCancel={() => {
+						if (!update.isPending) {
+							setEditing(false);
+							update.reset();
 						}
-					/>
-				</>
+					}}
+					isPending={update.isPending}
+					error={
+						update.isError
+							? `Couldn't update the team: ${update.error.message}`
+							: undefined
+					}
+				/>
 			)}
 		</>
 	);

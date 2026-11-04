@@ -37,6 +37,14 @@ export {
 	CardTitle,
 } from "@codefly-dev/ui/layout";
 export { Checkbox } from "@codefly-dev/ui/layout";
+// A badge a person can act on. Its remove control is the kit's own, so a
+// revocable grant stops being a Badge wrapped around a hand-written <button>.
+export {
+	Chip,
+	ChipGroup,
+	type ChipGroupProps,
+	type ChipProps,
+} from "@codefly-dev/ui/layout";
 export { ErrorState, type ErrorStateProps } from "@codefly-dev/ui/layout";
 export {
 	Dialog,
@@ -57,6 +65,16 @@ export {
 	DropdownMenuTrigger,
 } from "@codefly-dev/ui/layout";
 export { Input } from "@codefly-dev/ui/layout";
+// A control with an addon inside its own border: the search box shape every
+// list surface wants, instead of a stacked Label and a bare Input taking a
+// whole row above the table they filter.
+export {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupInput,
+	InputGroupText,
+} from "@codefly-dev/ui/layout";
 export { Label } from "@codefly-dev/ui/layout";
 export { QRCode, type QRCodeProps } from "@codefly-dev/ui/layout";
 export {
@@ -67,6 +85,9 @@ export {
 	SelectValue,
 } from "@codefly-dev/ui/layout";
 export { Separator } from "@codefly-dev/ui/layout";
+// A painted surface with no imposed padding: the frame around a table, where a
+// page would otherwise write `rounded-lg border` by hand.
+export { Surface } from "@codefly-dev/ui/layout";
 export { Sheet, SheetContent, SheetTrigger } from "@codefly-dev/ui/layout";
 export { Skeleton } from "@codefly-dev/ui/layout";
 // The never-flash loading primitive: nothing for the first 200ms of a wait, then
@@ -93,9 +114,15 @@ export {
 	Table,
 	TableBody,
 	TableCell,
+	// The "nothing matched" row, spanning every column: a surface writing its
+	// own <td colSpan> re-decides the padding and alignment the kit decided.
+	TableEmptyState,
 	TableHead,
 	TableHeader,
 	TableRow,
+	// The filters-and-actions row ABOVE a table, and a sibling of it: a
+	// <table> may not contain arbitrary markup.
+	TableToolbar,
 } from "@codefly-dev/ui/layout";
 export {
 	TabsRoot as Tabs,

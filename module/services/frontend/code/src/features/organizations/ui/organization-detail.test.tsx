@@ -68,9 +68,13 @@ describe("OrganizationDetail", () => {
 			</Profiler>,
 		);
 		expect(await screen.findByText("owner@example.com")).toBeTruthy();
-		fireEvent.change(screen.getByPlaceholderText("Search by name or email…"), {
-			target: { value: "jane" },
-		});
+		// The picker is in the add overlay now, reached from the roster's own
+		// action rather than sitting above it as a row of disabled controls.
+		fireEvent.click(screen.getByRole("button", { name: "Add member" }));
+		fireEvent.change(
+			await screen.findByPlaceholderText("Search by name or email…"),
+			{ target: { value: "jane" } },
+		);
 		fireEvent.click(
 			await screen.findByRole("button", { name: "jane@example.com" }),
 		);

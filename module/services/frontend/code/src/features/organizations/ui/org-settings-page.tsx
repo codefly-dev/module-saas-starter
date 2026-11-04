@@ -2,9 +2,11 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Building2 } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
 import { useAuth } from "@/lib/auth";
 import {
@@ -17,6 +19,8 @@ import {
 	CardTitle,
 	Input,
 	Label,
+	Page,
+	PageHeader,
 } from "@/shared/ui";
 import {
 	defaultOrgSettings,
@@ -58,13 +62,12 @@ function useUpdateOrgSettings(orgId: string) {
 export function OrgSettingsPage() {
 	const { organizationId } = useAuth();
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<h1 className="text-2xl font-bold tracking-tight">
-					Organization Settings
-				</h1>
-				<OrgSelector />
-			</div>
+		<Page>
+			<PageHeader
+				title="Organization settings"
+				description="Who this organization is, and what every member of it gets by default."
+				actions={<OrgSelector />}
+			/>
 			{organizationId ? (
 				<>
 					<OrganizationIdentity
@@ -74,9 +77,13 @@ export function OrgSettingsPage() {
 					<OrgSettingsForm key={organizationId} orgId={organizationId} />
 				</>
 			) : (
-				<p>Select an organization to edit its settings.</p>
+				<EmptyState
+					icon={Building2}
+					title="No organization selected"
+					description="Pick an organization above to edit its settings."
+				/>
 			)}
-		</div>
+		</Page>
 	);
 }
 

@@ -38,6 +38,12 @@ import {
 	CardHeader,
 	CardTitle,
 	Skeleton,
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
 } from "@/shared/ui";
 import { billingMutations } from "../service/mutations";
 
@@ -278,70 +284,74 @@ export function BillingAdminPage() {
 									</div>
 								</div>
 							) : invoices.length === 0 ? (
-								<div className="text-sm text-muted-foreground py-6 text-center">
-									No invoices yet — start a checkout to enable billing.
-								</div>
+								<EmptyState
+									variant="default"
+									icon={FileText}
+									title="No invoices yet"
+									description="Start a checkout to enable billing; invoices appear here once Stripe issues them."
+								/>
 							) : (
-								<div className="overflow-x-auto">
-									<table className="w-full text-sm">
-										<thead>
-											<tr className="border-b text-xs text-muted-foreground">
-												<th className="text-left py-2 font-medium">Number</th>
-												<th className="text-left py-2 font-medium">Date</th>
-												<th className="text-left py-2 font-medium">Status</th>
-												<th className="text-right py-2 font-medium">Amount</th>
-												<th className="py-2"></th>
-											</tr>
-										</thead>
-										<tbody>
-											{invoices.map((inv) => (
-												<tr key={inv.id} className="border-b last:border-0">
-													<td className="py-2.5 font-mono text-xs">
-														{inv.hostedInvoiceUrl ? (
-															<Link
-																href={inv.hostedInvoiceUrl}
-																target="_blank"
-																className="underline underline-offset-2 hover:text-foreground"
-															>
-																{inv.number || "View invoice"}
-															</Link>
-														) : (
-															<span>{inv.number || "Invoice"}</span>
-														)}
-													</td>
-													<td className="py-2.5 text-muted-foreground">
-														{inv.created
-															? new Date(
-																	Number(inv.created.seconds) * 1000,
-																).toLocaleDateString()
-															: "—"}
-													</td>
-													<td className="py-2.5">
-														<InvoiceStatusBadge status={inv.status} />
-													</td>
-													<td className="py-2.5 text-right font-mono text-xs">
-														{formatMoney(
-															Number(inv.amountPaid || inv.amountDue),
-															inv.currency,
-														)}
-													</td>
-													<td className="py-2.5 text-right">
-														{inv.invoicePdf && (
-															<Link
-																href={inv.invoicePdf}
-																target="_blank"
-																aria-label="Download PDF"
-																className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-															>
-																<Download className="h-3.5 w-3.5" />
-															</Link>
-														)}
-													</td>
-												</tr>
-											))}
-										</tbody>
-									</table>
-								</div>
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>Number</TableHead>
+											<TableHead>Date</TableHead>
+											<TableHead>Status</TableHead>
+											<TableHead className="text-right">Amount</TableHead>
+											<TableHead />
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{invoices.map((inv) => (
+											<TableRow key={inv.id}>
+												<TableCell className="font-mono">
+													{inv.hostedInvoiceUrl ? (
+														<Link
+															href={inv.hostedInvoiceUrl}
+															target="_blank"
+															className="underline underline-offset-2 hover:text-foreground"
+														>
+															{inv.number || "View invoice"}
+														</Link>
+													) : (
+														<span>{inv.number || "Invoice"}</span>
+													)}
+												</TableCell>
+												<TableCell className="text-muted-foreground">
+													{inv.created
+														? new Date(
+																Number(inv.created.seconds) * 1000,
+															).toLocaleDateString()
+														: "—"}
+												</TableCell>
+												<TableCell>
+													<InvoiceStatusBadge status={inv.status} />
+												</TableCell>
+												<TableCell className="text-right font-mono">
+													{formatMoney(
+														Number(inv.amountPaid || inv.amountDue),
+														inv.currency,
+													)}
+												</TableCell>
+												<TableCell className="text-right">
+													{inv.invoicePdf && (
+														<Button
+															variant="ghost"
+															size="icon-sm"
+															aria-label="Download PDF"
+															nativeButton={false}
+															render={
+																<Link href={inv.invoicePdf} target="_blank" />
+															}
+														>
+															<Download />
+														</Button>
+													)}
+												</TableCell>
+											</TableRow>
+										))}
+									</TableBody>
+								</Table>
 							)}
 						</CardContent>
 					</Card>

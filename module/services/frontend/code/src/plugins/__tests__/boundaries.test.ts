@@ -402,20 +402,40 @@ process.stdout.write(JSON.stringify({
 		);
 	});
 
+	// A `<Button render={<Link …/>}>` and nothing else: the body between the
+	// two tag names may not cross an angle bracket, so the match stays inside
+	// one Button's own opening tag. `=>` is spelled out because an arrow in a
+	// prop (`onClick={() => …}`) is still inside that tag. Tempered only by
+	// `<Button` before, this ran on from ANY Button to the next `render={<Link`
+	// anywhere below it — a Chip, a Badge, a card — and reported that element's
+	// link against the button's name.
+	const LINK_BACKED_BUTTON =
+		/<Button\b(?:(?!<Button\b)(?:=>|[^<>]))*?render=\{<Link\b(?:(?!\/>\})[\s\S])*?\/>\}/g;
+
+	function linkBackedButtonViolations(source: string): string[] {
+		return (source.match(LINK_BACKED_BUTTON) ?? []).filter(
+			(openingTag) => !openingTag.includes("nativeButton={false}"),
+		);
+	}
+
 	it("marks link-backed Base UI buttons as non-native", () => {
-		const violations = sourceFiles(join(codeDir, "src")).flatMap((path) => {
-			const source = readFileSync(path, "utf8");
-			const linkButtons =
-				source.match(
-					/<Button\b(?:(?!<Button\b)[\s\S])*?render=\{<Link\b(?:(?!\/>\})[\s\S])*?\/>\}/g,
-				) ?? [];
-			return linkButtons
-				.filter((openingTag) => !openingTag.includes("nativeButton={false}"))
-				.map(
-					() =>
-						`${relative(codeDir, path)}: link-backed Button requires nativeButton={false}`,
-				);
-		});
+		// The detector, against the two shapes it has to tell apart.
+		expect(
+			linkBackedButtonViolations(
+				`<Button onClick={() => go()} render={<Link href="/x" />}>Go</Button>`,
+			),
+		).toHaveLength(1);
+		expect(
+			linkBackedButtonViolations(
+				`<Button onClick={() => open()}>Grant</Button>\n<Chip render={<Link href="/r" />}>r</Chip>`,
+			),
+		).toHaveLength(0);
+		const violations = sourceFiles(join(codeDir, "src")).flatMap((path) =>
+			linkBackedButtonViolations(readFileSync(path, "utf8")).map(
+				() =>
+					`${relative(codeDir, path)}: link-backed Button requires nativeButton={false}`,
+			),
+		);
 		expect(violations).toEqual([]);
 	});
 

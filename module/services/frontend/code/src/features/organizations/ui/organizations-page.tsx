@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/shared/ui";
+import { Button, Page, PageHeader } from "@/shared/ui";
 import { lifecycleErrorMessage } from "../model/errors";
 import type { Organization } from "../model/types";
 import { orgMutations } from "../service/mutations";
@@ -51,18 +51,21 @@ export function OrganizationsPage() {
 	}, []);
 
 	return (
-		<div className="space-y-6">
-			<div className="flex items-center justify-between">
-				<h2 data-slot="page-title" className="type-page-title">Organizations</h2>
-				{/* The deployment's creation policy decides; the server enforces it
-				    either way, so this only stops offering what it would refuse. */}
-				{raw?.canCreate && (
-					<Button onClick={() => setShowCreate(true)}>
-						<Plus className="mr-2 h-4 w-4" />
-						Create Organization
-					</Button>
-				)}
-			</div>
+		<Page>
+			<PageHeader
+				title="Organizations"
+				description="Every tenant you belong to, and who may reach each of them."
+				actions={
+					/* The deployment's creation policy decides; the server enforces it
+					   either way, so this only stops offering what it would refuse. */
+					raw?.canCreate ? (
+						<Button onClick={() => setShowCreate(true)}>
+							<Plus />
+							Create organization
+						</Button>
+					) : undefined
+				}
+			/>
 
 			<OrganizationsTable
 				data={orgs}
@@ -88,6 +91,6 @@ export function OrganizationsPage() {
 				onCancel={() => setShowCreate(false)}
 				isPending={createMutation.isPending}
 			/>
-		</div>
+		</Page>
 	);
 }
