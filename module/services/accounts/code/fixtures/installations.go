@@ -218,9 +218,19 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 		return false, err
 	}
 	approval.OperationID = business.NewIDString()
+	// An installation the core holds pending or active is continued with the
+	// approval it was opened under: the core replays an active same-operation
+	// install idempotently, and the host's plan guard refuses a fresh
+	// operation id against it. A revoked or absent record takes the fresh
+	// review's approval: a revoked installation's receipt names an operation
+	// the core refuses for good (its revision moved), so reusing it parked a
+	// fixture on that refusal on every pass after an uninstall.
 	if store, ok := i.service.Store().(business.CanonicalInstallationSetupStore); ok {
-		if plan, err := store.SolutionInstallationPlan(ctx, row.orgID, authority.StableInstallationID(row.orgID, row.declared.Target)); err == nil {
-			approval = plan.Approval
+		id := authority.StableInstallationID(row.orgID, row.declared.Target)
+		if all, err := core.Installations(ctx, caller, row.orgID); err == nil && attemptContinues(all, id) {
+			if plan, err := store.SolutionInstallationPlan(ctx, row.orgID, id); err == nil {
+				approval = plan.Approval
+			}
 		}
 	}
 	inst, err := i.service.InstallAuthoritySolution(ctx, caller, row.orgID, row.declared.Target, row.declared.Role, row.ownerID, &approval)
@@ -266,4 +276,16 @@ func (i *Installations) ConvergeAuthority(ctx context.Context) error {
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// attemptContinues reports whether the core holds installation id pending or
+// active: the states in which a stored plan's approval still names an
+// operation the core finishes or replays. A revoked or absent record does not.
+func attemptContinues(all []domain.Installation, id string) bool {
+	for _, inst := range all {
+		if inst.ID == id {
+			return inst.Status == domain.Pending || inst.Status == domain.Active
+		}
+	}
+	return false
 }
