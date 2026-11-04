@@ -7,6 +7,15 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The merge queue builds each entry on a `gh-readonly-queue/main/...` branch
+  # and fires `merge_group`, not `pull_request`. Without this trigger this gate
+  # never reports on a queued entry, so making it a required context strands
+  # every pull request in the queue until the check-response timeout ejects it.
+  # Measured on #1303: `boundaries` was the one required context absent from
+  # the queue head, and the entry sat in AWAITING_CHECKS while every other
+  # check had already passed. `go.yml` carries the same trigger for the same
+  # reason.
+  merge_group:
 
 permissions:
   contents: read
