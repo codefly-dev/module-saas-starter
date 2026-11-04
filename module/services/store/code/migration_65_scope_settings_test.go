@@ -90,7 +90,7 @@ func TestMigration65RenamesEveryScopeSettingAndNothingElse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer runner.Close()
+	defer func() { _, _ = runner.Close() }()
 	if err := runner.Steps(-1); err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ SELECT line FROM (
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
 		var line string
