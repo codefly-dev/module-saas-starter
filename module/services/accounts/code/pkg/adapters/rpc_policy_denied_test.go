@@ -92,7 +92,7 @@ func TestUnauthenticatedCentralRefusalIsCounted(t *testing.T) {
 	reader := deniedReader(t)
 	refusal := membershipLookupStatus("verify central org scope", auth.ErrVerifiedDatabaseIdentityRequired)
 	require.Equal(t, codes.Unauthenticated, status.Code(refusal))
-	recordPolicyDenial(context.Background(), deniedMethod, denialReasonCentral, refusal)
+	require.Equal(t, refusal, recordPolicyDenial(context.Background(), deniedMethod, denialReasonCentral, refusal))
 	require.Equal(t, int64(1), deniedPoints(t, reader)[deniedMethod+" "+denialReasonCentral])
 }
 
