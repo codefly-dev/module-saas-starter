@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra"
 	"accounts/pkg/infra/storetx"
 
 	"github.com/stretchr/testify/require"
@@ -103,8 +104,16 @@ func TestOrganizationMemberEmailFunctionHasPinnedAuthority(t *testing.T) {
 		require.True(t, securityDefiner)
 		require.True(t, tenantCanExecute)
 		require.False(t, publicCanExecute)
+		// Pinned as the catalog renders it, second arm and all: inside migration
+		// 66's compatibility window users_select reads the library's user
+		// setting and falls through to the host's retired one, so a pod built
+		// on either side of the rename sees its own user's row and no other.
+		// When the window closes this returns to the single read it pins
+		// above the fallback — which is the point of pinning the text rather
+		// than asserting that it mentions a setting.
 		require.Equal(t,
-			"((uuid)::text = current_setting('codefly.current_user_id'::text, true))",
+			"((uuid)::text = COALESCE(NULLIF(current_setting('"+infra.UserScopeSetting+
+				"'::text, true), ''::text), current_setting('"+infra.LegacyUserScopeSetting+"'::text, true)))",
 			policyExpression,
 		)
 		return nil
