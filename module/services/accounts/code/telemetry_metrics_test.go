@@ -7,14 +7,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
+	"accounts/pkg/adapters"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	genconnect "accounts/pkg/gen/saas/accounts/v1/accountsv1connect"
 
 	"connectrpc.com/connect"
-	"connectrpc.com/otelconnect"
 	wooltel "github.com/codefly-dev/core/wool/otel"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -108,6 +109,9 @@ func TestTelemetryMetricsExportRuntimeAndUnsampledRED(t *testing.T) {
 	connectCounts := statusCounts(request, "rpc.server.duration", "rpc.connect_rpc.error_code")
 	require.Equal(t, uint64(3), metricCount(request, "rpc.server.duration"))
 	require.Equal(t, uint64(1), connectCounts["permission_denied"])
+	// The caller's address and ephemeral port make a new series per connection;
+	// on staging they filled the telemetry store's disk in four days.
+	require.Empty(t, peerAttributeKeys(request))
 
 	require.Empty(t, spanExporter.GetSpans())
 }
@@ -231,7 +235,7 @@ func recordGRPCRequests(t *testing.T) {
 
 func recordConnectRequests(t *testing.T) {
 	t.Helper()
-	interceptor, err := otelconnect.NewInterceptor()
+	interceptor, err := adapters.NewOTelInterceptor()
 	require.NoError(t, err)
 	path, handler := genconnect.NewUserServiceHandler(
 		versionConnectHandler{},
@@ -319,6 +323,24 @@ func exportedMetricNames(request *collectormetricsv1.ExportMetricsServiceRequest
 		}
 	}
 	return names
+}
+
+func peerAttributeKeys(request *collectormetricsv1.ExportMetricsServiceRequest) []string {
+	var keys []string
+	for _, resourceMetrics := range request.GetResourceMetrics() {
+		for _, scopeMetrics := range resourceMetrics.GetScopeMetrics() {
+			for _, metric := range scopeMetrics.GetMetrics() {
+				for _, point := range metric.GetHistogram().GetDataPoints() {
+					for _, attr := range point.GetAttributes() {
+						if strings.HasPrefix(attr.GetKey(), "net.peer.") || strings.HasPrefix(attr.GetKey(), "network.peer.") {
+							keys = append(keys, metric.GetName()+" "+attr.GetKey())
+						}
+					}
+				}
+			}
+		}
+	}
+	return keys
 }
 
 func metricCount(request *collectormetricsv1.ExportMetricsServiceRequest, name string) uint64 {
