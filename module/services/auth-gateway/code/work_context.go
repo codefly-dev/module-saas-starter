@@ -33,8 +33,9 @@ const workContextJWKSCacheTTL = 5 * time.Minute
 //
 // Every failure — a foreign encoding, a forged signature, an expired or widened
 // context, an unknown key id, or an accounts outage that makes the key set
-// unreachable — collapses to errInvalidWorkContext. The edge answers 401 without
-// leaking which check failed or that a dependency is down.
+// unreachable — is classified as errInvalidWorkContext while retaining its
+// underlying cause internally. The edge answers 401 without leaking which check
+// failed or that a dependency is down.
 //
 // The cache carries no stale grace: a presented capability is an optional
 // attenuation a caller may always retry, so this path fails closed the moment
@@ -142,8 +143,8 @@ func (v *workContextVerifier) Inspect(
 	return nil, invalidWorkContext(refusal)
 }
 
-// invalidWorkContext folds an arbitrary underlying failure into the single
-// invalid sentinel, so callers see one error class regardless of cause.
+// invalidWorkContext preserves the edge classification and the underlying cause.
+// The HTTP boundary emits its static refusal without exposing either detail.
 func invalidWorkContext(err error) error {
-	return fmt.Errorf("%w: %v", errInvalidWorkContext, err)
+	return fmt.Errorf("%w: %w", errInvalidWorkContext, err)
 }
