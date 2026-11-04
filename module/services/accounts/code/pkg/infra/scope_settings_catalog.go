@@ -67,6 +67,12 @@ SELECT what,
 // the database will actually evaluate, and a version row is a claim about how
 // it got there. A policy inside the compatibility window reads both names and
 // is admitted by the first half of the rule.
+//
+// It runs where the served process is assembled, NewPostgresStoreWithCapabilities,
+// and not in the single-credential tooling store: that one opens no scoped
+// pool, so the reason this is fatal rather than advisory does not apply to it,
+// and a migration tool that refused to open a database it was about to move
+// forward would be refusing its own job.
 func requireCatalogReadsScopeSettings(ctx context.Context, q scopeSettingReader) error {
 	rows, err := q.Query(ctx, scopeSettingPolicyQuery,
 		TenantScopeSetting, UserScopeSetting, LegacyTenantScopeSetting, LegacyUserScopeSetting)
