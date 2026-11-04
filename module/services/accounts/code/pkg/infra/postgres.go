@@ -312,9 +312,17 @@ const requestReleaseTimeout = 5 * time.Second
 // next borrower's unqualified table names, and RESET ALL does not touch it.
 // Unlike DISCARD ALL it may run inside the implicit transaction a multi-statement
 // message opens. The four statements travel in one simple-protocol message.
+//
+// It reads back all four names, not just the two the library binds: inside
+// migration 66's compatibility window a policy falls through to the retired
+// name when the live one is empty, so a session-level binding left on either
+// generation hands the next borrower a scope. The reset clears both; this is
+// what refuses a connection on which it did not.
 const sessionReset = `RESET ROLE; RESET ALL; DISCARD TEMP; SELECT current_user::text,
-	coalesce(current_setting('` + TenantScopeSetting + `', true), ''),
-	coalesce(current_setting('` + UserScopeSetting + `', true), '')`
+	coalesce(current_setting('` + TenantScopeSetting + `', true), '')
+		|| coalesce(current_setting('` + LegacyTenantScopeSetting + `', true), ''),
+	coalesce(current_setting('` + UserScopeSetting + `', true), '')
+		|| coalesce(current_setting('` + LegacyUserScopeSetting + `', true), '')`
 
 // resetSession runs sessionReset on a released connection. It returns the role
 // the session came back to, and false if the reset failed or left a request
@@ -333,7 +341,7 @@ func resetSession(conn *pgx.Conn) (string, bool) {
 // returnsToTenantRole is the request pool's AfterRelease. A session-level change
 // a borrower leaves behind would reach the next borrower until the connection is
 // recycled: `SET ROLE NONE` hands it the bare login, and a session-level
-// codefly.current_tenant_id or codefly.current_user_id hands it the previous
+// binding of either generation of the two scope settings hands it the previous
 // caller's
 // scope, which every un-wrapped read runs under. The reset clears both; a
 // connection that does not come back as app_tenant with no binding is
