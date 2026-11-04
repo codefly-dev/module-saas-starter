@@ -120,7 +120,7 @@ func scopeSettingRefusal(judged []scopeSettingPolicy) error {
 	}
 	if len(stale) > 0 {
 		return fmt.Errorf("this database judges %d row-security polic%s by the retired scope settings alone (%s), which the scoped pools cannot bind: every read through them would be silently empty. Apply store migration 66_scope_settings_transition, or tools/rls-scope-settings-transition.sql for a policy this module does not own",
-			len(stale), plural(len(stale), "y", "ies"), strings.Join(sample(stale, 5), ", "))
+			len(stale), policyPlural(len(stale)), strings.Join(sampleScopeSettingPolicies(stale, 5), ", "))
 	}
 	if library == 0 {
 		return fmt.Errorf("no row-security policy in this database reads %s or %s, so nothing isolates a tenant from the request pools: this is not a database the store's ledger installed",
@@ -129,18 +129,19 @@ func scopeSettingRefusal(judged []scopeSettingPolicy) error {
 	return nil
 }
 
-// sample is the first `most` of list, with a count of what it leaves out, so a
-// startup refusal names the offenders without printing seventy of them.
-func sample(list []string, most int) []string {
+// sampleScopeSettingPolicies is the first `most` of list, with a count of what
+// it leaves out, so a startup refusal names the offenders without printing
+// seventy of them.
+func sampleScopeSettingPolicies(list []string, most int) []string {
 	if len(list) <= most {
 		return list
 	}
 	return append(list[:most:most], fmt.Sprintf("and %d more", len(list)-most))
 }
 
-func plural(n int, one, many string) string {
+func policyPlural(n int) string {
 	if n == 1 {
-		return one
+		return "y"
 	}
-	return many
+	return "ies"
 }
