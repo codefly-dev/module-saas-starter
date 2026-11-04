@@ -174,6 +174,16 @@ func NewPostgresStoreWithCapabilities(ctx context.Context, readOnlyConnection, r
 		requestPool.Close()
 		return nil, err
 	}
+	// And the database judges by the settings this process can bind. A catalog
+	// and a binary that disagree about the two names do not fail: every scoped
+	// read is empty and every scoped write fails its WITH CHECK, silently. The
+	// control-plane pool asks, because it is the one already open and the
+	// question is about pg_catalog, not about a tenant.
+	if err := requireCatalogReadsScopeSettings(ctx, controlPlanePool); err != nil {
+		controlPlanePool.Close()
+		requestPool.Close()
+		return nil, err
+	}
 
 	database, closeDatabase, err := openScopedBoundary(ctx, readOnlyConnection, readWriteConnection, provider)
 	if err != nil {
@@ -767,10 +777,17 @@ func openScopedBoundaryAs(ctx context.Context, readOnlyConnection, readWriteConn
 		return nil, nil, errors.New("reader and writer require distinct private identity sockets")
 	}
 	options := []scopedpostgres.Option{
-		// No WithScopeSettings: the library's own defaults are
-		// codefly.current_tenant_id and codefly.current_user_id, which is what
-		// the policies read (migration 65). An override here would be a second
-		// place to keep the two names in step.
+		// The two names these pools bind, named from the same two constants the
+		// hand-written SQL in this package names them from. They are also the
+		// library's own defaults, so passing them changes no behaviour today —
+		// what it changes is what happens when one side moves. The default is
+		// unexported, its doc comment in the published library still says
+		// `app.current_tenant_id`, and nothing links it to the constant the
+		// policies, the request binding and the startup catalog check all read.
+		// Passing it makes the host's two constants the single place the names
+		// live, and a library default that drifts a refusal here rather than a
+		// pool that silently binds a name no policy reads.
+		scopedpostgres.WithScopeSettings(TenantScopeSetting, UserScopeSetting),
 		scopedpostgres.WithOperationTimeout(scopedBoundaryOperationTimeout),
 		// service-postgres judges both scoped pools on every new physical
 		// connection and again on every checkout: it refuses a session whose

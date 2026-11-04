@@ -281,6 +281,15 @@ when the setting is missing. So:
 | `app.bypass = '1'` | All rows visible (workers + platform admin). |
 | Neither set | **Zero rows** — fail-closed. |
 
+For the length of the scope-setting compatibility window (store migration 66)
+the predicate reads
+`COALESCE(NULLIF(current_setting('codefly.current_tenant_id', true), ''), current_setting('app.current_org_id', true))`:
+a pod that binds either generation of the name is admitted to its own tenant,
+and "neither set" is still zero rows, because an empty live binding does not
+fall through to a value — both arms empty is a false predicate.
+[module/services/store/migrations/README.md](./module/services/store/migrations/README.md)
+carries the window and the release that closes it.
+
 **What this catches:**
 - A SQL injection that bypassed `WHERE org_id = $1` parsing.
 - A bug that uses the wrong orgID variable (`getWebhook(id, attackerOrg)` reading another tenant's row).

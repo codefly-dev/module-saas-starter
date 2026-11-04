@@ -7,6 +7,16 @@ in [module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md). Relations
 named here have since been renamed or dropped (`audit_export_configs` went in
 store migration 102), and the foundation has changed shape — the
 application-settable bypass is gone, replaced by the `app_control_plane` role.
+The two settings every policy below reads are also renamed: a tenant-scoped
+policy reads `codefly.current_tenant_id` and a user-scoped one
+`codefly.current_user_id` (store migration 65), with the
+`app.current_org_id` / `app.current_user_id` spellings kept in this file as the
+record of what was written. A consumer writing a policy today uses the two
+library names and nothing else —
+[module/services/store/migrations/README.md](./module/services/store/migrations/README.md)
+is the current convention, including the compatibility window a rename runs
+through and `module/tools/rls-scope-settings-transition.sql`, which rewrites
+policies already installed on the retired names.
 
 > Defense-in-depth for tenant isolation at the database row level.
 > Layered on top of:

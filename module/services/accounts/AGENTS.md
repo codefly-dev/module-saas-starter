@@ -28,14 +28,37 @@ is read by the capability checks and does not create synthetic directory rows.
 **The two scope settings are named once.** A transaction's tenant and user are
 bound to `codefly.current_tenant_id` and `codefly.current_user_id` — the
 defaults of the platform's Postgres library, which installs them for any
-transaction opened through the scoped factory. Nothing here passes
-`WithScopeSettings`, and hand-written SQL names them from
+transaction opened through the scoped factory. Both the scoped factory and the
+hand-written SQL in `pkg/infra` take the two names from
 `pkg/infra.TenantScopeSetting` / `UserScopeSetting` rather than spelling the
-literal again. Only `pkg/infra` may bind them at all
-(`TestNoTenantRebindingOutsidePkgInfra`), and a policy or function body left on
+literal again, the factory through `WithScopeSettings`: the library's default is
+unexported, so passing it is what ties the pools to the same constant the
+policies and the request binding read. Only `pkg/infra` may bind them at all
+(`TestNoTenantRebindingOutsideInfra`), and a policy or function body left on
 some other setting does not fail loudly: `current_setting(…, true)` returns
 NULL, the predicate is false, and the relation reads as empty for every caller
 (`TestEveryScopedPolicyReadsTheLibrarySettings` is what catches that).
+
+**A scope-setting rename is a two-release move, and this is the window.** A
+one-step rename is undeployable: the catalog and the image ship separately, and
+whichever loses the race reads an unset setting, which is zero rows on every
+scoped SELECT and a WITH CHECK failure on every INSERT, with nothing raised. So
+store migration 66 leaves every predicate reading the library's name with the
+host's retired `app.current_org_id` / `app.current_user_id` behind it
+(`COALESCE(NULLIF(<library>, ''), <retired>)`), `bindRequestScopeSQL` binds all
+four names, and one image is correct against a catalog from before the rename,
+after it, or inside the window. The retired names are
+`pkg/infra.LegacyTenantScopeSetting` / `LegacyUserScopeSetting`, and nothing but
+that binding and the migration may name them.
+
+What the window does not cover is the two pools `service-postgres` owns: those
+bind the library's two names and take no more, so against a catalog that reads
+only the retired ones every read through them is silently empty and no binding
+here can fix it. `requireCatalogReadsScopeSettings` refuses to start against
+such a database rather than serving it — it asks the catalog what the policies
+judge by, not the ledger what version it claims. The window closes in a later
+release, whose migration is `66_scope_settings_transition.down.sql`: it deletes
+the retired arm, and the two legacy constants and this section go with it.
 
 ## Forwarded Work Contexts on the organization directory
 

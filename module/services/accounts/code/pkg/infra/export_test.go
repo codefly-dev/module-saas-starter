@@ -284,3 +284,20 @@ func ProjectedTokenForTest(lifetime time.Duration) string {
 	encode := base64.RawURLEncoding.EncodeToString
 	return encode([]byte(`{"alg":"RS256"}`)) + "." + encode(claims) + "." + encode([]byte("signature"))
 }
+
+// ScopeSettingPolicy is one policy as the startup catalog check reads it.
+type ScopeSettingPolicy = scopeSettingPolicy
+
+// ScopeSettingRefusal is the decision requireCatalogReadsScopeSettings makes
+// over what it read, so the suite can state a catalog — notably the one from
+// before migration 65, every policy reading the retired names alone — without
+// standing a second database to hold it.
+func ScopeSettingRefusal(judged []ScopeSettingPolicy) error { return scopeSettingRefusal(judged) }
+
+// RequireCatalogReadsScopeSettings is the refusal startup applies, query and
+// decision together, against whatever connection the caller hands it.
+func RequireCatalogReadsScopeSettings(ctx context.Context, q interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}) error {
+	return requireCatalogReadsScopeSettings(ctx, q)
+}

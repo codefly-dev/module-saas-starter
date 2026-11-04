@@ -28,21 +28,58 @@ const (
 // and the SQL this package writes by hand names them from here. Every policy,
 // and every SECURITY DEFINER operation that judges a caller's scope, reads
 // exactly these two; migration 65 renamed the host's own app.current_org_id and
-// app.current_user_id onto them.
+// app.current_user_id onto them, and migration 66 left those two readable
+// behind them for the length of the compatibility window below. These are the
+// names the library's own scoped pools bind, and the only ones they can bind,
+// which is why a catalog that does not read them is refused at startup
+// (requireCatalogReadsScopeSettings) rather than served empty.
 const (
 	TenantScopeSetting = "codefly.current_tenant_id"
 	UserScopeSetting   = "codefly.current_user_id"
 )
 
+// The two names the host carried before migration 65, which migration 66's
+// policies read behind the library's two for the length of the compatibility
+// window.
+//
+// A rename of an RLS setting cannot be deployed in one step. The policy and the
+// binary that binds it ship separately, and the predicate is
+// `col::text = current_setting(<name>, true)`: the half that loses the race
+// reads an unset setting, which is zero rows on every scoped SELECT and a WITH
+// CHECK failure on every INSERT, with no error anywhere. A rolling update puts
+// pre-rename pods against a renamed catalog; rolling the image back with the
+// migration applied leaves the fleet there until someone notices that the
+// product is empty.
+//
+// So this process binds all four names, and migration 66's predicates read the
+// library's name first and the retired one behind it. That makes one image
+// correct against a catalog from before the rename, one from after it, and one
+// in the window — which is what lets the catalog and the fleet move
+// independently. Both halves go when the window closes; nothing but
+// bindRequestScopeSQL and migration 66 may name them.
+const (
+	LegacyTenantScopeSetting = "app.current_org_id"
+	LegacyUserScopeSetting   = "app.current_user_id"
+)
+
 // bindRequestScopeSQL binds both halves of a request scope for the current
-// transaction only. Every request transaction binds both, the empty string for
-// the half it does not carry, so a session-level binding left on the connection
-// is never visible inside it: an org transaction cannot read a previous user's
-// sessions or mfa_devices, nor a user transaction a previous tenant's rows. The
-// policies compare the settings as text and the SECURITY DEFINER operations
+// transaction only, under both generations of the two setting names. Every
+// request transaction binds all four, the empty string for the half it does not
+// carry, so a session-level binding left on the connection is never visible
+// inside it: an org transaction cannot read a previous user's sessions or
+// mfa_devices, nor a user transaction a previous tenant's rows. Binding the
+// retired names to the same values is what keeps that true inside the window —
+// a transaction that cleared only the library's half would otherwise fall
+// through to whatever the retired one still held.
+//
+// The policies compare the settings as text and the SECURITY DEFINER operations
 // map an empty setting to NULL through NULLIF, so an empty binding matches
-// nothing, as an unset one does.
-const bindRequestScopeSQL = "SELECT set_config('" + TenantScopeSetting + "', $1, true), set_config('" + UserScopeSetting + "', $2, true)"
+// nothing, as an unset one does. Under migration 66 the comparison reads the
+// library's name through NULLIF and falls through to the retired one, which
+// preserves that exactly: both arms empty is a false predicate, not an absent
+// one.
+const bindRequestScopeSQL = "SELECT set_config('" + TenantScopeSetting + "', $1, true), set_config('" + UserScopeSetting + "', $2, true), " +
+	"set_config('" + LegacyTenantScopeSetting + "', $1, true), set_config('" + LegacyUserScopeSetting + "', $2, true)"
 
 // bindRequestScope binds orgID and userID, either possibly empty, for tx.
 func bindRequestScope(ctx context.Context, tx pgx.Tx, orgID, userID string) error {
