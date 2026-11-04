@@ -213,3 +213,17 @@ it("hydrates a remembered choice without a recoverable markup mismatch", async (
 	await act(async () => root.unmount());
 	container.remove();
 });
+
+it("renders the server default when browser storage is unavailable", () => {
+	vi.stubGlobal("document", undefined);
+	try {
+		const markup = renderToString(
+			<SidebarProvider>
+				<Content />
+			</SidebarProvider>,
+		);
+		expect(markup).toContain("Expanded");
+	} finally {
+		vi.unstubAllGlobals();
+	}
+});
