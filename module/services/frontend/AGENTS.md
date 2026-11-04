@@ -17,8 +17,10 @@ The gateway stamps `kind` from the applied declaration; a remote manifest cannot
 choose its routing kind. A shared module has one deployment, while each
 organisation installs it and grants team access independently through the same
 target-based entitlement projection. The organization administration destination
-is labelled "Modules & solutions" and retains `/admin/solutions`; its empty
-state directs an administrator to the platform operator when nothing is available.
+is labelled "Solutions" and retains `/admin/solutions`, listing solutions only;
+supporting modules are administered at `/admin/modules`, which it links to. Its
+empty state directs an administrator to the platform operator when nothing is
+available.
 Each installed row links to `/admin/solutions/<installation id>`, that
 installation's setup page: what it is and whether it is READY (the host's
 `InstallationReadiness`, which is not the record's health), the unmet conditions
@@ -33,10 +35,34 @@ be carried. There is no per-module grant step for a person to perform
 ([MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md#a-grant-of-a-solution-carries-the-module-access-it-declares-it-consumes)).
 The platform catalogue explains the delivery prerequisite. Headless components
 contribute no page.
-For a module page, relative data requests through the injected `apiBase` reach
-`/v1/<alias>/<suffix>`; for a solution they reach `/solutions/<alias>/<suffix>`.
-Public GET/HEAD assets use the common `/solutions/<alias>/assets` surface for
-both kinds. Platform Connect procedures still reach the gateway root.
+Relative data requests through the injected `apiBase` reach
+`/v1/<alias>/<suffix>` for a module page and a solution alike, through the
+gateway's hop, which carries the person's Work Context and keeps the path
+unchanged. Public GET/HEAD reads of `assets` and `.well-known` use the common
+`/solutions/<alias>/…` surface for both kinds. Platform Connect procedures
+still reach the gateway root.
+
+Direct generated module clients use the optional `moduleApiBase` page binding
+and the kit's `moduleTransport`. The base is a same-origin `/_browser` suffix on
+the existing solution proxy; private gateway addresses stay server-side. The
+server selects the current module's `auth-gateway` / `rest` / `REST` endpoint
+through the existing Codefly `networkInstance` resolver and preserves its base
+path. Missing, ambiguous or unsafe destinations refuse without fallback.
+Ambiguous composition also emits a static server diagnostic, without endpoint
+addresses or delivered environment values; ordinary absence is not ambiguity.
+The proxy keeps the marker for terminal gateway browser-only dispatch, validates
+canonical POST procedure components before URL normalization, and preserves
+Connect headers, streaming, cancellation and the host's credential handling.
+Versioned asset routes cannot open this entry. Existing `apiBase`/path relays
+remain unchanged; the module connection adds no installation or permission.
+
+The page binding also carries `organizationId`, `viewerKey` and `reach`
+(alias → the viewer's installation of each module the record declares it
+consumes), from `GET /api/solutions/<id>/installation`
+([SOLUTION_REGISTRATION.md](../../SOLUTION_REGISTRATION.md)). `viewerKey` is the
+EFFECTIVE viewer: during impersonation it is the impersonated person's key, so an
+administrator's drafts and conversations land in that person's partition. It
+partitions state and authorizes nothing.
 
 These declarations grant no access to content. The solution page reads the full
 manifest in process; browser projections carry only the fields described below.
@@ -66,6 +92,44 @@ and a previous loading failure cannot poison the new generation.
 This does not by itself make a rolling backend serve immutable assets: delivery
 must also bind the resolved endpoint and packaged frontend to the same build.
 The browser cache tests do not qualify that producer/deployment boundary.
+
+## Solution settings
+
+A `/s/<id>` page opens the solution directly. A labelled settings gear opens the
+existing setup UI in a dismissible dialog while keeping the remote mounted: the solution's roles, what each grants (scopes → module
+operations → agent tools, and the permission ceiling) and who holds them. That
+is every solution record (the shared authority core requires a solution's
+`installer` role) and a module record whose page declares roles, which
+`WhenRolesDeclared` learns from the authority's offer review; a module page that
+declares none shows no settings gear. An optional declared Dashboard remains
+accessible beside Workspace; solutions without one have no tab bar. It renders the kit's `<SolutionSetup>`
+(`@codefly-dev/saas-ui/solution`) through `SolutionSetupPanel`, which adds
+only what this host knows: the
+session's organization, the people and teams it can name, and, on the admin
+installation page, this host's own unmet conditions. Every fact and refusal on
+the settings panel is the authority's answer through the host installation interface. The
+solution is named by its target, its registered route alias. The component is
+available for other hosts; adoption by the local authority is a separate owner
+integration and is not established by this repository.
+
+The Setup loading state follows the kit's delay and minimum visible duration,
+including when the authority answers immediately after the indicator appears.
+When the host cannot read composed tool bindings, tool exposure is shown as
+unavailable; an empty tool list is not reported as proof of no exposure.
+
+The browser reaches that interface at exactly the procedures the local
+authority's edge serves a browser (`src/lib/host-setup-procedures.ts`):
+InstallationService List, ListHeld, Review, ListRoleGrants, GrantRole, RevokeRole and
+OfferService ListOffers, ReviewOffer. `src/proxy.ts` forwards them from a host
+page and the solution proxy from a remote's `apiBase`, both to the gateway
+root; Install and Current are not forwarded. ListHeld reads the signed-in
+member’s own held roles; ListRoleGrants still requires the authority’s
+admin/installer standing to list everyone’s grants. The admin installation page keeps
+this host's own team access card only for a record carrying a host scope root
+and no declared roles; a module page that declares roles is set up through them
+alone (`useRolesDeclared`).
+Canonical solutions use the shared component's person/team roles; their absent
+legacy root must not offer a second grant form or imply that nobody has access.
 
 ## Three projections, deliberately separate
 
@@ -99,7 +163,8 @@ the organization. `src/lib/auth-session.ts` can read an `org` claim, but
 `decodeJWTPayload` only base64-decodes — it verifies nothing — so a route that
 narrowed on it would let a caller read another tenant's menu by editing one field.
 These `/api/*` paths are also not proxied through the gateway (`src/proxy.ts`
-forwards `/v1/*` and `/saas.accounts.v1.*` only), so no `ext_authz` stamp reaches
+forwards `/v1/*`, `/saas.accounts.v1.*` and the settings panel's eight host
+installation procedures only), so no `ext_authz` stamp reaches
 them either. `src/solutions/entitlements.ts` therefore forwards the caller's
 credential to `GET /solutions/_entitlements` on the gateway, which authenticates
 it, projects the organization and viewer from its own check, and answers from
@@ -395,3 +460,57 @@ headless or absent from the advertised manifest. The gateway owns historical
 version admission and live target checks; the proxy validates the version shape,
 forwards it from a fresh header set and preserves its Cache-Control and errors.
 Historical identities never open data routes or grant organisation access.
+
+## Combined installation review
+
+The normal catalogue defaults to solutions. Its existing install dialog reads
+`ReviewSolutionInstall` and the matching shared `ReviewOffer` through the normal
+session transport, presents the exact release, machine access and supporting
+module consent, and submits `InstallReviewedSolution` unchanged. A mismatched
+shared offer or unreadable consent prevents submission. Closing the dialog does
+not replace the cached operation; retries retain it, and Review again explicitly
+requests new consent. Pending installation rows offer current-person continuation.
+Supporting modules remain visible on `/admin/modules` and in installation
+detail. That administrator path remains available, but is not a step in normal
+solution installation. There, which form Install opens is the authority's
+answer, not the target's kind (`useRolesDeclared`): a module page whose offer
+names roles is reviewed from that offer (its machine access and what each role
+permits), installed through `InstallSolution` with no agent role, because its
+signed `installation_role` selects one (or none), and then opened at its Setup
+page, where each role takes a team. The shared core installs only solutions, so
+a module page stays this host's installation and carries no consent tuple. A
+module whose offer the authority refuses NotFound (it declares no roles) keeps
+the agent-role form; any other failure of that read is shown with a retry, never
+taken as "no roles". The review's approval is the browser's: a module page's
+offer carries no consent digest for the host to check it against. On Setup, a
+module page's roles take teams through the shared role grant form; the staged
+team-per-role picker binds to a solution's consent digest and is not offered.
+
+The only installer configuration is a team for each role the solution's offer
+declares: an existing organization team, or one created inline through
+`TeamService.CreateTeam` with the editable suggested name `<solution>-<role>`.
+A name already taken is surfaced with an explicit "Use existing" choice; it is
+never reused or created twice, and no member is added. The choices are intent
+kept per person, organization and solution in session storage
+(`service/team-choices.ts`), so they survive a pending installation, a retry and
+a remount. Install marks them approved by its operation and binds them to the
+installation it returns; nothing is granted then. The Setup surface grants each
+one through the canonical `GrantRole` only when the authority's own offer reports
+that installation active — automatically once for choices approved by Install,
+otherwise by an explicit Apply — and drops each choice as its grant succeeds, so
+a retry never repeats one. Choices made against another declaration digest or
+generation need an explicit confirmation first. Assignments stay editable in the
+same Setup surface afterwards.
+
+**Open.** The authority core at the accounts pin decides whether a team belongs
+to the organization from its members, so a grant to a team created here with
+nobody in it is refused (`"<team>" is not a team of <organization>`). The
+refusal is shown and the choice retained for retry. The accounts store already
+answers `TeamExists` from the team directory; the decision moves when the
+authority core reads it and accounts takes that pin.
+
+The combined review describes Accounts `namespaces` as event publication and
+`external_namespaces` as eligibility for declared external events to reach the
+organization's configured outbound webhook; neither is storage access. Preparing
+access uses the shared delayed-loading component with its default 200 ms delay
+and 300 ms minimum visibility, kept mounted across fetch completion.

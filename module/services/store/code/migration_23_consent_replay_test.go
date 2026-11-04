@@ -176,7 +176,7 @@ func throwawayPostgres(t *testing.T) (*sql.DB, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	// Generously long, and deliberately not tuned to how fast this starts on an
 	// idle machine. A readiness timeout here says nothing about the migration
 	// under test, so a short one converts "the host was busy" into a red that

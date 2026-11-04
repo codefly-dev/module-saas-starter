@@ -77,7 +77,7 @@ func (c *installationJobConsumer) runOnce(ctx context.Context) error {
 	if err != nil {
 		return errors.New("accounts claim unavailable")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
@@ -98,7 +98,7 @@ func (c *installationJobConsumer) runOnce(ctx context.Context) error {
 	if err != nil {
 		return errors.New("accounts outcome unavailable; lease expiry will recover")
 	}
-	defer outcome.Body.Close()
+	defer func() { _ = outcome.Body.Close() }()
 	if outcome.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("accounts outcome returned %d", outcome.StatusCode)
 	}
@@ -155,7 +155,7 @@ func sendInstallationStep(ctx context.Context, client *http.Client, destination 
 		log.Printf("installation step: %s: %v", destination, err)
 		return http.StatusServiceUnavailable, ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusConflict {
 		log.Printf("installation step: %s answered %d", destination, resp.StatusCode)
 	}

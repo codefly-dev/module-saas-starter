@@ -122,7 +122,7 @@ func (k *appRoleLogin) loginLocked() error {
 		// bare number, and the operator who meets it in a crash loop needs to
 		// know which two keys to look at and that a revoked or rotated secret_id
 		// looks exactly like a wrong one. Hence a named remedy beside it.
-		return fmt.Errorf("Vault approle login at mount %q: %w — check VAULT_APPROLE_ROLE_ID and VAULT_APPROLE_SECRET_ID in the `vault` secret group: the role may not exist at this mount, or the secret_id may be revoked, expired or used past its limit. Replace the secret_id through the configuration plane and restart; a credential this login never accepted will not start accepting itself", k.config.Mount, err)
+		return fmt.Errorf("approle login at Vault mount %q: %w — check VAULT_APPROLE_ROLE_ID and VAULT_APPROLE_SECRET_ID in the `vault` secret group: the role may not exist at this mount, or the secret_id may be revoked, expired or used past its limit. Replace the secret_id through the configuration plane and restart; a credential this login never accepted will not start accepting itself", k.config.Mount, err)
 	}
 	k.store(auth)
 	return nil
@@ -167,12 +167,12 @@ func (k *appRoleLogin) post(path, token string, body []byte) (*vaultAuthResponse
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Vault answered %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status %d from Vault", resp.StatusCode)
 	}
 	var auth vaultAuthResponse
 	if err := json.Unmarshal(data, &auth); err != nil || auth.Auth == nil ||
 		auth.Auth.ClientToken == "" || strings.ContainsAny(auth.Auth.ClientToken, "\r\n\t ") {
-		return nil, errors.New("Vault returned no usable client token")
+		return nil, errors.New("no usable client token in the Vault response")
 	}
 	return &auth, nil
 }

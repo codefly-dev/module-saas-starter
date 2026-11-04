@@ -541,6 +541,11 @@ func TestLogout(t *testing.T) {
 	// must still end the family, which is what a non-browser caller presents.
 	err = testService.Logout(testCtx, &gen.LogoutRequest{RefreshToken: authResp.RefreshToken}, "", "")
 	require.NoError(t, err)
+	// This fixture configures no identity provider sign-out, so there is nothing
+	// for the client to complete. An empty URL is the whole answer.
+	signOut, err := testService.GetProviderSignOut(testCtx, &gen.GetProviderSignOutRequest{})
+	require.NoError(t, err)
+	require.Empty(t, signOut.GetEndSessionUrl())
 
 	_, err = testService.RefreshToken(testCtx, &gen.RefreshTokenRequest{
 		RefreshToken: authResp.RefreshToken,

@@ -309,7 +309,7 @@ type transactionStore struct {
 }
 
 func (s *transactionStore) WithOrgTx(ctx context.Context, org string, fn func(context.Context) error) error {
-	_, err := s.tx.Exec(ctx, "SELECT set_config('app.current_org_id', $1, true)", org)
+	_, err := s.tx.Exec(ctx, "SELECT set_config('codefly.current_tenant_id', $1, true)", org)
 	if err != nil {
 		return err
 	}
@@ -566,16 +566,16 @@ func TestPostgresAuditPolicyAsNonOwner(t *testing.T) {
 	_, err = tx.Exec(ctx, "CREATE ROLE "+ident+" NOLOGIN NOSUPERUSER NOBYPASSRLS; CREATE SCHEMA "+ident+"; SET LOCAL search_path TO "+ident+"; CREATE TABLE audit_events(org_id text, actor_id text, event_type text, payload jsonb); INSERT INTO audit_events VALUES ('org-a','reader','saas.document.read','{}'),('org-b','reader','saas.document.read','{}'),(NULL,'reader','saas.document.read','{}')")
 	require.NoError(t, err)
 	// The isolation the real table carries, stated as the ledger states it: a
-	// tenant policy scoped by app.current_org_id, with the user-scoped insert
+	// tenant policy scoped by codefly.current_tenant_id, with the user-scoped insert
 	// path for rows that belong to no organization.
 	_, err = tx.Exec(ctx, `
 		ALTER TABLE audit_events ENABLE ROW LEVEL SECURITY;
 		ALTER TABLE audit_events FORCE ROW LEVEL SECURITY;
 		CREATE POLICY audit_events_tenant ON audit_events
-			USING (org_id IS NOT NULL AND org_id::text = current_setting('app.current_org_id', true))
+			USING (org_id IS NOT NULL AND org_id::text = current_setting('codefly.current_tenant_id', true))
 			WITH CHECK (
-				(org_id IS NOT NULL AND org_id::text = current_setting('app.current_org_id', true))
-				OR (org_id IS NULL AND actor_id IS NOT NULL AND actor_id::text = current_setting('app.current_user_id', true))
+				(org_id IS NOT NULL AND org_id::text = current_setting('codefly.current_tenant_id', true))
+				OR (org_id IS NULL AND actor_id IS NOT NULL AND actor_id::text = current_setting('codefly.current_user_id', true))
 			)`)
 	require.NoError(t, err)
 	_, err = tx.Exec(ctx, "GRANT USAGE ON SCHEMA "+ident+" TO "+ident+"; GRANT SELECT ON audit_events TO "+ident+"; SET LOCAL ROLE "+ident)
@@ -583,7 +583,7 @@ func TestPostgresAuditPolicyAsNonOwner(t *testing.T) {
 	ctx = txbind.BindRequest(ctx, tx, "", "")
 	store := &infra.PostgresStore{}
 	for _, org := range []string{"org-a", "org-b", ""} {
-		_, err = tx.Exec(ctx, "SELECT set_config('app.current_org_id', $1, true)", org)
+		_, err = tx.Exec(ctx, "SELECT set_config('codefly.current_tenant_id', $1, true)", org)
 		require.NoError(t, err)
 		rows, err := store.AggregateAuditLog(ctx, business.AuditQuery{}, business.AuditAggregationSpec{})
 		require.NoError(t, err)

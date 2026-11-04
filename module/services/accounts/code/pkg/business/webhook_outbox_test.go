@@ -19,7 +19,6 @@ type burstOutboxStore struct {
 	audits     map[string]struct{}
 	deliveries map[string]struct{}
 	jobs       map[string]*jobsv1.EnqueueJobRequest
-	sub        *WebhookSubscription
 }
 
 func (s *burstOutboxStore) SyncWebhookEventSubscriptions(context.Context, string, string, []string) error {

@@ -681,6 +681,17 @@ Which release, and who must have signed it, is the pin below.
 
 ### Pinning the package by identity
 
+The canonical development identity documents are `module/fixtures/*.yaml`.
+Accounts' embedded YAML is a generated packaging copy. From `module/tools`,
+`GOWORK=off go run ./cmd/module-package run-generators --module ..` executes the
+manifest's `embedded-fixtures` step along with the other declared generators.
+It copies the complete canonical bytes and removes only stale YAML copies in
+Accounts' embedded directory; it does not assemble grants or select principals.
+The Accounts fixture test requires matching filename sets and bytes. Existing
+composition conformance checks retain the explicit scenario-principal subset
+against the canonical identities. Edit canonical inputs and run the complete
+generator chain; never curate embedded output.
+
 A workspace resolves the published module package at run time. The reference
 names the source repository and a package version rather than a path:
 
@@ -795,8 +806,8 @@ the playground that drives every shape is `/admin/platform/plugin-transport`.
    ALTER TABLE X ENABLE ROW LEVEL SECURITY;
    ALTER TABLE X FORCE  ROW LEVEL SECURITY;
    CREATE POLICY X_tenant ON X
-     USING (org_id::text = current_setting('app.current_org_id', true))
-     WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+     USING (org_id::text = current_setting('codefly.current_tenant_id', true))
+     WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));
    ```
 3. Add a `Store` method in `pkg/business/store.go`.
 4. Implement in `pkg/infra/postgres_X.go`. Use `s.getQueryExecutor(ctx)` so context-scoped tx (from `WithOrgTx`) is reused.

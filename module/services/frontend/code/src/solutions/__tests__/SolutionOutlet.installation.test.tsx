@@ -11,7 +11,13 @@ vi.mock("@/lib/connect/token-store", () => ({
 	refreshToken: async () => "token",
 	subscribeToken: () => () => {},
 }));
-const Page = ({ installationId }: { installationId?: string }) => <p>installation: {installationId ?? "none"}</p>;
+type Placement = { installationId?: string; organizationId?: string; viewerKey?: string; reach?: Record<string, { installationId: string }> };
+const Page = ({ installationId, organizationId, viewerKey, reach }: Placement) => (
+	<>
+		<p>installation: {installationId ?? "none"}</p>
+		<p>placement: {JSON.stringify({ organizationId, viewerKey, reach })}</p>
+	</>
+);
 vi.mock("@module-federation/runtime", () => ({
 	createInstance: () => ({ registerRemotes: vi.fn(), loadRemote: () => Promise.resolve({ default: Page }) }),
 }));
@@ -36,11 +42,24 @@ describe("SolutionOutlet installation", () => {
 		expect(String(authedFetch.mock.calls[0]![0])).toBe(`/api/solutions/${id}/installation`);
 	});
 
+	it("hands the page the organization, the viewer's key and the reach the host resolved", async () => {
+		authedFetch.mockResolvedValue(Response.json({
+			installationId: "inst-page", healthy: true, organizationId: "org-acme", viewerKey: "viewer-1",
+			reach: { records: { installationId: "inst-records" }, documents: { installationId: "" } },
+		}));
+		renderOutlet();
+		await waitFor(() => expect(screen.getByText("installation: inst-page")).toBeTruthy());
+		expect(screen.getByText(/^placement:/).textContent).toBe(
+			`placement: ${JSON.stringify({ organizationId: "org-acme", viewerKey: "viewer-1", reach: { records: { installationId: "inst-records" } } })}`,
+		);
+	});
+
 	it("hands none when the host refuses, never a value of its own", async () => {
 		authedFetch.mockResolvedValue(Response.json({ error: "not_installed" }, { status: 404 }));
 		renderOutlet();
 		await waitFor(() => expect(screen.getByText("installation: none")).toBeTruthy());
 		await waitFor(() => expect(authedFetch).toHaveBeenCalledTimes(1));
 		expect(screen.queryByText(/installation: inst/)).toBeNull();
+		expect(screen.getByText(/^placement:/).textContent).toBe("placement: {}");
 	});
 });

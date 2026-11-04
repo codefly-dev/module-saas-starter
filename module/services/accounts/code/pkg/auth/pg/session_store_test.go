@@ -1099,7 +1099,7 @@ func TestRLS_Sessions_CrossUserBlocked(t *testing.T) {
 	}))
 
 	// Un-wrapped: zero rows. A request connection starts as app_tenant,
-	// and with no app.current_user_id set the policies admit nothing
+	// and with no codefly.current_user_id set the policies admit nothing
 	// (fail-closed).
 	var noWrapCount int
 	require.NoError(t, testPool.QueryRow(ctx,

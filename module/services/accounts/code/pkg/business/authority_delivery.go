@@ -141,9 +141,6 @@ func (s *Service) verifyAuthorityDocument(signed *compositionv1.SignedManifestV1
 			return nil, fmt.Errorf("%w: authority ceiling %s is not a declared whole kind with actions", ErrSolutionDeliveryMalformed, scope.GetResourceKind())
 		}
 	}
-	if manifest.Kind == solutionhost.KindModule && len(doc.GetRoles()) > 0 {
-		return nil, fmt.Errorf("%w: module %s declares solution roles", ErrSolutionDeliveryMalformed, manifest.Alias)
-	}
 	if err := validateAuthorityRoles(manifest, doc); err != nil {
 		return nil, err
 	}

@@ -12,16 +12,16 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
@@ -51,7 +51,6 @@ import (
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
 	"accounts/pkg/business/executiontest"
-	artifactv1 "accounts/pkg/gen/host/artifact/v1"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
@@ -69,6 +68,7 @@ const (
 	conformanceAlex     = "00000000-0000-7000-8000-0000000000b3"
 	conformanceIvy      = "00000000-0000-7000-8000-0000000000b9"
 	conformanceZoe      = "00000000-0000-7000-8000-0000000000b5"
+	conformanceMaya     = "00000000-0000-7000-8000-0000000000b1"
 )
 
 // TestAccountsPassesTheHostInterfaceConformanceSuite boots accounts over a
@@ -162,6 +162,8 @@ func runHostInterfaceFixture(t *testing.T) {
 	})
 	svc.SetModuleEnvelopeStore(store)
 	svc.SetAdmissionKeyStore(store)
+	pagePayload, pageSource := conformancePage(t)
+	svc.SetFrontendArtifactSource(pageSource)
 	reconciler, err := business.NewSolutionHostBindingReconciler(svc, business.SolutionHostBindingReconcilerConfig{
 		Source: business.NewDeliveredSolutionHostBindings(svc), Verifier: verifier, Coordinate: "conformance-host",
 	})
@@ -186,6 +188,8 @@ func runHostInterfaceFixture(t *testing.T) {
 	require.NoError(t, svc.ConfigureAuthorityCore(ctx, "https://accounts.conformance.test", "conformance-1", key))
 	core, err := svc.AuthorityCore()
 	require.NoError(t, err)
+	acknowledgeSetup := canonicalConformanceStep(t, ctx, svc, store)
+	svc.SetAuthorityInstallStep(acknowledgeSetup)
 
 	// The Connect listener is the catalog-complete one and speaks the gRPC
 	// protocol over h2c, so the suite dials it with a plain gRPC client.
@@ -241,6 +245,14 @@ func runHostInterfaceFixture(t *testing.T) {
 		}
 		require.NoError(t, installModule(ctx, m.alias))
 	}
+
+	// The artifact target's module: one kind, with the two actions an artifact
+	// decision asks of a policy. Installed at Acme alone, so Globex's
+	// administrator lists installations the module can never name.
+	const artifactModule = "conformance-artifact"
+	deliverModule(t, ctx, conn, signer, conformanceModule{alias: artifactModule,
+		ceilings: []*authorityv1.WorkScopeV1{wireScope(artifactModule+".intent", "activate", "run"), wireScope(artifactModule+".preview", "activate", "run")}})
+	require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, artifactModule))
 
 	// The solutions, delivered as the CLI delivers them, then installed by the
 	// fixture's declared installations through the core. conformance-pages
@@ -298,11 +310,11 @@ func runHostInterfaceFixture(t *testing.T) {
 	installed := func(target string) string { return authority.StableInstallationID(fixtureOrganization, target) }
 	proposals, assistant := installed("conformance-proposals"), installed("conformance-assistant")
 	finance := teamNamed(t, ctx, svc, fixtureOrganization, "Finance")
-	// Ivy, a member and no administrator, installs both owned solutions as the
-	// host's setup and holds their installer role; Maya's finance team holds
+	// Alex explicitly installs for Ivy, a member and no administrator, who
+	// holds the separately declared installer role; Maya's finance team holds
 	// A's viewer role and nothing of B's.
 	for _, owned := range []string{"conformance-owner-a", "conformance-owner-b"} {
-		_, err := core.InstallAsHost(ctx, fixtureOrganization, owned, "viewer", conformanceIvy, nil)
+		_, err := installConformanceSolution(ctx, svc, core, owned, "viewer", conformanceIvy)
 		require.NoError(t, err)
 		_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed(owned), Role: domain.InstallerRole, PersonID: conformanceIvy})
 		require.NoError(t, err)
@@ -319,6 +331,9 @@ func runHostInterfaceFixture(t *testing.T) {
 		{Credential: modelCredential, Binding: "records", Audience: "documents", AskKind: "example-records", AskAction: "read"},
 	}}
 	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization, SessionID: "conformance-harness"}
+	const adminToken = "dev-alice"
+	administrator, err := sessionv1.NewSessionServiceClient(conn).SignIn(ctx, &sessionv1.SignInRequest{FixtureToken: adminToken})
+	require.NoError(t, err)
 	conformance.Run(t, conn, registeredDescriptors(t), conformance.Fixture{
 		Organization:   fixtureOrganization,
 		HostCoordinate: "conformance-host", HostDomain: "acme",
@@ -326,11 +341,11 @@ func runHostInterfaceFixture(t *testing.T) {
 		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
 		DeliveryCredential: func(module string) string { return "delivery:" + module },
 		InstallModule:      installModule,
-		// accounts excludes OfferService (interface_policies.go), so the
-		// declaration case compares the reviewed offer on the local authority
-		// alone until accounts serves it; its grants run here as everywhere.
-		ReviewOfferNotServed: "accounts does not serve host.installation.v1.OfferService (excluded in pkg/business/interface_policies.go)",
-		ViewerToken:          "dev-bob", AdminToken: "dev-alice",
+		PagePayload:        pagePayload,
+		// accounts serves OfferService from the same core, so the declaration
+		// case compares the reviewed offer here too: a solution's roles and the
+		// permissions they carry are its declaration on either host.
+		ViewerToken: "dev-bob", AdminToken: adminToken,
 		Audience: "documents", ReadKind: "example-records",
 		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
 		// The installed proposals solution and its own workload. Its roles name
@@ -395,18 +410,29 @@ func runHostInterfaceFixture(t *testing.T) {
 			Target: "conformance-lifecycle", Credential: credential("conformance-lifecycle"), Kind: "conformance-lifecycle.page", Team: finance,
 			PauseInstall: func() func() {
 				release := make(chan struct{})
-				svc.SetAuthorityInstallStep(func(ctx context.Context, _ domain.Installation) error {
+				svc.SetAuthorityInstallStep(func(ctx context.Context, inst domain.Installation) error {
 					select {
 					case <-release:
-						return nil
+						return acknowledgeSetup(ctx, inst)
 					case <-ctx.Done():
 						return ctx.Err()
 					}
 				})
 				var once sync.Once
-				return func() { once.Do(func() { close(release); svc.SetAuthorityInstallStep(nil) }) }
+				return func() { once.Do(func() { close(release); svc.SetAuthorityInstallStep(acknowledgeSetup) }) }
 			},
 			Revoke: func(ctx context.Context, id string) error { return core.Uninstall(ctx, alex, fixtureOrganization, id) },
+			SetAdministrator: func(ctx context.Context, enabled bool) error {
+				role := gen.OrgRole_ORG_ROLE_MEMBER
+				if enabled {
+					role = gen.OrgRole_ORG_ROLE_ADMIN
+				}
+				// The normal membership upsert changes live standing without
+				// ending the session, and invalidates the membership cache.
+				return svc.AddOrgMember(ctx, conformanceAlex, &gen.AddOrgMemberRequest{
+					OrgId: fixtureOrganization, UserId: administrator.GetPersonId(), Role: role,
+				})
+			},
 		},
 		Chain: &chain,
 		// The same binding read as a lookup carries its lookup scopes alone.
@@ -422,6 +448,18 @@ func runHostInterfaceFixture(t *testing.T) {
 			{Token: "fixture-maya", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: false},
 			{Token: "fixture-omar", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
 		},
+	})
+
+	// The artifact target (conformance RunArtifacts): the one artifact decision
+	// every host makes, the shared core's. Alex administers Acme, so he holds
+	// every action on every kind; the approver holds the policy's activate and
+	// run through a role and the runner its run alone, which is what proves
+	// consent is the action rather than an administrator tier. Globex's
+	// administrator is the outsider: the module is installed at Acme only.
+	conformance.RunArtifacts(t, conn, registeredDescriptors(t), conformance.ArtifactCase{
+		Module: artifactModule, Credential: credential(artifactModule), OtherCredential: credential("org-directory"),
+		Policy: artifactModule + ".intent",
+		Admin:  "fixture-alex", Approver: "fixture-artifact-approver", Member: "fixture-artifact-runner", OtherAdmin: "fixture-zoe",
 	})
 
 	// The solution-principal target (conformance RunSolutionPrincipalTarget):
@@ -447,6 +485,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		LegacyStore: "principal-legacy-store", LegacyStoreCredential: credential("principal-legacy-store"), LegacyKind: "principal.legacy",
 		Admin: "fixture-alex", Viewer: "fixture-maya", Editor: "fixture-remi", Member: "fixture-no-roles", Installer: "fixture-principal-installer",
 		Team: teamNamed(t, ctx, svc, fixtureOrganization, "Principal team"), TeamMember: "fixture-principal-team-member", TeamLeaver: "fixture-principal-team-leaver",
+		EmptyTeam: teamNamed(t, ctx, svc, fixtureOrganization, "Principal empty team"),
 		OrgLeaver: "fixture-principal-org-leaver", Administrator: "fixture-store-administrator", Reader: "fixture-store-reader", NoteReader: "fixture-principal-note-reader",
 		OtherAdmin: "fixture-zoe", OtherMember: "fixture-omar", OtherTeam: teamNamed(t, ctx, svc, globexOrganization, "Ops"),
 		Existing:  "store-x",
@@ -472,6 +511,9 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NoError(t, err)
 		return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+sess.GetBearer())
 	}
+	t.Run("artifact consent stays with its policy", func(t *testing.T) {
+		testHostArtifactPolicyIsolation(t, ctx, conn, signIn("fixture-alex"), artifactModule, credential(artifactModule))
+	})
 	requireCode := func(t *testing.T, err error, code codes.Code, reason string) {
 		t.Helper()
 		require.Equal(t, code, status.Code(err), "%v", err)
@@ -507,6 +549,114 @@ func runHostInterfaceFixture(t *testing.T) {
 		_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(leaver, &authorityv1.IssueRequest{
 			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "documents", Scopes: records("read")})
 		requireCode(t, err, codes.PermissionDenied, "not a member of this organization")
+	})
+
+	// Beyond the suite: OfferService answers from the core's view of the
+	// delivered declaration. An administrator reviews an installed solution's
+	// roles → operations → tools and its permission ceiling, with the consent
+	// tuple; another organization's administrator is refused by name; anyone
+	// else gets exactly what the core answers them, never a tuple.
+	t.Run("an administrator reviews an installed solution's roles, operations and ceiling", func(t *testing.T) {
+		offers := installationv1.NewOfferServiceClient(conn)
+		const target = "conformance-pages"
+		composed, err := core.Composed(ctx, target)
+		require.NoError(t, err)
+
+		admin := signIn("fixture-alex")
+		listed, err := offers.ListOffers(admin, &installationv1.ListOffersRequest{OrganizationId: fixtureOrganization})
+		require.NoError(t, err)
+		var names []string
+		for _, o := range listed.GetOffers() {
+			names = append(names, o.GetTarget())
+		}
+		require.Contains(t, names, target)
+		require.NotContains(t, names, "documents", "a module is installed by composition, never offered")
+
+		review, err := offers.ReviewOffer(admin, &installationv1.ReviewRequest{OrganizationId: fixtureOrganization, Target: target})
+		require.NoError(t, err)
+		require.Equal(t, target, review.GetTarget())
+		require.Equal(t, composed.Generation, review.GetApproval().GetGeneration())
+		require.NotEmpty(t, review.GetApproval().GetDigest(), "an administrator reads the consent tuple")
+		require.Equal(t, authority.StableInstallationID(fixtureOrganization, target), review.GetInstallation().GetId())
+		require.Equal(t, installationv1.Installation_STATUS_ACTIVE, review.GetInstallation().GetStatus())
+		require.False(t, review.GetToolsComposed(), "this host composes no tool bindings and says so")
+
+		var roles []string
+		reaches := map[string][]string{}
+		for _, role := range review.GetRoles() {
+			roles = append(roles, role.GetName())
+			require.NotEmpty(t, role.GetScopes(), "role %s states its scopes", role.GetName())
+			for _, c := range role.GetCapabilities() {
+				reaches[role.GetName()] = append(reaches[role.GetName()], c.GetModule()+" "+c.GetOperation())
+				require.NotEmpty(t, c.GetRequires())
+				require.Empty(t, c.GetTools(), "no tool without composed bindings")
+			}
+		}
+		require.ElementsMatch(t, slices.Collect(maps.Keys(composed.Roles)), roles, "every declared role, and only those")
+		require.Contains(t, reaches["viewer"], target+" GET /items/{id}", "the viewer reaches the read it declares")
+		require.NotContains(t, reaches["viewer"], target+" POST /items/{id}", "and never the write")
+		require.NotContains(t, reaches["viewer"], target+" GET /open/{path=**}", "an operation any checked caller reaches needs no role")
+
+		var ceiling []string
+		for _, b := range review.GetCeiling() {
+			ceiling = append(ceiling, b.GetBinding()+"→"+b.GetModule())
+			require.NotEmpty(t, b.GetScopes())
+		}
+		require.Contains(t, ceiling, "documents→documents", "the ceiling is every binding the solution declares")
+		require.Len(t, ceiling, len(composed.Bindings))
+
+		// Globex's administrator learns nothing of Acme's offers.
+		zoe := signIn("fixture-zoe")
+		_, err = offers.ReviewOffer(zoe, &installationv1.ReviewRequest{OrganizationId: fixtureOrganization, Target: target})
+		requireCode(t, err, codes.PermissionDenied, fixtureOrganization)
+		_, err = offers.ListOffers(zoe, &installationv1.ListOffersRequest{OrganizationId: fixtureOrganization})
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+
+		// A member is answered exactly as the core answers them: its refusal
+		// verbatim, or the offer without the consent tuple.
+		member := signIn("fixture-maya")
+		session, err := sessionv1.NewSessionServiceClient(conn).Current(member, &sessionv1.CurrentRequest{})
+		require.NoError(t, err)
+		_, coreErr := core.ReviewOffer(ctx, authority.Person{ID: session.GetPersonId(), Organization: session.GetOrganizationId(), SessionID: session.GetSessionId()}, fixtureOrganization, target)
+		answer, err := offers.ReviewOffer(member, &installationv1.ReviewRequest{OrganizationId: fixtureOrganization, Target: target})
+		if coreErr != nil {
+			require.Equal(t, status.Code(coreStatus(coreErr)), status.Code(err), "%v", err)
+			require.Equal(t, coreErr.Error(), status.Convert(err).Message())
+		} else {
+			require.NoError(t, err)
+			require.Nil(t, answer.GetApproval(), "only an administrator reads the consent tuple")
+			require.NotEmpty(t, answer.GetRoles())
+		}
+	})
+
+	t.Run("reviewed roles remain from the review after redelivery", func(t *testing.T) {
+		const target = "conformance-review-snapshot"
+		scopes := []*authorityv1.WorkScopeV1{wireScope(target+".item", "read")}
+		declared := conformanceSolution{alias: target, generation: 1, ceilings: scopes,
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": scopes, "viewer": scopes}}
+		deliverSolution(t, ctx, conn, signer, declared)
+		_, err := installConformanceSolution(ctx, svc, core, target, "viewer", conformanceAlex)
+		require.NoError(t, err)
+		reviewed, err := core.ReviewOffer(ctx, alex, fixtureOrganization, target)
+		require.NoError(t, err)
+
+		// Delivery changes after the consistent read, before its wire mapping.
+		declared.generation = 2
+		declared.roles = map[string][]*authorityv1.WorkScopeV1{"installer": scopes, "viewer": scopes, "later": scopes}
+		deliverSolution(t, ctx, conn, signer, declared)
+		current, err := core.Composed(ctx, target)
+		require.NoError(t, err)
+		require.Contains(t, current.Roles, "later")
+
+		wire, err := reviewedOffer(reviewed, nil)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), wire.GetApproval().GetGeneration())
+		require.Equal(t, []string{"installer", "viewer"}, wire.GetInstallation().GetRoles())
+		var roles []string
+		for _, role := range wire.GetRoles() {
+			roles = append(roles, role.GetName())
+		}
+		require.Equal(t, wire.GetInstallation().GetRoles(), roles)
 	})
 
 	// Beyond the suite: a delegation never reaches past what its grantor holds
@@ -782,16 +932,16 @@ func runHostInterfaceFixture(t *testing.T) {
 		}
 		release := make(chan struct{})
 		started := make(chan struct{}, 4)
-		svc.SetAuthorityInstallStep(func(ctx context.Context, _ domain.Installation) error {
+		svc.SetAuthorityInstallStep(func(ctx context.Context, inst domain.Installation) error {
 			started <- struct{}{}
 			select {
 			case <-release:
-				return nil
+				return acknowledgeSetup(ctx, inst)
 			case <-ctx.Done():
 				return ctx.Err()
 			}
 		})
-		t.Cleanup(func() { svc.SetAuthorityInstallStep(nil) })
+		t.Cleanup(func() { svc.SetAuthorityInstallStep(acknowledgeSetup) })
 		install := func(approval *installationv1.ConsentApproval) chan error {
 			done := make(chan error, 1)
 			go func() {
@@ -891,81 +1041,152 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NoError(t, err)
 		finance := teamNamed(t, ctx, svc, fixtureOrganization, "Finance")
 		require.Contains(t, grants, domain.RoleGrant{InstallationID: inst.ID, Role: "viewer", TeamID: finance}, "the declared team holds its role")
-	})
 
-	// The artifact interface the local authority serves (host.artifact.v1),
-	// asked as a module asks it: the module's workload credential and a parent
-	// capability addressed to the module. accounts' one artifact decision
-	// answers: an organization administrator present approves an exact
-	// artifact under the module's installed policy; a member without the
-	// policy's permission, a policy the module has none of, and consent through
-	// another module's credential are each refused by name.
-	t.Run("the artifact interface approves for an allowed caller and refuses otherwise", func(t *testing.T) {
-		const module = "conformance-artifacts"
-		const kind = "conformance-artifacts.intent"
-		deliverModule(t, ctx, conn, signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope(kind, "activate", "run")}})
-		digest := "sha256:" + strings.Repeat("ab", 32)
-		registry := svc.ModulePrincipals()
-		t.Cleanup(func() { svc.SetModulePrincipals(registry) })
-		withPolicy := svc.ModulePrincipals()
-		grant := withPolicy[business.ModulePrincipalID(module)]
-		grant.ArtifactPolicies = map[string]business.ExecutableArtifactPolicy{"intent-version": {
-			Schema: "example.intent-version/v1", Sources: map[string]string{module: module},
-			Activate: business.ArtifactPermission{Resource: kind, Action: "activate"}, Run: business.ArtifactPermission{Resource: kind, Action: "run"},
-			Contracts: []business.ArtifactContract{{Kind: "engine", Name: "example-engine", Digest: digest}}, RequiredKinds: []string{"engine"},
-		}}
-		withPolicy[business.ModulePrincipalID(module)] = grant
-		svc.SetModulePrincipals(withPolicy)
-		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
-		installed, err := core.Installations(ctx, alex, fixtureOrganization)
+		// accounts' own record of the installation follows the core's: active,
+		// with no install step acknowledged, and exposed to the declared team.
+		available, _, err := svc.ListAvailableSolutions(ctx, fixtureOrganization, "", 500)
 		require.NoError(t, err)
-		var installation string
-		for _, inst := range installed {
-			if inst.Target == module {
-				installation = inst.ID
+		var target string
+		for _, entry := range available {
+			if entry.RouteAlias == "conformance-late" {
+				target = entry.TargetID
 			}
 		}
-		require.NotEmpty(t, installation)
+		require.NotEmpty(t, target)
+		rows, _, err := svc.ListOrganizationInstallations(ctx, fixtureOrganization, "", 100)
+		require.NoError(t, err)
+		var native *gen.Installation
+		for _, row := range rows {
+			if row.Summary.GetInstallation().GetTargetId() == target {
+				native = row.Summary.GetInstallation()
+			}
+		}
+		require.NotNil(t, native, "accounts holds its own record of the installation")
+		require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, native.GetStatus(), "accounts' record follows the core's")
+		entitled, err := svc.ListSolutionEntitlements(ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceMaya})
+		require.NoError(t, err)
+		var exposed bool
+		for _, entitlement := range entitled.GetEntitlements() {
+			exposed = exposed || entitlement.GetInstallationId() == native.GetId()
+		}
+		require.True(t, exposed, "the declared team is exposed to it")
 
-		parentOf := func(token string, actions ...string) string {
+		// A person on the team is issued a capability through the solution.
+		issued, err := authorityv1.NewAuthorityServiceClient(conn).Issue(signIn("fixture-maya"), &authorityv1.IssueRequest{
+			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "conformance-late"})
+		require.NoError(t, err, "a member of the declared team holds the solution's role")
+		require.NotEmpty(t, issued.GetContext().GetAuthorityScopes())
+	})
+
+	// A module page that declares roles reaches the navigation of a person
+	// holding one of them, and of no other member of the organization, as a
+	// solution does; its page's audience answers the same way. Redelivered
+	// without roles, it leaves the role holder's navigation: what lists it
+	// then is the organization's installation and a team's grant, as for any
+	// module.
+	t.Run("a module page's roles decide who is listed for it", func(t *testing.T) {
+		const module = "conformance-module-page"
+		note := wireScope(module+".note", "read")
+		page := &solutionhost.Frontend{Title: "Module page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload}
+		withRoles := conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{note}, page: page,
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}}
+		deliverModule(t, ctx, conn, signer, withRoles)
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		installations, err := core.Installations(ctx, alex, fixtureOrganization)
+		require.NoError(t, err)
+		var inst domain.Installation
+		for _, candidate := range installations {
+			if candidate.Target == module {
+				inst = candidate
+			}
+		}
+		require.Equal(t, domain.Active, inst.Status, "the module page is installed at Acme")
+		const nora, remi = "00000000-0000-7000-8000-0000000000b8", "00000000-0000-7000-8000-0000000000b2"
+		_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: "viewer", PersonID: nora})
+		require.NoError(t, err)
+		listed := func(person string) bool {
 			t.Helper()
-			issued, err := authorityv1.NewAuthorityServiceClient(conn).Issue(signIn(token), &authorityv1.IssueRequest{
-				As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: module,
-				Scopes: []*authorityv1.WorkScopeV1{wireScope(kind, actions...)}})
-			require.NoError(t, err, "%s at %s", token, module)
-			return issued.GetToken()
+			entitled, err := svc.ListSolutionEntitlements(ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: person})
+			require.NoError(t, err)
+			for _, entitlement := range entitled.GetEntitlements() {
+				if entitlement.GetInstallationId() == inst.ID {
+					return true
+				}
+			}
+			return false
 		}
-		approve := func(parent, actor, policy string) (*artifactv1.Approval, error) {
-			return artifactv1.NewArtifactServiceClient(conn).Approve(ctx, &artifactv1.ArtifactRequest{
-				ParentToken: parent, ActorCredential: actor, InstallationId: installation, Policy: policy,
-				Identity: &artifactv1.Identity{Schema: "example.intent-version/v1", Source: module, Subject: []byte(`{"intent":"tool-assistant"}`),
-					Contracts: []*artifactv1.Contract{{Kind: "engine", Name: "example-engine", Digest: digest}}},
-			})
+		require.True(t, listed(nora), "the viewer's navigation lists the module page")
+		require.False(t, listed(remi), "another member's does not")
+		issue := func(token string) error {
+			_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(signIn(token), &authorityv1.IssueRequest{
+				As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: module})
+			return err
 		}
-		admin := parentOf("fixture-alex", "activate", "run")
-		approved, err := approve(admin, credential(module), "intent-version")
-		require.NoError(t, err, "an administrator present approves the artifact")
-		require.True(t, strings.HasPrefix(approved.GetQualifiedName(), "host/approved-artifacts/"))
-		authorized, err := artifactv1.NewArtifactServiceClient(conn).Authorize(ctx, &artifactv1.ArtifactRequest{
-			ParentToken: admin, ActorCredential: credential(module), InstallationId: installation, Policy: "intent-version",
-			Identity: &artifactv1.Identity{Schema: "example.intent-version/v1", Source: module, Subject: []byte(`{"intent":"tool-assistant"}`),
-				Contracts: []*artifactv1.Contract{{Kind: "engine", Name: "example-engine", Digest: digest}}},
-		})
-		require.NoError(t, err, "a run is authorized against the standing approval")
-		require.Equal(t, approved.GetQualifiedName(), authorized.GetQualifiedName())
+		require.NoError(t, issue("fixture-no-roles"), "the viewer is issued a capability at the page's audience")
+		require.Equal(t, codes.PermissionDenied, status.Code(issue("fixture-remi")), "another member is not")
 
-		_, err = approve(admin, credential(module), "no-such-policy")
-		requireCode(t, err, codes.PermissionDenied, "installed artifact policy required")
-		_, err = approve(admin, credential("documents"), "intent-version")
-		require.Error(t, err, "a parent addressed to the module is refused to another module's credential")
-		_, err = approve(admin, "", "intent-version")
-		requireCode(t, err, codes.PermissionDenied, "")
-		_, err = approve(parentOf("fixture-alex", "run"), credential(module), "intent-version")
-		requireCode(t, err, codes.PermissionDenied, "does not hold "+kind+":activate")
-		_, err = authorityv1.NewAuthorityServiceClient(conn).Issue(signIn("dev-bob"), &authorityv1.IssueRequest{
-			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: module,
-			Scopes: []*authorityv1.WorkScopeV1{wireScope(kind, "activate")}})
-		requireCode(t, err, codes.PermissionDenied, "beyond what the owner holds")
+		withoutRoles := withRoles
+		withoutRoles.roles, withoutRoles.generation = nil, 2
+		deliverModule(t, ctx, conn, signer, withoutRoles)
+		require.False(t, listed(nora), "a module page without roles is listed by no role")
+
+		// A module page's signed installation_role selects its standing role,
+		// as the core selects a solution's: neither a role name nor a role id
+		// overrides it.
+		const selected = "conformance-module-page-selected"
+		selectedNote := wireScope(selected+".note", "read")
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: selected, ceilings: []*authorityv1.WorkScopeV1{selectedNote}, page: page, installationRole: "viewer",
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {selectedNote}, "viewer": {selectedNote}}})
+		_, _, err = svc.InstallFixtureTarget(ctx, conformanceAlex, fixtureOrganization, selected, "installer", conformanceAlex)
+		require.ErrorContains(t, err, `role "installer" cannot override `+selected+`'s installation_role declaration`)
+		available, _, err := svc.ListAvailableSolutions(ctx, fixtureOrganization, "", 500)
+		require.NoError(t, err)
+		var target *business.AvailableSolutionTarget
+		for _, entry := range available {
+			if entry.RouteAlias == selected {
+				target = entry
+			}
+		}
+		require.NotNil(t, target)
+		roles, err := svc.ListRoles(ctx, &gen.ListRolesRequest{OrgId: fixtureOrganization})
+		require.NoError(t, err)
+		var catalogue string
+		for _, role := range roles.GetRoles() {
+			if role.GetName() == "Use org-directory" {
+				catalogue = role.GetId()
+			}
+		}
+		require.NotEmpty(t, catalogue)
+		_, err = svc.InstallSolution(ctx, conformanceAlex, &business.InstallSolutionParams{OrgID: fixtureOrganization, TargetID: target.TargetID,
+			AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, DisplayName: selected, RootScopeLabel: selected,
+			RoleID: catalogue, OwnerPrincipalID: conformanceAlex})
+		require.ErrorContains(t, err, "cannot override "+selected+"'s installation_role declaration")
+		// The administrator's install with no role, as the module page review
+		// sends it: the signed installation_role selects the standing role.
+		installation, err := svc.InstallSolution(ctx, conformanceAlex, &business.InstallSolutionParams{OrgID: fixtureOrganization, TargetID: target.TargetID,
+			AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, DisplayName: selected, RootScopeLabel: selected,
+			OwnerPrincipalID: conformanceAlex})
+		require.NoError(t, err, "an empty role installs a module page as its declared installation_role")
+		require.NoError(t, completeInstallStep(ctx, store, installation))
+		var standing []string
+		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
+			rows, err := storetx.Tx(ctx).Query(ctx, `SELECT r.derived_from FROM public.scope_grants g JOIN public.roles r ON r.id = g.role_id
+				WHERE g.org_id = $1 AND g.subject_kind = 'principal' AND g.subject_id = $2`, fixtureOrganization, installation.GetAgentPrincipalId())
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var from string
+				if err := rows.Scan(&from); err != nil {
+					return err
+				}
+				standing = append(standing, from)
+			}
+			return rows.Err()
+		}))
+		require.Equal(t, []string{"org=" + fixtureOrganization + ";solution=" + target.TargetID + ";role=viewer"}, standing,
+			"the agent's one standing grant is the declared viewer role")
 	})
 
 	// Last, because the envelope it writes becomes every module's ceiling: a
@@ -1049,7 +1270,7 @@ func serveConnect(t *testing.T, ctx context.Context, grpcServer *GrpcServer) uin
 		}), rateLimitInterceptor(rateLimiter)))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	server := &http.Server{Handler: h2c.NewHandler(mux, &http2.Server{}), ReadHeaderTimeout: 10 * time.Second,
+	server := &http.Server{Handler: mux, Protocols: unencryptedHTTP2(), ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return ctx }}
 	ran := make(chan error, 1)
 	go func() { ran <- server.Serve(listener) }()

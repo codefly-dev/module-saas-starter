@@ -57,6 +57,7 @@ func RenderRPCPolicyMatrix() []byte {
 	for _, tier := range tiers {
 		fmt.Fprintf(&b, "- `%s`: %d\n", tier, counts[RPCPolicyTier(tier)])
 	}
+	b.WriteString(renderRoleVocabularies())
 	return []byte(b.String())
 }
 

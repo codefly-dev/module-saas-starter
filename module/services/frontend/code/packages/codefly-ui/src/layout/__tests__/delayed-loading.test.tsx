@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { useLayoutEffect } from "react";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -202,6 +203,29 @@ describe("useDelayedLoading", () => {
 	function Probe({ active }: { active: boolean }) {
 		return <span>{useDelayedLoading(active) ? "waiting" : "idle"}</span>;
 	}
+
+	it("cancels the pending indicator before completed content is committed", () => {
+		function CommitClock({ active }: { active: boolean }) {
+			useLayoutEffect(() => {
+				// Let a due timer run after content commits but before passive effects.
+				if (!active) vi.advanceTimersByTime(LOADING_DELAY_MS);
+			}, [active]);
+			return null;
+		}
+		function CompletingWait({ active }: { active: boolean }) {
+			const visible = useDelayedLoading(active);
+			return (
+				<>
+					<span>{visible ? "waiting" : "idle"}</span>
+					<CommitClock active={active} />
+				</>
+			);
+		}
+		const { rerender } = render(<CompletingWait active />);
+		rerender(<CompletingWait active={false} />);
+		expect(screen.queryByText("waiting")).toBeNull();
+		expect(screen.getByText("idle")).toBeTruthy();
+	});
 
 	it("is the same decision without the presentation", async () => {
 		const { rerender } = render(<Probe active />);

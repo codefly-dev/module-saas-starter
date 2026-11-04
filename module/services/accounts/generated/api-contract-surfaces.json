@@ -88,9 +88,18 @@
         "/host.installation.v1.InstallationService/GrantRole",
         "/host.installation.v1.InstallationService/Install",
         "/host.installation.v1.InstallationService/List",
+        "/host.installation.v1.InstallationService/ListHeld",
         "/host.installation.v1.InstallationService/ListRoleGrants",
         "/host.installation.v1.InstallationService/Review",
         "/host.installation.v1.InstallationService/RevokeRole"
+      ]
+    },
+    {
+      "name": "OfferService",
+      "fullName": "host.installation.v1.OfferService",
+      "procedures": [
+        "/host.installation.v1.OfferService/ListOffers",
+        "/host.installation.v1.OfferService/ReviewOffer"
       ]
     },
     {
@@ -148,6 +157,7 @@
         "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
         "/saas.accounts.v1.AuthService/ExchangeClientToken",
         "/saas.accounts.v1.AuthService/GetJWKS",
+        "/saas.accounts.v1.AuthService/GetProviderSignOut",
         "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode",
         "/saas.accounts.v1.AuthService/Logout",
         "/saas.accounts.v1.AuthService/RefreshToken",
@@ -274,12 +284,14 @@
       "procedures": [
         "/saas.accounts.v1.InstallationService/GetInstallation",
         "/saas.accounts.v1.InstallationService/GrantInstallationToTeam",
+        "/saas.accounts.v1.InstallationService/InstallReviewedSolution",
         "/saas.accounts.v1.InstallationService/InstallSolution",
         "/saas.accounts.v1.InstallationService/ListAvailableSolutions",
         "/saas.accounts.v1.InstallationService/ListInstallations",
         "/saas.accounts.v1.InstallationService/ListOrganizationInstallations",
         "/saas.accounts.v1.InstallationService/NarrowInstallation",
         "/saas.accounts.v1.InstallationService/RetryInstallation",
+        "/saas.accounts.v1.InstallationService/ReviewSolutionInstall",
         "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
         "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
         "/saas.accounts.v1.InstallationService/UninstallSolution"

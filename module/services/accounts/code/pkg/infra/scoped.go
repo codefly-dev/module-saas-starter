@@ -10,7 +10,8 @@ import (
 
 // Scoped is a Store handle bound to a principal Identity. Every call runs inside
 // a single transaction pre-seeded with that identity's RLS context —
-// app.current_user_id and/or app.current_org_id — or, for business.System(), the
+// codefly.current_user_id and/or codefly.current_tenant_id — or, for
+// business.System(), the
 // explicit app_control_plane role. This is how RLS context gets
 // established: once, from the identity, instead of each call site reaching for
 // WithUserTx / WithOrgTx / WithControlPlane.
@@ -118,7 +119,7 @@ func (sc *Scoped) describe() string {
 
 // ListPrincipals lists the principals in this identity's org, RLS enforced.
 // kind "" returns all kinds — humans surface via the organization_members join,
-// which is RLS-gated on app.current_org_id (supplied by the identity).
+// which is RLS-gated on codefly.current_tenant_id (supplied by the identity).
 func (sc *Scoped) ListPrincipals(ctx context.Context, kind string, pageSize int32, pageToken string) ([]*business.Principal, string, error) {
 	var out []*business.Principal
 	var next string
@@ -131,7 +132,7 @@ func (sc *Scoped) ListPrincipals(ctx context.Context, kind string, pageSize int3
 }
 
 // AddOrgMember adds a membership row to this identity's org. organization_members
-// is RLS-gated (org_id = app.current_org_id); the identity's OrgID satisfies the
+// is RLS-gated (org_id = codefly.current_tenant_id); the identity's OrgID satisfies the
 // WITH CHECK, so no bypass is needed for a tenant-scoped caller.
 func (sc *Scoped) AddOrgMember(ctx context.Context, userID, role string) error {
 	return sc.Within(ctx, func(ctx context.Context) error {

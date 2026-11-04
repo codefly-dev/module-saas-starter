@@ -1,0 +1,442 @@
+import { Code, ConnectError } from "@connectrpc/connect";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+	changeRefusal,
+	exampleOrganization,
+	exampleTarget,
+	outsiderRefusal,
+	reviewedOffer,
+	setupFixture,
+} from "../../../stories/setup-fixtures.js";
+import { SolutionSetup } from "../index.js";
+
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
+
+const section = (name: string) =>
+	screen
+		.getByRole("heading", { name })
+		.closest("[data-slot='card']") as HTMLElement;
+
+async function mounted(fixture = setupFixture(), extra = {}) {
+	render(
+		<SolutionSetup
+			transport={fixture.transport}
+			organizationId={exampleOrganization}
+			target={exampleTarget}
+			{...extra}
+		/>,
+	);
+	await screen.findByRole("heading", { name: "Is it ready?" });
+	return fixture;
+}
+
+describe("Is it ready?", () => {
+	it("keeps an already visible loading indicator for the kit's minimum duration", async () => {
+		vi.useFakeTimers();
+		const fixture = setupFixture();
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		const transport = {
+			...fixture.transport,
+			unary: (async (...args: Parameters<typeof fixture.transport.unary>) => {
+				await pending;
+				return fixture.transport.unary(...args);
+			}) as typeof fixture.transport.unary,
+		};
+		render(
+			<SolutionSetup
+				transport={transport}
+				organizationId={exampleOrganization}
+				target={exampleTarget}
+			/>,
+		);
+		expect(screen.queryByRole("status")).toBeNull();
+		await act(() => vi.advanceTimersByTimeAsync(200));
+		expect(screen.getByRole("status")).toBeTruthy();
+		await act(async () => {
+			finish();
+		});
+		expect(screen.getByRole("status")).toBeTruthy();
+		expect(screen.queryByRole("heading", { name: "Is it ready?" })).toBeNull();
+		await act(() => vi.advanceTimersByTimeAsync(300));
+		expect(screen.queryByRole("status")).toBeNull();
+		expect(screen.getByRole("heading", { name: "Is it ready?" })).toBeTruthy();
+	});
+
+	it("states the installation as the authority holds it", async () => {
+		await mounted();
+		const ready = within(section("Is it ready?"));
+		expect(ready.getByText("Installed")).toBeTruthy();
+		expect(ready.getByText("3")).toBeTruthy(); // the reviewed generation
+		expect(ready.getByText("4")).toBeTruthy(); // the installation's revision
+		expect(ready.getByText("viewer")).toBeTruthy(); // the agent role
+	});
+
+	it("lists what the host knows is still unmet, with who clears it", async () => {
+		await mounted(setupFixture(), {
+			conditions: [
+				{
+					key: "source:repo",
+					heading: "A source is not connected",
+					subject: "example/repo",
+					detail: "The solution reads a repository nobody connected.",
+					clearedBy: "An organization administrator",
+					action: {
+						kind: "link",
+						label: "Connect it",
+						href: "/admin/datasources",
+					},
+				},
+			],
+		});
+		const unmet = screen.getByRole("list", { name: "Unmet conditions" });
+		expect(within(unmet).getByText("A source is not connected")).toBeTruthy();
+		expect(
+			within(unmet).getByText("Cleared by: An organization administrator"),
+		).toBeTruthy();
+		expect(
+			within(unmet)
+				.getByRole("link", { name: "Connect it" })
+				.getAttribute("href"),
+		).toBe("/admin/datasources");
+	});
+
+	it("says a solution not installed here holds no role yet, and offers no install", async () => {
+		await mounted(
+			setupFixture({ offer: reviewedOffer({ tools: true, installed: false }) }),
+		);
+		expect(
+			within(section("Is it ready?")).getByText("Not installed"),
+		).toBeTruthy();
+		expect(screen.getByText(/Not installed at this organization/)).toBeTruthy();
+		expect(screen.queryByRole("button", { name: /Install/ })).toBeNull();
+		expect(
+			within(section("Who holds them")).getByText(
+				/Nobody holds a role until the solution is installed/,
+			),
+		).toBeTruthy();
+	});
+});
+
+describe("Roles and what they grant", () => {
+	// One row per operation with a column per role, not one full table per
+	// role: the roles differ by a few scopes, and three copies of the same
+	// fifty rows hid that.
+	const openModule = (roles: ReturnType<typeof within>, module: string) => {
+		fireEvent.click(
+			roles.getByRole("button", {
+				name: new RegExp(`^${module} · \\d+ operations?`),
+			}),
+		);
+		return within(
+			roles.getByRole("table", { name: `Operations of ${module}` }),
+		);
+	};
+
+	it("lists each role's scopes, the operations they share, their tools and the ceiling (a local-authority answer)", async () => {
+		await mounted(setupFixture({ offer: reviewedOffer({ tools: true }) }));
+		const roles = within(section("Roles and what they grant"));
+		const declared = within(roles.getByRole("list", { name: "Roles" }));
+		expect(declared.getByText("editor")).toBeTruthy();
+		expect(declared.getByText("viewer")).toBeTruthy();
+		expect(
+			roles.getByText(
+				"example-pages.page: read, write · what this installation owns",
+			),
+		).toBeTruthy();
+		const table = openModule(roles, exampleTarget);
+		expect(table.getByText("POST /items/{id}")).toBeTruthy();
+		expect(table.getByText("write_item · changes data")).toBeTruthy();
+		// The write operation is the editor's and not the viewer's, which the
+		// role columns say on the one row rather than by its absence from a
+		// second table.
+		const write = table.getByText("POST /items/{id}").closest("tr");
+		const cells = [...(write?.querySelectorAll("td") ?? [])].map(
+			(cell) => cell.textContent,
+		);
+		expect(cells.slice(2, 4)).toEqual(["Yes", "—"]);
+		const ceiling = roles.getByRole("list", { name: "Permission ceiling" });
+		expect(within(ceiling).getByText("documents")).toBeTruthy();
+		expect(
+			within(ceiling).getByText("example-records: read, write"),
+		).toBeTruthy();
+		expect(roles.queryByText(/Tool exposure is unavailable/)).toBeNull();
+	});
+
+	it("says once that a host composes no tools, and carries no column that could only repeat it", async () => {
+		await mounted(setupFixture({ offer: reviewedOffer({ tools: false }) }));
+		const roles = within(section("Roles and what they grant"));
+		expect(
+			roles.getByText("Tool exposure is unavailable from this host."),
+		).toBeTruthy();
+		const table = openModule(roles, exampleTarget);
+		expect(table.getByText("POST /items/{id}")).toBeTruthy();
+		expect(
+			table.queryByRole("columnheader", { name: "Agent tools" }),
+		).toBeNull();
+		expect(roles.queryByText("Tool exposure unavailable")).toBeNull();
+	});
+
+	// "Why has the installer so many permissions" is answered by the split, so
+	// the role's own line and the module's summary both carry it, and the rows
+	// are banded by it. A total alone said only "fifty-two".
+	it("splits a role's breadth and a module's operations by the access they demand", async () => {
+		await mounted(setupFixture({ offer: reviewedOffer({ tools: true }) }));
+		const roles = within(section("Roles and what they grant"));
+		const declared = within(roles.getByRole("list", { name: "Roles" }));
+		expect(declared.getByText("2 operations · 1 read, 1 write")).toBeTruthy();
+		expect(declared.getByText("1 operation · 1 read")).toBeTruthy();
+		expect(
+			roles.getByRole("button", {
+				name: `${exampleTarget} · 2 operations · 1 read, 1 write`,
+			}),
+		).toBeTruthy();
+		const table = openModule(roles, exampleTarget);
+		// One band per access level, each counted, reads first.
+		expect(
+			table
+				.getAllByRole("rowheader")
+				.map((header) => header.textContent?.trim()),
+		).toEqual(["read · 1 operation", "write · 1 operation"]);
+	});
+
+	// Two roles reaching the same operations in a module is otherwise found only
+	// by diffing two columns over fifty rows.
+	it("says when two roles reach exactly the same operations in a module", async () => {
+		const offer = reviewedOffer({ tools: true });
+		const editor = offer.roles[0];
+		await mounted(
+			setupFixture({
+				offer: {
+					...offer,
+					roles: [
+						editor,
+						{ ...editor, name: "installer" },
+						...offer.roles.slice(1),
+					],
+				},
+			}),
+		);
+		const roles = within(section("Roles and what they grant"));
+		// On the closed line: the reader never has to open the module to learn
+		// that these two columns would be identical.
+		expect(
+			roles.getByText(
+				"editor and installer reach exactly the same operations here.",
+			),
+		).toBeTruthy();
+	});
+
+	it("says what a ceiling entry with no scope of its own means", async () => {
+		const offer = reviewedOffer({ tools: true });
+		await mounted(
+			setupFixture({
+				offer: {
+					...offer,
+					ceiling: [
+						...offer.ceiling,
+						{ binding: "evaluation", module: "evaluation", scopes: [] },
+					],
+				},
+			}),
+		);
+		const ceiling = within(
+			within(section("Roles and what they grant")).getByRole("list", {
+				name: "Permission ceiling",
+			}),
+		);
+		expect(ceiling.getByText("evaluation")).toBeTruthy();
+		expect(
+			ceiling.getByText("Reached, but granted no scope of its own."),
+		).toBeTruthy();
+	});
+
+	it("shows a member holding a role what it grants, without the consent tuple and read-only", async () => {
+		await mounted(
+			setupFixture({
+				offer: reviewedOffer({ tools: true, administrator: false }),
+				refuse: { grants: changeRefusal },
+			}),
+		);
+		const ready = within(section("Is it ready?"));
+		expect(ready.getByText("Installed")).toBeTruthy();
+		expect(ready.getByText("—", { selector: "dd" })).toBeTruthy(); // no generation without the tuple
+		expect(
+			within(
+				within(section("Roles and what they grant")).getByRole("list", {
+					name: "Roles",
+				}),
+			).getByText("editor"),
+		).toBeTruthy();
+		const holders = within(section("Who holds them"));
+		expect(
+			holders.getByText(
+				/Refused: installation administration requires an administrator/,
+			),
+		).toBeTruthy();
+		expect(screen.queryByRole("button", { name: "Grant role" })).toBeNull();
+	});
+
+	it("shows anyone else the authority's one reason in every section", async () => {
+		await mounted(setupFixture({ refuse: { offer: outsiderRefusal } }));
+		for (const name of [
+			"Is it ready?",
+			"Roles and what they grant",
+			"Who holds them",
+		]) {
+			expect(
+				within(section(name)).getByText(
+					/Refused: reviewing "example-pages" requires an administrator or owner of organization "org-acme", or a role on its installation there/,
+				),
+			).toBeTruthy();
+		}
+		expect(screen.queryByRole("button", { name: "Grant role" })).toBeNull();
+	});
+});
+
+describe("Who holds them", () => {
+	const subjects = [
+		{ kind: "person" as const, id: "person-jane", label: "Jane Doe" },
+		{ kind: "team" as const, id: "team-finance", label: "Finance" },
+	];
+
+	it("names each holder as the host names them", async () => {
+		await mounted(setupFixture(), { subjects });
+		const grants = screen.getByRole("list", { name: "Role grants" });
+		expect(within(grants).getByText("viewer · Team Finance")).toBeTruthy();
+		expect(within(grants).getByText("editor · Jane Doe")).toBeTruthy();
+	});
+
+	it("grants a declared role to a team, and the list follows the authority", async () => {
+		const fixture = await mounted(setupFixture({ grants: [] }), { subjects });
+		fireEvent.change(screen.getByLabelText("Role"), {
+			target: { value: "editor" },
+		});
+		fireEvent.change(screen.getByLabelText("Person or team"), {
+			target: { value: "team:team-finance" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Grant role" }));
+		await waitFor(() => expect(fixture.calls).toHaveLength(1));
+		expect(fixture.calls[0]).toMatchObject({
+			method: "GrantRole",
+			request: {
+				organizationId: "org-acme",
+				installationId: "installation-1",
+				role: "editor",
+				teamId: "team-finance",
+				personId: "",
+			},
+		});
+		expect(await screen.findByText("editor · Team Finance")).toBeTruthy();
+	});
+
+	it("grants to an id when the host names nobody", async () => {
+		const fixture = await mounted(setupFixture({ grants: [] }));
+		fireEvent.change(screen.getByLabelText("Role"), {
+			target: { value: "viewer" },
+		});
+		fireEvent.change(screen.getByLabelText("Person id"), {
+			target: { value: "person-omar" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Grant role" }));
+		await waitFor(() => expect(fixture.calls).toHaveLength(1));
+		expect(fixture.calls[0].request).toMatchObject({
+			role: "viewer",
+			personId: "person-omar",
+			teamId: "",
+		});
+	});
+
+	it("revokes one grant and shows the authority's refusal when it refuses", async () => {
+		const fixture = await mounted(
+			setupFixture({ refuse: { change: changeRefusal } }),
+			{ subjects },
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Revoke editor from Jane Doe" }),
+		);
+		await waitFor(() => expect(fixture.calls).toHaveLength(1));
+		expect(fixture.calls[0]).toMatchObject({
+			method: "RevokeRole",
+			request: { role: "editor", personId: "person-jane", teamId: "" },
+		});
+		const banner = await screen.findByText("The authority refused the change");
+		expect(banner).toBeTruthy();
+		expect(
+			screen.getByText(/Refused: installation administration requires/),
+		).toBeTruthy();
+	});
+
+	it("shows the reason when the grants cannot be read", async () => {
+		await mounted(
+			setupFixture({
+				refuse: {
+					grants: new ConnectError(
+						"the store is unreachable",
+						Code.Unavailable,
+					),
+				},
+			}),
+		);
+		expect(
+			within(section("Who holds them")).getByText(
+				"Unavailable: the store is unreachable",
+			),
+		).toBeTruthy();
+	});
+});
+
+describe("a binding instead of a transport", () => {
+	it("reaches the host interfaces at the binding's base with its bearer", async () => {
+		const seen: { url: string; authorization: string | null }[] = [];
+		const authedFetch = async (
+			input: RequestInfo | URL,
+			init?: RequestInit,
+		) => {
+			const request = new Request(input, init);
+			seen.push({
+				url: request.url,
+				authorization: request.headers.get("authorization"),
+			});
+			return new Response(
+				JSON.stringify({ code: "permission_denied", message: "not here" }),
+				{
+					status: 403,
+					headers: { "content-type": "application/json" },
+				},
+			);
+		};
+		render(
+			<SolutionSetup
+				binding={{
+					apiBase: "http://host.test/api/solutions/example/proxy",
+					getAccessToken: () => "token-1",
+					authedFetch,
+				}}
+				organizationId={exampleOrganization}
+				target={exampleTarget}
+			/>,
+		);
+		expect(
+			(await screen.findAllByText("Refused: not here")).length,
+		).toBeGreaterThan(0);
+		expect(seen[0].url).toBe(
+			"http://host.test/api/solutions/example/proxy/host.installation.v1.OfferService/ReviewOffer",
+		);
+		expect(seen[0].authorization).toBe("Bearer token-1");
+	});
+});

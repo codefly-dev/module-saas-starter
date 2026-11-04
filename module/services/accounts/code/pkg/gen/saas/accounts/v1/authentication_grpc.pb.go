@@ -29,6 +29,7 @@ const (
 	AuthService_RefreshToken_FullMethodName                 = "/saas.accounts.v1.AuthService/RefreshToken"
 	AuthService_SwitchOrganization_FullMethodName           = "/saas.accounts.v1.AuthService/SwitchOrganization"
 	AuthService_Logout_FullMethodName                       = "/saas.accounts.v1.AuthService/Logout"
+	AuthService_GetProviderSignOut_FullMethodName           = "/saas.accounts.v1.AuthService/GetProviderSignOut"
 	AuthService_GetJWKS_FullMethodName                      = "/saas.accounts.v1.AuthService/GetJWKS"
 	AuthService_ValidateClientAuthorization_FullMethodName  = "/saas.accounts.v1.AuthService/ValidateClientAuthorization"
 	AuthService_IssueClientAuthorizationCode_FullMethodName = "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode"
@@ -60,6 +61,16 @@ type AuthServiceClient interface {
 	// the locked session row before the selected organization is persisted.
 	SwitchOrganization(ctx context.Context, in *SwitchOrganizationRequest, opts ...grpc.CallOption) (*SwitchOrganizationResponse, error)
 	Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// GetProviderSignOut returns the identity provider's RP-initiated logout URL,
+	// so a client can complete the half of a sign-out the host cannot: ending the
+	// provider's own session, which needs the person's browser. Public, like
+	// GetJWKS, because everything it answers with is already public — the
+	// deployment's client id and its registered post-logout redirect — and
+	// because a client needs it on a sign-out that has already ended the session
+	// whose bearer it would otherwise present. Empty when this provider offers no
+	// RP-initiated sign-out. See FEATURES.md "Signing out of the identity
+	// provider".
+	GetProviderSignOut(ctx context.Context, in *GetProviderSignOutRequest, opts ...grpc.CallOption) (*GetProviderSignOutResponse, error)
 	GetJWKS(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*JWKSResponse, error)
 	// ValidateClientAuthorization checks a client's authorization request before
 	// any sign-in UI is rendered. Public RPC: this runs before the person has
@@ -168,6 +179,16 @@ func (c *authServiceClient) Logout(ctx context.Context, in *LogoutRequest, opts 
 	return out, nil
 }
 
+func (c *authServiceClient) GetProviderSignOut(ctx context.Context, in *GetProviderSignOutRequest, opts ...grpc.CallOption) (*GetProviderSignOutResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetProviderSignOutResponse)
+	err := c.cc.Invoke(ctx, AuthService_GetProviderSignOut_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *authServiceClient) GetJWKS(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*JWKSResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JWKSResponse)
@@ -233,6 +254,16 @@ type AuthServiceServer interface {
 	// the locked session row before the selected organization is persisted.
 	SwitchOrganization(context.Context, *SwitchOrganizationRequest) (*SwitchOrganizationResponse, error)
 	Logout(context.Context, *LogoutRequest) (*emptypb.Empty, error)
+	// GetProviderSignOut returns the identity provider's RP-initiated logout URL,
+	// so a client can complete the half of a sign-out the host cannot: ending the
+	// provider's own session, which needs the person's browser. Public, like
+	// GetJWKS, because everything it answers with is already public — the
+	// deployment's client id and its registered post-logout redirect — and
+	// because a client needs it on a sign-out that has already ended the session
+	// whose bearer it would otherwise present. Empty when this provider offers no
+	// RP-initiated sign-out. See FEATURES.md "Signing out of the identity
+	// provider".
+	GetProviderSignOut(context.Context, *GetProviderSignOutRequest) (*GetProviderSignOutResponse, error)
 	GetJWKS(context.Context, *emptypb.Empty) (*JWKSResponse, error)
 	// ValidateClientAuthorization checks a client's authorization request before
 	// any sign-in UI is rendered. Public RPC: this runs before the person has
@@ -284,6 +315,9 @@ func (UnimplementedAuthServiceServer) SwitchOrganization(context.Context, *Switc
 }
 func (UnimplementedAuthServiceServer) Logout(context.Context, *LogoutRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method Logout not implemented")
+}
+func (UnimplementedAuthServiceServer) GetProviderSignOut(context.Context, *GetProviderSignOutRequest) (*GetProviderSignOutResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetProviderSignOut not implemented")
 }
 func (UnimplementedAuthServiceServer) GetJWKS(context.Context, *emptypb.Empty) (*JWKSResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetJWKS not implemented")
@@ -462,6 +496,24 @@ func _AuthService_Logout_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_GetProviderSignOut_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProviderSignOutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).GetProviderSignOut(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_GetProviderSignOut_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).GetProviderSignOut(ctx, req.(*GetProviderSignOutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AuthService_GetJWKS_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
@@ -572,6 +624,10 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Logout",
 			Handler:    _AuthService_Logout_Handler,
+		},
+		{
+			MethodName: "GetProviderSignOut",
+			Handler:    _AuthService_GetProviderSignOut_Handler,
 		},
 		{
 			MethodName: "GetJWKS",

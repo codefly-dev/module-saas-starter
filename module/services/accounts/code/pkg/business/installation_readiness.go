@@ -220,12 +220,25 @@ func (f *readinessFacts) readinessFor(
 
 	seen := map[string]int{}
 	for _, binding := range asked.Authority.Bindings {
+		// Authority IssueChild bounds a person's self invoke/lookup by the
+		// parent and current grants, not the outward installation ceiling.
+		// Compare the delivered principal, not the target alias or binding ID.
+		personSelf := binding.Audience == prefix &&
+			(len(binding.Operations[modulecontract.OperationInvoke]) > 0 || len(binding.Operations[modulecontract.OperationLookup]) > 0)
+		for operation := range binding.Operations {
+			if operation != modulecontract.OperationInvoke && operation != modulecontract.OperationLookup {
+				personSelf = false
+			}
+		}
+		if personSelf {
+			continue
+		}
 		if derivedAudience, derived := grant.OperationAudiences[binding.ID]; derived {
 			// Only an invoke acts on the asking person's session, so only an
 			// invoke needs that person to hold a grant on the module. A
 			// headless-only binding is background work no person asks for and
 			// would be a grant nobody needs.
-			if len(binding.Operations[modulecontract.OperationInvoke]) == 0 {
+			if binding.Audience == prefix || len(binding.Operations[modulecontract.OperationInvoke]) == 0 {
 				continue
 			}
 			// Two bindings may redeem on the same audience. The person needs
@@ -246,7 +259,7 @@ func (f *readinessFacts) readinessFor(
 			Kind:    gen.ReadinessConditionKind_READINESS_CONDITION_KIND_OPERATION_BINDING_OMITTED,
 			Subject: binding.ID,
 			Detail: fmt.Sprintf("The applied manifest of %q asks for operation binding %q on audience %q and the host derived nothing for it: "+
-				"the binding is not valid as declared, or a module envelope a platform administrator wrote allows no such binding or nothing of it. Until that changes, every exchange under it is refused.",
+				"the binding is not valid as declared, or a module envelope a platform administrator wrote allows no such binding or nothing of it. Its cross-audience or headless use requires that derived authority; a person's self invoke or lookup remains bounded by their parent and current grants.",
 				prefix, binding.ID, binding.Audience),
 			ClearedBy: gen.ReadinessClearedBy_READINESS_CLEARED_BY_PLATFORM_OPERATOR,
 			Action:    gen.ReadinessAction_READINESS_ACTION_NONE_AT_THIS_SURFACE,

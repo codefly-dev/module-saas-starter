@@ -11,7 +11,8 @@ const { getWorkspaceSecret, getEndpoints } = vi.hoisted(() => ({
 		vi.fn<(name: string, key: string) => string | undefined>(),
 	getEndpoints: vi.fn<() => Array<Record<string, unknown>>>(() => []),
 }));
-vi.mock("codefly", () => ({ getWorkspaceSecret, getEndpoints }));
+vi.mock("codefly", async () => ({
+	...(await vi.importActual<typeof import("codefly")>("codefly")), networkInstance: () => getEndpoints()[0], getWorkspaceSecret, getEndpoints }));
 
 const GATEWAY = "http://gateway.internal:8080";
 

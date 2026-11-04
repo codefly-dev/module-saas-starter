@@ -13,7 +13,8 @@ const { getWorkspaceSecret, getEndpoints, getWorkspaceConfiguration } =
 		getWorkspaceConfiguration:
 			vi.fn<(name: string, key: string) => string | undefined>(),
 	}));
-vi.mock("codefly", () => ({
+vi.mock("codefly", async () => ({
+	...(await vi.importActual<typeof import("codefly")>("codefly")), networkInstance: () => getEndpoints()[0],
 	getWorkspaceSecret,
 	getEndpoints,
 	getWorkspaceConfiguration,

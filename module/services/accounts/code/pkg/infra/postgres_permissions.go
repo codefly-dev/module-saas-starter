@@ -24,7 +24,7 @@ func (s *PostgresStore) CreateRole(ctx context.Context, role *gen.Role) error {
 
 	// Reuse the caller's tx if one is on context — that's where
 	// WithOrgTx / WithControlPlane put it, and stacking a fresh BeginTxFunc
-	// would lose the SET LOCAL app.current_org_id state and the role
+	// would lose the SET LOCAL codefly.current_tenant_id state and the role
 	// INSERT would fail the WITH CHECK on the polymorphic policy
 	// (Phase 2E migration). Same pattern as postgres_org.go's
 	// CreateOrganization.

@@ -1,3 +1,7 @@
+import { AccessibleScopeService } from "@codefly-dev/saas-sdk";
+import { createClient, Code } from "@connectrpc/connect";
+import { moduleTransport, requestBinding } from "@codefly-dev/saas-ui/solution";
+import { HOST_SETUP_PROCEDURES } from "@/lib/host-setup-procedures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -21,7 +25,13 @@ const {
 	getWorkspaceConfiguration:
 		vi.fn<(name: string, key: string) => string | undefined>(),
 }));
-vi.mock("codefly", () => ({
+vi.mock("codefly", async () => ({
+	...(await vi.importActual<typeof import("codefly")>("codefly")),
+	networkInstance: () => {
+		const endpoints = getEndpoints();
+		if (endpoints.length !== 1) throw new Error("gateway unavailable");
+		return endpoints[0];
+	},
 	getEndpoints,
 	getCurrentModule,
 	getCurrentService,
@@ -165,7 +175,7 @@ describe("solution proxy passthrough", () => {
 		expect(res.status).toBe(200);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const [target, init] = fetchMock.mock.calls[0];
-		expect(target).toBe(`${GATEWAY_BASE}/solutions/audit-backend/records`);
+		expect(target).toBe(`${GATEWAY_BASE}/v1/audit-backend/records`);
 		expect((init.headers as Headers).get("authorization")).toBe(
 			"Bearer caller-token",
 		);
@@ -264,6 +274,8 @@ describe("solution proxy passthrough", () => {
 		"saas.accounts.v1.DatasourceService/DeleteSource",
 		"saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes",
 		"saas.accounts.v1.AuditService/QueryAuditLog",
+		// `<SolutionSetup binding>`: the Setup tab's host installation procedures.
+		...HOST_SETUP_PROCEDURES.map((procedure) => procedure.slice(1)),
 	])(
 		"reaches the host over the solution's own apiBase for %s",
 		async (procedure) => {
@@ -282,7 +294,7 @@ describe("solution proxy passthrough", () => {
 
 			const target = fetchMock.mock.calls[0][0] as string;
 			expect(target).toBe(`${GATEWAY_BASE}/${procedure}`);
-			expect(target).not.toContain("/solutions/audit-backend/");
+			expect(target).not.toContain("audit-backend");
 		},
 	);
 
@@ -293,6 +305,11 @@ describe("solution proxy passthrough", () => {
 		"saas.accounts.v1.DatasourceService/ListSources/extra",
 		"saas.accounts.v1.DatasourceService/not-a-method",
 		"saas.accounts.v2.DatasourceService/ListSources",
+		// Only the Setup tab's host procedures reach the host; the rest of the
+		// interface stays the solution's own path.
+		"host.installation.v1.InstallationService/Install",
+		"host.installation.v1.InstallationService/Current",
+		"host.authority.v1.AuthorityService/Issue",
 	])("keeps solution path %s on the registered upstream", async (path) => {
 		withGateway();
 		registerAudit();
@@ -307,7 +324,7 @@ describe("solution proxy passthrough", () => {
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(fetchMock.mock.calls[0][0]).toBe(
-			`${GATEWAY_BASE}/solutions/audit-backend/${path}`,
+			`${GATEWAY_BASE}/v1/audit-backend/${path}`,
 		);
 	});
 
@@ -567,7 +584,7 @@ describe("solution proxy passthrough", () => {
 
 		const [target] = fetchMock.mock.calls[0];
 		expect(target).toBe(
-			`${GATEWAY_BASE}/solutions/audit-backend/a%20b/c%3Fd%3De`,
+			`${GATEWAY_BASE}/v1/audit-backend/a%20b/c%3Fd%3De`,
 		);
 	});
 
@@ -585,7 +602,7 @@ describe("solution proxy passthrough", () => {
 
 		const [target] = fetchMock.mock.calls[0];
 		expect(target).toBe(
-			`${GATEWAY_BASE}/solutions/audit-backend/records?limit=10&cursor=abc`,
+			`${GATEWAY_BASE}/v1/audit-backend/records?limit=10&cursor=abc`,
 		);
 	});
 
@@ -1016,20 +1033,35 @@ describe("solution proxy trace context", () => {
 });
 
 
-describe("shared module frontend", () => {
- it.each([
-  ["records", "v1"],
-  ["assets/mf-manifest.json", "solutions"],
-  [".well-known/capabilities", "solutions"],
- ])("routes %s through its owning gateway surface", async (path, prefix) => {
-  withGateway();
-  registerAudit("shared-example", "module");
-  const res = await GET(proxyRequest(`http://frontend/api/solutions/audit/proxy/${path}`, {
-   headers: { authorization: "Bearer caller-token" },
-  }), context("audit", path.split("/")));
-  expect(res.status).toBe(200);
-  expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/${prefix}/shared-example/${path}`);
-  expect((fetchMock.mock.calls[0][1].headers as Headers).get("authorization")).toBe("Bearer caller-token");
+describe("module and solution data routes", () => {
+ // The runtime serves a module page and a solution alike: public assets and
+ // `.well-known` at its root, every other route under /v1/<alias> with the
+ // person's Work Context. The gateway's /solutions/<alias>/ data route strips
+ // that prefix, so a solution's data request sent there reached no route.
+ it.each(["module", "solution"] as const)("routes a %s's data and assets through their owning gateway surfaces", async (kind) => {
+  for (const [method, path, prefix] of [
+   ["GET", "records", "v1"],
+   ["GET", "settings/upload", "v1"],
+   ["POST", "modules/store/store.v1.StoreService/ListItems", "v1"],
+   ["GET", "assets/mf-manifest.json", "solutions"],
+   ["HEAD", "assets/remoteEntry.js", "solutions"],
+   ["GET", ".well-known/capabilities", "solutions"],
+   // Only a read of a public path is public: a write under it is data.
+   ["POST", "assets/upload", "v1"],
+  ] as const) {
+   withGateway();
+   registerAudit("shared-example", kind);
+   fetchMock.mockClear();
+   const handler = method === "POST" ? POST : GET;
+   const res = await handler(proxyRequest(`http://frontend/api/solutions/audit/proxy/${path}`, {
+    method,
+    headers: { authorization: "Bearer caller-token" },
+    ...(method === "POST" ? { body: "{}" } : {}),
+   }), context("audit", path.split("/")));
+   expect(res.status).toBe(200);
+   expect(fetchMock.mock.calls[0][0]).toBe(`${GATEWAY_BASE}/${prefix}/shared-example/${path}`);
+   expect((fetchMock.mock.calls[0][1].headers as Headers).get("authorization")).toBe("Bearer caller-token");
+  }
  });
  it("preserves a live installation refusal from the module gateway", async () => {
   withGateway();
@@ -1118,4 +1150,70 @@ describe("retained frontend authority", () => {
   expect(res.status).toBe(410);
   expect(fetchMock).not.toHaveBeenCalled();
  });
+});
+
+describe("the dedicated browser module edge", () => {
+	it.each([
+		["_browser", "..", "solutions", "_registry"],
+		["_browser", "example.v1.Service", "Read", "..", "..", "solutions", "_registry"],
+		["_browser", "example.v1.Service/Read"],
+		["_browser", "example.v1.Service", "%2e%2e"],
+	])("refuses malformed components before a trusted fetch: %j", async (...path) => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+		const res = await POST(proxyRequest("http://frontend/api/solutions/audit/proxy/_browser", { method: "POST" }), context("audit", path));
+		expect(res.status).toBe(404);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+});
+
+
+describe("generated clients through the browser module forwarder", () => {
+	it("keeps the marker, generated procedure, base path and protocol headers", async () => {
+		withGateway();
+		withTrustContext();
+		registerAudit();
+		fetchMock.mockResolvedValue(Response.json({ scopes: [] }));
+		const authedFetch: typeof fetch = async (input, init) => {
+			const url = new URL(String(input), "http://frontend");
+			const path = url.pathname.split("/proxy/")[1].split("/");
+			return POST(new Request(url, init), context("audit", path));
+		};
+		const client = createClient(AccessibleScopeService, moduleTransport(
+			requestBinding("/relay", () => "viewer", authedFetch, "/api/solutions/audit/proxy/_browser"),
+		));
+		await client.listMyAccessibleScopes({ orgId: "acme" });
+		const [target, init] = fetchMock.mock.calls[0];
+		expect(target).toBe(`${GATEWAY_BASE}/_browser/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes`);
+		expect(init.headers.get("authorization")).toBe("Bearer viewer");
+		expect(init.headers.get("connect-protocol-version")).toBe("1");
+		expect(init.headers.get("X-Codefly-Internal-Token")).toBe(INTERNAL_TOKEN);
+		expect(init.redirect).toBe("error");
+		// This descriptor tests generic forwarding only: gateway tests separately
+		// refuse host namespaces and admit only composed-module publications.
+	});
+
+	it.each([[401, "unauthenticated", Code.Unauthenticated], [403, "permission_denied", Code.PermissionDenied]] as const)("retains owner refusal %s", async (status, code, want) => {
+		withGateway();
+		registerAudit();
+		fetchMock.mockResolvedValue(Response.json({ code, message: "owner refusal" }, { status }));
+		const authedFetch: typeof fetch = (input, init) => POST(
+			new Request(new URL(String(input), "http://frontend"), init),
+			context("audit", ["_browser", "example.v1.Service", "Read"]),
+		);
+		await expect(createClient(AccessibleScopeService, moduleTransport(
+			requestBinding("/relay", () => "viewer", authedFetch, "/api/solutions/audit/proxy/_browser"),
+		)).listMyAccessibleScopes({})).rejects.toMatchObject({ code: want });
+	});
+
+	it("never serves a module call through a retained asset version", async () => {
+		withGateway();
+		registerAudit();
+		const res = await POST(proxyRequest("http://frontend/api/solutions/audit/proxy/_browser", { method: "POST" }), {
+			params: Promise.resolve({ id: "audit", path: ["_browser", "example.v1.Service", "Read"], version: "a".repeat(64) }),
+		});
+		expect(res.status).toBe(404);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
 });

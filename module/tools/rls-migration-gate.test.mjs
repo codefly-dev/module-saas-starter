@@ -15,8 +15,8 @@ ALTER TABLE t FORCE ROW LEVEL SECURITY;
 
 const forAllPolicy = `
 CREATE POLICY t_tenant ON t
-    USING (org_id::text = current_setting('app.current_org_id', true))
-    WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+    USING (org_id::text = current_setting('codefly.current_tenant_id', true))
+    WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));
 `;
 
 const appendOnlyTrigger = `
@@ -35,9 +35,9 @@ test("an append-only trigger with only SELECT/INSERT policies is unreachable on 
     tenantSetup +
     `
     CREATE POLICY t_sel ON t FOR SELECT
-        USING (org_id::text = current_setting('app.current_org_id', true));
+        USING (org_id::text = current_setting('codefly.current_tenant_id', true));
     CREATE POLICY t_ins ON t FOR INSERT
-        WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+        WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));
     ` +
     appendOnlyTrigger;
   const errors = analyzeSql(sql);
@@ -55,14 +55,14 @@ test("explicit per-verb policies covering all four verbs keep the trigger reacha
     tenantSetup +
     `
     CREATE POLICY t_sel ON t FOR SELECT
-        USING (org_id::text = current_setting('app.current_org_id', true));
+        USING (org_id::text = current_setting('codefly.current_tenant_id', true));
     CREATE POLICY t_ins ON t FOR INSERT
-        WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+        WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));
     CREATE POLICY t_upd ON t FOR UPDATE
-        USING (org_id::text = current_setting('app.current_org_id', true))
-        WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+        USING (org_id::text = current_setting('codefly.current_tenant_id', true))
+        WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));
     CREATE POLICY t_del ON t FOR DELETE
-        USING (org_id::text = current_setting('app.current_org_id', true));
+        USING (org_id::text = current_setting('codefly.current_tenant_id', true));
     ` +
     appendOnlyTrigger;
   assert.deepEqual(analyzeSql(sql), []);
@@ -73,7 +73,7 @@ test("a state-machine trigger that returns NEW is not treated as append-only", (
     tenantSetup +
     `
     CREATE POLICY t_ins ON t FOR INSERT
-        WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+        WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));
     CREATE FUNCTION enforce_state() RETURNS TRIGGER AS $$
     BEGIN
         IF NEW.org_id IS NULL THEN RAISE EXCEPTION 'bad'; END IF;
@@ -90,7 +90,7 @@ test("forced RLS is required, not just enabled", () => {
     CREATE TABLE t (org_id UUID);
     GRANT SELECT ON t TO app_tenant;
     ALTER TABLE t ENABLE ROW LEVEL SECURITY;
-    CREATE POLICY p ON t USING (org_id::text = current_setting('app.current_org_id', true));
+    CREATE POLICY p ON t USING (org_id::text = current_setting('codefly.current_tenant_id', true));
   `;
   const errors = analyzeSql(sql);
   assert.equal(errors.length, 1);
@@ -112,14 +112,40 @@ test("an unconditional policy predicate is rejected", () => {
   assert.ok(errors.every((e) => /may be accidentally unconditional/.test(e)));
 });
 
+test("a predicate on the host's retired setting is refused, and the error names the remedy", () => {
+  // The state a consumer that wrote its policies against the convention this
+  // repository documented before migration 65 is in. Nothing binds the retired
+  // name any more, so the relation reads as empty for every caller — and the
+  // refusal has to say what to do about it, because the predicate looks exactly
+  // like a correct one.
+  const sql =
+    tenantSetup +
+    "CREATE POLICY p ON t USING (org_id::text = current_setting('app.current_org_id', true));";
+  const errors = analyzeSql(sql);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /app\.current_org_id/);
+  assert.match(errors[0], /rls-scope-settings-transition\.sql/);
+  assert.match(errors[0], /migration 66/);
+});
+
+test("the compatibility window reads the library's name and is admitted", () => {
+  // One database serving a pod from either side of the rename: the library's
+  // name first, the retired one behind it. The gate must not read this as a
+  // policy on a setting nothing binds.
+  const sql =
+    tenantSetup +
+    "CREATE POLICY p ON t USING (org_id::text = COALESCE(NULLIF(current_setting('codefly.current_tenant_id', true), ''), current_setting('app.current_org_id', true)));";
+  assert.deepEqual(analyzeSql(sql), []);
+});
+
 test("a user-scoped predicate counts as tenant-scoped", () => {
   const sql = `
     CREATE TABLE t (org_id UUID, user_id UUID);
     ALTER TABLE t ENABLE ROW LEVEL SECURITY;
     ALTER TABLE t FORCE ROW LEVEL SECURITY;
     CREATE POLICY p ON t
-        USING (user_id::text = current_setting('app.current_user_id', true))
-        WITH CHECK (user_id::text = current_setting('app.current_user_id', true));
+        USING (user_id::text = current_setting('codefly.current_user_id', true))
+        WITH CHECK (user_id::text = current_setting('codefly.current_user_id', true));
   `;
   assert.deepEqual(analyzeSql(sql), []);
 });
@@ -141,11 +167,11 @@ test("a nullable-org polymorphic FOR ALL policy passes", () => {
     CREATE POLICY t_poly ON t
         USING (
             current_setting('app.bypass', true) = '1'
-            OR (org_id IS NOT NULL AND org_id::text = current_setting('app.current_org_id', true))
+            OR (org_id IS NOT NULL AND org_id::text = current_setting('codefly.current_tenant_id', true))
         )
         WITH CHECK (
             current_setting('app.bypass', true) = '1'
-            OR (org_id IS NOT NULL AND org_id::text = current_setting('app.current_org_id', true))
+            OR (org_id IS NOT NULL AND org_id::text = current_setting('codefly.current_tenant_id', true))
         );
     `;
   assert.deepEqual(analyzeSql(sql), []);
@@ -163,8 +189,8 @@ test("expands DO/FOREACH/format loops that apply one recipe to many tables", () 
             EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
             EXECUTE format($f$
                 CREATE POLICY %I_tenant ON %I
-                    USING (org_id::text = current_setting('app.current_org_id', true))
-                    WITH CHECK (org_id::text = current_setting('app.current_org_id', true))
+                    USING (org_id::text = current_setting('codefly.current_tenant_id', true))
+                    WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true))
             $f$, t, t);
         END LOOP;
     END $$;
@@ -183,7 +209,7 @@ test("a DO loop that forgets FORCE is still caught after expansion", () => {
             EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
             EXECUTE format($f$
                 CREATE POLICY %I_tenant ON %I
-                    USING (org_id::text = current_setting('app.current_org_id', true))
+                    USING (org_id::text = current_setting('codefly.current_tenant_id', true))
             $f$, t, t);
         END LOOP;
     END $$;
@@ -216,7 +242,7 @@ test("a JOIN ... USING (col) inside a predicate is not mistaken for the policy's
         WITH CHECK (EXISTS (
             SELECT 1 FROM parent p JOIN grandparent g USING (gid)
             WHERE p.id = t.org_id
-              AND g.org_id::text = current_setting('app.current_org_id', true)
+              AND g.org_id::text = current_setting('codefly.current_tenant_id', true)
         ));
     `;
   assert.deepEqual(analyzeSql(sql), []);
@@ -235,8 +261,8 @@ test("a restrictive-only policy does not admit an append-only-guarded verb", () 
     tenantSetup +
     `
     CREATE POLICY t_r ON t AS RESTRICTIVE
-        USING (org_id::text = current_setting('app.current_org_id', true))
-        WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+        USING (org_id::text = current_setting('codefly.current_tenant_id', true))
+        WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));
     ` +
     appendOnlyTrigger;
   const errors = analyzeSql(sql);
@@ -250,7 +276,7 @@ test("a DO block using plain EXECUTE literals to force RLS is recognized", () =>
     DO $$ BEGIN
         EXECUTE 'ALTER TABLE t ENABLE ROW LEVEL SECURITY';
         EXECUTE 'ALTER TABLE t FORCE ROW LEVEL SECURITY';
-        EXECUTE 'CREATE POLICY p ON t USING (org_id::text = current_setting(''app.current_org_id'', true)) WITH CHECK (org_id::text = current_setting(''app.current_org_id'', true))';
+        EXECUTE 'CREATE POLICY p ON t USING (org_id::text = current_setting(''codefly.current_tenant_id'', true)) WITH CHECK (org_id::text = current_setting(''codefly.current_tenant_id'', true))';
     END $$;
   `;
   assert.deepEqual(analyzeSql(sql), []);
@@ -262,7 +288,7 @@ test("a DO block whose EXECUTE literals forget FORCE is still caught", () => {
     GRANT SELECT ON t TO app_tenant;
     DO $$ BEGIN
         EXECUTE 'ALTER TABLE t ENABLE ROW LEVEL SECURITY';
-        EXECUTE 'CREATE POLICY p ON t USING (org_id::text = current_setting(''app.current_org_id'', true))';
+        EXECUTE 'CREATE POLICY p ON t USING (org_id::text = current_setting(''codefly.current_tenant_id'', true))';
     END $$;
   `;
   const errors = analyzeSql(sql);
@@ -275,8 +301,8 @@ test("doubled single quotes inside string literals do not break scanning", () =>
     CREATE TABLE t (note TEXT DEFAULT 'it''s; ok)', org_id UUID);
     ALTER TABLE t ENABLE ROW LEVEL SECURITY; ALTER TABLE t FORCE ROW LEVEL SECURITY;
     CREATE POLICY p ON t
-        USING (note <> 'a'')b' AND org_id::text = current_setting('app.current_org_id', true))
-        WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+        USING (note <> 'a'')b' AND org_id::text = current_setting('codefly.current_tenant_id', true))
+        WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));
   `;
   assert.deepEqual(analyzeSql(sql), []);
 });
@@ -285,8 +311,8 @@ test("an append-only trigger on UPDATE OF a quoted column binds to the table, no
   const sql =
     tenantSetup +
     `
-    CREATE POLICY s ON t FOR SELECT USING (org_id::text = current_setting('app.current_org_id', true));
-    CREATE POLICY i ON t FOR INSERT WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+    CREATE POLICY s ON t FOR SELECT USING (org_id::text = current_setting('codefly.current_tenant_id', true));
+    CREATE POLICY i ON t FOR INSERT WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));
     CREATE FUNCTION reject() RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'no'; END; $$ LANGUAGE plpgsql;
     CREATE TRIGGER t_ao BEFORE UPDATE OF "on" ON t FOR EACH ROW EXECUTE FUNCTION reject();
     `;
@@ -368,8 +394,8 @@ test("a partition declared in a migration owes its own row level security", () =
 ALTER TABLE t_2026_01 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE t_2026_01 FORCE ROW LEVEL SECURITY;
 CREATE POLICY t_tenant ON t_2026_01
-    USING (org_id::text = current_setting('app.current_org_id', true))
-    WITH CHECK (org_id::text = current_setting('app.current_org_id', true));`;
+    USING (org_id::text = current_setting('codefly.current_tenant_id', true))
+    WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));`;
   assert.deepEqual(analyzeSql(partitionedTenant + secured), []);
 });
 
@@ -416,8 +442,8 @@ test("rlsGateErrors reads a real migration tree in version order", () => {
     writeFileSync(
       join(migrations, "2_rls.up.sql"),
       "ALTER TABLE t ENABLE ROW LEVEL SECURITY; ALTER TABLE t FORCE ROW LEVEL SECURITY;\n" +
-        "CREATE POLICY p ON t USING (org_id::text = current_setting('app.current_org_id', true)) " +
-        "WITH CHECK (org_id::text = current_setting('app.current_org_id', true));",
+        "CREATE POLICY p ON t USING (org_id::text = current_setting('codefly.current_tenant_id', true)) " +
+        "WITH CHECK (org_id::text = current_setting('codefly.current_tenant_id', true));",
     );
     assert.deepEqual(rlsGateErrors(root), []);
   } finally {
@@ -451,7 +477,7 @@ CREATE TABLE public.t (id uuid NOT NULL, org_id uuid NOT NULL);
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.t TO app_tenant;
 ALTER TABLE public.t ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ONLY public.t FORCE ROW LEVEL SECURITY;
-CREATE POLICY t_tenant ON public.t USING (((org_id)::text = current_setting('app.current_org_id'::text, true))) WITH CHECK (((org_id)::text = current_setting('app.current_org_id'::text, true)));
+CREATE POLICY t_tenant ON public.t USING (((org_id)::text = current_setting('codefly.current_tenant_id'::text, true))) WITH CHECK (((org_id)::text = current_setting('codefly.current_tenant_id'::text, true)));
 CREATE POLICY app_job_worker_explicit_rows ON public.t TO app_job_worker USING ((CURRENT_USER = 'app_job_worker'::name)) WITH CHECK ((CURRENT_USER = 'app_job_worker'::name));
 `;
   assert.deepEqual(analyzeSql(dumped), []);

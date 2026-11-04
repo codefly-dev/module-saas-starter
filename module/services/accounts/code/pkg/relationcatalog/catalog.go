@@ -113,6 +113,7 @@ var authorities = map[string]Authority{
 	"datasource_credential_budgets":   {Scope: ScopeGlobal},
 	"hop_admission_keys":              {Scope: ScopeGlobal},
 	"hop_admission_proofs":            {Scope: ScopeGlobal},
+	"authority_core_clients":          {Scope: ScopeGlobal},
 	"authority_core_delegations":      {Scope: ScopeGlobal},
 	"authority_core_grant_epochs":     {Scope: ScopeGlobal},
 	"authority_core_installations":    {Scope: ScopeGlobal},

@@ -234,7 +234,9 @@ func TestSolutionRegistrationBoundaryIsDocumented(t *testing.T) {
 		// The residual exposure, stated as a decision rather than left to be
 		// rediscovered as a gap.
 		"The public Module-Federation surface is not gated, and cannot be.",
-		"does **not** remove the solution's page for that organization",
+		// Since the live page gate, what is not removed is the server render's
+		// public declaration: the render reads the registry alone.
+		"The server render of `/s/{id}` still reads the registry alone,",
 		// §7b. The host's own control paths, published because three
 		// repositories independently invented `/platform/_credential` from a
 		// design note and nothing failed at build time. The paths are pinned

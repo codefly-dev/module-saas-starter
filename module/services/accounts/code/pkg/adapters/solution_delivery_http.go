@@ -254,3 +254,13 @@ func writeSolutionDeliveryJSON(w http.ResponseWriter, status int, body solutionD
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
 }
+
+// mountDeliveryRoutes serves the delivery endpoints on a listener's mux. The
+// REST server mounts them through RegisterHTTPRoute; the Connect server mounts
+// them here, because the composition interface carries module manifests
+// (ApplyManifest) and nothing else yet: the module envelope reaches the host
+// on this HTTP route only, and the carrier is admitted to the endpoint the
+// composition names as host.delivery, whatever that endpoint's API.
+func mountDeliveryRoutes(mux *http.ServeMux, service *business.Service) {
+	mux.Handle(SolutionDeliveryPrefix, NewSolutionDeliveryHTTPHandler(service))
+}

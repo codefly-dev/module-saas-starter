@@ -57,6 +57,9 @@ const (
 	AuthServiceSwitchOrganizationProcedure = "/saas.accounts.v1.AuthService/SwitchOrganization"
 	// AuthServiceLogoutProcedure is the fully-qualified name of the AuthService's Logout RPC.
 	AuthServiceLogoutProcedure = "/saas.accounts.v1.AuthService/Logout"
+	// AuthServiceGetProviderSignOutProcedure is the fully-qualified name of the AuthService's
+	// GetProviderSignOut RPC.
+	AuthServiceGetProviderSignOutProcedure = "/saas.accounts.v1.AuthService/GetProviderSignOut"
 	// AuthServiceGetJWKSProcedure is the fully-qualified name of the AuthService's GetJWKS RPC.
 	AuthServiceGetJWKSProcedure = "/saas.accounts.v1.AuthService/GetJWKS"
 	// AuthServiceValidateClientAuthorizationProcedure is the fully-qualified name of the AuthService's
@@ -91,6 +94,16 @@ type AuthServiceClient interface {
 	// the locked session row before the selected organization is persisted.
 	SwitchOrganization(context.Context, *connect.Request[v1.SwitchOrganizationRequest]) (*connect.Response[v1.SwitchOrganizationResponse], error)
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[emptypb.Empty], error)
+	// GetProviderSignOut returns the identity provider's RP-initiated logout URL,
+	// so a client can complete the half of a sign-out the host cannot: ending the
+	// provider's own session, which needs the person's browser. Public, like
+	// GetJWKS, because everything it answers with is already public — the
+	// deployment's client id and its registered post-logout redirect — and
+	// because a client needs it on a sign-out that has already ended the session
+	// whose bearer it would otherwise present. Empty when this provider offers no
+	// RP-initiated sign-out. See FEATURES.md "Signing out of the identity
+	// provider".
+	GetProviderSignOut(context.Context, *connect.Request[v1.GetProviderSignOutRequest]) (*connect.Response[v1.GetProviderSignOutResponse], error)
 	GetJWKS(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.JWKSResponse], error)
 	// ValidateClientAuthorization checks a client's authorization request before
 	// any sign-in UI is rendered. Public RPC: this runs before the person has
@@ -170,6 +183,12 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(authServiceMethods.ByName("Logout")),
 			connect.WithClientOptions(opts...),
 		),
+		getProviderSignOut: connect.NewClient[v1.GetProviderSignOutRequest, v1.GetProviderSignOutResponse](
+			httpClient,
+			baseURL+AuthServiceGetProviderSignOutProcedure,
+			connect.WithSchema(authServiceMethods.ByName("GetProviderSignOut")),
+			connect.WithClientOptions(opts...),
+		),
 		getJWKS: connect.NewClient[emptypb.Empty, v1.JWKSResponse](
 			httpClient,
 			baseURL+AuthServiceGetJWKSProcedure,
@@ -207,6 +226,7 @@ type authServiceClient struct {
 	refreshToken                 *connect.Client[v1.RefreshTokenRequest, v1.RefreshTokenResponse]
 	switchOrganization           *connect.Client[v1.SwitchOrganizationRequest, v1.SwitchOrganizationResponse]
 	logout                       *connect.Client[v1.LogoutRequest, emptypb.Empty]
+	getProviderSignOut           *connect.Client[v1.GetProviderSignOutRequest, v1.GetProviderSignOutResponse]
 	getJWKS                      *connect.Client[emptypb.Empty, v1.JWKSResponse]
 	validateClientAuthorization  *connect.Client[v1.ValidateClientAuthorizationRequest, v1.ValidateClientAuthorizationResponse]
 	issueClientAuthorizationCode *connect.Client[v1.IssueClientAuthorizationCodeRequest, v1.IssueClientAuthorizationCodeResponse]
@@ -253,6 +273,11 @@ func (c *authServiceClient) Logout(ctx context.Context, req *connect.Request[v1.
 	return c.logout.CallUnary(ctx, req)
 }
 
+// GetProviderSignOut calls saas.accounts.v1.AuthService.GetProviderSignOut.
+func (c *authServiceClient) GetProviderSignOut(ctx context.Context, req *connect.Request[v1.GetProviderSignOutRequest]) (*connect.Response[v1.GetProviderSignOutResponse], error) {
+	return c.getProviderSignOut.CallUnary(ctx, req)
+}
+
 // GetJWKS calls saas.accounts.v1.AuthService.GetJWKS.
 func (c *authServiceClient) GetJWKS(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.JWKSResponse], error) {
 	return c.getJWKS.CallUnary(ctx, req)
@@ -294,6 +319,16 @@ type AuthServiceHandler interface {
 	// the locked session row before the selected organization is persisted.
 	SwitchOrganization(context.Context, *connect.Request[v1.SwitchOrganizationRequest]) (*connect.Response[v1.SwitchOrganizationResponse], error)
 	Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[emptypb.Empty], error)
+	// GetProviderSignOut returns the identity provider's RP-initiated logout URL,
+	// so a client can complete the half of a sign-out the host cannot: ending the
+	// provider's own session, which needs the person's browser. Public, like
+	// GetJWKS, because everything it answers with is already public — the
+	// deployment's client id and its registered post-logout redirect — and
+	// because a client needs it on a sign-out that has already ended the session
+	// whose bearer it would otherwise present. Empty when this provider offers no
+	// RP-initiated sign-out. See FEATURES.md "Signing out of the identity
+	// provider".
+	GetProviderSignOut(context.Context, *connect.Request[v1.GetProviderSignOutRequest]) (*connect.Response[v1.GetProviderSignOutResponse], error)
 	GetJWKS(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.JWKSResponse], error)
 	// ValidateClientAuthorization checks a client's authorization request before
 	// any sign-in UI is rendered. Public RPC: this runs before the person has
@@ -369,6 +404,12 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(authServiceMethods.ByName("Logout")),
 		connect.WithHandlerOptions(opts...),
 	)
+	authServiceGetProviderSignOutHandler := connect.NewUnaryHandler(
+		AuthServiceGetProviderSignOutProcedure,
+		svc.GetProviderSignOut,
+		connect.WithSchema(authServiceMethods.ByName("GetProviderSignOut")),
+		connect.WithHandlerOptions(opts...),
+	)
 	authServiceGetJWKSHandler := connect.NewUnaryHandler(
 		AuthServiceGetJWKSProcedure,
 		svc.GetJWKS,
@@ -411,6 +452,8 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceSwitchOrganizationHandler.ServeHTTP(w, r)
 		case AuthServiceLogoutProcedure:
 			authServiceLogoutHandler.ServeHTTP(w, r)
+		case AuthServiceGetProviderSignOutProcedure:
+			authServiceGetProviderSignOutHandler.ServeHTTP(w, r)
 		case AuthServiceGetJWKSProcedure:
 			authServiceGetJWKSHandler.ServeHTTP(w, r)
 		case AuthServiceValidateClientAuthorizationProcedure:
@@ -458,6 +501,10 @@ func (UnimplementedAuthServiceHandler) SwitchOrganization(context.Context, *conn
 
 func (UnimplementedAuthServiceHandler) Logout(context.Context, *connect.Request[v1.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuthService.Logout is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) GetProviderSignOut(context.Context, *connect.Request[v1.GetProviderSignOutRequest]) (*connect.Response[v1.GetProviderSignOutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.AuthService.GetProviderSignOut is not implemented"))
 }
 
 func (UnimplementedAuthServiceHandler) GetJWKS(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.JWKSResponse], error) {

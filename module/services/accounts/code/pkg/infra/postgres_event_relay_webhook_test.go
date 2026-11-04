@@ -358,7 +358,7 @@ func TestSyncWebhookEventSubscriptionsRejectsMissingTenantScope(t *testing.T) {
 	// control-plane login cannot step down into it.
 	err := testStore.RunInTransaction(testCtx, func(ctx context.Context) error {
 		tx := storetx.Tx(ctx)
-		if _, err := tx.Exec(ctx, "SELECT set_config('app.current_org_id', '', true)"); err != nil {
+		if _, err := tx.Exec(ctx, "SELECT set_config('codefly.current_tenant_id', '', true)"); err != nil {
 			return err
 		}
 		return testStore.SyncWebhookEventSubscriptions(ctx, orgID, endpointID, nil)

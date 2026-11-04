@@ -20,15 +20,66 @@ const (
 	controlPlaneDatabaseRole = "app_control_plane"
 )
 
+// The two transaction-local settings that carry a request's scope into the
+// database. They are the defaults of the platform's Postgres library
+// (codefly-dev/service-postgres, libs/go/store.go), which is what installs them
+// for a transaction opened through the scoped factory, and what every other
+// store on this platform reads back — so the host declares no names of its own
+// and the SQL this package writes by hand names them from here. Every policy,
+// and every SECURITY DEFINER operation that judges a caller's scope, reads
+// exactly these two; migration 65 renamed the host's own app.current_org_id and
+// app.current_user_id onto them, and migration 66 left those two readable
+// behind them for the length of the compatibility window below. These are the
+// names the library's own scoped pools bind, and the only ones they can bind,
+// which is why a catalog that does not read them is refused at startup
+// (requireCatalogReadsScopeSettings) rather than served empty.
+const (
+	TenantScopeSetting = "codefly.current_tenant_id"
+	UserScopeSetting   = "codefly.current_user_id"
+)
+
+// The two names the host carried before migration 65, which migration 66's
+// policies read behind the library's two for the length of the compatibility
+// window.
+//
+// A rename of an RLS setting cannot be deployed in one step. The policy and the
+// binary that binds it ship separately, and the predicate is
+// `col::text = current_setting(<name>, true)`: the half that loses the race
+// reads an unset setting, which is zero rows on every scoped SELECT and a WITH
+// CHECK failure on every INSERT, with no error anywhere. A rolling update puts
+// pre-rename pods against a renamed catalog; rolling the image back with the
+// migration applied leaves the fleet there until someone notices that the
+// product is empty.
+//
+// So this process binds all four names, and migration 66's predicates read the
+// library's name first and the retired one behind it. That makes one image
+// correct against a catalog from before the rename, one from after it, and one
+// in the window — which is what lets the catalog and the fleet move
+// independently. Both halves go when the window closes; nothing but
+// bindRequestScopeSQL and migration 66 may name them.
+const (
+	LegacyTenantScopeSetting = "app.current_org_id"
+	LegacyUserScopeSetting   = "app.current_user_id"
+)
+
 // bindRequestScopeSQL binds both halves of a request scope for the current
-// transaction only. Every request transaction binds both, the empty string for
-// the half it does not carry, so a session-level binding left on the connection
-// is never visible inside it: an org transaction cannot read a previous user's
-// sessions or mfa_devices, nor a user transaction a previous tenant's rows. The
-// policies compare the settings as text and the SECURITY DEFINER operations
+// transaction only, under both generations of the two setting names. Every
+// request transaction binds all four, the empty string for the half it does not
+// carry, so a session-level binding left on the connection is never visible
+// inside it: an org transaction cannot read a previous user's sessions or
+// mfa_devices, nor a user transaction a previous tenant's rows. Binding the
+// retired names to the same values is what keeps that true inside the window —
+// a transaction that cleared only the library's half would otherwise fall
+// through to whatever the retired one still held.
+//
+// The policies compare the settings as text and the SECURITY DEFINER operations
 // map an empty setting to NULL through NULLIF, so an empty binding matches
-// nothing, as an unset one does.
-const bindRequestScopeSQL = "SELECT set_config('app.current_org_id', $1, true), set_config('app.current_user_id', $2, true)"
+// nothing, as an unset one does. Under migration 66 the comparison reads the
+// library's name through NULLIF and falls through to the retired one, which
+// preserves that exactly: both arms empty is a false predicate, not an absent
+// one.
+const bindRequestScopeSQL = "SELECT set_config('" + TenantScopeSetting + "', $1, true), set_config('" + UserScopeSetting + "', $2, true), " +
+	"set_config('" + LegacyTenantScopeSetting + "', $1, true), set_config('" + LegacyUserScopeSetting + "', $2, true)"
 
 // bindRequestScope binds orgID and userID, either possibly empty, for tx.
 func bindRequestScope(ctx context.Context, tx pgx.Tx, orgID, userID string) error {
@@ -135,12 +186,12 @@ func itoa(n int) string {
 }
 
 // WithOrgTx runs `fn` inside a transaction that has
-// `app.current_org_id` set to `orgID` for its lifetime. This is the
+// `codefly.current_tenant_id` set to `orgID` for its lifetime. This is the
 // connection-level handshake the eventual Postgres RLS policies key
 // off — every per-tenant table will get a policy of the form:
 //
 //	CREATE POLICY foo_tenant ON foo
-//	  USING (org_id::text = current_setting('app.current_org_id', true));
+//	  USING (org_id::text = current_setting('codefly.current_tenant_id', true));
 //
 // The `true` second arg to current_setting() means "missing setting
 // returns empty string instead of erroring", so a query path that
@@ -208,8 +259,9 @@ func (s *PostgresStore) WithOrgTx(ctx context.Context, orgID string, fn func(ctx
 
 	// The connection is already running as app_tenant: the request login
 	// starts there and can reach nothing wider (a tooling store selects it on
-	// checkout). We just need to set app.current_org_id for the policy, and
-	// clear app.current_user_id so no user binding reaches this transaction.
+	// checkout). We just need to set codefly.current_tenant_id for the policy,
+	// and clear codefly.current_user_id so no user binding reaches this
+	// transaction.
 	//
 	// set_config is parameterized via pgx; the value is properly
 	// quoted and not a SQL-injection vector even if orgID came from
@@ -284,7 +336,7 @@ const errEmptyOrgID errString = "WithOrgTx: orgID is required"
 var _ pgx.Tx = (pgx.Tx)(nil)
 
 // WithUserTx is the user-scoped twin of WithOrgTx: runs `fn` inside
-// a transaction that has `app.current_user_id` set, so RLS policies
+// a transaction that has `codefly.current_user_id` set, so RLS policies
 // on user-scoped tables (notifications, mfa_devices, sessions) filter
 // to that user. Empty userID is rejected (loud, fail-closed). Same
 // no-nesting rule as WithOrgTx — see the comment on that function.
@@ -292,7 +344,7 @@ var _ pgx.Tx = (pgx.Tx)(nil)
 // User-scoped tables aren't tenant-scoped (no org_id), but the same
 // fail-closed property applies: an un-wrapped Store call against a
 // user-RLS-protected table returns zero rows by default because the
-// connection runs as `app_tenant` with no `app.current_user_id` set. Cross-user readers (platform
+// connection runs as `app_tenant` with no `codefly.current_user_id` set. Cross-user readers (platform
 // admin / refresh-token-hash lookup during login) use WithControlPlane.
 func (s *PostgresStore) WithUserTx(ctx context.Context, userID string, fn func(ctx context.Context) error) error {
 	if userID == "" {
@@ -303,7 +355,7 @@ func (s *PostgresStore) WithUserTx(ctx context.Context, userID string, fn func(c
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
-	// Clear app.current_org_id so no tenant binding reaches this transaction.
+	// Clear codefly.current_tenant_id so no tenant binding reaches this transaction.
 	if err := bindRequestScope(ctx, tx, "", userID); err != nil {
 		return err
 	}

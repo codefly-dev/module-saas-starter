@@ -39,7 +39,7 @@ accountability are different questions:
 
 | Field | Answers | Used by |
 |---|---|---|
-| `EffectiveSubject` | "whose authority does this request run under?" | tenant membership, scoped roles, resource authority, the user-scoped RLS context (`app.current_user_id`) |
+| `EffectiveSubject` | "whose authority does this request run under?" | tenant membership, scoped roles, resource authority, the user-scoped RLS context (`codefly.current_user_id`) |
 | `RealActor` | "who is this request attributable to?" | audit (`impersonated_by`), and the platform-authority gates, which withhold platform authority whenever the two differ |
 
 For an ordinary session the two are the same id and nothing needs a special
@@ -172,6 +172,43 @@ bypass on sensitive ops, IP/key floods.
 up the wrong row (e.g., `getWebhook(id)` without filtering by orgID).
 That's L2 + L3.
 
+### The central floor beneath the handler gates
+
+Before any handler runs, the interceptors apply the same org-member/org-admin
+tenant the descriptor declares, against the caller's *verified* organization
+(`enforceCentralPolicy`, `business.CentralTenantEnforcement`). It is a redundant
+floor: it is never stricter than the `require*` site that still runs after it,
+and it resolves only the subset it can decide without reading the request body —
+no declared permission, platform role, MFA requirement, team or owned-resource
+binding, no global-scope escape (`globalScopeEscapeMethods`) and no
+shape-authenticated method (`business.ShapeAuthenticated`, whose caller's
+credential is *in* the request body, so admission has no verified organization to
+resolve against). Everything else stays with the handler gates above.
+
+The shape-authenticated exemption is the one that needs its backstop named,
+because `Issue` declares an org tenant and is nonetheless outside the floor. A
+cross-organisation call is refused by the adapter instead, and that is proven
+against a live store in two harness cases: the shared suite's **"an installation
+issue cannot name a different organization"**, and this repository's own **"a
+module workload is issued only where it is installed, within its pin, until
+uninstalled"**. The exemption's *extent* — exactly `Issue` and `GetDelegation`,
+never a third method — is pinned by
+`TestTheCentralFloorExemptsExactlyTheShapeAuthenticatedMethods`.
+
+**It enforces by default.** `RBAC_CENTRAL_ENFORCEMENT` unset means enforce;
+`shadow` is an explicit opt-out that classifies only, and the boot warns naming
+it on every start; any other value refuses to boot. The coverage classification
+that drove the rollout (`saas.accounts.rpc_policy.coverage`) keeps running, since
+what it measures is the part this floor still cannot reach.
+
+Refusals are counted on `saas.accounts.rpc_policy.denied`, labelled by `method`
+and by the gate that refused (`reason`). An alerting rule targets the
+collector's normalised spelling of it,
+**`saas_accounts_rpc_policy_denied_total`**, not the dotted instrument name —
+see [module/MEASUREMENT_RUNBOOKS.md](module/MEASUREMENT_RUNBOOKS.md) under
+`authorization-denials`, which gives both spellings and why the distinction
+matters.
+
 ## Layer 2 — Permissions (RBAC, business layer)
 
 **Where:** `pkg/business/service.go:CheckPermission` + the
@@ -219,7 +256,7 @@ same matrix.
 
 **Where:** Postgres `ROW LEVEL SECURITY` + policies on every per-tenant
 table. The api wraps every per-tenant request in a transaction that
-sets `app.current_org_id`. Workers that legitimately span tenants set
+sets `codefly.current_tenant_id`. Workers that legitimately span tenants set
 `app.bypass = '1'` instead.
 
 **What it asserts:** even if the SQL hitting Postgres has no WHERE
@@ -230,7 +267,7 @@ different tenant.
 -- Example policy (applies to every per-tenant table):
 CREATE POLICY tenant_isolation ON foo
 USING (
-    org_id::text = current_setting('app.current_org_id', true)
+    org_id::text = current_setting('codefly.current_tenant_id', true)
     OR current_setting('app.bypass', true) = '1'
 );
 ```
@@ -240,9 +277,18 @@ when the setting is missing. So:
 
 | Setting | Effect on a per-tenant query |
 |---|---|
-| `app.current_org_id = '<uuid>'` | Rows where `org_id = uuid` are visible. |
+| `codefly.current_tenant_id = '<uuid>'` | Rows where `org_id = uuid` are visible. |
 | `app.bypass = '1'` | All rows visible (workers + platform admin). |
 | Neither set | **Zero rows** — fail-closed. |
+
+For the length of the scope-setting compatibility window (store migration 66)
+the predicate reads
+`COALESCE(NULLIF(current_setting('codefly.current_tenant_id', true), ''), current_setting('app.current_org_id', true))`:
+a pod that binds either generation of the name is admitted to its own tenant,
+and "neither set" is still zero rows, because an empty live binding does not
+fall through to a value — both arms empty is a false predicate.
+[module/services/store/migrations/README.md](./module/services/store/migrations/README.md)
+carries the window and the release that closes it.
 
 **What this catches:**
 - A SQL injection that bypassed `WHERE org_id = $1` parsing.
@@ -329,6 +375,39 @@ now means assuming a *different database role* (`app_control_plane`, `SET LOCAL
 ROLE`) with its own explicit grants, which a request transaction has no way to
 reach. Each entry is recorded (`recordControlPlane`), so the crossings are
 countable rather than merely greppable.
+
+### The daily archive, and what "sealed" currently means
+
+With `audit-archive/AUDIT_ARCHIVE_URI` set, the host writes one object per
+complete UTC day — the whole platform's audit log, every organisation plus the
+control plane — to the composed object-storage service's own bucket, and
+records a receipt for each archived day in the audit log itself: the day, the
+object key, its SHA-256 digest, and the byte and event counts
+(`saas.audit.archive_exported`). The host's daily sweep offers each day; a
+leased job performs the export. Two independent guards make it idempotent per
+day: the job's idempotency key is the day, and the write is create-if-absent, so
+even a job that outlived its own record cannot replace an archived day's bytes.
+
+**State plainly what this does and does not prove.**
+
+- It does prove the audit trail has a copy outside the database it was written
+  to, and that a later run of this host cannot silently rewrite an archived day.
+- It does prove a tampered object is *detectable*: the receipt's digest
+  describes exactly the bytes that were written, and the receipt is in the audit
+  log rather than only in the bucket.
+- It does **not** prove the object is immutable. That needs an object-lock or
+  retention policy on the bucket, which belongs to the infrastructure that
+  provisions the bucket and not to this module — accounts names a key prefix and
+  never a bucket, precisely so it makes no claim about a bucket's policy. Until
+  that lock exists, the archive is tamper-**evident** and not
+  tamper-**proof**, and anyone with write access to the bucket can replace an
+  object; what they cannot do is make the replacement agree with the receipt.
+- A day with no events is still archived, as an empty array. The absence of an
+  object means "not archived" and nothing else.
+
+A day older than the sweep's catch-up window is not archived automatically; it
+is `ExportAuditLog` for an operator to run. Unset, the key leaves the audit
+log's only copy in this database, and the boot says so.
 
 ## Removing an organization member: deleted vs. rendered ineffective
 
@@ -556,7 +635,7 @@ organization nobody can administer, so it asks whether there are any. An
 organization nobody else is in is left empty, not unadministrable.
 
 A user-scoped transaction can resolve none of this on its own:
-`organization_members` is scoped to `app.current_org_id`, which a deactivation
+`organization_members` is scoped to `codefly.current_tenant_id`, which a deactivation
 does not set, and `users` is readable only for the caller's own row. Both fail
 *silently* — zero rows, no error — and "administers nothing" is exactly the
 answer that lets the deactivation through. So request traffic resolves it through
@@ -780,7 +859,7 @@ the executable inventory by a test.
 
 The user-scoped half of this list is gone: `users`, `mfa_devices`,
 `notifications`, `sessions` and their siblings carry forced RLS policies today
-and enter through `WithUserTx` (`app.current_user_id`), so `WHERE user_id = $1`
+and enter through `WithUserTx` (`codefly.current_user_id`), so `WHERE user_id = $1`
 is no longer the safety property. `oauth_state` and `refresh_tokens` no longer
 exist at all. `role_permissions` gained a parent-visibility policy in
 `65_role_permissions_rls`.
@@ -810,8 +889,8 @@ changing codefly's Postgres plugin:
                               │                       ▼
                               ▼            SET LOCAL ROLE app_control_plane
               SET LOCAL                    (a named role with BYPASSRLS and
-              app.current_org_id = X        its own explicit grants — NOT
-              app.current_user_id = U       the session superuser)
+              codefly.current_tenant_id = X   its own explicit grants — NOT
+              codefly.current_user_id = U     the session superuser)
               (still app_tenant —
                policy filters by scope)
 
@@ -828,7 +907,7 @@ unwind on commit/rollback. `AfterRelease` does `RESET ROLE` as a
 safety net before the connection returns to the pool.
 
 The fail-closed property: a Store method called WITHOUT either
-wrapper runs as `app_tenant` with no `app.current_org_id` set.
+wrapper runs as `app_tenant` with no `codefly.current_tenant_id` set.
 RLS policies see neither match, return zero rows. A bug that forgot
 to wrap surfaces in tests as "expected 1 row, got 0" — loud, not
 silent.

@@ -174,6 +174,16 @@ func NewPostgresStoreWithCapabilities(ctx context.Context, readOnlyConnection, r
 		requestPool.Close()
 		return nil, err
 	}
+	// And the database judges by the settings this process can bind. A catalog
+	// and a binary that disagree about the two names do not fail: every scoped
+	// read is empty and every scoped write fails its WITH CHECK, silently. The
+	// control-plane pool asks, because it is the one already open and the
+	// question is about pg_catalog, not about a tenant.
+	if err := requireCatalogReadsScopeSettings(ctx, controlPlanePool); err != nil {
+		controlPlanePool.Close()
+		requestPool.Close()
+		return nil, err
+	}
 
 	database, closeDatabase, err := openScopedBoundary(ctx, readOnlyConnection, readWriteConnection, provider)
 	if err != nil {
@@ -292,7 +302,8 @@ const requestReleaseTimeout = 5 * time.Second
 // sessionReset returns a released connection to its login's session defaults
 // and reads back what it returned to. RESET ROLE restores the per-role default
 // role, app_tenant for the request login. RESET ALL restores every other
-// session setting — app.current_org_id and app.current_user_id included, which
+// session setting — codefly.current_tenant_id and codefly.current_user_id
+// included, which
 // RESET ROLE leaves in place — and does not itself reset the role, so both are
 // needed. Neither deallocates prepared statements, so the statements pgx caches
 // per connection stay valid on the reused connection, which DISCARD ALL would
@@ -301,9 +312,17 @@ const requestReleaseTimeout = 5 * time.Second
 // next borrower's unqualified table names, and RESET ALL does not touch it.
 // Unlike DISCARD ALL it may run inside the implicit transaction a multi-statement
 // message opens. The four statements travel in one simple-protocol message.
+//
+// It reads back all four names, not just the two the library binds: inside
+// migration 66's compatibility window a policy falls through to the retired
+// name when the live one is empty, so a session-level binding left on either
+// generation hands the next borrower a scope. The reset clears both; this is
+// what refuses a connection on which it did not.
 const sessionReset = `RESET ROLE; RESET ALL; DISCARD TEMP; SELECT current_user::text,
-	coalesce(current_setting('app.current_org_id', true), ''),
-	coalesce(current_setting('app.current_user_id', true), '')`
+	coalesce(current_setting('` + TenantScopeSetting + `', true), '')
+		|| coalesce(current_setting('` + LegacyTenantScopeSetting + `', true), ''),
+	coalesce(current_setting('` + UserScopeSetting + `', true), '')
+		|| coalesce(current_setting('` + LegacyUserScopeSetting + `', true), '')`
 
 // resetSession runs sessionReset on a released connection. It returns the role
 // the session came back to, and false if the reset failed or left a request
@@ -322,7 +341,8 @@ func resetSession(conn *pgx.Conn) (string, bool) {
 // returnsToTenantRole is the request pool's AfterRelease. A session-level change
 // a borrower leaves behind would reach the next borrower until the connection is
 // recycled: `SET ROLE NONE` hands it the bare login, and a session-level
-// app.current_org_id or app.current_user_id hands it the previous caller's
+// binding of either generation of the two scope settings hands it the previous
+// caller's
 // scope, which every un-wrapped read runs under. The reset clears both; a
 // connection that does not come back as app_tenant with no binding is
 // discarded rather than reused.
@@ -645,7 +665,7 @@ func (a loginAuthority) beyond(boundary loginBoundary) []string {
 			{role.Replication, "REPLICATION"},
 			{role.OwnsRelation, "owns a relation"},
 			{role.OwnsSchema, "owns a schema"},
-			{role.OwnsFunction && !(isDeclared && boundary.RolesOwnFunctions), "owns a function"},
+			{role.OwnsFunction && (!isDeclared || !boundary.RolesOwnFunctions), "owns a function"},
 			{role.OwnsDatabase, "owns a database"},
 		} {
 			if attribute.held {
@@ -765,7 +785,17 @@ func openScopedBoundaryAs(ctx context.Context, readOnlyConnection, readWriteConn
 		return nil, nil, errors.New("reader and writer require distinct private identity sockets")
 	}
 	options := []scopedpostgres.Option{
-		scopedpostgres.WithScopeSettings("app.current_org_id", "app.current_user_id"),
+		// The two names these pools bind, named from the same two constants the
+		// hand-written SQL in this package names them from. They are also the
+		// library's own defaults, so passing them changes no behaviour today —
+		// what it changes is what happens when one side moves. The default is
+		// unexported, its doc comment in the published library still says
+		// `app.current_tenant_id`, and nothing links it to the constant the
+		// policies, the request binding and the startup catalog check all read.
+		// Passing it makes the host's two constants the single place the names
+		// live, and a library default that drifts a refusal here rather than a
+		// pool that silently binds a name no policy reads.
+		scopedpostgres.WithScopeSettings(TenantScopeSetting, UserScopeSetting),
 		scopedpostgres.WithOperationTimeout(scopedBoundaryOperationTimeout),
 		// service-postgres judges both scoped pools on every new physical
 		// connection and again on every checkout: it refuses a session whose
@@ -849,7 +879,7 @@ func configureConnection(connectionURL string, hook beforeConnectHook) (*pgxpool
 // The one credential must hold SET membership in both app_tenant and
 // app_control_plane — the migration principal does. A checkout hook selects
 // app_tenant on every connection, so an un-wrapped Store call returns zero rows
-// from a tenant table when no app.current_org_id is set (fail-closed), WithOrgTx
+// from a tenant table when no codefly.current_tenant_id is set (fail-closed), WithOrgTx
 // adds the transaction-local org, and WithControlPlane assumes app_control_plane
 // on the same pool for its transaction. AfterRelease resets the role and every
 // session setting before the connection returns to the pool. If app_tenant does
@@ -1398,7 +1428,7 @@ func (s *PostgresStore) ClearAll(ctx context.Context) error {
 	w := wool.Get(ctx).In("ClearAll")
 
 	// Most tables here are RLS-protected (Phase 2B-2F). A bare DELETE
-	// under app_tenant with no app.current_org_id set returns ZERO
+	// under app_tenant with no codefly.current_tenant_id set returns ZERO
 	// rows — that's fail-closed for production but sabotages test
 	// cleanup. Wrap in WithControlPlane so the deletes actually fire across
 	// every tenant.

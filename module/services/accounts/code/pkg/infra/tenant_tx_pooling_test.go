@@ -6,7 +6,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,7 +17,7 @@ import (
 )
 
 // TestWithOrgTx_OrgIDIsTransactionLocal_NoPoolLeak pins the single
-// highest-consequence multi-tenant RLS footgun: app.current_org_id MUST
+// highest-consequence multi-tenant RLS footgun: codefly.current_tenant_id MUST
 // be transaction-scoped (set via set_config(..., is_local => true) /
 // SET LOCAL), never session-scoped. A session-scoped GUC survives on the
 // physical connection after the transaction ends, so the next checkout —
@@ -47,7 +46,7 @@ func TestWithOrgTx_OrgIDIsTransactionLocal_NoPoolLeak(t *testing.T) {
 	// Inside the transaction the GUC is set — the RLS policies read it.
 	require.NoError(t, single.WithOrgTx(testCtx, orgA, func(ctx context.Context) error {
 		require.Equal(t, orgA, currentOrgID(t, txFromCtx(t, ctx)),
-			"app.current_org_id must be visible to the policy inside WithOrgTx")
+			"codefly.current_tenant_id must be visible to the policy inside WithOrgTx")
 		return nil
 	}))
 
@@ -55,7 +54,7 @@ func TestWithOrgTx_OrgIDIsTransactionLocal_NoPoolLeak(t *testing.T) {
 	// pool. The next borrower on that exact connection MUST see no tenant
 	// context — a bare (un-wrapped) query is fail-closed.
 	require.Empty(t, currentOrgID(t, single.Pool()),
-		"app.current_org_id leaked past its transaction onto the pooled connection")
+		"codefly.current_tenant_id leaked past its transaction onto the pooled connection")
 
 	// A second tenant reuses the same connection. The in-tx read only
 	// confirms the mechanism re-engages for orgB — a leaked session GUC
@@ -69,7 +68,7 @@ func TestWithOrgTx_OrgIDIsTransactionLocal_NoPoolLeak(t *testing.T) {
 		return nil
 	}))
 	require.Empty(t, currentOrgID(t, single.Pool()),
-		"orgB's app.current_org_id leaked past its transaction onto the pooled connection")
+		"orgB's codefly.current_tenant_id leaked past its transaction onto the pooled connection")
 }
 
 // singleConnStore opens a dedicated store over the request login whose pool
@@ -106,7 +105,7 @@ func currentOrgID(t *testing.T, q orgIDQuerier) string {
 	t.Helper()
 	var got string
 	require.NoError(t, q.QueryRow(testCtx,
-		"SELECT coalesce(current_setting('app.current_org_id', true), '')").Scan(&got))
+		"SELECT coalesce(current_setting('codefly.current_tenant_id', true), '')").Scan(&got))
 	return got
 }
 
@@ -121,7 +120,7 @@ func currentUserID(t *testing.T, q orgIDQuerier) string {
 	t.Helper()
 	var got string
 	require.NoError(t, q.QueryRow(testCtx,
-		"SELECT coalesce(current_setting('app.current_user_id', true), '')").Scan(&got))
+		"SELECT coalesce(current_setting('codefly.current_user_id', true), '')").Scan(&got))
 	return got
 }
 
@@ -132,7 +131,7 @@ func currentUserID(t *testing.T, q orgIDQuerier) string {
 func poisonSession(t *testing.T, store *infra.PostgresStore, orgID, userID string) {
 	t.Helper()
 	_, err := store.Pool().Exec(testCtx,
-		"SELECT set_config('app.current_org_id', $1, false), set_config('app.current_user_id', $2, false)", orgID, userID)
+		"SELECT set_config('codefly.current_tenant_id', $1, false), set_config('codefly.current_user_id', $2, false)", orgID, userID)
 	require.NoError(t, err)
 	require.Equal(t, orgID, currentOrgID(t, store.Pool()), "the session binding really did survive its statement")
 	require.Equal(t, userID, currentUserID(t, store.Pool()))
@@ -194,10 +193,22 @@ func TestRequestTransactionsClearTheBindingTheyDoNotCarry(t *testing.T) {
 }
 
 // A request connection comes back to the pool carrying no request binding,
-// whatever its borrower left at session level. RESET ROLE alone would return
-// the role and keep app.current_org_id and app.current_user_id, so the next
-// borrower's un-wrapped reads — and any transaction that binds only half the
-// scope — would run as the previous caller.
+// whatever its borrower left at session level, and comes back rather than being
+// thrown away. RESET ROLE alone would return the role and keep the scope
+// settings, so the next borrower's un-wrapped reads — and any transaction that
+// binds only half the scope — would run as the previous caller.
+//
+// Both halves are asserted on the connection the reset actually ran on, by
+// driving the pool's own AfterRelease judgement. The earlier shape released the
+// connection to the shared pool and then waited up to five seconds for that
+// backend's PID to reappear among the idle ones, which is two conditions at
+// once: it needed the reset to have cleaned the session AND nothing else in the
+// package to be holding every request connection for the length of the wait.
+// The second is not a property of this code — a background dispatcher is enough
+// to fail it — and a failure could not say which half it was. The judgement
+// returns the verdict the pool acts on: true reuses the connection, false
+// destroys it. Asking it directly is the same property with the timing removed,
+// and names the failure when it breaks.
 func TestRequestConnectionCarriesNoBindingAfterRelease(t *testing.T) {
 	const (
 		staleOrg  = "12121212-1212-1212-1212-121212121212"
@@ -205,25 +216,44 @@ func TestRequestConnectionCarriesNoBindingAfterRelease(t *testing.T) {
 	)
 	conn, err := testPool.Acquire(testCtx)
 	require.NoError(t, err)
-	pid := conn.Conn().PgConn().PID()
-	_, err = conn.Exec(testCtx,
-		"SELECT set_config('app.current_org_id', $1, false), set_config('app.current_user_id', $2, false)", staleOrg, staleUser)
-	require.NoError(t, err)
-	conn.Release()
+	defer conn.Release()
 
-	require.Eventually(t, func() bool {
-		idle := testPool.AcquireAllIdle(testCtx)
-		defer func() {
-			for _, c := range idle {
-				c.Release()
-			}
-		}()
-		found := false
-		for _, c := range idle {
-			require.Empty(t, currentOrgID(t, c), "an idle request connection carries an org binding")
-			require.Empty(t, currentUserID(t, c), "an idle request connection carries a user binding")
-			found = found || c.Conn().PgConn().PID() == pid
-		}
-		return found
-	}, 5*time.Second, 50*time.Millisecond, "the released connection returns to the pool without its bindings")
+	// What a borrower that used set_config(..., false) or SET, rather than a
+	// transaction-local binding, hands back — under both generations of both
+	// names, because inside migration 66's compatibility window a predicate
+	// falls through to the retired name when the live one is empty, so a
+	// session-level binding on either is the previous caller's scope.
+	_, err = conn.Exec(testCtx,
+		`SELECT set_config($1, $3, false), set_config($2, $4, false),
+		        set_config($5, $3, false), set_config($6, $4, false)`,
+		infra.TenantScopeSetting, infra.UserScopeSetting, staleOrg, staleUser,
+		infra.LegacyTenantScopeSetting, infra.LegacyUserScopeSetting)
+	require.NoError(t, err)
+	require.Equal(t, staleOrg, currentOrgID(t, conn), "the session binding really did survive its statement")
+	require.Equal(t, staleUser, currentUserID(t, conn))
+
+	require.True(t, infra.ReturnsToTenantRole(conn.Conn()),
+		"the release judgement refused the connection it had just reset, so every request connection would be destroyed on release instead of reused")
+
+	// And this is the session the next borrower would be handed.
+	for _, setting := range []string{
+		infra.TenantScopeSetting, infra.UserScopeSetting,
+		infra.LegacyTenantScopeSetting, infra.LegacyUserScopeSetting,
+	} {
+		require.Empty(t, sessionSetting(t, conn, setting),
+			"a request connection returned to the pool still carries %s", setting)
+	}
+	var role string
+	require.NoError(t, conn.QueryRow(testCtx, "SELECT current_user::text").Scan(&role))
+	require.Equal(t, "app_tenant", role, "a released request connection must come back as app_tenant")
+}
+
+// sessionSetting is one scope setting's value on q, the empty string when
+// nothing has bound it.
+func sessionSetting(t *testing.T, q orgIDQuerier, setting string) string {
+	t.Helper()
+	var got string
+	require.NoError(t, q.QueryRow(testCtx,
+		"SELECT coalesce(current_setting($1, true), '')", setting).Scan(&got))
+	return got
 }

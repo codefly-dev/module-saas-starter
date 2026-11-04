@@ -17,7 +17,7 @@ function AccessDenied() {
 }
 
 /**
- * One installation's setup page, under `Admin → Modules & solutions`. Gated by
+ * One installation's setup page, under `Admin → Solutions`. Gated by
  * the same permission as that page: it shows the same organisation's
  * installations and performs the same host acts.
  */

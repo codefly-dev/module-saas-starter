@@ -128,31 +128,6 @@ func TestGatewayEdge_ACapabilityAddressedToTheGatewayIsRefused(t *testing.T) {
 	require.Contains(t, err.Error(), "forwarding hop")
 }
 
-// Rule 3: a declared MODULE route expects the module capability audience, and a
-// solution capability is refused there.
-func TestGatewayEdge_AModuleRouteExpectsTheModuleAudience(t *testing.T) {
-	gw, _, accessPriv, wcPriv, kid := edgeHarness(t)
-	fake := declareModule(t, gw, "example-module")
-
-	solutionToken := mintWorkContextAudience(t, kid, wcPriv, solutionRouteAudience("acme.test.example-go"))
-	req := httptest.NewRequest(http.MethodGet, "/v1/example-module/things", nil)
-	req.Header.Set("authorization", "Bearer "+signValidToken(t, accessPriv))
-	req.Header.Set(carrier.HeaderName, solutionToken)
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, req)
-	require.Equal(t, http.StatusUnauthorized, w.Code)
-	require.Nil(t, fake.lastHeaders)
-
-	moduleToken := mintWorkContextAudience(t, kid, wcPriv, moduleCapabilitiesAudience)
-	ok := httptest.NewRequest(http.MethodGet, "/v1/example-module/things", nil)
-	ok.Header.Set("authorization", "Bearer "+signValidToken(t, accessPriv))
-	ok.Header.Set(carrier.HeaderName, moduleToken)
-	w = httptest.NewRecorder()
-	gw.ServeHTTP(w, ok)
-	require.Equal(t, http.StatusOK, w.Code,
-		"the module audience must be accepted on a module route, or the refusal above proves nothing")
-}
-
 // The solution route's expected audience is keyed on the BINDING, not the alias.
 //
 // An alias is deliberately reusable, so an audience keyed on it would let a
@@ -165,7 +140,6 @@ func TestGatewayEdge_TheSolutionAudienceIsKeyedOnTheBinding(t *testing.T) {
 	require.Equal(t, solutionAudiencePrefix+"b", solutionRouteAudience("b"))
 	require.Empty(t, solutionRouteAudience(""),
 		"no binding means no expectation; the surrounding refusals are what make that unreachable")
-	// The two constants this gateway cannot import from accounts, pinned by value.
+	// The constant this gateway cannot import from accounts, pinned by value.
 	require.Equal(t, "solution:", solutionAudiencePrefix)
-	require.Equal(t, "module-capabilities", moduleCapabilitiesAudience)
 }

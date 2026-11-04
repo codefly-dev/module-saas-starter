@@ -72,14 +72,14 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
 
 	require.Len(t, first.Catalog.GetServices(), 8)
-	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 7)
+	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 8)
 	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 14, endpointCount)
+	require.Equal(t, 15, endpointCount)
 	require.Equal(t, 7, dependencyCount)
 	// Accounts REST stays private. Gateway REST is exported for module mints;
 	// solutions resolve its separately exported workload listener.
@@ -734,7 +734,7 @@ func TestDeploymentTopologyAuthorityPortIsAllocatedAtRender(t *testing.T) {
 	for _, service := range artifacts.Catalog.GetServices() {
 		for _, endpoint := range service.GetEndpoints() {
 			if (service.GetName() == "accounts" && endpoint.GetName() == "authority") ||
-				(service.GetName() == "auth-gateway" && (endpoint.GetName() == "rest" || endpoint.GetName() == "workload")) {
+				(service.GetName() == "auth-gateway" && (endpoint.GetName() == "workload" || endpoint.GetName() == "hop")) {
 				require.Zero(t, endpoint.GetPort(), "%s/%s is allocated at render", service.GetName(), endpoint.GetName())
 			} else {
 				require.NotZero(t, endpoint.GetPort(), "%s/%s declares its pod port", service.GetName(), endpoint.GetName())
@@ -766,9 +766,22 @@ func TestDeploymentTopologyPodPortIsTheAllocationUnlessDeclared(t *testing.T) {
 			ports[service.GetName()+"/"+endpoint.GetName()] = endpoint.GetPort()
 		}
 	}
+	// auth-gateway/rest is 8080, and that is not a change to what any cell
+	// deploys: core's network.DeployedEndpointPorts already allocates it 8080
+	// without the hop endpoint. `rest` and `http` both standardise on 8080, so
+	// while `workload` was the only `http` endpoint the two contended for it,
+	// and core breaks that tie on API priority — standards.APIS() is
+	// [grpc rest tcp http connect mcp], so REST outranks HTTP and `rest` wins
+	// while `workload` takes a named port. This projection models only the
+	// composition-independent half of that rule, so it refused to pick between
+	// two contenders and recorded 0. A second `http` endpoint makes `workload`
+	// unconventional, the contest disappears, and the projection can state the
+	// port the render was choosing all along. Checked against core directly:
+	// {grpc,rest,workload} allocates rest:8080 workload:46651, and adding
+	// hop:http leaves both and adds hop:7231.
 	for endpoint, want := range map[string]uint32{
 		"accounts/connect": 8081, "accounts/grpc": 9090, "accounts/rest": 8080, "accounts/authority": 0,
-		"auth-gateway/grpc": 9090, "auth-gateway/rest": 0, "auth-gateway/workload": 0,
+		"auth-gateway/grpc": 9090, "auth-gateway/rest": 8080, "auth-gateway/workload": 0, "auth-gateway/hop": 0,
 		"cache/read": 6379, "cache/write": 6379, "store/tcp": 5432, "vault/http": 8200,
 		"frontend/http": 3000, "marketing/http": 3000,
 	} {

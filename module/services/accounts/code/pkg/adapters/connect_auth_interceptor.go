@@ -181,23 +181,25 @@ func connectAuthInterceptor(getMinter func() auth.JWTMinter) connect.Interceptor
 
 func (i *connectPolicyInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		ctx, err := i.authorize(ctx, req.Spec().Procedure, req.Header())
+		procedure := req.Spec().Procedure
+		ctx, err := i.authorize(ctx, procedure, req.Header())
 		if err != nil {
-			return nil, err
+			return nil, recordPolicyDenial(ctx, procedure, denialReasonAdmission, err)
 		}
-		if err := enforceImpersonationPolicy(ctx, req.Spec().Procedure); err != nil {
-			return nil, translateGRPCError(err)
+		if err := enforceImpersonationPolicy(ctx, procedure); err != nil {
+			return nil, translateGRPCError(recordPolicyDenial(ctx, procedure, denialReasonImpersonation, err))
 		}
-		if err := enforceAPIKeyScopePolicy(ctx, req.Spec().Procedure); err != nil {
-			return nil, translateGRPCError(err)
+		if err := enforceAPIKeyScopePolicy(ctx, procedure); err != nil {
+			return nil, translateGRPCError(recordPolicyDenial(ctx, procedure, denialReasonAPIKeyScope, err))
 		}
-		if err := enforceCentralPolicy(ctx, req.Spec().Procedure); err != nil {
-			return nil, translateGRPCError(err)
+		if err := enforceCentralPolicy(ctx, procedure); err != nil {
+			return nil, translateGRPCError(recordPolicyDenial(ctx, procedure, denialReasonCentral, err))
 		}
-		shadowPolicyCoverage(ctx, req.Spec().Procedure)
+		shadowPolicyCoverage(ctx, procedure)
 		// One committed module-envelope revision read per unary request,
 		// however many module authority decisions the handler makes.
-		return next(business.WithModuleEnvelopeRevisionMemo(ctx), req)
+		response, err := next(business.WithModuleEnvelopeRevisionMemo(ctx), req)
+		return response, recordPolicyDenial(ctx, procedure, denialReasonHandler, err)
 	}
 }
 
@@ -207,21 +209,22 @@ func (i *connectPolicyInterceptor) WrapStreamingClient(next connect.StreamingCli
 
 func (i *connectPolicyInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		ctx, err := i.authorize(ctx, conn.Spec().Procedure, conn.RequestHeader())
+		procedure := conn.Spec().Procedure
+		ctx, err := i.authorize(ctx, procedure, conn.RequestHeader())
 		if err != nil {
-			return err
+			return recordPolicyDenial(ctx, procedure, denialReasonAdmission, err)
 		}
-		if err := enforceImpersonationPolicy(ctx, conn.Spec().Procedure); err != nil {
-			return translateGRPCError(err)
+		if err := enforceImpersonationPolicy(ctx, procedure); err != nil {
+			return translateGRPCError(recordPolicyDenial(ctx, procedure, denialReasonImpersonation, err))
 		}
-		if err := enforceAPIKeyScopePolicy(ctx, conn.Spec().Procedure); err != nil {
-			return translateGRPCError(err)
+		if err := enforceAPIKeyScopePolicy(ctx, procedure); err != nil {
+			return translateGRPCError(recordPolicyDenial(ctx, procedure, denialReasonAPIKeyScope, err))
 		}
-		if err := enforceCentralPolicy(ctx, conn.Spec().Procedure); err != nil {
-			return translateGRPCError(err)
+		if err := enforceCentralPolicy(ctx, procedure); err != nil {
+			return translateGRPCError(recordPolicyDenial(ctx, procedure, denialReasonCentral, err))
 		}
-		shadowPolicyCoverage(ctx, conn.Spec().Procedure)
-		return next(ctx, conn)
+		shadowPolicyCoverage(ctx, procedure)
+		return recordPolicyDenial(ctx, procedure, denialReasonHandler, next(ctx, conn))
 	}
 }
 

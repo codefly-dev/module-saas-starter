@@ -4,6 +4,8 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
 	solutionTransport,
+	moduleTransport,
+	requestBinding,
 	useAccessibleScope,
 	viewerOrganization,
 } from "../index.js";
@@ -151,5 +153,39 @@ describe("useAccessibleScope", () => {
 				pageSize: 1,
 			});
 		}
+	});
+});
+
+
+describe("moduleTransport", () => {
+	it("uses the explicitly supplied standalone root with the generated client", async () => {
+		const authedFetch = scopes(Response.json({ scopes: [] }));
+		await createClient(
+			AccessibleScopeService,
+			moduleTransport(requestBinding("/relay", () => "viewer", authedFetch, "/")),
+		).listMyAccessibleScopes({});
+		expect(String(authedFetch.mock.calls[0]![0])).toBe(
+			"/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes",
+		);
+	});
+	it("preserves the explicit base when rebuilding credentials and uses the generated client unchanged", async () => {
+		const authedFetch = scopes(Response.json({ scopes: [] }));
+		const binding = requestBinding("/solution-relay", () => "viewer", authedFetch, "/api/solutions/example/proxy/_browser");
+		await createClient(AccessibleScopeService, moduleTransport(binding)).listMyAccessibleScopes({ orgId: "acme" });
+		expect(String(authedFetch.mock.calls[0]![0])).toBe("/api/solutions/example/proxy/_browser/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes");
+		expect(new Headers(authedFetch.mock.calls[0]![1]?.headers).get("authorization")).toBe("Bearer viewer");
+		expect(authedFetch.mock.calls[0]![1]?.credentials).toBe("same-origin");
+		expect(binding.apiBase).toBe("/solution-relay");
+	});
+	it.each([undefined, "", "   "])("refuses absent connection %s before fetch", (moduleApiBase) => {
+		const authedFetch = vi.fn();
+		expect(() => moduleTransport({ apiBase: "/relay", moduleApiBase, authedFetch })).toThrow("module connection unavailable");
+		expect(authedFetch).not.toHaveBeenCalled();
+	});
+	it.each([[401, "unauthenticated", Code.Unauthenticated], [403, "permission_denied", Code.PermissionDenied]] as const)("preserves refusal %s without changing its meaning", async (status, code, want) => {
+		const onUnauthorized = vi.fn();
+		const binding = { apiBase: "/relay", moduleApiBase: "/edge", authedFetch: scopes(Response.json({ code, message: "owner refusal" }, { status })) };
+		await expect(createClient(AccessibleScopeService, moduleTransport(binding, onUnauthorized)).listMyAccessibleScopes({})).rejects.toMatchObject({ code: want });
+		expect(onUnauthorized).toHaveBeenCalledOnce();
 	});
 });

@@ -88,7 +88,9 @@ func TestSealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.T)
 	var grant business.ModulePrincipalGrant
 	var policy business.ExecutableArtifactPolicy
 	var installParams business.InstallSolutionParams
-	org, owner, role, installation, root := installFixture(t, "*", "*", func(p *business.InstallSolutionParams) {
+	// A module credential is sealed to a module's installation: the kind whose
+	// entitlement the gateway's proxy read takes from this store.
+	org, owner, role, installation, root := installFixtureKind(t, business.SolutionDeclaredKindModule, "*", "*", func(p *business.InstallSolutionParams) {
 		policy = business.ExecutableArtifactPolicy{Schema: "example.artifact/v1", Sources: map[string]string{"acme.example": p.RegistryBindingID}, Activate: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Run: business.ArtifactPermission{Resource: "definitions", Action: "configure"}, Contracts: []business.ArtifactContract{{Kind: "model", Name: "example/profile", Digest: "sha256:" + strings.Repeat("a", 64)}}, RequiredKinds: []string{"model"}}
 		grant = business.ModulePrincipalGrant{Prefix: "example", Tenant: p.OrgID, PresenceBinding: p.RegistryBindingID,
 			Queues: []string{queue, business.DatasourceIngestQueue}, Resources: []string{"records"},
@@ -116,6 +118,9 @@ func TestSealedModuleCredentialDBLiveInstallationAtEveryEntryPoint(t *testing.T)
 	svc.SetExecutionBinding(cluster)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
+	// The authority core signs with the Work Context key, as production
+	// configures it beside the issuer; the entitlement read merges its holders.
+	require.NoError(t, svc.ConfigureAuthorityCore(testCtx, "accounts.test", "example-key", key))
 	issuer := &adapters.WorkContextAuthorityServer{}
 	issuer.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "example-key", PrivateKey: key, Authority: testStore, Seals: svc})
 	credential, _, err := issuer.StartModuleTask(testCtx, business.ModuleWorkContextAuthority{

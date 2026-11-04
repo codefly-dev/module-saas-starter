@@ -4,8 +4,9 @@ go 1.27.3
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
-	github.com/codefly-dev/core v0.19.7-0.20261025161440-4e7f8ef01ed2
+	github.com/codefly-dev/core v0.19.7
 	github.com/yoheimuta/go-protoparser/v4 v4.14.2
+	golang.org/x/mod v0.41.0
 	golang.org/x/tools v0.50.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
@@ -46,7 +47,6 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
-	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect

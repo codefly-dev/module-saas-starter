@@ -72,9 +72,15 @@ describe("OrganizationDetail", () => {
 			target: { value: "jane" },
 		});
 		fireEvent.click(
-			await screen.findByRole("button", { name: "jane@example.com" }),
+			await screen.findByRole("option", { name: "jane@example.com" }),
 		);
-		expect(await screen.findByText("User selected")).toBeTruthy();
+		// The choice reads as a removable chip naming the person, not as a
+		// label left in a search box that any keystroke would discard.
+		expect(
+			await screen.findByRole("button", {
+				name: "Choose someone other than jane@example.com",
+			}),
+		).toBeTruthy();
 		expect(
 			screen.getByRole<HTMLButtonElement>("button", { name: "Add" }).disabled,
 		).toBe(false);

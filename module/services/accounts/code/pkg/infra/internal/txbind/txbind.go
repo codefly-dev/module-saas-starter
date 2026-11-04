@@ -57,7 +57,7 @@ type Binding struct {
 	Tx   pgx.Tx
 	Pool Pool
 	// OrgID and UserID are the request scope a request transaction bound for
-	// itself — app.current_org_id and app.current_user_id, set transaction-
+	// itself — codefly.current_tenant_id and codefly.current_user_id, set transaction-
 	// locally — with "" for a half it cleared or never set. A control-plane or
 	// worker transaction binds no request scope, so both are "".
 	OrgID  string

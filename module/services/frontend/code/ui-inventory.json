@@ -1888,6 +1888,62 @@
       "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
     },
     {
+      "source": "packages/saas-ui/src/solution/setup/solution-setup.tsx",
+      "imports": [
+        "@codefly-dev/saas-sdk",
+        "@codefly-dev/ui/layout",
+        "@connectrpc/connect",
+        "react",
+        "../binding.js",
+        "../transport.js",
+        "./model.js",
+        "./use-solution-setup.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "The one Setup UI for a solution: is it ready, what each role grants (scopes, module operations, agent tools, the permission ceiling) and who holds them, answered by the authority through the host installation interface. Every host renders it, so it looks the same locally and deployed.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "ReadyLocalAuthority"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "ReadySaaS"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "NotInstalled"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "RolesLocalAuthority"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "RolesSaaS"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "HoldersLocalAuthority"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "HoldersSaaSRefused"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "MemberReadOnly"
+        },
+        {
+          "file": "packages/saas-ui/stories/solution-setup.stories.tsx",
+          "export": "Refused"
+        }
+      ],
+      "coverage": "owner stories and unit tests; browser/skin verification pending",
+      "remaining": "Verify explorer rendering and interactive accessibility under external skins."
+    },
+    {
       "source": "src/app/(auth)/auth/callback/page.tsx",
       "imports": [
         "@/features/auth/ui/callback-page"
@@ -2653,22 +2709,6 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/app/admin/platform/page.tsx",
-      "imports": [
-        "lucide-react",
-        "next/link",
-        "@/lib/product-features",
-        "@/lib/read-public-runtime-config",
-        "@/shared/ui"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/app/admin/platform/plugin-transport/page.tsx",
       "imports": [
         "@/components/auth/role-gate",
@@ -2764,6 +2804,20 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/modules/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/solution-installations",
+        "@/gen/saas/accounts/v1/frontend_catalog"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route entry for direct supporting-module administration; owns host routing only. Full-page preview coverage is still pending.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
@@ -5062,6 +5116,54 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/solution-installations/ui/declared-access.tsx",
+      "imports": [
+        "@/gen/host/installation/v1/installation_pb",
+        "../model/install-review"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "States an installation's declared machine access and call ceiling from the authority's offer, once, for both the solution review and the module page review.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/install-module-page-dialog.tsx",
+      "imports": [
+        "@connectrpc/connect",
+        "@tanstack/react-query",
+        "react",
+        "@/gen/host/installation/v1/installation_pb",
+        "@/gen/saas/accounts/v1/installations_pb",
+        "@/lib/connect/transport",
+        "@/shared/ui",
+        "../model/install-review",
+        "../model/installations",
+        "./declared-access"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Reviews a module page that declares roles from the authority's offer and installs it with no agent role; its roles take teams in Setup. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/install-module-dialog.tsx",
+      "imports": [
+        "@/shared/ui",
+        "../model/installations",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the explicit supporting-module installation form outside normal solution installation. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/solution-installations/ui/installation-setup-page.tsx",
       "imports": [
         "lucide-react",
@@ -5087,6 +5189,47 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/solution-installations/ui/installation-team-choices.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "react",
+        "@/features/teams/service/queries",
+        "@/gen/host/installation/v1/installation_pb",
+        "@/shared/ui",
+        "../model/install-review",
+        "../model/installations",
+        "../service/team-choices",
+        "./role-team-choice"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the staged team-per-declared-role choices and when they are granted through the canonical GrantRole. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/role-team-choice.tsx",
+      "imports": [
+        "@codefly-dev/saas-ui/solution",
+        "@tanstack/react-query",
+        "react",
+        "@/features/teams/model/schemas",
+        "@/features/teams/service/mutations",
+        "@/features/teams/service/queries",
+        "@/features/teams/ui/team-form",
+        "@/gen/saas/accounts/v1/common_pb",
+        "@/shared/ui",
+        "../model/installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Binds one declared role to an existing organization team or one created through the organization's CreateTeam; the picker is the kit's SolutionRoleGrantForm.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required; the picker is the kit's SolutionRoleGrantForm."
+    },
+    {
       "source": "src/features/solution-installations/ui/solution-installations-page.tsx",
       "imports": [
         "lucide-react",
@@ -5108,6 +5251,42 @@
       "owner": "SaaS application",
       "disposition": "keep feature-local",
       "reason": "Owns the solution-installations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/solution-installations/ui/solution-setup-panel.tsx",
+      "imports": [
+        "@codefly-dev/saas-ui/solution",
+        "@tanstack/react-query",
+        "react",
+        "@/features/teams/service/queries",
+        "@/lib/auth",
+        "@/lib/connect/transport",
+        "@/lib/hooks/use-organizations",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "This host's mount of the shared Setup UI: the session's organization, the people and teams the host can name, and its own conditions. Presentation is the kit's SolutionSetup.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required; the presentation is the kit's SolutionSetup, with its own stories."
+    },
+    {
+      "source": "src/features/solution-installations/ui/when-roles-declared.tsx",
+      "imports": [
+        "@connectrpc/connect",
+        "@tanstack/react-query",
+        "react",
+        "@/gen/host/installation/v1/installation_pb",
+        "@/lib/auth",
+        "@/lib/connect/transport"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Renders the Setup tab only for a target whose installation roles the authority's offer review names: every solution, and a module page that declares roles. It draws nothing of its own.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."

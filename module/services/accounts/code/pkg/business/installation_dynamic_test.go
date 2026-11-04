@@ -178,7 +178,7 @@ func (f availableInstallationStore) WithControlPlane(ctx context.Context, fn fun
 func (f availableInstallationStore) ListAvailableSolutionTargets(_ context.Context, q AvailableSolutionQuery) ([]*AvailableSolutionTarget, error) {
 	var out []*AvailableSolutionTarget
 	for _, target := range f.targets {
-		if target.TargetID > q.Cursor && (q.TargetID == "" || target.TargetID == q.TargetID) {
+		if target.TargetID > q.Cursor && (q.TargetID == "" || target.TargetID == q.TargetID) && (q.BindingID == "" || target.BindingID == q.BindingID) {
 			out = append(out, target)
 			if len(out) == q.Limit {
 				break
@@ -208,7 +208,7 @@ func TestDynamicInstallationTenancyFiltersBeforePaginationAndInstall(t *testing.
 	require.Empty(t, next)
 	_, err = s.prepareInstallation(context.Background(), &InstallSolutionParams{OrgID: "org-a", TargetID: "1"})
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
-	_, err = s.prepareInstallation(context.Background(), &InstallSolutionParams{OrgID: "org-b", TargetID: "1"})
+	_, err = s.prepareInstallation(context.Background(), &InstallSolutionParams{OrgID: "org-b", TargetID: "1", RoleID: "role-id"})
 	require.NoError(t, err)
 }
 

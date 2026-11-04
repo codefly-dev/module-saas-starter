@@ -41,6 +41,8 @@ type Service struct {
 	devValidator              auth.TokenValidator // development only: allowlists explicit fixture identities
 	resolver                  auth.IdentityResolver
 	minter                    auth.JWTMinter
+	providerSignOut           ProviderSignOut  // what the identity provider offers for ending its own session
+	auditArchive              AuditArchive     // where the daily audit archive is written, when one is configured
 	emailOutbox               *email.Outbox    // optional durable email producer; transport is worker-only
 	billing                   BillingClient    // optional: Stripe client for checkout/portal
 	billingURLs               BillingRedirects // server-owned Stripe return destinations
@@ -181,9 +183,6 @@ type Service struct {
 	hostModule             string
 	frontendSource         frontendpayload.Source
 	frontendLazyLoadWindow time.Duration
-
-	// policyClock is the clock narrowing-dependent reads judge time by; nil means time.Now.
-	policyClock func() time.Time
 
 	// The live-authority reads enforcement at use depends on. Nil means this
 	// host cannot re-read, and AuthorizeModuleCapability then refuses every
@@ -987,7 +986,7 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 // Bootstrap path: at this moment the tenant doesn't exist yet, so
 // there's no org context to set. WithControlPlane (which keeps the
 // connection's session_user role) is correct here — the role-switch
-// in WithOrgTx would put us as app_tenant with no app.current_org_id,
+// in WithOrgTx would put us as app_tenant with no codefly.current_tenant_id,
 // and the WITH CHECK on organization_members would reject the insert.
 // User authz is at the handler — only authenticated users can create
 // orgs; abuse is rate-limited.

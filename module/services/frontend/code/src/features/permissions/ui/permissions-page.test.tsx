@@ -131,6 +131,15 @@ describe("PermissionsPage — check a grant", () => {
 		);
 	}
 
+	// The member comes from the shared UserPicker (a searchable listbox), the
+	// permission from the kit's Select.
+	async function pickMember(email: string) {
+		fireEvent.change(await screen.findByLabelText("User"), {
+			target: { value: email },
+		});
+		fireEvent.click(await screen.findByRole("option", { name: email }));
+	}
+
 	async function pick(placeholder: string, option: string) {
 		const trigger = (await screen.findByText(placeholder)).closest("button");
 		fireEvent.click(trigger as HTMLElement);
@@ -140,7 +149,7 @@ describe("PermissionsPage — check a grant", () => {
 	}
 
 	async function ask(scope?: string) {
-		await pick("Pick a member…", MEMBER_EMAIL);
+		await pickMember(MEMBER_EMAIL);
 		await pick("Pick a permission…", "audit:read");
 		if (scope !== undefined) {
 			const box = screen.getByLabelText("Scope");
@@ -284,7 +293,10 @@ describe("PermissionsPage — the scope a question carries", () => {
 			fireEvent.pointerDown(item, { pointerType: "mouse" });
 			fireEvent.click(item);
 		};
-		await open("Pick a member…", MEMBER_EMAIL);
+		fireEvent.change(await screen.findByLabelText("User"), {
+			target: { value: MEMBER_EMAIL },
+		});
+		fireEvent.click(await screen.findByRole("option", { name: MEMBER_EMAIL }));
 		await open("Pick a permission…", "audit:read");
 	}
 

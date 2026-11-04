@@ -602,6 +602,9 @@ func (h *authConnectHandler) Logout(ctx context.Context, req *connect.Request[ge
 	})
 	return unary(ctx, req, h.inner.Logout)
 }
+func (h *authConnectHandler) GetProviderSignOut(ctx context.Context, req *connect.Request[gen.GetProviderSignOutRequest]) (*connect.Response[gen.GetProviderSignOutResponse], error) {
+	return unary(ctx, req, h.inner.GetProviderSignOut)
+}
 func (h *authConnectHandler) ValidateClientAuthorization(ctx context.Context, req *connect.Request[gen.ValidateClientAuthorizationRequest]) (*connect.Response[gen.ValidateClientAuthorizationResponse], error) {
 	return unary(ctx, req, h.inner.ValidateClientAuthorization)
 }

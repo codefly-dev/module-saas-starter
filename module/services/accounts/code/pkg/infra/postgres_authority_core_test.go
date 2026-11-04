@@ -61,7 +61,23 @@ func seedAuthorityIdentity(t *testing.T, id storetest.Identity) {
 				return err
 			}
 		}
+		// The directory holds teams independently of membership: an entry of
+		// id.Teams may have no members at all.
 		teams := map[string]bool{}
+		insertTeam := func(organization, team string) error {
+			if teams[team] {
+				return nil
+			}
+			teams[team] = true
+			slug := "t" + strings.ReplaceAll(team, "-", "")[:12]
+			_, err := q.Exec(ctx, `INSERT INTO teams (id, org_id, name, slug, path) VALUES ($1, $2, $3, $4, $4)`, team, organization, "Storetest "+team, slug)
+			return err
+		}
+		for _, team := range id.Teams {
+			if err := insertTeam(team.Organization, team.ID); err != nil {
+				return err
+			}
+		}
 		for _, m := range id.Members {
 			role := "member"
 			if m.Administrator {
@@ -71,12 +87,8 @@ func seedAuthorityIdentity(t *testing.T, id storetest.Identity) {
 				return err
 			}
 			for _, team := range m.Teams {
-				if !teams[team] {
-					teams[team] = true
-					slug := "t" + strings.ReplaceAll(team, "-", "")[:12]
-					if _, err := q.Exec(ctx, `INSERT INTO teams (id, org_id, name, slug, path) VALUES ($1, $2, $3, $4, $4)`, team, m.Organization, "Storetest "+team, slug); err != nil {
-						return err
-					}
+				if err := insertTeam(m.Organization, team); err != nil {
+					return err
 				}
 				if _, err := q.Exec(ctx, `INSERT INTO team_members (team_id, user_id, org_id) VALUES ($1, $2, $3)`, team, m.Person, m.Organization); err != nil {
 					return err

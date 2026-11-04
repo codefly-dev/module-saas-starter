@@ -20,7 +20,9 @@ import (
 func TestPendingInstallationEnforcementReaders(t *testing.T) {
 	for _, state := range []string{"pending", "failed"} {
 		t.Run(state, func(t *testing.T) {
-			i := newDynamicInstall(t, "", "", "")
+			// A module's installation: the gateway projection below is the
+			// store's module half, so the positive control needs one.
+			i := newDynamicInstallKind(t, "", "", "", "module")
 			team := seedTeamWith(t, i.org, i.owner)
 			grantAtNode(t, i.org, team, solutionRole(t, i.org), i.installation)
 			require.Equal(t, []string{i.target}, entitledIdentifiers(t, i.org, i.owner))

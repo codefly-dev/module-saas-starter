@@ -68,9 +68,15 @@
           "port": 9090
         },
         {
+          "name": "hop",
+          "api": "CODEFLY_API_HTTP",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE"
+        },
+        {
           "name": "rest",
           "api": "CODEFLY_API_REST",
-          "visibility": "ENDPOINT_VISIBILITY_MODULE"
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 8080
         },
         {
           "name": "workload",
@@ -190,6 +196,11 @@
     {
       "service": "auth-gateway",
       "endpoint": "grpc",
+      "visibility": "ENDPOINT_VISIBILITY_MODULE"
+    },
+    {
+      "service": "auth-gateway",
+      "endpoint": "hop",
       "visibility": "ENDPOINT_VISIBILITY_MODULE"
     },
     {

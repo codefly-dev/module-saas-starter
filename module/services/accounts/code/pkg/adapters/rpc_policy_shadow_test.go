@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,19 @@ func TestShadowPolicyCoverageRecordsEveryOutcomeIncludingOK(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	otel.SetMeterProvider(provider)
-	t.Cleanup(func() { otel.SetMeterProvider(metricnoop.NewMeterProvider()) })
+	// Rebind the counter against this provider. rpcPolicyCoverageCounter binds
+	// once, lazily, so any earlier test in this package that ran an interceptor
+	// — the host-interface conformance harness does — has already bound it to
+	// whichever provider was global then, and this case would collect an empty
+	// reader and fail (or, worse on another ordering, pass having measured
+	// nothing).
+	coverageCounterOnce = sync.Once{}
+	coverageCounter = nil
+	t.Cleanup(func() {
+		otel.SetMeterProvider(metricnoop.NewMeterProvider())
+		coverageCounterOnce = sync.Once{}
+		coverageCounter = nil
+	})
 
 	// GetUser is a covered self-service read (ok); CreateAPIKey requires an org
 	// admin the interceptor does not yet resolve (gap).

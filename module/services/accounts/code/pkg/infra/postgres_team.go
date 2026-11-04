@@ -202,7 +202,7 @@ func (s *PostgresStore) GetTeamMembership(ctx context.Context, orgID string, tea
 				SELECT team_id, user_id, role, joined_at
 				FROM team_members
 				WHERE team_id = $1
-				  AND user_id = current_setting('app.current_user_id', true)::uuid`, teamID)
+				  AND user_id = current_setting('`+UserScopeSetting+`', true)::uuid`, teamID)
 		})
 		return membership, err
 	}

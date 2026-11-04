@@ -1,14 +1,23 @@
 import { notFound } from "next/navigation";
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
+import {
+	SolutionSetupPanel,
+	WhenRolesDeclared,
+} from "@/features/solution-installations";
+import {
+	browserManifestUrl,
+	findSolution,
+	solutionModuleApiBase,
+	solutionProxyBase,
+} from "@/solutions/registry";
 import { SolutionDashboards } from "@/solutions/SolutionDashboard";
 import { SolutionLivePage } from "@/solutions/SolutionLivePage";
 import { SolutionRuntime } from "@/solutions/SolutionRuntime";
 import {
-	browserManifestUrl,
-	findSolution,
-	solutionProxyBase,
-} from "@/solutions/registry";
+	SolutionSettings,
+	SolutionWorkspace,
+} from "@/solutions/SolutionWorkspace";
+import SolutionNotFound from "./not-found";
 
 export const dynamic = "force-dynamic";
 
@@ -40,12 +49,13 @@ export default async function SolutionPage({
 			}}
 			pageProps={{
 				solutionId: solution.id,
-				// Same-origin base for every backend call the remote makes. The
+				// Same-origin base for host procedures and the solution relay. The
 				// proxy routes on the path: a `saas.<pkg>.v1.<Service>/<Method>`
 				// procedure reaches the API gateway's root (the host's own
 				// services, e.g. the DatasourceService `<DatasourcesPanel>`
 				// calls), anything else reaches this solution's upstream.
 				apiBase: solutionProxyBase(solution.id),
+				moduleApiBase: solutionModuleApiBase(solution.id),
 				// What this solution declared it is built on, handed straight
 				// back to it. The remote could hard-code the same repository,
 				// but then two statements would have to agree: the one the host
@@ -59,40 +69,32 @@ export default async function SolutionPage({
 		/>
 	);
 
-	// A declared dashboard is its own tab beside the solution, not a block
-	// stacked above it: stacked, it pushed the solution below the fold on every
-	// visit, and a dashboard with nothing to show yet ("No data yet") sat on top
-	// of the thing the person came for. The solution's panel stays mounted
-	// while the dashboard is open, so switching back keeps its state (an open
-	// chat, a half-typed question). A solution that declares no dashboard
-	// (no graph, or a graph of events and metrics with no dashboard in it)
-	// renders as before, with no tab bar for a single tab.
 	return (
-		<SolutionLivePage id={solution.id} assetVersion={solution.assetVersion}>
-			<div className="flex flex-col gap-4 p-6">
-				<h1 data-slot="page-title" className="type-page-title">
-					{solution.nav.title}
-				</h1>
-				{solution.dashboard?.dashboards?.length ? (
-					<Tabs defaultValue="app" className="w-full">
-						<TabsList>
-							<TabsTrigger value="app">App</TabsTrigger>
-							<TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-						</TabsList>
-						<TabsContent value="app" keepMounted>
-							{app}
-						</TabsContent>
-						<TabsContent value="dashboard">
-							<SolutionDashboards
-								graph={solution.dashboard}
-								solutionId={solution.id}
-							/>
-						</TabsContent>
-					</Tabs>
-				) : (
-					app
-				)}
-			</div>
+		<SolutionLivePage
+			id={solution.id}
+			assetVersion={solution.assetVersion}
+			denied={<SolutionNotFound />}
+		>
+			<SolutionWorkspace
+				title={solution.nav.title}
+				settings={
+					<WhenRolesDeclared target={solution.id} kind={solution.kind}>
+						<SolutionSettings title={solution.nav.title}>
+							<SolutionSetupPanel target={solution.id} />
+						</SolutionSettings>
+					</WhenRolesDeclared>
+				}
+				dashboard={
+					solution.dashboard?.dashboards?.length ? (
+						<SolutionDashboards
+							graph={solution.dashboard}
+							solutionId={solution.id}
+						/>
+					) : undefined
+				}
+			>
+				{app}
+			</SolutionWorkspace>
 		</SolutionLivePage>
 	);
 }

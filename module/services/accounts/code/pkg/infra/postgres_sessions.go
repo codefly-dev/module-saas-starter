@@ -136,12 +136,31 @@ func (s *PostgresStore) RevokeSessionFamily(ctx context.Context, familyID string
 	return err
 }
 
-func (s *PostgresStore) RevokeAllUserSessions(ctx context.Context, userID string, reason string) error {
+// RevokeAllUserSessions revokes every live session of one user and returns the
+// ids it revoked. The ids are what lets a caller kill the access half as well:
+// revoking the rows ends refreshing, but an already-minted access token stays
+// valid until its natural TTL unless a per-session revocation marker is
+// written, exactly as RevokeSession's caller does. Returning nothing was the
+// shape that made a whole-user sign-out quietly weaker than a single-family
+// one.
+func (s *PostgresStore) RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]string, error) {
 	q := s.getQueryExecutor(ctx)
-	_, err := q.Exec(ctx,
-		`UPDATE sessions SET revoked_at = NOW(), revoked_reason = $2 WHERE user_id = $1 AND revoked_at IS NULL`,
+	rows, err := q.Query(ctx,
+		`UPDATE sessions SET revoked_at = NOW(), revoked_reason = $2 WHERE user_id = $1 AND revoked_at IS NULL RETURNING id`,
 		userID, reason)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (s *PostgresStore) UpdateSessionActivity(ctx context.Context, sessionID string) error {

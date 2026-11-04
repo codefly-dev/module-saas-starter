@@ -111,39 +111,60 @@ func headerNameOf(arg ast.Expr, constants map[string]string) (string, bool) {
 func packageStringConstants(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, func(info os.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, 0)
-	require.NoError(t, err)
-
 	constants := map[string]string{}
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				generic, ok := decl.(*ast.GenDecl)
-				if !ok || generic.Tok != token.CONST {
+	for _, file := range parseNonTestGoFiles(t, fset, dir) {
+		for _, decl := range file.Decls {
+			generic, ok := decl.(*ast.GenDecl)
+			if !ok || generic.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range generic.Specs {
+				value, ok := spec.(*ast.ValueSpec)
+				if !ok {
 					continue
 				}
-				for _, spec := range generic.Specs {
-					value, ok := spec.(*ast.ValueSpec)
-					if !ok {
+				for index, name := range value.Names {
+					if index >= len(value.Values) {
 						continue
 					}
-					for index, name := range value.Names {
-						if index >= len(value.Values) {
-							continue
-						}
-						lit, ok := value.Values[index].(*ast.BasicLit)
-						if !ok || lit.Kind != token.STRING {
-							continue
-						}
-						if text, err := strconv.Unquote(lit.Value); err == nil {
-							constants[name.Name] = text
-						}
+					lit, ok := value.Values[index].(*ast.BasicLit)
+					if !ok || lit.Kind != token.STRING {
+						continue
+					}
+					if text, err := strconv.Unquote(lit.Value); err == nil {
+						constants[name.Name] = text
 					}
 				}
 			}
 		}
 	}
 	return constants
+}
+
+// parseNonTestGoFiles parses every non-test .go file in dir, keyed by its path.
+//
+// go/parser.ParseDir is deprecated for not honouring build tags when it groups
+// files into packages. This scan asks a purely syntactic question — what does
+// this directory DECLARE — and never asks which build a file belongs to, so
+// reading the directory and parsing each file is the same work without the
+// deprecated call. go/packages, the suggested replacement, would type-check a
+// whole package to answer it. (pkg/infra's reseal inventory carries the same
+// helper; it is three lines of its own package's test scaffolding, not a seam
+// worth a shared test package.)
+func parseNonTestGoFiles(t *testing.T, fileSet *token.FileSet, dir string) map[string]*ast.File {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	files := map[string]*ast.File{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		file, parseErr := parser.ParseFile(fileSet, path, nil, 0)
+		require.NoError(t, parseErr)
+		files[path] = file
+	}
+	return files
 }

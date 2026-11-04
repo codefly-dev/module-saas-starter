@@ -433,6 +433,14 @@ const (
 	// release key. Its actor is the system: the signer, its ownership domain
 	// and the payload digest name who stated the ceiling.
 	EventModuleEnvelopeDelivered EventType = "saas.platform.module_envelope_delivered"
+	// EventAuditArchiveExported records that one complete UTC day of the whole
+	// platform's audit log was written to the configured archive. It is the
+	// archive's receipt, and it is in the audit log on purpose: "was yesterday
+	// archived, and is the object in the bucket the object we wrote" is then
+	// answerable from the trail rather than only from the bucket, which is the
+	// thing the archive exists to stop being the single copy. Its actor is the
+	// system — a scheduled export is nobody's request.
+	EventAuditArchiveExported EventType = "saas.audit.archive_exported"
 	// EventHopAdmissionKeyPublished records that Keys began publishing a hop
 	// admission key, the key every module behind the hop trusts to have
 	// admitted a call. Its actor is the system: the hop proved itself by its
@@ -696,7 +704,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
 	mutation(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
 	mutation(EventInstallationCreated, CategoryAccess, "A solution was installed: an agent principal, solution scope node, standing grant, and installation row were composed.",
-		uid("agent_principal_id"), uid("target_id"), uid("role_id"), uid("owner_principal_id"), str("allowed_audiences"), str("allowed_scopes")),
+		uid("agent_principal_id"), uid("target_id"), uid("role_id"), uid("owner_principal_id"), strs("allowed_audiences"), strs("allowed_scopes")),
 	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled, or the presence it was installed from was withdrawn: its agent principal and standing grant were revoked and its scope node soft-deleted.",
 		uid("target_id"), str("binding_id"), str("generation"), str("revoked_reason")),
 	mutation(EventInstallationNarrowed, CategoryAccess, "An installation scope was narrowed and its affected work canceled.", str("scope"), str("revision"), str("binding_id")),
@@ -743,7 +751,20 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventHopAdmissionKeyPublished, CategorySecurity, "Keys began publishing a hop admission key, registered by the hop's attested workload.",
 		PayloadField{Name: "key_id", Kind: FieldString, Required: true},
 		PayloadField{Name: "workload", Kind: FieldString, Required: true},
+		// The hop instance (its pod) the key is pinned to; a credential naming
+		// no pod is refused before anything is published.
+		PayloadField{Name: "instance", Kind: FieldString, Required: true},
 		PayloadField{Name: "expires_at", Kind: FieldString, Required: true}),
+	mutation(EventAuditArchiveExported, CategorySecurity, "A day of the audit log was written to the configured archive.",
+		PayloadField{Name: "day", Kind: FieldString, Required: true},
+		PayloadField{Name: "object_key", Kind: FieldString, Required: true},
+		PayloadField{Name: "digest", Kind: FieldString, Required: true},
+		PayloadField{Name: "bytes", Kind: FieldInt, Required: true},
+		PayloadField{Name: "events", Kind: FieldInt, Required: true},
+		// The store's own version identifier for the object it wrote. Optional:
+		// a backend that reports none is not a failed archive, and demanding it
+		// would make the receipt depend on which store the composition chose.
+		PayloadField{Name: "etag", Kind: FieldString}),
 	mutation(EventModuleEnvelopeDelivered, CategorySecurity, "A release-signed revision of the module envelope was delivered.",
 		PayloadField{Name: "revision", Kind: FieldInt, Required: true},
 		PayloadField{Name: "previous_revision", Kind: FieldInt, Required: true},

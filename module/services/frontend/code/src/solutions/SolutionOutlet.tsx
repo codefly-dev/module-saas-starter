@@ -449,24 +449,28 @@ function useInBrowser(): boolean {
 
 const LOADING = <div className="p-6 text-sm opacity-70">Loading solution…</div>;
 
+/** What the host resolved about where, and for whom, the mounted page acts. */
+type SolutionPlacement = Pick<SolutionPageProps, "installationId" | "organizationId" | "viewerKey" | "reach">;
+
 /**
- * The viewer organization's installation of this solution, read from the host's
- * own projection route, which resolves it from the gateway-verified viewer's
- * entitlements for the routed target. Undefined until it answers, and on any
- * refusal: the remote then has no installation to act in, which is the honest
- * state, rather than one this outlet guessed.
+ * The viewer organization's installation of this page, the organization, the
+ * viewer's key and the modules it reaches, read from the host's own projection
+ * route, which resolves them from the gateway-verified viewer's entitlements
+ * and the record's declared consumption. Empty until it answers, and on any
+ * refusal: the remote then has nothing to act in, which is the honest state,
+ * rather than one this outlet guessed.
  */
-function useSolutionInstallation(solutionId: string | null): string | undefined {
-	const [resolved, setResolved] = useState<{ solutionId: string; installationId: string } | null>(null);
+function useSolutionPlacement(solutionId: string | null): SolutionPlacement {
+	const [resolved, setResolved] = useState<{ solutionId: string; placement: SolutionPlacement } | null>(null);
 	useEffect(() => {
 		if (!solutionId) return;
 		let live = true;
 		authedFetch(`/api/solutions/${encodeURIComponent(solutionId)}/installation`, { cache: "no-store" })
 			.then(async (response) => {
 				if (!response.ok) return;
-				const body = (await response.json()) as { installationId?: unknown };
-				if (live && typeof body.installationId === "string" && body.installationId !== "") {
-					setResolved({ solutionId, installationId: body.installationId });
+				const body = (await response.json()) as Record<string, unknown>;
+				if (live && nonEmpty(body.installationId)) {
+					setResolved({ solutionId, placement: placementOf(body) });
 				}
 			})
 			.catch(() => {});
@@ -474,7 +478,28 @@ function useSolutionInstallation(solutionId: string | null): string | undefined 
 			live = false;
 		};
 	}, [solutionId]);
-	return resolved && resolved.solutionId === solutionId ? resolved.installationId : undefined;
+	return resolved && resolved.solutionId === solutionId ? resolved.placement : {};
+}
+
+function nonEmpty(value: unknown): value is string {
+	return typeof value === "string" && value !== "";
+}
+
+/** Only the fields the route answered well-formed; anything else stays absent. */
+function placementOf(body: Record<string, unknown>): SolutionPlacement {
+	const reach: Record<string, { installationId: string }> = {};
+	if (typeof body.reach === "object" && body.reach !== null) {
+		for (const [alias, entry] of Object.entries(body.reach)) {
+			const installationId = (entry as { installationId?: unknown } | null)?.installationId;
+			if (nonEmpty(installationId)) reach[alias] = { installationId };
+		}
+	}
+	return {
+		...(nonEmpty(body.installationId) ? { installationId: body.installationId } : {}),
+		...(nonEmpty(body.organizationId) ? { organizationId: body.organizationId } : {}),
+		...(nonEmpty(body.viewerKey) ? { viewerKey: body.viewerKey } : {}),
+		...(typeof body.reach === "object" && body.reach !== null ? { reach } : {}),
+	};
 }
 
 export function SolutionOutlet({
@@ -497,7 +522,7 @@ export function SolutionOutlet({
 }) {
 	const inBrowser = useInBrowser();
 	const Remote = inBrowser ? remoteComponent(remote) : null;
-	const installationId = useSolutionInstallation(inBrowser ? pageProps.solutionId : null);
+	const placement = useSolutionPlacement(inBrowser ? pageProps.solutionId : null);
 
 	return (
 		<SolutionErrorBoundary key={`${remote.id}:${remote.manifestUrl}:${remote.exposedModule}`}>
@@ -510,7 +535,10 @@ export function SolutionOutlet({
 						subscribeToken={subscribeToken}
 						refreshAccessToken={refreshToken}
 						authedFetch={authedFetch}
-						installationId={installationId}
+						installationId={placement.installationId}
+						organizationId={placement.organizationId}
+						viewerKey={placement.viewerKey}
+						reach={placement.reach}
 						dashboardAuthoring={authoring}
 					/>
 				) : (

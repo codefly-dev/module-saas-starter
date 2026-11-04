@@ -113,11 +113,16 @@ boundary is deliberate:
 **What uninstalling does, stated plainly:** it revokes that organization's agent
 authority — the principal and its standing grant — withdraws that organization's
 viewers from the projections, and refuses that organization's traffic at the
-solution proxy. It does **not** remove the solution's page for that organization,
-because `/s/{id}` server-renders from the registry and this origin cannot read a
-verified viewer server-side without rotating a refresh token per render; the page
-discloses a nav title and a manifest URL the public asset surface already serves,
-and every call it makes goes through the gated proxy. Other
+solution proxy. The server render of `/s/{id}` still reads the registry alone,
+because this origin cannot read a verified viewer server-side without rotating a
+refresh token per render; its payload carries the record's nav title, manifest
+URL, declared sources and dashboard declaration — the bundle the public asset
+surface already serves without a credential. What the page mounts — the remote, its
+Setup and Dashboard tabs — waits for the viewer's own navigation projection and
+appears only when that projection names the page; a viewer it does not name sees
+the page's not-found state, in a 200 that still carries the public declaration
+above, where an id nothing is registered under is a 404.
+Every call the page makes still goes through the gated proxy. Other
 tenants are unaffected either way, because installation state is per-org.
 
 ### What the projections answer (issue #949)
@@ -140,10 +145,20 @@ organization taken from there is one the caller chose.
 
 `GET /api/solutions/<id>/installation` is the third projection, and the one
 a solution PAGE consumes. It answers the verified viewer organization's active
-installation of the routed solution (`{installationId, healthy}`), through the same
+installation of the routed solution, the verified organization and viewer, and
+the viewer's installation of each module the record declares it consumes
+(`{installationId, healthy, organizationId, viewerKey, reach}`), through the same
 `entitledSolutions` join as the menu, and `404` for a solution that is not
-registered or not entitled to the viewer alike. The solution outlet reads it with
-the viewer's session and hands the id to the page as `SolutionBinding.installationId`.
+registered or not entitled to the viewer alike. The declared consumption is the
+gateway registry snapshot's `reaches`: the aliases of the modules the applied
+manifest's invoke bindings name as audiences, other than its own principal. It is
+the declared half of accounts' reached-module rule: a binding the derived module
+registry withheld (an envelope narrowing) is still listed, because that registry
+is accounts' alone, and the module refuses those calls with its reason. A
+principal two aliases carry resolves to no reach and is logged. `viewerKey` is
+the effective viewer: the impersonated person's while an impersonation is active. The solution outlet reads the
+route with the viewer's session and hands the answer to the page as
+`SolutionBinding.installationId`, `organizationId`, `viewerKey` and `reach`.
 A page never names an installation itself: one it chose could be another
 organization's. The gateway's `/solutions/_entitlements` entries carry
 `installationId` for this; the authority already returned it and the gateway used
@@ -151,7 +166,10 @@ to drop it.
 
 The authority answer is `SolutionEntitlementService.ListSolutionEntitlements`,
 which reads the installation set and the scope grant + share union in **one**
-transaction, so the two can never describe different moments. The join key is the
+transaction, so the two can never describe different moments, and adds the
+installations whose roles decide: a solution's, and a module page's that declares
+roles, wherever the shared authority core says the viewer holds one of them (a
+module without a page declares none, so it is never listed that way). The join key is the
 immutable solution target: `installations.target_id` is the target a
 registration record was **declared** under, which the registry projection carries
 as `targetId`.

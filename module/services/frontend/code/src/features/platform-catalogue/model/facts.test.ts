@@ -13,13 +13,13 @@ import {
 } from "@/gen/saas/accounts/v1/solution_registry_pb";
 import {
 	authorizationView,
-	buildSizeView,
 	CATALOGUE_STATES,
 	catalogueGaps,
 	catalogueStates,
 	gapLabel,
 	observedVerdictView,
 	registrationView,
+	unbuiltFacts,
 } from "./facts";
 
 const notRecorded = (detail: string) => ({
@@ -78,14 +78,15 @@ function observedWith(verdict: CatalogueObservedVerdict, observedAt?: Date) {
 }
 
 describe("the state model", () => {
-	it("is the registry's six states, in order", () => {
+	// Withdrawing and Retired are not here: their proto messages carry no value
+	// case, so a column for either could only ever read "Not recorded". They are
+	// stated once by unbuiltFacts instead.
+	it("is the states the contract can fill, in order", () => {
 		expect([...CATALOGUE_STATES]).toEqual([
 			"Desired",
 			"Authorized",
 			"Applied",
 			"Observed",
-			"Withdrawing",
-			"Retired",
 		]);
 	});
 
@@ -118,15 +119,26 @@ describe("the state model", () => {
 			},
 		});
 		const states = catalogueStates(e);
-		for (const state of [
-			"Authorized",
-			"Applied",
-			"Withdrawing",
-			"Retired",
-		] as const) {
+		for (const state of ["Authorized", "Applied"] as const) {
 			for (const item of states[state])
 				expect(item.view.kind, `${state} ${item.label}`).toBe("gap");
 		}
+		// The withdrawal and retirement records are reported under the table, not
+		// as columns, and carry the server's own reason.
+		expect(unbuiltFacts([e])).toEqual(
+			expect.arrayContaining([
+				{
+					fact: "Withdrawal",
+					label: "Not recorded",
+					detail: "No withdrawal record.",
+				},
+				{
+					fact: "Retirement",
+					label: "Not observed",
+					detail: "No cluster state.",
+				},
+			]),
+		);
 		expect(observedVerdictView(e)).toEqual({
 			kind: "gap",
 			label: "Not observed",
@@ -384,14 +396,16 @@ describe("catalogueGaps", () => {
 				verdictValue: { case: "verdictGap" as const, value: notObserved },
 			},
 		};
-		const gaps = catalogueGaps([
-			entry(shared),
-			entry({ ...shared, name: "other" }),
-		]);
-		expect(gaps.filter((g) => g.fact === "Build size")).toEqual([
+		const entries = [entry(shared), entry({ ...shared, name: "other" })];
+		const gaps = catalogueGaps(entries);
+		// Build size is not a gap in the Catalogue's own knowledge — the contract
+		// has no field for it to arrive in — so it is reported apart, once.
+		expect(gaps.filter((g) => g.fact === "Build size")).toEqual([]);
+		expect(
+			unbuiltFacts(entries).filter((g) => g.fact === "Build size"),
+		).toEqual([
 			{ fact: "Build size", label: "Not recorded", detail: "core#708" },
 		]);
 		expect(gaps.filter((g) => g.fact === "Observed · Running")).toHaveLength(1);
-		expect(buildSizeView(entry(shared)).kind).toBe("gap");
 	});
 });

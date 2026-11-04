@@ -81,7 +81,7 @@ func txFromCtx(ctx context.Context) pgx.Tx {
 // the access-token lifetime; RotateRefresh re-resolves current authorization
 // before minting the next access token.
 //
-// Wrapped in WithUserTx so the row's user_id matches app.current_user_id
+// Wrapped in WithUserTx so the row's user_id matches codefly.current_user_id
 // — the WITH CHECK on sessions's RLS policy passes.
 func (s *SessionStore) Insert(ctx context.Context, rec *auth.SessionRecord) error {
 	if s.configErr != nil {

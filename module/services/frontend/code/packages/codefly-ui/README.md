@@ -544,6 +544,9 @@ import { DelayedLoading, Spinner, useDelayedLoading } from "@codefly-dev/ui/layo
 const busy = useDelayedLoading(query.isPending);
 ```
 
+The hook cancels pending timers during the commit that completes a read, so
+a delay cannot replace already rendered content with a late spinner.
+
 `active` is simply whether the thing you are waiting for is outstanding; the
 hook owns everything else. A wait that restarts while the indicator is up does
 **not** restart the delay, so a series of quick refetches cannot tear the

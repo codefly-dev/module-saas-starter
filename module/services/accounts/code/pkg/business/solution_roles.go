@@ -26,7 +26,8 @@ import (
 // bounded by what the solution may grant: its delivered scope ceilings on its
 // own kinds and its bindings' invoke and lookup scopes on the kinds it
 // consumes. Organisation roles do not enter it: they administer the
-// organisation.
+// organisation. A module that declares a page may declare roles too, and then
+// everything here holds of it as of a solution.
 
 // InstallerRole is the role every solution declares; an installation's owner holds it.
 const InstallerRole = "installer"
@@ -72,8 +73,11 @@ func (s *Service) deliveredTargetAuthority(ctx context.Context, target *Availabl
 	return nil, fmt.Sprintf("%s's applied delivery declares no solution roles", target.RouteAlias), nil
 }
 
+// solutionAuthorityOf is the role declaration of a solution, or of a module
+// that declares a page (the core's rule: a module page may declare roles, and
+// then they decide what a person holds there, as a solution's do).
 func (s *Service) solutionAuthorityOf(doc *compositionv1.AuthorityManifestV1, manifest *solutionhost.ModuleManifest) *SolutionAuthority {
-	if doc == nil || manifest.Kind != solutionhost.KindSolution || len(doc.GetRoles()) == 0 {
+	if doc == nil || len(doc.GetRoles()) == 0 || (manifest.Kind != solutionhost.KindSolution && manifest.Frontend == nil) {
 		return nil
 	}
 	principal := manifest.Authority.Principal
@@ -224,15 +228,20 @@ func solutionRoleProvenance(orgID, targetID, role string) string {
 	return fmt.Sprintf("org=%s;solution=%s;role=%s", orgID, targetID, role)
 }
 
-// SolutionRoleOrganization is the organisation a solution role's provenance
-// names, and whether the provenance is a solution role's at all.
-func SolutionRoleOrganization(provenance string) (string, bool) {
+// SolutionRoleOrigin is the organisation and the solution target a solution
+// role's provenance names, and whether the provenance is a solution role's at
+// all.
+func SolutionRoleOrigin(provenance string) (org, target string, ok bool) {
 	rest, ok := strings.CutPrefix(provenance, "org=")
-	if !ok || !strings.Contains(rest, ";solution=") || !strings.Contains(rest, ";role=") {
-		return "", false
+	if !ok {
+		return "", "", false
 	}
-	org, _, _ := strings.Cut(rest, ";")
-	return org, true
+	org, rest, _ = strings.Cut(rest, ";solution=")
+	target, _, ok = strings.Cut(rest, ";role=")
+	if !ok || org == "" || target == "" {
+		return "", "", false
+	}
+	return org, target, true
 }
 
 // SolutionRoleOf is the solution's role name a standing role carries, or the

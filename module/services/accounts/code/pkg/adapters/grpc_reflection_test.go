@@ -26,7 +26,8 @@ func reflectionRegistered(server *grpc.Server) bool {
 }
 
 // TestReflectionRegisteredOnlyLocally pins the environment gate on gRPC server
-// reflection. grpc_gen.go is generated, so a regeneration that emits an
+// reflection. grpc_gen.go is to be adopted from the agent (service-go-grpc#223),
+// so a regeneration that emits an
 // unconditional reflection.Register would re-expose the full service surface to
 // any mesh-internal caller in production; this test fails if that gate is lost.
 func TestReflectionRegisteredOnlyLocally(t *testing.T) {

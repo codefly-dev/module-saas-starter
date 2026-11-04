@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -64,6 +66,38 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 	}
 	params.RegistryBindingID, params.RegistryPrincipalID = target.BindingID, principal
 	params.RouteAlias, params.Kind = target.RouteAlias, target.Kind
+	params.NoStandingAuthority = false
+	declaration, err := s.moduleInstallationDeclaration(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	if declaration.Principal != "" && declaration.Principal != grant.Prefix {
+		return nil, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: the module principal differs from its paired declaration")
+	}
+	if declaration.InstallationRole == domain.NoInstallationRole {
+		if params.RoleID != "" {
+			return nil, domain.Refuse("the delivered module declares no standing machine authority")
+		}
+		params.NoStandingAuthority = true
+	} else if err := undeclaredInstallationRole(declaration); err != nil {
+		return nil, err
+	} else if declaration.InstallationRole != "" {
+		// A module page's signed installation_role selects its standing role,
+		// as the core selects a solution's: a role_id may only name it.
+		role, err := s.declaredInstallationRoleID(ctx, params.OrgID, target, declaration)
+		if err != nil {
+			return nil, err
+		}
+		if params.RoleID != "" && params.RoleID != role {
+			return nil, domain.Refuse("role %q cannot override %s's installation_role declaration", params.RoleID, declaration.Name)
+		}
+		params.RoleID = role
+	}
+	// Only the delivered declaration may leave the caller's role out: a named
+	// installation_role is selected above, and "none" grants no standing role.
+	if !params.NoStandingAuthority && params.RoleID == "" {
+		return nil, NewStoreError(fmt.Errorf("role_id is required: %s declares no installation role for this host to select", target.RouteAlias), ErrTypeValidation)
+	}
 	if params.Kind == "module" && target.Installed && params.OwnerPrincipalID == "" {
 		existing, err := s.heldTargetInstallation(ctx, params.OrgID, params.TargetID)
 		if err != nil {

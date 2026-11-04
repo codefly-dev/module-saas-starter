@@ -31,11 +31,15 @@ runtime-loaded JavaScript or make UI visibility an authorization boundary.
 | `docs/frontend-plugin-request-correlation.md` | Host-owned diagnostic request-ID lifecycle and separation from untrusted trace context. |
 | `services/accounts/code/pkg/cataloggen/frontend_plugins.go` | Filesystem-page inventory, joins, semantic validation, and deterministic renderers. |
 
-The current catalog contains three built-in plugins, 36 pages, and 25
+The current catalog contains three built-in plugins, 61 pages, and 36
 navigation items. Page access is inferred only from recognized filesystem
 boundaries: `(auth)` is public, `(dashboard)` is authenticated, `/admin` is
-admin-only, and `/admin/platform` is super-admin-only. The admin plugin catch-all is represented as
+admin-only, and `/admin/platform/…` is super-admin-only. The admin plugin catch-all is represented as
 `/admin/{*slug}`. Unknown route groups and optional catch-alls fail generation.
+
+There is no `/admin/platform` overview page. It re-listed by hand what this
+catalog already holds, which `/admin` renders from the `plugin_registry`
+surface; the platform surfaces are items of that one list like every other.
 
 ## Navigation consumers
 
@@ -43,10 +47,10 @@ Each navigation item has one stable ID, plugin owner, exact filesystem route,
 icon, optional group and accounts permission, minimum shell audience, global
 order, and one or more finite surfaces:
 
-- 20 sidebar entries;
-- 16 command-palette entries;
-- 21 plugin-registry entries;
-- three user-menu entries.
+- 22 sidebar entries;
+- 29 command-palette entries;
+- 33 plugin-registry entries;
+- five user-menu entries.
 
 The application composition root explicitly imports the installed packages and
 projects generated inputs into the active sidebar, command palette, user menu,

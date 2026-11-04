@@ -1,4 +1,4 @@
-import { getEndpoints } from "codefly";
+import { networkInstance, NetworkInstanceAmbiguousError } from "codefly";
 
 /**
  * The API gateway as the composition declares it — the one address a server
@@ -17,28 +17,20 @@ import { getEndpoints } from "codefly";
  * never a fallback.
  */
 export function gatewayBase(): string | null {
-	const address = gatewayAddress();
-	if (!address) return null;
 	try {
-		return new URL(address).toString().replace(/\/$/, "");
-	} catch {
+		const endpoint = networkInstance({ service: "auth-gateway", api: "rest", protocol: "REST" });
+		const address = new URL(endpoint.address);
+		if (!['http:', 'https:'].includes(address.protocol) || address.username || address.password || address.search || address.hash) return null;
+		return address.toString().replace(/\/$/, "");
+	} catch (error) {
+		if (error instanceof NetworkInstanceAmbiguousError) {
+			console.error("gateway resolution: ambiguous auth-gateway/rest/REST endpoint in the current module");
+		}
 		return null;
 	}
 }
 
 export function gatewayOrigin(): string | null {
-	const address = gatewayAddress();
-	if (!address) return null;
-	try {
-		return new URL(address).origin;
-	} catch {
-		return null;
-	}
-}
-
-function gatewayAddress(): string | undefined {
-	return getEndpoints().find(
-		(candidate) =>
-			candidate.service === "auth-gateway" && candidate.name === "rest",
-	)?.address;
+	const base = gatewayBase();
+	return base ? new URL(base).origin : null;
 }

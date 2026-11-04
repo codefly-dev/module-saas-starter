@@ -107,6 +107,18 @@ func envValue(raw string) string {
 	return strings.TrimSpace(v)
 }
 
+// envFileValue returns the value an env file assigns key, and whether it
+// declares the key at all.
+func envFileValue(data []byte, key string) (string, bool) {
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if k, raw, ok := strings.Cut(trimmed, "="); ok && !strings.HasPrefix(trimmed, "#") && strings.TrimSpace(k) == key {
+			return envValue(raw), true
+		}
+	}
+	return "", false
+}
+
 // moduleDefaultFiles returns the default file names (e.g. "legal.env",
 // "internal-auth.secret.env") that group actually ships under
 // moduleConfigLocalDir. A group may ship a non-secret file, a secret file, or
@@ -247,16 +259,56 @@ func assertSecretDefaultIsPlaceholder(t *testing.T, name string) {
 
 func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 	for _, group := range declaredWorkspaceConfigGroups(t) {
-		// The CLI supplies these groups: artifact-cache per native run, egress
-		// from the environment's egress declaration. An authored path (even an
-		// empty placeholder) conflicts with its CLI-owned declaration.
-		if group == "artifact-cache" || group == "egress" {
+		// The CLI supplies these groups and refuses an authored one anywhere:
+		// artifact-cache per native run, egress from the environment's egress
+		// declaration, hop-routes from the published API catalogs of the
+		// modules hop/MODULES names.
+		//
+		// For hop-routes this is load-bearing, not tidiness, so do not relax it
+		// as pedantry. The CLI is the single supplier: it writes the routes of
+		// the modules hop/MODULES names, and for a composition that names none
+		// it delivers the group with an empty ROUTES, which is the whole of
+		// "no routes". An authored file here would be a second way to say the
+		// same thing, and the two could disagree — a tree that says "no routes"
+		// while the composition names modules, or routes a composition never
+		// generated. Refusing one keeps exactly one representation, which is
+		// what makes the gateway's single reader safe: it reads hop-routes only
+		// after hop/MODULES named something (code/gateway_hop.go standHop), and
+		// nothing else in this repository reads the group at all.
+		if group == "artifact-cache" || group == "egress" || group == "hop-routes" {
 			for _, directory := range []string{moduleConfigLocalDir, workspaceConfigLocalDir} {
 				for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
 					path := filepath.Join(directory, group+suffix)
 					if _, err := os.Lstat(path); !os.IsNotExist(err) {
 						t.Errorf("CLI-owned group %s must have no authored default at %s", group, path)
 					}
+				}
+			}
+			continue
+		}
+		// hop names the modules the gateway stands in front of, which only a
+		// composition knows. The repo root is this repository's OWN
+		// composition, which composes no module behind a hop, so it states that
+		// there rather than leaving the gateway's declared dependency
+		// unresolved. Codefly offers that root to every composing workspace
+		// too, and overlays the consumer's own hop group on it per key,
+		// refusing a key the root does not declare (#1279). So the root
+		// declares every key a composition's hop group sets, each empty.
+		if group == "hop" {
+			data, err := os.ReadFile(filepath.Join(workspaceConfigLocalDir, group+".env"))
+			if err != nil {
+				t.Errorf("this workspace's own composition must state %s at %s/%s.env: it composes no module behind a hop, and the gateway declares the group: %v",
+					group, workspaceConfigLocalDir, group, err)
+			}
+			for _, key := range []string{"MODULES", "ENDPOINT", "ENFORCEMENT"} {
+				if value, ok := envFileValue(data, key); !ok || value != "" {
+					t.Errorf("%s/%s.env must declare %s empty, so a composing workspace's hop group may set it", workspaceConfigLocalDir, group, key)
+				}
+			}
+			for _, suffix := range []string{".env", ".secret.env", ".yaml"} {
+				path := filepath.Join(moduleConfigLocalDir, group+suffix)
+				if _, err := os.Lstat(path); !os.IsNotExist(err) {
+					t.Errorf("composition-owned group %s must have no base-synced default at %s", group, path)
 				}
 			}
 			continue

@@ -52,8 +52,8 @@ func TestScopedPoolsIdentityRotationAndClosure(t *testing.T) {
  ALTER TABLE organization_members ENABLE ROW LEVEL SECURITY;
  ALTER TABLE organization_members FORCE ROW LEVEL SECURITY;
  CREATE POLICY request_scope ON organization_members TO scoped_reader,app_tenant
- USING (org_id::text=current_setting('app.current_org_id',true)
-    AND user_id::text=current_setting('app.current_user_id',true));
+ USING (org_id::text=current_setting('codefly.current_tenant_id',true)
+    AND user_id::text=current_setting('codefly.current_user_id',true));
  CREATE POLICY control_scope ON organization_members TO app_control_plane USING (true);
  GRANT SELECT ON organization_members TO scoped_reader,app_tenant,app_control_plane;
  INSERT INTO organization_members(org_id,user_id,role) VALUES

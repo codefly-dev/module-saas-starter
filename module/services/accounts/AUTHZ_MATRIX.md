@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **296 RPCs** across **41 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **302 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -27,9 +27,12 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/host.installation.v1.InstallationService/GrantRole` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_granted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a person or a team one of an installed solution's roles. |
 | `/host.installation.v1.InstallationService/Install` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.installation_requested, saas.authority.installation_activated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Install one solution at one organisation under the consent its administrator reviewed; pending until its install step converges. |
 | `/host.installation.v1.InstallationService/List` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List what one organisation has installed. |
+| `/host.installation.v1.InstallationService/ListHeld` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the installations of the caller's organisation they hold a role on, with those roles: their own navigation. |
 | `/host.installation.v1.InstallationService/ListRoleGrants` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List who holds which role on one installation. |
 | `/host.installation.v1.InstallationService/Review` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read the exact authority offer an administrator consents to, without recording consent. |
 | `/host.installation.v1.InstallationService/RevokeRole` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | SUCCESS: saas.authority.role_revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke one role grant; its subject's capabilities through the installation end. |
+| `/host.installation.v1.OfferService/ListOffers` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the solutions delivered to this host that one organisation's administrator may install. |
+| `/host.installation.v1.OfferService/ReviewOffer` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read one delivered solution's offer as the core holds it: each role's scopes, the operations and tools they reach, and the permission ceiling; the consent tuple for an administrator alone. |
 | `/host.session.v1.SessionService/Current` | unary | `GET /v1/session` | `auth` | exposure=AUTHENTICATED; tenant=NONE; impersonation=FORBIDDEN | — | — | — | OPTIONAL / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Answer the session the caller's bearer belongs to, without the bearer. |
 | `/host.session.v1.SessionService/ListFixturePeople` | unary | `GET /v1/session/fixture-people` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | OPTIONAL / AUTHENTICATION | PUBLIC → SECRET | List the people fixture sign-in admits, in the fixture's order; none where it is not enabled. |
 | `/host.session.v1.SessionService/SignIn` | unary | `POST /v1/session:sign-in` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.auth.login | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Open a session for a fixture person by their fixture token. |
@@ -51,6 +54,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge` | unary | `POST /v1/auth/mfa/webauthn/complete` | `public` | exposure=PUBLIC; tenant=NONE; authentication_factor_attempt=true | — | — | SUCCESS: saas.auth.login, saas.auth.mfa_challenge_completed, saas.mfa.webauthn_used | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Verify WebAuthn and atomically consume the MFA login transaction. |
 | `/saas.accounts.v1.AuthService/ExchangeClientToken` | unary | `POST /v1/auth/token` | `public` | exposure=PUBLIC; tenant=NONE | — | — | SUCCESS: saas.auth.login | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Exchange a registered client's authorization code or rotating refresh token for tokens. |
 | `/saas.accounts.v1.AuthService/GetJWKS` | unary | `GET /v1/auth/.well-known/jwks.json` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / PUBLIC | PUBLIC → PUBLIC | Public JWKS for JWT signature verification. |
+| `/saas.accounts.v1.AuthService/GetProviderSignOut` | unary | `POST /v1/auth/provider-sign-out` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / AUTHENTICATION | SECRET → CONFIDENTIAL | The identity provider's RP-initiated logout URL, for a client to end the provider's own session. |
 | `/saas.accounts.v1.AuthService/IssueClientAuthorizationCode` | unary | `POST /v1/auth/clients/authorize` | `auth` | exposure=AUTHENTICATED; tenant=NONE | — | — | SUCCESS: saas.auth.client_authorized | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Issue the one-time code the host redirects back to a registered client with. |
 | `/saas.accounts.v1.AuthService/Logout` | unary | `POST /v1/auth/logout` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / AUTHENTICATION | SECRET → CONFIDENTIAL | Revoke the caller's session and its refresh-token family. |
 | `/saas.accounts.v1.AuthService/RefreshToken` | unary | `POST /v1/auth/refresh` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / AUTHENTICATION | SECRET → SECRET | Exchange a refresh token for a new access token, rotating the refresh token. |
@@ -117,12 +121,14 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.IdentityService/ResolveIdentity` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | SECRET → CONFIDENTIAL | Internal: provider id → user/org/roles. |
 | `/saas.accounts.v1.InstallationService/GetInstallation` | unary | `GET /v1/installations/{installation_id}` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Get one installation and its live health. |
 | `/saas.accounts.v1.InstallationService/GrantInstallationToTeam` | unary | `POST /v1/installations/{installation_id}/teams` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.scope.granted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Expose an installation to a team: grant a role permitting solution use at the installation's authority root. |
+| `/saas.accounts.v1.InstallationService/InstallReviewedSolution` | unary | `POST /v1/solution-installations` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Install the unchanged reviewed solution and supporting modules; activate only after setup acknowledgement and final prerequisite checks. |
 | `/saas.accounts.v1.InstallationService/InstallSolution` | unary | `POST /v1/installations` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Install a solution: compose its agent principal, scope node, standing grant, and installation row. |
 | `/saas.accounts.v1.InstallationService/ListAvailableSolutions` | unary | `GET /v1/installations:listAvailable` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the solution targets an administrator may install: accepted applied presence, never a refused desired generation. |
 | `/saas.accounts.v1.InstallationService/ListInstallations` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | List one organization's installations with their live health. |
 | `/saas.accounts.v1.InstallationService/ListOrganizationInstallations` | unary | `GET /v1/installations` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the caller's organization's active installations with health, installed target, authority root and the teams it is exposed to. |
 | `/saas.accounts.v1.InstallationService/NarrowInstallation` | unary | `POST /v1/installations/{installation_id}:narrow` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.narrowed | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Narrow an installation's scope, bump its revision and cancel the organization's affected work. |
 | `/saas.accounts.v1.InstallationService/RetryInstallation` | unary | `POST /v1/installations/{installation_id}:retry` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.retried | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Run a failed installation's install step again; the installation is pending until the solution acknowledges. |
+| `/saas.accounts.v1.InstallationService/ReviewSolutionInstall` | unary | `POST /v1/solution-installations/review` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Review a delivered solution release and the exact supporting module consent before installation. |
 | `/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam` | unary | `POST /v1/installations/{installation_id}/teams/{team_id}:revoke` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.scope.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Remove a team's grant at an installation's authority root. |
 | `/saas.accounts.v1.InstallationService/TransferInstallationOwnership` | unary | `POST /v1/installations/{installation_id}:transferOwnership` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.ownership_transferred | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Reassign an installation's accountable owner of record. |
 | `/saas.accounts.v1.InstallationService/UninstallSolution` | unary | `POST /v1/installations/{installation_id}:uninstall` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Uninstall a solution and reverse its composition. |
@@ -307,10 +313,31 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 50
+- `auth`: 52
 - `internal`: 55
 - `mfa`: 5
-- `org_admin`: 68
+- `org_admin`: 71
 - `org_member`: 57
 - `platform_admin`: 29
-- `public`: 32
+- `public`: 33
+
+## Three vocabularies
+
+Three sets of role words appear on this host. They answer different questions,
+and a word in one never means the same-spelled word in another.
+
+| Vocabulary | Words | What it decides | Declared in |
+|---|---|---|---|
+| Organisation role | `owner`, `admin`, `member` | Who administers the organisation. The `org_admin` tier admits `owner` and `admin` (and a platform `super_admin`); `org_member` admits any member. The `/admin` pages gate on `roles:write`, which admits the same people (`owner`, `admin`, a platform `super_admin`) as the API's org-admin check. | the organisation membership; the session's `or` claim |
+| Catalogue built-in role | `admin`, `editor`, `viewer` | Which `<resource>:<action>` permissions (the Permission / scope column above) a role assignment carries on this host's own resources. | `servicePermissionVocabulary` in `pkg/business/service_vocabulary.go` |
+| Installation role | `installer`, and whatever else a solution or a module page declares (the proposed standard adds `editor`, `viewer`) | What a person holds through one installation of a solution or of a module page that declares roles: its page, its navigation entry, its Setup tab, and what a Work Context at its audience carries. The shared authority core requires every solution, and every module page that declares roles, to declare `installer`; `editor` and `viewer` are the standard an open handbook proposal sets, checked by nothing yet. The installation's owner holds `installer`. | the signed authority document of the solution or module page; granted per installation to a person or a team |
+
+The `/s/<id>` page, the solution navigation and the Setup tab speak only
+installation roles. A module page (a module whose signed manifest declares a
+frontend) may declare installation roles too: then they gate its page, its
+navigation entry and its audience exactly as a solution's, and the
+organisation's roles no longer apply there. A module that declares no roles,
+which every module without a page is, keeps the organisation's roles at its
+audience, and its page is reached through the organisation's installation of
+it and a team grant at that installation. The shared authority core refuses
+roles on a module without a page.

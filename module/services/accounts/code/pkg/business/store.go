@@ -12,13 +12,13 @@ type Store interface {
 	// Transactions
 	RunInTransaction(ctx context.Context, fn func(ctx context.Context) error) error
 
-	// WithOrgTx wraps fn in a transaction that has app.current_org_id
+	// WithOrgTx wraps fn in a transaction that has codefly.current_tenant_id
 	// set, so RLS policies on per-tenant tables filter to that org.
 	// Empty orgID is rejected (loud, fail-closed). Wrap every
 	// per-tenant Service path in this — see AUTHZ.md.
 	WithOrgTx(ctx context.Context, orgID string, fn func(ctx context.Context) error) error
 
-	// WithUserTx wraps fn in a transaction that has app.current_user_id
+	// WithUserTx wraps fn in a transaction that has codefly.current_user_id
 	// set, so RLS policies on user-scoped tables (notifications,
 	// mfa_devices, sessions) filter to that user. Empty userID is
 	// rejected (loud, fail-closed). Same no-nesting rule as WithOrgTx.
@@ -253,7 +253,7 @@ type Store interface {
 	SetDatasourceSourceGitHubInstallation(ctx context.Context, orgID, id, installationID string) error
 
 	// GitHub App onboarding (issue #687). All org-scoped: every call runs inside
-	// WithOrgTx, and the tables' RLS policies key on app.current_org_id.
+	// WithOrgTx, and the tables' RLS policies key on codefly.current_tenant_id.
 	//
 	// The datasource directory (datasource_directory.go). Every method runs
 	// inside the organization's transaction.
@@ -671,7 +671,7 @@ type Store interface {
 	// session-revocation marker per id and kill the access half immediately.
 	RevokeSession(ctx context.Context, deviceSessionID string, reason string) ([]string, error)
 	RevokeSessionFamily(ctx context.Context, familyID string, reason string) error
-	RevokeAllUserSessions(ctx context.Context, userID string, reason string) error
+	RevokeAllUserSessions(ctx context.Context, userID string, reason string) ([]string, error)
 	UpdateSessionActivity(ctx context.Context, sessionID string) error
 
 	// Webhooks

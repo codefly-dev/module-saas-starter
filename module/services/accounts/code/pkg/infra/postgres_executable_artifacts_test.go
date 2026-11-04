@@ -106,7 +106,7 @@ func TestExecutableArtifactPostgresConsentRevocationAndTenantFloor(t *testing.T)
 	request.Identity.Subject = original
 	foreignOrg := seedOrg(t, owner)
 	require.NoError(t, testStore.WithOrgTx(testCtx, foreignOrg, func(ctx context.Context) error {
-		got, e := testStore.GetExecutableArtifactApproval(ctx, org, installation.Id, caller.PrincipalID, first.Digest)
+		got, e := testStore.GetExecutableArtifactApproval(ctx, org, installation.Id, caller.PrincipalID, request.Policy, first.Digest)
 		require.NoError(t, e)
 		require.Nil(t, got, "wrong-tenant parameter must not defeat RLS")
 		return nil
@@ -139,4 +139,36 @@ func TestExecutableArtifactPostgresConsentRevocationAndTenantFloor(t *testing.T)
 		return e
 	}))
 
+}
+
+// The host interface hashes content independently of policy. Real PostgreSQL
+// uniqueness and revocation must preserve both dimensions of consent.
+func TestHostArtifactPostgresPoliciesAreIndependent(t *testing.T) {
+	org, owner, _, installation, _ := installFixture(t, "definitions", "configure")
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	ctx := auth.WithVerifiedDatabaseIdentity(testCtx, owner, org)
+	principal := business.ModulePrincipalID("example")
+	digest := "sha256:" + strings.Repeat("c", 64)
+	subject := []byte("canonical artifact identity")
+	approve := func(policy string) *business.HostArtifactApproval {
+		a, err := svc.ApproveHostArtifact(ctx, org, owner, installation.Id, principal, policy, digest, subject, 7)
+		require.NoError(t, err)
+		return a
+	}
+	first := approve("example.workflow")
+	_, err = svc.AuthorizedHostArtifact(ctx, org, owner, installation.Id, principal, "example.preview", digest, subject, 7)
+	require.ErrorContains(t, err, "no standing approval")
+	_, err = svc.RevokeHostArtifact(ctx, org, owner, installation.Id, principal, "example.preview", first.ID, func([]byte) int64 { return 7 })
+	require.ErrorContains(t, err, "no standing approval")
+	second := approve("example.preview")
+	require.NotEqual(t, first.ID, second.ID)
+	require.Equal(t, first.ID, approve("example.workflow").ID)
+	_, err = svc.RevokeHostArtifact(ctx, org, owner, installation.Id, principal, "example.workflow", first.ID, func([]byte) int64 { return 7 })
+	require.NoError(t, err)
+	_, err = svc.AuthorizedHostArtifact(ctx, org, owner, installation.Id, principal, "example.workflow", digest, subject, 7)
+	require.ErrorContains(t, err, "no standing approval")
+	got, err := svc.AuthorizedHostArtifact(ctx, org, owner, installation.Id, principal, "example.preview", digest, subject, 7)
+	require.NoError(t, err)
+	require.Equal(t, second, got)
 }

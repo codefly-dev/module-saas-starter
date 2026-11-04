@@ -128,6 +128,15 @@ round numbers undercount):
 admission. #415 notes a shadow-mode patch exists against an older base and needs
 a rebase — treat it as a starting point, not merge-ready.
 
+> **Since this record was written (3 Nov 2026, #1296).** Workstream A shipped and
+> then flipped: the classifier
+> (`business.ClassifyCentralCoverage`, metric `saas.accounts.rpc_policy.coverage`)
+> and the central floor (`enforceCentralPolicy`) both exist, and enforcement is
+> now what an unset `RBAC_CENTRAL_ENFORCEMENT` selects — `shadow` is an explicit,
+> boot-warned opt-out. The paragraph above and the "Shape of the fix" below are
+> kept as the scoping record they were, not as current state; current state is
+> [`AUTHZ.md`](AUTHZ.md) "The central floor beneath the handler gates".
+
 **Shape of the fix (for #415).** A central interceptor that reads the *full*
 `MethodPolicy` and, per call, classifies the outcome `ok` / `gap` /
 `broadening` / `unsupported`, emitting an audit signal and **changing no

@@ -72,6 +72,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
+      "path": "/admin/modules",
+      "source_path": "src/app/admin/modules/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
       "path": "/admin/organizations",
       "source_path": "src/app/admin/organizations/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -88,12 +94,6 @@
       "source_path": "src/app/admin/permissions/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
-    },
-    {
-      "path": "/admin/platform",
-      "source_path": "src/app/admin/platform/page.tsx",
-      "match": "FRONTEND_ROUTE_MATCH_EXACT",
-      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
       "path": "/admin/platform/admins",
@@ -524,19 +524,6 @@
       "order": 160
     },
     {
-      "id": "admin-platform-overview",
-      "plugin": "platform-admin",
-      "label": "Platform Overview",
-      "path": "/admin/platform",
-      "icon": "Layers",
-      "group": "Platform",
-      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
-      "surfaces": [
-        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
-      ],
-      "order": 190
-    },
-    {
       "id": "admin-platform-users",
       "plugin": "platform-admin",
       "label": "Platform Users",
@@ -653,8 +640,7 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
       "surfaces": [
         "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
-        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
-        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
       ],
       "order": 236
     },
@@ -673,6 +659,62 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 240
+    },
+    {
+      "id": "admin-module-authority",
+      "plugin": "platform-admin",
+      "label": "Module Authority",
+      "path": "/admin/platform/module-authority",
+      "icon": "Shield",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
+      ],
+      "order": 241
+    },
+    {
+      "id": "admin-event-operations",
+      "plugin": "platform-admin",
+      "label": "Event Operations",
+      "path": "/admin/platform/events",
+      "icon": "Activity",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
+      ],
+      "order": 242
+    },
+    {
+      "id": "admin-plugin-transport",
+      "plugin": "platform-admin",
+      "label": "Plugin Transport",
+      "path": "/admin/platform/plugin-transport",
+      "icon": "Globe",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
+      ],
+      "order": 243
+    },
+    {
+      "id": "admin-unattended-work",
+      "plugin": "platform-admin",
+      "label": "Unattended Work",
+      "path": "/admin/platform/unattended-work",
+      "icon": "Key",
+      "group": "Platform",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
+      ],
+      "order": 244
     },
     {
       "id": "admin-billing",
@@ -707,7 +749,7 @@
     {
       "id": "admin-solutions",
       "plugin": "core-users",
-      "label": "Modules & solutions",
+      "label": "Solutions",
       "path": "/admin/solutions",
       "icon": "Layers",
       "group": "Integrations",
@@ -719,6 +761,21 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 405
+    },
+    {
+      "id": "admin-modules",
+      "plugin": "core-users",
+      "label": "Supporting Modules",
+      "path": "/admin/modules",
+      "icon": "Layers",
+      "group": "Integrations",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "roles:write",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
+      ],
+      "order": 406
     },
     {
       "id": "admin-datasources",
@@ -771,8 +828,7 @@
       "group": "Developer",
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
       "surfaces": [
-        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
-        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
       ],
       "order": 510
     },
@@ -785,8 +841,7 @@
       "group": "Developer",
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
       "surfaces": [
-        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
-        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY"
       ],
       "order": 520
     },

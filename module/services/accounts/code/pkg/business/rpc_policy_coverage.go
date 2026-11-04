@@ -93,7 +93,10 @@ func GlobalScopeEscapeHatchMethods() []string {
 // authenticated methods, the interceptor resolves the ORG_MEMBER / ORG_ADMIN
 // tenant against the caller's verified organization (CentralTenantEnforcement),
 // so a method whose floor reduces to that tenant — or to "a verified user"
-// (tenant NONE or USER) — is fully covered. A declared permission (which may
+// (tenant NONE or USER) — is fully covered. A shape-authenticated method is a
+// gap: its caller may be a credential in the request body, so there is no
+// verified organization at admission to resolve the tenant against, and the
+// adapter resolves it from the credential itself. A declared permission (which may
 // admit a non-admin who holds it), a platform-role, an MFA requirement, an
 // org-owner or team tenant, a bound team resource, or a global-scope escape
 // method (globalScopeEscapeMethods) is a gap the require* handler sites still
@@ -114,6 +117,9 @@ func ClassifyCentralCoverage(policy RPCPolicy) CentralCoverage {
 		return CoverageOK
 	}
 	if hasGlobalScopeEscape(policy.FullMethod) {
+		return CoverageGap
+	}
+	if ShapeAuthenticated(policy.FullMethod) {
 		return CoverageGap
 	}
 	for _, binding := range p.GetResourceBindings() {
@@ -159,7 +165,8 @@ func ClassifyCentralCoverage(policy RPCPolicy) CentralCoverage {
 // resolves only the ORG_MEMBER / ORG_ADMIN tenant, against the caller's verified
 // organization, and only when the method declares no finer permission (which
 // could admit a non-admin who holds it), no platform-role or MFA requirement,
-// no team or owned-resource binding, and no global-scope escape
+// no team or owned-resource binding, is not shape-authenticated, and no
+// global-scope escape
 // (globalScopeEscapeMethods, whose empty-org alternative the interceptor cannot
 // resolve). Every other requirement stays with the handler require* sites, so
 // this check is never stricter than the handler's own.
@@ -179,6 +186,24 @@ func CentralTenantEnforcement(policy RPCPolicy) (policyv1.TenantRequirement, boo
 		return policyv1.TenantRequirement_TENANT_REQUIREMENT_UNSPECIFIED, false
 	}
 	if hasGlobalScopeEscape(policy.FullMethod) {
+		return policyv1.TenantRequirement_TENANT_REQUIREMENT_UNSPECIFIED, false
+	}
+	// A shape-authenticated method (ShapeAuthenticated: the host interface's
+	// Issue and GetDelegation) carries its caller's credential in the request
+	// body, not necessarily as a bearer. Admission never reads the body, so
+	// there is no verified organization to resolve the declared tenant against:
+	// for a workload, an installation or a child hop there is no verified
+	// database scope at all, and enforcing the floor refuses every such call
+	// with "verified authentication context required" before the adapter can
+	// authenticate the credential it was handed and resolve the organization
+	// from it. The tenant stays with that adapter, which checks the
+	// organization against the credential rather than against a session.
+	//
+	// This is the exemption the enforce-by-default flip required: the floor has
+	// to decline a method whose authenticating credential it cannot see, and
+	// declining it here keeps the coverage classifier and this check agreeing on
+	// one answer per method.
+	if ShapeAuthenticated(policy.FullMethod) {
 		return policyv1.TenantRequirement_TENANT_REQUIREMENT_UNSPECIFIED, false
 	}
 	if len(p.GetPermissions()) > 0 ||

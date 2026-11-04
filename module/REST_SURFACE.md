@@ -17,21 +17,25 @@ module ceiling. The complete regeneration includes these additions and the calla
 
 ## Current surface
 
-The accounts projection contains 172 descriptor routes across 30 services,
+The accounts projection contains 176 descriptor routes across 30 services,
 counted from `generated/rest-surface.json`:
 
-- 18 public routes and 154 authenticated routes;
-- 145 OpenAPI paths and 172 operations;
+- 19 public routes and 157 authenticated routes;
+- 149 OpenAPI paths and 176 operations;
 - zero internal RPCs;
-- fifteen explicit non-protobuf extensions loaded by auth-gateway: magic-link
+- the explicit non-protobuf extensions loaded by auth-gateway: magic-link
   request/verification, the billing and Resend email webhooks, the two GitHub
   delivery receivers, the public status surface, the subscriptions stream,
-  checkout, free-plan, portal, and the four OAuth 2 authorization-server routes
-  (metadata, authorize validation, authorize grant, token).
+  checkout, free-plan, portal, the four OAuth 2 authorization-server routes
+  (metadata, authorize validation, authorize grant, token), and the OpenID
+  Connect back-channel logout receiver.
 
-The generated runtime therefore authorizes 187 REST routes in total. Descriptor
-routes and extensions remain separate so an extension can never be mistaken
-for a protobuf procedure or inherit policy by path similarity.
+Descriptor routes and extensions remain separate so an extension can never be
+mistaken for a protobuf procedure or inherit policy by path similarity. The
+extension list is deliberately not counted here, nor added to the descriptor
+count for a total: nothing enforces either number, and two changes that each add
+a route and each bump the same figure merge cleanly into a total that is
+silently wrong. The file named below is the inventory.
 
 The extension count is the one number here a test holds:
 `TestGeneratedRESTSurfaceAndExtensions` in `auth-gateway/code/routing_rest.go`'s
@@ -68,7 +72,7 @@ it trust. See [CALLABLE_SOURCES.md](./CALLABLE_SOURCES.md) for the wire contract
 | `services/accounts/generated/rest-surface.json` | Typed target-neutral REST catalog. |
 | `services/accounts/code/pkg/adapters/rest_registration_catalog_gen.go` | Accounts registration and exact/template allowlist. |
 | `services/auth-gateway/code/routing_rest_catalog_gen.go` | Auth-gateway descriptor REST inventory. |
-| `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | Fifteen explicit routes without protobuf ownership. |
+| `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | The explicit routes without protobuf ownership. |
 | `services/accounts/openapi/api.swagger.json` | Checked-in public OpenAPI document. |
 
 The strict binding file covers every surface service exactly once. Twenty-six
@@ -205,3 +209,13 @@ Input schema refusals from Invoke include BadRequest FieldViolation JSON
 pointers; provider refusals carry their known decimal `provider_status` in
 ErrorInfo metadata. The `SOURCE_OPERATION_OUTCOME_UNKNOWN` reason distinguishes
 an unresolved, non-redispatchable effect from an ordinary provider refusal.
+
+### Reviewed solution installation
+
+`POST /v1/solution-installations/review` accepts the organization and a live
+catalogue target UUID and returns the complete release/access/dependency review.
+`POST /v1/solution-installations` accepts that unchanged review. Both require a
+current organization administrator and use the same handlers as Connect
+`InstallationService.ReviewSolutionInstall` and `InstallReviewedSolution`.
+Retain the review for retries. Setup failure remains pending; the installation
+read exposes its exact durable setup outcome and the required continuation.

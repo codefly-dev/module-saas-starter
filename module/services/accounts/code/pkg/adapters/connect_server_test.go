@@ -48,3 +48,19 @@ func TestCatalogConnectRegistrationCoversEveryProcedure(t *testing.T) {
 	_, pattern := mux.Handler(request)
 	require.Empty(t, pattern)
 }
+
+// The Connect listener — the endpoint the composition names as host.delivery —
+// serves the delivery documents the composition interface has no procedure
+// for: the module envelope, which the CLI's envelope Job POSTs to
+// /platform/_delivery/envelope.
+func TestConnectListenerServesTheDeliveryRoutes(t *testing.T) {
+	mux := http.NewServeMux()
+	mountDeliveryRoutes(mux, nil)
+	for _, path := range []string{SolutionDeliveryEnvelopePath, SolutionDeliveryManifestPath} {
+		request := httptest.NewRequest(http.MethodPost, "http://accounts.test"+path, nil)
+		_, pattern := mux.Handler(request)
+		if pattern != SolutionDeliveryPrefix {
+			t.Fatalf("%s is served by %q on the Connect listener, want %q", path, pattern, SolutionDeliveryPrefix)
+		}
+	}
+}

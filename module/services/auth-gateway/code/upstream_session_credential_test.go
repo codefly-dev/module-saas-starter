@@ -18,17 +18,11 @@ import (
 // the cookie carries the longest-lived value a browser holds.
 func TestDeclaredUpstreamNeverReceivesTheCallerCookie(t *testing.T) {
 	for _, tc := range []struct{ name, path string }{
-		{"a declared module route", "/v1/documents/entries"},
 		{"a solution data route", "/solutions/audit/v1/audit/logs"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gw, _, _, priv := newGatewayHarness(t)
-			var fake *fakeUpstream
-			if tc.path == "/v1/documents/entries" {
-				fake = declareModule(t, gw, "documents")
-			} else {
-				fake = registerSolutionUpstream(t, gw, "audit")
-			}
+			fake := registerSolutionUpstream(t, gw, "audit")
 
 			request := httptest.NewRequest(http.MethodGet, tc.path, nil)
 			request.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))

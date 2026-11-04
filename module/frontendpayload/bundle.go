@@ -80,7 +80,7 @@ func Prepare(ctx context.Context, source Source, frontend *solutionhost.Frontend
 	if reader == nil {
 		return nil, ErrUnavailable
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 	archive, err := io.ReadAll(io.LimitReader(reader, MaxBundleBytes+1))
 	if err != nil {
 		return nil, ErrUnavailable
@@ -103,7 +103,7 @@ func Prepare(ctx context.Context, source Source, frontend *solutionhost.Frontend
 	if err != nil {
 		return nil, fmt.Errorf("prepare frontend scratch directory: %w", err)
 	}
-	defer os.RemoveAll(staging)
+	defer func() { _ = os.RemoveAll(staging) }()
 	if err := composition.ExtractArchive(ctx, archive, staging); err != nil {
 		return nil, fmt.Errorf("unsafe frontend bundle: %w", err)
 	}

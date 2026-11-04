@@ -71,6 +71,69 @@ provider responses into an incident channel.
 5. Verify source events, aggregate, customer history, entitlement limit, and
    provider quantity agree after the late-arrival window.
 
+## `authorization-denials`
+
+The two authorization instruments accounts exports, both from
+`pkg/adapters/grpc_auth_interceptor.go` and both on the meter
+`github.com/codefly-dev/module-saas-starter/accounts`. They are named here so an
+operator — or the cell's alerting, which owns its own rules — can watch them
+without reading the service's source.
+
+| Metric | Unit | Labels | Counts |
+| --- | --- | --- | --- |
+| `saas.accounts.rpc_policy.denied` | calls | `method`, `reason` | every authorization refusal, on both the gRPC and the Connect transport |
+| `saas.accounts.rpc_policy.coverage` | calls | `method`, `coverage` | every **admitted** call, classified by how much of its declared floor central admission can enforce (`ok`, `gap`, `unsupported`) |
+
+**The name an alerting rule must target is not the name above.** Accounts
+exports over OTLP (`otlpmetricgrpc`), and a rule is written against the
+collector's Prometheus-normalised spelling: dots become underscores, and a
+monotonic counter gains `_total`. So, exactly:
+
+| OTel instrument | What a promql rule targets |
+| --- | --- |
+| `saas.accounts.rpc_policy.denied` | **`saas_accounts_rpc_policy_denied_total`** |
+| `saas.accounts.rpc_policy.coverage` | **`saas_accounts_rpc_policy_coverage_total`** |
+
+The attributes keep their names as labels: `method` and `reason` on the first,
+`method` and `coverage` on the second. This is the same transformation every
+other metric in this repository's own alert pack already relies on — compare
+`saas.jobs.completed` in this file with `saas_jobs_completed_total` in
+`services/accounts/code/pkg/metrics/slo_pack.json`, and `saas.retention.failing`
+with `saas_retention_failing`, which keeps no suffix because it is a gauge.
+
+A rule targeting the dotted form, or the undotted form without `_total`, matches
+nothing and fires never — which looks exactly like "no denials" and is the one
+failure mode an authorization alert cannot afford.
+
+`reason` is a closed set, never an error message — a message carries the
+organization and the permission, which would make the label unbounded and put
+tenant identifiers in a metrics backend:
+
+| `reason` | The gate that refused |
+| --- | --- |
+| `admission` | exposure, transport, credential: an unclassified method, a malformed or ambiguous forwarded identity, a missing internal or module credential, an invalid or expired bearer |
+| `impersonation_restricted` | the method is withheld from a session acting as another user |
+| `api_key_scope` | an API key reached a method that accepts none, or whose declared scopes it does not cover |
+| `central_admission` | the declared org-member/org-admin tenant floor, resolved against the caller's verified organization |
+| `handler` | the handler's own `require*` site, after admission admitted the call |
+
+1. A refusal is ordinary traffic — a person asking for what they may not have is
+   a denial, not an incident. What is worth alerting on is a *change*: a rate of
+   `central_admission` or `api_key_scope` refusals that was near zero and is not,
+   on one `method`, which is a caller systematically asking for authority it does
+   not hold or a declaration that stopped matching its handler.
+2. Correlate with the request log, which carries the organization and the actor
+   this metric deliberately does not. Never widen a policy to clear an alert.
+3. `coverage` is the other half: `gap` and `unsupported` say which methods the
+   central floor still leaves to their handler gates. A method moving from `ok`
+   to `gap` means its declaration changed — read it against
+   [../AUTHZ.md](../AUTHZ.md) "The central floor beneath the handler gates"
+   before concluding anything about traffic.
+4. `saas.accounts.rpc_policy.denied` going to **zero** on a method that normally
+   refuses is also a signal: with `RBAC_CENTRAL_ENFORCEMENT=shadow` the central
+   floor denies nothing, and the boot warning naming that key is the only other
+   place that state is visible.
+
 ## `retention`
 
 1. Read the accounts `retention` log line `scheduled run failed`. It names each

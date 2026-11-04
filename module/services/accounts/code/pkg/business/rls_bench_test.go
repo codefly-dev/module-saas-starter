@@ -18,8 +18,8 @@ import (
 // goroutine) at time of writing:
 //
 //   BenchmarkRLS_NoOpQuery_NoWrap   ~850µs/op   bare pool QueryRow("SELECT 1")
-//   BenchmarkRLS_NoOpQuery_OrgTx   ~1680µs/op   + Begin + SET LOCAL app.current_org_id + Commit
-//   BenchmarkRLS_NoOpQuery_UserTx  ~1510µs/op   + Begin + SET LOCAL app.current_user_id + Commit
+//   BenchmarkRLS_NoOpQuery_OrgTx   ~1680µs/op   + Begin + SET LOCAL codefly.current_tenant_id + Commit
+//   BenchmarkRLS_NoOpQuery_UserTx  ~1510µs/op   + Begin + SET LOCAL codefly.current_user_id + Commit
 //   BenchmarkRLS_NoOpQuery_ControlPlane ~700µs/op + Begin + SET LOCAL ROLE + Commit
 //   (* ControlPlane also runs recordControlPlane which emits a wool.Debug;
 //      with DEBUG-level logging the per-op number includes that.)

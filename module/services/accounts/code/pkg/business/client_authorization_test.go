@@ -290,7 +290,7 @@ func auditLoginRow(t *testing.T, userID string) (resourceID string, orgID *strin
 }
 
 // audit_events' tenant policy is USING (org_id IS NOT NULL AND org_id =
-// app.current_org_id), so a login row emitted without an organization is
+// codefly.current_tenant_id), so a login row emitted without an organization is
 // readable by no tenant at all — an org admin reviewing their audit trail would
 // never see that this person signed in through a client. The row must also name
 // the session the exchange created, not the host session that authorized it.

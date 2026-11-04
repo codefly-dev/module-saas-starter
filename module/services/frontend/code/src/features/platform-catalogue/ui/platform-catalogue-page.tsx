@@ -9,7 +9,6 @@ import type {
 	CatalogueInstallation,
 } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { CatalogueEntryKind } from "@/gen/saas/accounts/v1/platform_admin_pb";
-import { groupSolutionNavigation } from "@/solutions/solution-groups";
 import {
 	mayKeepRetainedRows,
 	readOutcome,
@@ -35,22 +34,23 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/shared/ui";
+import { groupSolutionNavigation } from "@/solutions/solution-groups";
 import {
 	agentReleaseView,
-	buildSizeView,
 	CATALOGUE_STATES,
+	type CatalogueNote,
 	catalogueGaps,
 	catalogueStates,
 	type FactView,
-	installationRevisionView,
 	kindLabel,
 	publisherView,
 	type StateFact,
+	unbuiltFacts,
 } from "../model/facts";
 import { usePlatformCatalogue } from "../service/queries";
 
-// The expander, the entry, one column per state, installations and build size.
-const COLUMNS = 2 + CATALOGUE_STATES.length + 2;
+// The expander, the entry, one column per state, and installations.
+const COLUMNS = 2 + CATALOGUE_STATES.length + 1;
 
 /**
  * One cell. A gap reads as its reason in muted italics with the detail on
@@ -143,6 +143,39 @@ export function TeamGrants({
 	);
 }
 
+/** One list of notes under the table: a title, why it is there, and the rows. */
+function Notes({
+	title,
+	description,
+	notes,
+}: {
+	title: string;
+	description: string;
+	notes: CatalogueNote[];
+}) {
+	if (notes.length === 0) return null;
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle className="text-base">{title}</CardTitle>
+				<CardDescription>{description}</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<dl className="space-y-3 text-sm">
+					{notes.map((note) => (
+						<div key={`${note.fact}:${note.label}:${note.detail}`}>
+							<dt className="font-medium">
+								{note.fact} — {note.label}
+							</dt>
+							<dd className="text-muted-foreground">{note.detail}</dd>
+						</div>
+					))}
+				</dl>
+			</CardContent>
+		</Card>
+	);
+}
+
 function entryKey(entry: CatalogueEntry): string {
 	return `${entry.kind}:${entry.name}`;
 }
@@ -162,6 +195,7 @@ export function PlatformCataloguePage() {
 	const stale = staleReadNotice(outcome, "the catalogue");
 	const entries = withheld ? [] : (catalogue.data?.entries ?? []);
 	const gaps = catalogueGaps(entries);
+	const unbuilt = unbuiltFacts(entries);
 	const sections = groupSolutionNavigation(
 		entries.map((entry) => ({
 			entry,
@@ -240,7 +274,6 @@ export function PlatformCataloguePage() {
 										<TableHead key={state}>{state}</TableHead>
 									))}
 									<TableHead>Installations</TableHead>
-									<TableHead>Build size</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
@@ -302,9 +335,6 @@ export function PlatformCataloguePage() {
 														<TableCell className="text-sm">
 															{entry.installations.length}
 														</TableCell>
-														<TableCell>
-															<Fact view={buildSizeView(entry)} />
-														</TableCell>
 													</TableRow>
 													{open && (
 														<TableRow>
@@ -328,28 +358,21 @@ export function PlatformCataloguePage() {
 				</CardContent>
 			</Card>
 
-			{gaps.length > 0 && (
-				<Card>
-					<CardHeader>
-						<CardTitle className="text-base">Not known to this host</CardTitle>
-						<CardDescription>
-							What each unavailable cell above means, and what would supply it.
-						</CardDescription>
-					</CardHeader>
-					<CardContent>
-						<dl className="space-y-3 text-sm">
-							{gaps.map((gap) => (
-								<div key={`${gap.fact}:${gap.label}:${gap.detail}`}>
-									<dt className="font-medium">
-										{gap.fact} — {gap.label}
-									</dt>
-									<dd className="text-muted-foreground">{gap.detail}</dd>
-								</div>
-							))}
-						</dl>
-					</CardContent>
-				</Card>
-			)}
+			<Notes
+				title="Not known to this host"
+				description="What each unavailable cell above means, and what would supply it."
+				notes={gaps}
+			/>
+
+			{/* Separated from the gaps above on purpose. A gap is this host failing
+			    to learn something it could know; these are facts no part of the
+			    platform produces yet, so they are not columns an operator scans for
+			    a value that cannot appear. */}
+			<Notes
+				title="Not yet built on this platform"
+				description="Facts no component reports yet, so the Catalogue carries no column for them. Nothing is misconfigured."
+				notes={unbuilt}
+			/>
 		</div>
 	);
 }
@@ -367,7 +390,6 @@ function InstallationsTable({
 				<TableRow>
 					<TableHead>Organization</TableHead>
 					<TableHead>Agent release</TableHead>
-					<TableHead>Revision</TableHead>
 					<TableHead>Teams exposed</TableHead>
 					<TableHead>Installed</TableHead>
 				</TableRow>
@@ -378,9 +400,6 @@ function InstallationsTable({
 						<TableCell className="font-medium">{item.orgName}</TableCell>
 						<TableCell>
 							<Fact view={agentReleaseView(item)} />
-						</TableCell>
-						<TableCell>
-							<Fact view={installationRevisionView(item)} />
 						</TableCell>
 						<TableCell>
 							<TeamGrants

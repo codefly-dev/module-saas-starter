@@ -19,6 +19,7 @@ import {
 	type CodeflyGatewayContext,
 	resolveCodeflyGatewayContext,
 } from "@/lib/codefly-gateway-context";
+import { isHostSetupProcedure } from "@/lib/host-setup-procedures";
 import {
 	expectedInternalToken,
 	INTERNAL_TOKEN_HEADER,
@@ -30,6 +31,7 @@ import {
 } from "../server/security-headers.mjs";
 
 const PRODUCT_API_PREFIXES = ["/v1/", "/saas.accounts.v1."] as const;
+
 const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
 
 /**
@@ -96,6 +98,8 @@ function isProductAPI(pathname: string): boolean {
 	if (PRODUCT_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
 		return true;
 	}
+	// The solution Setup tab's host procedures, and only those.
+	if (isHostSetupProcedure(pathname)) return true;
 	return oauthSurfaceUpstreamPath(pathname) !== undefined;
 }
 
@@ -598,8 +602,7 @@ export function isPublic(pathname: string): boolean {
 	// Page middleware is only a UX guard; redirecting these requests would turn
 	// login into a 307 POST to /auth/login and bypass the backend's real auth
 	// response semantics.
-	if (pathname.startsWith("/v1/")) return true;
-	if (pathname.startsWith("/saas.accounts.v1.")) return true;
+	if (isProductAPI(pathname)) return true;
 	// The OAuth 2.1 / MCP surface. These carry their own credentials (a bearer,
 	// a PKCE verifier) or none at all by specification, and are answered by the
 	// backend, so the page middleware's login redirect must not intercept them:

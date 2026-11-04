@@ -25,6 +25,41 @@ Context exchanges below; no secret does.
 The principal directory lists stored identities only. Declared module authority
 is read by the capability checks and does not create synthetic directory rows.
 
+**The two scope settings are named once.** A transaction's tenant and user are
+bound to `codefly.current_tenant_id` and `codefly.current_user_id` — the
+defaults of the platform's Postgres library, which installs them for any
+transaction opened through the scoped factory. Both the scoped factory and the
+hand-written SQL in `pkg/infra` take the two names from
+`pkg/infra.TenantScopeSetting` / `UserScopeSetting` rather than spelling the
+literal again, the factory through `WithScopeSettings`: the library's default is
+unexported, so passing it is what ties the pools to the same constant the
+policies and the request binding read. Only `pkg/infra` may bind them at all
+(`TestNoTenantRebindingOutsideInfra`), and a policy or function body left on
+some other setting does not fail loudly: `current_setting(…, true)` returns
+NULL, the predicate is false, and the relation reads as empty for every caller
+(`TestEveryScopedPolicyReadsTheLibrarySettings` is what catches that).
+
+**A scope-setting rename is a two-release move, and this is the window.** A
+one-step rename is undeployable: the catalog and the image ship separately, and
+whichever loses the race reads an unset setting, which is zero rows on every
+scoped SELECT and a WITH CHECK failure on every INSERT, with nothing raised. So
+store migration 66 leaves every predicate reading the library's name with the
+host's retired `app.current_org_id` / `app.current_user_id` behind it
+(`COALESCE(NULLIF(<library>, ''), <retired>)`), `bindRequestScopeSQL` binds all
+four names, and one image is correct against a catalog from before the rename,
+after it, or inside the window. The retired names are
+`pkg/infra.LegacyTenantScopeSetting` / `LegacyUserScopeSetting`, and nothing but
+that binding and the migration may name them.
+
+What the window does not cover is the two pools `service-postgres` owns: those
+bind the library's two names and take no more, so against a catalog that reads
+only the retired ones every read through them is silently empty and no binding
+here can fix it. `requireCatalogReadsScopeSettings` refuses to start against
+such a database rather than serving it — it asks the catalog what the policies
+judge by, not the ledger what version it claims. The window closes in a later
+release, whose migration is `66_scope_settings_transition.down.sql`: it deletes
+the retired arm, and the two legacy constants and this section go with it.
+
 ## Forwarded Work Contexts on the organization directory
 
 `DirectoryService` on the Connect endpoint accepts a person-owned Work Context
@@ -140,6 +175,13 @@ stored carrier still verifies. The signed manifest is the ceiling; no module
 envelope is needed on a fresh store. An existing administrative envelope narrows
 that ceiling. Workloads are the manifest's `(service, container)` spelled by the
 namespace rule; no administrative policy approves a build.
+
+## Derived solution-role grants
+
+A solution-derived role is granted only at that solution's installation root,
+to a team or that installation's own agent. Installation creation records the
+agent/root/target relationship before its standing grant in the same transaction;
+public scope registration cannot create a fresh-root exception to this check.
 
 ## Composition interface delivery
 
@@ -1424,3 +1466,16 @@ keeps what is per-source state:
   nothing on it to say why (`parkDatasourceSource`, the park the GitHub
   unreadable-public-repository path goes through as well); an incomplete, too-long or too-large
   listing is the terminal incomplete-listing disposition.
+
+## Canonical solution installation
+
+New solution installation uses `ReviewSolutionInstall` followed by
+`InstallReviewedSolution`; the shared Authority record is canonical. The host
+retains the reviewed dependency approvals and durable job linkage beside its
+consent receipt, not in a second installation table. Supporting modules retain
+the existing Accounts module consent/lifecycle path. Never call the legacy
+product solution writer to make a canonical installation or copy its standing
+grants into person/team roles. Queue ACK is not activation: the shared final
+serializable transaction checks the exact prerequisites. Pending outcomes are
+read from the linked job; continuation is explicitly authorized as the current
+person. See `HOST_INTERFACE.md` for the API, recovery and qualification limits.

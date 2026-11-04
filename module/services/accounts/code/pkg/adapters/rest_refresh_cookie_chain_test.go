@@ -12,8 +12,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -71,7 +69,9 @@ func TestABrowserSessionSurvivesTheRealRESTChain(t *testing.T) {
 	handler := &chainAuthHandler{received: map[string]string{}}
 	connectMux := http.NewServeMux()
 	connectMux.Handle(accountsv1connect.NewAuthServiceHandler(handler))
-	backend := httptest.NewServer(h2c.NewHandler(connectMux, &http2.Server{}))
+	backend := httptest.NewUnstartedServer(connectMux)
+	backend.Config.Protocols = unencryptedHTTP2()
+	backend.Start()
 	t.Cleanup(backend.Close)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -99,7 +99,7 @@ func TestABrowserSessionSurvivesTheRealRESTChain(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { resp.Body.Close() })
+		t.Cleanup(func() { _ = resp.Body.Close() })
 		return resp
 	}
 	onlyCookie := func(path string, resp *http.Response) *http.Cookie {

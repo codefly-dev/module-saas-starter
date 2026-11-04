@@ -66,8 +66,8 @@ func forwardThroughTranscoder(t *testing.T, option runtime.ServeMuxOption, heade
 	return recorder
 }
 
-// rest_gen.go is generated; its CUSTOM lines survive regeneration only by
-// being preserved. Parsed, not string-matched (as the incoming matcher's
+// rest_gen.go is to be adopted from the agent (service-go-grpc#223); its
+// CUSTOM lines survive that only by being preserved. Parsed, not string-matched (as the incoming matcher's
 // lockstep test does), so a commented-out or renamed option fails here and the
 // prefixed cookie cannot come back silently.
 func TestTheRESTMuxIsBuiltWithTheOutgoingHeaderMatcher(t *testing.T) {

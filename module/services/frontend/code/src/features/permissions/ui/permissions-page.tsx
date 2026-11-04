@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { OrgSelector } from "@/components/org-selector";
-import { orgQueries } from "@/features/organizations/service/queries";
+import { UserPicker } from "@/components/user-picker";
 import { useEffectivePermissions } from "@/features/permissions/service/effective";
 import { useExplainPermission } from "@/features/permissions/service/explain";
 import { useRoles } from "@/features/roles/service/queries";
@@ -192,11 +192,6 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 	// question is asked trimmed — and the draft is compared trimmed too, or
 	// trailing whitespace alone would read as an unasked question forever.
 	const pending = scopeDraft.trim() !== scope;
-	const {
-		data: members,
-		isError: membersFailed,
-		error: membersError,
-	} = useQuery(orgQueries.members(orgId));
 	const { data: info } = useQuery(permissionQueries.serviceInfo());
 	const { permissions } = useEffectivePermissions(orgId, subjectId);
 
@@ -221,39 +216,15 @@ function CheckAGrant({ orgId }: { orgId: string }) {
 		>
 			<Panel>
 				<Stack gap={4}>
-					{/* An empty subject picker reads as "this organization has no members",
-						    which would send an administrator to the roster to look for people who
-						    are there. The picker stays mounted so the rest of the question can
-						    still be asked. */}
-					{membersFailed && (
-						<span role="alert" className="text-sm text-muted-foreground">
-							{readOutcomeMessage(
-								readOutcome(true, membersError),
-								"this organization's members",
-								"",
-							)}
-						</span>
-					)}
 					<Stack direction="row" gap={4} className="flex-wrap">
-						<Select
+						{/* The same picker every other surface chooses a person with: a
+						    scroll list of every member is unusable past a few dozen, and
+						    two ways to pick a user is one too many. */}
+						<UserPicker
+							orgId={orgId}
 							value={subjectId}
-							items={(members?.members ?? []).map((member) => ({
-								value: member.userId,
-								label: member.userEmail || "User unavailable",
-							}))}
-							onValueChange={(value) => setSubjectId(value ?? "")}
-						>
-							<SelectTrigger className="w-72">
-								<SelectValue placeholder="Pick a member…" />
-							</SelectTrigger>
-							<SelectContent>
-								{(members?.members ?? []).map((member) => (
-									<SelectItem key={member.userId} value={member.userId}>
-										{member.userEmail || "User unavailable"}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
+							onChange={setSubjectId}
+						/>
 						<Select
 							value={permission}
 							items={(info?.capabilities?.permissions ?? []).map((entry) => ({

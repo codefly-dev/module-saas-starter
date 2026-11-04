@@ -372,6 +372,35 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 			wool.Get(ctx).Warn("the composed object-storage service cannot read a tenant's bucket; object-storage datasources are unavailable", wool.ErrField(err))
 		}
 	}
+	// The daily audit archive writes to the same composed object-storage
+	// service, but unbound: its Put carries no bucket, so it lands in that
+	// service's own configured bucket — the host's, not a tenant's. The prefix
+	// is accounts' to name and the bucket is the composition's, which is why
+	// AUDIT_ARCHIVE_URI is refused if it names one.
+	auditArchivePrefix, err := business.ParseAuditArchiveURI(workspaceEnv("audit-archive", "AUDIT_ARCHIVE_URI"))
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case auditArchivePrefix == "":
+		// Say it at boot. "Is the audit log archived off this database?" was
+		// otherwise answerable only by reading configuration on the box, and the
+		// answer that matters — no — looked exactly like a host that had one.
+		w.Info("no audit archive is configured (audit-archive/AUDIT_ARCHIVE_URI); the audit log's only copy is this database")
+	case objectStorage == nil:
+		// A configured destination with nothing to write it through is a
+		// misconfiguration, not a degraded mode: the operator asked for an
+		// archive and would otherwise get silence.
+		return nil, fmt.Errorf(
+			"audit-archive/AUDIT_ARCHIVE_URI is set to %q but no object-storage service is composed, so no day could ever be archived; compose one or clear the key",
+			auditArchivePrefix)
+	default:
+		service.SetAuditArchive(business.AuditArchive{
+			Prefix: auditArchivePrefix,
+			Store:  objectstore.NewHostStore(storagev0.NewObjectStorageClient(objectStorage)),
+		})
+		w.Info("daily audit archive enabled", wool.Field("prefix", auditArchivePrefix))
+	}
 	// Every provider credential's operations are metered in one window shared by
 	// every replica, so a sync a person starts is served before background work.
 	service.SetDatasourceBudgetStore(store)
@@ -667,6 +696,29 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		service.SetTokenValidator(v)
 		service.SetCodeExchanger(ex)
 
+		// Signing out of this host does not sign the person out of the identity
+		// provider: the provider's session cookie is in their browser, and the
+		// next sign-in through it is silent. RP-initiated logout and
+		// back-channel logout are the two halves of closing that, and a provider
+		// offers them independently, so each is wired on its own evidence.
+		signOut := configuredProviderSignOut(ctx, authProvider)
+		if verifier, ok := v.(business.LogoutTokenVerifier); ok {
+			signOut.LogoutTokens = verifier
+		}
+		service.SetProviderSignOut(signOut)
+		if service.ProviderSignOutConfigured() {
+			adapters.RegisterHTTPRoute(adapters.BackchannelLogoutPath, adapters.NewBackchannelLogoutHandler(service))
+			w.Info("provider back-channel logout enabled", wool.Field("path", adapters.BackchannelLogoutPath))
+		} else {
+			// An unauthenticated route whose only honest answer is a refusal is
+			// worse than no route: it answers, so it looks implemented.
+			w.Info("the configured identity provider cannot verify a back-channel logout token; no such endpoint is mounted")
+		}
+		if signOut.EndSessionEndpoint == "" {
+			w.Info("the configured identity provider publishes no end_session_endpoint; a sign-out ends the host session only",
+				wool.Field("provider", authProvider))
+		}
+
 		// Per-org identity provider registry (issue #107). Orgs with an active
 		// row in org_identity_providers resolve to their own stack; every other
 		// org falls back to this global default (v, ex). Stacks build lazily on
@@ -881,7 +933,14 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	if err != nil {
 		return nil, err
 	}
-	adapters.SetCentralEnforcementMode(centralEnforcement)
+	if !centralEnforcement.Enforcing() {
+		// Say the opt-out by name, at boot, every boot. A deployment running the
+		// classify-only floor looks identical to one enforcing it until a call
+		// that should have been denied is served, so the only place this can be
+		// read is the boot log of the process that chose it.
+		w.Warn("RBAC_CENTRAL_ENFORCEMENT=shadow: request-time central RBAC admission classifies only and denies nothing; unset this key to enforce")
+	}
+	adapters.SetCentralEnforcementMode(centralEnforcement.Enforcing())
 
 	// /v1/status — public health probe surface. Probes run in parallel
 	// with a 2s budget each; overall status is the worst result. The
@@ -1088,6 +1147,21 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 		return nil, err
 	}
 
+	// The daily audit archive (issue #1296): a leased worker that writes one
+	// complete UTC day of the whole platform's audit log to the configured
+	// archive. Like the privacy worker it runs whether or not a destination is
+	// wired, so a day enqueued by a runtime that had one dead-letters visibly
+	// here instead of sitting pending after the key was cleared.
+	auditArchiveWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.AuditArchiveQueue,
+		Handler:    service.NewAuditArchiveJobHandler(),
+		RetryDelay: business.AuditArchiveRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// The change-set compiler (issue #487): a leased worker that turns each raw
 	// GitHub delivery — and each periodic/forced reconcile request — into a set of
 	// per-file ingest ops, holding the source's decrypted token so all GitHub
@@ -1248,12 +1322,30 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 			}
 		}
 
+		// The daily audit archive (issue #1296) offers every complete day in its
+		// catch-up window; the enqueue is deduplicated by day, so a tick that
+		// offers a day already archived costs one refused insert and nothing
+		// else. The export itself runs in the leased worker, off this tick: an
+		// object store that is slow or down must not hold the retention pass
+		// that shares it.
+		sweepAuditArchive := func() {
+			if !service.AuditArchiveConfigured() {
+				return
+			}
+			if n, err := service.ScheduleAuditArchive(retentionCtx, time.Now()); err != nil {
+				rw.Warn("audit archive scheduling failed", wool.ErrField(err))
+			} else if n > 0 {
+				rw.Info("offered audit archive days", wool.Field("count", n))
+			}
+		}
+
 		// Run once immediately on startup.
 		runRetention()
 		sweepReplay()
 		sweepPrivacyArtifacts()
 		sweepReconcile()
 		sweepInstallationRecheck()
+		sweepAuditArchive()
 
 		retentionTicker := time.NewTicker(24 * time.Hour)
 		replayTicker := time.NewTicker(time.Hour)
@@ -1267,6 +1359,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 				return
 			case <-retentionTicker.C:
 				runRetention()
+				sweepAuditArchive()
 			case <-replayTicker.C:
 				sweepReplay()
 				sweepPrivacyArtifacts()
@@ -1315,6 +1408,7 @@ func doWork(ctx context.Context) (clean Clean, err error) {
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
 	privacyWorker.Start(ctx)
+	auditArchiveWorker.Start(ctx)
 	datasourceDeliveryWorker.Start(ctx)
 	datasourceInstallationWorker.Start(ctx)
 	eventRelayWorker.Start(ctx)
@@ -1589,18 +1683,39 @@ func configuredMFAStepUpMaxAge() (time.Duration, error) {
 	return maxAge, nil
 }
 
+// centralEnforcementMode is the request-time central RBAC admission a
+// deployment selected. It is an enum rather than a bool so the boot can tell
+// "nobody configured this" from "an operator asked for classify-only": the two
+// now mean different things, and collapsing them onto an unset value is exactly
+// how the classify-only reading became every deployment's default.
+type centralEnforcementMode uint8
+
+const (
+	// centralEnforcementEnforce denies at admission. It is the default.
+	centralEnforcementEnforce centralEnforcementMode = iota
+	// centralEnforcementShadow classifies only and denies nothing. It is
+	// reachable only by naming it in the configuration.
+	centralEnforcementShadow
+)
+
+// Enforcing reports whether the interceptors hard-deny.
+func (m centralEnforcementMode) Enforcing() bool { return m == centralEnforcementEnforce }
+
 // configuredCentralEnforcement selects request-time central RBAC admission from
-// the security configuration. "enforce" turns hard-deny on; "shadow" (and an
-// unset value) keeps the classify-only fallback. Any other value fails the boot
-// so a typo cannot silently leave enforcement off.
-func configuredCentralEnforcement() (bool, error) {
+// the security configuration. An unset value enforces: the central tenant floor
+// is a redundant floor beneath the per-call authority Check and the handlers'
+// own require* sites, so a deployment that says nothing gets the stricter of the
+// two readings rather than the weaker one. "shadow" is an explicit opt-out that
+// the boot warns about by name; any other value fails the boot so a typo cannot
+// silently leave enforcement off.
+func configuredCentralEnforcement() (centralEnforcementMode, error) {
 	switch strings.ToLower(strings.TrimSpace(workspaceEnv("security", "RBAC_CENTRAL_ENFORCEMENT"))) {
-	case "", "shadow":
-		return false, nil
-	case "enforce":
-		return true, nil
+	case "", "enforce":
+		return centralEnforcementEnforce, nil
+	case "shadow":
+		return centralEnforcementShadow, nil
 	default:
-		return false, fmt.Errorf(`RBAC_CENTRAL_ENFORCEMENT must be "shadow" or "enforce"`)
+		return centralEnforcementEnforce, fmt.Errorf(`RBAC_CENTRAL_ENFORCEMENT must be "shadow" or "enforce"`)
 	}
 }
 
@@ -2334,6 +2449,49 @@ func discoverOIDCValidator(provider string, defaultAudienceToClientID bool) (val
 			"identity provider %s published no token endpoint; set IDENTITY_TOKEN_URL", provider)
 	}
 	return v, tokenURL, clientID, clientSecret, nil
+}
+
+// configuredProviderSignOut resolves what the identity provider offers for
+// ending its own session. The endpoint comes from an explicit
+// IDENTITY_END_SESSION_URL pin, or from the provider's discovery document when
+// the deployment configured an issuer — the same two sources, in the same
+// order, as the JWKS and token endpoints.
+//
+// A discovery failure here is a warning and not a boot refusal, deliberately:
+// by the time this runs the login path has already discovered the same document
+// successfully (buildProviderStack would have failed the boot otherwise), so a
+// failure is transient, and refusing to start a host whose sign-in works because
+// its sign-out could not be enriched trades a working deployment for a
+// cosmetic one. The consequence is stated at boot instead: no end-session URL
+// is returned, and a sign-out ends the host session only.
+//
+// A provider configured from a preset rather than from an issuer (auth0,
+// google) reaches this with no IDENTITY_ISSUER and needs the explicit pin;
+// Google publishes no end_session_endpoint at all.
+func configuredProviderSignOut(ctx context.Context, provider string) business.ProviderSignOut {
+	signOut := business.ProviderSignOut{
+		ClientID:              identityEnv("IDENTITY_CLIENT_ID"),
+		PostLogoutRedirectURI: identityEnv("IDENTITY_POST_LOGOUT_REDIRECT_URI"),
+	}
+	if pinned := identityEnv("IDENTITY_END_SESSION_URL"); hasConfiguredValue(pinned) {
+		signOut.EndSessionEndpoint = pinned
+		return signOut
+	}
+	issuer := identityEnv("IDENTITY_ISSUER")
+	if !hasConfiguredValue(issuer) {
+		return signOut
+	}
+	discoverCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	discovered, err := oidc.Discover(discoverCtx, issuer, nil)
+	if err != nil {
+		wool.Get(ctx).In("configuredProviderSignOut").Warn(
+			"could not read the provider's end_session_endpoint; a sign-out ends the host session only",
+			wool.Field("provider", provider), wool.ErrField(err))
+		return signOut
+	}
+	signOut.EndSessionEndpoint = discovered.EndSessionEndpoint
+	return signOut
 }
 
 func identityEnvOrDefault(key, fallback string) string {

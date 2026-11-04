@@ -53,7 +53,7 @@ func TestDelegatedRecordAccessUsesRealPlacementAndAllSubjects(t *testing.T) {
 
 // Both halves of the decision — the grant check's record CTE and the placement
 // disclosure — resolve a record on (resource_type, resource_id) with no tenant
-// predicate, because scope_nodes is RLS-scoped to app.current_org_id. The unique
+// predicate, because scope_nodes is RLS-scoped to codefly.current_tenant_id. The unique
 // index is per tenant, so the same resource id may be placed in two of them, and
 // a scope path is spelled the same in both; a leak between them would therefore
 // still resolve to a real grant rather than fail closed.

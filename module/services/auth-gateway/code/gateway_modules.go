@@ -24,21 +24,18 @@ import (
 // re-validates the resolved IPs at dial time — for every upstream a DECLARATION
 // named, rather than the static catalog.
 //
-// Both kinds qualify, for one reason: the address is read out of a delivered
+// A declared solution qualifies because the address is read out of a delivered
 // document and the person's identity is stamped on what is sent there, so the
 // host must still refuse a name that resolves somewhere it will not send a
-// request made on someone's behalf. A module route added without this line would
-// have been the one declared upstream dialled on the plain transport, and nothing
-// about the route's shape would have said so.
+// request made on someone's behalf. No module is proxied this way: a module call
+// goes through the hop (gateway_hop.go).
 //
 // The predicate has a second reader now: proxyTo withholds the caller's COOKIE
 // for exactly these routes (removeCallerCookie). The bearer still travels —
 // SA-F-BEARER is recorded open, for the reason given at
 // removePersonsSessionCredential in gateway.go.
 func isRuntimeRegisteredRoute(entry *RouteEntry) bool {
-	return entry != nil &&
-		(strings.HasPrefix(entry.Service, solutionServicePrefix) ||
-			strings.HasPrefix(entry.Service, moduleServicePrefix))
+	return entry != nil && strings.HasPrefix(entry.Service, solutionServicePrefix)
 }
 
 // meshHostSuffixes are the DNS suffixes that denote a composition-local

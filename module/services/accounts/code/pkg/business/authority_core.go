@@ -44,8 +44,8 @@ type authorityCoreState struct {
 	mu   sync.RWMutex
 	core *authority.Service
 	err  error
-	// step is the install step a solution installation runs before it is
-	// active; nil activates at once, as the local authority does.
+	// step overrides the host's durable setup adapter for explicit test/host
+	// integration. An absent override uses canonicalInstallationStep.
 	step authority.InstallStep
 }
 
@@ -110,7 +110,7 @@ func (s *Service) AuthorityCore() (*authority.Service, error) {
 }
 
 // SetAuthorityInstallStep sets the step a solution installation runs before
-// it is active; nil activates it at once.
+// it is active; nil restores the host's durable setup adapter.
 func (s *Service) SetAuthorityInstallStep(step authority.InstallStep) {
 	state := s.authorityCoreState()
 	state.mu.Lock()
@@ -123,7 +123,10 @@ func (s *Service) AuthorityInstallStep() authority.InstallStep {
 	state := s.authorityCoreState()
 	state.mu.RLock()
 	defer state.mu.RUnlock()
-	return state.step
+	if state.step != nil {
+		return state.step
+	}
+	return s.canonicalInstallationStep
 }
 
 // MemberPermissions are the contributed permissions every current member of

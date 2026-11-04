@@ -126,7 +126,7 @@ func newDelegationViewFixture(t *testing.T, ctx context.Context) dvFixture {
  ALTER TABLE dv_rows ENABLE ROW LEVEL SECURITY;
  ALTER TABLE dv_rows FORCE ROW LEVEL SECURITY;
  CREATE POLICY dv_rows_tenant ON dv_rows
-   USING (org_id::text = current_setting('app.current_org_id', true));
+   USING (org_id::text = current_setting('codefly.current_tenant_id', true));
  INSERT INTO dv_rows VALUES
    ('`+dvOrgA+`',1,'pattern',3,'a-secret'),
    ('`+dvOrgB+`',2,'pattern',7,'b-secret');
@@ -215,11 +215,11 @@ func TestDelegationViewOwnerAuthorityDecidesTheCrossing(t *testing.T) {
 						// irrelevant and the tenant policy binds.
 						_, err := fixture.admin.Exec(ctx, fmt.Sprintf(`ALTER VIEW %s SET (security_invoker = true)`, view.name))
 						require.NoError(t, err)
-						_, err = conn.Exec(ctx, `SELECT set_config('app.current_org_id', $1, false)`, dvOrgA)
+						_, err = conn.Exec(ctx, `SELECT set_config('codefly.current_tenant_id', $1, false)`, dvOrgA)
 						require.NoError(t, err)
 						require.Equal(t, []string{dvOrgA}, orgsRead(t, ctx, conn, view.name),
 							"with security_invoker, %s reads only the tenant it bound", capability.name)
-						_, err = conn.Exec(ctx, `SELECT set_config('app.current_org_id', '', false)`)
+						_, err = conn.Exec(ctx, `SELECT set_config('codefly.current_tenant_id', '', false)`)
 						require.NoError(t, err)
 						require.Empty(t, orgsRead(t, ctx, conn, view.name),
 							"with security_invoker and nothing bound, %s reads nothing", capability.name)

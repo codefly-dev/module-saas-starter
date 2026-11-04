@@ -8,18 +8,20 @@ import (
 	"github.com/google/uuid"
 
 	"accounts/pkg/auth"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // FixturePerson is one person the development fixture provider signs in, as
 // this host knows them: the canonical person, their organisation, their role
 // there and their teams, and the token SignIn takes for them.
 type FixturePerson struct {
-	PersonID       string
-	Email          string
-	OrganizationID string
-	Roles          []string
-	TeamIDs        []string
-	FixtureToken   string
+	PersonID                string
+	Email                   string
+	OrganizationID          string
+	OrganizationDisplayName string
+	Roles                   []string
+	TeamIDs                 []string
+	FixtureToken            string
 }
 
 // fixtureAllowlist is the development validator's ordered allowlist.
@@ -70,6 +72,11 @@ func (s *Service) ListFixturePeople(ctx context.Context) ([]FixturePerson, error
 		person := FixturePerson{PersonID: identity.UserID.String(), Email: identity.Email, FixtureToken: token}
 		if identity.OrgID != uuid.Nil {
 			person.OrganizationID = identity.OrgID.String()
+			organization, err := s.GetOrganization(ctx, &gen.GetOrganizationRequest{Id: person.OrganizationID})
+			if err != nil {
+				return nil, err
+			}
+			person.OrganizationDisplayName = organization.GetName()
 			person.Roles = []string{identity.OrgRole}
 			if person.TeamIDs, err = s.fixtureTeamIDs(ctx, person.OrganizationID, person.PersonID); err != nil {
 				return nil, err

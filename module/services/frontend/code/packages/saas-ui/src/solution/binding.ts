@@ -15,7 +15,7 @@ import type { DeclaredSource } from "../datasources/declared-source.js";
 export interface SolutionBinding {
 	solutionId: string;
 	/**
-	 * Same-origin base for ALL of a remote's backend calls — its own service and
+	 * Same-origin base for a remote's solution-runtime and host platform calls — its own service and
 	 * the host's platform services alike. ONE base covers both because the host
 	 * proxy routes on the path, not on the base: a Connect procedure shaped
 	 * `saas.<pkg>.v1.<Service>/<Method>` goes to the API gateway's root, exactly
@@ -24,10 +24,14 @@ export interface SolutionBinding {
 	 *
 	 * So a kit component the host hands a remote — `<DatasourcesPanel gateway>`
 	 * calls the host's `saas.accounts.v1.DatasourceService` — works over this
-	 * base unchanged. Do NOT add a second "host" base: it would be the same
-	 * destination reached a second way.
+	 * base unchanged. Direct composed-module calls use moduleApiBase instead: they acquire the
+	 * person's capability through the host edge, not the solution-runtime relay.
 	 */
 	apiBase: string;
+	/** Optional host-provided browser edge for generated module clients.
+	 * Missing means unavailable; never infer an origin or a module URL.
+	 */
+	moduleApiBase?: string;
 	/** Host-owned access-token getter — the remote never touches the token store. */
 	getAccessToken: () => string | null;
 	/**
@@ -90,6 +94,43 @@ export interface SolutionBinding {
 	 * "no installation to act in", never fall back to a value of its own.
 	 */
 	installationId?: string;
+	/**
+	 * The organization the host VERIFIED this viewer acting in — the gateway's
+	 * answer for the credential, never one the page or a token claim chose. A
+	 * remote scopes a call to the organization with it; it grants nothing.
+	 *
+	 * Optional and absent while resolving, on an older host, and when the viewer
+	 * is not entitled, on the same terms as `installationId`.
+	 */
+	organizationId?: string;
+	/**
+	 * The stable key the host's entitlements answer for this viewer. It
+	 * partitions what a page keeps per viewer — a draft, a conversation — and
+	 * authorizes nothing. Absent on the same terms as `organizationId`.
+	 *
+	 * It is the EFFECTIVE viewer: while an administrator impersonates someone it
+	 * is the impersonated person's key, as the entitlements are theirs, so what
+	 * the administrator keeps under it lands in that person's partition.
+	 */
+	viewerKey?: string;
+	/**
+	 * The modules this page declared it consumes, by alias, each with the
+	 * viewer organization's installation of it: the declaration the host
+	 * applied, joined to the verified viewer's own entitlements. A module the
+	 * page declares but the viewer cannot reach has no entry, so a remote reads
+	 * an absent alias as "not reachable here" and never supplies one itself.
+	 * An entry is not admission: the module still admits each call, and refuses
+	 * one whose binding the platform withheld, with its reason.
+	 *
+	 * Optional, and absent as a whole on an older host or while resolving:
+	 * that is "the host does not tell me", not "this page reaches nothing".
+	 */
+	reach?: Readonly<Record<string, ReachedInstallation>>;
+}
+
+/** One module a page reaches, as the host resolved it for this viewer. */
+export interface ReachedInstallation {
+	installationId: string;
 }
 
 /**
@@ -123,7 +164,7 @@ export type SolutionCredential =
  * binding — but the credential as a whole is not.
  */
 export type SolutionRequestBinding = Pick<SolutionBinding, "apiBase"> &
-	Partial<Pick<SolutionBinding, "subscribeToken">> &
+	Partial<Pick<SolutionBinding, "subscribeToken" | "moduleApiBase">> &
 	SolutionCredential;
 
 /** Thrown for a binding that carries no credential at all. */
@@ -145,9 +186,10 @@ export function requestBinding(
 	apiBase: string,
 	getAccessToken: SolutionBinding["getAccessToken"] | undefined,
 	authedFetch: SolutionBinding["authedFetch"] | undefined,
+	moduleApiBase?: SolutionBinding["moduleApiBase"],
 ): SolutionRequestBinding {
-	if (authedFetch) return { apiBase, getAccessToken, authedFetch };
-	if (getAccessToken) return { apiBase, getAccessToken };
+	if (authedFetch) return { apiBase, getAccessToken, authedFetch, ...(moduleApiBase === undefined ? {} : { moduleApiBase }) };
+	if (getAccessToken) return { apiBase, getAccessToken, ...(moduleApiBase === undefined ? {} : { moduleApiBase }) };
 	throw new SolutionBindingError();
 }
 

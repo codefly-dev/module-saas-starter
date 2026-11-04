@@ -86,6 +86,15 @@ describe("solution installation facts", () => {
 		});
 	});
 
+	it("retains the host's exact setup outcome after a fresh listing", () => {
+		for (const message of ["Setup is queued.", "Setup is temporarily unavailable and will retry.", "Setup refused: required configuration is missing.", "Setup acknowledged. Continue the original reviewed installation to finish activation."]) {
+			const response = installed("t-1", true);
+			response.installation!.setupMessage = message;
+			const [row] = installedRows([response]);
+			expect(row.failureReason).toBe(message);
+		}
+	});
+
 	it("never guesses a name for a target the host no longer offers", () => {
 		const [row] = installedRows([installed("t-gone", false)]);
 		expect(row.solution).toMatchObject({ kind: "gap", label: "Not offered" });

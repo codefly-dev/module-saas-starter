@@ -16,6 +16,14 @@ type installationConnectHandler struct {
 	inner *InstallationServer
 }
 
+func (h *installationConnectHandler) ReviewSolutionInstall(ctx context.Context, req *connect.Request[gen.ReviewSolutionInstallRequest]) (*connect.Response[gen.ReviewedSolutionInstall], error) {
+	return unary(ctx, req, h.inner.ReviewSolutionInstall)
+}
+
+func (h *installationConnectHandler) InstallReviewedSolution(ctx context.Context, req *connect.Request[gen.InstallReviewedSolutionRequest]) (*connect.Response[gen.Installation], error) {
+	return unary(ctx, req, h.inner.InstallReviewedSolution)
+}
+
 func (h *installationConnectHandler) RetryInstallation(ctx context.Context, req *connect.Request[gen.RetryInstallationRequest]) (*connect.Response[gen.Installation], error) {
 	return unary(ctx, req, h.inner.RetryInstallation)
 }

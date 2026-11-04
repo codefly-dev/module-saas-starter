@@ -65,6 +65,8 @@ type AvailableSolutionQuery struct {
 	OrgID string
 	// TargetID narrows to one target. When set, Cursor is ignored.
 	TargetID string
+	// BindingID narrows the same accepted catalogue predicate to a known binding.
+	BindingID string
 	// TargetIDs narrows to a set of targets — the ones a page of installations
 	// names — so joining a listing to the catalogue is one statement through the
 	// same acceptance predicate, not one per row. Empty does not narrow.

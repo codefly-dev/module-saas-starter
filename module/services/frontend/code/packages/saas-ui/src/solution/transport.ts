@@ -53,3 +53,16 @@ export function solutionTransport(
 		],
 	});
 }
+
+/** Generated module clients use the host's explicit person-authorized edge.
+ * This deliberately does not change solutionTransport's runtime relay paths.
+ */
+export function moduleTransport(
+	binding: SolutionRequestBinding,
+	onUnauthorized?: () => void,
+): Transport {
+	if (!binding.moduleApiBase?.trim()) {
+		throw new Error("module connection unavailable: the host did not provide moduleApiBase");
+	}
+	return solutionTransport({ ...binding, apiBase: binding.moduleApiBase }, "", onUnauthorized);
+}

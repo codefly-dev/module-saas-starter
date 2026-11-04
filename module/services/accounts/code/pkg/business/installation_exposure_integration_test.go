@@ -4,6 +4,7 @@ package business_test
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"testing"
 	"time"
@@ -12,14 +13,24 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// exposureWorld is one organization with an installed solution, a team, a member
+// exposureWorld is one organization with an installed module, a team, a member
 // of that team, a member outside it, and a role that permits using a solution;
 // and a second organization with a team and an installation of its own.
+//
+// The installation is a module's: the kind whose team grants at its authority
+// root this host's own store still decides. A solution's people and teams are
+// the authority core's role grants (GrantRole, read back through
+// HeldInstallations), which the host interface conformance suite proves; a
+// legacy scope grant at a solution's root entitles nobody, which
+// TestListSolutionEntitlements_LegacySolutionGrantEntitlesNobody pins at the
+// store.
 type exposureWorld struct {
 	admin, inTeam, outside  string
 	org, team, useRole      string
@@ -42,10 +53,16 @@ func createRole(t *testing.T, orgID, name, resource, action string) string {
 	return roleID
 }
 
+// installForExposure delivers a module whose paired declaration selects an
+// explicit standing role, and installs it through the administrator's install.
 func installForExposure(t *testing.T, adminID, orgID string) (installationID, targetID, alias string) {
 	t.Helper()
 	agentRole := createRole(t, orgID, "agent", "doc", "write")
-	targetID, alias = declarePresence(t, "exposed-solution")
+	alias = uniqueAlias("exposed-module")
+	targetID = declarePresenceAt(t, alias, business.SolutionDeclaredKindModule)
+	require.NoError(t, testStore.AuthorityCore().Write(testCtx, func(tx authority.Tx) error {
+		return tx.PutModule(domain.Module{Name: alias, Principal: alias, Kind: domain.KindModule, Generation: 1})
+	}))
 	installation, err := testService.InstallSolution(testCtx, adminID, &business.InstallSolutionParams{
 		OrgID:           orgID,
 		AgentIdentifier: "acme.example/exposed:1.0.0",
@@ -54,8 +71,22 @@ func installForExposure(t *testing.T, adminID, orgID string) (installationID, ta
 		RoleID:          agentRole,
 	})
 	require.NoError(t, err)
-	acknowledgeInstallation(t, installation)
+	// A module's consent is active at once; a solution would wait for its setup.
+	require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, installation.GetStatus())
 	return installation.GetId(), targetID, alias
+}
+
+// withAuthorityCore builds the shared service's authority core as production
+// builds it at start (configurePermissionServerKeys: ConfigureAuthorityCore
+// with the Work Context issuer and key) for the length of one test. Entitlement
+// reads merge the core's held solutions, so a test reading them builds it; the
+// world itself installs nothing that needs it.
+func withAuthorityCore(t *testing.T) {
+	t.Helper()
+	_, key, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	require.NoError(t, testService.ConfigureAuthorityCore(testCtx, "https://accounts.example.test", "exposure-test", key))
+	t.Cleanup(testService.UnconfigureAuthorityCoreForTest)
 }
 
 func newExposureWorld(t *testing.T) *exposureWorld {
@@ -103,6 +134,7 @@ func entitledInstallations(t *testing.T, orgID, subjectID string) []string {
 // menu and the solution proxy rely on, not a second reading of the same row.
 func TestGrantInstallationToTeamExposesItToThatTeamOnly(t *testing.T) {
 	w := newExposureWorld(t)
+	withAuthorityCore(t)
 	server := &adapters.InstallationServer{}
 	admin := storyCallerContext(testCtx, w.admin, w.org)
 
@@ -171,6 +203,7 @@ func TestListOrganizationInstallationsIsTenantScoped(t *testing.T) {
 // and a member who is not an administrator is denied. None of them writes a grant.
 func TestGrantInstallationToTeamRefusals(t *testing.T) {
 	w := newExposureWorld(t)
+	withAuthorityCore(t)
 	server := &adapters.InstallationServer{}
 	admin := storyCallerContext(testCtx, w.admin, w.org)
 
@@ -207,6 +240,7 @@ func TestGrantInstallationToTeamRefusals(t *testing.T) {
 // the solution to the team, and the revocation is in the audit journal.
 func TestRevokeInstallationFromTeamAppliesDirectly(t *testing.T) {
 	w := newExposureWorld(t)
+	withAuthorityCore(t)
 	server := &adapters.InstallationServer{}
 	admin := storyCallerContext(testCtx, w.admin, w.org)
 	grant := &gen.GrantInstallationToTeamRequest{
@@ -250,6 +284,7 @@ func requireARowLockWaiter(t *testing.T, msg string) {
 func TestGrantInstallationToTeamSerializesWithUninstall(t *testing.T) {
 	t.Run("uninstall commits first: the waiting grant finds nothing", func(t *testing.T) {
 		w := newExposureWorld(t)
+		withAuthorityCore(t)
 		granted := make(chan error, 1)
 		require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 			_, transitioned, err := testStore.UninstallSolution(ctx, w.org, w.installation)
@@ -282,7 +317,7 @@ func TestGrantInstallationToTeamSerializesWithUninstall(t *testing.T) {
 			RootScopeLabel: "Exposed", RoleID: agentRole,
 		})
 		require.NoError(t, err)
-		acknowledgeInstallation(t, reinstalled)
+		require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, reinstalled.GetStatus())
 		require.NotEqual(t, w.installation, reinstalled.GetId())
 		require.Empty(t, entitledInstallations(t, w.org, w.inTeam))
 	})

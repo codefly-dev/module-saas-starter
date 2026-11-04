@@ -26,22 +26,22 @@ func (s *PostgresStore) PutExecutableArtifactApproval(ctx context.Context, a *bu
 	result, err := s.getQueryExecutor(ctx).Exec(ctx, `INSERT INTO executable_artifact_approvals
  (id,org_id,installation_id,module_principal_id,policy_id,subject_digest,subject,approved_by)
  VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
- ON CONFLICT (org_id,installation_id,module_principal_id,subject_digest) DO NOTHING`, a.ID, a.OrgID, a.Installation, a.Module, a.Policy, a.Digest, a.Subject, a.ApprovedBy)
+ ON CONFLICT (org_id,installation_id,module_principal_id,policy_id,subject_digest) DO NOTHING`, a.ID, a.OrgID, a.Installation, a.Module, a.Policy, a.Digest, a.Subject, a.ApprovedBy)
 	if err != nil {
 		return nil, false, err
 	}
-	row, err := s.GetExecutableArtifactApproval(ctx, a.OrgID, a.Installation, a.Module, a.Digest)
+	row, err := s.GetExecutableArtifactApproval(ctx, a.OrgID, a.Installation, a.Module, a.Policy, a.Digest)
 	return row, result.RowsAffected() == 1, err
 }
-func (s *PostgresStore) GetExecutableArtifactApproval(ctx context.Context, org, installation, module, digest string) (*business.ExecutableArtifactApproval, error) {
+func (s *PostgresStore) GetExecutableArtifactApproval(ctx context.Context, org, installation, module, policy, digest string) (*business.ExecutableArtifactApproval, error) {
 	// Serialize exact-identity decisions with revocation. FOR UPDATE avoids lock
 	// upgrades when this lookup precedes a revoke in the same tenant transaction.
 	return scanArtifactApproval(s.getQueryExecutor(ctx).QueryRow(ctx, `SELECT `+artifactApprovalColumns+`
- FROM executable_artifact_approvals WHERE org_id=$1 AND installation_id=$2 AND module_principal_id=$3 AND subject_digest=$4 FOR UPDATE`, org, installation, module, digest))
+ FROM executable_artifact_approvals WHERE org_id=$1 AND installation_id=$2 AND module_principal_id=$3 AND policy_id=$4 AND subject_digest=$5 FOR UPDATE`, org, installation, module, policy, digest))
 }
-func (s *PostgresStore) RevokeExecutableArtifactApproval(ctx context.Context, org, installation, module, digest, actor string) (bool, error) {
-	result, err := s.getQueryExecutor(ctx).Exec(ctx, `UPDATE executable_artifact_approvals SET revoked_at=CURRENT_TIMESTAMP, revoked_by=$5
- WHERE org_id=$1 AND installation_id=$2 AND module_principal_id=$3 AND subject_digest=$4 AND revoked_at IS NULL`, org, installation, module, digest, actor)
+func (s *PostgresStore) RevokeExecutableArtifactApproval(ctx context.Context, org, installation, module, policy, digest, actor string) (bool, error) {
+	result, err := s.getQueryExecutor(ctx).Exec(ctx, `UPDATE executable_artifact_approvals SET revoked_at=CURRENT_TIMESTAMP, revoked_by=$6
+ WHERE org_id=$1 AND installation_id=$2 AND module_principal_id=$3 AND policy_id=$4 AND subject_digest=$5 AND revoked_at IS NULL`, org, installation, module, policy, digest, actor)
 	if err != nil {
 		return false, err
 	}

@@ -128,7 +128,7 @@ func (c *Client) Fetch(ctx context.Context, pageURL string) (Page, error) {
 	if err != nil {
 		return Page{}, fmt.Errorf("crawler: fetch page: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return Page{}, fmt.Errorf("crawler: page fetch returned status %d", resp.StatusCode)
 	}
@@ -173,7 +173,7 @@ func (c *Client) fetchSitemap(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("crawler: fetch sitemap: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("crawler: sitemap fetch returned status %d", resp.StatusCode)
 	}

@@ -780,9 +780,8 @@ func (s *Service) sealGitHubConnectCredential(ctx context.Context, source *Datas
 // each encrypted through the SecretCipher and persisted only as an envelope
 // reference.
 type AddSourceInput struct {
-	operationsOnly bool
-	OrgID          string
-	Provider       string
+	OrgID    string
+	Provider string
 	// The data boundary the source writes into: exactly one of an existing scope
 	// node's id, or a label to mint a new `collection` node (issue #473).
 	BoundaryNodeID  string

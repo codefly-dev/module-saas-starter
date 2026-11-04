@@ -15,7 +15,7 @@ import (
 // Background: codefly's Postgres plugin connects the accounts service as a
 // SUPERUSER by default. Postgres superusers bypass RLS unconditionally,
 // even when the table has FORCE ROW LEVEL SECURITY. So a naive
-// "set app.current_org_id and run the query" approach has no effect
+// "set codefly.current_tenant_id and run the query" approach has no effect
 // — the policy never evaluates.
 //
 // WithOrgTx defends against this by SET LOCAL ROLE app_tenant inside

@@ -73,6 +73,31 @@ export {
 	TeamRole,
 } from "../generated/typescript/src/gen/saas/accounts/v1/common_pb.js";
 export { WebhookService } from "../generated/typescript/src/gen/saas/accounts/v1/webhooks_pb.js";
+// The host interfaces a signed-in person's page calls, as every host serves
+// them (this host and the local authority alike): the installation interface —
+// installations, role grants and the setup read of an offer — and the session
+// the bearer belongs to. Named `Host…` beside this package's own services.
+export {
+	type ConsentApproval,
+	type Installation as HostInstallation,
+	InstallationService as HostInstallationService,
+	Installation_Status as HostInstallationStatus,
+	type ListOffersResponse,
+	type ListRoleGrantsResponse,
+	type Offer,
+	type OfferBinding,
+	type OfferCapability,
+	type OfferRole,
+	type OfferScope,
+	OfferService as HostOfferService,
+	type OfferTool,
+	type ReviewedOffer,
+	type RoleGrant,
+} from "../generated/typescript/src/gen/host/installation/v1/installation_pb.js";
+export {
+	type Session as HostSession,
+	SessionService as HostSessionService,
+} from "../generated/typescript/src/gen/host/session/v1/session_pb.js";
 export type {
 	Dashboard,
 	DashboardLayout,

@@ -47,11 +47,15 @@ func newTestGateway(t *testing.T) (baseURL string, teardown func()) {
 	// Load the real route config.
 	entries, err := LoadAllRESTRoutes(context.Background(), DefaultRoutingDir())
 	require.NoError(t, err)
-	matcher := NewRouteMatcher(entries, nil)
+	connectEntries, err := LoadConnectRoutesFromCatalog()
+	require.NoError(t, err)
+	matcher := NewRouteMatcher(entries, connectEntries)
 
-	upstreams := map[string]*url.URL{
-		"accounts": apiURL,
-	}
+	connectNet := codefly.For(testCtx).Service("accounts").API("connect").NetworkInstance()
+	require.NotNil(t, connectNet)
+	connectURL, err := url.Parse(fmt.Sprintf("http://%s:%d", connectNet.Hostname, connectNet.Port))
+	require.NoError(t, err)
+	upstreams := map[string]*url.URL{"accounts": apiURL, "accounts_connect": connectURL}
 
 	gateway := NewGateway(testExtAuthz, matcher, upstreams, nil, newFakeSolutionRegistry(), newFakeClientRegistry())
 

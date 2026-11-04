@@ -4,7 +4,9 @@ package business
 //
 // The composition's hop signs each call it admits with a key of its own, and
 // every module behind it verifies that admission by the public half, which it
-// reads from Keys. The hop presents the public half here under its workload
+// reads from Keys. A run composing the authority module has its hop service
+// sign; a cell composes none, and this host's gateway is the hop there. The hop
+// presents the public half here under its workload
 // credential; this host attests the caller is the hop and publishes the key
 // until its lease lapses. The seed never leaves the hop.
 //
@@ -17,6 +19,8 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/codefly-dev/authority/libraries/authority-client/go/stamp"
@@ -32,21 +36,28 @@ const AdmissionKeyLease = 2 * time.Minute
 // and a few more absorb rotations closer together than one lease.
 const MaxAdmissionKeys = 8
 
-// HopModule and HopService name the one workload whose admission keys this
-// host publishes: the hop service of the composition's authority module, the
-// same pair the local authority admits.
+// HopModule and HopService name the local composition's hop: the hop service
+// of the authority module, the same pair the local authority admits. A run
+// that composes the authority module on this host has it sign admissions.
 const (
 	HopModule  = "authority"
 	HopService = "hop"
 )
+
+// GatewayHopService is the service account this host's own gateway runs as,
+// the hop on a cell that composes no authority module: it signs the admission
+// of every module call it forwards. It is the gateway's declared
+// spec.service-account.name in its service.codefly.yaml, pinned to that
+// manifest by a test, and it runs in this host's own module's namespace.
+const GatewayHopService = "auth-gateway"
 
 // admissionKeyActor is the audit actor of a published admission key: the
 // system, since the hop's workload is no person; the payload names it.
 const admissionKeyActor = "system"
 
 // ErrAdmissionKeyNotTheHop refuses a registration by any workload other than
-// the hop.
-var ErrAdmissionKeyNotTheHop = errors.New("only the hop registers an admission key")
+// a hop: the composed authority module's hop, or this host's own gateway.
+var ErrAdmissionKeyNotTheHop = errors.New("only a hop registers an admission key")
 
 // ErrAdmissionKeyMalformed refuses a key that is not a raw Ed25519 public key.
 var ErrAdmissionKeyMalformed = errors.New("an admission key is a raw Ed25519 public key")
@@ -117,10 +128,9 @@ func (s *Service) RegisterAdmissionKey(ctx context.Context, credential string, p
 	if err != nil {
 		return AdmissionKey{}, err
 	}
-	hopNamespace := s.moduleNamespaces.Namespace(HopModule)
-	if reviewed.Namespace != hopNamespace || reviewed.ServiceAccount != HopService {
-		return AdmissionKey{}, fmt.Errorf("%w: the caller is %s/%s, not the hop (%s/%s)",
-			ErrAdmissionKeyNotTheHop, reviewed.Namespace, reviewed.ServiceAccount, hopNamespace, HopService)
+	if hops := s.hopWorkloads(); !slices.Contains(hops, reviewed.Namespace+"/"+reviewed.ServiceAccount) {
+		return AdmissionKey{}, fmt.Errorf("%w: the caller is %s/%s, not a hop (%s)",
+			ErrAdmissionKeyNotTheHop, reviewed.Namespace, reviewed.ServiceAccount, strings.Join(hops, " or "))
 	}
 	if reviewed.PodName == "" {
 		return AdmissionKey{}, fmt.Errorf("%w: the hop's credential names no pod, so no admission key can be pinned to it", ErrAdmissionKeyNotTheHop)
@@ -158,6 +168,18 @@ func (s *Service) RegisterAdmissionKey(ctx context.Context, credential string, p
 		return AdmissionKey{}, err
 	}
 	return key, nil
+}
+
+// hopWorkloads are the (namespace/ServiceAccount) workloads that may register
+// an admission key: the composed authority module's hop, and this host's own
+// gateway when the host knows the module it was composed as. Each namespace is
+// read through the cell's rule, never written here.
+func (s *Service) hopWorkloads() []string {
+	hops := []string{s.moduleNamespaces.Namespace(HopModule) + "/" + HopService}
+	if s.hostModule != "" {
+		hops = append(hops, s.moduleNamespaces.Namespace(s.hostModule)+"/"+GatewayHopService)
+	}
+	return hops
 }
 
 // PublishedAdmissionKeys are the registered keys still within their lease, by

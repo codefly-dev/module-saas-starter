@@ -1,3 +1,10 @@
+// When someone last signed in, said as a person reads it and kept true as time
+// passes; relativeTime is its words alone, for a consumer's own shell.
+export {
+	LastLogin,
+	type LastLoginProps,
+	relativeTime,
+} from "./audit/last-login.js";
 export {
 	type ApiSourceSpec,
 	apiSourceCollection,
@@ -18,11 +25,6 @@ export {
 	ConnectObjectStorageForm,
 	objectStorageInputFrom,
 } from "./datasources/connect-object-storage-form.js";
-export {
-	DatasourcesPanel,
-	type DatasourcesPanelProps,
-} from "./datasources/datasources-panel.js";
-export { EditSourceForm } from "./datasources/edit-source-form.js";
 // The credential block, presentational and controlled, exported for the same
 // reason `matchDeclaredSources` is: a consumer that renders the three states
 // in its own shell must be able to ASK for the credential without copying
@@ -40,6 +42,10 @@ export {
 	WebhookSecretField,
 } from "./datasources/credential-mode.js";
 export {
+	DatasourcesPanel,
+	type DatasourcesPanelProps,
+} from "./datasources/datasources-panel.js";
+export {
 	type DeclaredSource,
 	declaredCollectionLabel,
 	matchDeclaredSources,
@@ -53,6 +59,7 @@ export {
 	DatasourceDirectoryPanel,
 	useMyAccountLinks,
 } from "./datasources/directory.js";
+export { EditSourceForm } from "./datasources/edit-source-form.js";
 export {
 	createDatasourceClient,
 	datasourceClientOverTransport,
@@ -124,14 +131,14 @@ export type {
 	CollectionGrantView,
 	ConnectGitHubInput,
 	ConnectObjectStorageInput,
+	ConnectPersonalApiInput,
 	ConnectSourceInput,
+	DatasourceClient,
 	DatasourceConnectField,
 	DatasourceCredential,
-	DatasourceProviderView,
-	ConnectPersonalApiInput,
-	DatasourceClient,
 	DatasourceDirectoryView,
 	DatasourceProviderName,
+	DatasourceProviderView,
 	DatasourceStatusName,
 	DatasourceView,
 	DomainView,
@@ -159,23 +166,35 @@ export {
 	COLLECTION_ACCESS_PATH,
 	injectTraceContext,
 	installBrowserTracing,
+	moduleTransport,
 	type NameOf,
 	NoReadableCollection,
 	type NoReadableCollectionProps,
 	OTEL_API_VERSION,
-	PrincipalName,
 	type PrincipalDirectoryState,
+	PrincipalName,
 	type PrincipalNameProps,
 	PrincipalNamesProvider,
 	type PrincipalNamesProviderProps,
+	refusalOf,
+	type ReachedInstallation,
 	requestBinding,
 	resolveTraceExportEndpoint,
+	type SetupClients,
+	type SetupCondition,
+	type SetupState,
+	type SetupSubject,
 	type SolutionBinding,
 	SolutionBindingError,
 	type SolutionCredential,
 	type SolutionRequestBinding,
 	SolutionRequestError,
 	type SolutionResource,
+	SolutionRoleGrantForm,
+	SolutionSetup,
+	type SolutionSetupProps,
+	type SolutionSetupTransport,
+	setupClients,
 	solutionFetch,
 	solutionJson,
 	solutionTransport,
@@ -194,12 +213,10 @@ export {
 	usePrincipalDirectory,
 	usePrincipalNames,
 	useSolutionJson,
+	useSolutionSetup,
 	useViewerEpoch,
 	viewerAdministersOrganization,
 	viewerIdentity,
 	viewerOrganization,
 	viewerPrincipal,
 } from "./solution/index.js";
-// When someone last signed in, said as a person reads it and kept true as time
-// passes; relativeTime is its words alone, for a consumer's own shell.
-export { LastLogin, type LastLoginProps, relativeTime } from "./audit/last-login.js";

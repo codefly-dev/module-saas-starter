@@ -139,7 +139,7 @@ func (c operationHTTPClient) Do(ctx context.Context, method, target string, body
 	if err != nil {
 		return nil, &apisource.Failure{Reason: "transport failed"}
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return nil, &apisource.Failure{Reason: "provider refused", ProviderStatus: res.StatusCode, RetryAfter: time.Minute}
 	}

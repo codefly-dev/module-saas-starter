@@ -105,6 +105,15 @@ func (s *Service) ListOrganizationInstallations(
 		return nil, "", w.Wrapf(err, "cannot list organization installations")
 	}
 
+	canonical, err := s.canonicalSolutionSummaries(ctx, orgID, "", pageToken, gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, pageSize+1)
+	if err != nil {
+		return nil, "", err
+	}
+	canonicalIDs := make(map[string]bool, len(canonical))
+	for _, row := range canonical {
+		canonicalIDs[row.GetInstallation().GetId()] = true
+	}
+	summaries = mergeInstallationSummaries(summaries, canonical)
 	next := ""
 	if len(summaries) > pageSize {
 		summaries = summaries[:pageSize]
@@ -169,6 +178,11 @@ func (s *Service) ListOrganizationInstallations(
 			Exposure: exposure[installation.GetId()],
 			Target:   targets[installation.GetTargetId()],
 		}
+		if canonicalIDs[installation.GetId()] {
+			// Person/team grants are the shared core's ListRoleGrants. No
+			// legacy exposure root or derived module grants are fabricated.
+			row.Exposure = &InstallationExposure{}
+		}
 		if installation.GetStatus() == gen.InstallationStatus_INSTALLATION_STATUS_REVOKED {
 			// Its former root may now be reused by a new installation. Those
 			// grants belong to the new consent, never to this review history.
@@ -176,6 +190,18 @@ func (s *Service) ListOrganizationInstallations(
 		}
 		row.Readiness, row.ReachedModules = facts.readinessFor(
 			installation, summary.GetHealth(), row.Target, installedByPrincipal)
+		if canonicalIDs[installation.GetId()] && installation.GetStatus() == gen.InstallationStatus_INSTALLATION_STATUS_PENDING {
+			detail := installation.GetSetupMessage()
+			if detail == "" {
+				detail = "Setup is pending. Continue the original reviewed installation to check its result."
+			}
+			row.Readiness = InstallationReadiness{Unmet: []ReadinessCondition{{
+				Kind:      gen.ReadinessConditionKind_READINESS_CONDITION_KIND_INSTALL_STEP_PENDING,
+				Detail:    detail,
+				ClearedBy: gen.ReadinessClearedBy_READINESS_CLEARED_BY_ORGANIZATION_ADMIN,
+				Action:    gen.ReadinessAction_READINESS_ACTION_RETRY_INSTALL_STEP,
+			}}}
+		}
 		for i := range row.ReachedModules {
 			if id := row.ReachedModules[i].InstallationID; id != "" {
 				if reachedTarget := targets[installedTargetID(summaries, id)]; reachedTarget != nil {
@@ -275,6 +301,9 @@ func (s *Service) GrantInstallationToTeam(
 			roleID, _, _, err = reader.InstallationRoleRevision(ctx, orgID, installationID)
 			if err != nil {
 				return err
+			}
+			if roleID == "" {
+				return NewStoreError(fmt.Errorf("this installation has no standing role; choose an explicit person/team role"), ErrTypeValidation)
 			}
 		}
 		permits, err := s.installationStore().RolePermits(ctx, roleID, ResourceTypeSolution, ActionUseSolution)

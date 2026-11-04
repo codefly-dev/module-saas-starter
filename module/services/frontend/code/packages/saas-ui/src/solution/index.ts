@@ -1,5 +1,6 @@
 export type { DeclaredSource } from "../datasources/declared-source.js";
 export {
+	type ReachedInstallation,
 	requestBinding,
 	type SolutionBinding,
 	SolutionBindingError,
@@ -14,8 +15,8 @@ export {
 } from "./no-readable-collection.js";
 export {
 	type NameOf,
-	PrincipalName,
 	type PrincipalDirectoryState,
+	PrincipalName,
 	type PrincipalNameProps,
 	PrincipalNamesProvider,
 	type PrincipalNamesProviderProps,
@@ -28,6 +29,23 @@ export {
 	solutionFetch,
 	solutionJson,
 } from "./request.js";
+export {
+	refusalOf,
+	type SetupCondition,
+	type SetupSubject,
+} from "./setup/model.js";
+export {
+	SolutionRoleGrantForm,
+	SolutionSetup,
+	type SolutionSetupProps,
+	type SolutionSetupTransport,
+} from "./setup/solution-setup.js";
+export {
+	type SetupClients,
+	type SetupState,
+	setupClients,
+	useSolutionSetup,
+} from "./setup/use-solution-setup.js";
 export {
 	TRACE_ATTRIBUTE_VALUE_MAX_LENGTH,
 	TRACE_DENIED_ATTRIBUTE_KEYS,
@@ -48,7 +66,7 @@ export {
 	TRACE_EXPORT_DELAY_MS,
 	TRACE_EXPORT_META_NAME,
 } from "./tracing.js";
-export { solutionTransport } from "./transport.js";
+export { moduleTransport, solutionTransport } from "./transport.js";
 export {
 	type SolutionResource,
 	useAccessToken,

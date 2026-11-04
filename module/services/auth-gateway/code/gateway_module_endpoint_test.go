@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
@@ -100,56 +98,6 @@ func TestAModuleIsRoutedToTheEndpointTheCompositionAddressed(t *testing.T) {
 				return
 			}
 			require.Equal(t, tc.want, upstreams["documents"].String())
-		})
-	}
-}
-
-// The address the SDK resolves is where traffic goes, asked for by the
-// endpoint's declared name; the record carries no address at all.
-func TestAModuleRouteGoesWhereTheSDKResolvesItsEndpoint(t *testing.T) {
-	gw, _, _, priv := newGatewayHarness(t)
-	resolved := declareModule(t, gw, "example-module")
-	endpoint := fakeRouteEndpoint("example-module")
-	original, _ := testModuleAddresses.Load(endpoint.String())
-	asked := 0
-	previous := gw.solutions.resolveEndpoint
-	gw.solutions.resolveEndpoint = func(_ context.Context, named moduleEndpoint) (string, error) {
-		require.Equal(t, endpoint, named)
-		asked++
-		return original.(string), nil
-	}
-	t.Cleanup(func() { gw.solutions.resolveEndpoint = previous })
-	require.NoError(t, gw.solutions.refresh(context.Background()))
-	require.Equal(t, 1, asked)
-
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/example-module/things", nil)
-	request.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
-	gw.ServeHTTP(recorder, request)
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	require.Equal(t, "/v1/example-module/things", resolved.lastPath)
-}
-
-// No resolvable address, or one the upstream policy refuses, leaves the module
-// unrouted — answered as not active, never guessed.
-func TestAModuleWithNoUsableAddressIsNotRouted(t *testing.T) {
-	for name, resolve := range map[string]func(context.Context, moduleEndpoint) (string, error){
-		"no carrier":             func(context.Context, moduleEndpoint) (string, error) { return "", errors.New("carrier absent") },
-		"a public address":       func(context.Context, moduleEndpoint) (string, error) { return "http://8.8.8.8:80", nil },
-		"metadata address":       func(context.Context, moduleEndpoint) (string, error) { return "http://169.254.169.254:80", nil },
-		"an address with a path": func(context.Context, moduleEndpoint) (string, error) { return "http://localhost:8080/v1", nil },
-	} {
-		t.Run(name, func(t *testing.T) {
-			gw, _, _, priv := newGatewayHarness(t)
-			module := declareModule(t, gw, "example-module")
-			gw.solutions.resolveEndpoint = resolve
-			require.NoError(t, gw.solutions.refresh(context.Background()))
-			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodGet, "/v1/example-module/things", nil)
-			request.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
-			gw.ServeHTTP(recorder, request)
-			require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-			require.Empty(t, module.lastPath)
 		})
 	}
 }

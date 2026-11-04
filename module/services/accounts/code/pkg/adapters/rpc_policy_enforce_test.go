@@ -53,8 +53,21 @@ func installEnforceService(t *testing.T, store business.Store) {
 
 func enableEnforcement(t *testing.T) {
 	t.Helper()
+	setEnforcement(t, true)
+}
+
+// shadowMode selects the explicit classify-only opt-out. It has to be set
+// deliberately now that enforcement is the package's own default: a case that
+// said nothing used to exercise shadow and now exercises enforce.
+func shadowMode(t *testing.T) {
+	t.Helper()
+	setEnforcement(t, false)
+}
+
+func setEnforcement(t *testing.T, enforce bool) {
+	t.Helper()
 	previous := centralEnforcement
-	centralEnforcement = true
+	centralEnforcement = enforce
 	t.Cleanup(func() { centralEnforcement = previous })
 }
 
@@ -68,12 +81,24 @@ func enforceActorCtx() context.Context {
 	return stampVerifiedIdentity(context.Background(), enforceActorID, enforceOrgID, auth.Assurance{})
 }
 
-// Shadow is the fallback: with enforcement off the interceptor changes no
-// admission decision even for an org-admin method and a caller who is not a
+// Shadow is the explicit opt-out: with enforcement off the interceptor changes
+// no admission decision even for an org-admin method and a caller who is not a
 // member — the handler require* site remains the sole gate.
 func TestShadowModeDoesNotDenyAtAdmission(t *testing.T) {
+	shadowMode(t)
 	installEnforceService(t, memberStore(gen.OrgRole_ORG_ROLE_MEMBER))
 	require.NoError(t, enforceCentralPolicy(enforceActorCtx(), orgAdminMethod))
+}
+
+// The package's own default is the enforcing one, so that a caller reaching an
+// interceptor without going through startup — every test here, and any future
+// embedding of these interceptors — exercises the same admission a deployment
+// that configures nothing gets. The same case as above, with nothing set,
+// denies.
+func TestAdmissionEnforcesByDefault(t *testing.T) {
+	installEnforceService(t, memberStore(gen.OrgRole_ORG_ROLE_MEMBER))
+	err := enforceCentralPolicy(enforceActorCtx(), orgAdminMethod)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
 
 func TestEnforceAdmitsOrgAdmin(t *testing.T) {

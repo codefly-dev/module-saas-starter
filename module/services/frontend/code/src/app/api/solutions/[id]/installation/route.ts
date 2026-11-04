@@ -1,5 +1,5 @@
 import { entitlementFailureResponse, isEntitlementFailure, viewerEntitlements } from "@/solutions/entitlements";
-import { entitledSolutions } from "@/solutions/projections";
+import { entitledSolutions, pageBinding } from "@/solutions/projections";
 import { loadSolutionsWithRevision } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
@@ -10,8 +10,10 @@ interface RouteContext {
 }
 
 /**
- * The verified viewer organization's installation of ONE solution, for the
- * outlet to hand the solution page (`SolutionBinding.installationId`).
+ * The verified viewer organization's installation of ONE solution, with the
+ * organization, the viewer's key and the modules it reaches, for the outlet to
+ * hand the page (`SolutionBinding`: `installationId`, `organizationId`,
+ * `viewerKey`, `reach`).
  *
  * It is a projection, so it answers from the gateway-verified viewer's
  * entitlements and nothing the browser said: the route alias in the path only
@@ -36,12 +38,9 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
 	}
 	// The navigation's own join, over the whole registry, so this answer and the
 	// menu can never disagree about which solutions the viewer may use.
-	const entitlement = entitledSolutions(registered.solutions, entitlements).find(({ manifest }) => manifest.id === id)?.entitlement;
-	if (!entitlement || entitlement.installationId === "") {
+	const binding = pageBinding(entitledSolutions(registered.solutions, entitlements), entitlements, id);
+	if (!binding) {
 		return Response.json({ error: "not_installed" }, { status: 404, headers: { "cache-control": "no-store" } });
 	}
-	return Response.json(
-		{ installationId: entitlement.installationId, healthy: entitlement.healthy },
-		{ headers: { "cache-control": "no-store" } },
-	);
+	return Response.json(binding, { headers: { "cache-control": "no-store" } });
 }

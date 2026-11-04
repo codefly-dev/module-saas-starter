@@ -1337,6 +1337,13 @@ func (s *AuthServer) Logout(ctx context.Context, req *gen.LogoutRequest) (*empty
 	return &emptypb.Empty{}, nil
 }
 
+// GetProviderSignOut answers the provider's RP-initiated logout URL. No
+// Validate call: the one field is an optional opaque hint with no shape this
+// host asserts, and a request carrying none is the ordinary case.
+func (s *AuthServer) GetProviderSignOut(ctx context.Context, req *gen.GetProviderSignOutRequest) (*gen.GetProviderSignOutResponse, error) {
+	return service.GetProviderSignOut(ctx, req)
+}
+
 // bearerFromContext extracts the bearer token from the incoming
 // Authorization header (gRPC metadata or Connect-mapped HTTP header).
 // Returns "" when absent or malformed.

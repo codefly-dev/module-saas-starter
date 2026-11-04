@@ -23,6 +23,10 @@ type dynamicInstall struct {
 }
 
 func newDynamicInstall(t *testing.T, target, binding, principal string, pending ...bool) dynamicInstall {
+	return newDynamicInstallKind(t, target, binding, principal, "solution", pending...)
+}
+
+func newDynamicInstallKind(t *testing.T, target, binding, principal, kind string, pending ...bool) dynamicInstall {
 	t.Helper()
 	owner := seedUser(t)
 	seedHumanPrincipal(t, owner, "Jane Doe")
@@ -35,7 +39,7 @@ func newDynamicInstall(t *testing.T, target, binding, principal string, pending 
 	if target == "" {
 		alias := uniqueAlias("example-installed")
 		binding = "acme.test." + alias
-		target = declarePresence(t, binding, alias)
+		target = declarePresenceKind(t, binding, alias, business.SolutionDeclaredKind(kind))
 		principal = business.ModulePrincipalID(alias)
 	}
 	grant := business.ModulePrincipalGrant{Prefix: "example", PresenceBinding: binding, Tenant: org, CrossTenant: true, Queues: []string{"example.ingest"}, Resources: []string{"records"}}
@@ -50,7 +54,7 @@ func newDynamicInstall(t *testing.T, target, binding, principal string, pending 
 	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
 		var err error
 		installation, err = testStore.InstallSolution(ctx, &business.InstallSolutionParams{OrgID: org, AgentIdentifier: "acme.example/installed:1.0.0", TargetID: target,
-			OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role, Kind: "solution", RegistryBindingID: binding, RegistryPrincipalID: principal, Scope: &scope, EnvelopeRevision: revision})
+			OwnerPrincipalID: owner, GrantedBy: owner, RoleID: role, Kind: kind, RegistryBindingID: binding, RegistryPrincipalID: principal, Scope: &scope, EnvelopeRevision: revision})
 		return err
 	}))
 	if len(pending) == 0 || !pending[0] {

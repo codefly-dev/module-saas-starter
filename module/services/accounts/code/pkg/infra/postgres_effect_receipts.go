@@ -25,7 +25,10 @@ func (s *PostgresStore) NewEffectReceipts() (*receipts.PostgresStore, func(), er
 	db := stdlib.OpenDBFromPool(s.pool)
 	db.SetMaxOpenConns(int(s.pool.Config().MaxConns / 2))
 	store, err := receipts.NewPostgresStore(db, receipts.WithTenantScope(func(ctx context.Context, tx *sql.Tx, tenant string) error {
-		_, err := tx.ExecContext(ctx, `SELECT set_config('app.current_org_id', $1, true), set_config('app.current_user_id', '', true)`, tenant)
+		// The same binding every request transaction uses, both generations of
+		// both names, so this path cannot be the one left behind when the
+		// compatibility window closes or the names move again.
+		_, err := tx.ExecContext(ctx, bindRequestScopeSQL, tenant, "")
 		return err
 	}))
 	if err != nil {
@@ -56,6 +59,6 @@ func (t receiptTx) ExecContext(ctx context.Context, query string, args ...any) (
 type receiptResult struct{ tag pgconn.CommandTag }
 
 func (r receiptResult) LastInsertId() (int64, error) {
-	return 0, errors.New("Postgres does not support LastInsertId")
+	return 0, errors.New("LastInsertId is not supported by Postgres")
 }
 func (r receiptResult) RowsAffected() (int64, error) { return r.tag.RowsAffected(), nil }

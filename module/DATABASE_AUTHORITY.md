@@ -34,10 +34,14 @@ and the runner refuses one it did not install.
 
 The authenticated request boundary uses the published service-postgres `Open`
 constructor. That primitive owns the separate reader/writer pools, startup pings,
-failure cleanup and repeated-close safety. Accounts supplies its verified identity
-adapter and transaction-local `app.current_org_id` / `app.current_user_id` settings.
-Its current request adapter issues Readers only; authentication alone does not
-grant a Writer.
+failure cleanup and repeated-close safety, and it also owns the two
+transaction-local settings a scope is bound to: its defaults,
+`codefly.current_tenant_id` and `codefly.current_user_id`, are what the policies
+read, and accounts passes them back through `WithScopeSettings` from the same
+two constants its own hand-written SQL names, so the library's unexported
+default cannot drift away from the policies without a refusal. It supplies its
+verified identity adapter and nothing else. Its current request adapter issues Readers only;
+authentication alone does not grant a Writer.
 
 External-identity deployments with separate logins configure
 `POSTGRES_TOKEN_FILES`: a JSON object mapping each exact database login name
@@ -77,7 +81,7 @@ to: `SET ROLE` to any cross-tenant role is refused by PostgreSQL, and `SET ROLE
 NONE` leaves the bare login, holding none of the privileges judged below. A
 request connection runs `RESET ROLE`, `RESET ALL` and `DISCARD TEMP` as it
 returns to the pool — back to that session default role, with
-`app.current_org_id` and `app.current_user_id` cleared and any temporary table
+`codefly.current_tenant_id` and `codefly.current_user_id` cleared and any temporary table
 dropped — and is discarded unless it comes back as
 `app_tenant` with neither set, so a borrower cannot hand the bare login, or its
 own request scope, to the next one. Every request transaction (`WithOrgTx`,
@@ -85,6 +89,20 @@ own request scope, to the next one. Every request transaction (`WithOrgTx`,
 transaction-locally, the half it does not carry as the empty string, so a
 session-level binding is never visible inside one: an org transaction cannot
 read a previous user's `sessions` or `mfa_devices`.
+
+For the length of the scope-setting compatibility window it binds four: the
+host's retired `app.current_org_id` and `app.current_user_id` carry the same two
+values, and store migration 66's predicates read the library's name with the
+retired one behind it. That is what makes a catalog and an image deployable
+independently — a rename applied in one step is zero rows on every scoped
+SELECT for whichever side lands first, silently. The retired half is bound to
+the same value as the live one precisely so clearing one half clears both.
+Startup refuses a database whose policies read only the retired names
+(`requireCatalogReadsScopeSettings`): the two pools `service-postgres` owns bind
+the library's names alone, so no binding here could make such a catalog serve,
+and a started process would report healthy and answer nothing through them.
+`module/services/store/migrations/README.md` carries the window and how it
+closes.
 
 Every new request connection, the first one at startup included, is judged
 before the pool hands it out. It is refused if its login can reach any role
@@ -182,8 +200,9 @@ importers to `pkg/infra` and `storetx` and refuses an exported `pkg/infra`
 function that takes a `pgx.Tx` and returns a context — a binder handed on.
 Code holding the raw transaction could still rebind it in SQL, under a binding
 that claims the old scope; `TestNoTenantRebindingOutsideInfra` fails on a
-string literal containing `set_config(`, `SET ROLE`, `RESET ROLE` or
-`app.current_` in any non-test file outside `pkg/infra`. Both are checks on
+string literal containing `set_config(`, `SET ROLE`, `RESET ROLE` or either
+generation of the scope setting names (`app.current_`, `codefly.current_`) in
+any non-test file outside `pkg/infra`. Both are checks on
 the source, not capabilities.
 
 The store pins published Postgres agent 0.0.140, which provisions its declared
@@ -525,7 +544,7 @@ executable inventory and this table in the same change.
 
 | Scope | Relations | Required database boundary |
 |---|---|---|
-| `global` | `audit_event_types`, `authority_core_delegations`, `authority_core_grant_epochs`, `authority_core_installations`, `authority_core_module_revisions`, `authority_core_modules`, `authority_core_owner_aware`, `authority_core_person_epochs`, `authority_core_replay`, `authority_core_role_grants`, `authority_core_tombstones`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `hop_admission_keys`, `hop_admission_proofs`, `identity_providers`, `module_envelopes`, `plan_entitlements`, `plans`, `platform_admins`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
+| `global` | `audit_event_types`, `authority_core_clients`, `authority_core_delegations`, `authority_core_grant_epochs`, `authority_core_installations`, `authority_core_module_revisions`, `authority_core_modules`, `authority_core_owner_aware`, `authority_core_person_epochs`, `authority_core_replay`, `authority_core_role_grants`, `authority_core_tombstones`, `bootstrap_state`, `data_retention_policies`, `datasource_credential_budgets`, `email_templates`, `feature_flags`, `hop_admission_keys`, `hop_admission_proofs`, `identity_providers`, `module_envelopes`, `plan_entitlements`, `plans`, `platform_admins`, `solution_delivery_documents`, `solution_generation_history`, `solution_host_bindings`, `solution_registrations`, `solution_targets` | No RLS; exact grants |
 | `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_account_links`, `datasource_domains`, `datasource_group_bindings`, `datasource_object_manifests`, `codefly_effect_receipts`, `datasource_operation_attempts`, `datasource_oauth_consumed_states`, `datasource_source_operations`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `executable_artifact_approvals`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_key_bindings`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_delegations`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `client_authorization_codes`, `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `resource_follows`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
@@ -812,7 +831,7 @@ counting administrative rows regardless of identity status reports an
 organization healthy when nobody holding one can sign in to administer it —
 exactly the backlog this inventory exists to size. Migration 130's
 `organization_eligible_administrators()` is not reused: it is `SECURITY DEFINER`
-scoped to `app.current_org_id`, so it answers for a single tenant, and this is a
+scoped to `codefly.current_tenant_id`, so it answers for a single tenant, and this is a
 cross-tenant inventory.
 
 The three are **mutually exclusive by construction** — one `CASE` over one row
@@ -845,7 +864,7 @@ current backlog rather than an append-only history.
 **The connection principal must be a member of `app_control_plane`**, and that
 is load-bearing rather than ceremonial. `organizations`, `organization_members`
 and `membership_integrity_findings` all force RLS — which binds the table owner
-too — with policies scoped to `app.current_org_id` and no bypass clause. A
+too — with policies scoped to `codefly.current_tenant_id` and no bypass clause. A
 principal that does not span organizations therefore reads zero rows through
 all three: it would record an empty backlog and report a healthy platform. The
 function refuses to run for such a principal instead, and the migration assumes
@@ -910,12 +929,12 @@ removes the former queue lifecycle columns for upgraded databases; migration
 
 Migration `69_user_directory_operations` replaces the historical
 `users_select USING (true)` policy. Request traffic can read only the row whose
-UUID matches `app.current_user_id`; pre-authentication, platform administration,
+UUID matches `codefly.current_user_id`; pre-authentication, platform administration,
 and workers use their separately named roles.
 
 Tenant code does not receive co-member visibility over the full `users` row.
 The `organization_member_primary_email(user_id)` operation returns exactly one
-field, only when that user belongs to `app.current_org_id`. It is a
+field, only when that user belongs to `codefly.current_tenant_id`. It is a
 `SECURITY DEFINER` function owned by the NOLOGIN `app_control_plane` role,
 revokes public execution, and grants only `EXECUTE` to `app_tenant`. Executable
 tests pin its owner, security mode, ACL, cross-user isolation, and membership
@@ -936,7 +955,7 @@ Eligibility therefore has to read `users`, which request traffic cannot do for a
 co-member (migration `69`). The remedy is the same one that section describes: a
 `SECURITY DEFINER` function owned by the NOLOGIN `app_control_plane` role,
 public execution revoked, `EXECUTE` granted only to `app_tenant`, and the body
-scoped to `app.current_org_id` so it answers only for the caller's own
+scoped to `codefly.current_tenant_id` so it answers only for the caller's own
 organization. It returns membership ids that caller can already enumerate, and
 no `users` column.
 
@@ -979,19 +998,19 @@ on this platform.
 
 A deactivating transaction is scoped to an identity and to no organization,
 which is the one scope that can read neither input: `organization_members` is
-scoped to `app.current_org_id` (migrations `29`/`68`) and `users` to the
+scoped to `codefly.current_tenant_id` (migrations `29`/`68`) and `users` to the
 caller's own row (migration `69`). Both return zero rows rather than an error,
 and zero administered organizations reads as "this identity administers
 nothing" — the answer that admits the deactivation. Same shape as the two
 sections above: a `SECURITY DEFINER` function owned by the NOLOGIN
 `app_control_plane` role, public execution revoked, `EXECUTE` granted only to
-`app_tenant`, and the body scoped to `app.current_user_id` so it answers only
+`app_tenant`, and the body scoped to `codefly.current_user_id` so it answers only
 for the caller's own identity. It returns organization ids that caller is
 already a member of, plus a count over them, and no `users` column.
 
 The administrator count repeats migration `133`'s eligibility predicate rather than
 calling `organization_eligible_administrators`, which scopes itself to
-`app.current_org_id` — a value a deactivation has no single one of.
+`codefly.current_tenant_id` — a value a deactivation has no single one of.
 `PostgresStore.ListAdministeredOrganizations` branches on the transaction's
 scope: the caller's own identity goes through the function, a transaction that
 has assumed `app_control_plane` evaluates the predicate directly, and one that is
@@ -1114,12 +1133,16 @@ start instead.
 `executable_artifact_approvals` (migration 19) is organization-scoped consent
 metadata. It stores exact exported identities and their approved contract policy,
 not executable content. FORCE RLS admits only `app_tenant` with matching
-`app.current_org_id`; there is no control-plane read policy. Tenant callers may
+`codefly.current_tenant_id`; there is no control-plane read policy. Tenant callers may
 select/insert and update only `revoked_at`/`revoked_by`; they cannot change the
 approved identity, approver, installation or policy. A trigger makes revocation
 terminal. The service uses `As(verified tenant and current user).Within` and explicit tenant/installation/module
-predicates, serializing exact-identity decisions with revocation. Down migration
-refuses to discard any retained approval.
+and policy predicates, serializing exact-identity decisions with revocation.
+Migration 61 adds policy to the unique consent identity: shared artifact digests
+identify content, so the same content may hold independent approvals under two
+policies. Revoking one never revokes the other. Rollback refuses when independent
+policy receipts cannot fit the old uniqueness constraint; it deletes no receipts.
+The original table down migration refuses to discard any retained approval.
 
 The shared relation catalog classifies this table as tenant-scoped with a direct
 `org_id` policy. The live database inventory verifies the table grants, FORCE
@@ -1138,3 +1161,18 @@ attempt markers under the request pool's RLS. Expired response bytes, a typed
 audit event and the cleanup operation's own receipt commit atomically. Compact
 markers are retained so expiry cannot authorize redispatch of a mutation.
 No control-plane grant or host retention timer is added.
+
+### Authority public-client state
+
+Migration 63 adds `authority_core_clients`, a global control-plane relation with
+SELECT, INSERT and UPDATE only. Tenant/request roles have no access. Its opaque
+client ID, name, redirect list, unsigned revision and disabled state are metadata;
+registration grants no scopes or installation. The existing authority transaction
+replaces the complete record, including a lower revision or re-enabled state.
+The core owns validation and disabled-client refusal. Delegations persist their
+client ID, exact solution audience and resource beside existing module-grantee,
+scope, revocation and expiry fields. No HTTP or OAuth acquisition flow is exposed.
+
+Migration 63 must precede the adapter. Old adapters discard client-grantee fields
+and must not handle client-bearing state. Down migration removes client metadata
+and grantee fields; it is data loss, not a behavior-preserving rollback.
