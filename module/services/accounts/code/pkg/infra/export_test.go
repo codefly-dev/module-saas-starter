@@ -301,3 +301,11 @@ func RequireCatalogReadsScopeSettings(ctx context.Context, q interface {
 }) error {
 	return requireCatalogReadsScopeSettings(ctx, q)
 }
+
+// ReturnsToTenantRole is the request pool's AfterRelease judgement: it runs the
+// reset a released connection runs and returns the verdict the pool acts on —
+// true to put the connection back, false to destroy it. The suite drives it on
+// a connection it poisoned itself, so "the connection is reused, cleaned" is a
+// decision this returns rather than a backend reappearing in a shared pool
+// within some number of seconds.
+func ReturnsToTenantRole(conn *pgx.Conn) bool { return returnsToTenantRole(conn) }
