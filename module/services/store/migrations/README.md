@@ -13,7 +13,21 @@ the runner refuses one rather than leave it behind (`code/main.go`,
 
 Add a forward migration above the baseline, as a matched `N_name.up.sql` /
 `N_name.down.sql` pair with `N` above the current frontier. A shipped file is
-immutable; corrections are new forward migrations. When the ledger has grown
+immutable; corrections are new forward migrations — including a correction to
+how a shipped migration takes its locks, which is why the bound below lives in
+66 and not in 65.
+
+A migration that touches many relations runs in one implicit transaction and
+holds every lock it takes until the end of it. `ALTER TABLE`, `CREATE POLICY`
+and `ALTER POLICY` each take `AccessExclusiveLock`, so a migration over the
+whole scoped set blocks every statement on seventy relations for as long as it
+waits — and with no bound it waits for whatever long-running query it queued
+behind, turning a deploy into an outage. Open such a migration with `SET LOCAL
+lock_timeout` (`66_scope_settings_transition` uses `'15s'`): a bounded wait
+fails and is retried, where an unbounded one takes the database with it. Prefer
+`ALTER POLICY` to a `DROP`/`CREATE` pair for the same reason it is preferred in
+66 — it cannot restate a policy's kind, verb or role list, so it cannot get one
+of them wrong. When the ledger has grown
 enough to be worth reading as one schema again, fold it:
 
 ```sh
@@ -78,7 +92,41 @@ A consumer's own migration must use the same two names. A policy on any other
 setting fails **quietly**: nothing binds it, `current_setting(…, true)` returns
 NULL, the predicate is false, and the relation reads as empty for every caller
 rather than raising. `../../../tools/rls-migration-gate.mjs` is what refuses
-that, and it accepts only these two.
+that, and it accepts only these two — a predicate on a retired name alone is
+refused with the remedy named.
+
+### The compatibility window, and how to close it
+
+A rename of a scope setting cannot be deployed in one step. The policy and the
+binary that binds it ship separately: the bootstrap job applies the migration
+before the new ReplicaSet is ready, and rolling the image back leaves the old
+one against the new catalog indefinitely. Either way the half that loses the
+race reads an unset setting, and the product goes blank without an error.
+
+`66_scope_settings_transition` is the transition 65 needed. Every predicate and
+routine body reads the library's name with the host's retired one behind it:
+
+```sql
+COALESCE(NULLIF(current_setting('codefly.current_tenant_id', true), ''),
+         current_setting('app.current_org_id', true))
+```
+
+Fail-closed is unchanged — both arms empty is a false predicate, not an absent
+one — and accounts binds all four names, so one image serves a catalog from
+either side of the rename. The migration is
+`../../../tools/rls-scope-settings-transition.sql` byte for byte
+(`module/tools/rls_scope_settings_recipe_test.go` holds the two in step), which
+is the same file a consumer runs against its own database: it is catalog-driven
+and idempotent, and reaches a policy whose name depends on the month and a
+consumer's own policies alike.
+
+**Closing the window is a release of its own.** Its migration is the text of
+`66_scope_settings_transition.down.sql` — the same walk, rewriting the
+compatibility read back to a single read of the library's name — renumbered
+above the frontier, cut only once no deployable image binds the retired names.
+It must not ship beside 66: together they are the one-step rename again. Once it
+lands, `pkg/infra`'s two `Legacy*ScopeSetting` constants, the retired arm in
+`bindRequestScopeSQL` and the host's half of the gate's remedy go with it.
 
 ## What CI proves
 

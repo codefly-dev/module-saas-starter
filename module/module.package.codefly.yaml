@@ -100,10 +100,14 @@ migrations:
   - id: composition-v2
     from: ">=0.0.32 <0.1.0"
     breaking: true
+  - id: scope-settings-transition
+    from: ">=0.1.0 <0.2.0"
+    breaking: true
 breaking-changes:
   - Consumers resolve the immutable package into a disposable projection instead of editing Starter-owned files.
   - "Audit event types are namespaced under `saas.*` (`auth.login` -> `saas.auth.login`). The wire value of `audit_events.event_type`, the `X-Webhook-Event` header, and webhook routing keys all change; migration 116 rewrites stored history and existing subscriptions in place, so a live subscriber keeps firing, but a consumer that re-creates a subscription from a hardcoded pre-namespace name, or emits one through `ModuleEmitAuditEvent`, is now rejected. No alias layer."
   - "The telemetry service and its dependency contract are removed. SDK Init exports traces when OTEL_EXPORTER_OTLP_ENDPOINT is delivered; no endpoint means no tracing, including native local runs. Exporter initialization failures are logged without stopping the service. Accounts and auth-gateway push metrics to the same endpoint and no longer serve /metrics. Telemetry uses standard process variables, not the removed observability configuration group. Deliver standard OTEL variables to every service through the environment telemetry declaration using a compatible CLI. Existing consumers of the telemetry service must migrate to the HTTPS operations intake."
+  - "The two transaction-local settings an RLS policy reads are now the platform Postgres library's own, `codefly.current_tenant_id` and `codefly.current_user_id`, not the host's `app.current_org_id` and `app.current_user_id` (store migration 65). A consumer whose own migrations created tenant policies against the retired names must rewrite them: nothing binds those names as the only read any more, so each such table reads as EMPTY for every caller and every INSERT fails its WITH CHECK, with no error raised anywhere. Run `tools/rls-scope-settings-transition.sql` against the database — it is catalog-driven, idempotent, and reaches a consumer's own policies and routine bodies as well as this module's — or rewrite the predicates onto the two library names. Store migration 66 is that same file applied to this module's ledger: for the length of the compatibility window every predicate reads the library's name with the retired one behind it, and the host binds both generations, so the catalog and the fleet can move independently. A later release closes the window by deleting the retired arm; a policy still reading a retired name alone at that point goes silently empty, which accounts refuses to start against and `tools/rls-migration-gate.mjs` refuses to build."
 reserved-namespaces:
   - "@codefly/saas-"
   - "@codefly-dev/saas-"

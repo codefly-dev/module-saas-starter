@@ -37,8 +37,10 @@ constructor. That primitive owns the separate reader/writer pools, startup pings
 failure cleanup and repeated-close safety, and it also owns the two
 transaction-local settings a scope is bound to: its defaults,
 `codefly.current_tenant_id` and `codefly.current_user_id`, are what the policies
-read, so accounts passes no `WithScopeSettings` override and supplies only its
-verified identity adapter. Its current request adapter issues Readers only;
+read, and accounts passes them back through `WithScopeSettings` from the same
+two constants its own hand-written SQL names, so the library's unexported
+default cannot drift away from the policies without a refusal. It supplies its
+verified identity adapter and nothing else. Its current request adapter issues Readers only;
 authentication alone does not grant a Writer.
 
 External-identity deployments with separate logins configure
@@ -87,6 +89,20 @@ own request scope, to the next one. Every request transaction (`WithOrgTx`,
 transaction-locally, the half it does not carry as the empty string, so a
 session-level binding is never visible inside one: an org transaction cannot
 read a previous user's `sessions` or `mfa_devices`.
+
+For the length of the scope-setting compatibility window it binds four: the
+host's retired `app.current_org_id` and `app.current_user_id` carry the same two
+values, and store migration 66's predicates read the library's name with the
+retired one behind it. That is what makes a catalog and an image deployable
+independently — a rename applied in one step is zero rows on every scoped
+SELECT for whichever side lands first, silently. The retired half is bound to
+the same value as the live one precisely so clearing one half clears both.
+Startup refuses a database whose policies read only the retired names
+(`requireCatalogReadsScopeSettings`): the two pools `service-postgres` owns bind
+the library's names alone, so no binding here could make such a catalog serve,
+and a started process would report healthy and answer nothing through them.
+`module/services/store/migrations/README.md` carries the window and how it
+closes.
 
 Every new request connection, the first one at startup included, is judged
 before the pool hands it out. It is refused if its login can reach any role
@@ -184,8 +200,9 @@ importers to `pkg/infra` and `storetx` and refuses an exported `pkg/infra`
 function that takes a `pgx.Tx` and returns a context — a binder handed on.
 Code holding the raw transaction could still rebind it in SQL, under a binding
 that claims the old scope; `TestNoTenantRebindingOutsideInfra` fails on a
-string literal containing `set_config(`, `SET ROLE`, `RESET ROLE` or
-`app.current_` in any non-test file outside `pkg/infra`. Both are checks on
+string literal containing `set_config(`, `SET ROLE`, `RESET ROLE` or either
+generation of the scope setting names (`app.current_`, `codefly.current_`) in
+any non-test file outside `pkg/infra`. Both are checks on
 the source, not capabilities.
 
 The store pins published Postgres agent 0.0.140, which provisions its declared

@@ -112,6 +112,32 @@ test("an unconditional policy predicate is rejected", () => {
   assert.ok(errors.every((e) => /may be accidentally unconditional/.test(e)));
 });
 
+test("a predicate on the host's retired setting is refused, and the error names the remedy", () => {
+  // The state a consumer that wrote its policies against the convention this
+  // repository documented before migration 65 is in. Nothing binds the retired
+  // name any more, so the relation reads as empty for every caller — and the
+  // refusal has to say what to do about it, because the predicate looks exactly
+  // like a correct one.
+  const sql =
+    tenantSetup +
+    "CREATE POLICY p ON t USING (org_id::text = current_setting('app.current_org_id', true));";
+  const errors = analyzeSql(sql);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /app\.current_org_id/);
+  assert.match(errors[0], /rls-scope-settings-transition\.sql/);
+  assert.match(errors[0], /migration 66/);
+});
+
+test("the compatibility window reads the library's name and is admitted", () => {
+  // One database serving a pod from either side of the rename: the library's
+  // name first, the retired one behind it. The gate must not read this as a
+  // policy on a setting nothing binds.
+  const sql =
+    tenantSetup +
+    "CREATE POLICY p ON t USING (org_id::text = COALESCE(NULLIF(current_setting('codefly.current_tenant_id', true), ''), current_setting('app.current_org_id', true)));";
+  assert.deepEqual(analyzeSql(sql), []);
+});
+
 test("a user-scoped predicate counts as tenant-scoped", () => {
   const sql = `
     CREATE TABLE t (org_id UUID, user_id UUID);

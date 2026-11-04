@@ -93,8 +93,9 @@ func read(ctx context.Context, store Store) {
 
 // TestNoTenantRebindingOutsideInfra fails on a string literal, in a non-test Go
 // file outside pkg/infra, that binds or reads a transaction's request scope or
-// role: set_config(, SET [LOCAL|SESSION] ROLE, RESET ROLE or codefly.current_,
-// matched without regard to case or spacing. pkg/business, pkg/auth/pg and
+// role: set_config(, SET [LOCAL|SESSION] ROLE, RESET ROLE or either generation
+// of the scope setting names (app.current_, codefly.current_), matched without
+// regard to case or spacing. pkg/business, pkg/auth/pg and
 // pkg/billing/pg hold the raw transaction through storetx.Tx, and one such
 // statement on it would rebind the tenant — or leave app_tenant — under a
 // binding that still claims the org, user and role pkg/infra set, which is what
@@ -150,6 +151,7 @@ func escalate(ctx context.Context, tx pgx.Tx) {
 	_, _ = tx.Exec(ctx, "reset role")
 	_, _ = tx.Exec(ctx, "SELECT pg_catalog.set_config ('role', 'app_control_plane', true)")
 	_, _ = tx.Exec(ctx, "SELECT current_setting('codefly.current_user_id', true)")
+	_, _ = tx.Exec(ctx, "SELECT set_config('app.current_org_id', $1, true)")
 	_, _ = tx.Exec(ctx, "SET LOCAL " + "ROLE " + role)
 	_, _ = tx.Exec(ctx, "UPDATE organization_members SET a = 1; SET role = 'app_control_plane'")
 }
@@ -169,13 +171,15 @@ func harmless(ctx context.Context, tx pgx.Tx) {
 	}
 	require.ElementsMatch(t, []string{
 		"(package level): set_config(",
-		"(package level): codefly.current_",
+		"(package level): app|codefly.current_",
 		"escalate: SET ROLE",
 		"escalate: SET ROLE",
 		"escalate: SET ROLE",
 		"escalate: RESET ROLE",
 		"escalate: set_config(",
-		"escalate: codefly.current_",
+		"escalate: app|codefly.current_",
+		"escalate: set_config(",
+		"escalate: app|codefly.current_",
 		"escalate: SET ROLE",
 		"escalate: SET ROLE",
 	}, got)
@@ -190,7 +194,12 @@ var tenantRebinding = []struct {
 	{"set_config(", regexp.MustCompile(`(?i)\bset_config\s*\(`)},
 	{"SET ROLE", regexp.MustCompile(`(?i)\bSET\s+(?:LOCAL\s+|SESSION\s+)?ROLE\b`)},
 	{"RESET ROLE", regexp.MustCompile(`(?i)\bRESET\s+ROLE\b`)},
-	{"codefly.current_", regexp.MustCompile(`(?i)\bcodefly\s*\.\s*current_`)},
+	// Both generations of the two names. The retired spelling has to be refused
+	// as well as the live one: it is readable again for the length of migration
+	// 66's compatibility window, so a statement outside pkg/infra that binds or
+	// reads it rebinds a transaction's scope exactly as the live name would —
+	// and a scan that matched only the live one would have reported nothing.
+	{"app|codefly.current_", regexp.MustCompile(`(?i)\b(?:app|codefly)\s*\.\s*current_`)},
 }
 
 var updateStatement = regexp.MustCompile(`(?i)\bUPDATE\b`)

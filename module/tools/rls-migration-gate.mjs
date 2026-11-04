@@ -51,7 +51,14 @@ const TENANT_COLUMNS = new Set(["org_id", "organization_id", "tenant_id"]);
 // — codefly-dev/service-postgres installs exactly these for a transaction opened
 // through its scoped factory — so a policy on any other setting reads something
 // nothing sets. The host carried names of its own (app.current_org_id,
-// app.current_user_id) until migration 65 renamed them onto these.
+// app.current_user_id) until migration 65 renamed them onto these, and
+// migration 66 left those two readable BEHIND the library's for the length of
+// the compatibility window: a predicate of the form
+// COALESCE(NULLIF(current_setting('codefly.current_tenant_id', true), ''),
+// current_setting('app.current_org_id', true)) reads the library's name and is
+// admitted here, which is what lets one database serve a pod from either side
+// of a rename. A predicate on a retired name ALONE is not admitted — that is
+// the silent-empty state, and the error below names the remedy.
 const SCOPING_SETTING = /current_setting\(\s*'codefly\.current_(?:tenant|user)_id'/;
 
 const MUTATION_VERBS = ["UPDATE", "DELETE"];
@@ -484,7 +491,10 @@ export function analyzeSql(sql) {
           exactRolePredicate(expr) === `current_user = '${p.roles[0]}'`
         )) {
           errors.push(
-            `${name}: policy ${p.policy} has a ${clause} predicate that never references codefly.current_tenant_id/codefly.current_user_id — it may be accidentally unconditional`,
+            `${name}: policy ${p.policy} has a ${clause} predicate that never references codefly.current_tenant_id/codefly.current_user_id — it may be accidentally unconditional.` +
+              " A predicate on the host's retired app.current_org_id/app.current_user_id reads a name nothing binds any more:" +
+              " rewrite it onto the two names above, or run tools/rls-scope-settings-transition.sql over the database to put every" +
+              " predicate it already installed into the compatibility window (store migration 66 is that file applied to this module's own ledger)",
           );
         }
       }
