@@ -212,7 +212,7 @@ describe("team details", () => {
 			target: { value: "newbie" },
 		});
 		fireEvent.click(
-			await screen.findByRole("button", { name: "newbie@example.com" }),
+			await screen.findByRole("option", { name: "newbie@example.com" }),
 		);
 		fireEvent.click(screen.getByRole("button", { name: "Add member" }));
 		// The mutation has to reach the service before the roster can refetch;

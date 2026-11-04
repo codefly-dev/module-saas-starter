@@ -2709,22 +2709,6 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/app/admin/platform/page.tsx",
-      "imports": [
-        "lucide-react",
-        "next/link",
-        "@/lib/product-features",
-        "@/lib/read-public-runtime-config",
-        "@/shared/ui"
-      ],
-      "owner": "SaaS application",
-      "disposition": "keep feature-local",
-      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
-    },
-    {
       "source": "src/app/admin/platform/plugin-transport/page.tsx",
       "imports": [
         "@/components/auth/role-gate",

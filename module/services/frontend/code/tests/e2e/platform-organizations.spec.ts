@@ -52,7 +52,7 @@ test("a platform administrator manages an organization by hand", async ({
 
 	// Add a member.
 	await detail.getByPlaceholder("Search by name or email…").fill("carol");
-	await detail.getByRole("button", { name: "carol@acme.com" }).click();
+	await detail.getByRole("option", { name: "carol@acme.com" }).click();
 	await detail.getByRole("button", { name: "Add" }).click();
 	await expect(page.getByText("Member added")).toBeVisible();
 

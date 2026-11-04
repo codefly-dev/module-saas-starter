@@ -184,19 +184,17 @@ function serve(body: JsonBodyType) {
 }
 
 describe("PlatformCataloguePage admin container", () => {
-	it("shows each entry in the six states, one column each", async () => {
+	it("shows one column per state the contract can fill, and none it cannot", async () => {
 		serve(catalogue);
 		renderInApp(<PlatformCataloguePage />);
 		await screen.findByText("drifted-solution");
-		for (const state of [
-			"Desired",
-			"Authorized",
-			"Applied",
-			"Observed",
-			"Withdrawing",
-			"Retired",
-		]) {
+		for (const state of ["Desired", "Authorized", "Applied", "Observed"]) {
 			expect(screen.getByRole("columnheader", { name: state })).toBeTruthy();
+		}
+		// A column that could only ever read "Not recorded" is not a column: it
+		// reads as a deployment the operator failed to configure.
+		for (const unbuilt of ["Withdrawing", "Retired", "Build size"]) {
+			expect(screen.queryByRole("columnheader", { name: unbuilt })).toBeNull();
 		}
 	});
 
@@ -240,9 +238,6 @@ describe("PlatformCataloguePage admin container", () => {
 		expect(
 			within(stateOf("billing-module", "Authorized")).getByText("Not recorded"),
 		).toBeTruthy();
-		expect(
-			within(stateOf("billing-module", "Retired")).getByText("Not observed"),
-		).toBeTruthy();
 	});
 
 	it("says what the host cannot state, and what would supply it", async () => {
@@ -250,10 +245,12 @@ describe("PlatformCataloguePage admin container", () => {
 		renderInApp(<PlatformCataloguePage />);
 		await screen.findByText("drifted-solution");
 		expect(screen.getByText("Not known to this host")).toBeTruthy();
+		expect(screen.getByText("No approval record.")).toBeTruthy();
+		// What nobody has built is said apart from what this host failed to learn.
+		expect(screen.getByText("Not yet built on this platform")).toBeTruthy();
 		expect(
 			screen.getByText("Build size is codefly-dev/core#708."),
 		).toBeTruthy();
-		expect(screen.getByText("No approval record.")).toBeTruthy();
 		expect(screen.getByText("No withdrawal record.")).toBeTruthy();
 	});
 
@@ -284,7 +281,9 @@ describe("PlatformCataloguePage admin container", () => {
 		expect(within(granted).queryByText("Everyone Team")).toBeNull();
 		expect(within(inherited).getByText("Everyone Team")).toBeTruthy();
 		expect(within(inherited).queryByText("Finance Team")).toBeNull();
-		expect(within(installations).getByText("Not recorded")).toBeTruthy();
+		// The installation's own revision has no value case either, so the
+		// expansion carries facts only.
+		expect(within(installations).queryByText("Not recorded")).toBeNull();
 	});
 
 	it("says a refused read is refused, not that nothing is deployed", async () => {

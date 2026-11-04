@@ -104,6 +104,65 @@ export function scopeText(s: OfferScope, confined: boolean): string {
 	return `${actions} · ${reach}`;
 }
 
+/**
+ * The access one operation demands, as one label.
+ *
+ * `read` is the floor, and the only action that changes nothing — a
+ * distinction this contract already draws elsewhere, where a tool carries
+ * `write` to say it changes data. So an operation demanding any other action
+ * is named by those actions, and only a wholly read-only one is named `read`.
+ * Naming an operation by every action it demands instead would file a write
+ * that also reads under "read, write" and split the write count over two
+ * buckets, hiding the number a reader came for: whether a role's breadth is
+ * forty reads or eleven writes.
+ *
+ * No severity order is invented among the other verbs — `write`, `publish`,
+ * `create` and whatever a module declares next are listed as the contract
+ * spells them, sorted only so the label is stable.
+ */
+export function accessLevel(requires: readonly OfferScope[]): string {
+	const actions = [...new Set(requires.flatMap((s) => s.actions))].sort();
+	const changing = actions.filter((action) => action !== "read");
+	if (changing.length > 0) return changing.join(", ");
+	if (actions.length > 0) return "read";
+	// An operation the authority says needs no scope at all is a real answer,
+	// and not a read.
+	return "no scope";
+}
+
+/** Access labels in reading order: the read floor first, the unscoped last. */
+export function byAccess(a: string, b: string): number {
+	const rank = (label: string) =>
+		label === "read" ? 0 : label === "no scope" ? 2 : 1;
+	return rank(a) - rank(b) || a.localeCompare(b);
+}
+
+/**
+ * How a set of operations divides by the access it demands, counted and
+ * ordered: `41 read, 11 write`. This is what a module's summary line says,
+ * because "requires documents: read" understated a module whose fifty-two
+ * operations include eleven writes.
+ */
+export function accessMix(
+	requires: readonly (readonly OfferScope[])[],
+): string {
+	const counts = new Map<string, number>();
+	for (const operation of requires) {
+		const level = accessLevel(operation);
+		counts.set(level, (counts.get(level) ?? 0) + 1);
+	}
+	return [...counts.entries()]
+		.sort(([a], [b]) => byAccess(a, b))
+		.map(([level, count]) => `${count} ${level}`)
+		.join(", ");
+}
+
+/** "a", "a and b", "a, b and c" — for naming the roles that coincide. */
+export function nameList(names: readonly string[]): string {
+	if (names.length <= 1) return names[0] ?? "";
+	return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 /** A subject's key as the grant picker spells it. */
 export function subjectKey(kind: "person" | "team", id: string): string {
 	return `${kind}:${id}`;

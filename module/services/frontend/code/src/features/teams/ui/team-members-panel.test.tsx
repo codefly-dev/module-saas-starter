@@ -92,7 +92,7 @@ describe("adding a member reports the write, not the read that follows it", () =
 			{ target: { value: "newbie" } },
 		);
 		fireEvent.click(
-			await screen.findByRole("button", { name: "newbie@example.com" }),
+			await screen.findByRole("option", { name: "newbie@example.com" }),
 		);
 		fireEvent.click(await screen.findByRole("button", { name: "Add member" }));
 		await waitFor(() => expect(rosterCalls).toBeGreaterThan(1));

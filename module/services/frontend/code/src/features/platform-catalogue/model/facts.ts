@@ -33,17 +33,20 @@ export interface StateFact {
 }
 
 /**
- * The registry's state model, in order. An entry shows each state separately,
- * so desired-but-not-authorized and observed-but-no-longer-authorized read as
+ * The registry's state model, in order, limited to the states this platform can
+ * report a value for. An entry shows each separately, so
+ * desired-but-not-authorized and observed-but-no-longer-authorized read as
  * exactly that rather than collapsing into "declared" and "running".
+ *
+ * Withdrawing and Retired are absent on purpose: their messages in
+ * `platform_admin.proto` are gap-only oneofs, so a column for either could
+ * never hold anything but "Not recorded". See UNBUILT_FACTS.
  */
 export const CATALOGUE_STATES = [
 	"Desired",
 	"Authorized",
 	"Applied",
 	"Observed",
-	"Withdrawing",
-	"Retired",
 ] as const;
 export type CatalogueState = (typeof CATALOGUE_STATES)[number];
 
@@ -325,30 +328,7 @@ export function catalogueStates(
 				})),
 			},
 		],
-		Withdrawing: [
-			{
-				label: "Withdrawal",
-				view: fact(entry.withdrawing?.withdrawalStateValue, () => UNSET),
-			},
-			{
-				label: "Credential revocation",
-				view: fact(
-					entry.withdrawing?.credentialRevocationStateValue,
-					() => UNSET,
-				),
-			},
-		],
-		Retired: [
-			{
-				label: "Retirement",
-				view: fact(entry.retired?.retirementStateValue, () => UNSET),
-			},
-		],
 	};
-}
-
-export function buildSizeView(entry: CatalogueEntry): FactView {
-	return fact(entry.buildSizeValue, () => UNSET);
 }
 
 export function agentReleaseView(
@@ -360,29 +340,32 @@ export function agentReleaseView(
 	}));
 }
 
-export function installationRevisionView(
-	installation: CatalogueInstallation,
-): FactView {
-	return fact(installation.revisionValue, () => UNSET);
+export interface CatalogueNote {
+	fact: string;
+	label: string;
+	detail: string;
+}
+
+function collector() {
+	const seen = new Map<string, CatalogueNote>();
+	return {
+		note(fact: string, view: FactView) {
+			if (view.kind !== "gap") return;
+			const key = `${fact}\u0000${view.label}\u0000${view.detail}`;
+			if (!seen.has(key))
+				seen.set(key, { fact, label: view.label, detail: view.detail });
+		},
+		notes: () => [...seen.values()],
+	};
 }
 
 /**
- * The facts this host cannot state, deduplicated, so the page can say once —
- * under the table — what each gap means and what would supply it.
+ * The facts this host could hold and does not, deduplicated, so the page can
+ * say once — under the table — what each unavailable cell means and what would
+ * supply it.
  */
-export function catalogueGaps(
-	entries: CatalogueEntry[],
-): { fact: string; label: string; detail: string }[] {
-	const seen = new Map<
-		string,
-		{ fact: string; label: string; detail: string }
-	>();
-	const note = (factName: string, view: FactView) => {
-		if (view.kind !== "gap") return;
-		const key = `${factName}\u0000${view.label}\u0000${view.detail}`;
-		if (!seen.has(key))
-			seen.set(key, { fact: factName, label: view.label, detail: view.detail });
-	};
+export function catalogueGaps(entries: CatalogueEntry[]): CatalogueNote[] {
+	const { note, notes } = collector();
 	for (const entry of entries) {
 		note("Publisher", publisherView(entry));
 		const states = catalogueStates(entry);
@@ -391,11 +374,53 @@ export function catalogueGaps(
 				note(`${state} · ${item.label}`, item.view);
 			}
 		}
-		note("Build size", buildSizeView(entry));
 		for (const installation of entry.installations) {
 			note("Agent release", agentReleaseView(installation));
-			note("Installation revision", installationRevisionView(installation));
 		}
 	}
-	return [...seen.values()];
+	return notes();
+}
+
+/**
+ * The facts whose contract carries no value case at all.
+ *
+ * `CatalogueWithdrawing`, `CatalogueRetired`, an entry's build size and an
+ * installation's own revision are gap-only oneofs in `platform_admin.proto`:
+ * the records that would fill them — a withdrawal and revocation record, a
+ * retirement controller reporting to this host, the presence document's
+ * build_size section — have not been built. A column for any of them could
+ * never hold anything but its gap.
+ *
+ * So they are not columns. A grid of "Not recorded" reads as a deployment an
+ * operator failed to configure, when it is machinery nobody has written yet;
+ * the two are different facts and the page states them separately. Each one's
+ * reason is still the server's own, read from the gap it sends.
+ */
+export function unbuiltFacts(entries: CatalogueEntry[]): CatalogueNote[] {
+	const { note, notes } = collector();
+	for (const entry of entries) {
+		note(
+			"Withdrawal",
+			fact(entry.withdrawing?.withdrawalStateValue, () => UNSET),
+		);
+		note(
+			"Credential revocation",
+			fact(entry.withdrawing?.credentialRevocationStateValue, () => UNSET),
+		);
+		note(
+			"Retirement",
+			fact(entry.retired?.retirementStateValue, () => UNSET),
+		);
+		note(
+			"Build size",
+			fact(entry.buildSizeValue, () => UNSET),
+		);
+		for (const installation of entry.installations) {
+			note(
+				"Installation revision",
+				fact(installation.revisionValue, () => UNSET),
+			);
+		}
+	}
+	return notes();
 }

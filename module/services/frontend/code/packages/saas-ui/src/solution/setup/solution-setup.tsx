@@ -4,6 +4,7 @@ import {
 	HostInstallationStatus,
 	type OfferRole,
 	type OfferScope,
+	type OfferTool,
 	type ReviewedOffer,
 	type RoleGrant,
 } from "@codefly-dev/saas-sdk";
@@ -12,6 +13,7 @@ import {
 	Banner,
 	Button,
 	Card,
+	Disclosure,
 	Field,
 	Input,
 	List,
@@ -26,13 +28,17 @@ import {
 	useLoadingPhase,
 } from "@codefly-dev/ui/layout";
 import type { Transport } from "@connectrpc/connect";
-import { type ReactNode, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import type { SolutionRequestBinding } from "../binding.js";
 import { solutionTransport } from "../transport.js";
 import {
+	accessLevel,
+	accessMix,
+	byAccess,
 	holderName,
 	installed,
 	isDenied,
+	nameList,
 	refusalOf,
 	type SetupCondition,
 	type SetupSubject,
@@ -292,6 +298,107 @@ function Scopes({
 	);
 }
 
+/**
+ * One grouped view of what every role reaches, in place of one full table per
+ * role.
+ *
+ * The three tables this replaced were near-copies: the operations a solution
+ * composes are the same set, and a role differs from its neighbour by a handful
+ * of scopes. Three copies of fifty rows hid that difference in 150 rows; one
+ * row per operation with a column per role shows it.
+ *
+ * `operation` is a wire path, which is a developer's artefact and not what an
+ * administrator came to read, so operations are grouped by their module and each
+ * group is closed until asked for, with its count and access mix on the line
+ * that opens it.
+ *
+ * Inside a module the rows are banded by the access they demand, because the
+ * question a reader brings is "why has this role so many permissions" and the
+ * answer is never the total: forty-one reads and eleven writes are not the same
+ * breadth, and a flat list of fifty-two rows says only "fifty-two".
+ */
+interface ReachRow {
+	module: string;
+	operation: string;
+	requires: readonly OfferScope[];
+	tools: readonly OfferTool[];
+	roles: Set<string>;
+}
+
+/** One access level inside a module, with the operations that demand it. */
+interface AccessBand {
+	level: string;
+	rows: ReachRow[];
+}
+
+interface ReachGroup {
+	module: string;
+	rows: ReachRow[];
+	bands: AccessBand[];
+	/** Roles reaching exactly the same operations here, named together. */
+	coinciding: string[][];
+}
+
+function reach(roles: readonly OfferRole[]): ReachGroup[] {
+	const rows = new Map<string, ReachRow>();
+	for (const role of roles) {
+		for (const c of role.capabilities) {
+			const key = `${c.module}\u0000${c.operation}`;
+			const row = rows.get(key) ?? {
+				module: c.module,
+				operation: c.operation,
+				requires: c.requires,
+				tools: c.tools,
+				roles: new Set<string>(),
+			};
+			row.roles.add(role.name);
+			rows.set(key, row);
+		}
+	}
+	const groups = new Map<string, ReachGroup>();
+	for (const row of rows.values()) {
+		const group = groups.get(row.module) ?? {
+			module: row.module,
+			rows: [],
+			bands: [],
+			coinciding: [],
+		};
+		group.rows.push(row);
+		groups.set(row.module, group);
+	}
+	for (const group of groups.values()) {
+		// Reads and writes apart. "Why has this role so many permissions" is
+		// answered by the split, never by the total: forty reads and eleven
+		// writes are not the same breadth, and a flat list of fifty-two rows
+		// says only "fifty-two".
+		const bands = new Map<string, ReachRow[]>();
+		for (const row of group.rows) {
+			const level = accessLevel(row.requires);
+			bands.set(level, [...(bands.get(level) ?? []), row]);
+		}
+		group.bands = [...bands.entries()]
+			.sort(([a], [b]) => byAccess(a, b))
+			.map(([level, rows]) => ({ level, rows }));
+		// Two roles reaching the same operations in a module is the fact a
+		// reader would otherwise have to find by diffing two columns over fifty
+		// rows. It is stated instead.
+		const signatures = new Map<string, string[]>();
+		for (const role of roles) {
+			const reached = group.rows
+				.filter((row) => row.roles.has(role.name))
+				.map((row) => row.operation)
+				.sort()
+				.join("\u0000");
+			if (!reached) continue;
+			signatures.set(reached, [...(signatures.get(reached) ?? []), role.name]);
+		}
+		group.coinciding = [...signatures.values()].filter(
+			(names) => names.length > 1,
+		);
+	}
+	return [...groups.values()];
+}
+
 function RolesSection({
 	offer,
 	offerError,
@@ -299,10 +406,15 @@ function RolesSection({
 	offer?: ReviewedOffer;
 	offerError?: unknown;
 }) {
+	const groups = offer ? reach(offer.roles) : [];
+	// A column that can only ever repeat one sentence is not a column. When no
+	// tool is exposed anywhere, the banner above says so once and the column is
+	// gone, rather than printing the same words in every cell.
+	const anyTools = groups.some((g) => g.rows.some((r) => r.tools.length > 0));
 	return (
 		<Card
 			title="Roles and what they grant"
-			description="What each role grants, limited to what this installation owns, the module operations that covers, and the agent tools those operations are. The authority checks them again on every call."
+			description="What each role grants, limited to what this installation owns, and the module operations that covers. The authority checks them again on every call."
 		>
 			{!offer ? (
 				<Refusal error={offerError} what="the roles" />
@@ -312,7 +424,10 @@ function RolesSection({
 						<Banner
 							tone="info"
 							title="Tool exposure is unavailable from this host."
-						/>
+						>
+							No operation below can be shown as an agent tool, and nothing
+							about this installation is wrong.
+						</Banner>
 					)}
 					<div>
 						<p className="type-emphasis">Permission ceiling</p>
@@ -326,7 +441,18 @@ function RolesSection({
 								{offer.ceiling.map((c) => (
 									<ListItem
 										key={c.binding}
-										description={<Scopes scopes={c.scopes} confined={false} />}
+										description={
+											// A module with no scope under it read as a bare name, which
+											// looks like a value still loading. It is a real answer and
+											// says so.
+											c.scopes.length === 0 ? (
+												<span className="text-muted-foreground">
+													Reached, but granted no scope of its own.
+												</span>
+											) : (
+												<Scopes scopes={c.scopes} confined={false} />
+											)
+										}
 									>
 										{c.module}
 									</ListItem>
@@ -337,13 +463,76 @@ function RolesSection({
 					{offer.roles.length === 0 ? (
 						<p>This solution declares no role.</p>
 					) : (
-						offer.roles.map((role) => (
-							<RoleCard
-								key={role.name}
-								role={role}
-								toolsComposed={offer.toolsComposed}
-							/>
-						))
+						<>
+							<div>
+								<p className="type-emphasis">Roles</p>
+								<List variant="divided" label="Roles">
+									{offer.roles.map((role) => (
+										<ListItem
+											key={role.name}
+											description={<Scopes scopes={role.scopes} confined />}
+											// The total alone is what made the installer's breadth
+											// unreadable; the split is the answer.
+											meta={
+												role.capabilities.length === 0
+													? "No operation"
+													: `${role.capabilities.length} ${
+															role.capabilities.length === 1
+																? "operation"
+																: "operations"
+														} · ${accessMix(
+															role.capabilities.map((c) => c.requires),
+														)}`
+											}
+										>
+											{role.name}
+										</ListItem>
+									))}
+								</List>
+							</div>
+							<div className="flex flex-col gap-2">
+								<p className="type-emphasis">What the roles reach</p>
+								{groups.length === 0 ? (
+									<p>No composed operation is covered by any role.</p>
+								) : (
+									groups.map((group) => (
+										<Disclosure
+											key={group.module}
+											headingLevel={4}
+											// "requires documents: read" understated a module whose
+											// fifty-two operations include eleven writes. The line
+											// names every access level in it, counted.
+											title={
+												<span>
+													{`${group.module} · ${group.rows.length} ${
+														group.rows.length === 1 ? "operation" : "operations"
+													} · ${accessMix(
+														group.rows.map((row) => row.requires),
+													)}`}
+													{/* On the closed line, because the point of saying
+													    it is that the reader does not have to open the
+													    module and diff two columns over fifty rows. */}
+													{group.coinciding.map((names) => (
+														<span
+															key={names.join()}
+															className="block type-card-description text-muted-foreground"
+														>
+															{`${nameList(names)} reach exactly the same operations here.`}
+														</span>
+													))}
+												</span>
+											}
+										>
+											<ReachTable
+												group={group}
+												roles={offer.roles}
+												showTools={anyTools}
+											/>
+										</Disclosure>
+									))
+								)}
+							</div>
+						</>
 					)}
 				</div>
 			)}
@@ -351,69 +540,77 @@ function RolesSection({
 	);
 }
 
-function RoleCard({
-	role,
-	toolsComposed,
+function ReachTable({
+	group,
+	roles,
+	showTools,
 }: {
-	role: OfferRole;
-	toolsComposed: boolean;
+	group: ReachGroup;
+	roles: readonly OfferRole[];
+	showTools: boolean;
 }) {
+	// The expander's columns: operation, requires, one per role, and tools.
+	const columns = 2 + roles.length + (showTools ? 1 : 0);
 	return (
-		<Card
-			titleAs="h4"
-			title={`Role: ${role.name}`}
-			description={<Scopes scopes={role.scopes} confined />}
-		>
-			{role.capabilities.length === 0 ? (
-				<p>No composed operation is covered by this role.</p>
-			) : (
-				<Table aria-label={`What ${role.name} reaches`}>
-					<TableHeader>
+		<Table aria-label={`Operations of ${group.module}`}>
+			<TableHeader>
+				<TableRow>
+					<TableHead>Operation</TableHead>
+					<TableHead>Requires</TableHead>
+					{roles.map((role) => (
+						<TableHead key={role.name}>{role.name}</TableHead>
+					))}
+					{showTools && <TableHead>Agent tools</TableHead>}
+				</TableRow>
+			</TableHeader>
+			<TableBody>
+				{group.bands.map((band) => (
+					<Fragment key={band.level}>
 						<TableRow>
-							<TableHead>Module</TableHead>
-							<TableHead>Operation</TableHead>
-							<TableHead>Requires</TableHead>
-							<TableHead>Agent tools</TableHead>
+							<TableHead colSpan={columns} scope="rowgroup">
+								{band.level} · {band.rows.length}{" "}
+								{band.rows.length === 1 ? "operation" : "operations"}
+							</TableHead>
 						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{role.capabilities.map((c) => (
-							<TableRow key={c.module + c.operation}>
-								<TableCell>{c.module}</TableCell>
+						{band.rows.map((row) => (
+							<TableRow key={row.operation}>
 								<TableCell className="whitespace-normal break-words">
-									<code>{c.operation}</code>
+									<code>{row.operation}</code>
 								</TableCell>
 								<TableCell className="whitespace-normal">
-									<Scopes scopes={c.requires} confined={false} />
+									<Scopes scopes={row.requires} confined={false} />
 								</TableCell>
-								<TableCell className="whitespace-normal">
-									{c.tools.length === 0 ? (
-										toolsComposed ? (
+								{roles.map((role) => (
+									<TableCell key={role.name}>
+										{row.roles.has(role.name) ? "Yes" : "—"}
+									</TableCell>
+								))}
+								{showTools && (
+									<TableCell className="whitespace-normal">
+										{row.tools.length === 0 ? (
 											"Not exposed as a tool"
 										) : (
-											"Tool exposure unavailable"
-										)
-									) : (
-										<span className="inline-flex flex-wrap gap-1.5">
-											{c.tools.map((t) => (
-												<Badge
-													key={t.binding}
-													tone={t.write ? "warning" : "info"}
-													title={t.binding}
-												>
-													{t.name}
-													{t.write ? " · changes data" : ""}
-												</Badge>
-											))}
-										</span>
-									)}
-								</TableCell>
+											<span className="inline-flex flex-wrap gap-1.5">
+												{row.tools.map((t) => (
+													<Badge
+														key={t.binding}
+														tone={t.write ? "warning" : "info"}
+														title={t.binding}
+													>
+														{t.name}
+														{t.write ? " · changes data" : ""}
+													</Badge>
+												))}
+											</span>
+										)}
+									</TableCell>
+								)}
 							</TableRow>
 						))}
-					</TableBody>
-				</Table>
-			)}
-		</Card>
+					</Fragment>
+				))}
+			</TableBody>
+		</Table>
 	);
 }
 

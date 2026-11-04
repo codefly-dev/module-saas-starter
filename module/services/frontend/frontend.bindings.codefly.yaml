@@ -121,16 +121,6 @@ navigation:
     surfaces:
       - plugin_registry
     order: 160
-  - id: admin-platform-overview
-    plugin: platform-admin
-    label: Platform Overview
-    path: /admin/platform
-    icon: Layers
-    group: Platform
-    access: super_admin
-    surfaces:
-      - plugin_registry
-    order: 190
   - id: admin-platform-users
     plugin: platform-admin
     label: Platform Users
@@ -227,7 +217,6 @@ navigation:
     surfaces:
       - command_palette
       - plugin_registry
-      - sidebar
     order: 236
   - id: admin-audit-log
     plugin: audit
@@ -242,6 +231,50 @@ navigation:
       - plugin_registry
       - sidebar
     order: 240
+  - id: admin-module-authority
+    plugin: platform-admin
+    label: Module Authority
+    path: /admin/platform/module-authority
+    icon: Shield
+    group: Platform
+    access: super_admin
+    surfaces:
+      - command_palette
+      - plugin_registry
+    order: 241
+  - id: admin-event-operations
+    plugin: platform-admin
+    label: Event Operations
+    path: /admin/platform/events
+    icon: Activity
+    group: Platform
+    access: super_admin
+    surfaces:
+      - command_palette
+      - plugin_registry
+    order: 242
+  - id: admin-plugin-transport
+    plugin: platform-admin
+    label: Plugin Transport
+    path: /admin/platform/plugin-transport
+    icon: Globe
+    group: Platform
+    access: super_admin
+    surfaces:
+      - command_palette
+      - plugin_registry
+    order: 243
+  - id: admin-unattended-work
+    plugin: platform-admin
+    label: Unattended Work
+    path: /admin/platform/unattended-work
+    icon: Key
+    group: Platform
+    access: super_admin
+    surfaces:
+      - command_palette
+      - plugin_registry
+    order: 244
   - id: admin-billing
     plugin: core-users
     label: Subscription
@@ -279,6 +312,18 @@ navigation:
       - plugin_registry
       - sidebar
     order: 405
+  - id: admin-modules
+    plugin: core-users
+    label: Supporting Modules
+    path: /admin/modules
+    icon: Layers
+    group: Integrations
+    access: admin
+    permission: roles:write
+    surfaces:
+      - command_palette
+      - plugin_registry
+    order: 406
   - id: admin-datasources
     plugin: core-users
     label: Data sources
@@ -321,7 +366,6 @@ navigation:
     access: admin
     surfaces:
       - plugin_registry
-      - sidebar
     order: 510
   - id: compliance
     plugin: audit
@@ -332,7 +376,6 @@ navigation:
     access: admin
     surfaces:
       - plugin_registry
-      - sidebar
     order: 520
   - id: settings
     plugin: core-users
