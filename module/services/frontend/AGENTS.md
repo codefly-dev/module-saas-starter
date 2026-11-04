@@ -93,20 +93,21 @@ This does not by itself make a rolling backend serve immutable assets: delivery
 must also bind the resolved endpoint and packaged frontend to the same build.
 The browser cache tests do not qualify that producer/deployment boundary.
 
-## The solution Setup tab
+## Solution settings
 
-A `/s/<id>` page whose record declares installation roles has a Setup tab beside
-App (and Dashboard): the solution's roles, what each grants (scopes → module
+A `/s/<id>` page opens the solution directly. A labelled settings gear opens the
+existing setup UI in a dismissible dialog while keeping the remote mounted: the solution's roles, what each grants (scopes → module
 operations → agent tools, and the permission ceiling) and who holds them. That
 is every solution record (the shared authority core requires a solution's
 `installer` role) and a module record whose page declares roles, which
 `WhenRolesDeclared` learns from the authority's offer review; a module page that
-declares none shows App (and Dashboard) only. It renders the kit's `<SolutionSetup>`
+declares none shows no settings gear. An optional declared Dashboard remains
+accessible beside Workspace; solutions without one have no tab bar. It renders the kit's `<SolutionSetup>`
 (`@codefly-dev/saas-ui/solution`) through `SolutionSetupPanel`, which adds
 only what this host knows: the
 session's organization, the people and teams it can name, and, on the admin
 installation page, this host's own unmet conditions. Every fact and refusal on
-the tab is the authority's answer through the host installation interface. The
+the settings panel is the authority's answer through the host installation interface. The
 solution is named by its target, its registered route alias. The component is
 available for other hosts; adoption by the local authority is a separate owner
 integration and is not established by this repository.
@@ -162,7 +163,7 @@ the organization. `src/lib/auth-session.ts` can read an `org` claim, but
 `decodeJWTPayload` only base64-decodes — it verifies nothing — so a route that
 narrowed on it would let a caller read another tenant's menu by editing one field.
 These `/api/*` paths are also not proxied through the gateway (`src/proxy.ts`
-forwards `/v1/*`, `/saas.accounts.v1.*` and the Setup tab's eight host
+forwards `/v1/*`, `/saas.accounts.v1.*` and the settings panel's eight host
 installation procedures only), so no `ext_authz` stamp reaches
 them either. `src/solutions/entitlements.ts` therefore forwards the caller's
 credential to `GET /solutions/_entitlements` on the gateway, which authenticates

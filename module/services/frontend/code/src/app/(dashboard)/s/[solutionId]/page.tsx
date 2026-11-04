@@ -1,11 +1,9 @@
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
 
 import {
 	SolutionSetupPanel,
 	WhenRolesDeclared,
 } from "@/features/solution-installations";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
 import {
 	browserManifestUrl,
 	findSolution,
@@ -15,6 +13,10 @@ import {
 import { SolutionDashboards } from "@/solutions/SolutionDashboard";
 import { SolutionLivePage } from "@/solutions/SolutionLivePage";
 import { SolutionRuntime } from "@/solutions/SolutionRuntime";
+import {
+	SolutionSettings,
+	SolutionWorkspace,
+} from "@/solutions/SolutionWorkspace";
 import SolutionNotFound from "./not-found";
 
 export const dynamic = "force-dynamic";
@@ -67,64 +69,32 @@ export default async function SolutionPage({
 		/>
 	);
 
-	// A declared dashboard is its own tab beside the solution, not a block
-	// stacked above it: stacked, it pushed the solution below the fold on every
-	// visit, and a dashboard with nothing to show yet ("No data yet") sat on top
-	// of the thing the person came for. The solution's panel stays mounted
-	// while another tab is open, so switching back keeps its state (an open
-	// chat, a half-typed question).
-	//
-	// A record whose delivery declares installation roles has a Setup tab: its
-	// roles, what each grants (operations and agent tools) and who holds them —
-	// the one Setup UI every host renders (`<SolutionSetup>`), answered by the
-	// authority through the host installation interface. The solution is named
-	// by its target, which is the route alias it is registered under.
-	//
-	// Every solution declares roles (the shared authority core requires an
-	// installer role). A module page may declare them too, and a module page
-	// that declares none has no tab that could only fail: `WhenRolesDeclared`
-	// asks the authority's offer review which it is.
-	const setup = (tab: ReactNode) => (
-		<WhenRolesDeclared target={solution.id} kind={solution.kind}>
-			{tab}
-		</WhenRolesDeclared>
-	);
 	return (
 		<SolutionLivePage
 			id={solution.id}
 			assetVersion={solution.assetVersion}
 			denied={<SolutionNotFound />}
 		>
-			<div className="flex flex-col gap-4 p-6">
-				<h1 data-slot="page-title" className="type-page-title">
-					{solution.nav.title}
-				</h1>
-				<Tabs defaultValue="app" className="w-full">
-					<TabsList>
-						<TabsTrigger value="app">App</TabsTrigger>
-						{solution.dashboard?.dashboards?.length ? (
-							<TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-						) : null}
-						{setup(<TabsTrigger value="setup">Setup</TabsTrigger>)}
-					</TabsList>
-					<TabsContent value="app" keepMounted>
-						{app}
-					</TabsContent>
-					{solution.dashboard?.dashboards?.length ? (
-						<TabsContent value="dashboard">
-							<SolutionDashboards
-								graph={solution.dashboard}
-								solutionId={solution.id}
-							/>
-						</TabsContent>
-					) : null}
-					{setup(
-						<TabsContent value="setup">
+			<SolutionWorkspace
+				title={solution.nav.title}
+				settings={
+					<WhenRolesDeclared target={solution.id} kind={solution.kind}>
+						<SolutionSettings title={solution.nav.title}>
 							<SolutionSetupPanel target={solution.id} />
-						</TabsContent>,
-					)}
-				</Tabs>
-			</div>
+						</SolutionSettings>
+					</WhenRolesDeclared>
+				}
+				dashboard={
+					solution.dashboard?.dashboards?.length ? (
+						<SolutionDashboards
+							graph={solution.dashboard}
+							solutionId={solution.id}
+						/>
+					) : undefined
+				}
+			>
+				{app}
+			</SolutionWorkspace>
 		</SolutionLivePage>
 	);
 }
