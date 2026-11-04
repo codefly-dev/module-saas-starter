@@ -6,6 +6,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	modulecontract "github.com/codefly-dev/core/contracts/module"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	runnablev0 "github.com/codefly-dev/core/generated/go/codefly/runnable/v0"
 	"github.com/codefly-dev/core/resources"
@@ -142,4 +143,20 @@ func TestAReviewedOfferPreservesTheSharedProjectionRefusal(t *testing.T) {
 	_, err := reviewedOffer(proposalsOffer(domain.ConsentApproval{}), map[string]*runnablev0.PreparedBinding{"BROKEN": binding})
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	require.Contains(t, status.Convert(err).Message(), "the composed binding BROKEN is not a valid tool")
+}
+
+// Setup grants shown for review retain their binding, target, methods and scope.
+func TestReviewedOfferProjectsSetup(t *testing.T) {
+	offer := proposalsOffer(domain.ConsentApproval{})
+	offer.Module.Setup = []modulecontract.ResolvedSetup{{Binding: "documents", Methods: []string{"/records.v1.Schema/Define"}, Scopes: []string{"records.types:define"}}}
+	review, err := reviewedOffer(offer, nil)
+	require.NoError(t, err)
+	require.Len(t, review.GetSetup(), 1)
+	setup := review.GetSetup()[0]
+	require.Equal(t, "documents", setup.GetBinding())
+	require.Equal(t, "documents", setup.GetModule())
+	require.Equal(t, []string{"/records.v1.Schema/Define"}, setup.GetMethods())
+	require.Len(t, setup.GetScopes(), 1)
+	require.Equal(t, "records.types", setup.GetScopes()[0].GetResourceKind())
+	require.Equal(t, []string{"define"}, setup.GetScopes()[0].GetActions())
 }

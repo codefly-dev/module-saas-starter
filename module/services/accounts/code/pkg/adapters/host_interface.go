@@ -224,6 +224,12 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 			return nil, werr
 		}
 		out, err = core.IssueForInstallation(ctx, w, as.Installation.GetInstallationId(), r)
+	case *authorityv1.IssueRequest_Setup:
+		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
+		if werr != nil {
+			return nil, werr
+		}
+		out, err = core.IssueForInstallationSetup(ctx, w, as.Setup.GetStepToken(), as.Setup.GetMethod(), r)
 	case *authorityv1.IssueRequest_ParentToken:
 		w, werr := workload(ctx, req.GetActor().GetCredential(), "actor")
 		if werr != nil {
