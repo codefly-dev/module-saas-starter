@@ -290,8 +290,13 @@ audiences and edge dependencies resolve by exact signed principal, and the set
 closes over what each supporting module itself reaches: a solution that binds
 documents installs the model documents embeds with, under the presence of the
 path that reached it (a path through an optional module requires nothing). A
-module reaching a solution, or a target that is not a supporting module,
-contributes nothing; a solution installs on its own review. The host UUID projection
+module's declaration is fleet-wide while a host's catalogue is a subset of it,
+so a supporting module's binding onto an audience the host has not delivered is
+shown absent and never refused, as the core tolerates it at issuance; a module's
+required edge keeps its declared presence and refuses undelivered. A module
+reaching a solution, or a target that is not a supporting module, contributes
+nothing; a solution installs on its own review. A refusal names the module the
+solution reached it through. The host UUID projection
 is compared separately; aliases, binding keys and release strings are not identity
 fallbacks. Omitted required modules, duplicate witnesses, unrelated additions or
 changed generations refuse activation. Ordered edge declarations are retained;
