@@ -237,7 +237,9 @@ func (g *Gateway) serveBrowser(w http.ResponseWriter, r *http.Request) bool {
 			hopBrowserError(w, r, code, status.Code(err), "the authority refused this person at "+module+": "+status.Convert(err).Message())
 			return
 		}
-		h.face.ServeHTTP(w, withOnlyWorkContext(r, token))
+		key := sha256.Sum256([]byte(bearer + "\x00" + module))
+		marked := r.WithContext(context.WithValue(r.Context(), browserCheckKey{}, browserCheck{key: key, token: token, audience: module}))
+		h.face.ServeHTTP(w, withOnlyWorkContext(marked, token))
 	}))
 	return true
 }
@@ -367,6 +369,34 @@ type hopAuthorityClient interface {
 	hopIssuer
 }
 
+// browserCheck stays in the request context and never crosses the hop boundary.
+type browserCheckKey struct{}
+type browserCheck struct {
+	key             [32]byte
+	token, audience string
+}
+
+// browserCheckAuthority observes the hop's own live authority decision without
+// changing it or guessing from the downstream protocol's response.
+type browserCheckAuthority struct {
+	hopAuthorityClient
+	role *hopRole
+}
+
+func (a browserCheckAuthority) Check(ctx context.Context, req *authorityv1.CheckRequest, opts ...grpc.CallOption) (*authorityv1.CheckResponse, error) {
+	out, err := a.hopAuthorityClient.Check(ctx, req, opts...)
+	marker, ok := ctx.Value(browserCheckKey{}).(browserCheck)
+	denied := status.Code(err) == codes.PermissionDenied || status.Code(err) == codes.Unauthenticated || (err == nil && out != nil && out.GetRefusal() != "")
+	if ok && denied && ctx.Err() == nil && req.GetToken() == marker.token && req.GetAudience() == marker.audience {
+		a.role.mu.Lock()
+		if held, exists := a.role.held[marker.key]; exists && held.token == marker.token {
+			delete(a.role.held, marker.key)
+		}
+		a.role.mu.Unlock()
+	}
+	return out, err
+}
+
 // hopAuthority is the interface's generated client, as hopAuthorityClient.
 type hopAuthority struct {
 	authorityv1.AuthorityServiceClient
@@ -381,15 +411,17 @@ func newHopRole(ctx context.Context, authority hopAuthorityClient, credential fu
 	if err != nil {
 		return nil, nil, err
 	}
+	role := &hopRole{modules: modules, routes: routes, issuer: authority}
 	front, err := forward.New(ctx, forward.Config{
-		Signer: signer, Authority: authority, Credential: credential,
+		Signer: signer, Authority: browserCheckAuthority{hopAuthorityClient: authority, role: role}, Credential: credential,
 		Modules: modules, Routes: raw, Enforcement: enforcement, Log: wool.Get(ctx).In("hop"),
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 	log.Printf("hop: standing in front of %s", strings.Join(modules, ", "))
-	return &hopRole{modules: modules, routes: routes, issuer: authority, face: front.Handler, front: front}, front, nil
+	role.face, role.front = front.Handler, front
+	return role, front, nil
 }
 
 // hopFace is the hop's one face, as the hop endpoint serves it: a gRPC call
