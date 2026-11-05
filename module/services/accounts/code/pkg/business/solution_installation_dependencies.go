@@ -199,7 +199,7 @@ func (p SolutionInstallationPlan) ValidateDependencySet(offer authority.Reviewed
 		witness, present := remaining[principal]
 		if !present {
 			if dependency.Required {
-				return domain.NotNow("INSTALLATION_PREREQUISITES_CHANGED: required module %q has no consent witness", dependency.Principal)
+				return domain.NotNow("INSTALLATION_PREREQUISITES_CHANGED: required %s has no consent witness", dependency.Describe())
 			}
 			continue
 		}

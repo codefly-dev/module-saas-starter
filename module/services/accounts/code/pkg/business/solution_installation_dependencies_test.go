@@ -235,7 +235,7 @@ func TestSolutionDependenciesCloseOverWhatSupportingModulesReach(t *testing.T) {
 	// The activation fence sees the same closure: a plan that witnessed only
 	// what the solution names refuses on the module it reaches through them.
 	plan := business.SolutionInstallationPlan{Dependencies: []business.ModuleInstallationPrerequisite{{PrincipalID: business.ModulePrincipalID("module:documents"), Generation: 5}}}
-	if err := plan.ValidateDependencySet(offer); err == nil || !strings.Contains(err.Error(), `required module "module:model" has no consent witness`) {
+	if err := plan.ValidateDependencySet(offer); err == nil || !strings.Contains(err.Error(), `required module "module:model" (reached through "module:documents") has no consent witness`) {
 		t.Fatalf("the activation fence missed the transitive module: %v", err)
 	}
 }
