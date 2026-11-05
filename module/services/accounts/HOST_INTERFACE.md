@@ -285,8 +285,13 @@ role. Generated declaration carriage and SQL qualification must precede deployme
 of this path in a delivered host.
 
 The canonical solution activation transaction also reconstructs the dependency
-set from its locked paired declaration and referenced modules. Binding audiences
-and edge dependencies resolve by exact signed principal. The host UUID projection
+set from its locked paired declaration and the whole delivered catalogue. Binding
+audiences and edge dependencies resolve by exact signed principal, and the set
+closes over what each supporting module itself reaches: a solution that binds
+documents installs the model documents embeds with, under the presence of the
+path that reached it (a path through an optional module requires nothing). A
+module reaching a solution, or a target that is not a supporting module,
+contributes nothing; a solution installs on its own review. The host UUID projection
 is compared separately; aliases, binding keys and release strings are not identity
 fallbacks. Omitted required modules, duplicate witnesses, unrelated additions or
 changed generations refuse activation. Ordered edge declarations are retained;
