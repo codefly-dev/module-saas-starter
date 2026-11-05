@@ -2,6 +2,8 @@ package business_test
 
 import (
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"accounts/pkg/business"
@@ -124,5 +126,116 @@ func TestFinalDependencyFenceRejectsOmittedOrUnrelatedWitness(t *testing.T) {
 	offer.Module.EdgeDependencies[0].Presence = "required"
 	if err := (business.SolutionInstallationPlan{Dependencies: []business.ModuleInstallationPrerequisite{witness}}).ValidateDependencySet(offer); err == nil {
 		t.Fatal("required edge module omitted")
+	}
+}
+
+// A solution that binds a module needs what that module itself reaches, or the
+// module's calls there are refused the moment the solution is active: the pages
+// solution binds documents, documents embeds through model, so model is a
+// required dependency of the pages installation although pages never names it.
+func TestSolutionDependenciesCloseOverWhatSupportingModulesReach(t *testing.T) {
+	read := []*basev0.WorkScopeV1{{ResourceKind: "documents", Actions: []string{"read"}}}
+	embed := []*basev0.WorkScopeV1{{ResourceKind: "modelservice.profiles", Actions: []string{"invoke"}}}
+	rows := []*basev0.WorkScopeV1{{ResourceKind: "records.records", Actions: []string{"read"}}}
+	documents := domain.Module{Name: "documents", Principal: "module:documents", Kind: domain.KindModule, Generation: 5,
+		ResourceKinds: read, Bindings: map[string]domain.Binding{
+			"model": {ID: "model", Audience: "module:model", InvokeScopes: embed},
+			"self":  {ID: "self", Audience: "module:documents"},
+			"pages": {ID: "pages", Audience: "solution:pages", InvokeScopes: read},
+			"other": {ID: "other", Audience: "solution:other", InvokeScopes: read},
+		}, EdgeDependencies: []domain.EdgeDependency{
+			{Module: "module:records", Presence: "optional"},
+			{Module: "solution:other", Presence: "required"},
+			{Module: "solution:pages", Presence: "required"},
+		}}
+	model := domain.Module{Name: "model", Principal: "module:model", Kind: domain.KindModule, Generation: 4, ResourceKinds: embed,
+		Bindings: map[string]domain.Binding{"documents": {ID: "documents", Audience: "module:documents", InvokeScopes: read}}}
+	records := domain.Module{Name: "records", Principal: "module:records", Kind: domain.KindModule, Generation: 2, ResourceKinds: rows,
+		Bindings: map[string]domain.Binding{"org-directory": {ID: "org-directory", Audience: "module:org-directory", InvokeScopes: rows}}}
+	pages := domain.Module{Name: "pages", Principal: "solution:pages", Kind: domain.KindSolution, Generation: 3,
+		Bindings: map[string]domain.Binding{"documents": {ID: "documents", Audience: "module:documents", InvokeScopes: read}}}
+	other := domain.Module{Name: "other", Principal: "solution:other", Kind: domain.KindSolution, Generation: 1}
+	offer := authority.ReviewedOffer{Module: pages, Modules: []domain.Module{documents, model, records, pages, other}}
+
+	deps, err := business.SolutionInstallationDependencies(offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]business.SolutionDependency{}
+	for _, d := range deps {
+		got[d.Principal] = d
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected documents, model, records and org-directory: %+v", deps)
+	}
+	if d := got["module:model"]; !d.Required || !d.Delivered || d.Module.Generation != 4 || len(d.Bindings) != 0 || d.Via != "module:documents" {
+		t.Fatalf("model reached through documents is not a required, binding-free dependency named through documents: %+v", d)
+	}
+	if d := got["module:documents"]; !d.Required || len(d.Bindings) != 1 || d.Via != "" {
+		t.Fatalf("the solution's own binding onto documents was lost: %+v", d)
+	}
+	if d := got["module:records"]; d.Required || !d.Delivered {
+		t.Fatalf("an optional edge of a supporting module became required: %+v", d)
+	}
+	if d := got["module:org-directory"]; d.Required || d.Delivered {
+		t.Fatalf("a module behind an optional edge was required or invented: %+v", d)
+	}
+	for _, principal := range []string{"solution:pages", "solution:other"} {
+		if _, present := got[principal]; present {
+			t.Fatalf("a supporting module reaching solution %q made it a dependency", principal)
+		}
+	}
+
+	// A module's binding onto an audience this host has not delivered is shown
+	// absent and never refused: the module's declaration is fleet-wide, the
+	// catalogue is this host's. The solution's own binding keeps refusing.
+	undelivered := offer
+	undelivered.Modules = []domain.Module{documents, records, pages, other}
+	deps, err = business.SolutionInstallationDependencies(undelivered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, d := range deps {
+		if d.Principal == "module:model" {
+			found = true
+			if d.Required || d.Delivered || d.Via != "module:documents" {
+				t.Fatalf("documents' reach onto an undelivered model was required or invented: %+v", d)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("documents' reach onto an undelivered model was not shown")
+	}
+	// A supporting module's required edge keeps its declared presence.
+	fenced := offer
+	fencedDocuments := documents
+	fencedDocuments.EdgeDependencies = []domain.EdgeDependency{{Module: "module:records", Presence: "required"}}
+	fenced.Modules = []domain.Module{fencedDocuments, model, pages, other}
+	if _, err := business.SolutionInstallationDependencies(fenced); err == nil {
+		t.Fatal("documents' required edge onto an undelivered records was accepted")
+	} else if !strings.Contains(err.Error(), `"module:records" (reached through "module:documents")`) {
+		t.Fatalf("the refusal does not name the path: %v", err)
+	}
+	// An optional reach that a later required path promotes walks that
+	// module's own reach as required.
+	promoted := offer
+	promoted.Module.EdgeDependencies = []domain.EdgeDependency{{Module: "module:records", Presence: "required"}}
+	orgDirectory := domain.Module{Name: "org-directory", Principal: "module:org-directory", Kind: domain.KindModule, Generation: 3, ResourceKinds: rows}
+	promoted.Modules = append(slices.Clone(offer.Modules), orgDirectory)
+	deps, err = business.SolutionInstallationDependencies(promoted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range deps {
+		if d.Principal == "module:org-directory" && !d.Required {
+			t.Fatalf("records promoted to required did not carry org-directory with it: %+v", d)
+		}
+	}
+	// The activation fence sees the same closure: a plan that witnessed only
+	// what the solution names refuses on the module it reaches through them.
+	plan := business.SolutionInstallationPlan{Dependencies: []business.ModuleInstallationPrerequisite{{PrincipalID: business.ModulePrincipalID("module:documents"), Generation: 5}}}
+	if err := plan.ValidateDependencySet(offer); err == nil || !strings.Contains(err.Error(), `required module "module:model" (reached through "module:documents") has no consent witness`) {
+		t.Fatalf("the activation fence missed the transitive module: %v", err)
 	}
 }

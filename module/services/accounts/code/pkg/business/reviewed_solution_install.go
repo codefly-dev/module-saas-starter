@@ -89,7 +89,7 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 			return nil, err
 		}
 		if target.Kind != "module" || target.AppliedGeneration != dependency.Module.Generation {
-			return nil, domain.NotNow("module %q delivery changed; review again", dependency.Principal)
+			return nil, domain.NotNow("%s delivery changed; review again", dependency.Describe())
 		}
 		entry.TargetId, entry.Target, entry.BindingId = target.TargetID, target.RouteAlias, target.BindingID
 		entry.Release, entry.DeliveryDigest, err = s.reviewedTargetDelivery(ctx, target)
@@ -128,11 +128,11 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 				return nil, err
 			}
 			if !active || inst.Status != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
-				return nil, domain.NotNow("module %q has insufficient current consent; review its access before installing this solution", dependency.Principal)
+				return nil, domain.NotNow("%s has insufficient current consent; review its access before installing this solution", dependency.Describe())
 			}
 			entry.ReuseInstallationId, entry.Approval.ExpectedRevision, scope = inst.Id, state.Revision, state.Scope
 		} else if entry.InstallationRole != domain.NoInstallationRole {
-			return nil, domain.NotNow("module %q cannot be installed automatically: its installation authority is absent or unsupported", dependency.Principal)
+			return nil, domain.NotNow("%s cannot be installed automatically: its installation authority is absent or unsupported", dependency.Describe())
 		} else {
 			// Revoked history still owns the revision a fresh consent must name.
 			for token := ""; ; {

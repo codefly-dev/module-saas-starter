@@ -1,6 +1,7 @@
 package business
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 
@@ -13,18 +14,48 @@ import (
 // SolutionDependency is a review requirement, not consent or a grant. Bindings
 // retain their separate invoke/lookup/headless scopes; an edge contributes only
 // presence. An absent optional module is shown as such, never installed by guess.
+//
+// Bindings holds the solution's own bindings onto the module: what the review
+// shows the administrator the solution asks there. A module reached only
+// through another module carries none, because what that module asks is its
+// own applied declaration, granted at its own authority root.
 type SolutionDependency struct {
 	Principal string
 	Required  bool
 	Delivered bool
 	Module    domain.Module
 	Bindings  []domain.Binding
+	// Via names the supporting module whose own declaration first reached
+	// this one; empty when the solution names it itself.
+	Via string
+}
+
+// Describe names the dependency for a person, with the module it was reached
+// through when the solution never names it.
+func (d SolutionDependency) Describe() string {
+	if d.Via == "" {
+		return fmt.Sprintf("module %q", d.Principal)
+	}
+	return fmt.Sprintf("module %q (reached through %q)", d.Principal, d.Via)
 }
 
 // SolutionInstallationDependencies resolves signed audience identities through
 // the shared offer's delivered catalogue. Neither a binding ID nor a route
 // alias is a substitute for that identity. It leaves the declaration untouched,
 // including edge order, and returns a deterministic presentation of its union.
+//
+// The union closes over what each supporting module itself reaches: a solution
+// that binds documents needs the model documents embeds with, or every call
+// documents makes there is refused once the solution is active. A module's own
+// bindings and edges are walked as the solution's are, under the presence of
+// the path that reached it; a path through an optional module makes nothing
+// required. Two things differ from the solution's own declaration, because a
+// module's declaration is fleet-wide while this host's catalogue is a subset of
+// it: a module's binding onto an audience this host has not delivered is shown
+// absent, never refused (the core tolerates it the same way at issuance), and
+// a module reaching a solution, or any target that is not a supporting module,
+// contributes nothing, because a solution installs on its own review. A
+// module's required edge keeps its declared presence: undelivered, it refuses.
 func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]SolutionDependency, error) {
 	modules := make(map[string]domain.Module, len(offer.Modules))
 	for _, m := range offer.Modules {
@@ -34,31 +65,39 @@ func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]Solution
 		modules[m.Principal] = m
 	}
 	byPrincipal := map[string]*SolutionDependency{}
-	add := func(principal string, required bool) (*SolutionDependency, error) {
+	// add records a dependency and says whether its reach must (still) be
+	// walked: on first sight, and again when a later path makes it required.
+	add := func(principal string, required bool, via string) (*SolutionDependency, bool, error) {
 		if existing := byPrincipal[principal]; existing != nil {
+			raised := required && !existing.Required
 			existing.Required = existing.Required || required
 			if existing.Required && !existing.Delivered {
-				return nil, domain.NotNow("INSTALLATION_DEPENDENCY_MISSING: required module identity %q is not delivered", principal)
+				return nil, false, domain.NotNow("INSTALLATION_DEPENDENCY_MISSING: required %s is not delivered", existing.Describe())
 			}
-			return existing, nil
+			return existing, raised, nil
 		}
 		m, delivered := modules[principal]
 		if delivered && m.Kind != domain.KindModule {
-			return nil, domain.NotNow("INSTALLATION_DEPENDENCY_KIND: %q does not identify a supporting module", principal)
+			return nil, false, domain.NotNow("INSTALLATION_DEPENDENCY_KIND: %q does not identify a supporting module", principal)
 		}
+		entry := &SolutionDependency{Principal: principal, Required: required, Delivered: delivered, Module: m, Via: via}
 		if required && !delivered {
-			return nil, domain.NotNow("INSTALLATION_DEPENDENCY_MISSING: required module identity %q is not delivered", principal)
+			return nil, false, domain.NotNow("INSTALLATION_DEPENDENCY_MISSING: required %s is not delivered", entry.Describe())
 		}
-		entry := &SolutionDependency{Principal: principal, Required: required, Delivered: delivered, Module: m}
 		byPrincipal[principal] = entry
-		return entry, nil
+		return entry, delivered, nil
 	}
+	type reach struct {
+		module   domain.Module
+		required bool
+	}
+	var pending []reach
 	for _, id := range slices.Sorted(maps.Keys(offer.Module.Bindings)) {
 		binding := offer.Module.Bindings[id]
 		if binding.Audience == offer.Module.Principal {
 			continue
 		}
-		entry, err := add(binding.Audience, true)
+		entry, walk, err := add(binding.Audience, true, "")
 		if err != nil {
 			return nil, err
 		}
@@ -72,10 +111,50 @@ func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]Solution
 			}
 		}
 		entry.Bindings = append(entry.Bindings, binding)
+		if walk {
+			pending = append(pending, reach{entry.Module, true})
+		}
 	}
 	for _, edge := range offer.Module.EdgeDependencies {
-		if _, err := add(edge.Module, edge.Presence == "required"); err != nil {
+		entry, walk, err := add(edge.Module, edge.Presence == "required", "")
+		if err != nil {
 			return nil, err
+		}
+		if walk {
+			pending = append(pending, reach{entry.Module, entry.Required})
+		}
+	}
+	for len(pending) > 0 {
+		next := pending[0]
+		pending = pending[1:]
+		for _, principal := range reachedModules(next.module, offer.Module.Principal) {
+			target, delivered := modules[principal]
+			if delivered && target.Kind != domain.KindModule {
+				continue // A solution installs on its own review.
+			}
+			entry, walk, err := add(principal, next.required && delivered, next.module.Principal)
+			if err != nil {
+				return nil, err
+			}
+			if walk {
+				pending = append(pending, reach{entry.Module, next.required})
+			}
+		}
+		for _, edge := range next.module.EdgeDependencies {
+			if edge.Module == offer.Module.Principal {
+				continue
+			}
+			target, delivered := modules[edge.Module]
+			if delivered && target.Kind != domain.KindModule {
+				continue
+			}
+			entry, walk, err := add(edge.Module, next.required && edge.Presence == "required", next.module.Principal)
+			if err != nil {
+				return nil, err
+			}
+			if walk {
+				pending = append(pending, reach{entry.Module, entry.Required})
+			}
 		}
 	}
 	out := make([]SolutionDependency, 0, len(byPrincipal))
@@ -83,6 +162,20 @@ func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]Solution
 		out = append(out, *byPrincipal[principal])
 	}
 	return out, nil
+}
+
+// reachedModules lists the audiences a module's own bindings name, in binding
+// ID order, without the module itself or the solution under review.
+func reachedModules(m domain.Module, solution string) []string {
+	var out []string
+	for _, id := range slices.Sorted(maps.Keys(m.Bindings)) {
+		audience := m.Bindings[id].Audience
+		if audience == m.Principal || audience == solution || slices.Contains(out, audience) {
+			continue
+		}
+		out = append(out, audience)
+	}
+	return out
 }
 
 // ValidateDependencySet checks completeness against the delivered graph read in
@@ -106,7 +199,7 @@ func (p SolutionInstallationPlan) ValidateDependencySet(offer authority.Reviewed
 		witness, present := remaining[principal]
 		if !present {
 			if dependency.Required {
-				return domain.NotNow("INSTALLATION_PREREQUISITES_CHANGED: required module %q has no consent witness", dependency.Principal)
+				return domain.NotNow("INSTALLATION_PREREQUISITES_CHANGED: required %s has no consent witness", dependency.Describe())
 			}
 			continue
 		}

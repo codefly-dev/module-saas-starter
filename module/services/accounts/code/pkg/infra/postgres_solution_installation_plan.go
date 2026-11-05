@@ -89,16 +89,11 @@ func (t coreTx) validateSolutionActivation(inst domain.Installation, plan busine
 	if err := decodeModule(&module, declaration); err != nil {
 		return err
 	}
-	principals := make([]string, 0, len(module.Bindings)+len(module.EdgeDependencies))
-	for _, binding := range module.Bindings {
-		if binding.Audience != principal {
-			principals = append(principals, binding.Audience)
-		}
-	}
-	for _, edge := range module.EdgeDependencies {
-		principals = append(principals, edge.Module)
-	}
-	rows, err := t.q.Query(t.ctx, `SELECT `+coreModuleColumns+` FROM public.authority_core_modules WHERE principal=ANY($1) ORDER BY name FOR SHARE`, principals)
+	// The whole delivered catalogue, as the review read it: the dependency
+	// set closes over what each supporting module reaches, so the modules the
+	// solution names directly are not enough to reconstruct it. Sharing every
+	// row holds the catalogue still for the length of this transaction.
+	rows, err := t.q.Query(t.ctx, `SELECT `+coreModuleColumns+` FROM public.authority_core_modules ORDER BY name FOR SHARE`)
 	if err != nil {
 		return err
 	}
