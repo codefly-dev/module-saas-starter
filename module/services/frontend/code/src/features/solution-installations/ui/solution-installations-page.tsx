@@ -159,6 +159,9 @@ function SolutionInstallationsForOrganization({
 	// module administration lists nothing until the read succeeds, and a
 	// failed read is said as the host words it.
 	const offered = useOfferedTargets(orgId);
+	// Until the offers are read, supporting module administration offers no
+	// module to install and lists what is installed without saying which is a
+	// module page: only that classification waits on the authority.
 	const modulesWithheld = showModules && !offered.isSuccess;
 	const chosen = (target: AvailableSolution | undefined) =>
 		target !== undefined &&
@@ -171,6 +174,10 @@ function SolutionInstallationsForOrganization({
 				target.kind === "module" &&
 				!chosen(target)
 			: chosen(target);
+	const listedInstalled = (target: AvailableSolution | undefined) =>
+		modulesWithheld
+			? target !== undefined && target.kind === "module"
+			: listed(target);
 	// A target that declares roles installs through a review of them, as a
 	// solution does; a module that declares none keeps its agent-role form.
 	const installingChosen = installing ? chosen(installing) : false;
@@ -250,30 +257,33 @@ function SolutionInstallationsForOrganization({
 					}
 					description="Installations belong to one organization at a time. Pick one from the selector above."
 				/>
-			) : modulesWithheld ? null : (
+			) : (
 				<>
-					<AvailableSection
-						showModules={showModules}
-						listed={listed}
-						query={available}
-						installing={
-							(Boolean(installing) && offered.isPending) ||
-							install.isPending ||
-							combinedInstall.isPending ||
-							!installed.isSuccess ||
-							installed.isFetching
-						}
-						onInstall={(solution) => {
-							install.reset();
-							combinedInstall.reset();
-							setInstalling(solution);
-						}}
-					/>
+					{!modulesWithheld && (
+						<AvailableSection
+							showModules={showModules}
+							listed={listed}
+							query={available}
+							installing={
+								(Boolean(installing) && offered.isPending) ||
+								install.isPending ||
+								combinedInstall.isPending ||
+								!installed.isSuccess ||
+								installed.isFetching
+							}
+							onInstall={(solution) => {
+								install.reset();
+								combinedInstall.reset();
+								setInstalling(solution);
+							}}
+						/>
+					)}
 					<InstalledSection
 						orgId={orgId}
 						query={installed}
 						showModules={showModules}
-						listed={listed}
+						unclassified={modulesWithheld}
+						listed={listedInstalled}
 						updating={combinedInstall.isPending}
 						onUpdate={(target) => {
 							combinedInstall.reset();
@@ -302,7 +312,7 @@ function SolutionInstallationsForOrganization({
 				</Banner>
 			)}
 			<DelayedLoading
-				active={(Boolean(installing) || showModules) && offered.isPending}
+				active={(Boolean(installing) || showModules) && offered.isLoading}
 				label="Reading which targets declare roles"
 			/>
 			{updating && (
@@ -496,6 +506,7 @@ function AvailableSection({
 
 function InstalledSection({
 	showModules,
+	unclassified,
 	listed,
 	orgId,
 	query,
@@ -505,6 +516,8 @@ function InstalledSection({
 	orgId: string;
 	query: ReturnType<typeof useInstallations>;
 	showModules: boolean;
+	/** Every installed module is listed: which is a module page is not read yet. */
+	unclassified: boolean;
 	listed: (target: AvailableSolution | undefined) => boolean;
 	updating: boolean;
 	onUpdate: (target: AvailableSolution) => void;
@@ -579,10 +592,13 @@ function InstalledSection({
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className="text-base">Installed</CardTitle>
+				<CardTitle className="text-base">
+					{unclassified ? "Installed modules" : "Installed"}
+				</CardTitle>
 				<CardDescription>
-					What this organization has installed, at which release, and how
-					healthy each installation is right now.
+					{unclassified
+						? "Every module this organization has installed. Which of them are module pages, installed through their review, is shown once the authority's offers are read."
+						: "What this organization has installed, at which release, and how healthy each installation is right now."}
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-3">

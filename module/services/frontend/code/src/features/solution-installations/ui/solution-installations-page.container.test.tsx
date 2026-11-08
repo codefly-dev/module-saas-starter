@@ -847,7 +847,7 @@ describe("organization administration boundary", () => {
 		},
 	);
 
-	it("does not read without an active organization", () => {
+	it("does not read without an active organization", async () => {
 		session.organizationId = "";
 		const reads = serve();
 		renderInApp(<Page />);
@@ -857,6 +857,11 @@ describe("organization administration boundary", () => {
 			),
 		).toBeTruthy();
 		expect(Object.values(reads)).toEqual([0, 0, 0, 0]);
+		// A read that never starts is never shown as one in progress.
+		await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+		expect(
+			screen.queryByText("Reading which targets declare roles"),
+		).toBeNull();
 	});
 
 	it("reads every page with the organization and opaque token for each listing", async () => {
@@ -1963,7 +1968,7 @@ describe("Solutions lists a module page beside the solutions, by what the author
 		).toBeNull();
 	});
 
-	it("withholds every module from supporting module administration until the offers are read, and says a failed read as the host words it", async () => {
+	it("offers no module on supporting module administration until the offers are read, keeps every installed module listed unclassified, and says a failed read as the host words it", async () => {
 		const reads = serve({
 			availableBody: catalogue,
 			installationsBody: installed,
@@ -1992,7 +1997,8 @@ describe("Solutions lists a module page beside the solutions, by what the author
 		);
 		renderInApp(<Page />);
 		// Both host reads are in while the authority has not answered: no
-		// module is shown, so no module page reads as a supporting one.
+		// module is offered, and what is installed is listed without saying
+		// which is a module page.
 		await waitFor(() => {
 			expect(reads.available).toBe(1);
 			expect(reads.installed).toBe(1);
@@ -2000,8 +2006,15 @@ describe("Solutions lists a module page beside the solutions, by what the author
 		expect(
 			screen.queryByRole("table", { name: "Available modules and solutions" }),
 		).toBeNull();
-		for (const alias of ["expenses", "ledger", "directory", "archive"])
-			expect(screen.queryByText(alias)).toBeNull();
+		const unclassified = async () => {
+			expect(await screen.findByText("Installed modules")).toBeTruthy();
+			const table = await screen.findByRole("table", {
+				name: "Installed modules and solutions",
+			});
+			await within(table).findByText("expenses");
+			await within(table).findByText("directory");
+		};
+		await unclassified();
 
 		release();
 		expect(await screen.findByText(/authority restarting/)).toBeTruthy();
@@ -2011,7 +2024,7 @@ describe("Solutions lists a module page beside the solutions, by what the author
 		expect(
 			screen.queryByRole("table", { name: "Available modules and solutions" }),
 		).toBeNull();
-		expect(screen.queryByText("ledger")).toBeNull();
+		await unclassified();
 
 		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
 		const availableTable = await screen.findByRole("table", {
@@ -2020,6 +2033,15 @@ describe("Solutions lists a module page beside the solutions, by what the author
 		await within(availableTable).findByText("expenses");
 		for (const alias of ["payroll", "ledger", "directory", "archive"])
 			expect(within(availableTable).queryByText(alias)).toBeNull();
+		// Classified now: the module page leaves supporting administration.
+		await waitFor(() =>
+			expect(screen.queryByText("Installed modules")).toBeNull(),
+		);
+		const installedTable = screen.getByRole("table", {
+			name: "Installed modules and solutions",
+		});
+		await within(installedTable).findByText("expenses");
+		expect(within(installedTable).queryByText("directory")).toBeNull();
 		expect(offerReads).toBe(2);
 	});
 
