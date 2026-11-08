@@ -17,17 +17,18 @@ The gateway stamps `kind` from the applied declaration; a remote manifest cannot
 choose its routing kind. A shared module has one deployment, while each
 organisation installs it and grants team access independently through the same
 target-based entitlement projection. The organization administration destination
-is labelled "Solutions" and retains `/admin/solutions`, listing solutions and
-module pages: every target the authority offers an administrator (its one
-`OfferService.ListOffers` read, `useOfferedTargets`) — a solution always, a
-module when it declares roles — is listed, reviewed, installed and set up there
-exactly like a solution, through `ReviewSolutionInstall` and
-`InstallReviewedSolution`, and its setup page leads back there. Nothing asks the
-authority per module: a module the offers do not name declares no roles and is a
-supporting module, installed by a closure and administered at `/admin/modules`,
-which Solutions links to and which lists exactly those; while the offers cannot
-be read, module pages are withheld and the failed read is shown, never passed
-off as supporting modules. The one place a single target's roles are read from
+is labelled "Solutions" and retains `/admin/solutions`, listing the solutions
+an administrator installs (the authority's one `OfferService.ListOffers` read,
+`useOfferedTargets`: solutions alone) and, beside them, the module pages whose
+access is set up: a module declaring roles (`AvailableSolution.roles`,
+`isModulePage`) is installed by composition, never by an administrator, so its
+row says "Module page" and offers "Set up access", one act
+(`SetUpModulePageDialog`, `SetUpModulePage`): each role to its team, the
+conventional `<module>-<role>` unless changed, the administrator taking the
+ticked roles, exactly as an install assigns them. Every module, a module page
+included, is administered at `/admin/modules`, which Solutions links to; while
+the offers cannot be read, that page lists no module and the failed read is
+shown. The one place a single target's roles are read from
 its own review (`WhenRolesDeclared`, on `rolesDeclared`) is a member's own
 solution page, where no administrator read applies. An installed row whose
 host says `upgradeAvailable` shows "Update available" and an Update action: the
@@ -491,19 +492,11 @@ not replace the cached operation; retries retain it, and Review again explicitly
 requests new consent. Pending installation rows offer current-person continuation.
 Supporting modules remain visible on `/admin/modules` and in installation
 detail. That administrator path remains available, but is not a step in normal
-solution installation. There, which form Install opens is the authority's
-answer, not the target's kind (`useRolesDeclared`): a module page whose offer
-names roles is reviewed from that offer (its machine access and what each role
-permits), installed through `InstallSolution` with no agent role, because its
-signed `installation_role` selects one (or none), and then opened at its Setup
-page, where each role takes a team. The shared core installs only solutions, so
-a module page stays this host's installation and carries no consent tuple. A
-module whose offer the authority refuses NotFound (it declares no roles) keeps
-the agent-role form; any other failure of that read is shown with a retry, never
-taken as "no roles". The review's approval is the browser's: a module page's
-offer carries no consent digest for the host to check it against. On Setup, a
-module page's roles take teams through the shared role grant form; the staged
-team-per-role picker binds to a solution's consent digest and is not offered.
+solution installation. A module installed there is installed by composition, holding the standing
+role its declaration selects (a module page: none); its access, when it
+declares roles, is set up from Solutions. Not yet: the shared Setup component
+reads a target's roles from `ReviewOffer`, which the authority refuses for a
+module, so a module page's later grants are not editable from its Setup page.
 
 **Install assigns access; the browser keeps no draft.** The host assigns it
 (`InstallReviewedSolution`'s `role_teams` and `installer_roles`): each declared
@@ -524,8 +517,13 @@ assignment. Set up keeps its own grant form for every later change.
 
 **The review leads with what people can do.** The dialog shows, in order: each
 declared role in plain words, its scopes merged per resource kind ("editor:
-read and write pages"), grouped by where they apply (`roleReach`, the one
-place the core's reach plugs in once its offer carries it); the supporting
+read and write pages"), grouped by where they apply from the core's reach
+(`OfferRole.reach`, `roleReach`): "In <solution>" (the role on the solution),
+"Through <solution>, in <module>" (the solution acting for the holder, directly
+or transitively), "Uses your own access in <module>" (the holder's own
+session), operations in plain words with a Connect route and its gRPC
+procedure one capability (`operationText`), identifiers only in the technical
+disclosure (`reachDetail`); the supporting
 modules as one line each for what the install brings ("Also installs: …",
 naming each that holds a standing machine role as "module (role)") and what it
 reuses; team access; and one collapsed "Show technical access" holding the

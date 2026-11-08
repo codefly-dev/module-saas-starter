@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type {
+	OfferRole,
 	OfferScope,
 	ReviewedOffer,
 } from "@/gen/host/installation/v1/installation_pb";
@@ -234,17 +235,102 @@ export function scopesText(scopes: readonly OfferScope[]): string {
 	);
 }
 
-/** What each declared role lets people do, grouped by where it applies. */
+/**
+ * One operation in plain words: a procedure `/pkg.Service/ListItems` (or its
+ * Connect route `POST /pkg.Service/ListItems`) reads "list items"; a route
+ * `GET /items/{id}` reads "get items". Never an identifier.
+ */
+export function operationText(operation: string): string {
+	const [verb, route] = operation.includes(" ")
+		? (operation.split(" ", 2) as [string, string])
+		: ["", operation];
+	const procedure = /^\/[\w.]+\/(\w+)$/.exec(route);
+	if (procedure)
+		return procedure[1].replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+	const words = route
+		.split("/")
+		.filter((part) => part && !part.startsWith("{"))
+		.map((part) => part.replace(/[_-]+/g, " "));
+	return [verb.toLowerCase(), ...words].filter(Boolean).join(" ");
+}
+
+type ReachRow = OfferRole["reach"][number];
+
+/** What one reach row lets its holder do: its operations, or else its scopes. */
+function rowText(row: ReachRow) {
+	const operations = [...new Set(row.operations.map(operationText))];
+	const text = operations.length
+		? listText(operations)
+		: scopesText(row.scopes);
+	return row.confinement === "attached" ? `${text} (attached items)` : text;
+}
+
+/**
+ * What each declared role lets people do, in plain words, grouped by where:
+ * "In <target>" (the role on the target itself), "Through <target>, in
+ * <module>" (the target acting for the holder, directly or transitively),
+ * and "Uses your own access in <module>" (an edge the target's page calls on
+ * the holder's own session, where their own grants decide). The rows are the
+ * core's reach (OfferRole.reach); a role whose offer carries none reads its
+ * own scopes on the target.
+ */
 export function roleReach(offer: Pick<ReviewedOffer, "roles" | "target">) {
-	return [
-		{
-			where: `In ${offer.target}`,
-			roles: offer.roles.map((role) => ({
-				role: role.name,
-				text: scopesText(role.scopes),
+	const groups = new Map<
+		string,
+		{ order: number; roles: Map<string, string[]> }
+	>();
+	const add = (where: string, order: number, role: string, text: string) => {
+		const group = groups.get(where) ?? { order, roles: new Map() };
+		const texts = group.roles.get(role) ?? [];
+		if (!texts.includes(text)) texts.push(text);
+		group.roles.set(role, texts);
+		groups.set(where, group);
+	};
+	for (const role of offer.roles) {
+		if (!role.reach.length) {
+			add(`In ${offer.target}`, 0, role.name, scopesText(role.scopes));
+			continue;
+		}
+		for (const row of role.reach) {
+			if (row.via === "person")
+				add(
+					`Uses your own access in ${row.module}`,
+					2,
+					role.name,
+					"what you hold there yourself",
+				);
+			else if (row.via === "binding")
+				add(
+					`Through ${offer.target}, in ${row.module}`,
+					1,
+					role.name,
+					rowText(row),
+				);
+			else add(`In ${offer.target}`, 0, role.name, rowText(row));
+		}
+	}
+	return [...groups]
+		.sort(([a, x], [b, y]) => x.order - y.order || a.localeCompare(b))
+		.map(([where, { roles }]) => ({
+			where,
+			roles: [...roles].map(([role, texts]) => ({
+				role,
+				text: texts.join("; "),
 			})),
-		},
-	];
+		}));
+}
+
+/**
+ * The reach behind the plain words, for the technical disclosure: per role,
+ * each place it reaches with its path and the operations' identifiers.
+ */
+export function reachDetail(offer: Pick<ReviewedOffer, "roles">) {
+	return offer.roles.flatMap((role) =>
+		role.reach.map(
+			(row) =>
+				`${role.name} — ${row.via} ${row.path.join(" → ")}${row.confinement ? ` (${row.confinement})` : ""}: ${row.operations.join(", ") || "no operation of its own"}`,
+		),
+	);
 }
 
 /** The supporting modules of a review, as the one-line summaries it shows. */

@@ -4,7 +4,11 @@ import { useState } from "react";
 import type { ReviewedOffer } from "@/gen/host/installation/v1/installation_pb";
 import type { ReviewedSupportingModule } from "@/gen/saas/accounts/v1/installations_pb";
 import { Button } from "@/shared/ui";
-import { roleReach, supportingSummary } from "../model/install-review";
+import {
+	reachDetail,
+	roleReach,
+	supportingSummary,
+} from "../model/install-review";
 import { DeclaredOperations } from "./declared-access";
 
 /** What each declared role lets people do, in plain words, grouped by where. */
@@ -77,7 +81,7 @@ export function TechnicalAccess({
 	offer,
 	modules,
 }: {
-	offer: Pick<ReviewedOffer, "ceiling">;
+	offer: Pick<ReviewedOffer, "ceiling" | "roles">;
 	modules: readonly {
 		module: ReviewedSupportingModule;
 		access: readonly string[];
@@ -101,6 +105,16 @@ export function TechnicalAccess({
 			{open && (
 				<div className="space-y-3">
 					<DeclaredOperations offer={offer} />
+					{reachDetail(offer).length > 0 && (
+						<div className="space-y-1">
+							<p className="font-medium">What each role reaches</p>
+							<ul className="list-disc pl-5">
+								{reachDetail(offer).map((line) => (
+									<li key={line}>{line}</li>
+								))}
+							</ul>
+						</div>
+					)}
 					{installed.map(({ module, access }) => (
 						<div key={module.principal} className="space-y-1">
 							<p className="font-medium">

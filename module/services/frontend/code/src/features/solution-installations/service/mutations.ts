@@ -132,6 +132,32 @@ function invalidate(
  * the access the install assigns; the host records both and applies the
  * access once setup is active.
  */
+/** Sets up who may use a module page: its roles to teams, in one act. */
+export function useSetUpModulePage(orgId: string) {
+	const service = useInstallationService();
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({
+			targetId,
+			access,
+		}: {
+			targetId: string;
+			access: InstallAccess;
+		}) =>
+			service.setUpModulePage({
+				orgId,
+				targetId,
+				roleTeams: access.roleTeams,
+				installerRoles: access.installerRoles,
+			}),
+		onSettled: () =>
+			Promise.all([
+				invalidate(queryClient, orgId),
+				queryClient.invalidateQueries({ queryKey: ["teams", orgId] }),
+			]),
+	});
+}
+
 export function useInstallReviewedSolution(orgId: string) {
 	const service = useInstallationService();
 	const queryClient = useQueryClient();

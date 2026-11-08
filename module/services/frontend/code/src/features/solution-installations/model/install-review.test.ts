@@ -9,6 +9,8 @@ import {
 	assertMatchingOffer,
 	moduleConsentText,
 	offerScopeText,
+	operationText,
+	roleReach,
 	supportingSummary,
 } from "./install-review";
 
@@ -158,5 +160,39 @@ describe("installation access review", () => {
 		expect(same).toContain(
 			"Perform operations through example-items: list item; all items of this type.",
 		);
+	});
+	it("renders one capability per operation, whatever face serves it", () => {
+		expect(operationText("/docs.Documents/ListDocuments")).toBe(
+			"list documents",
+		);
+		expect(operationText("POST /docs.Documents/ListDocuments")).toBe(
+			"list documents",
+		);
+		expect(operationText("GET /pages/{id}")).toBe("get pages");
+		const offer = create(ReviewedOfferSchema, {
+			target: "Example",
+			roles: [
+				{
+					name: "viewer",
+					reach: [
+						{
+							path: ["Example", "documents"],
+							module: "documents",
+							via: "binding",
+							operations: [
+								"/docs.Documents/ListDocuments",
+								"POST /docs.Documents/ListDocuments",
+							],
+						},
+					],
+				},
+			],
+		});
+		expect(roleReach(offer)).toEqual([
+			{
+				where: "Through Example, in documents",
+				roles: [{ role: "viewer", text: "list documents" }],
+			},
+		]);
 	});
 });

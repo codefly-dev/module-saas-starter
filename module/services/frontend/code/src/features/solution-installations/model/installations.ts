@@ -66,6 +66,14 @@ export interface AvailableRow {
  * `installed` flag, never inferred from the installation listing: the two reads
  * are separate, and one failing must not make the other say something it did not.
  */
+/**
+ * A module page: a module declaring roles. It is installed by composition,
+ * never by an administrator, and its access is set up (SetUpModulePage).
+ */
+export function isModulePage(target: AvailableSolution | undefined) {
+	return target?.kind === "module" && target.roles.length > 0;
+}
+
 export function availableRows(solutions: AvailableSolution[]): AvailableRow[] {
 	return solutions.map((solution) => ({
 		targetId: solution.targetId,

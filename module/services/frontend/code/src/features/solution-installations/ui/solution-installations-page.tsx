@@ -54,6 +54,7 @@ import {
 	hostRefusal,
 	type InstalledRow,
 	installedRows,
+	isModulePage,
 	type TeamGrantRow,
 } from "../model/installations";
 import { readinessSummary } from "../model/readiness";
@@ -64,6 +65,7 @@ import {
 	useInstallReviewedSolution,
 	useRetryInstallation,
 	useRevokeInstallationFromTeam,
+	useSetUpModulePage,
 	useUninstallSolution,
 } from "../service/mutations";
 import {
@@ -74,6 +76,7 @@ import {
 import { GrantTeamDialog } from "./grant-team-dialog";
 import { InstallModuleDialog } from "./install-module-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
+import { SetUpModulePageDialog } from "./set-up-module-page-dialog";
 
 /**
  * One fact. A gap reads as its label in muted italics with what it means on
@@ -151,14 +154,16 @@ function SolutionInstallationsForOrganization({
 	// This owner survives dismissal of the form and reports every host result.
 	const install = useInstallModule(orgId);
 	const combinedInstall = useInstallReviewedSolution(orgId);
-	// Which targets an administrator chooses is the authority's one answer
-	// (ListOffers): a solution always, a module when it declares roles — a
-	// module page. Solutions lists exactly those; supporting module
-	// administration lists the modules it does not. A module whose answer is
-	// not in yet is withheld, never shown as a supporting one: supporting
-	// module administration lists nothing until the read succeeds, and a
-	// failed read is said as the host words it.
+	// Which targets an administrator installs is the authority's one answer
+	// (ListOffers): the solutions. Every module is installed by composition;
+	// a module page (a module declaring roles, AvailableSolution.roles) is
+	// listed with the solutions as an entry whose access is set up, never
+	// installed. Supporting module administration lists the modules. Until
+	// the offers are read, supporting module administration lists nothing,
+	// and a failed read is said as the host words it.
 	const offered = useOfferedTargets(orgId);
+	const setUp = useSetUpModulePage(orgId);
+	const [settingUp, setSettingUp] = useState<AvailableSolution | null>(null);
 	// Until the offers are read, supporting module administration offers no
 	// module to install and lists what is installed without saying which is a
 	// module page: only that classification waits on the authority.
@@ -173,7 +178,7 @@ function SolutionInstallationsForOrganization({
 				target !== undefined &&
 				target.kind === "module" &&
 				!chosen(target)
-			: chosen(target);
+			: chosen(target) || isModulePage(target);
 	const listedInstalled = (target: AvailableSolution | undefined) =>
 		modulesWithheld
 			? target !== undefined && target.kind === "module"
@@ -217,8 +222,8 @@ function SolutionInstallationsForOrganization({
 					</h1>
 					<p className="text-muted-foreground">
 						{showModules
-							? "Supporting modules declare no roles: they install and converge with the solutions and module pages that reach them. This page is for administering one directly."
-							: "The solutions and module pages this organization can install. Choose one and review its access and supporting modules together; choose a team for each of its roles during review or in Set up, and access is granted only once setup is active."}
+							? "Modules are part of the platform: they install and converge with the solutions that reach them. This page is for administering one directly."
+							: "The solutions this organization can install, and the module pages whose access it sets up. Install a solution after reviewing what each role can do and its supporting modules; a module page is already part of the platform, and nobody can use it until its roles are given to teams."}
 					</p>
 					{!showModules && (
 						<Link
@@ -276,6 +281,14 @@ function SolutionInstallationsForOrganization({
 								combinedInstall.reset();
 								setInstalling(solution);
 							}}
+							onSetUp={
+								showModules
+									? undefined
+									: (page) => {
+											setUp.reset();
+											setSettingUp(page);
+										}
+							}
 						/>
 					)}
 					<InstalledSection
@@ -300,8 +313,8 @@ function SolutionInstallationsForOrganization({
 				>
 					{hostRefusal(offered.error)}{" "}
 					{showModules
-						? "A module is listed here only once the authority says it declares no roles, so no supporting module is listed yet."
-						: "A module is listed with the solutions only once the authority says it declares roles, so module pages are not listed yet."}{" "}
+						? "A module is listed here only once the authority's offers are read, so no module is listed yet."
+						: "A solution is listed once the authority offers it, so no solution is listed yet."}{" "}
 					<Button
 						size="sm"
 						variant="outline"
@@ -341,6 +354,33 @@ function SolutionInstallationsForOrganization({
 						)
 					}
 					onClose={() => setUpdating(null)}
+				/>
+			)}
+			{settingUp && (
+				<SetUpModulePageDialog
+					orgId={orgId}
+					page={settingUp}
+					isPending={setUp.isPending}
+					error={setUp.isError ? hostRefusal(setUp.error) : undefined}
+					onSubmit={(access) =>
+						setUp.mutate(
+							{ targetId: settingUp.targetId, access },
+							{
+								onSuccess: (installation) => {
+									if (installation.accessProblems.length)
+										toast.warning(
+											`Set up, but not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+										);
+									else
+										toast.success(
+											`Access to ${settingUp.routeAlias} is set up. Each role's team holds it now.`,
+										);
+									setSettingUp(null);
+								},
+							},
+						)
+					}
+					onClose={() => setSettingUp(null)}
 				/>
 			)}
 			{installing && installingChosen && (
@@ -409,12 +449,15 @@ function AvailableSection({
 	query,
 	installing,
 	onInstall,
+	onSetUp,
 }: {
 	showModules: boolean;
 	listed: (target: AvailableSolution | undefined) => boolean;
 	query: ReturnType<typeof useAvailableSolutions>;
 	installing: boolean;
 	onInstall: (solution: AvailableSolution) => void;
+	/** Sets up a module page's access; absent where pages are not set up. */
+	onSetUp?: (page: AvailableSolution) => void;
 }) {
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
 	const outcome = readOutcome(query.isError, query.error);
@@ -486,7 +529,9 @@ function AvailableSection({
 											{row.generation}
 										</TableCell>
 										<TableCell>
-											{row.installed ? (
+											{onSetUp && isModulePage(row.solution) ? (
+												<Badge variant="outline">Module page</Badge>
+											) : row.installed ? (
 												<Badge tone="success" dot>
 													Installed
 												</Badge>
@@ -495,14 +540,25 @@ function AvailableSection({
 											)}
 										</TableCell>
 										<TableCell className="text-right">
-											<Button
-												size="sm"
-												disabled={row.installed || installing}
-												aria-label={`Install ${row.alias}`}
-												onClick={() => onInstall(row.solution)}
-											>
-												Install
-											</Button>
+											{onSetUp && isModulePage(row.solution) ? (
+												<Button
+													size="sm"
+													variant="outline"
+													aria-label={`Set up access to ${row.alias}`}
+													onClick={() => onSetUp(row.solution)}
+												>
+													Set up access
+												</Button>
+											) : (
+												<Button
+													size="sm"
+													disabled={row.installed || installing}
+													aria-label={`Install ${row.alias}`}
+													onClick={() => onInstall(row.solution)}
+												>
+													Install
+												</Button>
+											)}
 										</TableCell>
 									</TableRow>
 								))}

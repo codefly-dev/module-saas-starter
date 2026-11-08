@@ -79,6 +79,14 @@ const offer = {
 let roles: {
 	name: string;
 	scopes?: { resourceKind: string; actions: string[] }[];
+	reach?: {
+		path: string[];
+		module: string;
+		via: string;
+		confinement?: string;
+		scopes?: { resourceKind: string; actions: string[] }[];
+		operations?: string[];
+	}[];
 }[];
 let modules: unknown[] | undefined;
 let teams: { id: string; name: string }[];
@@ -343,17 +351,39 @@ describe("combined reviewed installation", () => {
 		});
 	});
 	it("the install review leads with what each role can do, grouped by where", async () => {
+		const page = { resourceKind: "example.page", actions: ["read"] };
+		const row = (
+			via: string,
+			module: string,
+			operations: string[],
+			confinement = "",
+		) => ({
+			path: via === "role" ? [review.target] : [review.target, module],
+			module,
+			via,
+			confinement,
+			scopes: [page],
+			operations,
+		});
 		roles = [
 			{
 				name: "editor",
-				scopes: [
-					{ resourceKind: "example.page", actions: ["read"] },
-					{ resourceKind: "example.page", actions: ["write"] },
+				scopes: [page],
+				reach: [
+					row("role", review.target, ["GET /pages/{id}"], "installation"),
+					row("binding", "documents", [
+						"/docs.Documents/ReadDocument",
+						"/docs.Documents/ListDocuments",
+					]),
+					row("person", "directory", []),
 				],
 			},
 			{
 				name: "viewer",
-				scopes: [{ resourceKind: "example.page", actions: ["read"] }],
+				scopes: [page],
+				reach: [
+					row("role", review.target, ["GET /pages/{id}"], "installation"),
+				],
 			},
 		];
 		renderInApp(<Page />);
@@ -361,9 +391,33 @@ describe("combined reviewed installation", () => {
 		const reach = await within(dialog).findByRole("region", {
 			name: "What people can do",
 		});
-		expect(within(reach).getByText("In Example Solution:")).toBeTruthy();
-		expect(reach.textContent).toContain("editor: read and write pages");
-		expect(reach.textContent).toContain("viewer: read pages");
+		const text = reach.textContent ?? "";
+		const groups = [
+			"In Example Solution:",
+			"Through Example Solution, in documents:",
+			"Uses your own access in directory:",
+		];
+		for (const group of groups)
+			expect(within(reach).getByText(group)).toBeTruthy();
+		// Direct first, then through the solution, then the holder's own access.
+		expect(groups.map((g) => text.indexOf(g))).toEqual(
+			[...groups.map((g) => text.indexOf(g))].sort((a, b) => a - b),
+		);
+		expect(text).toContain("editor: get pages");
+		expect(text).toContain("viewer: get pages");
+		expect(text).toContain("editor: read document and list documents");
+		expect(text).toContain("editor: what you hold there yourself");
+		// Operations in plain words; identifiers only behind the disclosure.
+		expect(dialog.textContent).not.toMatch(/docs\.Documents|\{id\}/);
+		fireEvent.click(
+			within(dialog).getByRole("button", { name: "Show technical access" }),
+		);
+		const technical = within(dialog).getByRole("region", {
+			name: "Technical access",
+		});
+		expect(technical.textContent).toContain(
+			"editor — binding Example Solution → documents: /docs.Documents/ReadDocument, /docs.Documents/ListDocuments",
+		);
 		const supporting = within(dialog).getByRole("region", {
 			name: "Supporting modules",
 		});
