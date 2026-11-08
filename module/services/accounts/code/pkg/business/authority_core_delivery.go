@@ -107,13 +107,18 @@ func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.Mo
 		return nil, err
 	}
 	if manifest.Removed {
-		if _, err := core.Composed(ctx, manifest.Alias); err != nil {
+		// A withdrawal is idempotent: two passes may apply the same one at
+		// once (the delivery endpoint's and the reconciler's), and a module the
+		// core no longer composes is already withdrawn. Reading first and
+		// withdrawing after raced exactly that way; the withdrawal's own
+		// NotFound is the one answer that is safe to read.
+		if err := core.WithdrawModule(ctx, manifest.Alias); err != nil {
 			if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
 				return nil, nil
 			}
 			return nil, err
 		}
-		return nil, core.WithdrawModule(ctx, manifest.Alias)
+		return nil, nil
 	}
 	m, err := coreModuleOf(manifest, carrierDocument, signed)
 	if err != nil {
