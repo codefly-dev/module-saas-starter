@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -162,8 +163,13 @@ func TestGrantInstallationToTeamExposesItToThatTeamOnly(t *testing.T) {
 	// authority root and the team granted there.
 	listed, err := server.ListOrganizationInstallations(admin, &gen.ListOrganizationInstallationsRequest{OrgId: w.org})
 	require.NoError(t, err)
-	require.Len(t, listed.GetInstallations(), 1)
-	row := listed.GetInstallations()[0]
+	// Composition installs every composed module in the organization too;
+	// the row of this installation is the one read here.
+	i := slices.IndexFunc(listed.GetInstallations(), func(r *gen.OrganizationInstallation) bool {
+		return r.GetInstallation().GetId() == w.installation
+	})
+	require.GreaterOrEqual(t, i, 0)
+	row := listed.GetInstallations()[i]
 	require.Equal(t, w.installation, row.GetInstallation().GetId())
 	require.Equal(t, w.alias, row.GetTarget().GetRouteAlias())
 	require.Equal(t, w.target, row.GetTarget().GetTargetId())

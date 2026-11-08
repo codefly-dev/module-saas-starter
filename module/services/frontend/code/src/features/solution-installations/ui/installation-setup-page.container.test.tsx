@@ -119,9 +119,12 @@ const teams = {
 	teams: [{ id: SUPPORT_TEAM, orgId: "org-1", name: "Support" }],
 };
 
-function serve(installationsBody: JsonBodyType) {
+function serve(installationsBody: JsonBodyType, catalogue: unknown[] = []) {
 	const grants: unknown[] = [];
 	server.use(
+		http.post(rpc("InstallationService", "ListAvailableSolutions"), () =>
+			HttpResponse.json({ solutions: catalogue }),
+		),
 		http.post(rpc("InstallationService", "ListOrganizationInstallations"), () =>
 			HttpResponse.json(installationsBody),
 		),
@@ -495,63 +498,94 @@ it("names a required module in the ceiling, explains roles that cover no operati
 // solution is. Its offer carries no consent digest (the authority installs no
 // module), so it has no staged team picker: Setup's role grant form, the
 // authority's GrantRole, is how each role takes a team.
-it("sets up a module page that declares roles through Setup's role grant form", async () => {
-	serve({
-		installations: [
-			installation({
-				target: { ...suiteTarget, kind: "module" },
-				readiness: { ready: true, unmet: [] },
-			}),
-		],
-	});
+it("a set-up module page's grants are edited from its Setup page", async () => {
+	const page = {
+		...suiteTarget,
+		kind: "module",
+		roles: ["installer", "viewer"],
+	};
+	serve(
+		{
+			installations: [
+				installation({ target: page, readiness: { ready: true, unmet: [] } }),
+			],
+		},
+		[page],
+	);
+	const changes: { procedure: string; body: unknown }[] = [];
+	const host = (procedure: string) =>
+		`http://localhost:3000/host.installation.v1.InstallationService/${procedure}`;
 	server.use(
-		// The authority offers the module page: it declares roles.
-		http.post(
-			"http://localhost:3000/host.installation.v1.OfferService/ListOffers",
-			() =>
-				HttpResponse.json({ offers: [{ target: "suite", generation: "3" }] }),
-		),
-		http.post(
-			"http://localhost:3000/host.installation.v1.OfferService/ReviewOffer",
-			() =>
-				HttpResponse.json({
-					target: "suite",
-					installationRole: "none",
-					installation: {
-						id: "core-suite",
+		// The offer read is refused for a module; the page never needs it.
+		http.post(host("List"), () =>
+			HttpResponse.json({
+				installations: [
+					{
+						id: SUITE_INSTALLATION,
 						organizationId: "org-1",
 						target: "suite",
 						status: "STATUS_ACTIVE",
-						revision: "2",
+						roles: ["installer", "viewer"],
 					},
-					roles: [
-						{
-							name: "installer",
-							scopes: [
-								{ resourceKind: "suite.page", actions: ["read", "write"] },
-							],
-						},
-						{
-							name: "viewer",
-							scopes: [{ resourceKind: "suite.page", actions: ["read"] }],
-						},
-					],
-				}),
+				],
+			}),
 		),
-		http.post(
-			"http://localhost:3000/host.installation.v1.InstallationService/ListRoleGrants",
-			() => HttpResponse.json({ grants: [] }),
+		http.post(host("ListRoleGrants"), () =>
+			HttpResponse.json({
+				grants: [
+					{
+						installationId: SUITE_INSTALLATION,
+						role: "viewer",
+						teamId: SUPPORT_TEAM,
+					},
+				],
+			}),
+		),
+		...["GrantRole", "RevokeRole"].map((procedure) =>
+			http.post(host(procedure), async ({ request }) => {
+				changes.push({ procedure, body: await request.json() });
+				return HttpResponse.json({ id: SUITE_INSTALLATION });
+			}),
 		),
 	);
 	render();
 
-	expect(
-		await screen.findByRole("button", { name: "Grant role" }),
-	).toBeTruthy();
-	expect(screen.queryByRole("region", { name: "Team access" })).toBeNull();
+	const holders = await screen.findByRole("list", { name: "Role holders" });
+	await within(holders).findByText("viewer: team Support");
+	fireEvent.click(
+		within(holders).getByRole("button", {
+			name: "Revoke viewer from team Support",
+		}),
+	);
+	await waitFor(() => expect(changes).toHaveLength(1));
+	expect(changes[0]).toEqual({
+		procedure: "RevokeRole",
+		body: {
+			organizationId: "org-1",
+			installationId: SUITE_INSTALLATION,
+			role: "viewer",
+			teamId: SUPPORT_TEAM,
+		},
+	});
+	fireEvent.change(screen.getByLabelText("Role"), {
+		target: { value: "installer" },
+	});
+	fireEvent.change(screen.getByLabelText("Person or team"), {
+		target: { value: `team:${SUPPORT_TEAM}` },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Grant role" }));
+	await waitFor(() => expect(changes).toHaveLength(2));
+	expect(changes[1]).toEqual({
+		procedure: "GrantRole",
+		body: {
+			organizationId: "org-1",
+			installationId: SUITE_INSTALLATION,
+			role: "installer",
+			teamId: SUPPORT_TEAM,
+		},
+	});
 	// Its roles are the one grant form: no host team access card beside them.
 	expect(screen.queryByText("Team access on this host")).toBeNull();
-	expect(screen.queryByRole("button", { name: "Grant a team" })).toBeNull();
 	// A module page is listed with the solutions, so that is where it leads back.
 	expect(
 		screen.getByRole("link", { name: "Solutions" }).getAttribute("href"),

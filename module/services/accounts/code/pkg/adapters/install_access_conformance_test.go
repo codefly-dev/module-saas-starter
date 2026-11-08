@@ -78,6 +78,7 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		support := target + "-support"
 		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: support, installationRole: domain.NoInstallationRole})
 		solution(target, support)
+		h.uncompose(t, fixtureOrganization, conformanceAlex, support)
 		review, err := h.review(t, alex, target)
 		require.NoError(t, err)
 		resolved, err := h.svc.ResolveInstallationPrincipal(h.ctx, fixtureOrganization, support)

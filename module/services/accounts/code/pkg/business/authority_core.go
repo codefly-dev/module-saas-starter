@@ -101,12 +101,18 @@ func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID stri
 // KeepAuthorityCoreCurrent is what boot and every delivery pass run once the
 // applied deliveries are composed: every declaration a live consent approved
 // that the store does not keep yet is written where it can be rebuilt and is
-// what was consented to (keepApprovedDeclarations). It is idempotent.
+// what was consented to (keepApprovedDeclarations), and every composed module
+// is installed in every organization that does not hold it yet
+// (InstallComposedModules). Both are idempotent.
 func (s *Service) KeepAuthorityCoreCurrent(ctx context.Context) error {
+	var failures []error
 	if err := s.keepApprovedDeclarations(ctx); err != nil {
-		return fmt.Errorf("authority core: keep the approved declarations: %w", err)
+		failures = append(failures, fmt.Errorf("authority core: keep the approved declarations: %w", err))
 	}
-	return nil
+	if err := s.InstallComposedModules(ctx); err != nil {
+		failures = append(failures, err)
+	}
+	return errors.Join(failures...)
 }
 
 func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey) (*authority.Service, error) {

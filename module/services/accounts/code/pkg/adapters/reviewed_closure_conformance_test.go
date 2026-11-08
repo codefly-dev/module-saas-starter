@@ -125,6 +125,20 @@ func (h reviewedClosureHarness) coreInstallation(t *testing.T, caller authority.
 	return domain.Installation{}, false
 }
 
+// uncompose uninstalls, as admin, module's composition installation at org,
+// so a solution's closure installs it: what a host whose composition pass has
+// not reached org yet holds. No delivery runs before the caller installs, so
+// no composition pass installs it again first.
+func (h reviewedClosureHarness) uncompose(t *testing.T, org, admin string, modules ...string) {
+	t.Helper()
+	for _, module := range modules {
+		inst, err := h.svc.ActiveOrPendingModuleInstallation(h.ctx, org, module)
+		require.NoError(t, err)
+		require.NotNil(t, inst, "composition installed %s at %s", module, org)
+		require.NoError(t, h.svc.UninstallSolution(h.ctx, admin, org, inst.GetId()))
+	}
+}
+
 func requiredPrincipals(review *gen.ReviewedSolutionInstall) []string {
 	var out []string
 	for _, m := range review.GetModules() {
@@ -204,6 +218,7 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 			deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: m, installationRole: domain.NoInstallationRole})
 		}
 		reachingSolution(solution, modules...)
+		h.uncompose(t, fixtureOrganization, conformanceAlex, modules...)
 		review, err := h.review(t, alex, solution)
 		require.NoError(t, err)
 		require.Equal(t, modules, requiredPrincipals(review))
@@ -284,6 +299,7 @@ installations:
 		t.Setenv("DEV_FIXTURE_PATH", path)
 		installations, err := fixtures.SeedWithInstallations(h.ctx, h.svc, "closure-fixture")
 		require.NoError(t, err)
+		h.uncompose(t, "00000000-0000-7000-8000-0000000001c1", "00000000-0000-7000-8000-0000000001f1", support)
 		// The first pass loses the first solution's supporting module: that
 		// row stays pending and every other row converges, in either order.
 		// The next pass resumes the pending attempt from its own review.
@@ -368,6 +384,7 @@ installations:
 		t.Setenv("DEV_FIXTURE_PATH", path)
 		installations, err := fixtures.SeedWithInstallations(h.ctx, h.svc, "redelivery-fixture")
 		require.NoError(t, err)
+		h.uncompose(t, org, owner, support)
 		resolved, err := h.svc.ResolveInstallationPrincipal(h.ctx, org, support)
 		require.NoError(t, err)
 		lost := errors.New("the store lost the connection")

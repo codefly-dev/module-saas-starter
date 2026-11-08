@@ -258,9 +258,20 @@ it); roles are granted with `GrantRole`, first by the install itself (below);
 health and entitlement are read from that one record.
 
 Every **module**, with or without roles, page or not, is installed by
-composition: accounts' own record (`public.installations`, kind `module`),
-which the core reads live (`HostInstallsModules`), installed when a solution's
-closure reaches it or through supporting module administration. The core
+composition in every organization: accounts' own record
+(`public.installations`, kind `module`), which the core reads live
+(`HostInstallsModules`). Under `HostInstallsModules` the core leaves that to
+the host, so the host does it (`InstallComposedModules`): on every delivery
+pass and at start (`KeepAuthorityCoreCurrent`), for every organization and
+every composed module it does not hold yet, and for a new organization when it
+is created. Each is made through the module install path holding no standing
+authority (a declaration selecting none or nothing, a module page included),
+its consent scope the envelope's, the organization's owner as owner of record
+(the module install fence requires a current administrator). A module whose
+declaration selects a standing role is not installed this way; the pass logs
+it. What is installed already, pending or active, is never installed again;
+a withdrawal revokes every installation. Supporting module administration is
+a read-only view of these installations. The core
 refuses a module at `ReviewOffer`, `Review` and `Install` (`NotFound`, "a module
 is installed by composition"). A **module page** (a module declaring a page and
 roles) holds no standing authority (`installation_role: none`; the module

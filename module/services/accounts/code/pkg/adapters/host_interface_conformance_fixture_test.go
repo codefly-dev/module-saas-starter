@@ -182,13 +182,35 @@ func teamNamed(t *testing.T, ctx context.Context, svc *business.Service, orgID, 
 	return ""
 }
 
-// consentModule has org's administrator install a delivered module, or
-// consent again to its current delivery when it is installed, through
-// accounts' own path (the fixture's install: a role of the organization, an
-// approval of the reviewed target and generation, and its install step
-// completed on the durable queue). Nothing writes an installation directly;
-// the authority core reads the one this makes.
+// reconsentModule is an organization administrator installing module again
+// at org, through the same module path composition uses, holding none: a
+// consent at the module's current ceiling, over whatever its installation
+// held (a narrowing, an earlier generation).
+func reconsentModule(ctx context.Context, svc *business.Service, store *infra.PostgresStore, org, admin, module string) error {
+	// The owner of record stays the installation's.
+	installation, _, err := svc.InstallFixtureTarget(ctx, admin, org, module, "", "")
+	if err != nil {
+		return fmt.Errorf("install %s at %s again: %w", module, org, err)
+	}
+	return completeInstallStep(ctx, store, installation)
+}
+
+// consentModule is the suite's InstallModule: the module installed at org
+// by composition, its install step completed on the durable queue; a module
+// composition did not install (one selecting a standing role) is installed by
+// org's administrator through accounts' own path (a role of the
+// organization, an approval of the reviewed target and generation). Nothing
+// writes an installation directly; the authority core reads the one this
+// makes.
 func consentModule(ctx context.Context, svc *business.Service, store *infra.PostgresStore, org, admin, module string) error {
+	// The host installs every composed module holding none by composition,
+	// at delivery: what is left here is to complete a pending install step.
+	// Nothing installed by composition is installed or consented to again.
+	if installed, err := svc.ActiveOrPendingModuleInstallation(ctx, org, module); err != nil {
+		return err
+	} else if installed != nil {
+		return completeInstallStep(ctx, store, installed)
+	}
 	// One role per module and organization: a consent given again keeps the
 	// role the installation holds, which is immutable.
 	authority, err := svc.DeliveredSolutionAuthority(ctx, module)

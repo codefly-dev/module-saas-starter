@@ -261,20 +261,6 @@ export function installedRows(
 }
 
 /**
- * Splits a one-per-line (or comma-separated) list into its entries, trimmed and
- * de-duplicated. An empty field is an empty list, which the host reads as "no
- * restriction" — so the page says that beside the field rather than here.
- */
-export function parseList(text: string): string[] {
-	const seen = new Set<string>();
-	for (const entry of text.split(/[\n,]/)) {
-		const value = entry.trim();
-		if (value) seen.add(value);
-	}
-	return [...seen];
-}
-
-/**
  * A role as an installer chooses it: its name and what it permits, so the
  * least-privilege choice is made from the permissions rather than the name.
  */

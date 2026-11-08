@@ -1,48 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReviewedSolutionInstall } from "@/gen/saas/accounts/v1/installations_pb";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
-import { parseList } from "../model/installations";
-import type { InstallSolutionValues } from "../model/schemas";
 import type { InstallAccess } from "../model/team-assignment";
 import { solutionInstallationKeys } from "./queries";
-
-/**
- * Installs one available target. The target is the immutable identity the
- * catalogue row named — never a route alias — and the owner of record is left
- * empty so the host records the calling administrator, which it requires to be
- * a current one.
- */
-export function useInstallModule(orgId: string) {
-	const service = useInstallationService();
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: ({
-			targetId,
-			generation,
-			expectedRevision,
-			operationId,
-			values,
-		}: {
-			targetId: string;
-			generation: bigint;
-			expectedRevision: bigint;
-			operationId: string;
-			values: InstallSolutionValues;
-		}) =>
-			service.installSolution({
-				orgId,
-				targetId,
-				approval: { targetId, generation, expectedRevision, operationId },
-				agentIdentifier: values.agentIdentifier.trim(),
-				displayName: values.displayName.trim(),
-				rootScopeLabel: values.rootScopeLabel.trim(),
-				roleId: values.roleId,
-				allowedAudiences: parseList(values.allowedAudiences),
-				allowedScopes: parseList(values.allowedScopes),
-			}),
-		onSettled: () => invalidate(queryClient, orgId),
-	});
-}
 
 /**
  * Uninstalls one installation. The host may refuse, and the caller shows that

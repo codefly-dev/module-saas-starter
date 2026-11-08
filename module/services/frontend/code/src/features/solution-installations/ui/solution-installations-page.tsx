@@ -9,7 +9,6 @@ import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
 import {
 	type AvailableSolution,
-	type Installation,
 	InstallationStatus,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import { useAuth } from "@/lib/auth";
@@ -58,10 +57,8 @@ import {
 	type TeamGrantRow,
 } from "../model/installations";
 import { readinessSummary } from "../model/readiness";
-import type { InstallSolutionValues } from "../model/schemas";
 import {
 	useGrantInstallationToTeam,
-	useInstallModule,
 	useInstallReviewedSolution,
 	useRetryInstallation,
 	useRevokeInstallationFromTeam,
@@ -74,7 +71,6 @@ import {
 	useOfferedTargets,
 } from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
-import { InstallModuleDialog } from "./install-module-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
 import { SetUpModulePageDialog } from "./set-up-module-page-dialog";
 
@@ -151,8 +147,6 @@ function SolutionInstallationsForOrganization({
 	const [updating, setUpdating] = useState<AvailableSolution | null>(null);
 	const available = useAvailableSolutions(orgId);
 	const installed = useInstallations(orgId);
-	// This owner survives dismissal of the form and reports every host result.
-	const install = useInstallModule(orgId);
 	const combinedInstall = useInstallReviewedSolution(orgId);
 	// Which targets an administrator installs is the authority's one answer
 	// (ListOffers): the solutions. Every module is installed by composition;
@@ -183,35 +177,6 @@ function SolutionInstallationsForOrganization({
 		modulesWithheld
 			? target !== undefined && target.kind === "module"
 			: listed(target);
-	// A target that declares roles installs through a review of them, as a
-	// solution does; a module that declares none keeps its agent-role form.
-	const installingChosen = installing ? chosen(installing) : false;
-	const installModule = (
-		target: AvailableSolution,
-		values: InstallSolutionValues,
-		{ onSuccess }: { onSuccess: (installation: Installation) => void },
-	) =>
-		install.mutate(
-			{
-				targetId: target.targetId,
-				generation: target.appliedGeneration,
-				expectedRevision: (installed.data ?? []).reduce(
-					(revision, row) =>
-						row.installation?.targetId === target.targetId &&
-						row.installation.revision > revision
-							? row.installation.revision
-							: revision,
-					BigInt(0),
-				),
-				operationId: crypto.randomUUID(),
-				values,
-			},
-			{
-				onSuccess,
-				onError: (error) =>
-					toast.error(`The host refused the install: ${hostRefusal(error)}`),
-			},
-		);
 
 	return (
 		<div className="space-y-6">
@@ -271,13 +236,11 @@ function SolutionInstallationsForOrganization({
 							query={available}
 							installing={
 								(Boolean(installing) && offered.isPending) ||
-								install.isPending ||
 								combinedInstall.isPending ||
 								!installed.isSuccess ||
 								installed.isFetching
 							}
 							onInstall={(solution) => {
-								install.reset();
 								combinedInstall.reset();
 								setInstalling(solution);
 							}}
@@ -383,7 +346,7 @@ function SolutionInstallationsForOrganization({
 					onClose={() => setSettingUp(null)}
 				/>
 			)}
-			{installing && installingChosen && (
+			{installing && chosen(installing) && (
 				<InstallSolutionDialog
 					orgId={orgId}
 					solution={installing}
@@ -418,27 +381,6 @@ function SolutionInstallationsForOrganization({
 					onClose={() => setInstalling(null)}
 				/>
 			)}
-			{installing?.kind === "module" &&
-				offered.isSuccess &&
-				!installingChosen && (
-					<InstallModuleDialog
-						orgId={orgId}
-						solution={installing}
-						isPending={install.isPending}
-						error={install.isError ? hostRefusal(install.error) : undefined}
-						onSubmit={(values) =>
-							installModule(installing, values, {
-								onSuccess: () => {
-									toast.success(
-										`${installing.routeAlias} installation pending`,
-									);
-									setInstalling(null);
-								},
-							})
-						}
-						onClose={() => setInstalling(null)}
-					/>
-				)}
 		</div>
 	);
 }
@@ -540,7 +482,11 @@ function AvailableSection({
 											)}
 										</TableCell>
 										<TableCell className="text-right">
-											{onSetUp && isModulePage(row.solution) ? (
+											{showModules ? (
+												<span className="text-sm text-muted-foreground">
+													Installed by composition
+												</span>
+											) : onSetUp && isModulePage(row.solution) ? (
 												<Button
 													size="sm"
 													variant="outline"

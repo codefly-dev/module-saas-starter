@@ -486,6 +486,14 @@ func runHostInterfaceFixture(t *testing.T) {
 	// run through a role and the runner its run alone, which is what proves
 	// consent is the action rather than an administrator tier. Globex's
 	// administrator is the outsider: the module is installed at Acme only.
+	// Composition installed it at Globex too; Globex's administrator
+	// uninstalls it there, after the suite's last delivery, so the next
+	// composition pass, which would install it again, does not run before
+	// the case.
+	globexArtifact, err := svc.ActiveOrPendingModuleInstallation(ctx, globexOrganization, artifactModule)
+	require.NoError(t, err)
+	require.NotNil(t, globexArtifact, "composition installs the artifact module at Globex")
+	require.NoError(t, svc.UninstallSolution(ctx, conformanceZoe, globexOrganization, globexArtifact.GetId()))
 	conformance.RunArtifacts(t, conn, registeredDescriptors(t), conformance.ArtifactCase{
 		Module: artifactModule, Credential: credential(artifactModule), OtherCredential: credential("org-directory"),
 		Policy: artifactModule + ".intent",
@@ -693,11 +701,10 @@ func runHostInterfaceFixture(t *testing.T) {
 	// or what it names; once revoked, by its grantor or an administrator of its
 	// organization, it issues nothing and every capability issued from it fails
 	// its next check. Anyone else learns nothing of it.
-	// A module is installed at an organization only by its administrator's
-	// consent, through accounts' own path: its workload is issued nothing at an
-	// organization that did not install it, nothing past the organization the
-	// module envelope pins it to, and nothing once an administrator uninstalls
-	// it, when what it was issued fails its next check.
+	// A module is installed at every organization by composition, at its
+	// delivery: its workload is issued at each, nothing past the organization
+	// the module envelope pins it to, and nothing once an administrator
+	// uninstalls it, when what it was issued fails its next check.
 	t.Run("a module workload is issued only where it is installed, within its pin, until uninstalled", func(t *testing.T) {
 		client := authorityv1.NewAuthorityServiceClient(conn)
 		const module = "conformance-consent"
@@ -708,21 +715,14 @@ func runHostInterfaceFixture(t *testing.T) {
 			return client.Issue(ctx, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Workload{Workload: &authorityv1.WorkloadCredential{Credential: workloadOf}},
 				OperationBindingId: "model", Audience: "model", OrganizationId: org})
 		}
-		_, err := issue(fixtureOrganization)
-		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+fixtureOrganization)
-
-		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
 		issued, err := issue(fixtureOrganization)
-		require.NoError(t, err, "installed by Acme's administrator")
+		require.NoError(t, err, "installed at Acme by composition, at its delivery")
 		require.Equal(t, fixtureOrganization, issued.GetContext().GetTenantId())
 		_, err = issue(globexOrganization)
-		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+globexOrganization)
+		require.NoError(t, err, "installed at Globex by composition too")
 
 		// Pinned to Acme by the module envelope, the workload is issued nothing
-		// at Globex even once Globex installs it.
-		require.NoError(t, consentModule(ctx, svc, store, globexOrganization, conformanceZoe, module))
-		_, err = issue(globexOrganization)
-		require.NoError(t, err, "installed by Globex's administrator")
+		// at Globex though it is installed there.
 		registry := svc.ModulePrincipals()
 		pinned := registry[business.ModulePrincipalID(module)]
 		pinned.Tenant = fixtureOrganization
@@ -783,8 +783,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		}
 		zoe := authority.Person{ID: conformanceZoe, Organization: globexOrganization, SessionID: "conformance-harness"}
 
-		// Acme narrows its installation to no capability.
-		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		// Acme narrows its installation, made by composition, to no capability.
 		before, err := issue(fixtureOrganization)
 		require.NoError(t, err)
 		acme := installationAt(alex, fixtureOrganization)
@@ -797,9 +796,8 @@ func runHostInterfaceFixture(t *testing.T) {
 		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+fixtureOrganization)
 
 		// Globex keeps capabilities but drops the binding from its consent.
-		require.NoError(t, consentModule(ctx, svc, store, globexOrganization, conformanceZoe, module))
 		_, err = issue(globexOrganization)
-		require.NoError(t, err, "consented at Globex")
+		require.NoError(t, err, "installed at Globex by composition")
 		globex := installationAt(zoe, globexOrganization)
 		require.NoError(t, svc.NarrowInstallation(ctx, conformanceZoe, globexOrganization, globex, business.InstallationScope{Capabilities: true, Resources: []string{"conformance-narrow.task"}}))
 		_, err = svc.ModuleAuthorizeOperationContext(ctx, module, workloadOf, "model", globexOrganization)
@@ -814,7 +812,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		widened.bindings = []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{
 			"headless": {"modelservice.profiles:read", "modelservice.datasets:read"}}}}
 		const consentedFirst = "consented before the widening"
-		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module), consentedFirst)
+		require.NoError(t, reconsentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module), consentedFirst)
 		deliverModule(t, ctx, conn, signer, widened)
 		issued, err := issue(fixtureOrganization)
 		require.NoError(t, err)
@@ -838,7 +836,13 @@ func runHostInterfaceFixture(t *testing.T) {
 	t.Run("a delegation is bounded by its grantor and ends with its revocation", func(t *testing.T) {
 		client := authorityv1.NewAuthorityServiceClient(conn)
 		alex, bob, alice := signIn("fixture-alex"), signIn("dev-bob"), signIn("dev-alice")
-		_, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "conformance-idle", Scopes: records("read"), Purpose: "uninstalled"})
+		// Composition installed conformance-idle at Acme; an administrator
+		// uninstalls it there, and nothing is delegated to it.
+		idle, err := svc.ActiveOrPendingModuleInstallation(ctx, fixtureOrganization, "conformance-idle")
+		require.NoError(t, err)
+		require.NotNil(t, idle)
+		require.NoError(t, svc.UninstallSolution(ctx, conformanceAlex, fixtureOrganization, idle.GetId()))
+		_, err = client.Delegate(alex, &authorityv1.DelegateRequest{Module: "conformance-idle", Scopes: records("read"), Purpose: "uninstalled"})
 		requireCode(t, err, codes.FailedPrecondition, `module "conformance-idle" is not installed in organization`)
 		_, err = client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("write"), Purpose: "beyond"})
 		requireCode(t, err, codes.PermissionDenied, "delegates what they do not hold")
@@ -1232,6 +1236,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	testReviewedClosures(t, closures)
 	testInstallAssignsAccess(t, closures)
 	testModulePagesAndReach(t, closures)
+	testModulesInstalledByComposition(t, closures)
 
 	// Last, because the envelope it writes becomes every module's ceiling: a
 	// real envelope write that narrows a module's binding (the write

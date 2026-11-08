@@ -63,13 +63,6 @@ const LIST_OFFERS =
 	"http://localhost:3000/host.installation.v1.OfferService/ListOffers";
 const EXPENSES_TARGET = "aaaaaaaa-0000-4000-8000-000000000001";
 const LEDGER_TARGET = "aaaaaaaa-0000-4000-8000-000000000002";
-// The consent the page sends: the reviewed target and generation, a zero
-// (omitted) revision for a first install, and a fresh operation id.
-const LEDGER_APPROVAL = {
-	targetId: LEDGER_TARGET,
-	generation: "5",
-	operationId: expect.any(String),
-};
 const EXPENSES_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000001";
 const READER_ROLE = "cccccccc-0000-4000-8000-000000000001";
 const USE_ROLE = "cccccccc-0000-4000-8000-000000000002";
@@ -245,15 +238,6 @@ function serve({
 	return reads;
 }
 
-async function openInstall() {
-	fireEvent.click(
-		await screen.findByRole("button", { name: "Install ledger" }),
-	);
-	const dialog = await screen.findByRole("dialog");
-	await choose(dialog, "Agent role", "Expense reader — expenses:read");
-	return dialog;
-}
-
 async function openGrant() {
 	fireEvent.click(
 		await screen.findByRole("button", {
@@ -303,13 +287,11 @@ describe("SolutionInstallationsPage admin container", () => {
 		expect(
 			within(expenses).getByText("Generation 3 (opened at 2)"),
 		).toBeTruthy();
+		// A module is installed by composition: nothing here installs one.
 		expect(
-			(
-				within(expenses).getByRole("button", {
-					name: "Install expenses",
-				}) as HTMLButtonElement
-			).disabled,
-		).toBe(true);
+			within(expenses).queryByRole("button", { name: /^Install/ }),
+		).toBeNull();
+		expect(within(ledger).getByText("Installed by composition")).toBeTruthy();
 
 		const installedTable = await screen.findByRole("table", {
 			name: "Installed modules and solutions",
@@ -355,202 +337,6 @@ describe("SolutionInstallationsPage admin container", () => {
 			name: "Installed modules and solutions",
 		});
 		expect(asked).toEqual({ orgId: "org-1", pageSize: 500 });
-	});
-
-	it("installs the chosen target with the role and ceiling the administrator gave", async () => {
-		let installed: Record<string, unknown> | undefined;
-		const availableBody = structuredClone(available);
-		const installationsBody = structuredClone(installations);
-		const reads = serve({ availableBody, installationsBody });
-		server.use(
-			http.post(
-				rpc("InstallationService", "InstallSolution"),
-				async ({ request }) => {
-					installed = (await request.json()) as Record<string, unknown>;
-					availableBody.solutions[1].installed = true;
-					installationsBody.installations.push({
-						...structuredClone(installations.installations[0]),
-						installation: {
-							...installations.installations[0].installation,
-							id: "bbbbbbbb-0000-4000-8000-000000000002",
-							targetId: LEDGER_TARGET,
-						},
-						target: availableBody.solutions[1],
-						grantedTeams: [],
-						inheritedTeams: [],
-					});
-					return HttpResponse.json({
-						id: "bbbbbbbb-0000-4000-8000-000000000002",
-						orgId: "org-1",
-						targetId: LEDGER_TARGET,
-						status: "INSTALLATION_STATUS_ACTIVE",
-					});
-				},
-			),
-		);
-		renderInApp(<Page />);
-
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Install ledger" }),
-		);
-		const dialog = await screen.findByRole("dialog");
-		expect(
-			(within(dialog).getByLabelText("Agent identifier") as HTMLInputElement)
-				.value,
-		).toBe("acme/ledger:0.9.1");
-
-		await choose(dialog, "Agent role", "Expense reader — expenses:read");
-		fireEvent.change(within(dialog).getByLabelText("Allowed audiences"), {
-			target: { value: "solution:binding-ledger\n\nsolution:binding-ledger" },
-		});
-		fireEvent.change(within(dialog).getByLabelText("Agent name (optional)"), {
-			target: { value: "  Ledger agent  " },
-		});
-		fireEvent.change(
-			within(dialog).getByLabelText("Access boundary name (optional)"),
-			{ target: { value: "  Ledger boundary  " } },
-		);
-		fireEvent.change(within(dialog).getByLabelText("Allowed resource kinds"), {
-			target: { value: "entry, entry\naccount" },
-		});
-		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
-
-		await waitFor(() => expect(installed).toBeDefined());
-		expect(installed).toEqual({
-			orgId: "org-1",
-			// The immutable target the row named, never its route alias.
-			targetId: LEDGER_TARGET,
-			approval: LEDGER_APPROVAL,
-			agentIdentifier: "acme/ledger:0.9.1",
-			roleId: READER_ROLE,
-			allowedAudiences: ["solution:binding-ledger"],
-			displayName: "Ledger agent",
-			rootScopeLabel: "Ledger boundary",
-			allowedScopes: ["entry", "account"],
-		});
-		// Left empty, so the host records the calling administrator as owner.
-		expect(installed?.ownerPrincipalId).toBeUndefined();
-		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-		expect(reads.available).toBe(2);
-		expect(reads.installed).toBe(2);
-		expect(
-			(
-				screen.getByRole("button", {
-					name: "Install ledger",
-				}) as HTMLButtonElement
-			).disabled,
-		).toBe(true);
-		expect(
-			within(
-				screen.getByRole("table", { name: "Installed modules and solutions" }),
-			).getByText("ledger"),
-		).toBeTruthy();
-		expect(toast.success).toHaveBeenCalledWith("ledger installation pending");
-	});
-
-	it("reinstalls after revoke using the revision reported by the installation listing", async () => {
-		serve();
-		let sent: Record<string, unknown> | undefined;
-		server.use(
-			http.post(
-				rpc("InstallationService", "ListOrganizationInstallations"),
-				() =>
-					HttpResponse.json({
-						installations: [
-							{
-								installation: {
-									id: "revoked-ledger",
-									orgId: "org-1",
-									targetId: LEDGER_TARGET,
-									status: "INSTALLATION_STATUS_REVOKED",
-									revision: "17",
-								},
-							},
-						],
-					}),
-			),
-			http.post(
-				rpc("InstallationService", "InstallSolution"),
-				async ({ request }) => {
-					sent = (await request.json()) as Record<string, unknown>;
-					return HttpResponse.json({});
-				},
-			),
-		);
-		renderInApp(<Page />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Install ledger" }),
-		);
-		const dialog = await screen.findByRole("dialog");
-		await choose(dialog, "Agent role", "Expense reader — expenses:read");
-		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
-		await waitFor(() => expect(sent).toBeDefined());
-		expect(sent?.approval).toEqual({
-			...LEDGER_APPROVAL,
-			expectedRevision: "17",
-		});
-	});
-
-	it("does not install without a role for the solution's agent", async () => {
-		let called = false;
-		serve();
-		server.use(
-			http.post(rpc("InstallationService", "InstallSolution"), () => {
-				called = true;
-				return HttpResponse.json({});
-			}),
-		);
-		renderInApp(<Page />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Install ledger" }),
-		);
-		const dialog = await screen.findByRole("dialog");
-		await waitFor(() =>
-			expect(
-				(
-					within(dialog).getByRole("button", {
-						name: "Install",
-					}) as HTMLButtonElement
-				).disabled,
-			).toBe(false),
-		);
-		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
-		expect(
-			await within(dialog).findByText(
-				"Choose the role the solution's agent is granted",
-			),
-		).toBeTruthy();
-		expect(called).toBe(false);
-	});
-
-	it("shows the host's refusal of an install in its own words", async () => {
-		serve();
-		server.use(
-			http.post(rpc("InstallationService", "InstallSolution"), () =>
-				HttpResponse.json(
-					{
-						code: "invalid_argument",
-						message:
-							'audience is not in the host vocabulary: "nowhere" (this host serves ...)',
-					},
-					{ status: 400 },
-				),
-			),
-		);
-		renderInApp(<Page />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Install ledger" }),
-		);
-		const dialog = await screen.findByRole("dialog");
-		await choose(dialog, "Agent role", "Expense reader — expenses:read");
-		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
-
-		const alert = await within(dialog).findByRole("alert");
-		expect(alert.textContent).toContain(
-			'audience is not in the host vocabulary: "nowhere"',
-		);
-		expect(screen.getByRole("dialog")).toBeTruthy();
-		expect(toast.success).not.toHaveBeenCalled();
 	});
 
 	it("shows a refused uninstall as the host words it, never as done", async () => {
@@ -926,13 +712,11 @@ describe("organization administration boundary", () => {
 		expect(installedTokens).toEqual([false, true]);
 	});
 
-	it.each(["install", "grant"])(
-		"discards the %s draft and scopes all reads and the next grant after an organization switch",
-		async (draft) => {
+	it("discards the grant draft and scopes all reads and the next grant after an organization switch", async () => {
+		{
 			serve();
 			const { client, rerender } = renderInApp(<Page />);
-			if (draft === "install") await openInstall();
-			else await openGrant();
+			await openGrant();
 
 			const secondAvailable = structuredClone(available);
 			secondAvailable.solutions[0].routeAlias = "payables";
@@ -1002,8 +786,8 @@ describe("organization administration boundary", () => {
 			await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 			expect(grant).toHaveBeenCalledOnce();
 			expect(reads).toEqual({ available: 2, installed: 2, roles: 1, teams: 1 });
-		},
-	);
+		}
+	});
 });
 
 describe("host read refusals and retained data", () => {
@@ -1093,15 +877,6 @@ describe("host read refusals and retained data", () => {
 
 	const pickers = [
 		{
-			kind: "install",
-			label: "Agent role",
-			service: "PermissionService",
-			method: "ListRoles",
-			key: ["roles", "org-1"],
-			selected: "Expense reader — expenses:read",
-			action: "Install",
-		},
-		{
 			kind: "grant",
 			label: "Team",
 			service: "TeamService",
@@ -1162,24 +937,17 @@ describe("host read refusals and retained data", () => {
 
 	it.each(pickers)(
 		"withholds $kind / $label and blocks a previously valid selection after refusal",
-		async ({ kind, label, service, method, key, selected, action }) => {
+		async ({ label, service, method, key, selected, action }) => {
 			serve();
 			const mutation = vi.fn();
 			server.use(
-				http.post(
-					rpc(
-						"InstallationService",
-						kind === "install" ? "InstallSolution" : "GrantInstallationToTeam",
-					),
-					() => {
-						mutation();
-						return HttpResponse.json({});
-					},
-				),
+				http.post(rpc("InstallationService", "GrantInstallationToTeam"), () => {
+					mutation();
+					return HttpResponse.json({});
+				}),
 			);
 			const { client } = renderInApp(<Page />);
-			const dialog =
-				kind === "install" ? await openInstall() : await openGrant();
+			const dialog = await openGrant();
 			server.use(
 				http.post(rpc(service, method), async ({ request }) => {
 					await assertBody(request, { orgId: "org-1" });
@@ -1217,11 +985,10 @@ describe("host read refusals and retained data", () => {
 
 	it.each(pickers)(
 		"keeps $kind / $label options with a visible stale notice on transient failure",
-		async ({ kind, label, service, method, key, selected }) => {
+		async ({ label, service, method, key, selected }) => {
 			serve();
 			const { client } = renderInApp(<Page />);
-			const dialog =
-				kind === "install" ? await openInstall() : await openGrant();
+			const dialog = await openGrant();
 			server.use(
 				http.post(rpc(service, method), async ({ request }) => {
 					await assertBody(request, { orgId: "org-1" });
@@ -1246,9 +1013,6 @@ describe("host read refusals and retained data", () => {
 
 describe("mutation results belong to the page", () => {
 	it.each([
-		["install", "Cancel"],
-		["install", "Close"],
-		["install", "Escape"],
 		["grant", "Cancel"],
 		["grant", "Close"],
 		["grant", "Escape"],
@@ -1265,28 +1029,14 @@ describe("mutation results belong to the page", () => {
 				'host refuses <img src="x" onerror="alert(1)">: authority changed';
 			server.use(
 				http.post(
-					rpc(
-						"InstallationService",
-						kind === "install" ? "InstallSolution" : "GrantInstallationToTeam",
-					),
+					rpc("InstallationService", "GrantInstallationToTeam"),
 					async ({ request }) => {
-						await assertBody(
-							request,
-							kind === "install"
-								? {
-										orgId: "org-1",
-										targetId: LEDGER_TARGET,
-										approval: LEDGER_APPROVAL,
-										agentIdentifier: "acme/ledger:0.9.1",
-										roleId: READER_ROLE,
-									}
-								: {
-										orgId: "org-1",
-										installationId: EXPENSES_INSTALLATION,
-										teamId: SUPPORT_TEAM,
-										roleId: USE_ROLE,
-									},
-						);
+						await assertBody(request, {
+							orgId: "org-1",
+							installationId: EXPENSES_INSTALLATION,
+							teamId: SUPPORT_TEAM,
+							roleId: USE_ROLE,
+						});
 						received();
 						await pending;
 						return refusal(message);
@@ -1294,8 +1044,7 @@ describe("mutation results belong to the page", () => {
 				),
 			);
 			renderInApp(<Page />);
-			const dialog =
-				kind === "install" ? await openInstall() : await openGrant();
+			const dialog = await openGrant();
 			fireEvent.click(
 				within(dialog).getByRole("button", {
 					name: kind === "install" ? "Install" : "Grant",
@@ -1322,13 +1071,6 @@ describe("mutation results belong to the page", () => {
 			expect(toast.success).not.toHaveBeenCalled();
 			expect(reads.available).toBe(2);
 			expect(reads.installed).toBe(2);
-			expect(
-				(
-					screen.getByRole("button", {
-						name: "Install ledger",
-					}) as HTMLButtonElement
-				).disabled,
-			).toBe(false);
 			expect(
 				screen.queryByRole("button", { name: "Remove Support from expenses" }),
 			).toBeNull();
@@ -1423,68 +1165,20 @@ describe("mutation results belong to the page", () => {
 		expect(
 			screen.queryByRole("button", { name: "Uninstall expenses" }),
 		).toBeNull();
-		expect(
-			(
-				screen.getByRole("button", {
-					name: "Install expenses",
-				}) as HTMLButtonElement
-			).disabled,
-		).toBe(false);
 	});
 });
 
 describe("accessible validation and host text", () => {
-	it.each([
-		["Agent identifier", "", "An agent identifier is required"],
-		["Agent identifier", "x".repeat(513), "At most 512 characters"],
-		["Agent name (optional)", "x".repeat(513), "At most 512 characters"],
-		[
-			"Access boundary name (optional)",
-			"x".repeat(513),
-			"At most 512 characters",
-		],
-	])(
-		"explains invalid %s and focuses its associated error",
-		async (label, value, message) => {
-			serve();
-			const install = vi.fn();
-			server.use(
-				http.post(rpc("InstallationService", "InstallSolution"), () => {
-					install();
-					return HttpResponse.json({});
-				}),
-			);
-			renderInApp(<Page />);
-			const dialog = await openInstall();
-			const control = within(dialog).getByLabelText(label);
-			fireEvent.change(control, { target: { value } });
-			fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
-			expect((await within(dialog).findByRole("alert")).textContent).toBe(
-				message,
-			);
-			expectFieldError(control, message);
-			await waitFor(() => expect(document.activeElement).toBe(control));
-			expect(install).not.toHaveBeenCalled();
-			expect(toast.success).not.toHaveBeenCalled();
-		},
-	);
-
-	it.each(["install", "grant"])(
+	it.each(["grant"])(
 		"announces missing %s picker values and focuses the first invalid control",
 		async (kind) => {
 			serve();
 			const mutation = vi.fn();
 			server.use(
-				http.post(
-					rpc(
-						"InstallationService",
-						kind === "install" ? "InstallSolution" : "GrantInstallationToTeam",
-					),
-					() => {
-						mutation();
-						return HttpResponse.json({});
-					},
-				),
+				http.post(rpc("InstallationService", "GrantInstallationToTeam"), () => {
+					mutation();
+					return HttpResponse.json({});
+				}),
 			);
 			renderInApp(<Page />);
 			fireEvent.click(
@@ -1524,7 +1218,7 @@ describe("accessible validation and host text", () => {
 		},
 	);
 
-	it("renders hostile host names and refusal details as text in lists and controls", async () => {
+	it("renders hostile host names as text in lists", async () => {
 		const hostile = '<img src="x" onerror="alert(1)">';
 		const availableBody = structuredClone(available);
 		availableBody.solutions[1].routeAlias = hostile;
@@ -1537,21 +1231,6 @@ describe("accessible validation and host text", () => {
 				roles: [{ id: READER_ROLE, orgId: "org-1", name: hostile }],
 			},
 		});
-		server.use(
-			http.post(
-				rpc("InstallationService", "InstallSolution"),
-				async ({ request }) => {
-					await assertBody(request, {
-						orgId: "org-1",
-						targetId: LEDGER_TARGET,
-						approval: LEDGER_APPROVAL,
-						agentIdentifier: "acme/ledger:0.9.1",
-						roleId: READER_ROLE,
-					});
-					return refusal(`Cannot accept ${hostile}`);
-				},
-			),
-		);
 		renderInApp(<Page />);
 		expect(
 			within(
@@ -1567,199 +1246,8 @@ describe("accessible validation and host text", () => {
 				}),
 			).getByText(hostile),
 		).toBeTruthy();
-		fireEvent.click(screen.getByRole("button", { name: `Install ${hostile}` }));
-		const dialog = await screen.findByRole("dialog");
-		await choose(dialog, "Agent role", hostile);
-		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
-		expect((await within(dialog).findByRole("alert")).textContent).toContain(
-			`Cannot accept ${hostile}`,
-		);
 		expect(document.querySelector("img, script")).toBeNull();
 		expect(toast.success).not.toHaveBeenCalled();
-	});
-});
-
-describe("installing a module: the form follows what the authority offers, not its kind", () => {
-	it("opens the agent-role form for a module the authority offers to nobody", async () => {
-		let asked: unknown;
-		serve();
-		server.use(
-			http.post(LIST_OFFERS, async ({ request }) => {
-				asked = await request.json();
-				return HttpResponse.json({ offers: [] });
-			}),
-		);
-		renderInApp(<Page />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Install ledger" }),
-		);
-		const dialog = await screen.findByRole("dialog");
-		expect(
-			within(dialog).getByRole("combobox", { name: "Agent role" }),
-		).toBeTruthy();
-		expect(within(dialog).queryByText("Module access")).toBeNull();
-		expect(asked).toEqual({ organizationId: "org-1" });
-	});
-
-	it("shows a failed read of the offers instead of guessing a form, and reads again", async () => {
-		let reads = 0;
-		serve();
-		server.use(
-			http.post(LIST_OFFERS, () => {
-				reads++;
-				return reads === 1
-					? HttpResponse.json(
-							{ code: "unavailable", message: "authority restarting" },
-							{ status: 503 },
-						)
-					: HttpResponse.json({ offers: [] });
-			}),
-		);
-		renderInApp(<Page />);
-		expect(await screen.findByText(/authority restarting/)).toBeTruthy();
-		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Install ledger" }),
-		);
-		const dialog = await screen.findByRole("dialog");
-		expect(
-			within(dialog).getByRole("combobox", { name: "Agent role" }),
-		).toBeTruthy();
-		expect(reads).toBe(2);
-	});
-
-	it("reviews a module page the authority offers and installs it through its review, then opens its Set up", async () => {
-		let installed: unknown;
-		const approval = {
-			targetId: "module:ledger",
-			generation: "5",
-			digest: "sha256:ledger-5",
-			operationId: "cccccccc-0000-4000-8000-000000000009",
-		};
-		const review = {
-			orgId: "org-1",
-			actorId: "person-1",
-			targetId: LEDGER_TARGET,
-			target: "ledger",
-			bindingId: "binding-ledger",
-			release: "acme/ledger@0.9.1",
-			deliveryDigest: "delivery-5",
-			installationRole: "none",
-			approval,
-			modules: [],
-		};
-		serve();
-		server.use(
-			http.post(LIST_OFFERS, () =>
-				HttpResponse.json({ offers: [{ target: "ledger", generation: "5" }] }),
-			),
-			http.post(rpc("InstallationService", "ReviewSolutionInstall"), () =>
-				HttpResponse.json(review),
-			),
-			http.post(REVIEW_OFFER, () =>
-				HttpResponse.json({
-					target: "ledger",
-					installationRole: "none",
-					approval: { ...approval, operationId: "" },
-					rolesDeclared: true,
-					page: true,
-					roles: [
-						{
-							name: "installer",
-							scopes: [{ resourceKind: "entry", actions: ["write"] }],
-						},
-						{ name: "viewer", scopes: [] },
-					],
-				}),
-			),
-			http.post(
-				rpc("InstallationService", "InstallReviewedSolution"),
-				async ({ request }) => {
-					installed = await request.json();
-					return HttpResponse.json({
-						id: "bbbbbbbb-0000-4000-8000-000000000002",
-						orgId: "org-1",
-						targetId: LEDGER_TARGET,
-						status: "INSTALLATION_STATUS_ACTIVE",
-					});
-				},
-			),
-		);
-		renderInApp(<SolutionsPage />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Install ledger" }),
-		);
-		const dialog = await screen.findByRole("dialog");
-		await within(dialog).findByText("Module access");
-		// The module's own declaration decides its standing access; nothing
-		// asks for an organisation role, and the review is a solution's.
-		expect(
-			within(dialog).getByText(
-				"This module receives no standing machine access.",
-			),
-		).toBeTruthy();
-		expect(
-			within(dialog).queryByRole("combobox", { name: "Agent role" }),
-		).toBeNull();
-		const install = within(dialog).getByRole("button", {
-			name: "Install",
-		}) as HTMLButtonElement;
-		expect(install.disabled).toBe(true);
-		fireEvent.click(
-			within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
-		);
-		await waitFor(() => expect(install.disabled).toBe(false));
-		fireEvent.click(install);
-
-		await waitFor(() => expect(installed).toBeDefined());
-		expect(installed).toMatchObject({
-			orgId: "org-1",
-			review: { targetId: LEDGER_TARGET, target: "ledger", approval },
-		});
-		await waitFor(() =>
-			expect(push).toHaveBeenCalledWith(
-				"/admin/solutions/bbbbbbbb-0000-4000-8000-000000000002",
-			),
-		);
-	});
-
-	it("keeps a long role label inside the form so Install stays in view", async () => {
-		const long = {
-			id: "cccccccc-0000-4000-8000-000000000003",
-			name: "Module viewer",
-			orgId: "org-1",
-			permissions: Array.from({ length: 12 }, (_, index) => ({
-				resource: `resource-with-a-long-name-${index}`,
-				action: "read",
-			})),
-		};
-		const label = `Module viewer — ${long.permissions
-			.map((p) => `${p.resource}:${p.action}`)
-			.join(", ")}`;
-		serve({ rolesBody: { roles: [...roles.roles, long] } });
-		renderInApp(<Page />);
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Install ledger" }),
-		);
-		const dialog = await screen.findByRole("dialog");
-		await choose(dialog, "Agent role", label);
-		const trigger = within(dialog).getByRole("combobox", {
-			name: "Agent role",
-		});
-		// happy-dom computes no layout, so this holds the CSS that bounds it:
-		// the form may shrink inside the dialog's grid, the trigger may shrink
-		// inside the form, and the label truncates with its full text on hover.
-		expect(trigger.closest("form")?.classList.contains("min-w-0")).toBe(true);
-		expect(trigger.classList.contains("min-w-0")).toBe(true);
-		expect(trigger.getAttribute("title")).toBe(label);
-		const shown = within(trigger).getByText(label);
-		expect(shown.classList.contains("truncate")).toBe(true);
-		expect(shown.closest('[data-slot="select-value"]')?.classList).toContain(
-			"min-w-0",
-		);
-		expect(
-			within(dialog).getByRole("button", { name: "Install" }).closest("form"),
-		).toBe(trigger.closest("form"));
 	});
 });
 

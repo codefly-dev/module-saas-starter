@@ -1072,6 +1072,11 @@ func (s *Service) createOrganization(ctx context.Context, actorID, ownerID strin
 	}); err != nil {
 		return nil, err
 	}
+	// The new organization holds every composed module at once, installed by
+	// composition; one that fails is installed by the next delivery pass.
+	if err := s.installComposedModulesAt(ctx, org.Id, ownerID); err != nil {
+		wool.Get(ctx).In("CreateOrganization").Warn("the composed modules are not all installed in the new organization yet", wool.Field("org_id", org.Id), wool.ErrField(err))
+	}
 	return &gen.CreateOrganizationResponse{Organization: org}, nil
 }
 

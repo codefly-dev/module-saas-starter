@@ -14,7 +14,6 @@ import {
 	healthView,
 	hostRefusal,
 	installedRows,
-	parseList,
 	roleOptionLabel,
 } from "./installations";
 
@@ -140,11 +139,6 @@ describe("solution installation facts", () => {
 			kind: "value",
 			tone: "danger",
 		});
-	});
-
-	it("splits a list one per line or by comma, trimmed and once each", () => {
-		expect(parseList(" a \n\nb, a ,c\n")).toEqual(["a", "b", "c"]);
-		expect(parseList("   ")).toEqual([]);
 	});
 
 	it("labels a role with what it permits", () => {

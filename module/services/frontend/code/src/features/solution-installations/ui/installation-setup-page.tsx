@@ -24,7 +24,11 @@ import {
 	Spinner,
 	useLoadingPhase,
 } from "@/shared/ui";
-import { hostRefusal, installedRows } from "../model/installations";
+import {
+	hostRefusal,
+	installedRows,
+	isModulePage,
+} from "../model/installations";
 import {
 	affordance,
 	clearedByText,
@@ -37,7 +41,7 @@ import {
 	useGrantInstallationToTeam,
 	useRetryInstallation,
 } from "../service/mutations";
-import { useInstallations, useOfferedTargets } from "../service/queries";
+import { useAvailableSolutions, useInstallations } from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
 import { Fact } from "./solution-installations-page";
 import { SolutionSetupPanel } from "./solution-setup-panel";
@@ -70,16 +74,18 @@ export function InstallationSetupPage({
 		(entry) => entry.installation?.id === installationId,
 	);
 	// Where this installation is listed follows what it declares, not its
-	// kind: a solution and a module page sit on Solutions; only a module the
-	// authority offers to nobody (it declares no roles) is a supporting
-	// module. The authority's one ListOffers read serves the header and the
+	// kind: a solution and a module page (a module declaring roles,
+	// AvailableSolution.roles) sit on Solutions; a module declaring none is a
+	// supporting module. The one catalogue read serves the header and the
 	// setup below.
-	const offered = useOfferedTargets(orgId);
+	const available = useAvailableSolutions(orgId);
 	const rolesDeclared =
 		row?.target?.kind === "solution"
 			? true
-			: row?.target && offered.isSuccess
-				? offered.data.has(row.target.routeAlias)
+			: row?.target && available.isSuccess
+				? isModulePage(
+						available.data.find((t) => t.targetId === row.target?.targetId),
+					)
 				: undefined;
 	// Only a module the authority has answered "no roles" for is a supporting
 	// module; an unknown or still-loading row, and every solution, belongs to
@@ -217,6 +223,7 @@ function InstallationSetup({
 				target={target}
 				conditions={conditions}
 				installation={row.installation}
+				modulePage={row.target?.kind === "module" && rolesDeclared === true}
 			/>
 
 			{hasHostScopeRoot ? (

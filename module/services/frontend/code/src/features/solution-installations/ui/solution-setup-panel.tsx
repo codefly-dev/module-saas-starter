@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import { useOrgMembers } from "@/lib/hooks/use-organizations";
 import { Banner } from "@/shared/ui";
+import { ModulePageAccess } from "./module-page-access";
 
 /**
  * This host's mount of the one Setup UI, `<SolutionSetup>`, the same component
@@ -25,10 +26,13 @@ export function SolutionSetupPanel({
 	target,
 	conditions,
 	installation,
+	modulePage = false,
 }: {
 	target: string;
 	installation?: Installation;
 	conditions?: readonly SetupCondition[];
+	/** A module page: its access is edited on its composition installation. */
+	modulePage?: boolean;
 }) {
 	const { organizationId = "" } = useAuth();
 	// Names only: a person who may not list them sees ids, and the authority
@@ -58,6 +62,15 @@ export function SolutionSetupPanel({
 			</Banner>
 		);
 	}
+	if (modulePage && installation)
+		return (
+			<ModulePageAccess
+				organizationId={organizationId}
+				installationId={installation.id}
+				target={target}
+				subjects={subjects}
+			/>
+		);
 	return (
 		<SolutionSetup
 			key={`${installation?.id}:${installation?.revision}:${installation?.status}`}

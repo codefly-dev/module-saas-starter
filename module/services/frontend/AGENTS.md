@@ -26,9 +26,13 @@ row says "Module page" and offers "Set up access", one act
 (`SetUpModulePageDialog`, `SetUpModulePage`): each role to its team, the
 conventional `<module>-<role>` unless changed, the administrator taking the
 ticked roles, exactly as an install assigns them. Every module, a module page
-included, is administered at `/admin/modules`, which Solutions links to; while
-the offers cannot be read, that page lists no module and the failed read is
-shown. The one place a single target's roles are read from
+included, is installed by composition in every organization; `/admin/modules`,
+which Solutions links to, is a read-only view of them ("Installed by
+composition", no Install); while the offers cannot be read, that page lists no
+module and the failed read is shown. A module page's Setup page edits who may
+use it on its composition installation (`ModulePageAccess`): the roles from the
+installation read (`InstallationService.List`), grants and revokes through
+`GrantRole` / `RevokeRole`, since the authority refuses a module's offer read. The one place a single target's roles are read from
 its own review (`WhenRolesDeclared`, on `rolesDeclared`) is a member's own
 solution page, where no administrator read applies. An installed row whose
 host says `upgradeAvailable` shows "Update available" and an Update action: the
@@ -492,11 +496,8 @@ not replace the cached operation; retries retain it, and Review again explicitly
 requests new consent. Pending installation rows offer current-person continuation.
 Supporting modules remain visible on `/admin/modules` and in installation
 detail. That administrator path remains available, but is not a step in normal
-solution installation. A module installed there is installed by composition, holding the standing
-role its declaration selects (a module page: none); its access, when it
-declares roles, is set up from Solutions. Not yet: the shared Setup component
-reads a target's roles from `ReviewOffer`, which the authority refuses for a
-module, so a module page's later grants are not editable from its Setup page.
+solution installation. Modules listed there are installed by composition, holding none; a module
+page's access is set up from Solutions and edited on its Setup page.
 
 **Install assigns access; the browser keeps no draft.** The host assigns it
 (`InstallReviewedSolution`'s `role_teams` and `installer_roles`): each declared

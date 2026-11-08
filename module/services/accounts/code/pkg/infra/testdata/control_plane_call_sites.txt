@@ -33,6 +33,7 @@ pkg/business/audit_archive.go: (*Service).archiveAuditDay: WithControlPlane
 pkg/business/authority_core_delivery.go: (*Service).composeAppliedDelivery: WithControlPlane
 pkg/business/authority_delivery.go: (*Service).verifyDeliveredGeneration: WithControlPlane
 pkg/business/canonical_solution_reads.go: (*Service).canonicalSolutionEntitlements: WithControlPlane
+pkg/business/composition_installations.go: (*Service).InstallComposedModules: WithControlPlane
 pkg/business/connector_credentials.go: (*Service).SourceSigningSecret: WithControlPlane
 pkg/business/current_installation.go: (*Service).ModuleCurrentInstallation: WithControlPlane
 pkg/business/datasource_budget.go: (datasourceScheduler).Acquire: WithControlPlane
