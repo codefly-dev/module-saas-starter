@@ -95,8 +95,8 @@ type recordingCarrier struct {
 	namespaces []string
 }
 
-func (c *recordingCarrier) AuthorizeCarrier(_ context.Context, credential, namespace string) error {
-	c.namespaces = append(c.namespaces, namespace)
+func (c *recordingCarrier) AuthorizeCarrier(_ context.Context, credential string, namespaces ...string) error {
+	c.namespaces = append(c.namespaces, namespaces...)
 	if credential != testCarrierToken {
 		return errors.New("not the delivery account")
 	}

@@ -136,9 +136,10 @@ type SolutionDeliveryCounter interface {
 // captured a carrier could re-deliver it.
 type SolutionDeliveryCarrierAuthorizer interface {
 	// AuthorizeCarrier authorises the caller's credential as the delivery
-	// account of namespace: the namespace the cell runs the manifest's module
-	// in, by rule (ModuleNamespaceRule).
-	AuthorizeCarrier(ctx context.Context, credential, namespace string) error
+	// account of one of namespaces: each the namespace the cell runs a module
+	// in, by rule (ModuleNamespaceRule). A live manifest names one; a
+	// withdrawal names its module's and the host's (carrierNamespaces).
+	AuthorizeCarrier(ctx context.Context, credential string, namespaces ...string) error
 }
 
 // ReceiveSolutionDelivery verifies, authorises, admits and persists one
@@ -152,7 +153,8 @@ type SolutionDeliveryCarrierAuthorizer interface {
 //     (core's VerifyDelivered);
 //  3. authorise the CALLER: the delivery account of the module's namespace —
 //     the manifest's module, or for a withdrawal the module of the binding's
-//     previously applied manifest;
+//     previously applied manifest or this host's own module, which carries
+//     the composition (carrierNamespaces);
 //  4. admit the generation against the binding's applied manifest (core's
 //     Admit: stale, rewritten, withdrawn, another host or domain) and its
 //     route alias against every applied manifest (core's CheckAlias);
@@ -204,14 +206,7 @@ func (s *Service) receiveSolutionDelivery(ctx context.Context, raw []byte, crede
 	}
 	previous, previousErr := record.AppliedManifest()
 
-	// The carrier is the delivery account of the module's namespace. A
-	// withdrawal is delivered from where the binding was delivered from, so
-	// its module is the previously applied one.
-	module := manifest.Alias
-	if manifest.Removed && previous != nil {
-		module = previous.Alias
-	}
-	if err := s.deliveryCarrier.AuthorizeCarrier(ctx, credential, s.moduleNamespaces.Namespace(module)); err != nil {
+	if err := s.deliveryCarrier.AuthorizeCarrier(ctx, credential, s.carrierNamespaces(manifest, previous)...); err != nil {
 		return "", nil, err
 	}
 
@@ -277,6 +272,32 @@ func (s *Service) receiveSolutionDelivery(ctx context.Context, raw []byte, crede
 		return SolutionDeliveryAccepted, stored, nil
 	}
 	return SolutionDeliveryReplayed, stored, nil
+}
+
+// carrierNamespaces is where the delivery account that may hand this host
+// manifest runs.
+//
+// A live manifest is carried from its own module's namespace, and only from
+// there: no other module speaks for it. A withdrawal is carried from where the
+// binding was delivered from — the previously applied manifest's module — or
+// from this host's own module. The host module carries the composition (its
+// envelope, module_envelope_delivery.go), and a module the composition no
+// longer declares has no namespace left to carry its own withdrawal from: the
+// composition that dropped it is what withdraws it. Signature, admission,
+// ownership domain and alias are held exactly as for any other manifest.
+func (s *Service) carrierNamespaces(manifest, previous *solutionhost.ModuleManifest) []string {
+	if !manifest.Removed {
+		return []string{s.moduleNamespaces.Namespace(manifest.Alias)}
+	}
+	module := manifest.Alias
+	if previous != nil {
+		module = previous.Alias
+	}
+	namespaces := []string{s.moduleNamespaces.Namespace(module)}
+	if s.hostModule != "" && s.hostModule != module {
+		namespaces = append(namespaces, s.moduleNamespaces.Namespace(s.hostModule))
+	}
+	return namespaces
 }
 
 // newestDeliveredManifests is the newest delivered manifest of every binding

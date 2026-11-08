@@ -356,7 +356,8 @@ and answers, in this order:
    `accounts`) — or, in a native run, core's native attester under the run's
    anchor — must name the `delivery` ServiceAccount of the namespace the cell
    runs the manifest's module in — for a withdrawal, the module of the binding's
-   previously applied manifest.
+   previously applied manifest, or this host's own module, which carries the
+   composition and so the withdrawal of a module it dropped.
 4. **Admit** it with core's `Admit` against the binding's applied manifest, and
    its alias with core's `CheckAlias` against every other binding as it stands
    once its newest delivered generation applies.

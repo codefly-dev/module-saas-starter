@@ -36,6 +36,21 @@ What accounts adds, and where:
 | The hop's admission keys: leased rows judged by the database's clock, published apart from the Work Context key; each registration proves its key once (its nonce is kept in `hop_admission_proofs`), and one key is pinned per hop instance (its pod) while its registration holds | migrations 55 and 58, `pkg/business/hop_admission_keys.go`, `pkg/adapters/host_interface_admission.go` |
 | Tenancy at the perimeter: a member or an administrator of the organization a call names, before the core decides | `pkg/adapters/host_interface.go` (`requireOrgMember`, `requireOrgAdmin`) |
 
+Who may hand this host a delivered module manifest is the `delivery` account
+of the module's own namespace, by the cell's rule. A live manifest is carried
+from that namespace alone. A **withdrawal** (`removed: true`) is carried from
+the namespace of the module the binding last applied, **or from this host's own
+module's namespace** — the same account that carries the module envelope. The
+host module carries the composition: when the composition drops a module, its
+namespace, delivery account and tree go with it, so nothing would be left to
+carry its own withdrawal and the host would keep offering its last applied
+generation. Everything else is held exactly as for any manifest — the release
+signature and its domain pin, admission above the applied generation, the
+ownership domain, the alias — and applying the withdrawal is the one existing
+path (the target closes, its installations are revoked). Another module's
+account carries neither a withdrawal nor a live manifest for a module it is
+not (`pkg/business/solution_delivery.go`, `carrierNamespaces`).
+
 The module registry the core reads is DERIVED each reconcile pass from the
 applied module manifests, narrowed by the module envelope where a platform
 administrator has written one (`pkg/business/module_principal_reconcile.go`).

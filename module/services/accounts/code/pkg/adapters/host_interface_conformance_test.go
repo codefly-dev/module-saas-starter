@@ -1361,9 +1361,11 @@ func (r *memoryRevoker) IsSessionRevoked(_ context.Context, sessionID string) (b
 // These test owners stand in for the platform's delivery account and approval.
 type conformanceCarrier struct{}
 
-func (conformanceCarrier) AuthorizeCarrier(_ context.Context, credential, namespace string) error {
-	if credential != "Bearer delivery:"+namespace {
-		return fmt.Errorf("not the delivery workload of %s", namespace)
+func (conformanceCarrier) AuthorizeCarrier(_ context.Context, credential string, namespaces ...string) error {
+	for _, namespace := range namespaces {
+		if credential == "Bearer delivery:"+namespace {
+			return nil
+		}
 	}
-	return nil
+	return fmt.Errorf("not the delivery workload of %v", namespaces)
 }

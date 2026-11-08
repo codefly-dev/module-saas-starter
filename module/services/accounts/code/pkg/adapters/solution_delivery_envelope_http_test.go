@@ -132,7 +132,7 @@ func TestADeliveredEnvelopeIsAcceptedThenReplayed(t *testing.T) {
 		require.Equal(t, envelopeReceipt{Disposition: disposition, Revision: 1, Digest: digest, Signer: deliveryTestKey}, receipt)
 	}
 	require.Len(t, table.records, 1)
-	require.Equal(t, "platform-acme-staging-saas", harness.carrier.namespace, "the host's own namespace carries its envelope")
+	require.Equal(t, []string{"platform-acme-staging-saas"}, harness.carrier.namespaces, "the host's own namespace carries its envelope")
 }
 
 func TestEnvelopeDeliveryRefusalsMapOntoTheDeliveryTaxonomy(t *testing.T) {

@@ -179,7 +179,8 @@ type Service struct {
 	moduleNamespaces ModuleNamespaceRule
 	// hostModule is the module this host was composed as. A delivered module
 	// envelope is the host's own document, so its carrier is the delivery
-	// account of this module's namespace (module_envelope_delivery.go).
+	// account of this module's namespace (module_envelope_delivery.go); the
+	// same account may carry a withdrawal (carrierNamespaces).
 	hostModule             string
 	frontendSource         frontendpayload.Source
 	frontendLazyLoadWindow time.Duration
