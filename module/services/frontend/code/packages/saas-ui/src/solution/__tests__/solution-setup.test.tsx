@@ -177,18 +177,96 @@ describe("Roles and what they grant", () => {
 		expect(roles.queryByText(/Tool exposure is unavailable/)).toBeNull();
 	});
 
-	it("says once that a host composes no tools, and carries no column that could only repeat it", async () => {
+	it("says once what a host that reads no tool bindings cannot show, and why, and carries no column that could only repeat it", async () => {
 		await mounted(setupFixture({ offer: reviewedOffer({ tools: false }) }));
 		const roles = within(section("Roles and what they grant"));
 		expect(
-			roles.getByText("Tool exposure is unavailable from this host."),
+			roles.getByText(
+				"Agent tools cannot be shown: this host reads no composed tool bindings.",
+			),
 		).toBeTruthy();
+		// The limit is the host's read, named as such; the page neither
+		// reassures nor claims that no tool is exposed.
+		expect(roles.getByText(/a limit of this host's read/)).toBeTruthy();
+		expect(roles.queryByText(/nothing about this installation/)).toBeNull();
 		const table = openModule(roles, exampleTarget);
 		expect(table.getByText("POST /items/{id}")).toBeTruthy();
 		expect(
 			table.queryByRole("columnheader", { name: "Agent tools" }),
 		).toBeNull();
 		expect(roles.queryByText("Tool exposure unavailable")).toBeNull();
+	});
+
+	// A declaration that depends on a module reaches it without binding to it:
+	// the authority carries the edge apart from the ceiling, with a presence
+	// and no scope. The ceiling names it anyway, or the page would say "no
+	// other module" of a solution that does not work without one.
+	it("lists a module the declaration depends on in the ceiling, as reached by the person and not called by the solution", async () => {
+		const offer = reviewedOffer({
+			tools: false,
+			edgeDependencies: [
+				{ module: "example-records", presence: "required" },
+				{ module: "documents", presence: "optional" },
+			],
+		});
+		await mounted(setupFixture({ offer }));
+		const ceiling = within(
+			within(section("Roles and what they grant")).getByRole("list", {
+				name: "Permission ceiling",
+			}),
+		);
+		const records = ceiling.getByText("example-records").closest("li");
+		expect(records?.textContent).toContain(
+			"Reached as the person using the solution",
+		);
+		expect(records?.textContent).toContain(
+			"Required: the solution does not work without it.",
+		);
+		// A module both bound and depended on is one entry: its scopes and
+		// its presence.
+		expect(ceiling.getAllByText("documents")).toHaveLength(1);
+		const documents = ceiling.getByText("documents").closest("li");
+		expect(documents?.textContent).toContain("example-records: read, write");
+		expect(documents?.textContent).toContain(
+			"Optional: the solution works without it.",
+		);
+	});
+
+	it("says what a ceiling with no binding and no dependency means", async () => {
+		await mounted(
+			setupFixture({
+				offer: { ...reviewedOffer({ tools: true }), ceiling: [] },
+			}),
+		);
+		expect(
+			within(section("Roles and what they grant")).getByText(
+				/binds no module and depends on none/,
+			),
+		).toBeTruthy();
+	});
+
+	// Roles whose scopes no delivered operation requires cover nothing, which
+	// the authority worked out by joining them against every delivered module:
+	// the page gives that reason, not a bare "no operation".
+	it("explains roles that cover no module operation instead of stating a blank", async () => {
+		const offer = reviewedOffer({ tools: false });
+		await mounted(
+			setupFixture({
+				offer: {
+					...offer,
+					roles: offer.roles.map((role) => ({ ...role, capabilities: [] })),
+				},
+			}),
+		);
+		const roles = within(section("Roles and what they grant"));
+		expect(
+			roles.getByText(
+				/no delivered module declares an operation that requires what they grant/,
+			),
+		).toBeTruthy();
+		expect(
+			roles.queryByText("No composed operation is covered by any role."),
+		).toBeNull();
 	});
 
 	// "Why has the installer so many permissions" is answered by the split, so

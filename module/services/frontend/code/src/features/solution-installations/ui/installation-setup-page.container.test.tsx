@@ -408,6 +408,83 @@ it("shows the solution's roles, what they grant and who holds them, from the aut
 	});
 });
 
+// A solution whose declaration requires another module without binding to it
+// reaches that module as the person, not as itself. The authority carries the
+// edge apart from the ceiling, so a page listing the ceiling alone said "calls
+// no other module" of it; and this host reads no composed tool bindings, which
+// the page states as the limit it is, not as reassurance.
+it("names a required module in the ceiling, explains roles that cover no operation, and says why no tool is shown", async () => {
+	serve({
+		installations: [installation({ readiness: { ready: true, unmet: [] } })],
+	});
+	server.use(
+		http.post(
+			"http://localhost:3000/host.installation.v1.OfferService/ReviewOffer",
+			() =>
+				HttpResponse.json({
+					target: "suite",
+					approval: {
+						targetId: "suite",
+						generation: "3",
+						digest: "sha256:suite",
+					},
+					installation: {
+						id: "core-suite",
+						organizationId: "org-1",
+						target: "suite",
+						status: "STATUS_ACTIVE",
+						revision: "2",
+						role: "none",
+					},
+					toolsComposed: false,
+					installationRole: "none",
+					ceiling: [],
+					edgeDependencies: [{ module: "records", presence: "required" }],
+					roles: [
+						{
+							name: "assistant",
+							scopes: [{ resourceKind: "suite.assistant", actions: ["use"] }],
+							capabilities: [],
+						},
+					],
+				}),
+		),
+		http.post(
+			"http://localhost:3000/host.installation.v1.InstallationService/ListRoleGrants",
+			() => HttpResponse.json({ grants: [] }),
+		),
+	);
+	render();
+
+	const ceiling = within(
+		await screen.findByRole("list", { name: "Permission ceiling" }),
+	);
+	const records = ceiling.getByText("records").closest("li");
+	expect(records?.textContent).toContain(
+		"Reached as the person using the solution",
+	);
+	expect(records?.textContent).toContain(
+		"Required: the solution does not work without it.",
+	);
+	expect(screen.queryByText("The solution calls no other module.")).toBeNull();
+
+	expect(
+		screen.getByText(
+			/no delivered module declares an operation that requires what they grant/,
+		),
+	).toBeTruthy();
+	expect(
+		screen.queryByText("No composed operation is covered by any role."),
+	).toBeNull();
+
+	expect(
+		screen.getByText(
+			"Agent tools cannot be shown: this host reads no composed tool bindings.",
+		),
+	).toBeTruthy();
+	expect(screen.queryByText(/nothing about this installation/)).toBeNull();
+});
+
 // A module page that declares roles is set up through its roles, as a
 // solution is. Its offer carries no consent digest (the authority installs no
 // module), so it has no staged team picker: Setup's role grant form, the

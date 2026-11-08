@@ -34,7 +34,9 @@ type RunnableReader func(context.Context) (map[string]*runnablev0.PreparedBindin
 type HostOfferServer struct {
 	installationv1.UnimplementedOfferServiceServer
 	// runnables supplies composed tool metadata. Production has no reader yet,
-	// so exposure is reported as unavailable, not absent. The CLI treats a
+	// so tools_composed is false and the Setup UI says agent tools cannot be
+	// shown because this host reads no composed tool bindings — a limit of the
+	// read, never a finding that none is exposed. The CLI treats a
 	// runnable-bindings consumer as an executor (including network reach);
 	// a read-only delivery must be qualified before enabling this reader.
 	runnables RunnableReader
@@ -108,6 +110,12 @@ func offerCaller(ctx context.Context, what, org string) (*authority.Service, aut
 }
 
 // reviewedOffer adapts the authority-owned projection to this host's wire.
+// The ceiling is the solution's bindings alone (what it may ask of a module as
+// itself); a module its declaration depends on travels apart, as an edge
+// dependency with a presence and no scope, so the Setup UI can name both.
+// Each role's capabilities are the core's join of the role against every
+// delivered module's method policies: a role with none covers no delivered
+// operation, which is an answer, not a missing read.
 func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev0.PreparedBinding) (*installationv1.ReviewedOffer, error) {
 	projected, err := offers.Project(offer, bindings)
 	if err != nil {

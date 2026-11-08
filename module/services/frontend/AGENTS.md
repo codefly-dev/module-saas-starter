@@ -119,8 +119,14 @@ integration and is not established by this repository.
 
 The Setup loading state follows the kit's delay and minimum visible duration,
 including when the authority answers immediately after the indicator appears.
-When the host cannot read composed tool bindings, tool exposure is shown as
-unavailable; an empty tool list is not reported as proof of no exposure.
+When the host cannot read composed tool bindings, the kit says agent tools
+cannot be shown because this host reads no composed tool bindings, a limit of
+the read and never proof of no exposure or reassurance about the installation.
+Its permission ceiling lists the modules the solution binds (what it may ask as
+itself) and the modules its declaration depends on (`edge_dependencies`,
+reached as the person, asking nothing as itself); roles that cover no
+operation are explained as the authority's answer that no delivered module
+declares an operation requiring what they grant.
 
 The browser reaches that interface at exactly the procedures the local
 authority's edge serves a browser (`src/lib/host-setup-procedures.ts`):

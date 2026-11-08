@@ -98,8 +98,14 @@ behavior-preserving rollback.
   with a newer declaration. The local authority uses the same
   projection (authority #47 and #48, selected at `0ef857ee3ba5`), including
   Core's default tool exposure when no explicit metadata is declared. Accounts has no production
-  tool-metadata reader, so `tools_composed` is false and the Setup UI reports
-  exposure as unavailable. A read-only delivery remains to be qualified: the
+  tool-metadata reader, so `tools_composed` is false and the Setup UI says agent
+  tools cannot be shown because this host reads no composed tool bindings — a
+  limit of the read, never a claim that none is exposed or that the installation
+  is fine. The ceiling is the solution's bindings alone; a module its
+  declaration depends on is carried apart as an `edge_dependencies` entry with
+  its presence, and the Setup UI lists both as the modules the solution reaches.
+  A role with no capability is the core's answer that no delivered module
+  declares an operation requiring what it grants. A read-only delivery remains to be qualified: the
   CLI treats a `runnable-bindings` consumer as an executor, including network
   reach; the Setup read must not create execution authority. The
   solution's side, `InstallableService`, is not served here.
