@@ -211,11 +211,12 @@ behavior-preserving rollback.
 
       GOWORK=off go test -count=1 -timeout 30m -run '^TestAccountsPassesTheHostInterfaceConformanceSuite$' -v ./pkg/adapters
 
-  passed 95 cases (the shared suite, the solution-principal target and the
+  passed 96 cases (the shared suite, the solution-principal target and the
   cases beyond the suite, as `go test -v` lists them one level under the
-  test), 304 subtests at every depth; failed 0; skipped 0; 78 s. "An
-  installation survives delivery" and "a module page is offered, reviewed and
-  installed like a solution" are among them. The harness seeds the two owned
+  test), 304 subtests at every depth below the test; failed 0; skipped 0;
+  73 s. "An installation survives delivery", "a module page is offered,
+  reviewed and installed like a solution" and "an upgrade refuses a
+  supporting module revoked between its step and its write" are among them. The harness seeds the two owned
   solutions of the installation-resources case at the surface the suite
   redelivers (the store they bind, their roles and owned scopes), so that
   redelivery asks nothing new of their consent; a fixture module declaring
