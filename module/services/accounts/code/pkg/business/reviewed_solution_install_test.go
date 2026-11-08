@@ -178,21 +178,52 @@ func TestReviewedSolutionAPIRefusesTamperingOrStaleDeliveryBeforeAnyStep(t *test
 }
 
 func TestReviewedSolutionAPIRequiresDeclaredAuthorityWithoutChoosingRole(t *testing.T) {
-	// A module that declares roles but names none of them, or names one it does
-	// not declare, leaves the host a choice it never makes.
-	for _, selector := range []string{"", "reader"} {
-		s, _, owner, caller, target := reviewedInstallFixture(t, true)
-		require.NoError(t, owner.Write(context.Background(), func(tx authority.Tx) error {
-			m, err := tx.ModuleNamed("records-route")
-			if err != nil {
-				return err
+	// A supporting module whose installation_role names a standing role
+	// leaves the host a grant it never makes on a solution's review.
+	s, _, owner, caller, target := reviewedInstallFixture(t, true)
+	require.NoError(t, owner.Write(context.Background(), func(tx authority.Tx) error {
+		m, err := tx.ModuleNamed("records-route")
+		if err != nil {
+			return err
+		}
+		m.InstallationRole = "reader"
+		return tx.PutModule(m)
+	}))
+	_, err := s.ReviewSolutionInstall(context.Background(), caller, caller.Organization, target)
+	require.ErrorContains(t, err, "module:records")
+}
+
+// A module declaring roles is a module page, chosen by its own review. A
+// solution reaching one does not install it and does not depend on it: its
+// review lists no entry for it, whatever installation role the page names, and
+// the install installs nothing for it (the core's closure, decide.Closure).
+func TestAReachedModulePageIsNoSupportingModule(t *testing.T) {
+	for _, selector := range []string{"", "reader", domain.NoInstallationRole} {
+		t.Run("installation role "+selector, func(t *testing.T) {
+			s, _, owner, caller, target := reviewedInstallFixture(t, true)
+			ctx := context.Background()
+			require.NoError(t, owner.Write(ctx, func(tx authority.Tx) error {
+				m, err := tx.ModuleNamed("records-route")
+				if err != nil {
+					return err
+				}
+				m.InstallationRole = selector
+				m.Roles = map[string][]*basev0.WorkScopeV1{"viewer": {{ResourceKind: "records", Actions: []string{"read"}}}}
+				return tx.PutModule(m)
+			}))
+			review, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
+			require.NoError(t, err)
+			for _, m := range review.Modules {
+				require.NotEqual(t, "module:records", m.Principal, "a reached module page is listed by the solution's review")
+				require.False(t, m.Required)
 			}
-			m.InstallationRole = selector
-			m.Roles = map[string][]*basev0.WorkScopeV1{"viewer": {{ResourceKind: "records", Actions: []string{"read"}}}}
-			return tx.PutModule(m)
-		}))
-		_, err := s.ReviewSolutionInstall(context.Background(), caller, caller.Organization, target)
-		require.ErrorContains(t, err, "module:records")
+			calls := 0
+			s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
+			inst, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+			require.NoError(t, err)
+			require.Equal(t, domain.Active, inst.Status)
+			require.Equal(t, 1, calls)
+		})
 	}
 }
 

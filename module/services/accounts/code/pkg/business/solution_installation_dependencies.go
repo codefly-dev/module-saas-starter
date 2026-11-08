@@ -49,12 +49,15 @@ func (d SolutionDependency) Describe() string {
 // documents makes there is refused once the solution is active. A module's own
 // bindings and edges are walked as the solution's are, under the presence of
 // the path that reached it; a path through an optional module makes nothing
-// required. Two things differ from the solution's own declaration, because a
-// module's declaration is fleet-wide while this host's catalogue is a subset of
-// it: a module's binding onto an audience this host has not delivered is shown
-// absent, never refused (the core tolerates it the same way at issuance), and
-// a module reaching a solution, or any target that is not a supporting module,
-// contributes nothing, because a solution installs on its own review. A
+// required. Its required set is the core's closure (decide.Closure): a
+// role-gated target reached, a solution or a module page declaring roles, is
+// chosen by its own review, so wherever it is reached (by the target's own
+// binding or edge, or through a supporting module) it is neither listed nor
+// walked through, and the installation under review does not depend on it.
+// Two things differ from the solution's own declaration, because a module's
+// declaration is fleet-wide while this host's catalogue is a subset of it: a
+// module's binding onto an audience this host has not delivered is shown
+// absent, never refused (the core tolerates it the same way at issuance). A
 // module's required edge keeps its declared presence: undelivered, it refuses.
 func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]SolutionDependency, error) {
 	modules := make(map[string]domain.Module, len(offer.Modules))
@@ -67,7 +70,11 @@ func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]Solution
 	byPrincipal := map[string]*SolutionDependency{}
 	// add records a dependency and says whether its reach must (still) be
 	// walked: on first sight, and again when a later path makes it required.
+	// A delivered role-gated target is no dependency: add answers nil.
 	add := func(principal string, required bool, via string) (*SolutionDependency, bool, error) {
+		if m, delivered := modules[principal]; delivered && decide.RoleGated(m) {
+			return nil, false, nil
+		}
 		if existing := byPrincipal[principal]; existing != nil {
 			raised := required && !existing.Required
 			existing.Required = existing.Required || required
@@ -101,6 +108,9 @@ func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]Solution
 		if err != nil {
 			return nil, err
 		}
+		if entry == nil {
+			continue
+		}
 		for _, operation := range []string{"invoke", "lookup", "headless"} {
 			required, err := decide.ScopesFor(binding, operation, operation)
 			if err != nil {
@@ -116,7 +126,7 @@ func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]Solution
 		}
 	}
 	for _, edge := range offer.Module.EdgeDependencies {
-		entry, walk, err := add(edge.Module, edge.Presence == "required", "")
+		entry, walk, err := add(edge.Module, edge.Presence != decide.EdgeOptional, "")
 		if err != nil {
 			return nil, err
 		}
@@ -128,10 +138,7 @@ func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]Solution
 		next := pending[0]
 		pending = pending[1:]
 		for _, principal := range reachedModules(next.module, offer.Module.Principal) {
-			target, delivered := modules[principal]
-			if delivered && target.Kind != domain.KindModule {
-				continue // A solution installs on its own review.
-			}
+			_, delivered := modules[principal]
 			entry, walk, err := add(principal, next.required && delivered, next.module.Principal)
 			if err != nil {
 				return nil, err
@@ -144,11 +151,7 @@ func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]Solution
 			if edge.Module == offer.Module.Principal {
 				continue
 			}
-			target, delivered := modules[edge.Module]
-			if delivered && target.Kind != domain.KindModule {
-				continue
-			}
-			entry, walk, err := add(edge.Module, next.required && edge.Presence == "required", next.module.Principal)
+			entry, walk, err := add(edge.Module, next.required && edge.Presence != decide.EdgeOptional, next.module.Principal)
 			if err != nil {
 				return nil, err
 			}

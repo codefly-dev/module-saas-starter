@@ -1228,6 +1228,8 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.ErrorContains(t, err, "installed through its review")
 	})
 
+	testReviewedClosures(t, reviewedClosureHarness{ctx: ctx, conn: conn, signer: signer, svc: svc, store: store, core: core, pagePayload: pagePayload})
+
 	// Last, because the envelope it writes becomes every module's ceiling: a
 	// real envelope write that narrows a module's binding (the write
 	// PutModuleEnvelope makes, without its platform administrator check) is

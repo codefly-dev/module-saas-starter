@@ -258,6 +258,21 @@ beside the solutions from the one `ListOffers` read and installs it through
 the same review dialog; "Supporting module administration" lists exactly the
 modules the offers do not name.
 
+**The closure is the core's.** What a review lists as required, and what the
+install converges, is `decide.Closure`: the modules the target reaches through
+its bindings and its required edge dependencies, transitively through what
+those reach, that declare no roles. A role-gated target reached (a solution,
+or a module page) is chosen by its own review: wherever it is reached (the
+target's own binding or edge, or a supporting module's), the host's walker
+(`SolutionInstallationDependencies`) neither lists it nor walks through it,
+exactly as the core does, so a solution's review never installs a module page
+and a solution's installation does not depend on one, whether or not the page
+is installed in the organization. Optional edges are shown, never installed.
+`TestTheWalkersClosureIsTheCoresClosure` holds the walker to `decide.Closure`,
+including a module page reached through a binding and through an edge; the
+conformance harness installs a solution reaching a module page before and after
+the page is installed through its own review.
+
 **Consent follows the release line.** The core records on each consent the
 generation and offer digest it approved and keeps the declaration approved
 per generation (`authority_core_approved_modules`). A redelivery whose

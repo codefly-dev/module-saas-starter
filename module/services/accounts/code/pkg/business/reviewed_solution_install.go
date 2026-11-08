@@ -86,8 +86,9 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 	}
 	if disagreement := closureDisagreement(offer, dependencies); disagreement != "" {
 		// The core answers the closure too (ReviewedOffer.Closure); the host's
-		// walker is what the review and the activation fence install by, so a
-		// disagreement is said, never silently resolved either way.
+		// walker follows the same rule (a role-gated target reached is chosen
+		// by its own review and never walked) and adds what the review shows,
+		// so a disagreement is a defect, said, never silently resolved.
 		wool.Get(ctx).In("ReviewSolutionInstall").Warn("the core's closure and the host's reviewed dependencies disagree", wool.Field("target", offer.Module.Name), wool.Field("disagreement", disagreement))
 	}
 	for _, dependency := range dependencies {
@@ -464,9 +465,9 @@ func closureDisagreement(offer authority.ReviewedOffer, dependencies []SolutionD
 // select, so the module is installed holding none: all a solution's closure
 // asks of it is to be installed, because the authority core issues a token
 // toward a module in an organization only where that module has an
-// installation. A module that declares roles but names none of them its
-// installation role is still undeclared: the host never chooses among them,
-// and the review refuses it. A reused installation keeps whatever it holds,
+// installation. A module that declares roles is a module page, chosen by its
+// own review, and never a supporting module (SolutionInstallationDependencies
+// skips it). A reused installation keeps whatever it holds,
 // so the entry carries the declaration as written and this is read only for
 // a fresh install. The store holds the same rule under its delivery locks
 // (lock_module_no_standing_declaration, migration 67).
