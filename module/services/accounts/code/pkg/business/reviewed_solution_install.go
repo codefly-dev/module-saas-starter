@@ -32,6 +32,15 @@ func (s *Service) ReviewSolutionInstall(ctx context.Context, caller authority.Pe
 	return s.reviewSolutionInstall(ctx, caller, org, targetID, NewIDString(), "")
 }
 
+// ReviewSolutionInstallAs is ReviewSolutionInstall for a caller that selects
+// the target's installation role where its declaration selects none (a
+// declaration that names one is never overridden); InstallReviewedSolutionAs
+// installs that review with the same role. The workspace fixture installs its
+// declared rows this way.
+func (s *Service) ReviewSolutionInstallAs(ctx context.Context, caller authority.Person, org, targetID, role string) (*gen.ReviewedSolutionInstall, error) {
+	return s.reviewSolutionInstall(ctx, caller, org, targetID, NewIDString(), role)
+}
+
 func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Person, org, targetID, operation, requestedRole string) (*gen.ReviewedSolutionInstall, error) {
 	if uuid.Validate(operation) != nil {
 		return nil, domain.Malformed("installation operation must be a UUID")
@@ -192,6 +201,12 @@ func (s *Service) reviewedTargetDelivery(ctx context.Context, target *AvailableS
 // the existing module installer records each separate module consent.
 func (s *Service) InstallReviewedSolution(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall) (domain.Installation, error) {
 	return s.installReviewedSolution(ctx, caller, org, review, "", "")
+}
+
+// InstallReviewedSolutionAs installs a review made by ReviewSolutionInstallAs
+// with the role it was made with; resuming it names the same role.
+func (s *Service) InstallReviewedSolutionAs(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, role string) (domain.Installation, error) {
+	return s.installReviewedSolution(ctx, caller, org, review, role, "")
 }
 
 func (s *Service) installReviewedSolution(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, requestedRole, requestedOwner string) (domain.Installation, error) {

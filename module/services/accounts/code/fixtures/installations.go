@@ -13,13 +13,16 @@ import (
 	"github.com/codefly-dev/core/wool"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // fixtureInstallation is one installation a fixture declares: the organisation
 // installing, the target by the name the composition gives it, the role it
-// holds, and the administrator who installs it and is its owner of record. It
-// is the host interface's Install by name, performed by a fixture person, then
-// granted to each team named: the teams whose members hold its role. The role
+// holds, and the administrator who installs it and is its owner of record. A
+// role-gated target (a solution, or a module page declaring roles) is reviewed
+// and installed through that review by that person, as an administrator
+// installs it, and its role is granted to each team named; a roleless module
+// is the host interface's Install by name. The role
 // is left out for a target that holds none: a module declaring
 // `installation_role: none`, or one declaring neither an installation role
 // nor any role, is installed holding no standing authority, and a row naming
@@ -81,10 +84,14 @@ func fixtureAdministers(f *fixtureFile, org, email string) bool {
 }
 
 // Installations are a seeded fixture's declared installations, performed
-// through the host's own install path (business.Service.InstallTargetByName)
-// as each installation's owner. A target is installable only once the
-// composition has delivered it to this host, which happens after the seed, so
-// they are converged after every delivery pass rather than at seed time.
+// through the host's own install paths as each installation's owner: the
+// reviewed install for a role-gated target (coreInstall), the install by name
+// (business.Service.InstallFixtureTarget) for a roleless module. Neither
+// depends on the rows' order: a solution's review installs its roleless
+// closure itself and never a module page it reaches. A target is installable
+// only once the composition has delivered it to this host, which happens after
+// the seed, so they are converged after every delivery pass rather than at
+// seed time.
 type Installations struct {
 	service *business.Service
 
@@ -195,9 +202,16 @@ func (i *Installations) Converge(ctx context.Context) error {
 // authority core has not composed yet; the next pass installs it there.
 var errCoreTargetNotComposed = errors.New("the authority core has not composed this target yet")
 
-// coreInstall uses the fixture's explicitly declared administrator and role.
-// It reuses the durable original approval; fixture convergence never invents
-// additional module consent or activates an unacknowledged solution.
+// coreInstall installs a role-gated target (a solution, or a module page
+// declaring roles) as an administrator does: the row's owner reviews it
+// (ReviewSolutionInstallAs) and installs that review (InstallReviewedSolutionAs),
+// which converges the target's closure of roleless supporting modules with it,
+// then the owner is granted the installer role and each declared team the
+// row's role. A module holding no roles answers false: Converge installs it by
+// name. An installation the core holds active is left as it is and its grants
+// are granted again, idempotently; one it holds pending is resumed from the
+// review it was opened under when that review is the owner's, and superseded
+// by a fresh one otherwise; a revoked or absent one takes a fresh review.
 func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation) (bool, error) {
 	core, err := i.service.AuthorityCore()
 	if errors.Is(err, business.ErrAuthorityCoreUnconfigured) {
@@ -206,11 +220,8 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 	if err != nil {
 		return false, err
 	}
-	// A module holding no roles is accounts' own record, which Converge's
-	// install made; the core reads it and installs no such module itself. A
-	// target declaring roles (a solution, or a module page) is the core's,
-	// installed here through its review. A target the core has not composed
-	// yet is waited on: the pass that applies its delivery composes it.
+	// A target the core has not composed yet is waited on: the pass that
+	// applies its delivery composes it.
 	m, err := core.Composed(ctx, row.declared.Target)
 	if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
 		return false, fmt.Errorf("%w: %s", errCoreTargetNotComposed, row.declared.Target)
@@ -222,35 +233,26 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 		return false, nil
 	}
 	caller := authority.Person{ID: row.ownerID, Organization: row.orgID}
-	approval, err := core.Review(ctx, caller, row.orgID, row.declared.Target)
+	all, err := core.Installations(ctx, caller, row.orgID)
 	if err != nil {
-		return false, err
-	}
-	approval.OperationID = business.NewIDString()
-	// An installation the core holds pending or active is continued with the
-	// approval it was opened under: the core replays an active same-operation
-	// install idempotently, and the host's plan guard refuses a fresh
-	// operation id against it. A revoked or absent record takes the fresh
-	// review's approval: a revoked installation's receipt names an operation
-	// the core refuses for good (its revision moved), so reusing it parked a
-	// fixture on that refusal on every pass after an uninstall.
-	if store, ok := i.service.Store().(business.CanonicalInstallationSetupStore); ok {
-		id := authority.StableInstallationID(row.orgID, row.declared.Target)
-		if all, err := core.Installations(ctx, caller, row.orgID); err == nil && attemptContinues(all, id) {
-			if plan, err := store.SolutionInstallationPlan(ctx, row.orgID, id); err == nil {
-				approval = plan.Approval
-			}
-		}
-	}
-	inst, err := i.service.InstallAuthoritySolution(ctx, caller, row.orgID, row.declared.Target, row.declared.Role, row.ownerID, &approval)
-	switch {
-	case errors.Is(err, domain.ErrAlreadyInstalled):
-		// Installed already, and active: its grants are granted again,
-		// idempotently.
-		inst.ID = authority.StableInstallationID(row.orgID, row.declared.Target)
-		inst.Status = domain.Active
-	case err != nil:
 		return false, fmt.Errorf("the authority core: %w", err)
+	}
+	// A declaration that selects no installation role leaves it to the
+	// installer: the row's role. One that selects a role is never overridden.
+	role := ""
+	if m.InstallationRole == "" {
+		role = row.declared.Role
+	}
+	inst, held := heldInstallation(all, authority.StableInstallationID(row.orgID, row.declared.Target))
+	if !held || inst.Status != domain.Active {
+		review, err := i.reviewFor(ctx, caller, m, role, inst, held)
+		if err != nil {
+			return false, err
+		}
+		inst, err = i.service.InstallReviewedSolutionAs(ctx, caller, row.orgID, review, role)
+		if err != nil {
+			return false, fmt.Errorf("the authority core: %w", err)
+		}
 	}
 	grants := []authority.RoleRequest{{Organization: row.orgID, InstallationID: inst.ID, Role: domain.InstallerRole, PersonID: row.ownerID}}
 	for _, teamID := range row.allTeamIDs {
@@ -262,6 +264,24 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 		}
 	}
 	return inst.Status == domain.Active, nil
+}
+
+// reviewFor is the review the owner installs m with: the one a pending
+// attempt of theirs was opened under, which resumes it (what that attempt
+// installed is installed again under the same operation, idempotently), or a
+// fresh one.
+func (i *Installations) reviewFor(ctx context.Context, caller authority.Person, m domain.Module, role string, inst domain.Installation, held bool) (*gen.ReviewedSolutionInstall, error) {
+	if store, ok := i.service.Store().(business.CanonicalInstallationSetupStore); ok && held && inst.Status == domain.Pending {
+		plan, err := store.SolutionInstallationPlan(ctx, caller.Organization, inst.ID)
+		if err == nil && plan.Review != nil && plan.Review.ActorId == caller.ID && plan.RequestedRole == role && plan.RequestedOwner == "" {
+			return plan.Review, nil
+		}
+	}
+	target, err := i.service.ResolveInstallationPrincipal(ctx, caller.Organization, m.Principal)
+	if err != nil {
+		return nil, err
+	}
+	return i.service.ReviewSolutionInstallAs(ctx, caller, caller.Organization, target.TargetID, role)
 }
 
 // ConvergeAuthority performs every declared installation in the authority core
@@ -287,14 +307,13 @@ func (i *Installations) ConvergeAuthority(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
-// attemptContinues reports whether the core holds installation id pending or
-// active: the states in which a stored plan's approval still names an
-// operation the core finishes or replays. A revoked or absent record does not.
-func attemptContinues(all []domain.Installation, id string) bool {
+// heldInstallation is the core's installation id among all, whatever its
+// status, and whether the core holds it at all.
+func heldInstallation(all []domain.Installation, id string) (domain.Installation, bool) {
 	for _, inst := range all {
 		if inst.ID == id {
-			return inst.Status == domain.Pending || inst.Status == domain.Active
+			return inst, true
 		}
 	}
-	return false
+	return domain.Installation{}, false
 }

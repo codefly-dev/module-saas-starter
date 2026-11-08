@@ -3,9 +3,12 @@ package adapters
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
+	"accounts/fixtures"
 	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -108,8 +111,8 @@ func requiredPrincipals(review *gen.ReviewedSolutionInstall) []string {
 	return out
 }
 
-// testReviewedClosures holds the reviewed install to the core's closure and
-// its resumption.
+// testReviewedClosures holds the reviewed install to the core's closure, its
+// check-first refusal and its resumption, and the fixture to the same path.
 func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
 	// A module page, a roleless module that binds it, and solutions that
@@ -218,5 +221,86 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 		plan, err := h.store.SolutionInstallationPlan(h.ctx, fixtureOrganization, active.ID)
 		require.NoError(t, err)
 		require.Len(t, plan.Dependencies, 4)
+	})
+
+	// P2: a fixture row for a role-gated target installs through its review,
+	// with the row's owner as the actor, and grants its role to its teams.
+	// The order of the rows does not matter: one organization lists the
+	// solution before the module page it reaches, the other after.
+	t.Run("fixture rows for a solution and a module page converge through their reviews in either order", func(t *testing.T) {
+		const solution = "conformance-closure-fixture"
+		reachingSolution(solution, support, page)
+		dir := t.TempDir()
+		path := filepath.Join(dir, "closure-fixture.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(`users:
+  - {id: 00000000-0000-7000-8000-0000000001f1, email: owner@north.example.test, name: North Owner, role: member, provider: email, provider_id: fixture-north-owner}
+  - {id: 00000000-0000-7000-8000-0000000001f2, email: member@north.example.test, name: North Member, role: member, provider: email, provider_id: fixture-north-member}
+  - {id: 00000000-0000-7000-8000-0000000001f3, email: owner@south.example.test, name: South Owner, role: member, provider: email, provider_id: fixture-south-owner}
+  - {id: 00000000-0000-7000-8000-0000000001f4, email: member@south.example.test, name: South Member, role: member, provider: email, provider_id: fixture-south-member}
+organizations:
+  - {id: 00000000-0000-7000-8000-0000000001c1, name: Example North, owner: owner@north.example.test, members: [{email: member@north.example.test, role: member}]}
+  - {id: 00000000-0000-7000-8000-0000000001c2, name: Example South, owner: owner@south.example.test, members: [{email: member@south.example.test, role: member}]}
+teams:
+  - {name: Readers, org: Example North, members: [member@north.example.test]}
+  - {name: Readers, org: Example South, members: [member@south.example.test]}
+installations:
+  - {org: Example North, target: `+solution+`, role: viewer, owner: owner@north.example.test, teams: [Readers]}
+  - {org: Example North, target: `+page+`, role: viewer, owner: owner@north.example.test, teams: [Readers]}
+  - {org: Example South, target: `+page+`, role: viewer, owner: owner@south.example.test, teams: [Readers]}
+  - {org: Example South, target: `+solution+`, role: viewer, owner: owner@south.example.test, teams: [Readers]}
+`), 0o600))
+		t.Setenv("DEV_FIXTURE_PATH", path)
+		installations, err := fixtures.SeedWithInstallations(h.ctx, h.svc, "closure-fixture")
+		require.NoError(t, err)
+		// The first pass loses the first solution's supporting module: that
+		// row stays pending and every other row converges, in either order.
+		// The next pass resumes the pending attempt from its own review.
+		resolved, err := h.svc.ResolveInstallationPrincipal(h.ctx, "00000000-0000-7000-8000-0000000001c1", support)
+		require.NoError(t, err)
+		lost := errors.New("the store lost the connection")
+		h.faults.failOnce(resolved.TargetID, lost)
+		err = installations.Converge(h.ctx)
+		require.ErrorContains(t, err, lost.Error())
+		require.ErrorContains(t, err, `"`+solution+`" at "Example North"`)
+		north := authority.Person{ID: "00000000-0000-7000-8000-0000000001f1", Organization: "00000000-0000-7000-8000-0000000001c1"}
+		pending, held := h.coreInstallation(t, north, solution)
+		require.True(t, held)
+		require.Equal(t, domain.Pending, pending.Status)
+		require.NoError(t, installations.Converge(h.ctx), "the pending row resumes")
+		resumed, _ := h.coreInstallation(t, north, solution)
+		require.Equal(t, domain.Active, resumed.Status)
+		require.Equal(t, pending.Consent.OperationID, resumed.Consent.OperationID, "the pending attempt was resumed, not superseded")
+
+		orgs := map[string]string{"00000000-0000-7000-8000-0000000001c1": "00000000-0000-7000-8000-0000000001f1", "00000000-0000-7000-8000-0000000001c2": "00000000-0000-7000-8000-0000000001f3"}
+		revisions := map[string]uint64{}
+		for org, owner := range orgs {
+			caller := authority.Person{ID: owner, Organization: org}
+			team := teamNamed(t, h.ctx, h.svc, org, "Readers")
+			for _, target := range []string{solution, page} {
+				inst, held := h.coreInstallation(t, caller, target)
+				require.True(t, held, "%s is not installed at %s", target, org)
+				require.Equal(t, domain.Active, inst.Status, "%s at %s", target, org)
+				require.Equal(t, owner, inst.InstalledBy, "the row's owner installed %s", target)
+				grants, err := h.core.ListRoleGrants(h.ctx, caller, org, inst.ID)
+				require.NoError(t, err)
+				require.Contains(t, grants, domain.RoleGrant{InstallationID: inst.ID, Role: "viewer", TeamID: team}, "the team holds the row's role on %s", target)
+				revisions[org+target] = inst.Revision
+			}
+			require.NotNil(t, h.moduleInstallation(t, org, support), "the solution's review installed its roleless module at %s", org)
+		}
+
+		// A second pass, and a restart's fresh pass over the same rows, are
+		// no-ops: nothing is installed again and no revision moves.
+		require.NoError(t, installations.Converge(h.ctx))
+		restarted, err := fixtures.SeedWithInstallations(h.ctx, h.svc, "closure-fixture")
+		require.NoError(t, err)
+		require.NoError(t, restarted.Converge(h.ctx))
+		for org, owner := range orgs {
+			caller := authority.Person{ID: owner, Organization: org}
+			for _, target := range []string{solution, page} {
+				inst, _ := h.coreInstallation(t, caller, target)
+				require.Equal(t, revisions[org+target], inst.Revision, "a repeated pass moved %s at %s", target, org)
+			}
+		}
 	})
 }

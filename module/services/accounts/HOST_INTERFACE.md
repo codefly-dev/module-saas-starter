@@ -397,10 +397,16 @@ and actual queue-to-receiver journey must be qualified together before delivery.
   solution's, a module page's) to shared core `Uninstall`. It never removes
   supporting module installations. A supporting module's uninstall remains
   the existing Accounts lifecycle, read live by core.
-- Existing fixture setup still records a solution twice: by the product's own records
-  (`saas.accounts.v1.InstallationService`) and by the core; a fixture
-  installation is performed in both. A module's is recorded once, in
-  accounts' records, which the core reads.
+- A workspace fixture row for a role-gated target (a solution, or a module
+  page) is installed as an administrator installs it: the row's owner reviews
+  it and installs that review (`ReviewSolutionInstallAs`,
+  `InstallReviewedSolutionAs`; the row's role is the installation role only
+  where the declaration selects none), which converges its roleless closure;
+  then the owner holds the installer role and each declared team the row's
+  role. A pending attempt of the owner's resumes from its review; an active
+  installation is left as it is and its grants granted again. A row for a
+  roleless module is installed by name. Rows converge in any order. A module's
+  installation is recorded once, in accounts' records, which the core reads.
 - The hop's per-instance pin and its registration proofs are kept in
   Postgres, shared across replicas; the instance is the pod the reviewed
   credential names.
@@ -547,10 +553,11 @@ role, owner and full approval, including empty inputs. It may reuse supporting
 module consent but cannot approve a new module; that requires the combined
 review. An absent solution selector retains the shared API's explicitly supplied
 legacy role. Changed inputs on the same operation refuse, active retries enqueue
-nothing, and fresh approval may supersede pending work. Fixture convergence uses
-its explicitly declared administrator to review and install for the intended
-owner; it does not impersonate a non-administrator or call `InstallAsHost` to
-bypass the reviewed plan. The shared host conformance suite covers this adapter.
+nothing, and fresh approval may supersede pending work. Fixture convergence
+does not use this adapter: its declared administrator reviews and installs the
+combined review (above); it does not impersonate a non-administrator or call
+`InstallAsHost` to bypass the reviewed plan. The shared host conformance suite
+covers this adapter.
 
 `TestIntegration_Gateway_CombinedInstallationAuthentication` executes real login,
 key verification, gateway routing and Accounts handlers for both REST and Connect
