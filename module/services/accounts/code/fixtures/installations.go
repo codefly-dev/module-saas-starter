@@ -150,6 +150,9 @@ func (i *Installations) Converge(ctx context.Context) error {
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	// Converge runs inside a delivery pass: no install step waits on a
+	// solution's setup here (a pending one is resumed by the next pass).
+	ctx = business.WithoutSetupWait(ctx)
 	w := wool.Get(ctx).In("fixtures.Installations")
 	var failures []error
 	remaining := i.pending[:0]
@@ -157,13 +160,19 @@ func (i *Installations) Converge(ctx context.Context) error {
 		if active, err := i.coreInstall(ctx, row); active || err != nil {
 			if err != nil {
 				remaining = append(remaining, row)
-				if !errors.Is(err, errCoreTargetNotComposed) {
+				if !errors.Is(err, errCoreTargetNotComposed) && !setupPending(err) {
 					failures = append(failures, fmt.Errorf("fixture installation %s: %w", row.declared.describe(), err))
 				}
 			}
 			continue
 		}
-		installation, installed, err := i.service.InstallFixtureTarget(ctx, row.ownerID, row.orgID, row.declared.Target, row.declared.Role, row.ownerID)
+		// A module is installed by composition in every organization: a row
+		// naming one that another owner holds is satisfied by it, never
+		// installed again under the row's own owner or role.
+		installation, installed, err := i.composedModule(ctx, row)
+		if err == nil && installation == nil {
+			installation, installed, err = i.service.InstallFixtureTarget(ctx, row.ownerID, row.orgID, row.declared.Target, row.declared.Role, row.ownerID)
+		}
 		switch {
 		case errors.Is(err, business.ErrInstallTargetNotPresent):
 			if !row.waiting {
@@ -195,6 +204,28 @@ func (i *Installations) Converge(ctx context.Context) error {
 	}
 	i.pending = remaining
 	return errors.Join(failures...)
+}
+
+// composedModule is the installation of the module row names that another
+// owner holds at its organization (composition's, under the organization's
+// owner of record): the row is satisfied by it, never installed again under
+// the row's own owner. nil when the target is no module, holds none yet, or
+// is the row owner's own, which the fixture consents to again as before.
+func (i *Installations) composedModule(ctx context.Context, row pendingInstallation) (*gen.Installation, bool, error) {
+	installation, err := i.service.ActiveOrPendingModuleInstallation(ctx, row.orgID, row.declared.Target)
+	if errors.Is(err, business.ErrInstallTargetNotPresent) {
+		return nil, false, nil
+	}
+	if err != nil || installation == nil || installation.GetOwnerPrincipalId() == row.ownerID {
+		return nil, false, err
+	}
+	return installation, false, nil
+}
+
+// setupPending reports a solution row whose setup has not answered yet: the
+// next pass resumes it, so it is no failure of this one.
+func setupPending(err error) bool {
+	return strings.Contains(err.Error(), "INSTALLATION_SETUP_PENDING")
 }
 
 // errCoreTargetNotComposed is a declared installation whose target the

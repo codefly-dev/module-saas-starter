@@ -96,6 +96,19 @@ func (s *Service) canonicalInstallationStep(ctx context.Context, inst domain.Ins
 	if err != nil {
 		return err
 	}
+	if noWait, _ := ctx.Value(noSetupWaitKey{}).(bool); noWait {
+		// One read, no wait: what the setup answered so far decides, and
+		// anything still running is pending at once; the caller's next pass
+		// resumes the same attempt.
+		result, err := s.jobOperations.GetJob(ctx, &jobsv1.GetJobRequest{JobId: jobID})
+		if err != nil {
+			return fmt.Errorf("installation setup result unavailable: %w", err)
+		}
+		if done, err := setupAnswered(result, jobID, inst); done {
+			return err
+		}
+		return domain.NotNow("INSTALLATION_SETUP_PENDING: setup has not acknowledged yet; the next pass resumes the same approved operation")
+	}
 	// This is a bounded wait on the existing durable worker, not a second
 	// delivery loop. Cancellation leaves the same canonical attempt pending.
 	wait, cancel := context.WithTimeout(ctx, InstallationStepTimeout)
@@ -113,18 +126,8 @@ func (s *Service) canonicalInstallationStep(ctx context.Context, inst domain.Ins
 			}
 			return fmt.Errorf("installation setup result unavailable: %w", err)
 		}
-		job := result.GetJob()
-		if job.GetId() != jobID || job.GetScope().GetOrganizationId() != inst.Organization ||
-			job.GetQueue() != InstallationStepQueue || job.GetSource() != "saas.installation" || job.GetTopic() != "installation.step" {
-			return domain.NotNow("INSTALLATION_SETUP_CHANGED: the result does not belong to this setup attempt")
-		}
-		switch result.GetJob().GetState() {
-		case jobsv1.JobState_JOB_STATE_SUCCEEDED:
-			return nil // Only core.Install's final transaction may activate.
-		case jobsv1.JobState_JOB_STATE_DEAD_LETTER:
-			return domain.NotNow("INSTALLATION_SETUP_FAILED: %s", BoundedInstallationReason(result.GetJob().GetLastFailure().GetMessage()))
-		case jobsv1.JobState_JOB_STATE_CANCELED:
-			return domain.NotNow("INSTALLATION_SETUP_CHANGED: the setup attempt was canceled; review again")
+		if done, err := setupAnswered(result, jobID, inst); done {
+			return err
 		}
 		select {
 		case <-wait.Done():
@@ -180,4 +183,36 @@ func (s *Service) WithCanonicalInstallationStep(ctx context.Context, job *jobsv1
 		return err
 	}
 	return use(CanonicalInstallationDelivery{Plan: plan, Token: issued.Token})
+}
+
+// setupAnswered reads one result of the setup job jobID of inst: done when the
+// setup succeeded (nil: only core.Install's final transaction may activate),
+// failed, was canceled, or answers for another attempt; not done while it
+// still runs.
+func setupAnswered(result *jobsv1.GetJobResponse, jobID string, inst domain.Installation) (bool, error) {
+	job := result.GetJob()
+	if job.GetId() != jobID || job.GetScope().GetOrganizationId() != inst.Organization ||
+		job.GetQueue() != InstallationStepQueue || job.GetSource() != "saas.installation" || job.GetTopic() != "installation.step" {
+		return true, domain.NotNow("INSTALLATION_SETUP_CHANGED: the result does not belong to this setup attempt")
+	}
+	switch job.GetState() {
+	case jobsv1.JobState_JOB_STATE_SUCCEEDED:
+		return true, nil
+	case jobsv1.JobState_JOB_STATE_DEAD_LETTER:
+		return true, domain.NotNow("INSTALLATION_SETUP_FAILED: %s", BoundedInstallationReason(job.GetLastFailure().GetMessage()))
+	case jobsv1.JobState_JOB_STATE_CANCELED:
+		return true, domain.NotNow("INSTALLATION_SETUP_CHANGED: the setup attempt was canceled; review again")
+	}
+	return false, nil
+}
+
+type noSetupWaitKey struct{}
+
+// WithoutSetupWait marks ctx for work that runs inside a delivery pass (a
+// fixture's declared installations): an install step there never waits on
+// the solution's setup. It reads the setup's answer once and is pending at
+// once otherwise; the next pass resumes the same attempt. An interactive
+// install keeps the bounded wait.
+func WithoutSetupWait(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noSetupWaitKey{}, true)
 }

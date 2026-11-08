@@ -146,3 +146,41 @@ func TestCanonicalSetupWaitEndingInsideTheReadIsPending(t *testing.T) {
 		}
 	})
 }
+
+// Inside a delivery pass (WithoutSetupWait) a step never waits on a setup:
+// one read decides, a setup still running is pending at once, and the next
+// pass resumes the same attempt and activates it once the setup succeeded.
+func TestCanonicalSetupInsideAPassNeverWaits(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := &canonicalSetupStore{}
+		s, err := business.NewService(store)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state := jobsv1.JobState_JOB_STATE_PROCESSING
+		s.SetJobOperations(canonicalSetupResults{get: func(context.Context, string) (*jobsv1.GetJobResponse, error) {
+			return setupResult(state), nil
+		}})
+		inst := domain.Installation{ID: "installation", Organization: "org", Revision: 7, Status: domain.Pending}
+		ctx := business.WithoutSetupWait(context.Background())
+		start := time.Now()
+		err = s.AuthorityInstallStep()(ctx, inst)
+		if err == nil || !strings.Contains(err.Error(), "INSTALLATION_SETUP_PENDING") {
+			t.Fatalf("a running setup is not pending: %v", err)
+		}
+		if waited := time.Since(start); waited != 0 {
+			t.Fatalf("the step waited %s inside a pass", waited)
+		}
+		state = jobsv1.JobState_JOB_STATE_SUCCEEDED
+		if err := s.AuthorityInstallStep()(ctx, inst); err != nil {
+			t.Fatalf("the next pass does not resume the succeeded attempt: %v", err)
+		}
+		if len(store.attempts) != 2 || store.attempts[0].ID != store.attempts[1].ID || store.attempts[0].Revision != store.attempts[1].Revision {
+			t.Fatal("the resume replaced the attempt")
+		}
+		state = jobsv1.JobState_JOB_STATE_DEAD_LETTER
+		if err := s.AuthorityInstallStep()(ctx, inst); err == nil || !strings.Contains(err.Error(), "INSTALLATION_SETUP_FAILED") {
+			t.Fatalf("a failed setup is not said: %v", err)
+		}
+	})
+}

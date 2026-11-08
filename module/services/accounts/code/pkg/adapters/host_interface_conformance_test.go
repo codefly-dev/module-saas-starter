@@ -15,6 +15,8 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -1234,6 +1236,48 @@ func runHostInterfaceFixture(t *testing.T) {
 	testInstallAssignsAccess(t, closures)
 	testModulePagesAndReach(t, closures)
 	testModulesInstalledByComposition(t, closures)
+
+	// A fixture's solution row runs inside a delivery pass, so its install
+	// step never waits on the solution's setup: a pass with a setup that has
+	// not answered completes at once, the row pending, and a later pass, once
+	// the setup answered, activates the same attempt.
+	t.Run("a pass with a pending fixture solution row completes at once; the row converges on a later pass", func(t *testing.T) {
+		const solution, org, owner = "conformance-fixture-pending", "00000000-0000-7000-8000-0000000001c7", "00000000-0000-7000-8000-0000000001f7"
+		note := wireScope(solution+".note", "read")
+		deliverSolution(t, ctx, conn, signer, conformanceSolution{alias: solution, generation: 1, installationRole: domain.NoInstallationRole,
+			ceilings: []*authorityv1.WorkScopeV1{note}, roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}})
+		path := filepath.Join(t.TempDir(), "pending-fixture.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(`users:
+  - {id: `+owner+`, email: owner@west.example.test, name: West Owner, role: member, provider: email, provider_id: fixture-west-owner}
+organizations:
+  - {id: `+org+`, name: Example West, owner: owner@west.example.test, members: []}
+installations:
+  - {org: Example West, target: `+solution+`, role: viewer, owner: owner@west.example.test}
+`), 0o600))
+		t.Setenv("DEV_FIXTURE_PATH", path)
+		// The host's own setup step: nothing answers its job yet.
+		svc.SetAuthorityInstallStep(nil)
+		t.Cleanup(func() { svc.SetAuthorityInstallStep(acknowledgeSetup) })
+		rows, err := fixtures.SeedWithInstallations(ctx, svc, "pending-fixture")
+		require.NoError(t, err)
+		start := time.Now()
+		require.NoError(t, rows.Converge(ctx), "a setup that has not answered yet fails no pass")
+		require.Less(t, time.Since(start), 5*time.Second, "the pass waited on the setup")
+		west := authority.Person{ID: owner, Organization: org}
+		all, err := core.Installations(ctx, west, org)
+		require.NoError(t, err)
+		i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == solution })
+		require.GreaterOrEqual(t, i, 0)
+		require.Equal(t, domain.Pending, all[i].Status)
+		// The setup answers (the harness's step acknowledges it); the next
+		// pass activates the same attempt.
+		svc.SetAuthorityInstallStep(acknowledgeSetup)
+		require.NoError(t, rows.Converge(ctx))
+		all, err = core.Installations(ctx, west, org)
+		require.NoError(t, err)
+		i = slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == solution })
+		require.Equal(t, domain.Active, all[i].Status)
+	})
 
 	// Last, because the envelope it writes becomes every module's ceiling: a
 	// real envelope write that narrows a module's binding (the write

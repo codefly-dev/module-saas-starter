@@ -212,6 +212,10 @@ type Service struct {
 	authorityCore *authorityCoreState
 	// upgradeCache keeps listings' upgrade_available answers per composition.
 	upgradeCache upgradeCache
+	// composing serializes composition passes (InstallComposedModules): the
+	// ticking reconciler and a delivery's own pass would otherwise race on the
+	// same installation.
+	composing sync.Mutex
 	// admissionKeys persists the hop's registered admission keys
 	// (hop_admission_keys.go). Nil publishes none and registers none.
 	admissionKeys AdmissionKeyStore
@@ -1076,7 +1080,10 @@ func (s *Service) createOrganization(ctx context.Context, actorID, ownerID strin
 	}
 	// The new organization holds every composed module at once, installed by
 	// composition; one that fails is installed by the next delivery pass.
-	if err := s.installComposedModulesAt(ctx, org.Id, ownerID); err != nil {
+	s.composing.Lock()
+	err := s.installComposedModulesAt(ctx, org.Id, ownerID)
+	s.composing.Unlock()
+	if err != nil {
 		wool.Get(ctx).In("CreateOrganization").Warn("the composed modules are not all installed in the new organization yet", wool.Field("org_id", org.Id), wool.ErrField(err))
 	}
 	return &gen.CreateOrganizationResponse{Organization: org}, nil

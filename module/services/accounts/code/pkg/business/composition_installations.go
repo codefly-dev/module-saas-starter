@@ -35,6 +35,10 @@ func (s *Service) InstallComposedModules(ctx context.Context) error {
 	if _, err := s.AuthorityCore(); err != nil {
 		return nil // A host whose core is not built composes nothing yet.
 	}
+	// One pass at a time in this process: a delivery's own pass and the
+	// ticking one never install the same module twice at once.
+	s.composing.Lock()
+	defer s.composing.Unlock()
 	var failures []error
 	for offset := 0; ; offset += compositionPageLimit {
 		var page []*organizationOwner
@@ -62,7 +66,8 @@ func (s *Service) InstallComposedModules(ctx context.Context) error {
 type organizationOwner struct{ id, owner string }
 
 // installComposedModulesAt installs, by composition, every module org may
-// install and holds none of yet (installByComposition).
+// install and holds none of yet (installByComposition). The caller holds
+// s.composing.
 func (s *Service) installComposedModulesAt(ctx context.Context, org, owner string) error {
 	core, err := s.AuthorityCore()
 	if err != nil {
