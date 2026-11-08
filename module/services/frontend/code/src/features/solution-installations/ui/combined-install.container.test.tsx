@@ -73,7 +73,11 @@ const offer = {
 	installationRole: "none",
 	approval: { ...approval, operationId: "" },
 };
-let roles: { name: string }[];
+let roles: {
+	name: string;
+	scopes?: { resourceKind: string; actions: string[] }[];
+}[];
+let modules: unknown[] | undefined;
 let teams: { id: string; name: string }[];
 let requests: unknown[];
 let reviews: number;
@@ -84,6 +88,7 @@ let readOnlyRequests: string[];
 beforeEach(() => {
 	window.sessionStorage.clear();
 	roles = [];
+	modules = undefined;
 	teams = [];
 	requests = [];
 	reviews = 0;
@@ -134,7 +139,7 @@ beforeEach(() => {
 						},
 						{ status: 400 },
 					);
-				return HttpResponse.json(review);
+				return HttpResponse.json(modules ? { ...review, modules } : review);
 			},
 		),
 		http.post(
@@ -187,13 +192,17 @@ describe("combined reviewed installation", () => {
 			screen.queryByRole("button", { name: "Install Supporting module" }),
 		).toBeNull();
 		let dialog = await open();
-		await within(dialog).findByText("Records");
+		await within(dialog).findByText(/Also installs: Records/);
 		expect(
-			within(dialog).getByText(/Already installed — existing access/),
+			within(dialog).getByText("Already installed and reused: Runtime"),
 		).toBeTruthy();
 		expect(
-			within(dialog).getByText(/Optional — will not be installed/),
+			within(dialog).getByText("Optional, not installed: module:optional"),
 		).toBeTruthy();
+		expect(within(dialog).queryByText(/Run jobs in: index/)).toBeNull();
+		fireEvent.click(
+			within(dialog).getByRole("button", { name: "Show technical access" }),
+		);
 		expect(within(dialog).getByText(/Run jobs in: index/)).toBeTruthy();
 		expect(
 			within(dialog).getByText("Publish events in namespaces: example."),
@@ -217,7 +226,7 @@ describe("combined reviewed installation", () => {
 		await within(dialog).findByRole("alert");
 		fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 		dialog = await open();
-		await within(dialog).findByText("Records");
+		await within(dialog).findByText(/Also installs: Records/);
 		fireEvent.click(within(dialog).getByRole("checkbox"));
 		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
 		await waitFor(() => expect(requests).toHaveLength(2));
@@ -253,7 +262,7 @@ describe("combined reviewed installation", () => {
 		fireEvent.click(
 			within(dialog).getByRole("button", { name: "Review again" }),
 		);
-		await within(dialog).findByText("Records");
+		await within(dialog).findByText(/Also installs: Records/);
 		expect(reviews).toBe(2);
 		expect(requests).toEqual([]);
 	});
@@ -325,5 +334,113 @@ describe("combined reviewed installation", () => {
 			roleTeams: { viewer: "team-viewers" },
 			installerRoles: ["viewer"],
 		});
+	});
+	it("the install review leads with what each role can do, grouped by where", async () => {
+		roles = [
+			{
+				name: "editor",
+				scopes: [
+					{ resourceKind: "example.page", actions: ["read"] },
+					{ resourceKind: "example.page", actions: ["write"] },
+				],
+			},
+			{
+				name: "viewer",
+				scopes: [{ resourceKind: "example.page", actions: ["read"] }],
+			},
+		];
+		renderInApp(<Page />);
+		const dialog = await open();
+		const reach = await within(dialog).findByRole("region", {
+			name: "What people can do",
+		});
+		expect(within(reach).getByText("In Example Solution:")).toBeTruthy();
+		expect(reach.textContent).toContain("editor: read and write pages");
+		expect(reach.textContent).toContain("viewer: read pages");
+		const supporting = within(dialog).getByRole("region", {
+			name: "Supporting modules",
+		});
+		expect(
+			reach.compareDocumentPosition(supporting) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+	});
+	it("supporting modules are one line; technical identifiers only behind a disclosure", async () => {
+		// Each module installed here declares one operation on two faces.
+		const twoFaces = JSON.stringify({
+			capabilities: true,
+			operation_audiences: {
+				EXAMPLE__ITEMS_CONNECT_LIST: {
+					audience: "example-items",
+					delegation_mode: "module_actor",
+					invoke_scopes: [{ resource_kind: "item", actions: ["list"] }],
+				},
+				EXAMPLE__ITEMS_GRPC_LIST: {
+					audience: "example-items",
+					delegation_mode: "module_actor",
+					invoke_scopes: [{ resource_kind: "item", actions: ["list"] }],
+				},
+			},
+		});
+		const module = (name: string, reused: boolean) => ({
+			principal: `module:${name}`,
+			target: name,
+			required: true,
+			installationRole: "none",
+			scope: reused
+				? '{"capabilities":true,"queues":["reused-queue"]}'
+				: twoFaces,
+			...(reused ? { reuseInstallationId: `installed-${name}` } : {}),
+			approval: {
+				targetId: `${name}-target`,
+				generation: "1",
+				operationId: approval.operationId,
+			},
+		});
+		modules = [
+			...["Alpha", "Bravo", "Charlie", "Delta"].map((name) =>
+				module(name, false),
+			),
+			...["Echo", "Foxtrot", "Golf", "Hotel"].map((name) => module(name, true)),
+		];
+		renderInApp(<Page />);
+		const dialog = await open();
+		const supporting = await within(dialog).findByRole("region", {
+			name: "Supporting modules",
+		});
+		expect(
+			within(supporting).getByText(
+				"Also installs: Alpha, Bravo, Charlie, Delta — no standing machine access",
+			),
+		).toBeTruthy();
+		expect(
+			within(supporting).getByText(
+				"Already installed and reused: Echo, Foxtrot, Golf, Hotel",
+			),
+		).toBeTruthy();
+		expect(within(dialog).queryByText(/Perform operations/)).toBeNull();
+		expect(dialog.textContent).not.toMatch(/EXAMPLE__|Run jobs in/);
+		fireEvent.click(
+			within(dialog).getByRole("button", { name: "Show technical access" }),
+		);
+		const technical = within(dialog).getByRole("region", {
+			name: "Technical access",
+		});
+		// One line per module for the operation both faces reach, never its id.
+		expect(
+			within(technical).getAllByText(
+				"Perform operations through example-items: list item; all items of this type.",
+			),
+		).toHaveLength(4);
+		expect(
+			within(technical).getAllByText(
+				"Acts at example-items: delegation mode module actor.",
+			),
+		).toHaveLength(4);
+		expect(technical.textContent).not.toMatch(/EXAMPLE__/);
+		// A reused module's consent is unchanged: no detail for it.
+		expect(technical.textContent).not.toMatch(
+			/Echo|Foxtrot|Golf|Hotel|reused-queue/,
+		);
 	});
 });

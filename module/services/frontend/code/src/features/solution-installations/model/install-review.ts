@@ -113,24 +113,48 @@ export function moduleConsentText(raw: string): string[] {
 	] as const) {
 		if (value[key]?.length) lines.push(`${label}: ${value[key].join(", ")}.`);
 	}
+	// One line per audience, axis, resource kind and items, actions merged:
+	// an operation reached on two faces (Connect and gRPC) is one capability,
+	// and a binding's own identifier is never shown.
+	const operations = new Map<
+		string,
+		{ head: string; tail: string; actions: Set<string> }
+	>();
+	const modes = new Set<string>();
 	for (const bindings of [value.read_audiences, value.operation_audiences]) {
-		for (const [binding, access] of Object.entries(bindings ?? {})) {
+		for (const access of Object.values(bindings ?? {})) {
 			if (access.delegation_mode)
-				lines.push(
-					`${access.audience} (${binding}): delegation mode ${access.delegation_mode.replaceAll("_", " ")}.`,
+				modes.add(
+					`Acts at ${access.audience}: delegation mode ${access.delegation_mode.replaceAll("_", " ")}.`,
 				);
 			for (const [key, label] of Object.entries(operationLabels)) {
 				for (const entry of access[key as keyof typeof operationLabels] ?? []) {
 					const items = entry.resource_ids?.length
 						? `items ${entry.resource_ids.join(", ")}`
 						: "all items of this type";
-					lines.push(
-						`${label} through ${access.audience} (${binding}): ${(entry.actions ?? ["read"]).join(", ")} ${entry.resource_kind}; ${items}.`,
+					const id = [access.audience, key, entry.resource_kind, items].join(
+						"\u0000",
 					);
+					const line = operations.get(id) ?? {
+						head: `${label} through ${access.audience}: `,
+						tail: ` ${entry.resource_kind}; ${items}.`,
+						actions: new Set<string>(),
+					};
+					for (const action of entry.actions ?? ["read"])
+						line.actions.add(action);
+					operations.set(id, line);
 				}
 			}
 		}
 	}
+	lines.push(...[...modes].sort());
+	lines.push(
+		...[...operations.values()]
+			.map(
+				({ head, tail, actions }) => `${head}${[...actions].join(", ")}${tail}`,
+			)
+			.sort(),
+	);
 	for (const [name, policy] of Object.entries(value.artifact_policies ?? {})) {
 		// Retain the complete policy, including contract restrictions and digests.
 		// These are read-only declared terms, never editable authority inputs.
@@ -151,4 +175,75 @@ function policyText(value: unknown): string {
 			.map(([key, item]) => `${key.replaceAll("_", " ")}: ${policyText(item)}`)
 			.join("; ");
 	return String(value);
+}
+
+const kindText = (kind: string) => {
+	const name = (kind.split(".").pop() ?? kind).replace(/[_-]+/g, " ");
+	return name.endsWith("s") ? name : `${name}s`;
+};
+
+const listText = (words: readonly string[]) =>
+	words.length < 2
+		? (words[0] ?? "")
+		: `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+
+/**
+ * What a role's scopes let its holder do, in plain words: one phrase per
+ * resource kind with its actions merged ("read and write pages"), never an
+ * operation or a binding.
+ */
+export function scopesText(scopes: readonly OfferScope[]): string {
+	const kinds = new Map<string, { actions: Set<string>; attached: boolean }>();
+	for (const scope of scopes) {
+		const entry = kinds.get(scope.resourceKind) ?? {
+			actions: new Set<string>(),
+			attached: true,
+		};
+		for (const action of scope.actions) entry.actions.add(action);
+		entry.attached &&= scope.attachedOnly;
+		kinds.set(scope.resourceKind, entry);
+	}
+	return (
+		[...kinds]
+			.map(
+				([kind, { actions, attached }]) =>
+					`${listText([...actions])} ${attached ? "attached " : ""}${kindText(kind)}`,
+			)
+			.join("; ") || "no data access"
+	);
+}
+
+/** What each declared role lets people do, grouped by where it applies. */
+export function roleReach(offer: Pick<ReviewedOffer, "roles" | "target">) {
+	return [
+		{
+			where: `In ${offer.target}`,
+			roles: offer.roles.map((role) => ({
+				role: role.name,
+				text: scopesText(role.scopes),
+			})),
+		},
+	];
+}
+
+/** The supporting modules of a review, as the one-line summaries it shows. */
+export function supportingSummary(
+	modules: readonly {
+		principal: string;
+		target: string;
+		required: boolean;
+		reuseInstallationId: string;
+		installationRole: string;
+	}[],
+) {
+	const name = (m: (typeof modules)[number]) => m.target || m.principal;
+	const installs = modules.filter((m) => m.required && !m.reuseInstallationId);
+	return {
+		installs: installs.map(name),
+		standing: installs.some((m) => m.installationRole !== "none"),
+		reused: modules
+			.filter((m) => m.required && m.reuseInstallationId)
+			.map(name),
+		optional: modules.filter((m) => !m.required).map(name),
+	};
 }

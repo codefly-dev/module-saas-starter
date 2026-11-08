@@ -33,6 +33,11 @@ import {
 	teamAssignment,
 } from "../model/team-assignment";
 import { DeclaredAccess } from "./declared-access";
+import {
+	RoleReach,
+	SupportingModules,
+	TechnicalAccess,
+} from "./install-review-summary";
 import { InstallationTeamAssignment } from "./installation-team-assignment";
 
 const offers = createClient(OfferService, apiTransport);
@@ -128,53 +133,15 @@ export function InstallSolutionDialog({
 				{review.isError && <p role="alert">{hostRefusal(review.error)}</p>}
 				{data && (
 					<div className="space-y-4 text-sm">
+						<RoleReach offer={data.offer} />
 						<DeclaredAccess
 							subject={solution.kind === "module" ? "module" : "solution"}
 							installationRole={data.consent.installationRole}
 							offer={data.offer}
 						/>
-						<section aria-label="Supporting modules" className="space-y-3">
-							<h3 className="font-medium">Supporting modules</h3>
-							{data.modules.length === 0 && (
-								<p>No supporting modules are required.</p>
-							)}
-							{data.modules.map(({ module, access }) => (
-								<div
-									key={module.principal}
-									className="rounded border p-3 space-y-1"
-								>
-									<p className="font-medium">
-										{module.target || module.principal}
-									</p>
-									{module.release && <p>{module.release}</p>}
-									<p>
-										{!module.required
-											? "Optional — will not be installed."
-											: module.reuseInstallationId
-												? "Already installed — existing access will be reused unchanged."
-												: "Required — will be installed with its own consent record."}
-									</p>
-									{module.required && (
-										<>
-											{!module.reuseInstallationId &&
-												module.installationRole === "none" && (
-													<p>No standing machine access is granted.</p>
-												)}
-											<ul className="list-disc pl-5">
-												{access.map((line) => (
-													<li key={line}>{line}</li>
-												))}
-											</ul>
-										</>
-									)}
-								</div>
-							))}
-							<p>
-								Supporting modules keep their own installation and revocation
-								records. Uninstalling this solution keeps shared modules
-								installed.
-							</p>
-						</section>
+						<SupportingModules
+							modules={data.modules.map(({ module }) => module)}
+						/>
 						{!upgrade && roles.length > 0 && (
 							<InstallationTeamAssignment
 								assignment={assignment}
@@ -200,6 +167,7 @@ export function InstallSolutionDialog({
 								}
 							/>
 						)}
+						<TechnicalAccess offer={data.offer} modules={data.modules} />
 						<label className="flex items-start gap-2">
 							<input
 								type="checkbox"
@@ -207,8 +175,9 @@ export function InstallSolutionDialog({
 								onChange={(event) => setApproved(event.target.checked)}
 								disabled={isPending}
 							/>
-							I approve this {upgrade ? "release" : "target"} and the required
-							module access shown above.
+							I approve this {upgrade ? "release" : "target"} and the access it
+							and its supporting modules require, including the technical
+							access.
 						</label>
 					</div>
 				)}

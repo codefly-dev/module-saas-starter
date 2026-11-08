@@ -520,6 +520,17 @@ review sent again, applies the same one; nothing in session storage and no
 client-side grant loop. An update keeps its teams and grants and shows no
 assignment. Set up keeps its own grant form for every later change.
 
+**The review leads with what people can do.** The dialog shows, in order: each
+declared role in plain words, its scopes merged per resource kind ("editor:
+read and write pages"), grouped by where they apply (`roleReach`, the one
+place the core's reach plugs in once its offer carries it); the supporting
+modules as one line each for what the install brings ("Also installs: …") and
+what it reuses; team access; and one collapsed "Show technical access" holding
+the declared operations and, per module this install consents to, its access
+with an operation reached on Connect and gRPC shown once and no binding
+identifier. A reused module shows no detail: its consent is unchanged. This is
+presentation only; the reviewed request still carries every entry.
+
 The combined review describes Accounts `namespaces` as event publication and
 `external_namespaces` as eligibility for declared external events to reach the
 organization's configured outbound webhook; neither is storage access. Preparing
