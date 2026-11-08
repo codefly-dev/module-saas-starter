@@ -96,7 +96,7 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 		if err != nil {
 			return nil, err
 		}
-		entry.InstallationRole = supportingInstallationRole(dependency.Module)
+		entry.InstallationRole = dependency.Module.InstallationRole
 		entry.Approval = &installationv1.ConsentApproval{TargetId: target.TargetID, Generation: target.AppliedGeneration,
 			OperationId: uuid.NewSHA1(uuid.MustParse(operation), []byte(dependency.Principal)).String()}
 		snapshot := s.moduleRegistrySnapshot()
@@ -131,7 +131,7 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 				return nil, domain.NotNow("%s has insufficient current consent; review its access before installing this solution", dependency.Describe())
 			}
 			entry.ReuseInstallationId, entry.Approval.ExpectedRevision, scope = inst.Id, state.Revision, state.Scope
-		} else if entry.InstallationRole != domain.NoInstallationRole {
+		} else if entry.InstallationRole = supportingInstallationRole(dependency.Module); entry.InstallationRole != domain.NoInstallationRole {
 			return nil, domain.NotNow("%s cannot be installed automatically: its installation authority is absent or unsupported", dependency.Describe())
 		} else {
 			// Revoked history still owns the revision a fresh consent must name.
@@ -345,7 +345,10 @@ func (s *Service) InstallAuthoritySolution(ctx context.Context, caller authority
 // toward a module in an organization only where that module has an
 // installation. A module that declares roles but names none of them its
 // installation role is still undeclared: the host never chooses among them,
-// and the review refuses it.
+// and the review refuses it. A reused installation keeps whatever it holds,
+// so the entry carries the declaration as written and this is read only for
+// a fresh install. The store holds the same rule under its delivery locks
+// (lock_module_no_standing_declaration, migration 67).
 func supportingInstallationRole(m domain.Module) string {
 	if undeclaredAuthorityIsNone(m) {
 		return domain.NoInstallationRole

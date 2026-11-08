@@ -12,6 +12,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/stretchr/testify/require"
 )
 
@@ -83,9 +84,57 @@ func TestModuleDeclaredNonePersistsConsentWithoutStandingGrant(t *testing.T) {
 	params.RoleID = business.NewIDString()
 	err = testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error { _, err := testStore.InstallSolution(ctx, params); return err })
 	require.Error(t, err, "a role input cannot be silently discarded")
+	// A declaration that names roles but selects none of them leaves the host a
+	// choice it never makes: the store refuses the marker.
 	params.RoleID = ""
 	m.InstallationRole = ""
+	m.Roles = map[string][]*basev0.WorkScopeV1{"viewer": {{ResourceKind: "records", Actions: []string{"read"}}}}
 	require.NoError(t, testStore.AuthorityCore().Write(testCtx, func(tx authority.Tx) error { return tx.PutModule(m) }))
 	err = testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error { _, err := testStore.InstallSolution(ctx, params); return err })
 	require.ErrorContains(t, err, "does not select no standing authority")
+}
+
+// Blue 2026-11-08: four delivered modules declare neither an installation role
+// nor any role, and a solution's review installs each of them holding none
+// (business.supportingInstallationRole). The store's own copy of the rule
+// (lock_module_no_standing_declaration, migration 67) has to agree, or the
+// install the review accepted is refused one step later.
+func TestModuleDeclaringNoAuthorityAtAllPersistsConsentWithoutStandingGrant(t *testing.T) {
+	owner := seedUser(t)
+	seedHumanPrincipal(t, owner, "Jane Doe")
+	org := seedOrg(t, owner)
+	require.NoError(t, testStore.As(business.Identity{OrgID: org}).AddOrgMember(testCtx, owner, "admin"))
+	alias := uniqueAlias("undeclared-module")
+	binding := "acme.test." + alias
+	target := declarePresenceKind(t, binding, alias, business.SolutionDeclaredKindModule)
+	m := domain.Module{Name: alias, Principal: alias, Kind: domain.KindModule, Generation: 1}
+	require.NoError(t, testStore.AuthorityCore().Write(testCtx, func(tx authority.Tx) error { return tx.PutModule(m) }))
+	params := &business.InstallSolutionParams{OrgID: org, TargetID: target, Kind: "module", RegistryBindingID: binding,
+		RegistryPrincipalID: business.ModulePrincipalID(alias), AgentIdentifier: "acme.example/" + alias + ":1.0.0",
+		OwnerPrincipalID: owner, GrantedBy: owner, NoStandingAuthority: true, Scope: &business.InstallationScope{Capabilities: true}}
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		params.EnvelopeRevision, err = testStore.LatestModuleEnvelopeRevision(ctx)
+		return err
+	}))
+	var installation *gen.Installation
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		var err error
+		installation, err = testStore.InstallSolution(ctx, params)
+		return err
+	}))
+	require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, installation.Status)
+	require.NoError(t, testStore.WithOrgTx(testCtx, org, func(ctx context.Context) error {
+		var count int
+		require.NoError(t, storetx.Tx(ctx).QueryRow(ctx, `SELECT count(*) FROM public.scope_grants WHERE org_id=$1 AND subject_kind='principal' AND subject_id=$2`, org, installation.AgentPrincipalId).Scan(&count))
+		require.Zero(t, count, "no standing grant")
+		id, role, _, err := testStore.InstallationRoleRevision(ctx, org, installation.Id)
+		require.NoError(t, err)
+		require.Empty(t, id)
+		require.Empty(t, role)
+		_, health, err := testStore.GetInstallation(ctx, org, installation.Id)
+		require.NoError(t, err)
+		require.Equal(t, gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY, health)
+		return nil
+	}))
 }

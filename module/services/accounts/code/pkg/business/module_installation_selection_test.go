@@ -17,7 +17,7 @@ import (
 
 func TestModuleNoStandingSelectionRequiresCurrentPairedDeclaration(t *testing.T) {
 	for _, tc := range []struct {
-		name, declaration, role string
+		name, declaration, role    string
 		stale, roles, denied, none bool
 	}{
 		{"declared none", "none", "", false, false, false, true},
