@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 
 	"github.com/codefly-dev/core/wool"
 
@@ -40,7 +41,7 @@ func DirectorySingleton() *DirectoryServer { return directorySingleton }
 
 func SolutionEntitlementSingleton() *SolutionEntitlementServer { return solutionEntitlementSingleton }
 
-func configurePermissionServerKeys() {
+func configurePermissionServerKeys() error {
 	plugin := permissionsplugin.Default()
 	delegationSingleton.SigningSecret = plugin.HMACSecret()     // gitleaks:allow -- runtime key assignment
 	delegationSingleton.SigningEd25519Key = plugin.Ed25519Key() // gitleaks:allow -- runtime key assignment
@@ -60,10 +61,16 @@ func configurePermissionServerKeys() {
 		Seals:      seals,
 	})
 	// The host interfaces are decided by the shared authority core, which signs
-	// with the same Work Context key Keys publishes.
+	// with the same Work Context key Keys publishes. A module installed by name
+	// whose target now declares roles is not served past: the host refuses to
+	// start, naming each one.
 	if service != nil {
 		if err := service.ConfigureAuthorityCore(context.Background(), plugin.WorkContextIssuer(), plugin.WorkContextKeyID(), plugin.Ed25519Key()); err != nil {
+			if errors.Is(err, business.ErrUnreviewedModulePage) {
+				return err
+			}
 			wool.Get(context.Background()).In("configurePermissionServerKeys").Warn("the authority core is not configured; every host interface call answers Unavailable", wool.ErrField(err))
 		}
 	}
+	return nil
 }

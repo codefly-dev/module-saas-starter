@@ -244,7 +244,13 @@ is active once its closure is converged, and it holds no standing authority
 (`installation_role: none`). A module declaring no roles is never offered or
 installed by an administrator: it is installed when a closure reaches it,
 holding none, as accounts' own record, and `InstallSolution` and the by-name
-install refuse a role-gated module by name. The frontend lists a module page
+install refuse a role-gated module by name. A module installed by name
+before it declared roles is never carried over silently: when the host
+configures the core at boot and finds an active module installation of its
+own whose target is now role-gated, it refuses to start
+(`ErrUnreviewedModulePage`), naming the organization, target and
+installation of each, and the remedy (uninstall it, then install the target
+through its review). The frontend lists a module page
 beside the solutions from the one `ListOffers` read and installs it through
 the same review dialog; "Supporting module administration" lists exactly the
 modules the offers do not name.

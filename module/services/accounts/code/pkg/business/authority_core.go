@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/workcontext"
 
@@ -68,7 +69,9 @@ func (k staticKeys) PublicKeys(context.Context) (map[string]ed25519.PublicKey, e
 // (HostInstallsModules), so an uninstall or a narrowed ceiling ends it there at
 // once. Every applied delivery is composed in the core, and every declaration
 // a live consent approved that the store does not keep yet is written
-// (keepApprovedDeclarations).
+// (keepApprovedDeclarations). A module installed by name whose target now
+// declares roles fails it with ErrUnreviewedModulePage, which a host does not
+// start past.
 func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID string, key ed25519.PrivateKey) error {
 	state := s.authorityCoreState()
 	core, err := s.newAuthorityCore(issuer, keyID, key)
@@ -82,10 +85,65 @@ func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID stri
 	if err := s.reconcileAuthorityCore(ctx); err != nil {
 		failures = append(failures, fmt.Errorf("authority core: compose the applied deliveries: %w", err))
 	}
+	if err := s.refuseUnreviewedModulePages(ctx); err != nil {
+		failures = append(failures, err)
+	}
 	if err := s.keepApprovedDeclarations(ctx); err != nil {
 		failures = append(failures, fmt.Errorf("authority core: keep the approved declarations: %w", err))
 	}
 	return errors.Join(failures...)
+}
+
+// ErrUnreviewedModulePage is a host that must not start: an active module
+// installation of accounts' own (kind module, installed by name) whose target
+// now declares roles. A role-gated target's entitlement is read from the
+// core's record alone, so such an installation would silently lose it, and it
+// could not be installed again through its review without orphaning what it
+// was granted. Boot refuses instead, naming each one; the remedy is to
+// uninstall it and install the target through its review.
+var ErrUnreviewedModulePage = errors.New("a module declaring roles is installed by name, not through its review")
+
+// refuseUnreviewedModulePages answers ErrUnreviewedModulePage naming every
+// active module installation of this host's own (not the core's: it carries
+// no principal) whose composed target is role-gated (decide.RoleGated).
+func (s *Service) refuseUnreviewedModulePages(ctx context.Context) error {
+	cores, ok := s.store.(AuthorityCoreStore)
+	if !ok {
+		return nil
+	}
+	var found []string
+	// No consent reading: the installation's own status decides, not what its
+	// consent allows today.
+	err := cores.AuthorityCoreWithConsent(nil).Read(ctx, func(tx authority.Tx) error {
+		found = nil
+		modules, err := tx.Modules()
+		if err != nil {
+			return err
+		}
+		byName := make(map[string]domain.Module, len(modules))
+		for _, m := range modules {
+			byName[m.Name] = m
+		}
+		all, err := tx.Installations("")
+		if err != nil {
+			return err
+		}
+		for _, inst := range all {
+			m, composed := byName[inst.Target]
+			if inst.PrincipalID != "" || inst.Status != domain.Active || !composed || m.Kind == domain.KindSolution || !decide.RoleGated(m) {
+				continue
+			}
+			found = append(found, fmt.Sprintf("organization %s, target %s, installation %s", inst.Organization, inst.Target, inst.ID))
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("authority core: read the module installations: %w", err)
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %s; uninstall each one, then install its target through its review", ErrUnreviewedModulePage, strings.Join(found, "; "))
 }
 
 func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey) (*authority.Service, error) {
