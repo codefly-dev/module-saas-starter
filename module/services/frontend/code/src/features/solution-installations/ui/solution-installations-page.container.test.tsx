@@ -11,6 +11,7 @@ import { HttpResponse, http, type JsonBodyType } from "msw";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "@/app/admin/modules/page";
+import SolutionsPage from "@/app/admin/solutions/page";
 import { FRONTEND_NAVIGATION } from "@/gen/saas/frontend/v1/plugin_catalog";
 import type { OrgRole, PlatformRole } from "@/lib/auth-session";
 import { canPresent } from "@/lib/plugins/presentation";
@@ -1790,4 +1791,156 @@ it("shows pending and failed installations and retries the failed step", async (
 	fireEvent.click(screen.getByRole("button", { name: "Retry expenses" }));
 	expect(await screen.findByText("Pending")).toBeTruthy();
 	expect(screen.queryByRole("button", { name: "Retry expenses" })).toBeNull();
+});
+
+describe("Solutions lists a module page beside the solutions, by what it declares", () => {
+	const PAYROLL_TARGET = "aaaaaaaa-0000-4000-8000-000000000003";
+	const DIRECTORY_TARGET = "aaaaaaaa-0000-4000-8000-000000000004";
+	const ARCHIVE_TARGET = "aaaaaaaa-0000-4000-8000-000000000005";
+	const DIRECTORY_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000004";
+	const catalogue = {
+		solutions: [
+			{
+				...available.solutions[1],
+				kind: "solution",
+				targetId: PAYROLL_TARGET,
+				routeAlias: "payroll",
+				releaseName: "payroll",
+			},
+			// A module page: it declares roles, so it is a solution's peer here.
+			available.solutions[1],
+			// A supporting module: the authority reads no roles of it.
+			available.solutions[0],
+			{
+				...available.solutions[0],
+				targetId: DIRECTORY_TARGET,
+				routeAlias: "directory",
+				releaseName: "directory",
+			},
+			// A module whose roles cannot be read right now.
+			{
+				...available.solutions[1],
+				targetId: ARCHIVE_TARGET,
+				routeAlias: "archive",
+				releaseName: "archive",
+			},
+		],
+	};
+	const installed = {
+		installations: [
+			installations.installations[0],
+			{
+				...installations.installations[0],
+				installation: {
+					...installations.installations[0].installation,
+					id: DIRECTORY_INSTALLATION,
+					targetId: DIRECTORY_TARGET,
+				},
+				target: catalogue.solutions[3],
+				grantedTeams: [],
+				inheritedTeams: [],
+			},
+		],
+	};
+	const declaresRoles = (target: string) =>
+		HttpResponse.json({
+			target,
+			installationRole: "none",
+			roles: [{ name: "viewer", scopes: [] }],
+		});
+
+	// The authority's answer per module: roles, none (NotFound), or a failure
+	// that is no answer until it is read again.
+	function serveSolutions({ archiveFailsTimes = 0 } = {}) {
+		const reviewed: string[] = [];
+		serve({ availableBody: catalogue, installationsBody: installed });
+		server.use(
+			http.post(REVIEW_OFFER, async ({ request }) => {
+				const { target } = (await request.json()) as { target: string };
+				reviewed.push(target);
+				if (target === "expenses")
+					return HttpResponse.json(
+						{ code: "not_found", message: "declares no roles" },
+						{ status: 404 },
+					);
+				if (
+					target === "archive" &&
+					reviewed.filter((t) => t === "archive").length <= archiveFailsTimes
+				)
+					return HttpResponse.json(
+						{ code: "unavailable", message: "authority restarting" },
+						{ status: 503 },
+					);
+				return declaresRoles(target);
+			}),
+		);
+		return reviewed;
+	}
+
+	it("lists solutions and module pages, keeps a roleless module out, and says what it could not read", async () => {
+		const reviewed = serveSolutions({ archiveFailsTimes: 1 });
+		renderInApp(<SolutionsPage />);
+
+		const availableTable = await screen.findByRole("table", {
+			name: "Available solutions",
+		});
+		expect(
+			within(availableTable).getByRole("columnheader", {
+				name: "Solution or module page",
+			}),
+		).toBeTruthy();
+		await within(availableTable).findByText("payroll");
+		await within(availableTable).findByText("ledger");
+		await within(availableTable).findByText("directory");
+		expect(within(availableTable).queryByText("expenses")).toBeNull();
+		expect(within(availableTable).queryByText("archive")).toBeNull();
+
+		const installedTable = await screen.findByRole("table", {
+			name: "Installed solutions",
+		});
+		await within(installedTable).findByText("directory");
+		expect(within(installedTable).queryByText("expenses")).toBeNull();
+
+		// An unread module is withheld and said, never shown as roleless.
+		const banner = await screen.findByText(
+			"The roles some modules declare could not be read",
+		);
+		expect(screen.getByText(/authority restarting/)).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+		await within(availableTable).findByText("archive");
+		await waitFor(() => expect(banner.isConnected).toBe(false));
+		// Each module is reviewed once, however many rows name it, and only the
+		// failed read again; a solution is never asked.
+		expect(reviewed.sort()).toEqual([
+			"archive",
+			"archive",
+			"directory",
+			"expenses",
+			"ledger",
+		]);
+	});
+
+	it("installs a module page from Solutions through its reviewed roles", async () => {
+		serveSolutions();
+		renderInApp(<SolutionsPage />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Install ledger" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		await within(dialog).findByText("Module access");
+		expect(
+			within(dialog).queryByRole("combobox", { name: "Agent role" }),
+		).toBeNull();
+	});
+
+	it("still lists every module on supporting module administration without reading roles", async () => {
+		const reviewed = serveSolutions();
+		renderInApp(<Page />);
+		const availableTable = await screen.findByRole("table", {
+			name: "Available modules and solutions",
+		});
+		for (const alias of ["payroll", "ledger", "expenses", "directory", "archive"])
+			expect(within(availableTable).getByText(alias)).toBeTruthy();
+		expect(reviewed).toEqual([]);
+	});
 });

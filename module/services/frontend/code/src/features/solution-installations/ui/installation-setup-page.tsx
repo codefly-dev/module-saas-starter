@@ -70,30 +70,33 @@ export function InstallationSetupPage({
 	const row = (query.data ?? []).find(
 		(entry) => entry.installation?.id === installationId,
 	);
+	// Where this installation is listed follows what it declares, not its
+	// kind: a solution and a module page sit on Solutions; only a module the
+	// authority reads no roles of is a supporting module. One read serves the
+	// header and the setup below.
+	const rolesDeclared = useRolesDeclared(
+		row?.target?.routeAlias ?? "",
+		row?.target?.kind,
+	);
+	const supporting = rolesDeclared === false;
 
 	return (
 		<div className="space-y-6">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="space-y-1">
 					<Link
-						href={
-							row?.target?.kind === "module"
-								? "/admin/modules"
-								: "/admin/solutions"
-						}
+						href={supporting ? "/admin/modules" : "/admin/solutions"}
 						className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
 					>
 						<ArrowLeft className="h-3 w-3" />
-						{row?.target?.kind === "module"
-							? "Supporting modules"
-							: "Solutions"}
+						{supporting ? "Supporting modules" : "Solutions"}
 					</Link>
 					<h1 data-slot="page-title" className="type-page-title">
 						{row?.target?.routeAlias || "This installation"}
 					</h1>
 					<p className="text-muted-foreground">
-						{entryKindText(row)} — what it is, what it still needs before it
-						will work, and who may reach it.
+						{entryKindText(row, rolesDeclared)} — what it is, what it still
+						needs before it will work, and who may reach it.
 					</p>
 				</div>
 				<Button
@@ -119,7 +122,11 @@ export function InstallationSetupPage({
 					description="It may have been uninstalled, or it belongs to another organization. Go back to Solutions."
 				/>
 			) : (
-				<InstallationSetup orgId={orgId} row={row} />
+				<InstallationSetup
+					orgId={orgId}
+					row={row}
+					rolesDeclared={rolesDeclared}
+				/>
 			)}
 		</div>
 	);
@@ -128,9 +135,12 @@ export function InstallationSetupPage({
 function InstallationSetup({
 	orgId,
 	row,
+	rolesDeclared,
 }: {
 	orgId: string;
 	row: OrganizationInstallation;
+	/** Whether the target declares roles, from the page's one read of them. */
+	rolesDeclared: boolean | undefined;
 }) {
 	const installationId = row.installation?.id ?? "";
 	const fact = installedRows([row])[0];
@@ -151,7 +161,6 @@ function InstallationSetup({
 	// This host's own team access card is for a record carrying a host scope
 	// root and no declared roles: a module page that declares roles is set up
 	// through them alone, as a solution is, so it offers no second grant form.
-	const rolesDeclared = useRolesDeclared(target, row.target?.kind);
 	const hasHostScopeRoot =
 		Boolean(row.rootScopePath) &&
 		(row.target?.kind !== "module" || rolesDeclared === false);
@@ -296,7 +305,7 @@ function InstallationSetup({
 								tone="info"
 								title="A grant here also carries the modules this reaches"
 							>
-								{entryKindText(row)} {name} reaches{" "}
+								{entryKindText(row, rolesDeclared)} {name} reaches{" "}
 								{offers.map((offer) => offer.label).join(", ")} on the asking
 								person&apos;s own session, from its own applied declaration. A
 								grant carries each of them: what {name} declares it consumes

@@ -17,10 +17,15 @@ The gateway stamps `kind` from the applied declaration; a remote manifest cannot
 choose its routing kind. A shared module has one deployment, while each
 organisation installs it and grants team access independently through the same
 target-based entitlement projection. The organization administration destination
-is labelled "Solutions" and retains `/admin/solutions`, listing solutions only;
-supporting modules are administered at `/admin/modules`, which it links to. Its
-empty state directs an administrator to the platform operator when nothing is
-available.
+is labelled "Solutions" and retains `/admin/solutions`, listing solutions and
+module pages: a module that declares roles (the authority's offer review
+answers, through `useRolesDeclaredFor`) is listed, installed and set up there
+exactly like a solution, and its setup page leads back there. A module the
+authority reads no roles of is a supporting module, installed by a solution's
+closure and administered at `/admin/modules`, which Solutions links to; a module
+whose roles could not be read is withheld and the failed read is shown, never
+passed off as a supporting one. Its empty state directs an administrator to the
+platform operator when nothing is available.
 Each installed row links to `/admin/solutions/<installation id>`, that
 installation's setup page: what it is and whether it is READY (the host's
 `InstallationReadiness`, which is not the record's health), the unmet conditions

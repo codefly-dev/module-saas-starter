@@ -463,6 +463,11 @@ it("sets up a module page that declares roles through Setup's role grant form", 
 	// Its roles are the one grant form: no host team access card beside them.
 	expect(screen.queryByText("Team access on this host")).toBeNull();
 	expect(screen.queryByRole("button", { name: "Grant a team" })).toBeNull();
+	// A module page is listed with the solutions, so that is where it leads back.
+	expect(
+		screen.getByRole("link", { name: "Solutions" }).getAttribute("href"),
+	).toBe("/admin/solutions");
+	expect(screen.getByText(/^Module page — /)).toBeTruthy();
 });
 
 // A module that declares no roles keeps this host's own team access card.
@@ -478,4 +483,11 @@ it("keeps the host team access card for a module the authority reads no roles of
 	render();
 	expect(await screen.findByText("Team access on this host")).toBeTruthy();
 	expect(screen.queryByRole("region", { name: "Team access" })).toBeNull();
+	// A supporting module is administered apart from the solutions.
+	expect(
+		screen
+			.getByRole("link", { name: "Supporting modules" })
+			.getAttribute("href"),
+	).toBe("/admin/modules");
+	expect(screen.getByText(/^Module — /)).toBeTruthy();
 });

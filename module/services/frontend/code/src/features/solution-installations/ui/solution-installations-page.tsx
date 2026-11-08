@@ -72,7 +72,10 @@ import { GrantTeamDialog } from "./grant-team-dialog";
 import { InstallModuleDialog } from "./install-module-dialog";
 import { InstallModulePageDialog } from "./install-module-page-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
-import { useRolesDeclaredReview } from "./when-roles-declared";
+import {
+	useRolesDeclaredFor,
+	useRolesDeclaredReview,
+} from "./when-roles-declared";
 
 /**
  * One fact. A gap reads as its label in muted italics with what it means on
@@ -168,6 +171,26 @@ function SolutionInstallationsForOrganization({
 		error: rolesUnread,
 		retry: readRolesAgain,
 	} = useRolesDeclaredReview(installing?.routeAlias ?? "", installing?.kind);
+	// Solutions lists a module beside the solutions only when it declares
+	// roles — a module page — which is the authority's answer per module, read
+	// once here and shared with the install above. A module not yet answered
+	// is withheld, never shown as a supporting one; a failed read is said.
+	const {
+		declared: listedTargets,
+		error: pagesUnread,
+		retry: readPagesAgain,
+	} = useRolesDeclaredFor(
+		[
+			...(available.data ?? []),
+			...(installed.data ?? []).flatMap((row) =>
+				row.target ? [row.target] : [],
+			),
+		],
+		!showModules,
+	);
+	const listed = (target: AvailableSolution | undefined) =>
+		showModules ||
+		(target !== undefined && listedTargets[target.routeAlias] === true);
 	const installModule = (
 		target: AvailableSolution,
 		values: InstallSolutionValues,
@@ -205,7 +228,7 @@ function SolutionInstallationsForOrganization({
 					<p className="text-muted-foreground">
 						{showModules
 							? "Supporting modules install and converge with the solutions that require them. This page is for administering one directly."
-							: "Choose a solution and review its access and supporting modules together. Choose a team for each of its roles during review; access is granted only once setup is active."}
+							: "The solutions and module pages this organization can install. Choose one and review its access and supporting modules together; choose a team for each of its roles during review or in Set up, and access is granted only once setup is active."}
 					</p>
 					{!showModules && (
 						<Link
@@ -248,6 +271,7 @@ function SolutionInstallationsForOrganization({
 				<>
 					<AvailableSection
 						showModules={showModules}
+						listed={listed}
 						query={available}
 						installing={
 							(Boolean(installing) && rolesDeclared === undefined) ||
@@ -266,8 +290,23 @@ function SolutionInstallationsForOrganization({
 						orgId={orgId}
 						query={installed}
 						showModules={showModules}
+						listed={listed}
 					/>
 				</>
+			)}
+
+			{!showModules && pagesUnread !== undefined && (
+				<Banner
+					tone="danger"
+					title="The roles some modules declare could not be read"
+				>
+					{hostRefusal(pagesUnread)} A module is listed here with the solutions
+					only once it is known to declare roles, so those modules are not
+					listed yet.{" "}
+					<Button size="sm" variant="outline" onClick={readPagesAgain}>
+						Try again
+					</Button>
+				</Banner>
 			)}
 
 			{/* A module's roles are read before its form opens: which form is
@@ -363,11 +402,13 @@ function SolutionInstallationsForOrganization({
 
 function AvailableSection({
 	showModules,
+	listed,
 	query,
 	installing,
 	onInstall,
 }: {
 	showModules: boolean;
+	listed: (target: AvailableSolution | undefined) => boolean;
 	query: ReturnType<typeof useAvailableSolutions>;
 	installing: boolean;
 	onInstall: (solution: AvailableSolution) => void;
@@ -378,11 +419,7 @@ function AvailableSection({
 	const stale = staleReadNotice(outcome, "the available modules and solutions");
 	const rows = withheld
 		? []
-		: availableRows(
-				(query.data ?? []).filter(
-					(target) => showModules || target.kind === "solution",
-				),
-			);
+		: availableRows((query.data ?? []).filter(listed));
 
 	return (
 		<Card>
@@ -406,7 +443,7 @@ function AvailableSection({
 							"the available modules and solutions",
 							showModules
 								? "No module or solution is available to this organization. Ask your platform operator to make one available, then refresh this list."
-								: "No solution is available to this organization. Ask your platform operator to make one available, then refresh this list.",
+								: "No solution or module page is available to this organization. Ask your platform operator to make one available, then refresh this list.",
 						)}
 						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
@@ -427,7 +464,9 @@ function AvailableSection({
 							<TableHeader>
 								<TableRow>
 									<TableHead>
-										{showModules ? "Module or solution" : "Solution"}
+										{showModules
+											? "Module or solution"
+											: "Solution or module page"}
 									</TableHead>
 									<TableHead>Release</TableHead>
 									<TableHead>Generation</TableHead>
@@ -477,12 +516,14 @@ function AvailableSection({
 
 function InstalledSection({
 	showModules,
+	listed,
 	orgId,
 	query,
 }: {
 	orgId: string;
 	query: ReturnType<typeof useInstallations>;
 	showModules: boolean;
+	listed: (target: AvailableSolution | undefined) => boolean;
 }) {
 	const uninstall = useUninstallSolution(orgId);
 	const retry = useRetryInstallation(orgId);
@@ -500,11 +541,7 @@ function InstalledSection({
 	const stale = staleReadNotice(outcome, "the installed modules and solutions");
 	const rows = withheld
 		? []
-		: installedRows(
-				(query.data ?? []).filter(
-					(row) => showModules || row.target?.kind === "solution",
-				),
-			);
+		: installedRows((query.data ?? []).filter((row) => listed(row.target)));
 
 	const name = (row: InstalledRow) =>
 		row.solution.kind === "value" ? row.solution.text : "this installation";
@@ -586,7 +623,7 @@ function InstalledSection({
 							"the installed modules and solutions",
 							showModules
 								? "Nothing is installed in this organization. Once a module or solution is available above, choose it to install it."
-								: "Nothing is installed in this organization. Once a solution is available above, choose it to install it.",
+								: "Nothing is installed in this organization. Once a solution or module page is available above, choose it to install it.",
 						)}
 						{query.isError && ` ${hostRefusal(query.error)}`}
 					</p>
@@ -607,7 +644,9 @@ function InstalledSection({
 							<TableHeader>
 								<TableRow>
 									<TableHead>
-										{showModules ? "Module or solution" : "Solution"}
+										{showModules
+											? "Module or solution"
+											: "Solution or module page"}
 									</TableHead>
 									<TableHead>Revision</TableHead>
 									<TableHead>Status</TableHead>
