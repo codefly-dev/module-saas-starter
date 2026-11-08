@@ -399,6 +399,53 @@ function reach(roles: readonly OfferRole[]): ReachGroup[] {
 	return [...groups.values()];
 }
 
+/**
+ * One entry of the permission ceiling: a module the solution binds (what it
+ * may ask there as itself) or one its declaration depends on (reached as the
+ * person using it; the solution itself asks nothing of it). The authority
+ * carries the two apart — a binding has scopes, an edge dependency has a
+ * presence — and a reader asked "which modules does this solution reach" needs
+ * both in one list, or the page says "no other module" of a solution whose
+ * declaration requires one.
+ */
+interface CeilingEntry {
+	key: string;
+	module: string;
+	scopes: readonly OfferScope[];
+	/** "required" or "optional" when the declaration depends on the module. */
+	presence?: string;
+}
+
+function ceilingEntries(offer: ReviewedOffer): CeilingEntry[] {
+	const entries: CeilingEntry[] = offer.ceiling.map((c) => ({
+		key: `binding:${c.binding}`,
+		module: c.module,
+		scopes: c.scopes,
+	}));
+	for (const edge of offer.edgeDependencies) {
+		const bound = entries.find((e) => e.module === edge.module);
+		if (bound) {
+			bound.presence = edge.presence;
+			continue;
+		}
+		entries.push({
+			key: `edge:${edge.module}`,
+			module: edge.module,
+			scopes: [],
+			presence: edge.presence,
+		});
+	}
+	return entries;
+}
+
+function presenceText(presence: string): string {
+	return presence === "required"
+		? "Required: the solution does not work without it."
+		: presence === "optional"
+			? "Optional: the solution works without it."
+			: `Presence: ${presence}.`;
+}
+
 function RolesSection({
 	offer,
 	offerError,
@@ -407,6 +454,7 @@ function RolesSection({
 	offerError?: unknown;
 }) {
 	const groups = offer ? reach(offer.roles) : [];
+	const ceiling = offer ? ceilingEntries(offer) : [];
 	// A column that can only ever repeat one sentence is not a column. When no
 	// tool is exposed anywhere, the banner above says so once and the column is
 	// gone, rather than printing the same words in every cell.
@@ -423,35 +471,56 @@ function RolesSection({
 					{!offer.toolsComposed && (
 						<Banner
 							tone="info"
-							title="Tool exposure is unavailable from this host."
+							title="Agent tools cannot be shown: this host reads no composed tool bindings."
 						>
-							No operation below can be shown as an agent tool, and nothing
-							about this installation is wrong.
+							Whether an operation is also exposed to an agent as a tool is
+							decided by the composed tool bindings, and this host does not read
+							them, so no tool is shown here; that is a limit of this
+							host&apos;s read, not a finding that none is exposed. The roles,
+							operations and permission ceiling below are complete.
 						</Banner>
 					)}
 					<div>
 						<p className="type-emphasis">Permission ceiling</p>
 						<p className="text-muted-foreground">
-							What the solution may ask of each module it calls.
+							Each module the solution calls as itself, with the most it may ask
+							there, and each module its declaration depends on, which it
+							reaches as the person using it.
 						</p>
-						{offer.ceiling.length === 0 ? (
-							<p>The solution calls no other module.</p>
+						{ceiling.length === 0 ? (
+							<p>
+								The solution binds no module and depends on none: it calls
+								nothing as itself and reaches no other module.
+							</p>
 						) : (
 							<List variant="divided" label="Permission ceiling">
-								{offer.ceiling.map((c) => (
+								{ceiling.map((c) => (
 									<ListItem
-										key={c.binding}
+										key={c.key}
 										description={
-											// A module with no scope under it read as a bare name, which
-											// looks like a value still loading. It is a real answer and
-											// says so.
-											c.scopes.length === 0 ? (
-												<span className="text-muted-foreground">
-													Reached, but granted no scope of its own.
-												</span>
-											) : (
-												<Scopes scopes={c.scopes} confined={false} />
-											)
+											<span className="flex flex-col gap-1">
+												{c.scopes.length > 0 ? (
+													<Scopes scopes={c.scopes} confined={false} />
+												) : c.presence === undefined ? (
+													// A module with no scope under it read as a bare
+													// name, which looks like a value still loading. It
+													// is a real answer and says so.
+													<span className="text-muted-foreground">
+														Reached, but granted no scope of its own.
+													</span>
+												) : (
+													<span className="text-muted-foreground">
+														Reached as the person using the solution, with that
+														person&apos;s own access there; the solution itself
+														asks nothing of it.
+													</span>
+												)}
+												{c.presence !== undefined && (
+													<span className="text-muted-foreground">
+														{presenceText(c.presence)}
+													</span>
+												)}
+											</span>
 										}
 									>
 										{c.module}
@@ -493,7 +562,17 @@ function RolesSection({
 							<div className="flex flex-col gap-2">
 								<p className="type-emphasis">What the roles reach</p>
 								{groups.length === 0 ? (
-									<p>No composed operation is covered by any role.</p>
+									// The authority joined these roles against every
+									// delivered module's declared operations and found none
+									// that requires what they grant. That is an answer with a
+									// reason, not a blank.
+									<p>
+										These roles cover no module operation: no delivered module
+										declares an operation that requires what they grant, so a
+										role here reaches this solution alone. What its holder may
+										do on a module the solution reaches is decided by that
+										module, from the holder&apos;s own access there.
+									</p>
 								) : (
 									groups.map((group) => (
 										<Disclosure

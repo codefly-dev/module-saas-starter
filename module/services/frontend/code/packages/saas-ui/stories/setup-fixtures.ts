@@ -48,16 +48,20 @@ export function reviewedOffer({
 	tools,
 	installed = true,
 	administrator = true,
+	edgeDependencies = [],
 }: {
 	tools: boolean;
 	installed?: boolean;
 	administrator?: boolean;
+	/** Modules the declaration depends on, by presence; a binding carries none. */
+	edgeDependencies?: { module: string; presence: string }[];
 }) {
 	const tool = (name: string, binding: string, write: boolean) =>
 		tools ? [{ name, binding, write }] : [];
 	return {
 		target: exampleTarget,
 		toolsComposed: tools,
+		edgeDependencies,
 		approval: administrator
 			? {
 					targetId: exampleTarget,

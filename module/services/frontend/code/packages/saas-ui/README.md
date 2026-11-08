@@ -269,8 +269,14 @@ its consent tuple and may grant; a member holding a role reads what it grants,
 read-only; anyone else sees the authority's one refusal. Every refusal is shown
 with its code and the authority's reason, verbatim, where the answer would have
 been. When `tools_composed: false`, the host has not supplied tool exposure
-metadata. The page reports it as unavailable, including on each operation;
-this is not evidence that the composition exposes no tools.
+metadata. The page says agent tools cannot be shown because that host reads no
+composed tool bindings, a limit of its read; it never claims that no tool is
+exposed, nor that the installation is fine. The permission ceiling lists each
+module the solution binds, with what it may ask there as itself, and each
+module its declaration depends on (`edge_dependencies`, by presence), reached
+as the person using it; a role with no capability is explained as the
+authority's answer that no delivered module declares an operation requiring
+what it grants.
 
 **What a host adds.** Only what it knows and the authority does not: the
 organization its session is at (`organizationId`), the people and teams it can
