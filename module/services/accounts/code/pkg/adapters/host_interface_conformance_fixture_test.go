@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"io"
 	"maps"
 	"os"
@@ -69,8 +70,10 @@ type conformanceSolution struct {
 	generation       uint64
 	ceilings         []*authorityv1.WorkScopeV1
 	roles            map[string][]*authorityv1.WorkScopeV1
-	methods          []*compositionv1.MethodPolicyV1
-	bindings         []solutionhost.AuthorityBinding
+	// owned are the installation-owned scopes of a role, by role name.
+	owned    map[string][]*authorityv1.WorkScopeV1
+	methods  []*compositionv1.MethodPolicyV1
+	bindings []solutionhost.AuthorityBinding
 }
 
 // deliverSolution delivers s as the CLI does: core's manifest signed with the
@@ -94,7 +97,7 @@ func deliverSolution(t *testing.T, ctx context.Context, conn grpc.ClientConnInte
 		document.EdgeDependencies = append(document.EdgeDependencies, &compositionv1.EdgeDependencyV1{Module: edge.Module, Presence: edge.Presence})
 	}
 	for name, scopes := range s.roles {
-		document.Roles = append(document.Roles, &compositionv1.RoleV1{Name: name, Scopes: scopes})
+		document.Roles = append(document.Roles, &compositionv1.RoleV1{Name: name, Scopes: scopes, InstallationOwnedScopes: s.owned[name]})
 	}
 	doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(document)
 	require.NoError(t, err)
@@ -193,6 +196,17 @@ func consentModule(ctx context.Context, svc *business.Service, store *infra.Post
 		return err
 	}
 	role := "Use " + module
+	// A module declaring installation_role none holds no standing authority:
+	// its consent names no role, as a fixture row for it names none.
+	if core, err := svc.AuthorityCore(); err == nil {
+		if m, err := core.Composed(ctx, module); err == nil && m.InstallationRole == domain.NoInstallationRole {
+			installation, _, err := svc.InstallFixtureTarget(ctx, admin, org, module, "", admin)
+			if err != nil {
+				return fmt.Errorf("install %s at %s: %w", module, org, err)
+			}
+			return completeInstallStep(ctx, store, installation)
+		}
+	}
 	if authority == nil {
 		// A module page that has since dropped its roles keeps the role it
 		// was installed holding, one of the roles it declared then: no

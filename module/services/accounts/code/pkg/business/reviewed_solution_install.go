@@ -258,17 +258,59 @@ func (s *Service) installStepFor(ctx context.Context, core *authority.Service, t
 // install endpoint: every supporting module its review reached is installed or
 // reused, and the witnesses are recorded on the plan for the activation fence.
 func (s *Service) convergeClosureStep(ctx context.Context, inst domain.Installation) error {
+	_, err := s.ConvergeReviewedClosure(ctx, inst)
+	return err
+}
+
+// ConvergeReviewedClosure installs or reuses every supporting module the
+// reviewed plan of inst reached, and records the witnesses the activation
+// fence compares. It reports whether inst is an upgrade in flight: the plan
+// then is the one reviewed for this attempt, carried by the caller, and its
+// witnesses ride on it for the core's write, since the row still holds the
+// consent that stands until the core moves it.
+func (s *Service) ConvergeReviewedClosure(ctx context.Context, inst domain.Installation) (upgrade bool, err error) {
 	bundle, ok := s.store.(solutionBundleStore)
 	if !ok {
-		return domain.NotNow("INSTALLATION_SETUP_UNAVAILABLE: the host cannot converge supporting modules")
+		return false, domain.NotNow("INSTALLATION_SETUP_UNAVAILABLE: the host cannot converge supporting modules")
 	}
 	return s.convergeReviewedModules(ctx, inst, bundle)
 }
 
-func (s *Service) convergeReviewedModules(ctx context.Context, inst domain.Installation, store solutionBundleStore) error {
-	plan, err := store.SolutionInstallationPlan(ctx, inst.Organization, inst.ID)
+// reviewedPlanFor is the plan the install step of inst converges: the one the
+// row records (a fresh install, or its retry), or, when the row's consent is
+// another operation than inst's, the one reviewed for the upgrade in flight,
+// carried in the context by installReviewedSolution.
+func (s *Service) reviewedPlanFor(ctx context.Context, inst domain.Installation, store solutionBundleStore) (plan SolutionInstallationPlan, upgrade bool, err error) {
+	carried := solutionInstallationPlanRef(ctx)
+	if carried != nil && carried.Organization == inst.Organization && carried.Target == inst.Target && carried.Approval.OperationID == inst.Consent.OperationID {
+		// The attempt in flight: an upgrade when the row's consent is another
+		// operation's, which the core moves once this step converges.
+		recorded, err := store.SolutionInstallationPlan(ctx, inst.Organization, inst.ID)
+		switch {
+		case err == nil && recorded.Approval.OperationID == inst.Consent.OperationID:
+			return recorded, false, nil
+		case err == nil:
+			return *carried, true, nil
+		}
+		if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
+			return *carried, true, nil
+		}
+		return plan, false, err
+	}
+	recorded, err := store.SolutionInstallationPlan(ctx, inst.Organization, inst.ID)
+	if err != nil {
+		return plan, false, err
+	}
+	if recorded.Approval.OperationID != inst.Consent.OperationID {
+		return plan, false, domain.NotNow("INSTALLATION_PLAN_CHANGED: the attempt in flight has no reviewed plan for operation %s", inst.Consent.OperationID)
+	}
+	return recorded, false, nil
+}
+
+func (s *Service) convergeReviewedModules(ctx context.Context, inst domain.Installation, store solutionBundleStore) (bool, error) {
+	plan, upgrade, err := s.reviewedPlanFor(ctx, inst, store)
 	if err != nil || plan.Review == nil {
-		return err
+		return upgrade, err
 	}
 	var witnesses []ModuleInstallationPrerequisite
 	for _, reviewed := range plan.Review.Modules {
@@ -277,46 +319,52 @@ func (s *Service) convergeReviewedModules(ctx context.Context, inst domain.Insta
 		}
 		target, err := s.ResolveInstallationPrincipal(ctx, inst.Organization, reviewed.Principal)
 		if err != nil {
-			return err
+			return upgrade, err
 		}
 		_, digest, err := s.reviewedTargetDelivery(ctx, target)
 		if err != nil {
-			return err
+			return upgrade, err
 		}
 		if target.TargetID != reviewed.TargetId || target.BindingID != reviewed.BindingId || target.AppliedGeneration != reviewed.Approval.Generation || digest != reviewed.DeliveryDigest {
-			return domain.NotNow("module %q changed since review", reviewed.Principal)
+			return upgrade, domain.NotNow("module %q changed since review", reviewed.Principal)
 		}
 		id := reviewed.ReuseInstallationId
 		if id == "" {
 			scope, err := ParseInstallationScope(reviewed.Scope)
 			if err != nil {
-				return err
+				return upgrade, err
 			}
 			a := reviewed.Approval
 			installed, err := s.InstallSolution(ctx, plan.Review.ActorId, &InstallSolutionParams{OrgID: inst.Organization, TargetID: target.TargetID,
 				AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, Scope: &scope,
 				Approval: &InstallationApproval{TargetID: a.TargetId, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, OperationID: a.OperationId}})
 			if err != nil {
-				return err
+				return upgrade, err
 			}
 			id = installed.Id
 		}
 		witness, err := store.ModuleInstallationPrerequisite(ctx, inst.Organization, id, s.moduleRegistrySnapshot().envelopeRevision)
 		if err != nil {
-			return err
+			return upgrade, err
 		}
 		if witness.TargetID != reviewed.TargetId || witness.DeliveryDigest != reviewed.DeliveryDigest {
-			return domain.NotNow("module %q consent no longer matches review", reviewed.Principal)
+			return upgrade, domain.NotNow("module %q consent no longer matches review", reviewed.Principal)
 		}
 		if reviewed.ReuseInstallationId != "" && witness.Revision != reviewed.Approval.ExpectedRevision {
-			return domain.NotNow("module %q consent changed after review", reviewed.Principal)
+			return upgrade, domain.NotNow("module %q consent changed after review", reviewed.Principal)
 		}
 		witnesses = append(witnesses, witness)
 	}
-	if err := store.RecordSolutionPrerequisites(ctx, inst, witnesses); err != nil {
-		return fmt.Errorf("record reviewed module receipts: %w", err)
+	if upgrade {
+		// No pending row to record them on: the core's write of the upgrade
+		// persists the carried plan, witnesses included.
+		solutionInstallationPlanRef(ctx).Dependencies = witnesses
+		return true, nil
 	}
-	return nil
+	if err := store.RecordSolutionPrerequisites(ctx, inst, witnesses); err != nil {
+		return false, fmt.Errorf("record reviewed module receipts: %w", err)
+	}
+	return false, nil
 }
 
 // InstallAuthoritySolution adapts the existing single-target consent. It may

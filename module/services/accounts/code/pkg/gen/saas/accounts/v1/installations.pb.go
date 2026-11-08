@@ -413,9 +413,20 @@ type Installation struct {
 	// a current administrator resumes the original consent and activation passes.
 	SetupState string `protobuf:"bytes,15,opt,name=setup_state,json=setupState,proto3" json:"setup_state,omitempty"`
 	// Public recovery guidance; transport diagnostics and credentials are omitted.
-	SetupMessage  string `protobuf:"bytes,16,opt,name=setup_message,json=setupMessage,proto3" json:"setup_message,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SetupMessage string `protobuf:"bytes,16,opt,name=setup_message,json=setupMessage,proto3" json:"setup_message,omitempty"`
+	// The delivery generation the installation's consent approved, as the shared
+	// authority core holds it: a redelivery that asks nothing new of the
+	// organization advances it without a click; one that asks more leaves it.
+	// Zero for a record the core did not decide (a module installed by this
+	// host's own consent).
+	ApprovedGeneration uint64 `protobuf:"varint,17,opt,name=approved_generation,json=approvedGeneration,proto3" json:"approved_generation,omitempty"`
+	// True when the delivered generation asks more than approved_generation did:
+	// the installation stands, active and healthy with its grants, until an
+	// administrator reviews the target again and installs the reviewed release
+	// on this same installation (an update, never an uninstall).
+	UpgradeAvailable bool `protobuf:"varint,18,opt,name=upgrade_available,json=upgradeAvailable,proto3" json:"upgrade_available,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Installation) Reset() {
@@ -551,6 +562,20 @@ func (x *Installation) GetSetupMessage() string {
 		return x.SetupMessage
 	}
 	return ""
+}
+
+func (x *Installation) GetApprovedGeneration() uint64 {
+	if x != nil {
+		return x.ApprovedGeneration
+	}
+	return 0
+}
+
+func (x *Installation) GetUpgradeAvailable() bool {
+	if x != nil {
+		return x.UpgradeAvailable
+	}
+	return false
 }
 
 type InstallSolutionRequest struct {
@@ -2632,7 +2657,7 @@ var File_saas_accounts_v1_installations_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\n" +
-	"$saas/accounts/v1/installations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a'host/installation/v1/installation.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$saas/accounts/v1/authorization.proto\x1a\x1csaas/policy/v1/options.proto\"\xf6\x05\n" +
+	"$saas/accounts/v1/installations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a'host/installation/v1/installation.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$saas/accounts/v1/authorization.proto\x1a\x1csaas/policy/v1/options.proto\"\xd4\x06\n" +
 	"\fInstallation\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1f\n" +
 	"\x06org_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x126\n" +
@@ -2652,7 +2677,9 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\brevision\x18\x0e \x01(\x04R\brevision\x12\x1f\n" +
 	"\vsetup_state\x18\x0f \x01(\tR\n" +
 	"setupState\x12#\n" +
-	"\rsetup_message\x18\x10 \x01(\tR\fsetupMessageB\r\n" +
+	"\rsetup_message\x18\x10 \x01(\tR\fsetupMessage\x12/\n" +
+	"\x13approved_generation\x18\x11 \x01(\x04R\x12approvedGeneration\x12+\n" +
+	"\x11upgrade_available\x18\x12 \x01(\bR\x10upgradeAvailableB\r\n" +
 	"\v_revoked_atJ\x04\b\x04\x10\x05R\x13solution_identifier\"\xbc\x05\n" +
 	"\x16InstallSolutionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x125\n" +

@@ -70,10 +70,20 @@ func (s *Service) canonicalInstallationStep(ctx context.Context, inst domain.Ins
 	if !ok || s.jobOperations == nil {
 		return domain.NotNow("INSTALLATION_SETUP_UNAVAILABLE: the host setup queue is not configured")
 	}
+	var upgrade bool
 	if bundle, ok := s.store.(solutionBundleStore); ok {
-		if err := s.convergeReviewedModules(ctx, inst, bundle); err != nil {
+		var err error
+		if upgrade, err = s.convergeReviewedModules(ctx, inst, bundle); err != nil {
 			return err
 		}
+	}
+	if upgrade {
+		// The closure of the upgraded review is converged; the solution's own
+		// install step is not run again here. The durable setup job and its
+		// receiver are fenced to the pending attempt the row records, and an
+		// upgrade has none: the installation stays active and the core moves
+		// its consent once this returns.
+		return nil
 	}
 	retry, _ := ctx.Value(retryCanonicalSetupKey{}).(bool)
 	jobID, err := store.EnqueueCanonicalInstallationStep(ctx, inst, retry)

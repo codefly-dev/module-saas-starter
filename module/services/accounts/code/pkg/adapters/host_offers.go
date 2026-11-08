@@ -124,7 +124,7 @@ func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev
 	// roles_declared, page and closure are the core's own answers about the
 	// target, so a host's UI asks them of the one review and never per module.
 	out := &installationv1.ReviewedOffer{Target: projected.Target, ToolsComposed: projected.ToolsComposed, InstallationRole: projected.InstallationRole,
-		RolesDeclared: offer.RolesDeclared, Page: offer.Page, Closure: slices.Clone(offer.Closure)}
+		RolesDeclared: offer.RolesDeclared, Page: offer.Page, Closure: slices.Clone(offer.Closure), OptionalEdges: slices.Clone(offer.OptionalEdges)}
 	for _, edge := range projected.EdgeDependencies {
 		out.EdgeDependencies = append(out.EdgeDependencies, &installationv1.OfferDependency{Module: edge.Module, Presence: edge.Presence})
 	}

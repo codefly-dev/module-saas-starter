@@ -522,6 +522,37 @@ func (t coreTx) PutModule(m domain.Module) error {
 	return err
 }
 
+// ApprovedModule and PutApprovedModule keep the declaration an installation's
+// consent approved, per module and generation (authority_core_approved_modules,
+// migration 68): the core writes one whenever a consent is taken or advances
+// and reads it to decide what a holder holds while the consent is behind the
+// delivered generation. A generation no active consent names may be dropped;
+// this store keeps every one it was given.
+func (t coreTx) ApprovedModule(name string, generation uint64) (domain.Module, error) {
+	m, err := scanCoreModule(t.q.QueryRow(t.ctx, `SELECT `+coreModuleColumns+` FROM public.authority_core_approved_modules WHERE name = $1 AND generation = $2`, name, int64(generation)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Module{}, coreMissing("approved generation", fmt.Sprintf("%s@%d", name, generation))
+	}
+	return m, err
+}
+
+func (t coreTx) PutApprovedModule(m domain.Module) error {
+	if err := t.mustWrite(); err != nil {
+		return err
+	}
+	raw, err := encodeModule(m)
+	if err != nil {
+		return err
+	}
+	_, err = t.q.Exec(t.ctx, `
+		INSERT INTO public.authority_core_approved_modules (name, generation, principal, kind, stand_in, declarations)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (name, generation) DO UPDATE SET principal = EXCLUDED.principal, kind = EXCLUDED.kind,
+		       stand_in = EXCLUDED.stand_in, declarations = EXCLUDED.declarations`,
+		m.Name, int64(m.Generation), m.Principal, m.Kind, m.StandIn, raw)
+	return err
+}
+
 func (t coreTx) DeleteModule(name string) error {
 	if err := t.mustWrite(); err != nil {
 		return err

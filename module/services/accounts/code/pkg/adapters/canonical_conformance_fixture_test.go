@@ -26,34 +26,9 @@ func canonicalConformanceStep(t *testing.T, ctx context.Context, svc *business.S
 	worker := infra.NewPostgresJobStore(pool)
 	svc.SetJobOperations(worker)
 	return func(ctx context.Context, inst domain.Installation) error {
-		plan, err := store.SolutionInstallationPlan(ctx, inst.Organization, inst.ID)
-		if err != nil {
-			return err
-		}
-		var envelope uint64
-		err = store.WithControlPlane(ctx, func(ctx context.Context) error {
-			var err error
-			envelope, err = store.LatestModuleEnvelopeRevision(ctx)
-			return err
-		})
-		if err != nil {
-			return err
-		}
-		var witnesses []business.ModuleInstallationPrerequisite
-		for _, m := range plan.Review.Modules {
-			if !m.Required {
-				continue
-			}
-			if m.ReuseInstallationId == "" {
-				return fmt.Errorf("conformance module %s has no separately approved consent", m.Principal)
-			}
-			w, err := store.ModuleInstallationPrerequisite(ctx, inst.Organization, m.ReuseInstallationId, envelope)
-			if err != nil {
-				return err
-			}
-			witnesses = append(witnesses, w)
-		}
-		if err := store.RecordSolutionPrerequisites(ctx, inst, witnesses); err != nil {
+		// The closure converges as production's step converges it; an
+		// upgrade in flight ends here, since its setup job is not run again.
+		if upgrade, err := svc.ConvergeReviewedClosure(ctx, inst); upgrade || err != nil {
 			return err
 		}
 		jobID, err := store.EnqueueCanonicalInstallationStep(ctx, inst, false)

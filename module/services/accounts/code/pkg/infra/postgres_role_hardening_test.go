@@ -73,6 +73,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"authority_core_installations":    {},
 	"authority_core_module_revisions": {},
 	"authority_core_modules":          {},
+	"authority_core_approved_modules": {},
 	"authority_core_owner_aware":      {},
 	"authority_core_person_epochs":    {},
 	"authority_core_replay":           {},

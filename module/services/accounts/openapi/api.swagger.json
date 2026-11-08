@@ -407,6 +407,11 @@
         "agentPrincipalId": {
           "type": "string"
         },
+        "approvedGeneration": {
+          "description": "The delivery generation the installation's consent approved, as the shared\nauthority core holds it: a redelivery that asks nothing new of the\norganization advances it without a click; one that asks more leaves it.\nZero for a record the core did not decide (a module installed by this\nhost's own consent).",
+          "format": "uint64",
+          "type": "string"
+        },
         "coOwnerPrincipalIds": {
           "items": {
             "type": "string"
@@ -460,6 +465,10 @@
         "targetId": {
           "description": "The immutable solution target this installation was consented to: one\ncontinuous period of one binding's presence on this host. It is never\nreused, so a replacement binding — even one claiming the same route alias —\nis a different target and inherits nothing.\n\nDeliberately NOT accompanied by the route alias. The alias is a property of\nthe target that a later generation may move, and resolving it here would\nmean joining the host's presence state into a request-path listing — which\nwould require granting request traffic read over every organisation's\npresence to answer about one. A consumer that needs the alias asks\nListAvailableSolutions, which serves accepted applied state, and joins on\nthis id.\n\nEmpty only on a revoked historical row whose target could not be\nestablished at the cutover; an active installation always names one.",
           "type": "string"
+        },
+        "upgradeAvailable": {
+          "description": "True when the delivered generation asks more than approved_generation did:\nthe installation stands, active and healthy with its grants, until an\nadministrator reviews the target again and installs the reviewed release\non this same installation (an update, never an uninstall).",
+          "type": "boolean"
         }
       },
       "type": "object"

@@ -106,6 +106,17 @@ message Installation {
   string setup_state = 15;
   // Public recovery guidance; transport diagnostics and credentials are omitted.
   string setup_message = 16;
+  // The delivery generation the installation's consent approved, as the shared
+  // authority core holds it: a redelivery that asks nothing new of the
+  // organization advances it without a click; one that asks more leaves it.
+  // Zero for a record the core did not decide (a module installed by this
+  // host's own consent).
+  uint64 approved_generation = 17;
+  // True when the delivered generation asks more than approved_generation did:
+  // the installation stands, active and healthy with its grants, until an
+  // administrator reviews the target again and installs the reviewed release
+  // on this same installation (an update, never an uninstall).
+  bool upgrade_available = 18;
 }
 
 message InstallSolutionRequest {

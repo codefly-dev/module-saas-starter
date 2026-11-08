@@ -42,12 +42,27 @@ type solutionPlanContextKey struct{}
 func WithSolutionInstallationPlan(ctx context.Context, plan SolutionInstallationPlan) context.Context {
 	plan.Dependencies = slices.Clone(plan.Dependencies)
 	plan.Review = proto.CloneOf(plan.Review)
-	return context.WithValue(ctx, solutionPlanContextKey{}, plan)
+	return context.WithValue(ctx, solutionPlanContextKey{}, &plan)
+}
+
+// solutionInstallationPlanRef is the plan WithSolutionInstallationPlan
+// carried, for the one writer of it before the core records it: the install
+// step of an upgrade, which has no pending row to record the closure's
+// witnesses on and leaves them here for the core's write to persist.
+func solutionInstallationPlanRef(ctx context.Context) *SolutionInstallationPlan {
+	plan, _ := ctx.Value(solutionPlanContextKey{}).(*SolutionInstallationPlan)
+	return plan
 }
 
 func SolutionInstallationPlanFromContext(ctx context.Context) (SolutionInstallationPlan, bool) {
-	plan, ok := ctx.Value(solutionPlanContextKey{}).(SolutionInstallationPlan)
-	return plan, ok
+	ref := solutionInstallationPlanRef(ctx)
+	if ref == nil {
+		return SolutionInstallationPlan{}, false
+	}
+	plan := *ref
+	plan.Dependencies = slices.Clone(plan.Dependencies)
+	plan.Review = proto.CloneOf(plan.Review)
+	return plan, true
 }
 
 // ModuleInstallationPrerequisite is the exact module consent that satisfied a

@@ -45,8 +45,13 @@ func (t coreTx) solutionConsentForWrite(inst domain.Installation) ([]byte, error
 		}
 	}
 	current := solutionConsent{ConsentReceipt: inst.Consent}
-	if previous.OperationID == inst.Consent.OperationID && previous.Intent == inst.Consent.Intent {
-		current.Plan = previous.Plan
+	if previous.OperationID == inst.Consent.OperationID && previous.Intent == inst.Consent.Intent && previous.Plan != nil {
+		// The plan follows the consent it was reviewed for: a re-convergence
+		// moves the receipt's generation and digest and the revision, and the
+		// plan names them as they now stand.
+		plan := *previous.Plan
+		plan.Receipt, plan.Revision = inst.Consent, inst.Revision
+		current.Plan = &plan
 	}
 	if current.Plan == nil && inst.Consent.OperationID != "" {
 		if plan, ok := business.SolutionInstallationPlanFromContext(t.ctx); ok {

@@ -7176,6 +7176,15 @@
         "setupMessage": {
           "type": "string",
           "description": "Public recovery guidance; transport diagnostics and credentials are omitted."
+        },
+        "approvedGeneration": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The delivery generation the installation's consent approved, as the shared\nauthority core holds it: a redelivery that asks nothing new of the\norganization advances it without a click; one that asks more leaves it.\nZero for a record the core did not decide (a module installed by this\nhost's own consent)."
+        },
+        "upgradeAvailable": {
+          "type": "boolean",
+          "description": "True when the delivered generation asks more than approved_generation did:\nthe installation stands, active and healthy with its grants, until an\nadministrator reviews the target again and installs the reviewed release\non this same installation (an update, never an uninstall)."
         }
       },
       "description": "Installation is one solution's bound identity in an org. Server-assigned ids;\nthe browser cannot attest to tenancy, the agent principal, or the scope node."

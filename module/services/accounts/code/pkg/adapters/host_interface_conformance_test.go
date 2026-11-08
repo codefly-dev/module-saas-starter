@@ -302,10 +302,24 @@ func runHostInterfaceFixture(t *testing.T) {
 	}
 	// Two installed solutions for installation-owned role scopes: Alex installs
 	// both, and Maya's finance team holds A's viewer role and nothing of B's.
+	// Each is consented to at the surface the suite delivers again at its own
+	// generation (the store it binds, its roles and its owned scopes), so that
+	// redelivery asks nothing new and the consent re-converges on it: a
+	// holder holds what the consent approved, never a wider delivered offer.
+	const collection = "conformance.collection"
+	deliverModule(t, ctx, conn, signer, conformanceModule{alias: "conformance-store", ceilings: []*authorityv1.WorkScopeV1{wireScope(collection, "admin", "create", "read", "write")},
+		bindings: []solutionhost.AuthorityBinding{{ID: "self", Audience: "conformance-store", Operations: map[string][]string{
+			"invoke": {collection + ":create", collection + ":read"}, "headless": {collection + ":create", collection + ":read"}}}}})
+	require.NoError(t, installModule(ctx, "conformance-store"))
 	for _, owned := range []string{"conformance-owner-a", "conformance-owner-b"} {
 		note := wireScope(owned+".note", "read")
 		deliverSolution(t, ctx, conn, signer, conformanceSolution{alias: owned, generation: 1, ceilings: []*authorityv1.WorkScopeV1{note},
-			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}})
+			roles: map[string][]*authorityv1.WorkScopeV1{
+				"installer": {note, wireScope(collection, "create"), wireScope(collection, "read"), wireScope(collection, "admin"), wireScope(collection, "write")},
+				"viewer":    {note}},
+			owned: map[string][]*authorityv1.WorkScopeV1{"viewer": {wireScope(collection, "read")}},
+			bindings: []solutionhost.AuthorityBinding{{ID: "store", Audience: "conformance-store", Operations: map[string][]string{
+				"invoke": {collection + ":create", collection + ":read", collection + ":admin", collection + ":write"}}}}})
 	}
 	require.NoError(t, installations.ConvergeAuthority(ctx), "every declared installation converges once its target is delivered")
 	installed := func(target string) string { return authority.StableInstallationID(fixtureOrganization, target) }
