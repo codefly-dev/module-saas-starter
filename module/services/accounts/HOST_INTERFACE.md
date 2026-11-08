@@ -276,6 +276,13 @@ host does not create an empty role or choose an organization role. The durable
 paired declaration under delivery locks before accepting it. A caller-supplied
 role is refused. Existing explicit-role module installations retain their path.
 
+A paired declaration that selects no installation role and declares no role at
+all (a manifest written before the declaration existed) leaves the host nothing
+to select, so a review installs it the same way: ordinary consent, no standing
+grant, the review entry saying `none`. A caller's explicit role keeps the
+explicit-role path. A declaration that names roles but selects none of them is
+still refused: the host never chooses among a module's roles.
+
 The standing-role read returns empty role fields with the installation revision
 for this selection. Health does not diagnose its deliberately absent grant as
 missing. Team exposure must name a person/team role explicitly; installation

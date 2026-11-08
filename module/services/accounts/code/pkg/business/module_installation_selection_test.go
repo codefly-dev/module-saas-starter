@@ -10,6 +10,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 )
@@ -17,15 +18,19 @@ import (
 func TestModuleNoStandingSelectionRequiresCurrentPairedDeclaration(t *testing.T) {
 	for _, tc := range []struct {
 		name, declaration, role string
-		stale, denied, none     bool
+		stale, roles, denied, none bool
 	}{
-		{"declared none", "none", "", false, false, true},
-		{"caller role refused", "none", "role-id", false, true, false},
-		{"caller literal none refused", "none", "none", false, true, false},
-		{"old generation", "none", "", true, true, false},
-		{"legacy stays explicit", "", "role-id", false, false, false},
-		{"legacy without a role refused", "", "", false, true, false},
-		{"named module cannot become catalogue role", "reader", "catalogue-role-id", false, true, false},
+		{"declared none", "none", "", false, false, false, true},
+		{"caller role refused", "none", "role-id", false, false, true, false},
+		{"caller literal none refused", "none", "none", false, false, true, false},
+		{"old generation", "none", "", true, false, true, false},
+		{"legacy stays explicit", "", "role-id", false, false, false, false},
+		// Blue 2026-11-08: a manifest declaring neither an installation role nor
+		// any role leaves nothing to select, so without a caller role the module
+		// is installed holding none; one that declares roles stays undeclared.
+		{"undeclared without roles holds none", "", "", false, false, false, true},
+		{"undeclared with roles and no role refused", "", "", false, true, true, false},
+		{"named module cannot become catalogue role", "reader", "catalogue-role-id", false, false, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -33,6 +38,9 @@ func TestModuleNoStandingSelectionRequiresCurrentPairedDeclaration(t *testing.T)
 			m := domain.Module{Name: "records-route", Principal: "records-principal", Kind: domain.KindModule, Generation: 2, InstallationRole: tc.declaration}
 			if tc.stale {
 				m.Generation = 1
+			}
+			if tc.roles {
+				m.Roles = map[string][]*basev0.WorkScopeV1{"reader": {{ResourceKind: "records", Actions: []string{"read"}}}}
 			}
 			require.NoError(t, store.Write(ctx, func(tx authority.Tx) error { return tx.PutModule(m) }))
 			public, private, err := ed25519.GenerateKey(nil)

@@ -177,6 +177,8 @@ func TestReviewedSolutionAPIRefusesTamperingOrStaleDeliveryBeforeAnyStep(t *test
 }
 
 func TestReviewedSolutionAPIRequiresDeclaredAuthorityWithoutChoosingRole(t *testing.T) {
+	// A module that declares roles but names none of them, or names one it does
+	// not declare, leaves the host a choice it never makes.
 	for _, selector := range []string{"", "reader"} {
 		s, _, owner, caller, target := reviewedInstallFixture(t, true)
 		require.NoError(t, owner.Write(context.Background(), func(tx authority.Tx) error {
@@ -185,11 +187,49 @@ func TestReviewedSolutionAPIRequiresDeclaredAuthorityWithoutChoosingRole(t *test
 				return err
 			}
 			m.InstallationRole = selector
+			m.Roles = map[string][]*basev0.WorkScopeV1{"viewer": {{ResourceKind: "records", Actions: []string{"read"}}}}
 			return tx.PutModule(m)
 		}))
 		_, err := s.ReviewSolutionInstall(context.Background(), caller, caller.Organization, target)
 		require.ErrorContains(t, err, "module:records")
 	}
+}
+
+// Blue 2026-11-08: every solution review stopped at "annotations cannot be
+// installed automatically", because annotations, model, records and tracing
+// declare no installation role at all, and the review read that as a standing
+// role it could not grant. A manifest that declares neither an installation
+// role nor any role leaves nothing to select: the module is installed holding
+// none, which is all the solution's closure asks of it.
+func TestReviewedSolutionInstallsAnUndeclaredRolelessModuleHoldingNoAuthority(t *testing.T) {
+	s, _, owner, caller, target := reviewedInstallFixture(t, true)
+	ctx := context.Background()
+	require.NoError(t, owner.Write(ctx, func(tx authority.Tx) error {
+		m, err := tx.ModuleNamed("records-route")
+		if err != nil {
+			return err
+		}
+		m.InstallationRole, m.Roles = "", nil
+		return tx.PutModule(m)
+	}))
+	review, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
+	require.NoError(t, err)
+	var module *gen.ReviewedSupportingModule
+	for _, m := range review.Modules {
+		if m.Required {
+			module = m
+		}
+	}
+	require.NotNil(t, module)
+	require.Equal(t, domain.NoInstallationRole, module.InstallationRole, "the review says no standing machine access is granted")
+	require.Empty(t, module.ReuseInstallationId)
+	require.JSONEq(t, `{"capabilities":true}`, module.Scope)
+	// The same review is what the install reconstructs: nothing changed.
+	calls := 0
+	s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
+	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
 }
 
 func TestFreshReviewedConsentSupersedesPendingWithoutReusingOldAttempt(t *testing.T) {

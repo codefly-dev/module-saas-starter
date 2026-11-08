@@ -92,6 +92,13 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 			return nil, domain.Refuse("role %q cannot override %s's installation_role declaration", params.RoleID, declaration.Name)
 		}
 		params.RoleID = role
+	} else if params.RoleID == "" && undeclaredAuthorityIsNone(declaration) {
+		// A manifest that declares neither an installation role nor any role
+		// leaves this host nothing to select: with no caller role the module is
+		// installed holding none, which is all a solution's closure asks of it
+		// (supportingInstallationRole). A caller's explicit role keeps the
+		// legacy path, selected above by the role it named.
+		params.NoStandingAuthority = true
 	}
 	// Only the delivered declaration may leave the caller's role out: a named
 	// installation_role is selected above, and "none" grants no standing role.

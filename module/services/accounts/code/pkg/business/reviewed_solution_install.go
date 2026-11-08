@@ -96,7 +96,7 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 		if err != nil {
 			return nil, err
 		}
-		entry.InstallationRole = dependency.Module.InstallationRole
+		entry.InstallationRole = supportingInstallationRole(dependency.Module)
 		entry.Approval = &installationv1.ConsentApproval{TargetId: target.TargetID, Generation: target.AppliedGeneration,
 			OperationId: uuid.NewSHA1(uuid.MustParse(operation), []byte(dependency.Principal)).String()}
 		snapshot := s.moduleRegistrySnapshot()
@@ -333,4 +333,28 @@ func (s *Service) InstallAuthoritySolution(ctx context.Context, caller authority
 		}
 	}
 	return s.installReviewedSolution(ctx, caller, org, review, role, owner)
+}
+
+// supportingInstallationRole is the standing role a required supporting
+// module is installed holding; its delivered declaration decides. "none"
+// declares no standing machine authority and a named role is its own. A
+// manifest that declares neither an installation role nor any role at all
+// (one written before the declaration existed) leaves this host nothing to
+// select, so the module is installed holding none: all a solution's closure
+// asks of it is to be installed, because the authority core issues a token
+// toward a module in an organization only where that module has an
+// installation. A module that declares roles but names none of them its
+// installation role is still undeclared: the host never chooses among them,
+// and the review refuses it.
+func supportingInstallationRole(m domain.Module) string {
+	if undeclaredAuthorityIsNone(m) {
+		return domain.NoInstallationRole
+	}
+	return m.InstallationRole
+}
+
+// undeclaredAuthorityIsNone says whether m declares no installation role and
+// no role at all, so that no standing authority exists for a host to select.
+func undeclaredAuthorityIsNone(m domain.Module) bool {
+	return m.Kind == domain.KindModule && m.InstallationRole == "" && len(m.Roles) == 0
 }
