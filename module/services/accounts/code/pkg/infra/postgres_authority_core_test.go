@@ -4,13 +4,16 @@ package infra_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/scope"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/storetest"
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -173,4 +176,49 @@ func TestTheAuthorityCoreStoreReadsAccountsRBAC(t *testing.T) {
 		require.Empty(t, m.Roles, "a person off the team holds none of its roles")
 		return nil
 	}))
+}
+
+// The reach a consent approved reads back from accounts' store exactly as
+// the core's encoder wrote it (decide.EncodeReach): the text, so its digest,
+// and the rows it decodes to, operations and their policies included. The
+// core compares an approved reach with the composition's by that text.
+func TestAnApprovedReachReadsBackAsTheCoresEncoderWroteIt(t *testing.T) {
+	org, admin := uuid.NewString(), uuid.NewString()
+	seedAuthorityIdentity(t, storetest.Identity{
+		Organizations: []domain.Organization{{ID: org, Name: "Reach " + org[:8]}},
+		Members:       []storetest.Member{{Organization: org, Person: admin, Administrator: true}},
+	})
+	item := func(actions ...string) []*basev0.WorkScopeV1 {
+		return []*basev0.WorkScopeV1{{ResourceKind: "reach-store.item", Actions: actions}}
+	}
+	page := []*basev0.WorkScopeV1{{ResourceKind: "reach-solution.page", Actions: []string{"read"}}}
+	store := domain.Module{Name: "reach-store", Principal: "reach-store", Kind: domain.KindModule, ResourceKinds: item("admin", "read", "write"),
+		Methods: map[string]domain.MethodPolicy{"/reach.Store/Get": {Requires: item("read")}, "POST /reach.Store/Get": {Requires: item("read")},
+			"/reach.Store/Purge": {Requires: item("admin")}}}
+	solution := domain.Module{Name: "reach-solution", Principal: "reach-solution", Kind: domain.KindSolution, ResourceKinds: page,
+		Roles:    map[string][]*basev0.WorkScopeV1{"editor": append(slices.Clone(page), item("read", "write")...)},
+		Bindings: map[string]domain.Binding{"store": {ID: "store", Audience: "reach-store", InvokeScopes: item("read", "write")}}}
+	reach, err := decide.ReachOf(solution, []domain.Module{solution, store})
+	require.NoError(t, err)
+	text, digest, err := decide.EncodeReach(reach)
+	require.NoError(t, err)
+	require.Contains(t, text, "/reach.Store/Get", "the reach lists the operation it admits")
+
+	inst := domain.Installation{ID: uuid.NewString(), Organization: org, Target: solution.Name, Status: domain.Active, Revision: 1,
+		AgentRole: "editor", PrincipalID: uuid.NewString(), InstalledBy: admin,
+		Consent: domain.ConsentReceipt{OperationID: uuid.NewString(), Intent: "intent", Revision: 1, Generation: 1, Digest: "sha256:offer", ReachDigest: digest, Reach: text}}
+	require.NoError(t, testStore.AuthorityCore().Write(testCtx, func(tx authority.Tx) error { return tx.PutInstallation(inst) }))
+	var read domain.Installation
+	require.NoError(t, testStore.AuthorityCore().Read(testCtx, func(tx authority.Tx) error {
+		read, err = tx.Installation(inst.ID)
+		return err
+	}))
+	require.Equal(t, text, read.Consent.Reach, "the approved reach is the encoder's text, byte for byte")
+	require.Equal(t, digest, read.Consent.ReachDigest)
+	decoded, err := decide.DecodeReach(read.Consent.Reach)
+	require.NoError(t, err)
+	again, againDigest, err := decide.EncodeReach(decoded)
+	require.NoError(t, err)
+	require.Equal(t, text, again, "what is read decodes to the rows the encoder wrote")
+	require.Equal(t, digest, againDigest)
 }

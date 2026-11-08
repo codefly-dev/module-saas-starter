@@ -41,6 +41,9 @@ const (
 	// InstallationServiceInstallReviewedSolutionProcedure is the fully-qualified name of the
 	// InstallationService's InstallReviewedSolution RPC.
 	InstallationServiceInstallReviewedSolutionProcedure = "/saas.accounts.v1.InstallationService/InstallReviewedSolution"
+	// InstallationServiceSetUpModulePageProcedure is the fully-qualified name of the
+	// InstallationService's SetUpModulePage RPC.
+	InstallationServiceSetUpModulePageProcedure = "/saas.accounts.v1.InstallationService/SetUpModulePage"
 	// InstallationServiceInstallSolutionProcedure is the fully-qualified name of the
 	// InstallationService's InstallSolution RPC.
 	InstallationServiceInstallSolutionProcedure = "/saas.accounts.v1.InstallationService/InstallSolution"
@@ -82,6 +85,10 @@ type InstallationServiceClient interface {
 	ReviewSolutionInstall(context.Context, *connect.Request[v1.ReviewSolutionInstallRequest]) (*connect.Response[v1.ReviewedSolutionInstall], error)
 	// Consent to the exact review; retries retain its original per-owner receipts.
 	InstallReviewedSolution(context.Context, *connect.Request[v1.InstallReviewedSolutionRequest]) (*connect.Response[v1.Installation], error)
+	// Set up who may use a module page: its roles to teams on its composition
+	// installation, in one act; the answer is that installation, with what
+	// could not be applied in access_problems.
+	SetUpModulePage(context.Context, *connect.Request[v1.SetUpModulePageRequest]) (*connect.Response[v1.Installation], error)
 	// InstallSolution composes an installation in one transaction: an idempotent
 	// agent Principal with its ceiling, a solution scope node, the agent's standing
 	// least-privilege grant at that node, and the installation row with its owner of
@@ -191,6 +198,12 @@ func NewInstallationServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithSchema(installationServiceMethods.ByName("InstallReviewedSolution")),
 			connect.WithClientOptions(opts...),
 		),
+		setUpModulePage: connect.NewClient[v1.SetUpModulePageRequest, v1.Installation](
+			httpClient,
+			baseURL+InstallationServiceSetUpModulePageProcedure,
+			connect.WithSchema(installationServiceMethods.ByName("SetUpModulePage")),
+			connect.WithClientOptions(opts...),
+		),
 		installSolution: connect.NewClient[v1.InstallSolutionRequest, v1.Installation](
 			httpClient,
 			baseURL+InstallationServiceInstallSolutionProcedure,
@@ -264,6 +277,7 @@ func NewInstallationServiceClient(httpClient connect.HTTPClient, baseURL string,
 type installationServiceClient struct {
 	reviewSolutionInstall         *connect.Client[v1.ReviewSolutionInstallRequest, v1.ReviewedSolutionInstall]
 	installReviewedSolution       *connect.Client[v1.InstallReviewedSolutionRequest, v1.Installation]
+	setUpModulePage               *connect.Client[v1.SetUpModulePageRequest, v1.Installation]
 	installSolution               *connect.Client[v1.InstallSolutionRequest, v1.Installation]
 	uninstallSolution             *connect.Client[v1.UninstallSolutionRequest, emptypb.Empty]
 	narrowInstallation            *connect.Client[v1.NarrowInstallationRequest, emptypb.Empty]
@@ -285,6 +299,11 @@ func (c *installationServiceClient) ReviewSolutionInstall(ctx context.Context, r
 // InstallReviewedSolution calls saas.accounts.v1.InstallationService.InstallReviewedSolution.
 func (c *installationServiceClient) InstallReviewedSolution(ctx context.Context, req *connect.Request[v1.InstallReviewedSolutionRequest]) (*connect.Response[v1.Installation], error) {
 	return c.installReviewedSolution.CallUnary(ctx, req)
+}
+
+// SetUpModulePage calls saas.accounts.v1.InstallationService.SetUpModulePage.
+func (c *installationServiceClient) SetUpModulePage(ctx context.Context, req *connect.Request[v1.SetUpModulePageRequest]) (*connect.Response[v1.Installation], error) {
+	return c.setUpModulePage.CallUnary(ctx, req)
 }
 
 // InstallSolution calls saas.accounts.v1.InstallationService.InstallSolution.
@@ -351,6 +370,10 @@ type InstallationServiceHandler interface {
 	ReviewSolutionInstall(context.Context, *connect.Request[v1.ReviewSolutionInstallRequest]) (*connect.Response[v1.ReviewedSolutionInstall], error)
 	// Consent to the exact review; retries retain its original per-owner receipts.
 	InstallReviewedSolution(context.Context, *connect.Request[v1.InstallReviewedSolutionRequest]) (*connect.Response[v1.Installation], error)
+	// Set up who may use a module page: its roles to teams on its composition
+	// installation, in one act; the answer is that installation, with what
+	// could not be applied in access_problems.
+	SetUpModulePage(context.Context, *connect.Request[v1.SetUpModulePageRequest]) (*connect.Response[v1.Installation], error)
 	// InstallSolution composes an installation in one transaction: an idempotent
 	// agent Principal with its ceiling, a solution scope node, the agent's standing
 	// least-privilege grant at that node, and the installation row with its owner of
@@ -456,6 +479,12 @@ func NewInstallationServiceHandler(svc InstallationServiceHandler, opts ...conne
 		connect.WithSchema(installationServiceMethods.ByName("InstallReviewedSolution")),
 		connect.WithHandlerOptions(opts...),
 	)
+	installationServiceSetUpModulePageHandler := connect.NewUnaryHandler(
+		InstallationServiceSetUpModulePageProcedure,
+		svc.SetUpModulePage,
+		connect.WithSchema(installationServiceMethods.ByName("SetUpModulePage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	installationServiceInstallSolutionHandler := connect.NewUnaryHandler(
 		InstallationServiceInstallSolutionProcedure,
 		svc.InstallSolution,
@@ -528,6 +557,8 @@ func NewInstallationServiceHandler(svc InstallationServiceHandler, opts ...conne
 			installationServiceReviewSolutionInstallHandler.ServeHTTP(w, r)
 		case InstallationServiceInstallReviewedSolutionProcedure:
 			installationServiceInstallReviewedSolutionHandler.ServeHTTP(w, r)
+		case InstallationServiceSetUpModulePageProcedure:
+			installationServiceSetUpModulePageHandler.ServeHTTP(w, r)
 		case InstallationServiceInstallSolutionProcedure:
 			installationServiceInstallSolutionHandler.ServeHTTP(w, r)
 		case InstallationServiceUninstallSolutionProcedure:
@@ -565,6 +596,10 @@ func (UnimplementedInstallationServiceHandler) ReviewSolutionInstall(context.Con
 
 func (UnimplementedInstallationServiceHandler) InstallReviewedSolution(context.Context, *connect.Request[v1.InstallReviewedSolutionRequest]) (*connect.Response[v1.Installation], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.InstallReviewedSolution is not implemented"))
+}
+
+func (UnimplementedInstallationServiceHandler) SetUpModulePage(context.Context, *connect.Request[v1.SetUpModulePageRequest]) (*connect.Response[v1.Installation], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.InstallationService.SetUpModulePage is not implemented"))
 }
 
 func (UnimplementedInstallationServiceHandler) InstallSolution(context.Context, *connect.Request[v1.InstallSolutionRequest]) (*connect.Response[v1.Installation], error) {

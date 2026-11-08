@@ -73,11 +73,19 @@ func (s *Service) canonicalSolutionEntitlements(ctx context.Context, snapshot *i
 }
 
 // roleGatedInstallation is this host's active, healthy record of held, an
-// installation whose roles decide, or nil. A solution's and a module page's
-// alike are the core's canonical record (one lifecycle for every role-gated
-// target), read at the revision the core read; health is the record's own,
-// following the target's release line.
-func (s *Service) roleGatedInstallation(ctx context.Context, org string, _ domain.Module, held domain.Installation) (*gen.Installation, error) {
+// installation whose roles decide, or nil. A solution's is the core's
+// canonical record, read at the revision the core read, its health the
+// record's own, following the target's release line. A module page's is its
+// composition installation, this host's own module record, entitling by
+// grants alone: active is all it needs.
+func (s *Service) roleGatedInstallation(ctx context.Context, org string, module domain.Module, held domain.Installation) (*gen.Installation, error) {
+	if module.Kind != domain.KindSolution {
+		inst, _, err := s.GetInstallation(ctx, org, held.ID)
+		if err != nil || inst.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+			return nil, err
+		}
+		return inst, nil
+	}
 	canonical, err := s.canonicalSolutionSummaries(ctx, org, held.ID, "", gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, 1)
 	if err != nil || len(canonical) != 1 || canonical[0].Health != gen.InstallationHealth_INSTALLATION_HEALTH_HEALTHY ||
 		canonical[0].GetInstallation().GetRevision() != held.Revision {

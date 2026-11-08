@@ -23,6 +23,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	InstallationService_ReviewSolutionInstall_FullMethodName         = "/saas.accounts.v1.InstallationService/ReviewSolutionInstall"
 	InstallationService_InstallReviewedSolution_FullMethodName       = "/saas.accounts.v1.InstallationService/InstallReviewedSolution"
+	InstallationService_SetUpModulePage_FullMethodName               = "/saas.accounts.v1.InstallationService/SetUpModulePage"
 	InstallationService_InstallSolution_FullMethodName               = "/saas.accounts.v1.InstallationService/InstallSolution"
 	InstallationService_UninstallSolution_FullMethodName             = "/saas.accounts.v1.InstallationService/UninstallSolution"
 	InstallationService_NarrowInstallation_FullMethodName            = "/saas.accounts.v1.InstallationService/NarrowInstallation"
@@ -44,6 +45,10 @@ type InstallationServiceClient interface {
 	ReviewSolutionInstall(ctx context.Context, in *ReviewSolutionInstallRequest, opts ...grpc.CallOption) (*ReviewedSolutionInstall, error)
 	// Consent to the exact review; retries retain its original per-owner receipts.
 	InstallReviewedSolution(ctx context.Context, in *InstallReviewedSolutionRequest, opts ...grpc.CallOption) (*Installation, error)
+	// Set up who may use a module page: its roles to teams on its composition
+	// installation, in one act; the answer is that installation, with what
+	// could not be applied in access_problems.
+	SetUpModulePage(ctx context.Context, in *SetUpModulePageRequest, opts ...grpc.CallOption) (*Installation, error)
 	// InstallSolution composes an installation in one transaction: an idempotent
 	// agent Principal with its ceiling, a solution scope node, the agent's standing
 	// least-privilege grant at that node, and the installation row with its owner of
@@ -152,6 +157,16 @@ func (c *installationServiceClient) InstallReviewedSolution(ctx context.Context,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Installation)
 	err := c.cc.Invoke(ctx, InstallationService_InstallReviewedSolution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *installationServiceClient) SetUpModulePage(ctx context.Context, in *SetUpModulePageRequest, opts ...grpc.CallOption) (*Installation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Installation)
+	err := c.cc.Invoke(ctx, InstallationService_SetUpModulePage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -276,6 +291,10 @@ type InstallationServiceServer interface {
 	ReviewSolutionInstall(context.Context, *ReviewSolutionInstallRequest) (*ReviewedSolutionInstall, error)
 	// Consent to the exact review; retries retain its original per-owner receipts.
 	InstallReviewedSolution(context.Context, *InstallReviewedSolutionRequest) (*Installation, error)
+	// Set up who may use a module page: its roles to teams on its composition
+	// installation, in one act; the answer is that installation, with what
+	// could not be applied in access_problems.
+	SetUpModulePage(context.Context, *SetUpModulePageRequest) (*Installation, error)
 	// InstallSolution composes an installation in one transaction: an idempotent
 	// agent Principal with its ceiling, a solution scope node, the agent's standing
 	// least-privilege grant at that node, and the installation row with its owner of
@@ -376,6 +395,9 @@ func (UnimplementedInstallationServiceServer) ReviewSolutionInstall(context.Cont
 func (UnimplementedInstallationServiceServer) InstallReviewedSolution(context.Context, *InstallReviewedSolutionRequest) (*Installation, error) {
 	return nil, status.Error(codes.Unimplemented, "method InstallReviewedSolution not implemented")
 }
+func (UnimplementedInstallationServiceServer) SetUpModulePage(context.Context, *SetUpModulePageRequest) (*Installation, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetUpModulePage not implemented")
+}
 func (UnimplementedInstallationServiceServer) InstallSolution(context.Context, *InstallSolutionRequest) (*Installation, error) {
 	return nil, status.Error(codes.Unimplemented, "method InstallSolution not implemented")
 }
@@ -462,6 +484,24 @@ func _InstallationService_InstallReviewedSolution_Handler(srv interface{}, ctx c
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(InstallationServiceServer).InstallReviewedSolution(ctx, req.(*InstallReviewedSolutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InstallationService_SetUpModulePage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetUpModulePageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InstallationServiceServer).SetUpModulePage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InstallationService_SetUpModulePage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InstallationServiceServer).SetUpModulePage(ctx, req.(*SetUpModulePageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -678,6 +718,10 @@ var InstallationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InstallReviewedSolution",
 			Handler:    _InstallationService_InstallReviewedSolution_Handler,
+		},
+		{
+			MethodName: "SetUpModulePage",
+			Handler:    _InstallationService_SetUpModulePage_Handler,
 		},
 		{
 			MethodName: "InstallSolution",

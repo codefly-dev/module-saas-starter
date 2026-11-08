@@ -5465,6 +5465,40 @@
         ]
       }
     },
+    "/v1/solution-installations/module-pages/setup": {
+      "post": {
+        "summary": "Set up who may use a module page: its roles to teams on its composition\ninstallation, in one act; the answer is that installation, with what\ncould not be applied in access_problems.",
+        "operationId": "InstallationService_SetUpModulePage",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/saasAccountsV1Installation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "A module page's access is set up the way a solution's install assigns it,\nwithout an install: every module is installed by composition, and a module\npage's roles decide who may use it, through grants on that composition\ninstallation. Each declared role goes to the team role_teams names for it,\nor else to the organization's team `\u003cmodule\u003e-\u003crole\u003e` (found by name or by\nits slug, created when absent), and is granted to it on the composition\ninstallation; the acting administrator joins the teams of installer_roles\nand no other. Setting it up again changes nothing that is already so.",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetUpModulePageRequest"
+            }
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
     "/v1/solution-installations/review": {
       "post": {
         "summary": "Review one solution release and its supporting module access before consent.",
@@ -7736,6 +7770,13 @@
         "kind": {
           "type": "string",
           "description": "What this target is, as its registration declared it: `module` or\n`solution`. Read from the registration in the same statement as the rest of\nthe row; a reader is told rather than inferring it from the alias, because a\nmodule and a solution are set up differently and the page says which it is.\nEmpty when the registration declared neither."
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The roles a module page declares (a module declaring roles), as the\nauthority composes it: such a module is never installed by an\nadministrator, its access is set up (SetUpModulePage). Empty for a\nsolution, whose roles its review answers, and for a module without roles."
         }
       },
       "description": "AvailableSolution is one installable solution target: its immutable identity,\nthe release the host currently has applied for it, and where it is routed."
@@ -8290,6 +8331,10 @@
         "digest": {
           "type": "string",
           "description": "sha256 digest of the reviewed authority offer."
+        },
+        "reachDigest": {
+          "type": "string",
+          "description": "sha256 digest of what each of the target's roles reaches, directly and\ntransitively, in the composition reviewed (ReviewedOffer roles' reach):\nthe consent covers it. Required; Install refuses an approval whose reach\nchanged since it was reviewed (INSTALLATION_APPROVAL_REACH_CHANGED)."
         }
       },
       "description": "ConsentApproval binds consent to an immutable target, its reviewed delivery and\nthe installation revision (zero if absent). Review leaves operation_id empty;\nthe caller supplies a fresh UUID and preserves the entire request on retry."
@@ -12221,6 +12266,31 @@
           "description": "Set only on an impersonation window, naming the user being viewed. An\nordinary login leaves it empty, so a client can tell the two apart rather\nthan presenting an admin's support session as a device they signed in on."
         }
       }
+    },
+    "v1SetUpModulePageRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string",
+          "description": "The module page, as ListAvailableSolutions names it."
+        },
+        "roleTeams": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "installerRoles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "A module page's access is set up the way a solution's install assigns it,\nwithout an install: every module is installed by composition, and a module\npage's roles decide who may use it, through grants on that composition\ninstallation. Each declared role goes to the team role_teams names for it,\nor else to the organization's team `\u003cmodule\u003e-\u003crole\u003e` (found by name or by\nits slug, created when absent), and is granted to it on the composition\ninstallation; the acting administrator joins the teams of installer_roles\nand no other. Setting it up again changes nothing that is already so."
     },
     "v1SetupTOTPRequest": {
       "type": "object"

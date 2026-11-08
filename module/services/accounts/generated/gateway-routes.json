@@ -1444,6 +1444,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.InstallationService/SetUpModulePage",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/SetUpModulePage",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.InstallationService/SetUpModulePage",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.InstallationService/TransferInstallationOwnership",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
@@ -5303,6 +5319,22 @@
       "path": "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
+      "path": "/saas.accounts.v1.InstallationService/SetUpModulePage",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/SetUpModulePage",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9831,6 +9863,22 @@
       "path": "/v1/solution-installations",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.InstallationService/InstallReviewedSolution",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/solution-installations/module-pages/setup",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.InstallationService/SetUpModulePage",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

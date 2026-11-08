@@ -16,12 +16,9 @@ import (
 	"sync"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
-	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	"github.com/codefly-dev/core/wool"
 	"github.com/codefly-dev/core/workcontext"
 
-	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/permissioncatalog"
 )
 
@@ -69,8 +66,9 @@ func (k staticKeys) PublicKeys(context.Context) (map[string]ed25519.PublicKey, e
 // only by accounts' own consent (an administrator's install, within the module
 // envelope): the core installs none itself and reads accounts' records live
 // (HostInstallsModules), so an uninstall or a narrowed ceiling ends it there at
-// once. Every applied delivery is composed in the core, then the pass every
-// delivery pass repeats runs (KeepAuthorityCoreCurrent). An error with the
+// once. Consents recorded before reach was kept adopt their reach
+// (AdoptLegacyReach), every applied delivery is composed in the core, then
+// the pass every delivery pass repeats runs (KeepAuthorityCoreCurrent). An error with the
 // core built (AuthorityCore answers it) is a reconciliation that did not
 // complete, which the next delivery pass retries; it never stops the host.
 func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID string, key ed25519.PrivateKey) error {
@@ -83,6 +81,14 @@ func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID stri
 		return err
 	}
 	var failures []error
+	// A consent recorded before its reach was kept adopts, once, what its
+	// approved roles reach as the composition stands when the host starts
+	// (installation.reach_adopted); until then the core holds it to that
+	// same reach. The core adopts before any delivery changes the
+	// composition too, so this only covers a host that starts on one.
+	if err := core.AdoptLegacyReach(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("authority core: adopt the reach of earlier consents: %w", err))
+	}
 	if err := s.reconcileAuthorityCore(ctx); err != nil {
 		failures = append(failures, fmt.Errorf("authority core: compose the applied deliveries: %w", err))
 	}
@@ -95,136 +101,12 @@ func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID stri
 // KeepAuthorityCoreCurrent is what boot and every delivery pass run once the
 // applied deliveries are composed: every declaration a live consent approved
 // that the store does not keep yet is written where it can be rebuilt and is
-// what was consented to (keepApprovedDeclarations), and every module
-// installation that needs its review is reported (reportUnreviewedModulePages).
-// Both are idempotent.
+// what was consented to (keepApprovedDeclarations). It is idempotent.
 func (s *Service) KeepAuthorityCoreCurrent(ctx context.Context) error {
-	var failures []error
 	if err := s.keepApprovedDeclarations(ctx); err != nil {
-		failures = append(failures, fmt.Errorf("authority core: keep the approved declarations: %w", err))
-	}
-	if err := s.reportUnreviewedModulePages(ctx); err != nil {
-		failures = append(failures, err)
-	}
-	return errors.Join(failures...)
-}
-
-// unreviewedModulePages lists the active module installations of this host's
-// own (installed by name: no principal, not the core's) at org, or at every
-// organization when org is "", whose composed target is now role-gated
-// (decide.RoleGated). A role-gated target's entitlement is read from the
-// core's record alone, so such an installation entitles nobody, and it cannot
-// be installed again through its review without orphaning what it was
-// granted: it needs an administrator to uninstall it and install the target
-// through its review. Delivery refuses to make a module role-gated while one
-// exists (refuseRoleGatingByName); one that predates that refusal is reported
-// here, never a reason not to start.
-func (s *Service) unreviewedModulePages(ctx context.Context, org string) ([]domain.Installation, error) {
-	cores, ok := s.store.(AuthorityCoreStore)
-	if !ok {
-		return nil, nil
-	}
-	var found []domain.Installation
-	// No consent reading: the installation's own status decides, not what its
-	// consent allows today.
-	err := cores.AuthorityCoreWithConsent(nil).Read(ctx, func(tx authority.Tx) error {
-		found = nil
-		all, err := tx.Installations(org)
-		if err != nil {
-			return err
-		}
-		composed := map[string]domain.Module{}
-		for _, inst := range all {
-			if inst.PrincipalID != "" || inst.Status != domain.Active {
-				continue
-			}
-			m, seen := composed[inst.Target]
-			if !seen {
-				if m, err = tx.ModuleNamed(inst.Target); err != nil && !errors.Is(err, domain.ErrNotFound) {
-					return err
-				}
-				composed[inst.Target] = m
-			}
-			if m.Name != "" && m.Kind != domain.KindSolution && decide.RoleGated(m) {
-				found = append(found, inst)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("authority core: read the module installations: %w", err)
-	}
-	return found, nil
-}
-
-// reportUnreviewedModulePages logs, at error level, each module installation
-// that needs its review (unreviewedModulePages): once per call, so once per
-// boot and per delivery pass. The installation read states the same as an
-// unmet readiness condition.
-func (s *Service) reportUnreviewedModulePages(ctx context.Context) error {
-	found, err := s.unreviewedModulePages(ctx, "")
-	if err != nil {
-		return err
-	}
-	log := wool.Get(ctx).In("reportUnreviewedModulePages")
-	for _, inst := range found {
-		log.Error("a module declaring roles is installed by name, not through its review, so it entitles nobody; an organization administrator must uninstall it, then install it through its review",
-			wool.Field("installation", inst.ID), wool.Field("organization", inst.Organization), wool.Field("target", inst.Target))
+		return fmt.Errorf("authority core: keep the approved declarations: %w", err)
 	}
 	return nil
-}
-
-// unreviewedModulePageCondition is the readiness an installation that needs
-// its review (unreviewedModulePages) reads with.
-func unreviewedModulePageCondition(target string) ReadinessCondition {
-	return ReadinessCondition{
-		Kind:    gen.ReadinessConditionKind_READINESS_CONDITION_KIND_RECORD_UNHEALTHY,
-		Subject: target,
-		Detail: fmt.Sprintf("%s now declares roles, and this installation was made by name, not through its review, so it entitles nobody. "+
-			"An organization administrator clears it: uninstall it, then install it through its review.", target),
-		ClearedBy: gen.ReadinessClearedBy_READINESS_CLEARED_BY_ORGANIZATION_ADMIN,
-		Action:    gen.ReadinessAction_READINESS_ACTION_NONE_AT_THIS_SURFACE,
-	}
-}
-
-// refuseRoleGatingByName refuses, as a delivery conflict, a generation of m
-// that makes a module role-gated (it was not, or was not composed) while an
-// active installation of it made by name stands: that installation would
-// entitle nobody, and could not be installed again through its review without
-// orphaning what it was granted. The refusal names each one; an organization
-// administrator uninstalls them, then the generation is delivered again.
-func (s *Service) refuseRoleGatingByName(ctx context.Context, m domain.Module) error {
-	cores, ok := s.store.(AuthorityCoreStore)
-	if !ok || m.Kind == domain.KindSolution || !decide.RoleGated(m) {
-		return nil
-	}
-	var found []string
-	err := cores.AuthorityCoreWithConsent(nil).Read(ctx, func(tx authority.Tx) error {
-		found = nil
-		if held, err := tx.ModuleNamed(m.Name); err == nil && decide.RoleGated(held) {
-			return nil // role-gated already: this generation does not make it so
-		} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
-			return err
-		}
-		all, err := tx.Installations("")
-		if err != nil {
-			return err
-		}
-		for _, inst := range all {
-			if inst.Target == m.Name && inst.PrincipalID == "" && inst.Status == domain.Active {
-				found = append(found, fmt.Sprintf("installation %s at organization %s", inst.ID, inst.Organization))
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("authority core: read the module installations: %w", err)
-	}
-	if len(found) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%w: generation %d of %s declares roles while it is installed by name (%s); an organization administrator uninstalls each, then the generation is delivered again and %s is installed through its review",
-		ErrSolutionDeliveryConflict, m.Generation, m.Name, strings.Join(found, "; "), m.Name)
 }
 
 func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey) (*authority.Service, error) {

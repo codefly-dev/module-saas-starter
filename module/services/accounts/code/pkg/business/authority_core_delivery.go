@@ -69,10 +69,11 @@ func wireScopes(in []*authorityv1.WorkScopeV1) []*basev0.WorkScopeV1 {
 }
 
 // precheckCoreModule refuses, before anything is recorded, a delivery the core
-// would refuse to compose, and one that would make a module role-gated while
-// it is installed by name (refuseRoleGatingByName). It reads the carrier
-// unverified, so it only ever refuses: what is applied is read again from the
-// verified, applied record.
+// would refuse to compose. It reads the carrier unverified, so it only ever
+// refuses: what is applied is read again from the verified, applied record. A
+// module that gains or loses roles keeps its installations as they are: every
+// module is installed by composition, and its roles decide only who may use
+// it.
 func (s *Service) precheckCoreModule(ctx context.Context, req *compositionv1.ApplyManifestRequest) error {
 	manifest, err := solutionhost.ManifestFromVerified(req.GetCarrier().GetDocument())
 	if err != nil {
@@ -86,10 +87,7 @@ func (s *Service) precheckCoreModule(ctx context.Context, req *compositionv1.App
 		return err
 	}
 	m.ResourceKinds = decide.Served(m)
-	if err := decide.ValidateModule(m); err != nil {
-		return err
-	}
-	return s.refuseRoleGatingByName(ctx, m)
+	return decide.ValidateModule(m)
 }
 
 // applyCoreModule records the applied, verified delivery in the core: the
@@ -126,9 +124,6 @@ func (s *Service) applyCoreModule(ctx context.Context, manifest *solutionhost.Mo
 	}
 	if held, err := core.Composed(ctx, m.Name); err == nil && held.Generation == m.Generation && !held.StandIn {
 		return nil, nil
-	}
-	if err := s.refuseRoleGatingByName(ctx, m); err != nil {
-		return nil, err
 	}
 	return core.ApplyModule(ctx, m)
 }

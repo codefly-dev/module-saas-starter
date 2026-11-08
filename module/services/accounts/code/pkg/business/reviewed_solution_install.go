@@ -80,7 +80,8 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 	a := offer.Approval
 	review := &gen.ReviewedSolutionInstall{OrgId: org, ActorId: caller.ID, TargetId: targetID, Target: target.RouteAlias,
 		BindingId: target.BindingID, Release: release, DeliveryDigest: digest, InstallationRole: offer.Module.InstallationRole,
-		Approval: &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest, OperationId: operation}}
+		Approval: &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest,
+			ReachDigest: a.ReachDigest, OperationId: operation}}
 	dependencies, err := SolutionInstallationDependencies(offer)
 	if err != nil {
 		return nil, err
@@ -331,7 +332,7 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 	plan := SolutionInstallationPlan{Organization: org, Target: review.Target, MachineRole: review.InstallationRole, RequestedRole: requestedRole, RequestedOwner: requestedOwner,
 		HostTargetID: review.TargetId, BindingID: review.BindingId, Release: review.Release, DeliveryDigest: review.DeliveryDigest,
 		Review: review, Approval: domain.ConsentApproval{TargetID: a.TargetId,
-			Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest, OperationID: a.OperationId}}
+			Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest, ReachDigest: a.ReachDigest, OperationID: a.OperationId}}
 	// Check first: a supporting module that would be refused refuses the
 	// whole install here, before the core records a pending attempt and
 	// before any module is installed.
@@ -587,6 +588,8 @@ func (s *Service) InstallAuthoritySolution(ctx context.Context, caller authority
 		return domain.Installation{}, domain.NotNow("INSTALLATION_APPROVAL_DIGEST_CHANGED: review the current authority again")
 	case a.ExpectedRevision != approval.ExpectedRevision:
 		return domain.Installation{}, domain.NotNow("INSTALLATION_APPROVAL_REVISION_CHANGED: review the current installation again")
+	case a.ReachDigest != approval.ReachDigest:
+		return domain.Installation{}, domain.NotNow("INSTALLATION_APPROVAL_REACH_CHANGED: what the offer's roles reach changed, or the approval names no reach; review and approve again")
 	}
 	for _, dependency := range review.Modules {
 		if dependency.Required && dependency.ReuseInstallationId == "" {

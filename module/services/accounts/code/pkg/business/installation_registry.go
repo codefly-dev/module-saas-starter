@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 
 	"google.golang.org/grpc/codes"
@@ -75,12 +74,8 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 	if declaration.Principal != "" && declaration.Principal != grant.Prefix {
 		return nil, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: the module principal differs from its paired declaration")
 	}
-	if decide.RoleGated(declaration) {
-		// A module declaring roles is a module page, chosen through its review
-		// (ReviewSolutionInstall, InstallReviewedSolution) and recorded by the
-		// core, exactly as a solution is; this path installs the modules a
-		// closure reaches, which hold no roles.
-		return nil, domain.Refuse("%s declares roles and is installed through its review, like a solution", target.RouteAlias)
+	if err := modulePageHoldsNothing(declaration, target.RouteAlias); err != nil {
+		return nil, err
 	}
 	if declaration.InstallationRole == domain.NoInstallationRole {
 		if params.RoleID != "" {

@@ -394,6 +394,7 @@ const (
 	EventAuthorityInstallationReconverged      EventType = "saas.authority.installation_reconverged"
 	EventAuthorityInstallationUpgradeAvailable EventType = "saas.authority.installation_upgrade_available"
 	EventAuthorityInstallationUpgraded         EventType = "saas.authority.installation_upgraded"
+	EventAuthorityInstallationReachAdopted     EventType = "saas.authority.installation_reach_adopted"
 	EventAuthorityRoleGranted                  EventType = "saas.authority.role_granted"
 	EventAuthorityRoleRevoked                  EventType = "saas.authority.role_revoked"
 	EventAuthorityResourceAttached             EventType = "saas.authority.resource_attached"
@@ -722,6 +723,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventAuthorityInstallationReconverged, CategoryAccess, "A redelivery asked nothing new of an installation's consent, which now stands at the delivered generation; its grants are kept.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationUpgradeAvailable, CategoryAccess, "A redelivery asks more than an installation's consent approved; it stands on that consent until an administrator approves the new offer.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationUpgraded, CategoryAccess, "An administrator approved a newer offer on an active installation, which keeps its grants.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationReachAdopted, CategoryAccess, "A consent recorded before its reach was kept adopted, once, what its approved roles reach in the composition as it stood; nothing issued ended.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleGranted, CategoryAccess, "A solution role was granted on an installation to a person or a team.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleRevoked, CategoryAccess, "A solution role grant was revoked; its subject's capabilities through the installation ended.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceAttached, CategoryAccess, "A resource created through an installation was attached to it by the kind's serving module.", authorityChangeFields()...),

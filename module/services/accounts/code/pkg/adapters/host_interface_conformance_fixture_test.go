@@ -124,6 +124,8 @@ type conformanceModule struct {
 	// page is core's manifest's frontend, and roles the roles a page declares.
 	page  *solutionhost.Frontend
 	roles map[string][]*authorityv1.WorkScopeV1
+	// methods are what each operation the module serves requires.
+	methods []*compositionv1.MethodPolicyV1
 }
 
 // deliverModule delivers m as the CLI does: core's manifest signed with the
@@ -147,7 +149,7 @@ func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterf
 	require.NoError(t, err)
 	sum := sha256.Sum256(raw)
 	document := &compositionv1.AuthorityManifestV1{Module: m.alias, Generation: generation,
-		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, OwnerAware: true, InstallationRole: m.installationRole}
+		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, Methods: m.methods, OwnerAware: true, InstallationRole: m.installationRole}
 	for _, name := range slices.Sorted(maps.Keys(m.roles)) {
 		document.Roles = append(document.Roles, &compositionv1.RoleV1{Name: name, Scopes: m.roles[name]})
 	}
@@ -189,8 +191,6 @@ func teamNamed(t *testing.T, ctx context.Context, svc *business.Service, orgID, 
 func consentModule(ctx context.Context, svc *business.Service, store *infra.PostgresStore, org, admin, module string) error {
 	// One role per module and organization: a consent given again keeps the
 	// role the installation holds, which is immutable.
-	// A module page declaring roles is installed holding one of its own, as a
-	// solution is.
 	authority, err := svc.DeliveredSolutionAuthority(ctx, module)
 	if err != nil {
 		return err
@@ -200,6 +200,14 @@ func consentModule(ctx context.Context, svc *business.Service, store *infra.Post
 	// its consent names no role, as a fixture row for it names none.
 	if core, err := svc.AuthorityCore(); err == nil {
 		if m, err := core.Composed(ctx, module); err == nil && m.InstallationRole == domain.NoInstallationRole {
+			// A module page is installed by composition once; a redelivery
+			// that adds or drops a role keeps that installation as it is,
+			// its grants and the capabilities they issued included.
+			if len(m.Roles) > 0 {
+				if id, err := svc.WorkContextAudienceInstallation(ctx, org, module); err == nil && id != "" {
+					return nil
+				}
+			}
 			installation, _, err := svc.InstallFixtureTarget(ctx, admin, org, module, "", admin)
 			if err != nil {
 				return fmt.Errorf("install %s at %s: %w", module, org, err)

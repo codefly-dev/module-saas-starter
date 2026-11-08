@@ -104,6 +104,10 @@ type AvailableSolutionTarget struct {
 	// Active reports whether that installation is ACTIVE, which is what a
 	// catalogue shows as installed: a pending attempt is not installed yet.
 	Active bool
+	// Roles are the roles a module page declares, as the authority composes
+	// it (ListAvailableSolutions): its access is set up, never installed by
+	// an administrator. Empty for a solution and for a module without roles.
+	Roles []string
 }
 
 // SolutionGenerationDecision is one entry in the generation history: a generation

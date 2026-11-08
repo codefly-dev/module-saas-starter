@@ -11,7 +11,6 @@ import (
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
-	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/jackc/pgx/v5"
 )
@@ -53,7 +52,13 @@ func (t coreTx) solutionConsentForWrite(inst domain.Installation) ([]byte, error
 		plan.Receipt, plan.Revision = inst.Consent, inst.Revision
 		current.Plan = &plan
 	}
-	if current.Plan == nil && inst.Consent.OperationID != "" {
+	// The core re-recording a consent it already holds, unchanged in its
+	// operation and intent (adopting its reach, re-converging it), is no new
+	// install: it keeps whatever plan the row had, none included. A fresh
+	// consent, and an activation (below), still need the reviewed plan.
+	rerecorded := err == nil && previous.OperationID == inst.Consent.OperationID && previous.Intent == inst.Consent.Intent &&
+		previousStatus == string(inst.Status)
+	if current.Plan == nil && inst.Consent.OperationID != "" && !rerecorded {
 		if plan, ok := business.SolutionInstallationPlanFromContext(t.ctx); ok {
 			if plan.Organization != inst.Organization || plan.Target != inst.Target || plan.MachineRole != inst.AgentRole ||
 				plan.Approval.OperationID != inst.Consent.OperationID {
@@ -114,10 +119,10 @@ func (t coreTx) deliveredSolutionTarget(plan business.SolutionInstallationPlan) 
 	if err := decodeModule(&module, declaration); err != nil {
 		return domain.Module{}, err
 	}
-	// The core installs what is role-gated and nothing else; the host holds
-	// the same line, so a module without roles never gets a record here.
-	if !decide.RoleGated(module) {
-		return domain.Module{}, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: %q no longer declares roles; a module without roles is installed by composition", plan.Target)
+	// The core installs a solution and nothing else; the host holds the same
+	// line, so a module never gets a reviewed record here.
+	if module.Kind != domain.KindSolution {
+		return domain.Module{}, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: %q is a module; a module is installed by composition", plan.Target)
 	}
 	return module, nil
 }

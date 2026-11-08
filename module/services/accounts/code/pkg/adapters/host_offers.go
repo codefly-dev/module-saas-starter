@@ -138,16 +138,20 @@ func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev
 		out.EdgeDependencies = append(out.EdgeDependencies, &installationv1.OfferDependency{Module: edge.Module, Presence: edge.Presence})
 	}
 	if a := projected.Approval; a != nil {
-		out.Approval = &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest}
+		out.Approval = &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest, ReachDigest: a.ReachDigest}
 	}
 	if projected.Installation != nil {
-		out.Installation = installationWire(*projected.Installation, offer.Module, offer.Module)
+		out.Installation = installationWire(*projected.Installation, offer.Module, offer.UpgradeAvailable)
 	}
 	for _, b := range projected.Ceiling {
 		out.Ceiling = append(out.Ceiling, &installationv1.OfferBinding{Binding: b.Binding, Module: b.Module, Scopes: offerScopesToWire(b.Scopes)})
 	}
 	for _, r := range projected.Roles {
 		role := &installationv1.OfferRole{Name: r.Name, Scopes: offerScopesToWire(r.Scopes)}
+		for _, reach := range r.Reach {
+			role.Reach = append(role.Reach, &installationv1.OfferReach{Path: slices.Clone(reach.Path), Module: reach.Module, Via: reach.Via,
+				Confinement: reach.Confinement, Scopes: offerScopesToWire(reach.Scopes), Operations: slices.Clone(reach.Operations)})
+		}
 		for _, c := range r.Capabilities {
 			capability := &installationv1.OfferCapability{Module: c.Module, Operation: c.Operation, Requires: offerScopesToWire(c.Requires)}
 			for _, t := range c.Tools {

@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
-	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/wool"
 
@@ -202,13 +201,13 @@ func (i *Installations) Converge(ctx context.Context) error {
 // authority core has not composed yet; the next pass installs it there.
 var errCoreTargetNotComposed = errors.New("the authority core has not composed this target yet")
 
-// coreInstall installs a role-gated target (a solution, or a module page
-// declaring roles) as an administrator does: the row's owner reviews it
-// (ReviewSolutionInstallAs) and installs that review (InstallReviewedSolutionAs),
-// which converges the target's closure of roleless supporting modules with it,
-// then the owner is granted the installer role and each declared team the
-// row's role. A module holding no roles answers false: Converge installs it by
-// name. An installation the core holds active is left as it is and only the
+// coreInstall installs a solution as an administrator does: the row's owner
+// reviews it (ReviewSolutionInstallAs) and installs that review
+// (InstallReviewedSolutionAs), which converges the solution's closure of
+// supporting modules with it, then the owner is granted the installer role and
+// each declared team the row's role. A module page is installed by
+// composition and set up the same way (modulePageInstall). A module without
+// roles answers false: Converge installs it by name, as composition does. An installation the core holds active is left as it is and only the
 // grants it does not hold yet are granted, so a pass over a converged row
 // changes and journals nothing; one it holds pending is resumed from the
 // review it was opened under while that review is the owner's and still
@@ -231,8 +230,11 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 	if err != nil {
 		return false, fmt.Errorf("the authority core: %w", err)
 	}
-	if !decide.RoleGated(m) {
-		return false, nil
+	if m.Kind != domain.KindSolution {
+		if len(m.Roles) == 0 {
+			return false, nil
+		}
+		return i.modulePageInstall(ctx, row)
 	}
 	caller := authority.Person{ID: row.ownerID, Organization: row.orgID}
 	all, err := core.Installations(ctx, caller, row.orgID)
@@ -264,6 +266,35 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 		return false, fmt.Errorf("the authority core: %w", err)
 	}
 	return inst.Status == domain.Active, nil
+}
+
+// modulePageInstall installs a module page as every module is installed, by
+// composition, holding no standing authority (the row's role names who may use
+// it, never what it holds), then grants, on that composition installation, the
+// installer role to the row's owner and the row's role to each declared team.
+// One still pending its install step waits for the next pass; one installed
+// already is not installed or consented to again.
+func (i *Installations) modulePageInstall(ctx context.Context, row pendingInstallation) (bool, error) {
+	// Installed once: a pass over a converged row consents to nothing again.
+	var installation *gen.Installation
+	if id, err := i.service.WorkContextAudienceInstallation(ctx, row.orgID, row.declared.Target); err == nil && id != "" {
+		if installation, _, err = i.service.GetInstallation(ctx, row.orgID, id); err != nil {
+			return false, err
+		}
+	} else if installation, _, err = i.service.InstallFixtureTarget(ctx, row.ownerID, row.orgID, row.declared.Target, "", row.ownerID); err != nil {
+		return false, err
+	}
+	if installation.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
+		return false, fmt.Errorf("%w: %s is pending its install step", errCoreTargetNotComposed, row.declared.Target)
+	}
+	grants := []authority.RoleRequest{{Organization: row.orgID, InstallationID: installation.GetId(), Role: domain.InstallerRole, PersonID: row.ownerID}}
+	for _, teamID := range row.allTeamIDs {
+		grants = append(grants, authority.RoleRequest{Organization: row.orgID, InstallationID: installation.GetId(), Role: row.declared.Role, TeamID: teamID})
+	}
+	if err := i.service.GrantInstallationRoles(ctx, authority.Person{ID: row.ownerID, Organization: row.orgID}, grants); err != nil {
+		return false, fmt.Errorf("the authority core: %w", err)
+	}
+	return true, nil
 }
 
 // reviewFor is the review the owner installs m with: the one a pending

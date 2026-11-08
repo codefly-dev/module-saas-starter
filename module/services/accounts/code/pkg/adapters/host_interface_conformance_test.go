@@ -161,7 +161,17 @@ func runHostInterfaceFixture(t *testing.T) {
 	// owner and composes its module in the authority core.
 	signer := deliverytest.Signer(t, "conformance-release")
 	verifier := deliverytest.Verifier(t, map[string][]string{signer.KeyID(): {"acme"}})
-	svc.SetSolutionDelivery(verifier, store, conformanceCarrier{})
+	// The suite's reach case delivers conformance-reach and acts as its
+	// workload with the credential it delivered it with: that one delivery
+	// credential is the workload's own, and the carrier accepts it for it.
+	deliveryWorkloads := map[string]string{"conformance-reach": credential("conformance-reach")}
+	deliveryCredential := func(module string) string {
+		if workload, ok := deliveryWorkloads[module]; ok {
+			return workload
+		}
+		return "delivery:" + module
+	}
+	svc.SetSolutionDelivery(verifier, store, conformanceCarrier{workloads: deliveryWorkloads})
 	svc.SetSolutionDeliveryCoordinate("conformance-host")
 	svc.SetAuthorityDocumentVerifier(func(doc, envelope []byte) (string, error) {
 		return delivery.Verify(doc, envelope, map[string]crypto.PublicKey{signer.KeyID(): signer.Public()})
@@ -359,7 +369,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		HostCoordinate: "conformance-host", HostDomain: "acme",
 		SignManifest:       func(doc []byte) ([]byte, error) { return solutionhost.SignEnvelope(doc, signer) },
 		SignAuthority:      func(doc []byte) ([]byte, error) { return delivery.Sign(doc, signer.KeyID(), signer.Sign) },
-		DeliveryCredential: func(module string) string { return "delivery:" + module },
+		DeliveryCredential: deliveryCredential,
 		InstallModule:      installModule,
 		PagePayload:        pagePayload,
 		// accounts serves OfferService from the same core, so the declaration
@@ -1151,13 +1161,13 @@ func runHostInterfaceFixture(t *testing.T) {
 		}
 	})
 
-	// A module page that declares roles is chosen through its review and
-	// recorded by the core, as a solution is, and reaches the navigation of a
-	// person holding one of its roles, and of no other member of the
-	// organization; its page's audience answers the same way. Redelivered
-	// without roles, it leaves the role holder's navigation. The host's own
-	// module install path refuses it by name, and the core refuses a module
-	// page any standing authority but none.
+	// A module page that declares roles is installed by composition, as every
+	// module is, through the host's own module path, holding no standing
+	// authority; it reaches the navigation of a person holding one of its
+	// roles on that installation, and of no other member of the organization;
+	// its page's audience answers the same way. Redelivered without roles, it
+	// leaves the role holder's navigation. Nobody reviews or installs it as a
+	// solution, and a module page selecting a standing role is refused.
 	t.Run("a module page's roles decide who is listed for it", func(t *testing.T) {
 		const module = "conformance-module-page"
 		note := wireScope(module+".note", "read")
@@ -1165,14 +1175,17 @@ func runHostInterfaceFixture(t *testing.T) {
 		withRoles := conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{note}, page: page, installationRole: domain.NoInstallationRole,
 			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}}
 		deliverModule(t, ctx, conn, signer, withRoles)
-		// The host's module install path is for modules a closure reaches,
-		// which hold no roles; a module page is installed through its review.
-		_, _, err := svc.InstallFixtureTarget(ctx, conformanceAlex, fixtureOrganization, module, "", conformanceAlex)
-		require.ErrorContains(t, err, "installed through its review")
-		inst, err := installConformanceSolution(ctx, svc, core, module, "", conformanceAlex)
+		_, err := installConformanceSolution(ctx, svc, core, module, "", conformanceAlex)
+		code, _ := domain.CodeOf(err)
+		require.Equal(t, domain.NotFound, code, "a module page is never reviewed or installed as a solution: %v", err)
+		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
+		all, err := core.Installations(ctx, alex, fixtureOrganization)
 		require.NoError(t, err)
-		require.Equal(t, domain.Active, inst.Status, "the module page is installed at Acme, active at once: it declares no install step")
-		require.Equal(t, domain.NoInstallationRole, inst.AgentRole)
+		i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == module && inst.Status == domain.Active })
+		require.GreaterOrEqual(t, i, 0, "the module page is installed by composition at Acme")
+		inst := all[i]
+		require.Empty(t, inst.PrincipalID, "its installation is the host's own record, with no principal")
+		require.Empty(t, inst.AgentRole, "holding no standing authority")
 		const nora, remi = "00000000-0000-7000-8000-0000000000b8", "00000000-0000-7000-8000-0000000000b2"
 		_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: "viewer", PersonID: nora})
 		require.NoError(t, err)
@@ -1187,7 +1200,7 @@ func runHostInterfaceFixture(t *testing.T) {
 			}
 			return false
 		}
-		require.True(t, listed(nora), "the viewer's navigation lists the module page, from the core's one record")
+		require.True(t, listed(nora), "the viewer's navigation lists the module page, from its composition installation")
 		require.False(t, listed(remi), "another member's does not")
 		issue := func(token string) error {
 			_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(signIn(token), &authorityv1.IssueRequest{
@@ -1198,7 +1211,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.Equal(t, codes.PermissionDenied, status.Code(issue("fixture-remi")), "another member is not")
 		sealed, err := svc.WorkContextAudienceInstallation(ctx, fixtureOrganization, module)
 		require.NoError(t, err)
-		require.Equal(t, inst.ID, sealed, "the host's seal resolves the module page's installation from the core's record")
+		require.Equal(t, inst.ID, sealed, "the host's seal resolves the module page's installation as any module's")
 
 		withoutRoles := withRoles
 		withoutRoles.roles, withoutRoles.generation = nil, 2
@@ -1206,33 +1219,19 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.False(t, listed(nora), "a module page without roles is listed by no role")
 
 		// A module page holds no standing authority: a declaration selecting
-		// one of its roles is refused by the core at install, whatever the
-		// caller names, and the host's module install path refuses the module
-		// page before any role is read.
+		// one of its roles is refused by the host's module install path.
 		const selected = "conformance-module-page-selected"
 		selectedNote := wireScope(selected+".note", "read")
 		deliverModule(t, ctx, conn, signer, conformanceModule{alias: selected, ceilings: []*authorityv1.WorkScopeV1{selectedNote}, page: page, installationRole: "viewer",
 			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {selectedNote}, "viewer": {selectedNote}}})
-		_, err = installConformanceSolution(ctx, svc, core, selected, "", conformanceAlex)
+		_, _, err = svc.InstallFixtureTarget(ctx, conformanceAlex, fixtureOrganization, selected, "", conformanceAlex)
 		require.ErrorContains(t, err, "holds no standing authority")
-		available, _, err := svc.ListAvailableSolutions(ctx, fixtureOrganization, "", 500)
-		require.NoError(t, err)
-		var target *business.AvailableSolutionTarget
-		for _, entry := range available {
-			if entry.RouteAlias == selected {
-				target = entry
-			}
-		}
-		require.NotNil(t, target)
-		_, err = svc.InstallSolution(ctx, conformanceAlex, &business.InstallSolutionParams{OrgID: fixtureOrganization, TargetID: target.TargetID,
-			AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, DisplayName: selected, RootScopeLabel: selected,
-			OwnerPrincipalID: conformanceAlex})
-		require.ErrorContains(t, err, "installed through its review")
 	})
 
 	closures := reviewedClosureHarness{ctx: ctx, conn: conn, signer: signer, svc: svc, store: store, faults: faults, core: core, pagePayload: pagePayload}
 	testReviewedClosures(t, closures)
 	testInstallAssignsAccess(t, closures)
+	testModulePagesAndReach(t, closures)
 
 	// Last, because the envelope it writes becomes every module's ceiling: a
 	// real envelope write that narrows a module's binding (the write
@@ -1361,12 +1360,17 @@ func (r *memoryRevoker) IsSessionRevoked(_ context.Context, sessionID string) (b
 	return revoked, nil
 }
 
-// These test owners stand in for the platform's delivery account and approval.
-type conformanceCarrier struct{}
+// These test owners stand in for the platform's delivery account and approval:
+// "delivery:<namespace>", or a workload credential the harness delivers that
+// namespace with (workloads).
+type conformanceCarrier struct{ workloads map[string]string }
 
-func (conformanceCarrier) AuthorizeCarrier(_ context.Context, credential string, namespaces ...string) error {
+func (c conformanceCarrier) AuthorizeCarrier(_ context.Context, credential string, namespaces ...string) error {
 	for _, namespace := range namespaces {
 		if credential == "Bearer delivery:"+namespace {
+			return nil
+		}
+		if workload, ok := c.workloads[namespace]; ok && credential == "Bearer "+workload {
 			return nil
 		}
 	}

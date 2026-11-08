@@ -105,17 +105,6 @@ func (s *Service) ListOrganizationInstallations(
 		return nil, "", w.Wrapf(err, "cannot list organization installations")
 	}
 
-	// A module installed by name whose target now declares roles needs its
-	// review: it reads as such, never as ready.
-	unreviewed, err := s.unreviewedModulePages(ctx, orgID)
-	if err != nil {
-		return nil, "", w.Wrapf(err, "cannot list organization installations")
-	}
-	needsReview := make(map[string]string, len(unreviewed))
-	for _, inst := range unreviewed {
-		needsReview[inst.ID] = inst.Target
-	}
-
 	canonical, err := s.canonicalSolutionSummaries(ctx, orgID, "", pageToken, gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, pageSize+1)
 	if err != nil {
 		return nil, "", err
@@ -201,9 +190,6 @@ func (s *Service) ListOrganizationInstallations(
 		}
 		row.Readiness, row.ReachedModules = facts.readinessFor(
 			installation, summary.GetHealth(), row.Target, installedByPrincipal)
-		if target, ok := needsReview[installation.GetId()]; ok && installation.GetStatus() == gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
-			row.Readiness = verdict(append(row.Readiness.Unmet, unreviewedModulePageCondition(target)))
-		}
 		if canonicalIDs[installation.GetId()] && installation.GetStatus() == gen.InstallationStatus_INSTALLATION_STATUS_PENDING {
 			detail := installation.GetSetupMessage()
 			if detail == "" {

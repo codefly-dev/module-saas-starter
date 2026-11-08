@@ -195,11 +195,11 @@ func TestReviewedSolutionAPIRequiresDeclaredAuthorityWithoutChoosingRole(t *test
 	require.ErrorContains(t, err, "module:records")
 }
 
-// A module declaring roles is a module page, chosen by its own review. A
-// solution reaching one does not install it and does not depend on it: its
-// review lists no entry for it, whatever installation role the page names, and
-// the install installs nothing for it (the core's closure, decide.Closure).
-func TestAReachedModulePageIsNoSupportingModule(t *testing.T) {
+// A module declaring roles is a module page, and a module page is a module:
+// installed by composition. A solution reaching one lists it in its closure
+// and installs it with the solution, holding no standing authority; a module
+// page that does not declare installation_role none is refused by name.
+func TestAReachedModulePageIsInstalledWithTheClosure(t *testing.T) {
 	for _, selector := range []string{"", "reader", domain.NoInstallationRole} {
 		t.Run("installation role "+selector, func(t *testing.T) {
 			s, _, owner, caller, target := reviewedInstallFixture(t, true)
@@ -214,17 +214,19 @@ func TestAReachedModulePageIsNoSupportingModule(t *testing.T) {
 				return tx.PutModule(m)
 			}))
 			review, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
-			require.NoError(t, err)
-			for _, m := range review.Modules {
-				require.NotEqual(t, "module:records", m.Principal, "a reached module page is listed by the solution's review")
-				require.False(t, m.Required)
+			if selector != domain.NoInstallationRole {
+				require.ErrorContains(t, err, "module:records", "a module page holds no standing authority")
+				return
 			}
-			calls := 0
-			s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
+			require.NoError(t, err)
+			i := slices.IndexFunc(review.Modules, func(m *gen.ReviewedSupportingModule) bool { return m.Principal == "module:records" })
+			require.GreaterOrEqual(t, i, 0, "the reached module page is in the solution's closure")
+			require.True(t, review.Modules[i].Required)
+			require.Equal(t, domain.NoInstallationRole, review.Modules[i].InstallationRole)
+			s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { return nil })
 			inst, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 			require.NoError(t, err)
 			require.Equal(t, domain.Active, inst.Status)
-			require.Equal(t, 1, calls)
 		})
 	}
 }

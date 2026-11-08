@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **302 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **303 RPCs** across **42 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -130,6 +130,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.InstallationService/RetryInstallation` | unary | `POST /v1/installations/{installation_id}:retry` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.retried | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Run a failed installation's install step again; the installation is pending until the solution acknowledges. |
 | `/saas.accounts.v1.InstallationService/ReviewSolutionInstall` | unary | `POST /v1/solution-installations/review` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Review a delivered solution release and the exact supporting module consent before installation. |
 | `/saas.accounts.v1.InstallationService/RevokeInstallationFromTeam` | unary | `POST /v1/installations/{installation_id}/teams/{team_id}:revoke` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.scope.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Remove a team's grant at an installation's authority root. |
+| `/saas.accounts.v1.InstallationService/SetUpModulePage` | unary | `POST /v1/solution-installations/module-pages/setup` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Set up who may use a module page: each declared role to a team on its composition installation, the administrator joining the teams of the roles they take. |
 | `/saas.accounts.v1.InstallationService/TransferInstallationOwnership` | unary | `POST /v1/installations/{installation_id}:transferOwnership` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.ownership_transferred | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Reassign an installation's accountable owner of record. |
 | `/saas.accounts.v1.InstallationService/UninstallSolution` | unary | `POST /v1/installations/{installation_id}:uninstall` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.installation.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Uninstall a solution and reverse its composition. |
 | `/saas.accounts.v1.IntrospectionService/GetServiceInfo` | unary | `GET /v1/.well-known/service-info` | `public` | exposure=PUBLIC; tenant=NONE | — | — | — | FORBIDDEN / PUBLIC | PUBLIC → PUBLIC | Self-describing service catalog (this RPC). |
@@ -316,7 +317,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 52
 - `internal`: 55
 - `mfa`: 5
-- `org_admin`: 71
+- `org_admin`: 72
 - `org_member`: 57
 - `platform_admin`: 29
 - `public`: 33

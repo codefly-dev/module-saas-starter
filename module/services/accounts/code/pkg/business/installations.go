@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/wool"
 )
 
@@ -494,5 +497,30 @@ func (s *Service) ListAvailableSolutions(
 		available = available[:pageSize]
 		next = available[pageSize-1].TargetID
 	}
-	return available, next, nil
+	return available, next, s.modulePageRoles(ctx, available)
+}
+
+// modulePageRoles names, on each module of available, the roles the core
+// composes it with: a module declaring roles is a module page, whose access
+// an administrator sets up (SetUpModulePage). A host without the core, or a
+// module it does not compose, names none.
+func (s *Service) modulePageRoles(ctx context.Context, available []*AvailableSolutionTarget) error {
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return nil
+	}
+	for _, target := range available {
+		if target.Kind != "module" {
+			continue
+		}
+		m, err := core.Composed(ctx, target.RouteAlias)
+		if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		target.Roles = slices.Sorted(maps.Keys(m.Roles))
+	}
+	return nil
 }

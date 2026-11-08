@@ -975,6 +975,13 @@
         "releaseVersion": {
           "type": "string"
         },
+        "roles": {
+          "description": "The roles a module page declares (a module declaring roles), as the\nauthority composes it: such a module is never installed by an\nadministrator, its access is set up (SetUpModulePage). Empty for a\nsolution, whose roles its review answers, and for a module without roles.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "routeAlias": {
           "description": "The route alias the applied generation claims — `/solutions/<alias>/*`. A\nlater generation may move it, so it is never an identity.",
           "type": "string"
@@ -1491,6 +1498,10 @@
           "type": "string"
         },
         "operationId": {
+          "type": "string"
+        },
+        "reachDigest": {
+          "description": "sha256 digest of what each of the target's roles reaches, directly and\ntransitively, in the composition reviewed (ReviewedOffer roles' reach):\nthe consent covers it. Required; Install refuses an approval whose reach\nchanged since it was reviewed (INSTALLATION_APPROVAL_REACH_CHANGED).",
           "type": "string"
         },
         "targetId": {
@@ -5222,6 +5233,31 @@
           "type": "string"
         },
         "userId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1SetUpModulePageRequest": {
+      "description": "A module page's access is set up the way a solution's install assigns it,\nwithout an install: every module is installed by composition, and a module\npage's roles decide who may use it, through grants on that composition\ninstallation. Each declared role goes to the team role_teams names for it,\nor else to the organization's team `<module>-<role>` (found by name or by\nits slug, created when absent), and is granted to it on the composition\ninstallation; the acting administrator joins the teams of installer_roles\nand no other. Setting it up again changes nothing that is already so.",
+      "properties": {
+        "installerRoles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "roleTeams": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "targetId": {
+          "description": "The module page, as ListAvailableSolutions names it.",
           "type": "string"
         }
       },
@@ -11522,6 +11558,40 @@
           }
         },
         "summary": "Consent to the exact review; retries retain its original per-owner receipts.",
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/solution-installations/module-pages/setup": {
+      "post": {
+        "operationId": "InstallationService_SetUpModulePage",
+        "parameters": [
+          {
+            "description": "A module page's access is set up the way a solution's install assigns it,\nwithout an install: every module is installed by composition, and a module\npage's roles decide who may use it, through grants on that composition\ninstallation. Each declared role goes to the team role_teams names for it,\nor else to the organization's team `<module>-<role>` (found by name or by\nits slug, created when absent), and is granted to it on the composition\ninstallation; the acting administrator joins the teams of installer_roles\nand no other. Setting it up again changes nothing that is already so.",
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetUpModulePageRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/saasAccountsV1Installation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "summary": "Set up who may use a module page: its roles to teams on its composition\ninstallation, in one act; the answer is that installation, with what\ncould not be applied in access_problems.",
         "tags": [
           "InstallationService"
         ]

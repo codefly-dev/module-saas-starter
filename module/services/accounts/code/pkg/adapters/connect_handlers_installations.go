@@ -24,6 +24,10 @@ func (h *installationConnectHandler) InstallReviewedSolution(ctx context.Context
 	return unary(ctx, req, h.inner.InstallReviewedSolution)
 }
 
+func (h *installationConnectHandler) SetUpModulePage(ctx context.Context, req *connect.Request[gen.SetUpModulePageRequest]) (*connect.Response[gen.Installation], error) {
+	return unary(ctx, req, h.inner.SetUpModulePage)
+}
+
 func (h *installationConnectHandler) RetryInstallation(ctx context.Context, req *connect.Request[gen.RetryInstallationRequest]) (*connect.Response[gen.Installation], error) {
 	return unary(ctx, req, h.inner.RetryInstallation)
 }

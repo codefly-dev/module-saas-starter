@@ -29,6 +29,7 @@ var eventsEmittedOutsideRPC = []EventType{
 	// (the delivery path records the applied binding itself).
 	EventAuthorityInstallationReconverged,
 	EventAuthorityInstallationUpgradeAvailable,
+	EventAuthorityInstallationReachAdopted,
 	// The declared-presence reconcile pass emits this: delivery declares a
 	// generation and the host applies it, with no request behind it (#952).
 	EventSolutionHostBindingApplied,

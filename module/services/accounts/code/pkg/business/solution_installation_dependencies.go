@@ -49,11 +49,12 @@ func (d SolutionDependency) Describe() string {
 // documents makes there is refused once the solution is active. A module's own
 // bindings and edges are walked as the solution's are, under the presence of
 // the path that reached it; a path through an optional module makes nothing
-// required. Its required set is the core's closure (decide.Closure): a
-// role-gated target reached, a solution or a module page declaring roles, is
-// chosen by its own review, so wherever it is reached (by the target's own
-// binding or edge, or through a supporting module) it is neither listed nor
-// walked through, and the installation under review does not depend on it.
+// required. Its required set is the core's closure (decide.Closure): every
+// module reached, roles or not, page or not, since every module is installed
+// by composition; a solution reached is chosen by its own review, so wherever
+// it is reached (by the target's own binding or edge, or through a supporting
+// module) it is neither listed nor walked through, and the installation under
+// review does not depend on it.
 // Two things differ from the solution's own declaration, because a module's
 // declaration is fleet-wide while this host's catalogue is a subset of it: a
 // module's binding onto an audience this host has not delivered is shown
@@ -70,9 +71,9 @@ func SolutionInstallationDependencies(offer authority.ReviewedOffer) ([]Solution
 	byPrincipal := map[string]*SolutionDependency{}
 	// add records a dependency and says whether its reach must (still) be
 	// walked: on first sight, and again when a later path makes it required.
-	// A delivered role-gated target is no dependency: add answers nil.
+	// A delivered solution is no dependency: add answers nil.
 	add := func(principal string, required bool, via string) (*SolutionDependency, bool, error) {
-		if m, delivered := modules[principal]; delivered && decide.RoleGated(m) {
+		if m, delivered := modules[principal]; delivered && m.Kind == domain.KindSolution {
 			return nil, false, nil
 		}
 		if existing := byPrincipal[principal]; existing != nil {

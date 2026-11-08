@@ -162,29 +162,33 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 		deliverSolution(t, h.ctx, h.conn, h.signer, reaching(alias, edges...))
 	}
 
-	// D1, D3: a module page a solution reaches is chosen by its own review.
-	// The solution's review lists the roleless module alone and installs
-	// without the page, before and after the page is installed.
-	t.Run("a solution reaching a module page installs without it, before and after the page is installed", func(t *testing.T) {
+	// D1, D3: every module a solution reaches is in its closure, a module page
+	// included: it is installed by composition with the solution, holding no
+	// standing authority, and a second solution reaching it reuses it.
+	t.Run("a solution reaching a module page installs it with its closure, by composition", func(t *testing.T) {
 		const before, after = "conformance-closure-before", "conformance-closure-after"
 		reachingSolution(before, support, page)
 		reachingSolution(after, support, page)
 		review, err := h.review(t, alex, before)
 		require.NoError(t, err)
-		require.Equal(t, []string{support}, requiredPrincipals(review), "the review lists the roleless module and not the page")
+		require.Equal(t, []string{page, support}, requiredPrincipals(review), "the review lists every module the solution reaches, the page included")
 		inst, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err)
 		require.Equal(t, domain.Active, inst.Status)
-		_, held := h.coreInstallation(t, alex, page)
-		require.False(t, held, "the solution's install installed the module page")
-
-		pageInst, err := installConformanceSolution(h.ctx, h.svc, h.core, page, "", conformanceAlex)
-		require.NoError(t, err)
+		pageInst, held := h.coreInstallation(t, alex, page)
+		require.True(t, held, "the module page is installed with the solution's closure")
 		require.Equal(t, domain.Active, pageInst.Status)
+		require.Empty(t, pageInst.PrincipalID, "by composition: the host's own record, holding no standing authority")
+		_, err = installConformanceSolution(h.ctx, h.svc, h.core, page, "", conformanceAlex)
+		code, _ := domain.CodeOf(err)
+		require.Equal(t, domain.NotFound, code, "a module page is never installed through a review: %v", err)
+
 		review, err = h.review(t, alex, after)
-		require.NoError(t, err, "a module page installed through its review fails the review of a solution reaching it")
-		require.Equal(t, []string{support}, requiredPrincipals(review))
-		require.NotEmpty(t, review.GetModules()[0].GetReuseInstallationId(), "the roleless module the first solution installed is reused")
+		require.NoError(t, err)
+		require.Equal(t, []string{page, support}, requiredPrincipals(review))
+		for _, m := range review.GetModules() {
+			require.NotEmpty(t, m.GetReuseInstallationId(), "%s, installed by the first solution, is reused", m.GetPrincipal())
+		}
 		inst, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err)
 		require.Equal(t, domain.Active, inst.Status)
@@ -250,11 +254,12 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 		require.Len(t, plan.Dependencies, 4)
 	})
 
-	// P2: a fixture row for a role-gated target installs through its review,
-	// with the row's owner as the actor, and grants its role to its teams.
+	// P2: a fixture row for a solution installs through its review, with the
+	// row's owner as the actor, and one for a module page by composition; each
+	// grants its role to its teams.
 	// The order of the rows does not matter: one organization lists the
 	// solution before the module page it reaches, the other after.
-	t.Run("fixture rows for a solution and a module page converge through their reviews in either order", func(t *testing.T) {
+	t.Run("fixture rows for a solution and a module page converge in either order", func(t *testing.T) {
 		const solution = "conformance-closure-fixture"
 		reachingSolution(solution, support, page)
 		dir := t.TempDir()
@@ -307,7 +312,11 @@ installations:
 				inst, held := h.coreInstallation(t, caller, target)
 				require.True(t, held, "%s is not installed at %s", target, org)
 				require.Equal(t, domain.Active, inst.Status, "%s at %s", target, org)
-				require.Equal(t, owner, inst.InstalledBy, "the row's owner installed %s", target)
+				if target == solution {
+					require.Equal(t, owner, inst.InstalledBy, "the row's owner installed %s", target)
+				} else {
+					require.Empty(t, inst.PrincipalID, "the module page is installed by composition")
+				}
 				grants, err := h.core.ListRoleGrants(h.ctx, caller, org, inst.ID)
 				require.NoError(t, err)
 				require.Contains(t, grants, domain.RoleGrant{InstallationID: inst.ID, Role: "viewer", TeamID: team}, "the team holds the row's role on %s", target)

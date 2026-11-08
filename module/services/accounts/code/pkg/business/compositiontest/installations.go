@@ -119,7 +119,3 @@ func (c *ComposedModuleInstallations) LiveModuleAuthority(_ context.Context, pri
 func (c *ComposedModuleInstallations) WorkContextSolutionInstallation(ctx context.Context, orgID, bindingID string) (string, error) {
 	return c.seals.WorkContextSolutionInstallation(ctx, orgID, bindingID)
 }
-
-func (c *ComposedModuleInstallations) WorkContextRoleGatedInstallation(ctx context.Context, orgID, target string) (string, error) {
-	return c.seals.WorkContextRoleGatedInstallation(ctx, orgID, target)
-}

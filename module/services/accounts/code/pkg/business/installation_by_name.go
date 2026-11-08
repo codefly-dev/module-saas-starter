@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -56,17 +55,17 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		}
 		coOwners = existing.GetCoOwnerPrincipalIds()
 	}
-	// A target that declares roles (a solution, or a module page) is chosen
-	// through its review and recorded by the core: nothing here selects a role
-	// for it. What is installed by name is a module holding no roles, which
-	// the organisation's catalogue role names, or none at all.
+	// Every module, a module page declaring roles included, is installed by
+	// composition: its roles decide who may use it, through grants on this
+	// installation, and never what it holds itself. What it holds is the
+	// organisation's catalogue role its declaration selects, or none at all.
 	var roleID string
 	declaration, err := s.moduleInstallationDeclaration(ctx, available)
 	if err != nil {
 		return nil, false, err
 	}
-	if decide.RoleGated(declaration) {
-		return nil, false, domain.Refuse("%s declares roles and is installed through its review, like a solution", available.RouteAlias)
+	if err := modulePageHoldsNothing(declaration, available.RouteAlias); err != nil {
+		return nil, false, err
 	}
 	if role == domain.NoInstallationRole {
 		return nil, false, domain.Refuse("none is a declaration marker, not an installation role input")
@@ -217,4 +216,15 @@ func (s *Service) organizationRoleNamed(ctx context.Context, orgID, name string)
 		return "", NewStoreError(fmt.Errorf("organization %s has no role named %q", orgID, name), ErrTypeNotFound)
 	}
 	return found, nil
+}
+
+// modulePageHoldsNothing refuses a module page (a module declaring roles)
+// whose declaration selects a standing installation role: its roles decide
+// who may use it, through grants on its composition installation, and the
+// page itself acts for nobody.
+func modulePageHoldsNothing(declaration domain.Module, alias string) error {
+	if len(declaration.Roles) > 0 && declaration.InstallationRole != domain.NoInstallationRole {
+		return domain.Refuse("%s declares a page and roles, and a module page holds no standing authority: its installation role must be none", alias)
+	}
+	return nil
 }

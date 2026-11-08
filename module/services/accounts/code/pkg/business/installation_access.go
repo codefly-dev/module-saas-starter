@@ -261,3 +261,49 @@ func (s *Service) GrantInstallationRoles(ctx context.Context, caller authority.P
 	}
 	return nil
 }
+
+// SetUpModulePage sets up who may use the module page targetID at org, as
+// caller, in one act: every module is installed by composition and a module
+// page's roles decide who may use it, through grants on that composition
+// installation, so its set up assigns access exactly as a solution's install
+// does (resolveInstallationAccess, applyInstallationAccess) on the
+// installation composition made, with no install of its own and no consent:
+// a module page holds no standing authority. A target that is a solution, or
+// a module declaring no roles, is refused; so is a module page composition
+// has not installed in org yet. Setting it up again changes nothing that is
+// already so.
+func (s *Service) SetUpModulePage(ctx context.Context, caller authority.Person, org, targetID string, requested InstallAccess) (InstalledSolution, error) {
+	available, err := s.availableTarget(ctx, org, targetID)
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	if available.Kind != "module" {
+		return InstalledSolution{}, domain.Refuse("%s is not a module page: a solution's access is assigned at its install", available.RouteAlias)
+	}
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	m, err := core.Composed(ctx, available.RouteAlias)
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	if len(m.Roles) == 0 {
+		return InstalledSolution{}, domain.Refuse("%s declares no roles: there is no access of a person to set up", m.Name)
+	}
+	installed, err := core.Installations(ctx, caller, org)
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	i := slices.IndexFunc(installed, func(inst domain.Installation) bool {
+		return inst.Target == m.Name && inst.PrincipalID == "" && inst.Status == domain.Active
+	})
+	if i < 0 {
+		return InstalledSolution{}, domain.NotNow("%s is not installed in this organization yet: composition installs it (a solution that reaches it, or supporting module administration); set up its access once it is", m.Name)
+	}
+	access, err := s.resolveInstallationAccess(ctx, caller, org, m, requested)
+	if err != nil {
+		return InstalledSolution{}, err
+	}
+	return InstalledSolution{Installation: installed[i], AccessProblems: s.applyInstallationAccess(ctx, caller, installed[i], access)}, nil
+}

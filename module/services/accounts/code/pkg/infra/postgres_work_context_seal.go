@@ -100,27 +100,6 @@ func (s *PostgresStore) WorkContextOwnerRevision(ctx context.Context, orgID, own
 	return uint64(revision), nil
 }
 
-// WorkContextRoleGatedInstallation is the core's active installation of
-// target at orgID: a module page's, chosen through its review and recorded in
-// authority_core_installations with the principal the core gave it.
-func (s *PostgresStore) WorkContextRoleGatedInstallation(ctx context.Context, orgID, target string) (string, error) {
-	var id string
-	err := s.sealRead(ctx, func(ctx context.Context, q QueryExecutor) error {
-		return q.QueryRow(ctx, `
-			SELECT id FROM public.authority_core_installations
-			 WHERE organization_id = $1::uuid AND target = $2 AND status = 'active' AND principal_id <> ''`,
-			orgID, target,
-		).Scan(&id)
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", fmt.Errorf("%w: %s", business.ErrWorkContextNoAudienceInstallation, target)
-	}
-	if err != nil {
-		return "", fmt.Errorf("read the installation of %s: %w", target, err)
-	}
-	return id, nil
-}
-
 func (s *PostgresStore) WorkContextSolutionInstallation(ctx context.Context, orgID, bindingID string) (string, error) {
 	var id string
 	err := s.sealRead(ctx, func(ctx context.Context, q QueryExecutor) error {

@@ -243,10 +243,10 @@ func TestSolutionDependenciesCloseOverWhatSupportingModulesReach(t *testing.T) {
 
 // The host's walker and the core's closure (decide.Closure) are one rule: what
 // the review lists as required is exactly what installing the target brings
-// along. A module page (a module declaring roles) is chosen by its own review,
-// so a target reaching one, by its own binding or edge or through a supporting
-// module's binding or edge, neither lists it nor walks through it: the page's
-// own reach is not part of the closure either.
+// along. Every module is installed by composition, so a module page (a module
+// declaring roles) reached by the target's own binding or edge, or through a
+// supporting module's, is listed and walked through like any module; only a
+// solution reached is chosen by its own review and left out.
 func TestTheWalkersClosureIsTheCoresClosure(t *testing.T) {
 	read := []*basev0.WorkScopeV1{{ResourceKind: "support", Actions: []string{"read"}}}
 	entries := []*basev0.WorkScopeV1{{ResourceKind: "directory.entry", Actions: []string{"read"}}}
@@ -295,9 +295,6 @@ func TestTheWalkersClosureIsTheCoresClosure(t *testing.T) {
 			}
 			var walked []string
 			for _, d := range deps {
-				if d.Principal == page.Principal || d.Principal == behindPage.Principal {
-					t.Fatalf("a module page, or what only it reaches, is a dependency: %+v", d)
-				}
 				if d.Required && d.Delivered {
 					walked = append(walked, d.Module.Name)
 				}
@@ -336,7 +333,7 @@ func TestTheWalkersClosureIsTheCoresClosure(t *testing.T) {
 		}
 	}
 	slices.Sort(walked)
-	if want := []string{"documents", "model", "records"}; !slices.Equal(walked, core) || !slices.Equal(core, want) {
+	if want := []string{"behind-page", "directory", "documents", "model", "records"}; !slices.Equal(walked, core) || !slices.Equal(core, want) {
 		t.Fatalf("the walker found %v, the core's closure is %v, want %v", walked, core, want)
 	}
 }

@@ -25,7 +25,7 @@ What accounts adds, and where:
 
 | Concern | Where |
 |---|---|
-| The core's records: modules, tombstones, the installations of every role-gated target (a solution's, a module page's), each consent's approved declaration per generation (migration 68), role grants, delegations, epochs, owner-aware revisions, consumed nonces | migration 56 (`authority_core_*`, control-plane relations), migration 68 (`authority_core_approved_modules`) and `pkg/infra/postgres_authority_core.go` |
+| The core's records: modules, tombstones, the installations of every solution (a module's is accounts' own record), each consent's approved declaration per generation (migration 68), role grants, delegations, epochs, owner-aware revisions, consumed nonces | migration 56 (`authority_core_*`, control-plane relations), migration 68 (`authority_core_approved_modules`) and `pkg/infra/postgres_authority_core.go` |
 | A module declaring no roles is installed by this host's own consent and its installation is accounts' own record (`installations`, kind `module`): an administrator's install, or a closure's, within the module envelope, retired by an uninstall or by a ceiling that no longer allows the organization. The core is configured with `HostInstallsModules`, so it installs no such module itself and reads those records live, with what each consent allows: an installation whose consent allows no capability is not active for the core, and the bindings it allows (the module's grant within the envelope, intersected with the consent, as the native mint reads it) bound every issue through them (`Installation.Bindings`). The revision the core seals to is accounts' own revision, plus the core's raise when a redelivery narrows the module (`authority_core_module_revisions`), plus the committed envelope revision, so a narrowed consent and an envelope write each end what was issued before them | `pkg/infra/postgres_authority_core.go` (`moduleInstallations`), `pkg/business/authority_core_consent.go` |
 | Identity, read only: organizations, memberships, teams, and the organization roles a member holds, from accounts' RBAC (role assignments and live scope grants, directly or through a team, and the membership's administrator role) | `pkg/infra/postgres_authority_core.go` (`Member`, `OrgRole`) |
 | Revocation levers shared with the product: the organization's authorization revision is accounts' own, and a person's epoch includes their principal revisions | same file |
@@ -229,9 +229,10 @@ behavior-preserving rollback.
   passed 96 cases (the shared suite, the solution-principal target and the
   cases beyond the suite, as `go test -v` lists them one level under the
   test), 304 subtests at every depth below the test; failed 0; skipped 0;
-  73 s. "An installation survives delivery", "a module page is offered,
-  reviewed and installed like a solution" and "an upgrade refuses a
-  supporting module revoked between its step and its write" are among them. The harness seeds the two owned
+  73 s (authority f6b11135). At authority 310a5954 it passes 337 subtests at
+  every depth, including "a module page is installed by composition; its roles
+  decide who is listed for it and who may use it" and "consent covers what a
+  role reaches through the solution". The harness seeds the two owned
   solutions of the installation-resources case at the surface the suite
   redelivers (the store they bind, their roles and owned scopes), so that
   redelivery asks nothing new of their consent; a fixture module declaring
@@ -241,53 +242,65 @@ behavior-preserving rollback.
   Postgres store in `pkg/infra/postgres_authority_core_test.go`.
 - The core's own decisions are unit tested in `codefly-dev/authority`.
 
-## One lifecycle for every role-gated target
+## Solutions are installed; every module is installed by composition
 
 A **target** is anything delivered with a paired declaration: a module or a
-solution. What the host installs by an administrator's review is any target
-the core offers (`decide.RoleGated`): a solution always, a module when it
-declares roles, a **module page**. Both walk one lifecycle here: `ListOffers`
-lists them; `ReviewSolutionInstall` reviews one (the core's `ReviewOffer`, with
-`roles_declared`, `page`, `closure` and `optional_edges`, and the host's walk of
-its supporting modules, which must name the modules the core's closure names);
-`InstallReviewedSolution` installs it through the core's `Install`, whose
-install step converges the closure (every supporting module installed or
-reused under its own consent) and, for a solution, runs its setup job; the
-record is the core's (`authority_core_installations`, with the principal the
-core gave it); roles are granted with `GrantRole`, first by the install itself
-(below); health and entitlement are
-read from that one record. A module page declares no install endpoint, so it
-is active once its closure is converged, and it holds no standing authority
-(`installation_role: none`). A module declaring no roles is never offered or
-installed by an administrator: it is installed when a closure reaches it,
-holding none, as accounts' own record, and `InstallSolution` and the by-name
-install refuse a role-gated module by name. A module installed by name
-is never carried over silently into a role-gated one: a delivery that would
-make a module role-gated while an active installation of it made by name
-stands is refused before anything is recorded, as a delivery conflict naming
-each installation (`refuseRoleGatingByName`). One that predates that refusal
-never stops the host: at boot and on every delivery pass it is logged at
-error level, and the installation read states it as an unmet readiness
-condition an organization administrator clears (uninstall it, then install it
-through its review). The frontend lists a module page
-beside the solutions from the one `ListOffers` read and installs it through
-the same review dialog; "Supporting module administration" lists exactly the
-modules the offers do not name.
+solution. Only a **solution** is installed by an administrator's review:
+`ListOffers` lists the solutions; `ReviewSolutionInstall` reviews one (the
+core's `ReviewOffer`, with `roles_declared`, `page`, `closure`,
+`optional_edges` and each role's `reach`, and the host's walk of its supporting
+modules, which must name the modules the core's closure names);
+`InstallReviewedSolution` installs it through the core's `Install`, carrying
+the review's `reach_digest` unchanged, whose install step converges the
+closure (every module installed or reused) and runs its setup job; the record
+is the core's (`authority_core_installations`, with the principal the core gave
+it); roles are granted with `GrantRole`, first by the install itself (below);
+health and entitlement are read from that one record.
+
+Every **module**, with or without roles, page or not, is installed by
+composition: accounts' own record (`public.installations`, kind `module`),
+which the core reads live (`HostInstallsModules`), installed when a solution's
+closure reaches it or through supporting module administration. The core
+refuses a module at `ReviewOffer`, `Review` and `Install` (`NotFound`, "a module
+is installed by composition"). A **module page** (a module declaring a page and
+roles) holds no standing authority (`installation_role: none`; the module
+install path refuses any other, `modulePageHoldsNothing`), and its roles
+decide who may use it through grants on that composition installation: it
+arrives with no access, and an administrator sets it up in one act
+(`SetUpModulePage`, the same assignment an install makes, below), with no
+install and no consent. `ListAvailableSolutions` names a module page's roles
+(`AvailableSolution.roles`), so the frontend lists it beside the solutions as a
+"Set up access" entry and never offers to install it. A module that gains or
+loses roles keeps its installations as they are; the earlier refusals of a
+delivery that made a module role-gated, and the readiness condition of a
+module "installed by name", are gone with the chosen path. Entitlement
+(navigation) is the core's `HeldInstallations`: a solution's healthy record,
+or a module page's active composition installation, held by a grant.
 
 **The closure is the core's.** What a review lists as required, and what the
-install converges, is `decide.Closure`: the modules the target reaches through
-its bindings and its required edge dependencies, transitively through what
-those reach, that declare no roles. A role-gated target reached (a solution,
-or a module page) is chosen by its own review: wherever it is reached (the
-target's own binding or edge, or a supporting module's), the host's walker
-(`SolutionInstallationDependencies`) neither lists it nor walks through it,
-exactly as the core does, so a solution's review never installs a module page
-and a solution's installation does not depend on one, whether or not the page
-is installed in the organization. Optional edges are shown, never installed.
-`TestTheWalkersClosureIsTheCoresClosure` holds the walker to `decide.Closure`,
-including a module page reached through a binding and through an edge; the
-conformance harness installs a solution reaching a module page before and after
-the page is installed through its own review.
+install converges, is `decide.Closure`: every module the target reaches through
+its bindings and its required edge dependencies, transitively, roles or not.
+A solution reached is chosen by its own review: wherever it is reached, the
+host's walker (`SolutionInstallationDependencies`) neither lists it nor walks
+through it, exactly as the core does. Optional edges are shown, never
+installed. `TestTheWalkersClosureIsTheCoresClosure` holds the walker to
+`decide.Closure`; the conformance harness installs a solution reaching a module
+page, which installs the page with the closure and a second solution reuses it.
+
+**Consent covers reach.** The review's approval names `reach_digest`, the
+digest of what each role reaches directly and transitively (`decide.Reach`);
+the host carries it unchanged from `ReviewSolutionInstall` to the core's
+`Install`, and the host interface's `Install` refuses a changed one
+(`INSTALLATION_APPROVAL_REACH_CHANGED`). The consent receipt keeps the approved
+reach (`ConsentReceipt.ReachDigest`, `Reach`, the core encoder's text) inside
+the consent record (`authority_core_installations.consent`, JSON): no column
+or migration, and `TestAnApprovedReachReadsBackAsTheCoresEncoderWroteIt` holds
+the text to the encoder byte for byte. `upgrade_available` is the core's
+`Service.UpgradeAvailable` on every read (a delivery of any module that widens
+what a role reaches offers the update; holders keep the approved reach). At
+start the host has the core adopt, once, the reach of a consent recorded before
+reach was kept (`AdoptLegacyReach`, journalled `installation.reach_adopted`);
+until then the core holds it to that same reach.
 
 **Install assigns access.** `InstallReviewedSolution` is an administrator's
 install and assigns who holds the target's declared roles, since access is
@@ -401,9 +414,9 @@ schema or data migration) delivers that through its own runtime when the
 release starts, never through the install step, which a release cannot count
 on seeing.
 
-Not yet: the host's `WorkContextService` seal resolves a module page's
-installation from the core's record; the gateway's `/_browser` path, which
-issues through the core, was not exercised in a composed run for this change.
+Not yet: the gateway's `/_browser` path, which issues through the core, was not
+exercised in a composed run for this change. The host's seal resolves a module
+page's installation as any module's.
 
 ## Not yet
 
@@ -444,16 +457,17 @@ dependency convergence, generated signed-carrier fields, SQL activation barrier
 and actual queue-to-receiver journey must be qualified together before delivery.
 
 - Accounts product `UninstallSolution` dispatches the core's records (a
-  solution's, a module page's) to shared core `Uninstall`. It never removes
+  solution's) to shared core `Uninstall`. It never removes
   supporting module installations. A supporting module's uninstall remains
   the existing Accounts lifecycle, read live by core.
-- A workspace fixture row for a role-gated target (a solution, or a module
-  page) is installed as an administrator installs it: the row's owner reviews
-  it and installs that review (`ReviewSolutionInstallAs`,
-  `InstallReviewedSolutionAs`; the row's role is the installation role only
-  where the declaration selects none), which converges its roleless closure;
-  then the owner holds the installer role and each declared team the row's
-  role. A pending attempt of the owner's resumes from its review while that
+- A workspace fixture row for a solution is installed as an administrator
+  installs it: the row's owner reviews it and installs that review
+  (`ReviewSolutionInstallAs`, `InstallReviewedSolutionAs`; the row's role is
+  the installation role only where the declaration selects none), which
+  converges its closure; then the owner holds the installer role and each
+  declared team the row's role. A row for a module page is installed by
+  composition, once, and set up the same way: the owner holds the installer
+  role and each declared team the row's role on its composition installation. A pending attempt of the owner's resumes from its review while that
   review is current (the target's generation and delivery digest, and every
   supporting module's, unchanged); once a delivery moved past it, the owner's
   fresh review supersedes the attempt. An active installation is left as it

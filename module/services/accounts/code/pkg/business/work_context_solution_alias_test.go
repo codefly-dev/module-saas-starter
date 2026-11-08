@@ -3,7 +3,6 @@ package business
 import (
 	"context"
 	"crypto/ed25519"
-	"fmt"
 	"testing"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
@@ -72,20 +71,4 @@ func TestADeliveredSolutionAliasResolvesToItsOwnInstallation(t *testing.T) {
 	installation, err = svc.WorkContextAudienceInstallation(context.Background(), org, "records")
 	require.NoError(t, err)
 	require.Equal(t, org+"/"+ModulePrincipalID("records"), installation, "a module is installed by composition")
-}
-
-func (s solutionInstallationSeals) WorkContextRoleGatedInstallation(ctx context.Context, orgID, target string) (string, error) {
-	return "", fmt.Errorf("%w: %s", ErrWorkContextNoAudienceInstallation, target)
-}
-
-// A module audience is resolved in the authority core first, since a module
-// page's installation is the core's record. A host whose core is not built
-// cannot tell, so it refuses rather than resolve the audience as a module of
-// its own, which would seal a page's capability to the wrong installation.
-func TestAModuleAudienceIsNotResolvedWithoutTheAuthorityCore(t *testing.T) {
-	svc, err := NewService(&liveDeclarationsStore{})
-	require.NoError(t, err)
-	svc.SetModuleAuthorityReads(everyPrincipalInstalled{}, nil)
-	_, err = svc.WorkContextAudienceInstallation(context.Background(), "00000000-0000-7000-8000-0000000000c1", "records")
-	require.ErrorIs(t, err, ErrAuthorityCoreUnconfigured)
 }

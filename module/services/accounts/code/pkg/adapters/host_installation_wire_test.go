@@ -10,7 +10,8 @@ import (
 
 // An installation behind a widening redelivery lists the roles its consent
 // approved, never the roles the delivered declaration added, and says an
-// upgrade waits; the core refuses those added roles until it is upgraded.
+// upgrade waits as the core answers it; the core refuses those added roles
+// until it is upgraded.
 func TestAnInstallationListsTheRolesItsConsentApproved(t *testing.T) {
 	read := []*basev0.WorkScopeV1{{ResourceKind: "example.page", Actions: []string{"read"}}}
 	approved := domain.Module{Name: "example", Kind: domain.KindSolution, Generation: 1, Roles: map[string][]*basev0.WorkScopeV1{"installer": read, "viewer": read}}
@@ -20,13 +21,13 @@ func TestAnInstallationListsTheRolesItsConsentApproved(t *testing.T) {
 	inst := domain.Installation{ID: "installation", Organization: "org", Target: "example", Status: domain.Active, Revision: 3,
 		Consent: domain.ConsentReceipt{OperationID: "operation", Revision: 3, Generation: 1, Digest: "sha256:approved"}}
 
-	wire := installationWire(inst, delivered, approved)
+	wire := installationWire(inst, approved, true)
 	require.Equal(t, []string{"installer", "viewer"}, wire.GetRoles())
 	require.True(t, wire.GetUpgradeAvailable())
 	require.Equal(t, uint64(1), wire.GetApprovedGeneration())
 
 	inst.Consent.Generation = 2
-	wire = installationWire(inst, delivered, delivered)
+	wire = installationWire(inst, delivered, false)
 	require.Equal(t, []string{"editor", "installer", "viewer"}, wire.GetRoles())
 	require.False(t, wire.GetUpgradeAvailable())
 }
