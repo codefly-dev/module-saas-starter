@@ -253,15 +253,27 @@ func (s *Service) ReviewCurrent(ctx context.Context, review *gen.ReviewedSolutio
 // that activates it, the installer joins the teams of the roles they took and
 // every role is granted to its team. An upgrade of an active installation
 // assigns nothing: its grants and teams stand.
-func (s *Service) InstallReviewedSolution(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, access InstallAccess) (domain.Installation, error) {
+//
+// What of that access could not be applied once the installation is active
+// (a team that cannot be created, a grant or membership refused) is answered
+// in InstalledSolution.AccessProblems, role by role; the installation stands.
+func (s *Service) InstallReviewedSolution(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, access InstallAccess) (InstalledSolution, error) {
 	return s.installReviewedSolution(ctx, caller, org, review, reviewedInstall{assignAccess: true, access: access})
+}
+
+// InstalledSolution is an install's answer: the installation, and each part
+// of the access the install assigned that could not be applied.
+type InstalledSolution struct {
+	domain.Installation
+	AccessProblems []AccessProblem
 }
 
 // InstallReviewedSolutionAs installs a review made by ReviewSolutionInstallAs
 // with the role it was made with; resuming it names the same role. It
 // assigns no access: its caller grants the roles it declares.
 func (s *Service) InstallReviewedSolutionAs(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, role string) (domain.Installation, error) {
-	return s.installReviewedSolution(ctx, caller, org, review, reviewedInstall{role: role})
+	installed, err := s.installReviewedSolution(ctx, caller, org, review, reviewedInstall{role: role})
+	return installed.Installation, err
 }
 
 // reviewedInstall is what an install asks beside its review: the machine role
@@ -272,18 +284,18 @@ type reviewedInstall struct {
 	access       InstallAccess
 }
 
-func (s *Service) installReviewedSolution(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, request reviewedInstall) (domain.Installation, error) {
+func (s *Service) installReviewedSolution(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, request reviewedInstall) (InstalledSolution, error) {
 	requestedRole, requestedOwner := request.role, request.owner
 	if review == nil || review.OrgId != org || review.ActorId != caller.ID || review.Approval == nil {
-		return domain.Installation{}, domain.Refuse("the installation review belongs to another actor or organization")
+		return InstalledSolution{}, domain.Refuse("the installation review belongs to another actor or organization")
 	}
 	core, err := s.AuthorityCore()
 	if err != nil {
-		return domain.Installation{}, err
+		return InstalledSolution{}, err
 	}
 	all, err := core.Installations(ctx, caller, org)
 	if err != nil {
-		return domain.Installation{}, err
+		return InstalledSolution{}, err
 	}
 	upgrade := false
 	for _, inst := range all {
@@ -301,19 +313,19 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 		}
 		plan, err := s.store.(CanonicalInstallationSetupStore).SolutionInstallationPlan(ctx, org, inst.ID)
 		if err != nil {
-			return inst, err
+			return InstalledSolution{Installation: inst}, err
 		}
 		if !proto.Equal(plan.Review, review) || plan.RequestedRole != requestedRole || plan.RequestedOwner != requestedOwner {
-			return inst, domain.NotNow("pending installation has a different original review")
+			return InstalledSolution{Installation: inst}, domain.NotNow("pending installation has a different original review")
 		}
 		return s.continueCanonicalSolution(ctx, core, caller, inst, plan)
 	}
 	current, err := s.reviewSolutionInstall(ctx, caller, org, review.TargetId, review.Approval.OperationId, requestedRole)
 	if err != nil {
-		return domain.Installation{}, err
+		return InstalledSolution{}, err
 	}
 	if !proto.Equal(current, review) {
-		return domain.Installation{}, domain.NotNow("installation review changed; review the solution and supporting access again")
+		return InstalledSolution{}, domain.NotNow("installation review changed; review the solution and supporting access again")
 	}
 	a := review.Approval
 	plan := SolutionInstallationPlan{Organization: org, Target: review.Target, MachineRole: review.InstallationRole, RequestedRole: requestedRole, RequestedOwner: requestedOwner,
@@ -324,27 +336,27 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 	// whole install here, before the core records a pending attempt and
 	// before any module is installed.
 	if err := s.checkReviewedModulesInstallable(ctx, org, review); err != nil {
-		return domain.Installation{}, err
+		return InstalledSolution{}, err
 	}
 	if request.assignAccess && !upgrade {
 		target, err := core.Composed(ctx, review.Target)
 		if err != nil {
-			return domain.Installation{}, err
+			return InstalledSolution{}, err
 		}
 		if plan.Access, err = s.resolveInstallationAccess(ctx, caller, org, target, request.access); err != nil {
-			return domain.Installation{}, err
+			return InstalledSolution{}, err
 		}
 	}
 	ctx = WithSolutionInstallationPlan(ctx, plan)
 	step, err := s.installStepFor(ctx, core, review.Target)
 	if err != nil {
-		return domain.Installation{}, err
+		return InstalledSolution{}, err
 	}
 	inst, err := core.Install(ctx, caller, org, review.Target, requestedRole, requestedOwner, &plan.Approval, step)
 	if err != nil {
-		return inst, err
+		return InstalledSolution{Installation: inst}, err
 	}
-	return inst, s.applyInstallationAccess(ctx, caller, inst, plan.Access)
+	return InstalledSolution{Installation: inst, AccessProblems: s.applyInstallationAccess(ctx, caller, inst, plan.Access)}, nil
 }
 
 // installStepFor is the install step the core runs for target: one that
@@ -552,7 +564,8 @@ func (s *Service) InstallAuthoritySolution(ctx context.Context, caller authority
 		if plan.Approval != *approval || plan.RequestedRole != role || plan.RequestedOwner != owner {
 			return inst, domain.NotNow("INSTALLATION_APPROVAL_OPERATION_CONFLICT: the original installation inputs changed")
 		}
-		return s.continueCanonicalSolution(ctx, core, caller, inst, plan)
+		done, err := s.continueCanonicalSolution(ctx, core, caller, inst, plan)
+		return done.Installation, err
 	}
 	module, err := core.Composed(ctx, target)
 	if err != nil {
@@ -580,7 +593,8 @@ func (s *Service) InstallAuthoritySolution(ctx context.Context, caller authority
 			return domain.Installation{}, domain.NotNow("module %q requires the combined installation review", dependency.Principal)
 		}
 	}
-	return s.installReviewedSolution(ctx, caller, org, review, reviewedInstall{role: role, owner: owner})
+	done, err := s.installReviewedSolution(ctx, caller, org, review, reviewedInstall{role: role, owner: owner})
+	return done.Installation, err
 }
 
 // closureDisagreement compares the modules the core's closure names with the

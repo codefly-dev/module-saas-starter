@@ -117,6 +117,15 @@ message Installation {
   // administrator reviews the target again and installs the reviewed release
   // on this same installation (an update, never an uninstall).
   bool upgrade_available = 18;
+  // What of the access an administrator's install assigned could not be
+  // applied once the installation became active, one entry per role in words
+  // ("viewer: the role could not be granted to its team: ..."). Set only on
+  // the answer of the call that applied it (InstallReviewedSolution,
+  // RetryInstallation); the installation stands, and Set up grants the rest.
+  repeated string access_problems = 19 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.items = {string: {max_len: 1024}}
+  ];
 }
 
 message InstallSolutionRequest {

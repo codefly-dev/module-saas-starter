@@ -292,22 +292,34 @@ the page is installed through its own review.
 **Install assigns access.** `InstallReviewedSolution` is an administrator's
 install and assigns who holds the target's declared roles, since access is
 only by grant: each role goes to the team `role_teams` names for it, which
-must be a team of the organization, or else to the organization's team named
-`<target>-<role>` (lower case, matched case-insensitively), created through
-`CreateTeam` when absent; the installing person joins the teams of the roles
-named in `installer_roles` and no other, and no other team's members change.
-Everything requested is checked before any team is created. The resolved
-assignment is recorded on the installation's plan
-(`SolutionInstallationPlan.Access`) before the core records the attempt, and is
-applied only once the installation is active, by the call that activates it:
-the install itself, the same review sent again, or `RetryInstallation`. Both
-halves are idempotent (a member already is not added again, a grant held is
-not granted or journalled again), so a resumed install applies the recorded
-assignment once, never the one a replay names. An upgrade of an active
+must be a team of the organization, or else to the organization's team of the
+conventional name `<target>-<role>`: the team of that name (lower case,
+matched case-insensitively), or the root team holding its slug as its path
+(teams are unique by path, so "Target Viewer" is that team too), created
+through `CreateTeam` when absent. The installing person joins the teams of the
+roles named in `installer_roles` and no other, and no other team's members
+change. Everything requested is checked before the core records the attempt,
+and what is checked is recorded on the installation's plan
+(`SolutionInstallationPlan.Access`): the teams named and the conventional
+names, never a team created ahead. Nothing is created, granted or joined until
+the installation is active, so an install refused or left pending leaves no
+team; the call that activates it applies it: the install itself, the same
+review sent again, or `RetryInstallation`. Each role's team is resolved then
+(a named team since deleted falls back to the conventional one, and the answer
+says so), every role is granted to its team, then the installer joins the
+ticked teams. Every step is check-before-write (a member already is not added
+again, a grant held is not granted or journalled again), so a resumed install
+applies the recorded assignment once, never the one a replay names. A role
+whose team, grant or membership fails is reported in the answer's
+`Installation.access_problems` and the other roles are applied all the same:
+the installation is active, and Set up grants the rest. An upgrade of an active
 installation assigns nothing; its teams and grants stand. An uninstall ends the
 installation's grants and keeps the teams, which are the organization's. The
 fixture's installations and the host interface's `Install` assign none and
-grant through the same check-before-grant (`GrantInstallationRoles`). The
+grant through the same check-before-grant (`GrantInstallationRoles`). An
+install pending when this was deployed recorded the teams it created then and
+applies them; one recorded before access was assigned at all activates with no
+grants, and Set up grants its roles by hand. The
 store-backed proofs are the `testInstallAssignsAccess` cases of the
 conformance harness (`pkg/adapters/install_access_conformance_test.go`).
 

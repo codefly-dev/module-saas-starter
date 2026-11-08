@@ -9,6 +9,7 @@ import {
 	assertMatchingOffer,
 	moduleConsentText,
 	offerScopeText,
+	supportingSummary,
 } from "./install-review";
 
 describe("installation access review", () => {
@@ -104,5 +105,58 @@ describe("installation access review", () => {
 				create(ReviewedOfferSchema, { ...offer, roles: [] }),
 			),
 		).toThrow();
+	});
+	it("names each fresh supporting module that holds a standing machine role", () => {
+		const module = (target: string, installationRole: string, reused = "") => ({
+			principal: `module:${target}`,
+			target,
+			required: true,
+			reuseInstallationId: reused,
+			installationRole,
+		});
+		const summary = supportingSummary([
+			module("Alpha", "none"),
+			module("Bravo", "reader"),
+			module("Charlie", "writer", "installed-charlie"),
+		]);
+		expect(summary.installs).toEqual(["Alpha", "Bravo"]);
+		expect(summary.standing).toEqual(["Bravo (reader)"]);
+		expect(summary.reused).toEqual(["Charlie"]);
+	});
+	it("says each face's delegation mode when two faces of one audience differ", () => {
+		const face = (mode: string) => ({
+			audience: "example-items",
+			delegation_mode: mode,
+			invoke_scopes: [{ resource_kind: "item", actions: ["list"] }],
+		});
+		const differing = moduleConsentText(
+			JSON.stringify({
+				capabilities: true,
+				operation_audiences: {
+					EXAMPLE__CONNECT: face("module_actor"),
+					EXAMPLE__GRPC: face("person"),
+				},
+			}),
+		);
+		expect(differing).toContain(
+			"Perform operations through example-items (delegation mode module actor): list item; all items of this type.",
+		);
+		expect(differing).toContain(
+			"Perform operations through example-items (delegation mode person): list item; all items of this type.",
+		);
+		expect(differing.join("\n")).not.toMatch(/Acts at|EXAMPLE__/);
+		const same = moduleConsentText(
+			JSON.stringify({
+				capabilities: true,
+				operation_audiences: {
+					EXAMPLE__CONNECT: face("person"),
+					EXAMPLE__GRPC: face("person"),
+				},
+			}),
+		);
+		expect(same).toContain("Acts at example-items: delegation mode person.");
+		expect(same).toContain(
+			"Perform operations through example-items: list item; all items of this type.",
+		);
 	});
 });

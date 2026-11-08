@@ -26,13 +26,33 @@ import (
 	"google.golang.org/grpc"
 )
 
-// installFaults is the harness's store with one seam: the next install of a
+// installFaults is the harness's store with two seams: the next install of a
 // named target fails once, as a store failing part-way through a closure's
-// convergence does. Every other call is the store's own.
+// convergence does, and the next team membership added fails once. Every
+// other call is the store's own.
 type installFaults struct {
 	*infra.PostgresStore
-	mu   sync.Mutex
-	next map[string]error
+	mu     sync.Mutex
+	next   map[string]error
+	member error
+}
+
+// failNextMember fails the next team membership added, once.
+func (f *installFaults) failNextMember(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.member = err
+}
+
+func (f *installFaults) AddTeamMember(ctx context.Context, teamID, userID, role string) error {
+	f.mu.Lock()
+	err := f.member
+	f.member = nil
+	f.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return f.PostgresStore.AddTeamMember(ctx, teamID, userID, role)
 }
 
 func (f *installFaults) failOnce(targetID string, err error) {

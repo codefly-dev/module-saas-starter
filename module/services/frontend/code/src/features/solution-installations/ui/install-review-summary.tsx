@@ -47,8 +47,8 @@ export function SupportingModules({
 			{installs.length > 0 && (
 				<p>
 					Also installs: {installs.join(", ")} —{" "}
-					{standing
-						? "each with its own consent record"
+					{standing.length
+						? `standing machine access: ${standing.join(", ")}; each with its own consent record`
 						: "no standing machine access"}
 				</p>
 			)}

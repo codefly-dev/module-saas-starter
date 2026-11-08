@@ -425,8 +425,14 @@ type Installation struct {
 	// administrator reviews the target again and installs the reviewed release
 	// on this same installation (an update, never an uninstall).
 	UpgradeAvailable bool `protobuf:"varint,18,opt,name=upgrade_available,json=upgradeAvailable,proto3" json:"upgrade_available,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// What of the access an administrator's install assigned could not be
+	// applied once the installation became active, one entry per role in words
+	// ("viewer: the role could not be granted to its team: ..."). Set only on
+	// the answer of the call that applied it (InstallReviewedSolution,
+	// RetryInstallation); the installation stands, and Set up grants the rest.
+	AccessProblems []string `protobuf:"bytes,19,rep,name=access_problems,json=accessProblems,proto3" json:"access_problems,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Installation) Reset() {
@@ -576,6 +582,13 @@ func (x *Installation) GetUpgradeAvailable() bool {
 		return x.UpgradeAvailable
 	}
 	return false
+}
+
+func (x *Installation) GetAccessProblems() []string {
+	if x != nil {
+		return x.AccessProblems
+	}
+	return nil
 }
 
 type InstallSolutionRequest struct {
@@ -2680,7 +2693,7 @@ var File_saas_accounts_v1_installations_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\n" +
-	"$saas/accounts/v1/installations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a'host/installation/v1/installation.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$saas/accounts/v1/authorization.proto\x1a\x1csaas/policy/v1/options.proto\"\xd4\x06\n" +
+	"$saas/accounts/v1/installations.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a'host/installation/v1/installation.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a$saas/accounts/v1/authorization.proto\x1a\x1csaas/policy/v1/options.proto\"\x8e\a\n" +
 	"\fInstallation\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1f\n" +
 	"\x06org_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x126\n" +
@@ -2702,7 +2715,8 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"setupState\x12#\n" +
 	"\rsetup_message\x18\x10 \x01(\tR\fsetupMessage\x12/\n" +
 	"\x13approved_generation\x18\x11 \x01(\x04R\x12approvedGeneration\x12+\n" +
-	"\x11upgrade_available\x18\x12 \x01(\bR\x10upgradeAvailableB\r\n" +
+	"\x11upgrade_available\x18\x12 \x01(\bR\x10upgradeAvailable\x128\n" +
+	"\x0faccess_problems\x18\x13 \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\x80\bR\x0eaccessProblemsB\r\n" +
 	"\v_revoked_atJ\x04\b\x04\x10\x05R\x13solution_identifier\"\xbc\x05\n" +
 	"\x16InstallSolutionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x125\n" +

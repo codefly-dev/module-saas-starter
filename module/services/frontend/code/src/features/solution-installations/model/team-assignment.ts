@@ -8,8 +8,26 @@ export function conventionalTeamName(target: string, role: string) {
 	return `${target}-${role}`.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
-const sameName = (a: string, b: string) =>
-	a.trim().toLowerCase() === b.trim().toLowerCase();
+/**
+ * The path segment the host derives from a team's name (its `Slugify`):
+ * lower case, each run of anything but a-z and 0-9 one dash, trimmed.
+ */
+export function teamSlug(name: string) {
+	return name
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Whether `team` is the organization's team named `name`, as the host finds
+ * it: its name, whatever its case, or a root team whose path is the slug of
+ * `name` — teams are unique by path, so a team named otherwise that holds
+ * the slug is the one the host reuses.
+ */
+const isConventionalTeam = (team: Team, name: string) =>
+	team.name.trim().toLowerCase() === name.trim().toLowerCase() ||
+	(!team.parentTeamId && team.path !== "" && team.path === teamSlug(name));
 
 /** One declared role and the team the install gives it to. */
 export type RoleTeam = {
@@ -24,8 +42,9 @@ export type RoleTeam = {
 
 /**
  * What an install assigns: for each role, the team `chosen` names, or else
- * the organization's team of the conventional name (case-insensitively), or a
- * new team of that name, which the host creates with the installer in it.
+ * the organization's team of the conventional name (case-insensitively, or by
+ * its path), or a new team of that name, which the host creates once the
+ * installation is active.
  */
 export function teamAssignment(
 	target: string,
@@ -37,7 +56,7 @@ export function teamAssignment(
 		const picked = teams.find((team) => team.id === chosen[role]);
 		if (picked) return { role, name: picked.name, team: picked, chosen: true };
 		const name = conventionalTeamName(target, role);
-		const team = teams.find((entry) => sameName(entry.name, name));
+		const team = teams.find((entry) => isConventionalTeam(entry, name));
 		return { role, name: team?.name ?? name, team, chosen: false };
 	});
 }

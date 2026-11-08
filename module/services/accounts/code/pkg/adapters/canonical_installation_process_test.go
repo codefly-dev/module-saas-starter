@@ -214,7 +214,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 			go func() {
 				if !historical {
 					inst, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review, business.InstallAccess{})
-					resultCh <- result{inst, err}
+					resultCh <- result{inst.Installation, err}
 					return
 				}
 				_, installErr := api.InstallReviewedSolution(personContext, decoded)
@@ -301,14 +301,14 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, domain.Active, resumed.Status)
 				require.Equal(t, done.inst.Consent, resumed.Consent)
-				done = result{resumed, nil}
+				done = result{resumed.Installation, nil}
 			} else if outcome != "ack" && !historical {
 				// The current administrator resumes the SAME review. Neither a
 				// worker nor a successful job impersonates the approving user.
 				recovered, _ := startCanonicalReceiver(t, binary, review.Approval.TargetId, listener.Addr().String(), "ack")
 				go func() {
 					inst, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review, business.InstallAccess{})
-					resultCh <- result{inst, err}
+					resultCh <- result{inst.Installation, err}
 				}()
 				var retry canonicalProcessClaim
 				deadline = time.Now().Add(25 * time.Second)

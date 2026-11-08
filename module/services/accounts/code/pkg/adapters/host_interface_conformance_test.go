@@ -1116,7 +1116,8 @@ func runHostInterfaceFixture(t *testing.T) {
 			require.NoError(t, err)
 			review, err := svc.ReviewSolutionInstall(ctx, alex, fixtureOrganization, resolved.TargetID)
 			require.NoError(t, err)
-			return svc.InstallReviewedSolution(ctx, alex, fixtureOrganization, review, business.InstallAccess{})
+			installed, err := svc.InstallReviewedSolution(ctx, alex, fixtureOrganization, review, business.InstallAccess{})
+			return installed.Installation, err
 		}
 		installed, err := install()
 		require.NoError(t, err)

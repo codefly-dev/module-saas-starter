@@ -7,6 +7,7 @@ import {
 	within,
 } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "@/app/admin/solutions/page";
 import { ReviewedSolutionInstallSchema } from "@/gen/saas/accounts/v1/installations_pb";
@@ -23,7 +24,9 @@ vi.mock("@/lib/auth", () => ({
 		orgRole: "owner",
 	}),
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({
+	toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+}));
 const target = "aaaaaaaa-0000-4000-8000-000000000001";
 const approval = {
 	targetId: "signed-solution-principal",
@@ -84,8 +87,10 @@ let reviews: number;
 let mismatch: boolean;
 let refuseReview: boolean;
 let installed: boolean;
+let accessProblems: string[];
 let readOnlyRequests: string[];
 beforeEach(() => {
+	vi.clearAllMocks();
 	window.sessionStorage.clear();
 	roles = [];
 	modules = undefined;
@@ -95,6 +100,7 @@ beforeEach(() => {
 	mismatch = false;
 	refuseReview = false;
 	installed = false;
+	accessProblems = [];
 	readOnlyRequests = [];
 	setToken("example-session-token");
 	server.use(
@@ -169,6 +175,7 @@ beforeEach(() => {
 					orgId: "org-1",
 					targetId: target,
 					status: "INSTALLATION_STATUS_ACTIVE",
+					accessProblems,
 				});
 			},
 		),
@@ -441,6 +448,33 @@ describe("combined reviewed installation", () => {
 		// A reused module's consent is unchanged: no detail for it.
 		expect(technical.textContent).not.toMatch(
 			/Echo|Foxtrot|Golf|Hotel|reused-queue/,
+		);
+	});
+	it("an install whose access is not fully applied says what is left to grant", async () => {
+		roles = [{ name: "installer" }, { name: "viewer" }];
+		accessProblems = [
+			"viewer: the role could not be granted to its team: refused",
+		];
+		renderInApp(<Page />);
+		const install = async () => {
+			const dialog = await open();
+			await within(dialog).findByRole("region", { name: "Team access" });
+			fireEvent.click(
+				within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
+			);
+			fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
+			return dialog;
+		};
+		const first = await install();
+		await within(first).findByRole("alert");
+		fireEvent.click(within(first).getByRole("button", { name: "Cancel" }));
+		await install();
+		await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+		expect(vi.mocked(toast.warning).mock.calls[0][0]).toContain(
+			"viewer: the role could not be granted to its team: refused",
+		);
+		expect(toast.success).not.toHaveBeenCalledWith(
+			"Installed. Each role's team holds it now.",
 		);
 	});
 });

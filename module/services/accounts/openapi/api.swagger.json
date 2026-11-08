@@ -404,6 +404,13 @@
     "saasAccountsV1Installation": {
       "description": "Installation is one solution's bound identity in an org. Server-assigned ids;\nthe browser cannot attest to tenancy, the agent principal, or the scope node.",
       "properties": {
+        "accessProblems": {
+          "description": "What of the access an administrator's install assigned could not be\napplied once the installation became active, one entry per role in words\n(\"viewer: the role could not be granted to its team: ...\"). Set only on\nthe answer of the call that applied it (InstallReviewedSolution,\nRetryInstallation); the installation stands, and Set up grants the rest.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "agentPrincipalId": {
           "type": "string"
         },

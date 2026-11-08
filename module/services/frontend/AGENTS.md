@@ -508,8 +508,9 @@ team-per-role picker binds to a solution's consent digest and is not offered.
 **Install assigns access; the browser keeps no draft.** The host assigns it
 (`InstallReviewedSolution`'s `role_teams` and `installer_roles`): each declared
 role goes to the organization team `<solution>-<role>` (reused
-case-insensitively, created when absent) unless the administrator changes it,
-and is granted to it once setup is active; the installer joins the teams of the
+case-insensitively or by the root team's path, its slug; created once setup is
+active when absent) unless the administrator changes it, and is granted to it
+once setup is active; the installer joins the teams of the
 roles they keep ticked under "You will get" (all ticked by default), and no
 other. The dialog (`ui/installation-team-assignment.tsx`,
 `model/team-assignment.ts`) shows, per role, the team that will receive it —
@@ -517,18 +518,21 @@ other. The dialog (`ui/installation-team-assignment.tsx`,
 the ticked roles; nothing must be picked. The host records the assignment with
 the installation, so a pending install that resumes, by retry or by the same
 review sent again, applies the same one; nothing in session storage and no
-client-side grant loop. An update keeps its teams and grants and shows no
+client-side grant loop. What the host could not apply comes back in
+`access_problems` and the page says so, naming Set up for the rest. An update keeps its teams and grants and shows no
 assignment. Set up keeps its own grant form for every later change.
 
 **The review leads with what people can do.** The dialog shows, in order: each
 declared role in plain words, its scopes merged per resource kind ("editor:
 read and write pages"), grouped by where they apply (`roleReach`, the one
 place the core's reach plugs in once its offer carries it); the supporting
-modules as one line each for what the install brings ("Also installs: …") and
-what it reuses; team access; and one collapsed "Show technical access" holding
-the declared operations and, per module this install consents to, its access
-with an operation reached on Connect and gRPC shown once and no binding
-identifier. A reused module shows no detail: its consent is unchanged. This is
+modules as one line each for what the install brings ("Also installs: …",
+naming each that holds a standing machine role as "module (role)") and what it
+reuses; team access; and one collapsed "Show technical access" holding the
+declared operations and, per module this install consents to, its access with
+an operation reached on Connect and gRPC shown once and no binding identifier
+(an audience whose faces act in different delegation modes says each face's
+mode on its lines). A reused module shows no detail: its consent is unchanged. This is
 presentation only; the reviewed request still carries every entry.
 
 The combined review describes Accounts `namespaces` as event publication and

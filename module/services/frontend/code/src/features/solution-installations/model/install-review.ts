@@ -115,35 +115,56 @@ export function moduleConsentText(raw: string): string[] {
 	}
 	// One line per audience, axis, resource kind and items, actions merged:
 	// an operation reached on two faces (Connect and gRPC) is one capability,
-	// and a binding's own identifier is never shown.
+	// and a binding's own identifier is never shown. An audience whose faces
+	// act in one delegation mode says it once; one whose faces differ says
+	// each face's mode on its own lines.
 	const operations = new Map<
 		string,
 		{ head: string; tail: string; actions: Set<string> }
 	>();
+	const faces = [
+		...Object.values(value.read_audiences ?? {}),
+		...Object.values(value.operation_audiences ?? {}),
+	];
+	const modesAt = new Map<string, Set<string>>();
+	for (const access of faces) {
+		const modes = modesAt.get(access.audience) ?? new Set<string>();
+		modes.add(access.delegation_mode ?? "");
+		modesAt.set(access.audience, modes);
+	}
+	const modeText = (mode: string) =>
+		`delegation mode ${mode.replaceAll("_", " ")}`;
 	const modes = new Set<string>();
-	for (const bindings of [value.read_audiences, value.operation_audiences]) {
-		for (const access of Object.values(bindings ?? {})) {
-			if (access.delegation_mode)
-				modes.add(
-					`Acts at ${access.audience}: delegation mode ${access.delegation_mode.replaceAll("_", " ")}.`,
-				);
-			for (const [key, label] of Object.entries(operationLabels)) {
-				for (const entry of access[key as keyof typeof operationLabels] ?? []) {
-					const items = entry.resource_ids?.length
-						? `items ${entry.resource_ids.join(", ")}`
-						: "all items of this type";
-					const id = [access.audience, key, entry.resource_kind, items].join(
-						"\u0000",
-					);
-					const line = operations.get(id) ?? {
-						head: `${label} through ${access.audience}: `,
-						tail: ` ${entry.resource_kind}; ${items}.`,
-						actions: new Set<string>(),
-					};
-					for (const action of entry.actions ?? ["read"])
-						line.actions.add(action);
-					operations.set(id, line);
-				}
+	for (const [audience, held] of modesAt) {
+		const [mode] = held;
+		if (held.size === 1 && mode)
+			modes.add(`Acts at ${audience}: ${modeText(mode)}.`);
+	}
+	for (const access of faces) {
+		const perFace = (modesAt.get(access.audience)?.size ?? 0) > 1;
+		const mode = perFace
+			? ` (${access.delegation_mode ? modeText(access.delegation_mode) : "no delegation mode"})`
+			: "";
+		for (const [key, label] of Object.entries(operationLabels)) {
+			for (const entry of access[key as keyof typeof operationLabels] ?? []) {
+				const items = entry.resource_ids?.length
+					? `items ${entry.resource_ids.join(", ")}`
+					: "all items of this type";
+				const id = [
+					access.audience,
+					mode,
+					key,
+					entry.resource_kind,
+					items,
+				].join("\u0000");
+				const line = operations.get(id) ?? {
+					head: `${label} through ${access.audience}${mode}: `,
+					tail: ` ${entry.resource_kind}; ${items}.`,
+					actions: new Set<string>(),
+				};
+				for (const action of entry.actions ?? ["read"])
+					line.actions.add(action);
+				operations.set(id, line);
 			}
 		}
 	}
@@ -240,7 +261,10 @@ export function supportingSummary(
 	const installs = modules.filter((m) => m.required && !m.reuseInstallationId);
 	return {
 		installs: installs.map(name),
-		standing: installs.some((m) => m.installationRole !== "none"),
+		/** Each fresh module that holds a standing machine role, with the role. */
+		standing: installs
+			.filter((m) => m.installationRole && m.installationRole !== "none")
+			.map((m) => `${name(m)} (${m.installationRole})`),
 		reused: modules
 			.filter((m) => m.required && m.reuseInstallationId)
 			.map(name),

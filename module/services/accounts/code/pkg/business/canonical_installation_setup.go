@@ -25,50 +25,50 @@ type retryCanonicalSetupKey struct{}
 // input. Core reauthorizes the caller and checks stale consent BEFORE the step
 // may replay a dead-lettered job. Another administrator must review afresh; this
 // method never impersonates the original approving person.
-func (s *Service) RetryCanonicalSolution(ctx context.Context, caller authority.Person, org, id string) (domain.Installation, error) {
+func (s *Service) RetryCanonicalSolution(ctx context.Context, caller authority.Person, org, id string) (InstalledSolution, error) {
 	core, err := s.AuthorityCore()
 	if err != nil {
-		return domain.Installation{}, err
+		return InstalledSolution{}, err
 	}
 	all, err := core.Installations(ctx, caller, org)
 	if err != nil {
-		return domain.Installation{}, err
+		return InstalledSolution{}, err
 	}
 	for _, inst := range all {
 		if inst.ID != id {
 			continue
 		}
 		if inst.Status != domain.Pending && inst.Status != domain.Active {
-			return inst, domain.NotNow("INSTALLATION_REVIEW_REQUIRED: this installation is no longer pending")
+			return InstalledSolution{Installation: inst}, domain.NotNow("INSTALLATION_REVIEW_REQUIRED: this installation is no longer pending")
 		}
 		store, ok := s.store.(CanonicalInstallationSetupStore)
 		if !ok {
-			return inst, domain.NotNow("canonical installation setup store unavailable")
+			return InstalledSolution{Installation: inst}, domain.NotNow("canonical installation setup store unavailable")
 		}
 		plan, err := store.SolutionInstallationPlan(ctx, org, id)
 		if err != nil {
-			return inst, err
+			return InstalledSolution{Installation: inst}, err
 		}
 		return s.continueCanonicalSolution(ctx, core, caller, inst, plan)
 	}
-	return domain.Installation{}, domain.Missing("installation %q is not present in this organization", id)
+	return InstalledSolution{}, domain.Missing("installation %q is not present in this organization", id)
 }
 
-func (s *Service) continueCanonicalSolution(ctx context.Context, core *authority.Service, caller authority.Person, inst domain.Installation, plan SolutionInstallationPlan) (domain.Installation, error) {
+func (s *Service) continueCanonicalSolution(ctx context.Context, core *authority.Service, caller authority.Person, inst domain.Installation, plan SolutionInstallationPlan) (InstalledSolution, error) {
 	if inst.Status == domain.Pending {
 		ctx = context.WithValue(ctx, retryCanonicalSetupKey{}, true)
 	}
 	step, err := s.installStepFor(ctx, core, plan.Target)
 	if err != nil {
-		return domain.Installation{}, err
+		return InstalledSolution{}, err
 	}
 	// The access the attempt recorded is applied once it is active, whoever
 	// resumes it; a browser's choices since play no part.
 	inst, err = core.Install(ctx, caller, inst.Organization, plan.Target, plan.RequestedRole, plan.RequestedOwner, &plan.Approval, step)
 	if err != nil {
-		return inst, err
+		return InstalledSolution{Installation: inst}, err
 	}
-	return inst, s.applyInstallationAccess(ctx, caller, inst, plan.Access)
+	return InstalledSolution{Installation: inst, AccessProblems: s.applyInstallationAccess(ctx, caller, inst, plan.Access)}, nil
 }
 
 func (s *Service) canonicalInstallationStep(ctx context.Context, inst domain.Installation) error {

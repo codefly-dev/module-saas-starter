@@ -7185,6 +7185,13 @@
         "upgradeAvailable": {
           "type": "boolean",
           "description": "True when the delivered generation asks more than approved_generation did:\nthe installation stands, active and healthy with its grants, until an\nadministrator reviews the target again and installs the reviewed release\non this same installation (an update, never an uninstall)."
+        },
+        "accessProblems": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "What of the access an administrator's install assigned could not be\napplied once the installation became active, one entry per role in words\n(\"viewer: the role could not be granted to its team: ...\"). Set only on\nthe answer of the call that applied it (InstallReviewedSolution,\nRetryInstallation); the installation stands, and Set up grants the rest."
         }
       },
       "description": "Installation is one solution's bound identity in an org. Server-assigned ids;\nthe browser cannot attest to tenancy, the agent principal, or the scope node."

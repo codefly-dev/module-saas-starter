@@ -60,6 +60,7 @@ func (s *InstallationServer) InstallReviewedSolution(ctx context.Context, req *g
 	if err != nil {
 		return nil, mapInstallationError(err)
 	}
+	result.AccessProblems = business.AccessProblemsToWire(inst.AccessProblems)
 	return result, nil
 }
 

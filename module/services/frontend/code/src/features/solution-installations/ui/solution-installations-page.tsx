@@ -358,11 +358,16 @@ function SolutionInstallationsForOrganization({
 							{ review, access },
 							{
 								onSuccess: (installation) => {
-									toast.success(
-										installation.status === InstallationStatus.ACTIVE
-											? "Installed. Each role's team holds it now."
-											: "Setup is pending. Each role's team receives it once setup is active.",
-									);
+									if (installation.accessProblems.length)
+										toast.warning(
+											`Installed, but not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+										);
+									else
+										toast.success(
+											installation.status === InstallationStatus.ACTIVE
+												? "Installed. Each role's team holds it now."
+												: "Setup is pending. Each role's team receives it once setup is active.",
+										);
 									setInstalling(null);
 									router.push(`/admin/solutions/${installation.id}`);
 								},
@@ -552,7 +557,12 @@ function InstalledSection({
 	const runRetry = (row: InstalledRow) => {
 		setRefusal(null);
 		retry.mutate(row.installationId, {
-			onSuccess: () => toast.success(`${name(row)} installation pending`),
+			onSuccess: (installation) =>
+				installation.accessProblems.length
+					? toast.warning(
+							`${name(row)}: not every role's access was applied — grant the rest in Set up. ${installation.accessProblems.join(" ")}`,
+						)
+					: toast.success(`${name(row)} installation pending`),
 			onError: (error) =>
 				setRefusal({
 					title: `The host refused to retry ${name(row)}`,

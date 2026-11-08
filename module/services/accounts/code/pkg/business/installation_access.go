@@ -11,6 +11,7 @@ import (
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	"github.com/codefly-dev/core/wool"
 )
 
 // InstallAccess is the access an administrator's install asks for beside its
@@ -23,14 +24,36 @@ type InstallAccess struct {
 	InstallerRoles []string
 }
 
-// InstallationAccess is the access an install resolved and recorded on its
+// InstallationAccess is the access an install checked and recorded on its
 // plan, so a pending attempt that resumes applies the same one: the team of
-// the organization each role is granted to once the installation is active,
-// by role name, and the person who joins the teams of InstallerRoles then.
+// the organization the administrator named for a role (Teams), the
+// conventional team name of every other declared role (Conventional), both by
+// role name, and the person who joins the teams of InstallerRoles. Nothing
+// is created or granted until the installation is active
+// (applyInstallationAccess): a refused or pending install leaves no team.
 type InstallationAccess struct {
 	Teams          map[string]string `json:",omitempty"`
+	Conventional   map[string]string `json:",omitempty"`
 	Installer      string            `json:",omitempty"`
 	InstallerRoles []string          `json:",omitempty"`
+}
+
+// AccessProblem is one part of an installation's access its assignment could
+// not apply, by role, in words. The installation stands: an administrator
+// grants the rest in Set up.
+type AccessProblem struct {
+	Role, Problem string
+}
+
+func (p AccessProblem) String() string { return p.Role + ": " + p.Problem }
+
+// AccessProblemsToWire is problems as Installation.access_problems states them.
+func AccessProblemsToWire(problems []AccessProblem) []string {
+	out := make([]string, 0, len(problems))
+	for _, p := range problems {
+		out = append(out, p.String())
+	}
+	return out
 }
 
 // ConventionalTeamName is the team a declared role of target goes to when the
@@ -40,86 +63,176 @@ func ConventionalTeamName(target, role string) string {
 	return strings.ToLower(strings.Join(strings.Fields(target+"-"+role), "-"))
 }
 
-// resolveInstallationAccess is the access caller's install of target assigns:
+// isConventionalTeam reports whether team is the organization's team named
+// name: its name, whatever its case, or a root team whose path is the slug of
+// name. Teams are unique by path, so a team named otherwise ("Target Viewer")
+// that holds the slug is the one a create of name would collide with.
+func isConventionalTeam(team *gen.Team, name string) bool {
+	if strings.EqualFold(strings.TrimSpace(team.GetName()), name) {
+		return true
+	}
+	return team.GetParentTeamId() == "" && team.GetPath() != "" && team.GetPath() == Slugify(name)
+}
+
+// resolveInstallationAccess is the access caller's install of target records:
 // for every role target declares, the team requested names for it, which must
-// be a team of org, or else the organization's team named ConventionalTeamName
-// (case-insensitively), created through CreateTeam when absent. Everything
-// requested is checked before any team is created, and no team's members
-// change here.
+// be a team of org, or else the conventional name, whose team is found or
+// created once the installation is active. Everything requested is checked
+// here; no team is created and no team's members change.
 func (s *Service) resolveInstallationAccess(ctx context.Context, caller authority.Person, org string, target domain.Module, requested InstallAccess) (*InstallationAccess, error) {
 	roles := slices.Sorted(maps.Keys(target.Roles))
-	access := &InstallationAccess{Teams: map[string]string{}, Installer: caller.ID, InstallerRoles: slices.Sorted(slices.Values(requested.InstallerRoles))}
+	access := &InstallationAccess{Teams: map[string]string{}, Conventional: map[string]string{}, Installer: caller.ID,
+		InstallerRoles: slices.Sorted(slices.Values(requested.InstallerRoles))}
 	for _, role := range access.InstallerRoles {
 		if !slices.Contains(roles, role) {
 			return nil, domain.Malformed("%s declares no role %q", target.Name, role)
 		}
 	}
-	if len(roles) == 0 && len(requested.RoleTeams) == 0 {
-		return access, nil
-	}
-	listed, err := s.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: org})
-	if err != nil {
-		return nil, err
-	}
-	teams := listed.GetTeams()
-	for role, id := range requested.RoleTeams {
+	for role := range requested.RoleTeams {
 		if !slices.Contains(roles, role) {
 			return nil, domain.Malformed("%s declares no role %q", target.Name, role)
 		}
-		if !slices.ContainsFunc(teams, func(t *gen.Team) bool { return t.GetId() == id }) {
-			return nil, domain.Refuse("%q is not a team of this organization", id)
+	}
+	if len(requested.RoleTeams) > 0 {
+		listed, err := s.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: org})
+		if err != nil {
+			return nil, err
 		}
-		access.Teams[role] = id
+		for role, id := range requested.RoleTeams {
+			if !slices.ContainsFunc(listed.GetTeams(), func(t *gen.Team) bool { return t.GetId() == id }) {
+				return nil, domain.Refuse("%q is not a team of this organization", id)
+			}
+			access.Teams[role] = id
+		}
 	}
 	for _, role := range roles {
-		if _, named := requested.RoleTeams[role]; named {
-			continue
+		if _, named := requested.RoleTeams[role]; !named {
+			access.Conventional[role] = ConventionalTeamName(target.Name, role)
 		}
-		name := ConventionalTeamName(target.Name, role)
-		i := slices.IndexFunc(teams, func(t *gen.Team) bool { return strings.EqualFold(strings.TrimSpace(t.GetName()), name) })
-		if i >= 0 {
-			access.Teams[role] = teams[i].GetId()
-			continue
-		}
-		created, err := s.CreateTeam(ctx, caller.ID, &gen.CreateTeamRequest{OrgId: org, Name: name})
-		if err != nil {
-			return nil, fmt.Errorf("create the team %s for the role %s: %w", name, role, err)
-		}
-		teams = append(teams, created.GetTeam())
-		access.Teams[role] = created.GetTeam().GetId()
 	}
 	return access, nil
 }
 
-// applyInstallationAccess applies access once inst is active: the installer
-// joins the team of each role they took, and each role is granted to its
-// team. Before activation there is nothing to apply; the resumed attempt that
-// activates inst applies it. Both halves are idempotent, so applying it again
-// changes nothing.
-func (s *Service) applyInstallationAccess(ctx context.Context, caller authority.Person, inst domain.Installation, access *InstallationAccess) error {
-	if access == nil || inst.Status != domain.Active {
+// applyInstallationAccess applies access once inst is active, as caller:
+// each role's team is resolved (the team named for it while it still exists,
+// else its conventional team, found or created), each role is granted to its
+// team, then the installer joins the team of each role they took. Before
+// activation nothing is applied; the resumed attempt that activates inst
+// applies it. Every step is check-before-write, so applying it again changes
+// nothing. A role whose team, grant or membership fails is reported, and the
+// other roles are applied all the same: the installation is active, so its
+// access problems are an answer, never an error.
+func (s *Service) applyInstallationAccess(ctx context.Context, caller authority.Person, inst domain.Installation, access *InstallationAccess) []AccessProblem {
+	if access == nil || inst.Status != domain.Active || len(accessRoles(access)) == 0 {
 		return nil
+	}
+	var problems []AccessProblem
+	report := func(role, format string, args ...any) {
+		problems = append(problems, AccessProblem{Role: role, Problem: fmt.Sprintf(format, args...)})
+	}
+	listed, err := s.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: inst.Organization})
+	if err != nil {
+		for _, role := range accessRoles(access) {
+			report(role, "the organization's teams could not be read: %v", err)
+		}
+		return problems
+	}
+	teams := listed.GetTeams()
+	resolved := map[string]string{}
+	for _, role := range accessRoles(access) {
+		if id, named := access.Teams[role]; named {
+			if slices.ContainsFunc(teams, func(t *gen.Team) bool { return t.GetId() == id }) {
+				resolved[role] = id
+				continue
+			}
+		}
+		name := access.Conventional[role]
+		if name == "" {
+			name = ConventionalTeamName(inst.Target, role)
+		}
+		team, err := s.conventionalTeam(ctx, caller, inst.Organization, name, &teams)
+		if err != nil {
+			report(role, "the team %s could not be created: %v", name, err)
+			continue
+		}
+		resolved[role] = team
+		if _, named := access.Teams[role]; named {
+			report(role, "the team chosen for it no longer exists; granted to %s instead", name)
+		}
+	}
+	for _, role := range slices.Sorted(maps.Keys(resolved)) {
+		grant := authority.RoleRequest{Organization: inst.Organization, InstallationID: inst.ID, Role: role, TeamID: resolved[role]}
+		if err := s.GrantInstallationRoles(ctx, caller, []authority.RoleRequest{grant}); err != nil {
+			report(role, "the role could not be granted to its team: %v", err)
+		}
 	}
 	if len(access.InstallerRoles) > 0 {
 		joined, err := s.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: inst.Organization, MemberId: access.Installer})
-		if err != nil {
-			return err
-		}
 		for _, role := range access.InstallerRoles {
-			team := access.Teams[role]
-			if slices.ContainsFunc(joined.GetTeams(), func(t *gen.Team) bool { return t.GetId() == team }) {
+			team, ok := resolved[role]
+			switch {
+			case !ok:
+				continue // Reported above: the role has no team.
+			case err != nil:
+				report(role, "the installer's teams could not be read: %v", err)
+				continue
+			case slices.ContainsFunc(joined.GetTeams(), func(t *gen.Team) bool { return t.GetId() == team }):
 				continue // A member already, in whatever team role they hold.
 			}
 			if err := s.AddTeamMember(ctx, caller.ID, &gen.AddTeamMemberRequest{TeamId: team, UserId: access.Installer}); err != nil {
-				return fmt.Errorf("add the installer to the team of %s: %w", role, err)
+				report(role, "the installer could not join its team: %v", err)
 			}
 		}
 	}
-	grants := make([]authority.RoleRequest, 0, len(access.Teams))
-	for _, role := range slices.Sorted(maps.Keys(access.Teams)) {
-		grants = append(grants, authority.RoleRequest{Organization: inst.Organization, InstallationID: inst.ID, Role: role, TeamID: access.Teams[role]})
+	if len(problems) > 0 {
+		log := wool.Get(ctx).In("applyInstallationAccess")
+		for _, p := range problems {
+			log.Warn("an installation's access was not fully applied", wool.Field("installation", inst.ID), wool.Field("role", p.Role), wool.Field("problem", p.Problem))
+		}
 	}
-	return s.GrantInstallationRoles(ctx, caller, grants)
+	return problems
+}
+
+// accessRoles are the roles access assigns, sorted.
+func accessRoles(access *InstallationAccess) []string {
+	roles := slices.Collect(maps.Keys(access.Teams))
+	for role := range access.Conventional {
+		if !slices.Contains(roles, role) {
+			roles = append(roles, role)
+		}
+	}
+	slices.Sort(roles)
+	return roles
+}
+
+// conventionalTeam is the id of org's team named name (isConventionalTeam),
+// created through CreateTeam when absent and added to teams. A create that
+// fails is answered by the team another writer created meanwhile, when the
+// organization now holds one.
+func (s *Service) conventionalTeam(ctx context.Context, caller authority.Person, org, name string, teams *[]*gen.Team) (string, error) {
+	find := func() string {
+		if i := slices.IndexFunc(*teams, func(t *gen.Team) bool { return isConventionalTeam(t, name) }); i >= 0 {
+			return (*teams)[i].GetId()
+		}
+		return ""
+	}
+	if id := find(); id != "" {
+		return id, nil
+	}
+	created, err := s.CreateTeam(ctx, caller.ID, &gen.CreateTeamRequest{OrgId: org, Name: name})
+	if err == nil {
+		*teams = append(*teams, created.GetTeam())
+		return created.GetTeam().GetId(), nil
+	}
+	listed, listErr := s.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: org})
+	if listErr != nil {
+		return "", err
+	}
+	*teams = listed.GetTeams()
+	if id := find(); id != "" {
+		return id, nil
+	}
+	return "", err
 }
 
 // GrantInstallationRoles grants, as caller, each of grants its installation

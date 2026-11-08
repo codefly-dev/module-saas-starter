@@ -72,12 +72,6 @@ export type SolutionSetupProps = SolutionSetupTransport & {
 	conditions?: readonly SetupCondition[];
 	/** People and teams the host can name, for granting and naming holders. */
 	subjects?: readonly SetupSubject[];
-	/** Host-owned choices, using this same current offer and grant client. */
-	renderAccessChoices?: (
-		offer: ReviewedOffer,
-		clients: SetupClients,
-		reload: () => void,
-	) => ReactNode;
 	className?: string;
 };
 
@@ -118,8 +112,6 @@ export function SolutionSetup(props: SolutionSetupProps) {
 						offerError={state.offerError}
 						conditions={props.conditions}
 					/>
-					{state.offer &&
-						props.renderAccessChoices?.(state.offer, clients, reload)}
 					<RolesSection offer={state.offer} offerError={state.offerError} />
 					<HoldersSection
 						organizationId={props.organizationId}

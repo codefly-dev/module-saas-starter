@@ -33,11 +33,16 @@ func (s *Service) RetryInstallation(ctx context.Context, actorID, orgID, id stri
 		return nil, err
 	}
 	if len(canonical) == 1 {
-		if _, err := s.RetryCanonicalSolution(ctx, authority.Person{ID: actorID, Organization: orgID}, orgID, id); err != nil {
+		done, err := s.RetryCanonicalSolution(ctx, authority.Person{ID: actorID, Organization: orgID}, orgID, id)
+		if err != nil {
 			return nil, err
 		}
 		inst, _, err := s.GetInstallation(ctx, orgID, id)
-		return inst, err
+		if err != nil {
+			return nil, err
+		}
+		inst.AccessProblems = AccessProblemsToWire(done.AccessProblems)
+		return inst, nil
 	}
 	store, ok := s.store.(InstallationRetryStore)
 	if !ok {
