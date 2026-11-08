@@ -239,6 +239,12 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 		HostTargetID: review.TargetId, BindingID: review.BindingId, Release: review.Release, DeliveryDigest: review.DeliveryDigest,
 		Review: review, Approval: domain.ConsentApproval{TargetID: a.TargetId,
 			Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest, OperationID: a.OperationId}}
+	// Check first: a supporting module that would be refused refuses the
+	// whole install here, before the core records a pending attempt and
+	// before any module is installed.
+	if err := s.checkReviewedModulesInstallable(ctx, org, review); err != nil {
+		return domain.Installation{}, err
+	}
 	ctx = WithSolutionInstallationPlan(ctx, plan)
 	step, err := s.installStepFor(ctx, core, review.Target)
 	if err != nil {
@@ -321,32 +327,28 @@ func (s *Service) convergeReviewedModules(ctx context.Context, inst domain.Insta
 	if err != nil || plan.Review == nil {
 		return upgrade, err
 	}
+	// A resumed attempt checks first too: what an earlier attempt installed
+	// is installed again idempotently below (the same operation replays its
+	// receipt), and nothing is installed when any entry would be refused.
+	if err := s.checkReviewedModulesInstallable(ctx, inst.Organization, plan.Review); err != nil {
+		return upgrade, err
+	}
 	var witnesses []ModuleInstallationPrerequisite
 	for _, reviewed := range plan.Review.Modules {
 		if !reviewed.Required {
 			continue
 		}
-		target, err := s.ResolveInstallationPrincipal(ctx, inst.Organization, reviewed.Principal)
+		target, err := s.reviewedModuleTarget(ctx, inst.Organization, reviewed)
 		if err != nil {
 			return upgrade, err
-		}
-		_, digest, err := s.reviewedTargetDelivery(ctx, target)
-		if err != nil {
-			return upgrade, err
-		}
-		if target.TargetID != reviewed.TargetId || target.BindingID != reviewed.BindingId || target.AppliedGeneration != reviewed.Approval.Generation || digest != reviewed.DeliveryDigest {
-			return upgrade, domain.NotNow("module %q changed since review", reviewed.Principal)
 		}
 		id := reviewed.ReuseInstallationId
 		if id == "" {
-			scope, err := ParseInstallationScope(reviewed.Scope)
+			params, err := reviewedModuleInstall(inst.Organization, target, reviewed)
 			if err != nil {
 				return upgrade, err
 			}
-			a := reviewed.Approval
-			installed, err := s.InstallSolution(ctx, plan.Review.ActorId, &InstallSolutionParams{OrgID: inst.Organization, TargetID: target.TargetID,
-				AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, Scope: &scope,
-				Approval: &InstallationApproval{TargetID: a.TargetId, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, OperationID: a.OperationId}})
+			installed, err := s.InstallSolution(ctx, plan.Review.ActorId, params)
 			if err != nil {
 				return upgrade, err
 			}
@@ -374,6 +376,61 @@ func (s *Service) convergeReviewedModules(ctx context.Context, inst domain.Insta
 		return false, fmt.Errorf("record reviewed module receipts: %w", err)
 	}
 	return false, nil
+}
+
+// checkReviewedModulesInstallable holds every supporting module review
+// installs fresh to the predicates InstallSolution holds it to
+// (checkInstallable), and writes nothing: the first refusal refuses the whole
+// install before any module is installed. A module the review reuses is
+// installed already and is fenced by its witness instead.
+func (s *Service) checkReviewedModulesInstallable(ctx context.Context, org string, review *gen.ReviewedSolutionInstall) error {
+	for _, reviewed := range review.GetModules() {
+		if !reviewed.Required || reviewed.ReuseInstallationId != "" {
+			continue
+		}
+		target, err := s.reviewedModuleTarget(ctx, org, reviewed)
+		if err != nil {
+			return err
+		}
+		params, err := reviewedModuleInstall(org, target, reviewed)
+		if err != nil {
+			return err
+		}
+		if err := s.checkInstallable(ctx, review.ActorId, params); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reviewedModuleTarget is the host target a reviewed supporting module names,
+// refused when its delivery moved since the review.
+func (s *Service) reviewedModuleTarget(ctx context.Context, org string, reviewed *gen.ReviewedSupportingModule) (*AvailableSolutionTarget, error) {
+	target, err := s.ResolveInstallationPrincipal(ctx, org, reviewed.Principal)
+	if err != nil {
+		return nil, err
+	}
+	_, digest, err := s.reviewedTargetDelivery(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	if target.TargetID != reviewed.TargetId || target.BindingID != reviewed.BindingId || target.AppliedGeneration != reviewed.GetApproval().GetGeneration() || digest != reviewed.DeliveryDigest {
+		return nil, domain.NotNow("module %q changed since review", reviewed.Principal)
+	}
+	return target, nil
+}
+
+// reviewedModuleInstall is the install of one reviewed supporting module:
+// its target, the scope and the approval the review carries.
+func reviewedModuleInstall(org string, target *AvailableSolutionTarget, reviewed *gen.ReviewedSupportingModule) (*InstallSolutionParams, error) {
+	scope, err := ParseInstallationScope(reviewed.Scope)
+	if err != nil {
+		return nil, err
+	}
+	a := reviewed.Approval
+	return &InstallSolutionParams{OrgID: org, TargetID: target.TargetID,
+		AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, Scope: &scope,
+		Approval: &InstallationApproval{TargetID: a.TargetId, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, OperationID: a.OperationId}}, nil
 }
 
 // InstallAuthoritySolution adapts the existing single-target consent. It may

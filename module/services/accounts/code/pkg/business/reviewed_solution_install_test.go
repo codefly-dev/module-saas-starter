@@ -81,8 +81,10 @@ func reviewedInstallFixture(t *testing.T, dependencies bool) (*Service, *reviewe
 	core, err := authority.New(owner, authority.Config{Issuer: "test.example", KeyID: "key", Signer: private, Keys: staticKeys{"key": public}, Replay: workcontext.NewMemoryReplayStore()})
 	require.NoError(t, err)
 	host := &reviewedInstallStore{targets: []*AvailableSolutionTarget{
-		{TargetID: targetID, BindingID: "example-binding", RouteAlias: "example", Kind: "solution", AppliedGeneration: 1},
-		{TargetID: NewIDString(), BindingID: "records-binding", RouteAlias: "records-route", Kind: "module", AppliedGeneration: 3},
+		{TargetID: targetID, BindingID: "example-binding", RouteAlias: "example", Kind: "solution", AppliedGeneration: 1,
+			ReleasePublisher: "acme.example", ReleaseName: "example", ReleaseVersion: "1.0.0"},
+		{TargetID: NewIDString(), BindingID: "records-binding", RouteAlias: "records-route", Kind: "module", AppliedGeneration: 3,
+			ReleasePublisher: "acme.example", ReleaseName: "records", ReleaseVersion: "1.0.0"},
 	}, records: map[string]*SolutionHostBindingRecord{}}
 	registry := ModulePrincipalRegistry{}
 	for i, target := range host.targets {
@@ -261,6 +263,68 @@ func TestReviewedSolutionInstallsAnUndeclaredRolelessModuleHoldingNoAuthority(t 
 	s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
 	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
 	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+}
+
+// A reviewed install checks every supporting module it is about to install
+// before it installs any: one the host would refuse (here, a module whose
+// release the host cannot name an agent for) refuses the whole
+// install with that reason, before the core records a pending attempt and
+// before the install step that installs the closure runs. Nothing is left to
+// resume or to uninstall.
+func TestAReviewedInstallRefusedByAnyModuleLeavesNothingBehind(t *testing.T) {
+	s, host, owner, caller, target := reviewedInstallFixture(t, true)
+	ctx := context.Background()
+	// A second supporting module, installed first in review order.
+	require.NoError(t, owner.Write(ctx, func(tx authority.Tx) error {
+		solution, err := tx.ModuleNamed("example")
+		if err != nil {
+			return err
+		}
+		solution.EdgeDependencies = append([]domain.EdgeDependency{{Module: "module:alpha", Presence: "required"}}, solution.EdgeDependencies...)
+		if err := tx.PutModule(solution); err != nil {
+			return err
+		}
+		return tx.PutModule(domain.Module{Name: "alpha-route", Principal: "module:alpha", Kind: domain.KindModule, Generation: 2, InstallationRole: "none"})
+	}))
+	alpha := &AvailableSolutionTarget{TargetID: NewIDString(), BindingID: "alpha-binding", RouteAlias: "alpha-route", Kind: "module", AppliedGeneration: 2,
+		ReleasePublisher: "acme.example", ReleaseName: "alpha", ReleaseVersion: "1.0.0"}
+	host.targets = append(host.targets, alpha)
+	host.records[alpha.BindingID] = &SolutionHostBindingRecord{BindingID: alpha.BindingID, Applied: &SolutionHostBindingApplied{SolutionHostBindingGeneration: SolutionHostBindingGeneration{Generation: 2, Digest: "digest-module:alpha"}, Release: "acme.example/alpha@1.0.0"}}
+	registry := s.ModulePrincipals()
+	registry[ModulePrincipalID("module:alpha")] = ModulePrincipalGrant{Prefix: "module:alpha", PresenceBinding: alpha.BindingID, PresenceGeneration: 2}
+	s.SetModulePrincipals(registry)
+
+	review, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
+	require.NoError(t, err)
+	var principals []string
+	for _, m := range review.Modules {
+		if m.Required {
+			principals = append(principals, m.Principal)
+		}
+	}
+	require.Equal(t, []string{"module:alpha", "module:records"}, principals, "alpha is installed before records")
+
+	// The host's projection of records names no release version, so the
+	// agent its installation is made for cannot be named.
+	host.targets[1].ReleaseVersion = ""
+
+	calls := 0
+	s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
+	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	require.ErrorContains(t, err, "acme.example/records:")
+	require.Zero(t, calls, "the step that installs the closure ran")
+	core, err := s.AuthorityCore()
+	require.NoError(t, err)
+	all, err := core.Installations(ctx, caller, caller.Organization)
+	require.NoError(t, err)
+	require.Empty(t, all, "a refused install left a pending attempt")
+
+	// Once the projection names it, the same review installs.
+	host.targets[1].ReleaseVersion = "1.0.0"
+	inst, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	require.NoError(t, err)
+	require.Equal(t, domain.Active, inst.Status)
 	require.Equal(t, 1, calls)
 }
 

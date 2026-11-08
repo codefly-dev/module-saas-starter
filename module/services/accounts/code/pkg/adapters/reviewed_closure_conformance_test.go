@@ -2,6 +2,8 @@ package adapters
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 
 	"accounts/pkg/business"
@@ -17,6 +19,35 @@ import (
 	"google.golang.org/grpc"
 )
 
+// installFaults is the harness's store with one seam: the next install of a
+// named target fails once, as a store failing part-way through a closure's
+// convergence does. Every other call is the store's own.
+type installFaults struct {
+	*infra.PostgresStore
+	mu   sync.Mutex
+	next map[string]error
+}
+
+func (f *installFaults) failOnce(targetID string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.next == nil {
+		f.next = map[string]error{}
+	}
+	f.next[targetID] = err
+}
+
+func (f *installFaults) InstallSolution(ctx context.Context, p *business.InstallSolutionParams) (*gen.Installation, error) {
+	f.mu.Lock()
+	err, armed := f.next[p.TargetID]
+	delete(f.next, p.TargetID)
+	f.mu.Unlock()
+	if armed {
+		return nil, err
+	}
+	return f.PostgresStore.InstallSolution(ctx, p)
+}
+
 // reviewedClosureHarness is what the reviewed-closure cases use of the
 // conformance harness.
 type reviewedClosureHarness struct {
@@ -25,6 +56,7 @@ type reviewedClosureHarness struct {
 	signer      *solutionhost.InMemorySigner
 	svc         *business.Service
 	store       *infra.PostgresStore
+	faults      *installFaults
 	core        *authority.Service
 	pagePayload *solutionhost.FrontendPayload
 }
@@ -76,7 +108,8 @@ func requiredPrincipals(review *gen.ReviewedSolutionInstall) []string {
 	return out
 }
 
-// testReviewedClosures holds the reviewed install to the core's closure.
+// testReviewedClosures holds the reviewed install to the core's closure and
+// its resumption.
 func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
 	// A module page, a roleless module that binds it, and solutions that
@@ -125,5 +158,65 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 		inst, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review)
 		require.NoError(t, err)
 		require.Equal(t, domain.Active, inst.Status)
+	})
+
+	// D2: a convergence failing part-way resumes from the same review, by
+	// the original operation's replay and by RetryInstallation; what an
+	// earlier attempt installed is reused, never installed twice.
+	t.Run("a convergence failing part-way resumes from the same review", func(t *testing.T) {
+		const solution = "conformance-closure-resume"
+		modules := []string{"conformance-resume-a", "conformance-resume-b", "conformance-resume-c", "conformance-resume-d"}
+		for _, m := range modules {
+			deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: m, installationRole: domain.NoInstallationRole})
+		}
+		reachingSolution(solution, modules...)
+		review, err := h.review(t, alex, solution)
+		require.NoError(t, err)
+		require.Equal(t, modules, requiredPrincipals(review))
+		targetOf := func(module string) string {
+			resolved, err := h.svc.ResolveInstallationPrincipal(h.ctx, fixtureOrganization, module)
+			require.NoError(t, err)
+			return resolved.TargetID
+		}
+		lost := errors.New("the store lost the connection")
+		h.faults.failOnce(targetOf(modules[2]), lost)
+		pending, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review)
+		require.ErrorContains(t, err, lost.Error())
+		require.Equal(t, domain.Pending, pending.Status)
+		first := map[string]*gen.Installation{}
+		for i, m := range modules {
+			installed := h.moduleInstallation(t, fixtureOrganization, m)
+			require.Equal(t, i < 2, installed != nil, "after two of four modules, %s installed: %v", m, installed != nil)
+			first[m] = installed
+		}
+		// A fresh review reads the pending attempt's installed modules as
+		// reused, and is not refused.
+		fresh, err := h.review(t, alex, solution)
+		require.NoError(t, err)
+		require.Equal(t, first[modules[0]].GetId(), fresh.GetModules()[0].GetReuseInstallationId())
+
+		// The original operation's replay installs the third and fails on
+		// the fourth; RetryInstallation then finishes the same attempt.
+		h.faults.failOnce(targetOf(modules[3]), lost)
+		resumed, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review)
+		require.ErrorContains(t, err, lost.Error())
+		require.Equal(t, pending.ID, resumed.ID)
+		require.Equal(t, pending.Revision, resumed.Revision, "the replay is the same attempt")
+		require.NotNil(t, h.moduleInstallation(t, fixtureOrganization, modules[2]))
+		require.Nil(t, h.moduleInstallation(t, fixtureOrganization, modules[3]))
+		_, err = h.svc.RetryInstallation(h.ctx, conformanceAlex, fixtureOrganization, pending.ID)
+		require.NoError(t, err)
+		active, held := h.coreInstallation(t, alex, solution)
+		require.True(t, held)
+		require.Equal(t, domain.Active, active.Status)
+		require.Equal(t, review.GetApproval().GetOperationId(), active.Consent.OperationID, "the installation activated on the original review")
+		for _, m := range modules[:2] {
+			now := h.moduleInstallation(t, fixtureOrganization, m)
+			require.Equal(t, first[m].GetId(), now.GetId(), "%s was installed again", m)
+			require.Equal(t, first[m].GetRevision(), now.GetRevision(), "%s moved its revision on resume", m)
+		}
+		plan, err := h.store.SolutionInstallationPlan(h.ctx, fixtureOrganization, active.ID)
+		require.NoError(t, err)
+		require.Len(t, plan.Dependencies, 4)
 	})
 }

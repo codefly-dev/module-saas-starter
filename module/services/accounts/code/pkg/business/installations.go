@@ -138,52 +138,8 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		return nil, approvalErr
 	}
 	params.Approval = approval
-	params.GrantedBy = actorID
-	// Composing at the store level (one transaction) skips the friendly
-	// Principal.Validate() check the CreateAgentPrincipal domain path runs, so a
-	// malformed identifier would otherwise surface as an opaque DB CHECK violation
-	// mapped to Internal. Validate the shape here at the boundary instead.
-	if !looksLikeAgentIdentifier(params.AgentIdentifier) {
-		return nil, NewStoreError(
-			fmt.Errorf("agent_identifier %q must be 'publisher/name:version'", params.AgentIdentifier),
-			ErrTypeValidation,
-		)
-	}
-	// The target is resolved before the transaction, for the same reason the
-	// actor type is: it is control-plane state, and reading it inside the tenant
-	// transaction would reuse that transaction, where the request role holds no
-	// grant on the presence relations and the read would return nothing — a
-	// denied read printing as "no such target".
-	//
-	// Resolving is not the enforcement. A tombstone can be applied between this
-	// read and the insert, so liveness is enforced in the database by
-	// `installations_target_live_on_insert`, where the insert and the target row
-	// are in one transaction. What this read is for is the route alias (a display
-	// label) and a refusal that names the problem instead of surfacing a trigger.
-	_, err := s.prepareInstallation(ctx, params)
-	if err != nil {
+	if err := s.checkInstallable(ctx, actorID, params); err != nil {
 		return nil, err
-	}
-	if params.Kind == "solution" {
-		if _, err := s.AuthorityCore(); err == nil {
-			return nil, NewStoreError(fmt.Errorf("canonical solution installation requires ReviewSolutionInstall and InstallReviewedSolution; legacy solution writes are retired"), ErrTypeValidation)
-		}
-	}
-	if params.OwnerPrincipalID == "" {
-		params.OwnerPrincipalID = actorID
-	}
-	// The ceiling may only name audiences this host actually serves (issue #952).
-	// `allowed_audiences` used to be free text, so an installation could name a
-	// consumer that does not exist and then mint for it — the audience is what
-	// decides which consumer a capability is good at, so a value nothing serves is
-	// a capability pointing nowhere that still passes every other check.
-	//
-	// Refused HERE as well as narrowed at read, and both are needed: this catches
-	// a typo at the moment someone can fix it, and the read-time narrowing catches
-	// the set SHRINKING later, when delivery withdraws a solution long after any
-	// write.
-	if err := s.RequireHostAudiences(ctx, params.AllowedAudiences); err != nil {
-		return nil, NewStoreError(err, ErrTypeValidation)
 	}
 	actorType := s.actorTypeForCreator(ctx, actorID)
 	var installation *gen.Installation
@@ -227,6 +183,62 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		w.Warn("cannot materialize installed solution subscriptions", wool.ErrField(err))
 	}
 	return installation, nil
+}
+
+// checkInstallable applies every predicate InstallSolution holds params to
+// before its transaction, resolving the target and the consent prepareInstallation
+// fills into params, and writes nothing. The store's own fences (the
+// administrator, the generation lock and the revision compare) still decide in
+// the write. A reviewed solution install runs it over every module it is about
+// to install before installing any (checkReviewedModulesInstallable).
+func (s *Service) checkInstallable(ctx context.Context, actorID string, params *InstallSolutionParams) error {
+	params.GrantedBy = actorID
+	// Composing at the store level (one transaction) skips the friendly
+	// Principal.Validate() check the CreateAgentPrincipal domain path runs, so a
+	// malformed identifier would otherwise surface as an opaque DB CHECK violation
+	// mapped to Internal. Validate the shape here at the boundary instead.
+	if !looksLikeAgentIdentifier(params.AgentIdentifier) {
+		return NewStoreError(
+			fmt.Errorf("agent_identifier %q must be 'publisher/name:version'", params.AgentIdentifier),
+			ErrTypeValidation,
+		)
+	}
+	// The target is resolved before the transaction, for the same reason the
+	// actor type is: it is control-plane state, and reading it inside the tenant
+	// transaction would reuse that transaction, where the request role holds no
+	// grant on the presence relations and the read would return nothing — a
+	// denied read printing as "no such target".
+	//
+	// Resolving is not the enforcement. A tombstone can be applied between this
+	// read and the insert, so liveness is enforced in the database by
+	// `installations_target_live_on_insert`, where the insert and the target row
+	// are in one transaction. What this read is for is the route alias (a display
+	// label) and a refusal that names the problem instead of surfacing a trigger.
+	if _, err := s.prepareInstallation(ctx, params); err != nil {
+		return err
+	}
+	if params.Kind == "solution" {
+		if _, err := s.AuthorityCore(); err == nil {
+			return NewStoreError(fmt.Errorf("canonical solution installation requires ReviewSolutionInstall and InstallReviewedSolution; legacy solution writes are retired"), ErrTypeValidation)
+		}
+	}
+	if params.OwnerPrincipalID == "" {
+		params.OwnerPrincipalID = actorID
+	}
+	// The ceiling may only name audiences this host actually serves (issue #952).
+	// `allowed_audiences` used to be free text, so an installation could name a
+	// consumer that does not exist and then mint for it — the audience is what
+	// decides which consumer a capability is good at, so a value nothing serves is
+	// a capability pointing nowhere that still passes every other check.
+	//
+	// Refused HERE as well as narrowed at read, and both are needed: this catches
+	// a typo at the moment someone can fix it, and the read-time narrowing catches
+	// the set SHRINKING later, when delivery withdraws a solution long after any
+	// write.
+	if err := s.RequireHostAudiences(ctx, params.AllowedAudiences); err != nil {
+		return NewStoreError(err, ErrTypeValidation)
+	}
+	return nil
 }
 
 // GetInstallation returns one installation plus its health, resolved live from

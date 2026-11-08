@@ -107,7 +107,8 @@ func runHostInterfaceFixture(t *testing.T) {
 	store, err := infra.NewPostgresStore(ctx)
 	require.NoError(t, err)
 	t.Cleanup(store.Close)
-	svc, err := business.NewService(store)
+	faults := &installFaults{PostgresStore: store}
+	svc, err := business.NewService(faults)
 	require.NoError(t, err)
 	// The row-backed Work Context seal reads, as work.go wires them: the host
 	// resolves a module page's installation from the core's record through it.
@@ -1228,7 +1229,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.ErrorContains(t, err, "installed through its review")
 	})
 
-	testReviewedClosures(t, reviewedClosureHarness{ctx: ctx, conn: conn, signer: signer, svc: svc, store: store, core: core, pagePayload: pagePayload})
+	testReviewedClosures(t, reviewedClosureHarness{ctx: ctx, conn: conn, signer: signer, svc: svc, store: store, faults: faults, core: core, pagePayload: pagePayload})
 
 	// Last, because the envelope it writes becomes every module's ceiling: a
 	// real envelope write that narrows a module's binding (the write

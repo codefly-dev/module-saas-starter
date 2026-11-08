@@ -273,6 +273,23 @@ including a module page reached through a binding and through an edge; the
 conformance harness installs a solution reaching a module page before and after
 the page is installed through its own review.
 
+**Check first, then resume.** `InstallReviewedSolution` holds every supporting
+module the review installs fresh to the predicates `InstallSolution` holds it
+to (`checkInstallable`: the agent's release coordinates, the catalogue target,
+the registry entry and its generation, the delivered declaration, the scope,
+the audiences) before the core records anything: the first refusal refuses the
+whole install, with no pending installation and no module installed. The store's
+own fences (the administrator, the generation lock, the revision compare) still
+decide in each module's write, so a convergence can still stop part-way (a
+store failure, a race). The pending installation then keeps its original
+review, and either the same review sent again (the original operation's
+replay) or `RetryInstallation` resumes it: each module an earlier attempt
+installed is installed again under the same operation, which the store replays
+from its receipt (same installation, same revision), and the rest are
+installed; the installation activates on the original consent. A fresh review
+meanwhile reads the modules already installed as reused and may supersede the
+pending attempt.
+
 **Consent follows the release line.** The core records on each consent the
 generation and offer digest it approved and keeps the declaration approved
 per generation (`authority_core_approved_modules`). A redelivery whose
