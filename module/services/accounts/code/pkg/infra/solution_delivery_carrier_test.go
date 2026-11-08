@@ -155,6 +155,22 @@ func TestCarrierIsCheckedAgainstTheModulesNamespace(t *testing.T) {
 		"the same carrier must not deliver another module's manifest")
 }
 
+// A withdrawal names two accounts that may carry it, and one review decides:
+// the carrier is either one, and a refusal names both.
+func TestCarrierMayBeAnyOfTheNamedNamespaces(t *testing.T) {
+	client, _ := tokenReviewing(t,
+		"system:serviceaccount:acme-saas:delivery", []string{"accounts"}, true)
+	check := infra.NewSolutionDeliveryCarrierCheck(client)
+
+	require.NoError(t, check.AuthorizeCarrier(
+		context.Background(), "Bearer t", "acme-crm", "acme-saas"))
+
+	err := check.AuthorizeCarrier(
+		context.Background(), "Bearer t", "acme-crm", "acme-other")
+	require.ErrorIs(t, err, infra.ErrCarrierNotAuthorized)
+	require.ErrorContains(t, err, "acme-crm/delivery or acme-other/delivery")
+}
+
 // An empty namespace authorises no carrier: a reviewed account always names one.
 func TestCarrierForNoNamespaceIsRefused(t *testing.T) {
 	client, _ := tokenReviewing(t,
