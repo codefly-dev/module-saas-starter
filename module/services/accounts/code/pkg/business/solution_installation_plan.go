@@ -115,6 +115,18 @@ func (p SolutionInstallationPlan) ValidateActivation(inst domain.Installation, o
 	if !setupStep && p.SetupJobID != "" {
 		return refuse("a target without an install step was queued a setup job")
 	}
+	return p.ValidatePrerequisites(inst, observed)
+}
+
+// ValidatePrerequisites holds the supporting module installations observed
+// in the final transaction to the witnesses p recorded when its step
+// converged them: each one, exactly, and nothing else. It is the half of
+// ValidateActivation an upgrade in place runs too, before the core moves the
+// consent of the active installation inst.
+func (p SolutionInstallationPlan) ValidatePrerequisites(inst domain.Installation, observed []ModuleInstallationPrerequisite) error {
+	refuse := func(reason string) error {
+		return domain.NotNow("INSTALLATION_PREREQUISITES_CHANGED: %s; review the installation again", reason)
+	}
 	if len(observed) != len(p.Dependencies) {
 		return refuse("a required module installation is absent or revoked")
 	}

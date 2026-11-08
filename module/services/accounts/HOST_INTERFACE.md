@@ -267,6 +267,12 @@ holders hold what the approved generation granted until an administrator
 reviews the target again and installs the reviewed release on the same
 installation (`InstallReviewedSolution` with a fresh review: the core's
 upgrade, its step converging the closure of the new review, its grants kept).
+The write that records an upgrade is fenced as an activation is, but for the
+setup job: the delivered target and every supporting module the step
+converged are read and locked again in that transaction and held to the
+witnesses the step recorded, so a supporting module uninstalled in between
+refuses the upgrade (`INSTALLATION_PREREQUISITES_CHANGED`) and the
+installation stays on its consent.
 `CanonicalSolutionSummaries` reads health from that record: active, its target
 still delivered under the consent's principal, and the consent naming a
 generation the delivered one stands on; the host compares no generation of

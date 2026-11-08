@@ -63,8 +63,12 @@ func (t coreTx) solutionConsentForWrite(inst domain.Installation) ([]byte, error
 			if inst.Status == domain.Active && previousStatus == string(domain.Active) {
 				// An upgrade: the installation stays active and its plan is the
 				// one just reviewed, so the delivery it names must be the one
-				// the host applies now.
-				if _, err := t.deliveredSolutionTarget(plan); err != nil {
+				// the host applies now, and every supporting module its step
+				// converged must still stand as the step witnessed it. An
+				// upgrade runs no setup job, so none is checked.
+				if _, observed, err := t.observedPrerequisites(inst, plan); err != nil {
+					return nil, err
+				} else if err := plan.ValidatePrerequisites(inst, observed); err != nil {
 					return nil, err
 				}
 			}
@@ -122,39 +126,9 @@ func (t coreTx) deliveredSolutionTarget(plan business.SolutionInstallationPlan) 
 // the durable delivery and module consent, not an in-memory registry snapshot.
 // No callback, enqueue, credential issuance or network effect is permitted here.
 func (t coreTx) validateSolutionActivation(inst domain.Installation, plan business.SolutionInstallationPlan) error {
-	module, err := t.deliveredSolutionTarget(plan)
+	module, observed, err := t.observedPrerequisites(inst, plan)
 	if err != nil {
 		return err
-	}
-	// The whole delivered catalogue, as the review read it: the dependency
-	// set closes over what each supporting module reaches, so the modules the
-	// solution names directly are not enough to reconstruct it. Sharing every
-	// row holds the catalogue still for the length of this transaction.
-	rows, err := t.q.Query(t.ctx, `SELECT `+coreModuleColumns+` FROM public.authority_core_modules ORDER BY name FOR SHARE`)
-	if err != nil {
-		return err
-	}
-	modules, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Module, error) { return scanCoreModule(row) })
-	if err != nil {
-		return err
-	}
-	if err := plan.ValidateDependencySet(authority.ReviewedOffer{Module: module, Modules: modules}); err != nil {
-		return err
-	}
-	dependencies := slices.Clone(plan.Dependencies)
-	slices.SortFunc(dependencies, func(a, b business.ModuleInstallationPrerequisite) int {
-		return strings.Compare(a.InstallationID, b.InstallationID)
-	})
-	observed := make([]business.ModuleInstallationPrerequisite, 0, len(dependencies))
-	for _, expected := range dependencies {
-		if err := checkInstallationEnvelope(t.ctx, t.q, expected.EnvelopeRevision); err != nil {
-			return err
-		}
-		current, err := t.modulePrerequisite(expected.InstallationID, inst.Organization, expected.EnvelopeRevision)
-		if err != nil {
-			return err
-		}
-		observed = append(observed, current)
 	}
 	job, err := t.acknowledgedSolutionSetup(inst, plan.SetupJobID)
 	if err != nil {
@@ -163,6 +137,49 @@ func (t coreTx) validateSolutionActivation(inst domain.Installation, plan busine
 	// A solution is set up by its install step; a module page declares no
 	// install endpoint and is active as soon as its closure is converged.
 	return plan.ValidateActivation(inst, observed, job, module.Kind == domain.KindSolution)
+}
+
+// observedPrerequisites is the target plan was reviewed against, as delivered
+// now, and each supporting module installation the plan's witnesses name, as
+// it stands now, all read and locked in this transaction: the half of the
+// activation fence an upgrade in place runs too. The dependency set is
+// reconstructed from the target's declaration and the whole catalogue first.
+func (t coreTx) observedPrerequisites(inst domain.Installation, plan business.SolutionInstallationPlan) (domain.Module, []business.ModuleInstallationPrerequisite, error) {
+	module, err := t.deliveredSolutionTarget(plan)
+	if err != nil {
+		return domain.Module{}, nil, err
+	}
+	// The whole delivered catalogue, as the review read it: the dependency
+	// set closes over what each supporting module reaches, so the modules the
+	// solution names directly are not enough to reconstruct it. Sharing every
+	// row holds the catalogue still for the length of this transaction.
+	rows, err := t.q.Query(t.ctx, `SELECT `+coreModuleColumns+` FROM public.authority_core_modules ORDER BY name FOR SHARE`)
+	if err != nil {
+		return domain.Module{}, nil, err
+	}
+	modules, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Module, error) { return scanCoreModule(row) })
+	if err != nil {
+		return domain.Module{}, nil, err
+	}
+	if err := plan.ValidateDependencySet(authority.ReviewedOffer{Module: module, Modules: modules}); err != nil {
+		return domain.Module{}, nil, err
+	}
+	dependencies := slices.Clone(plan.Dependencies)
+	slices.SortFunc(dependencies, func(a, b business.ModuleInstallationPrerequisite) int {
+		return strings.Compare(a.InstallationID, b.InstallationID)
+	})
+	observed := make([]business.ModuleInstallationPrerequisite, 0, len(dependencies))
+	for _, expected := range dependencies {
+		if err := checkInstallationEnvelope(t.ctx, t.q, expected.EnvelopeRevision); err != nil {
+			return domain.Module{}, nil, err
+		}
+		current, err := t.modulePrerequisite(expected.InstallationID, inst.Organization, expected.EnvelopeRevision)
+		if err != nil {
+			return domain.Module{}, nil, err
+		}
+		observed = append(observed, current)
+	}
+	return module, observed, nil
 }
 
 func (t coreTx) acknowledgedSolutionSetup(inst domain.Installation, jobID string) (string, error) {

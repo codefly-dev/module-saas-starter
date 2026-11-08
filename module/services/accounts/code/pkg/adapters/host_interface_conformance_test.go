@@ -28,6 +28,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	conformance "github.com/codefly-dev/authority/libraries/conformance/go"
 	delivery "github.com/codefly-dev/authority/libraries/delivery/go"
+	modulecontract "github.com/codefly-dev/core/contracts/module"
 	"github.com/codefly-dev/core/sdk"
 	"github.com/codefly-dev/core/solutionhost"
 	codefly "github.com/codefly-dev/sdk-go"
@@ -1094,6 +1095,58 @@ func runHostInterfaceFixture(t *testing.T) {
 			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "conformance-late"})
 		require.NoError(t, err, "a member of the declared team holds the solution's role")
 		require.NotEmpty(t, issued.GetContext().GetAuthorityScopes())
+	})
+
+	// An upgrade in place is fenced as an activation is: a supporting module
+	// its step converged and that is uninstalled before the core records the
+	// upgrade refuses it, and the installation stays on its consent.
+	t.Run("an upgrade refuses a supporting module revoked between its step and its write", func(t *testing.T) {
+		const support, target = "conformance-upgrade-support", "conformance-upgrade-fence"
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: support, installationRole: domain.NoInstallationRole})
+		page := wireScope(target+".page", "read", "write")
+		read := wireScope(target+".page", "read")
+		solution := conformanceSolution{alias: target, generation: 1, installationRole: domain.NoInstallationRole, ceilings: []*authorityv1.WorkScopeV1{page},
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {page}, "viewer": {read}},
+			edges: []modulecontract.EdgeDependency{{Module: support, Presence: "required"}}}
+		deliverSolution(t, ctx, conn, signer, solution)
+		install := func() (domain.Installation, error) {
+			t.Helper()
+			resolved, err := svc.ResolveInstallationPrincipal(ctx, fixtureOrganization, target)
+			require.NoError(t, err)
+			review, err := svc.ReviewSolutionInstall(ctx, alex, fixtureOrganization, resolved.TargetID)
+			require.NoError(t, err)
+			return svc.InstallReviewedSolution(ctx, alex, fixtureOrganization, review)
+		}
+		installed, err := install()
+		require.NoError(t, err)
+		require.Equal(t, domain.Active, installed.Status)
+		plan, err := store.SolutionInstallationPlan(ctx, fixtureOrganization, installed.ID)
+		require.NoError(t, err)
+		require.Len(t, plan.Dependencies, 1)
+		supporting := plan.Dependencies[0].InstallationID
+
+		solution.generation = 2
+		solution.roles["editor"] = []*authorityv1.WorkScopeV1{page}
+		deliverSolution(t, ctx, conn, signer, solution)
+		svc.SetAuthorityInstallStep(func(ctx context.Context, inst domain.Installation) error {
+			upgrade, err := svc.ConvergeReviewedClosure(ctx, inst)
+			if err != nil {
+				return err
+			}
+			require.True(t, upgrade)
+			return svc.UninstallSolution(ctx, conformanceAlex, fixtureOrganization, supporting)
+		})
+		t.Cleanup(func() { svc.SetAuthorityInstallStep(acknowledgeSetup) })
+		_, err = install()
+		require.ErrorContains(t, err, "INSTALLATION_PREREQUISITES_CHANGED")
+		all, err := core.Installations(ctx, alex, fixtureOrganization)
+		require.NoError(t, err)
+		for _, inst := range all {
+			if inst.ID == installed.ID {
+				require.Equal(t, domain.Active, inst.Status)
+				require.Equal(t, uint64(1), inst.Consent.Generation, "the installation stays on the consent it had")
+			}
+		}
 	})
 
 	// A module page that declares roles is chosen through its review and
