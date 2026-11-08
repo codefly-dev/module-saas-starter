@@ -13,6 +13,7 @@ import (
 	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
+	"accounts/pkg/infra"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
@@ -31,6 +32,25 @@ import (
 type approvedLine struct {
 	alias, org, owner string
 	installation      string
+	inbox             lineInbox
+}
+
+// lineInbox is the delivery inbox as the line's host reads it: the line's
+// binding's received generations, served through the inbox's own read, and
+// every other binding's from Postgres. The line's documents are never written
+// to the shared inbox, which is append-only and which every other test's
+// reconcile pass verifies against its own pinned keys.
+type lineInbox struct {
+	*infra.PostgresStore
+	binding   string
+	delivered map[uint64]*business.SolutionDeliveryRecord
+}
+
+func (i lineInbox) ReadDeliveredDocument(ctx context.Context, binding string, generation uint64) (*business.SolutionDeliveryRecord, error) {
+	if binding == i.binding {
+		return i.delivered[generation], nil
+	}
+	return i.PostgresStore.ReadDeliveredDocument(ctx, binding, generation)
 }
 
 // newApprovedLine seeds the line; the inbox keeps generation 1's documents
@@ -41,6 +61,7 @@ func newApprovedLine(t *testing.T, keepFirst bool) approvedLine {
 	line := approvedLine{alias: uniqueAlias("approved-line")}
 	line.owner, line.org = mustUserAndOrg(t, testCtx, line.alias+"@line.test", line.alias, "Line "+line.alias)
 	binding := "acme.test." + line.alias
+	line.inbox = lineInbox{PostgresStore: testStore, binding: binding, delivered: map[uint64]*business.SolutionDeliveryRecord{}}
 	kind := line.alias + ".page"
 	scopes := func(actions ...string) []*authorityv1.WorkScopeV1 {
 		return []*authorityv1.WorkScopeV1{{ResourceKind: kind, Actions: actions}}
@@ -69,12 +90,9 @@ func newApprovedLine(t *testing.T, keepFirst bool) approvedLine {
 		if generation == 1 && !keepFirst {
 			continue
 		}
-		require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-			_, err := testStore.RecordDeliveredDocument(ctx, &business.SolutionDeliveryRecord{Binding: binding, Generation: generation, ContentHash: digest,
-				Payload: payload, Envelope: deliverytest.Envelope(t, payload, testSignerIdentity), AuthorityDocument: document, AuthorityEnvelope: envelope,
-				SignerIdentity: testSignerIdentity, OwnershipDomain: testOwnershipDomain, ReceivedAt: now})
-			return err
-		}))
+		line.inbox.delivered[generation] = &business.SolutionDeliveryRecord{Binding: binding, Generation: generation, ContentHash: digest,
+			Payload: payload, Envelope: deliverytest.Envelope(t, payload, testSignerIdentity), AuthorityDocument: document, AuthorityEnvelope: envelope,
+			SignerIdentity: testSignerIdentity, OwnershipDomain: testOwnershipDomain, ReceivedAt: now}
 	}
 	// The binding stands at generation 2, which the core composes at boot.
 	digest, err := applied.Digest()
@@ -113,7 +131,7 @@ func (line approvedLine) boot(t *testing.T) (*business.Service, *authority.Servi
 	t.Helper()
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
-	svc.SetSolutionDelivery(nil, testStore, nil)
+	svc.SetSolutionDelivery(nil, line.inbox, nil)
 	_, key, err := ed25519.GenerateKey(nil)
 	require.NoError(t, err)
 	require.NoError(t, svc.ConfigureAuthorityCore(testCtx, "https://accounts.example.test", "approved-line", key))
