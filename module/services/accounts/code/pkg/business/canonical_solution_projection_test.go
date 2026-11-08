@@ -34,9 +34,6 @@ func TestCanonicalSolutionEntitlementRequiresAcknowledgedHeldInstallation(t *tes
 		{"replacement binding principal", func(_ *authority.HeldInstallation, _ *domain.Module, _ *AvailableSolutionTarget, p *string) {
 			*p = "replacement-principal"
 		}},
-		{"stale core delivery", func(_ *authority.HeldInstallation, m *domain.Module, _ *AvailableSolutionTarget, _ *string) {
-			m.Generation--
-		}},
 		{"missing target identity", func(_ *authority.HeldInstallation, _ *domain.Module, target *AvailableSolutionTarget, _ *string) {
 			target.TargetID = ""
 		}},
@@ -60,6 +57,18 @@ func TestCanonicalSolutionEntitlementRequiresAcknowledgedHeldInstallation(t *tes
 				t.Fatalf("unqualified installation entered gateway entitlements: %v", got)
 			}
 		})
+	}
+}
+
+// A delivery ahead of the installation's consent (an upgrade on offer) or a
+// host applied generation that has moved is health's to judge, from the one
+// record; the entitlement projection compares no generation of its own.
+func TestCanonicalSolutionEntitlementLeavesTheReleaseLineToHealth(t *testing.T) {
+	held, module, target, principal := canonicalProjectionFixture()
+	held.Installation.Consent = domain.ConsentReceipt{OperationID: "op", Generation: 5, Digest: "sha256:approved"}
+	target.AppliedGeneration = 9
+	if got := canonicalSolutionEntitlement("org", held, module, &target, principal); got == nil || !got.Healthy {
+		t.Fatalf("an installation standing on an earlier consent lost its entitlement here: %v", got)
 	}
 }
 

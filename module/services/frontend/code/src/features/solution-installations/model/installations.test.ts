@@ -95,6 +95,15 @@ describe("solution installation facts", () => {
 		}
 	});
 
+	it("carries the host's update offer on the row, with the target it names", () => {
+		const response = installed("t-1", true);
+		response.installation!.upgradeAvailable = true;
+		const [row] = installedRows([response]);
+		expect(row.upgradeAvailable).toBe(true);
+		expect(row.target?.targetId).toBe("t-1");
+		expect(installedRows([installed("t-1", true)])[0].upgradeAvailable).toBe(false);
+	});
+
 	it("never guesses a name for a target the host no longer offers", () => {
 		const [row] = installedRows([installed("t-gone", false)]);
 		expect(row.solution).toMatchObject({ kind: "gap", label: "Not offered" });

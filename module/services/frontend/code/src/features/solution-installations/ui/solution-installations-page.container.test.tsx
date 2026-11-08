@@ -1944,3 +1944,101 @@ describe("Solutions lists a module page beside the solutions, by what it declare
 		expect(reviewed).toEqual([]);
 	});
 });
+
+describe("an installation survives delivery: the host offers an update, and the review installs it in place", () => {
+	const PAYROLL_TARGET = "aaaaaaaa-0000-4000-8000-000000000006";
+	const PAYROLL_INSTALLATION = "bbbbbbbb-0000-4000-8000-000000000006";
+	const payroll = {
+		...available.solutions[1],
+		kind: "solution",
+		targetId: PAYROLL_TARGET,
+		routeAlias: "payroll",
+		releaseName: "payroll",
+		appliedGeneration: "7",
+		installed: true,
+	};
+	const approval = {
+		targetId: "solution:payroll",
+		generation: "7",
+		digest: "sha256:payroll-7",
+		operationId: "cccccccc-0000-4000-8000-000000000007",
+	};
+	const review = {
+		orgId: "org-1",
+		actorId: "person-1",
+		targetId: PAYROLL_TARGET,
+		target: "payroll",
+		bindingId: "binding-payroll",
+		release: "acme/payroll@0.9.1",
+		deliveryDigest: "delivery-7",
+		installationRole: "none",
+		approval,
+		modules: [],
+	};
+	const installedPayroll = (upgradeAvailable: boolean) => ({
+		installations: [
+			{
+				...installations.installations[0],
+				installation: {
+					...installations.installations[0].installation,
+					id: PAYROLL_INSTALLATION,
+					targetId: PAYROLL_TARGET,
+					rootScopeNodeId: "",
+					approvedGeneration: "5",
+					upgradeAvailable,
+				},
+				target: payroll,
+				rootScopePath: "",
+				grantedTeams: [],
+				inheritedTeams: [],
+			},
+		],
+	});
+
+	it("says an update is available, keeps the installation healthy, and installs the reviewed release on the same installation", async () => {
+		let installedWith: unknown;
+		serve({ availableBody: { solutions: [payroll] }, installationsBody: installedPayroll(true) });
+		server.use(
+			http.post(rpc("InstallationService", "ReviewSolutionInstall"), async ({ request }) => {
+				await assertBody(request, { orgId: "org-1", targetId: PAYROLL_TARGET });
+				return HttpResponse.json(review);
+			}),
+			http.post(REVIEW_OFFER, () =>
+				HttpResponse.json({
+					target: "payroll",
+					installationRole: "none",
+					approval: { ...approval, operationId: "" },
+					roles: [{ name: "installer", scopes: [] }],
+					rolesDeclared: true,
+					installation: { id: PAYROLL_INSTALLATION, status: "STATUS_ACTIVE", approvedGeneration: "5", upgradeAvailable: true },
+				}),
+			),
+			http.post(rpc("InstallationService", "InstallReviewedSolution"), async ({ request }) => {
+				installedWith = await request.json();
+				return HttpResponse.json({ id: PAYROLL_INSTALLATION, orgId: "org-1", targetId: PAYROLL_TARGET, status: "INSTALLATION_STATUS_ACTIVE", approvedGeneration: "7" });
+			}),
+		);
+		renderInApp(<SolutionsPage />);
+		const installedTable = await screen.findByRole("table", { name: "Installed solutions" });
+		await within(installedTable).findByText("Update available");
+		expect(within(installedTable).getByText("Healthy")).toBeTruthy();
+		fireEvent.click(within(installedTable).getByRole("button", { name: "Update payroll" }));
+		const dialog = await screen.findByRole("dialog");
+		await within(dialog).findByText("Update payroll");
+		expect(within(dialog).getByText(/team grants are kept/)).toBeTruthy();
+		fireEvent.click(within(dialog).getByRole("checkbox"));
+		fireEvent.click(within(dialog).getByRole("button", { name: "Update" }));
+		await waitFor(() => expect(installedWith).toBeTruthy());
+		expect(installedWith).toMatchObject({ orgId: "org-1", review: { targetId: PAYROLL_TARGET, approval: { operationId: approval.operationId } } });
+		await waitFor(() => expect(toast.success).toHaveBeenCalledWith("payroll updated. Its team access is kept."));
+	});
+
+	it("offers no update while the installed release is the approved one", async () => {
+		serve({ availableBody: { solutions: [payroll] }, installationsBody: installedPayroll(false) });
+		renderInApp(<SolutionsPage />);
+		const installedTable = await screen.findByRole("table", { name: "Installed solutions" });
+		await within(installedTable).findByText("payroll");
+		expect(within(installedTable).queryByText("Update available")).toBeNull();
+		expect(within(installedTable).queryByRole("button", { name: "Update payroll" })).toBeNull();
+	});
+});

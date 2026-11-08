@@ -159,6 +159,9 @@ function SolutionInstallationsForOrganization({
 }) {
 	const router = useRouter();
 	const [installing, setInstalling] = useState<AvailableSolution | null>(null);
+	// The installed target an administrator is updating: a newer release the
+	// host offers on its existing installation, reviewed as an install is.
+	const [updating, setUpdating] = useState<AvailableSolution | null>(null);
 	const available = useAvailableSolutions(orgId);
 	const installed = useInstallations(orgId);
 	// This owner survives dismissal of the form and reports every host result.
@@ -291,6 +294,11 @@ function SolutionInstallationsForOrganization({
 						query={installed}
 						showModules={showModules}
 						listed={listed}
+						updating={combinedInstall.isPending}
+						onUpdate={(target) => {
+							combinedInstall.reset();
+							setUpdating(target);
+						}}
 					/>
 				</>
 			)}
@@ -328,6 +336,31 @@ function SolutionInstallationsForOrganization({
 						Try again
 					</Button>
 				</Banner>
+			)}
+			{updating && (
+				<InstallSolutionDialog
+					orgId={orgId}
+					solution={updating}
+					upgrade
+					isPending={combinedInstall.isPending}
+					error={
+						combinedInstall.isError
+							? hostRefusal(combinedInstall.error)
+							: undefined
+					}
+					onSubmit={(review) =>
+						combinedInstall.mutate(review, {
+							onSuccess: () => {
+								toast.success(
+									`${updating.routeAlias} updated. Its team access is kept.`,
+								);
+								setUpdating(null);
+							},
+							onError: (error) => toast.error(hostRefusal(error)),
+						})
+					}
+					onClose={() => setUpdating(null)}
+				/>
 			)}
 			{installing?.kind === "solution" && (
 				<InstallSolutionDialog
@@ -519,11 +552,15 @@ function InstalledSection({
 	listed,
 	orgId,
 	query,
+	updating,
+	onUpdate,
 }: {
 	orgId: string;
 	query: ReturnType<typeof useInstallations>;
 	showModules: boolean;
 	listed: (target: AvailableSolution | undefined) => boolean;
+	updating: boolean;
+	onUpdate: (target: AvailableSolution) => void;
 }) {
 	const uninstall = useUninstallSolution(orgId);
 	const retry = useRetryInstallation(orgId);
@@ -665,6 +702,15 @@ function InstalledSection({
 										</TableCell>
 										<TableCell>
 											<Fact view={row.revision} />
+											{row.upgradeAvailable && (
+												<Badge
+													tone="warning"
+													dot
+													title="The applied release asks more than this installation's consent approved. It keeps working as approved until you review and update it."
+												>
+													Update available
+												</Badge>
+											)}
 										</TableCell>
 										<TableCell>
 											<Fact view={row.lifecycle} />
@@ -728,6 +774,20 @@ function InstalledSection({
 													Retry
 												</Button>
 											)}
+											{row.upgradeAvailable &&
+												row.target &&
+												row.status === InstallationStatus.ACTIVE && (
+													<Button
+														size="sm"
+														disabled={updating || uninstall.isPending}
+														aria-label={`Update ${name(row)}`}
+														onClick={() => {
+															if (row.target) onUpdate(row.target);
+														}}
+													>
+														Update
+													</Button>
+												)}
 											<Link
 												href={`/admin/solutions/${row.installationId}`}
 												aria-label={`Set up ${name(row)}`}

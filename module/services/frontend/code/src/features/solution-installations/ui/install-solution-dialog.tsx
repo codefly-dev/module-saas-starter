@@ -35,7 +35,13 @@ import { InstallationTeamChoices } from "./installation-team-choices";
 
 const offers = createClient(OfferService, apiTransport);
 
-/** The cached review survives dismissal; only an explicit new review replaces it. */
+/**
+ * The review of a role-gated target before it is installed: a solution, or a
+ * module page declaring roles, which the host reviews and installs alike. The
+ * cached review survives dismissal; only an explicit new review replaces it.
+ * With `upgrade`, the same review approves a newer release on the existing
+ * installation: the host keeps the installation active and its team grants.
+ */
 export function InstallSolutionDialog({
 	orgId,
 	solution,
@@ -43,6 +49,7 @@ export function InstallSolutionDialog({
 	isPending,
 	error,
 	onClose,
+	upgrade = false,
 }: {
 	orgId: string;
 	solution: AvailableSolution;
@@ -50,6 +57,7 @@ export function InstallSolutionDialog({
 	isPending: boolean;
 	error?: string;
 	onClose: () => void;
+	upgrade?: boolean;
 }) {
 	const service = useInstallationService();
 	const teamChoices = useInstallationTeamChoices(orgId, solution.targetId);
@@ -85,10 +93,14 @@ export function InstallSolutionDialog({
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
 			<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[640px]">
 				<DialogHeader>
-					<DialogTitle>Install {solution.routeAlias}</DialogTitle>
+					<DialogTitle>
+						{upgrade ? "Update" : "Install"} {solution.routeAlias}
+					</DialogTitle>
 					<DialogDescription>
-						{data?.consent.release ?? releaseText(solution)}. Review the
-						solution and its supporting modules together.
+						{data?.consent.release ?? releaseText(solution)}.{" "}
+						{upgrade
+							? "This release asks more than the installed one was approved for. Review what it asks and its supporting modules together; the installation stays active and its team grants are kept."
+							: "Review it and its supporting modules together."}
 					</DialogDescription>
 				</DialogHeader>
 				<DelayedLoading
@@ -159,8 +171,8 @@ export function InstallSolutionDialog({
 								onChange={(event) => setApproved(event.target.checked)}
 								disabled={isPending}
 							/>
-							I approve this solution and the required module access shown
-							above.
+							I approve this {upgrade ? "release" : "target"} and the
+							required module access shown above.
 						</label>
 					</div>
 				)}
@@ -205,10 +217,16 @@ export function InstallSolutionDialog({
 						}}
 					>
 						{isPending
-							? "Installing…"
+							? upgrade
+								? "Updating…"
+								: "Installing…"
 							: submitted || error
-								? "Retry approved installation"
-								: "Install"}
+								? upgrade
+									? "Retry approved update"
+									: "Retry approved installation"
+								: upgrade
+									? "Update"
+									: "Install"}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

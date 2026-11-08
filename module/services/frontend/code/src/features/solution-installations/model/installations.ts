@@ -143,7 +143,16 @@ export interface TeamGrantRow {
 export interface InstalledRow {
 	installationId: string;
 	targetId: string;
+	/** The catalogue row of the installed target, when this host still offers it. */
+	target: AvailableSolution | undefined;
 	hasHostScopeRoot: boolean;
+	/**
+	 * The host says a newer release of the target asks more than this
+	 * installation's consent approved: the installation stands, healthy with
+	 * its grants, until an administrator reviews the release and installs it
+	 * on this same installation.
+	 */
+	upgradeAvailable: boolean;
 	solution: FactView;
 	revision: FactView;
 	health: FactView;
@@ -213,7 +222,9 @@ export function installedRows(
 				{
 					installationId: installation.id,
 					targetId: installation.targetId,
+					target,
 					hasHostScopeRoot: Boolean(rootScopePath),
+					upgradeAvailable: installation.upgradeAvailable,
 					solution: target
 						? { kind: "value", text: target.routeAlias }
 						: NOT_OFFERED,
