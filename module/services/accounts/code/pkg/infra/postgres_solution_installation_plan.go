@@ -134,9 +134,9 @@ func (t coreTx) validateSolutionActivation(inst domain.Installation, plan busine
 	if err != nil {
 		return err
 	}
-	// A solution is set up by its install step; a module page declares no
-	// install endpoint and is active as soon as its closure is converged.
-	return plan.ValidateActivation(inst, observed, job, module.Kind == domain.KindSolution)
+	// A target declaring an install endpoint is set up by its step; a module
+	// page declares none and is active as soon as its closure is converged.
+	return plan.ValidateActivation(inst, observed, job, business.DeclaresInstallStep(module))
 }
 
 // observedPrerequisites is the target plan was reviewed against, as delivered

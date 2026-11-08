@@ -6,6 +6,7 @@ import (
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 )
 
 // These comparisons do not establish transaction/lock behavior. The SQL
@@ -103,5 +104,17 @@ func TestReviewedSolutionPlanRequiresExactCanonicalReceiptAndPrerequisites(t *te
 	module.RoleID = "unexpected-standing-grant"
 	if err := plan.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, plan.SetupJobID, true); err == nil {
 		t.Fatal("a declared no-standing module acquired a grant")
+	}
+}
+
+// Whether a target is set up through an install step is read from its
+// declaration in one place: a solution is, a module page is not.
+func TestDeclaresInstallStepFollowsTheDeclaration(t *testing.T) {
+	viewer := map[string][]*basev0.WorkScopeV1{"viewer": {{ResourceKind: "example.note", Actions: []string{"read"}}}}
+	if !business.DeclaresInstallStep(domain.Module{Name: "example", Kind: domain.KindSolution, Roles: viewer}) {
+		t.Fatal("a solution is set up by its install step")
+	}
+	if business.DeclaresInstallStep(domain.Module{Name: "example", Kind: domain.KindModule, Roles: viewer}) {
+		t.Fatal("a module page declares no install endpoint")
 	}
 }

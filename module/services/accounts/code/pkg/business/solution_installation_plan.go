@@ -88,6 +88,18 @@ type ModuleInstallationPrerequisite struct {
 	ConsentRevision     uint64
 }
 
+// DeclaresInstallStep reports whether the role-gated target m declares an
+// install endpoint: the setup its installation runs through the durable queue
+// before it is active, and the acknowledgement its activation then requires.
+// A module page declares none and is active once its closure converges. The
+// delivered declaration does not carry the endpoint today (neither the signed
+// manifest nor the core's module names one), so the answer is the kind: a
+// solution is set up, a module page is not. Every site that asks reads it
+// here, so carrying the endpoint in the declaration changes this alone.
+func DeclaresInstallStep(m domain.Module) bool {
+	return m.Kind == domain.KindSolution
+}
+
 // ValidateActivation is the pure comparison used inside the canonical store's
 // final serializable write. Reading and locking the observed rows is the store's
 // responsibility. It must call this before writing active, and perform no

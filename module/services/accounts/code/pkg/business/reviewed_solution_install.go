@@ -246,17 +246,17 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 	return core.Install(ctx, caller, org, review.Target, requestedRole, requestedOwner, &plan.Approval, step)
 }
 
-// installStepFor is the install step the core runs for target: a solution's
-// converges its closure and runs its setup through the durable queue
-// (AuthorityInstallStep); a module page declares no install endpoint, so its
-// step converges its closure and nothing more, and the installation is active
-// as soon as the core records it.
+// installStepFor is the install step the core runs for target: one that
+// declares an install endpoint (DeclaresInstallStep) converges its closure and
+// runs its setup through the durable queue (AuthorityInstallStep); one that
+// declares none, a module page, converges its closure and nothing more, and
+// the installation is active as soon as the core records it.
 func (s *Service) installStepFor(ctx context.Context, core *authority.Service, target string) (authority.InstallStep, error) {
 	m, err := core.Composed(ctx, target)
 	if err != nil {
 		return nil, err
 	}
-	if m.Kind == domain.KindSolution {
+	if DeclaresInstallStep(m) {
 		return s.AuthorityInstallStep(), nil
 	}
 	return s.convergeClosureStep, nil
