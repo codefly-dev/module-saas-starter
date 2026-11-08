@@ -263,8 +263,9 @@ stays active, its approved generation advances, its revision moves, every
 grant is kept (grants of a role the new declaration drops end with the
 consent). A redelivery asking more leaves the installation on its consent,
 active and healthy, with `upgrade_available` on the installation read; its
-holders hold what the approved generation granted until an administrator
-reviews the target again and installs the reviewed release on the same
+holders hold what the approved generation granted, and every installation
+read lists those roles (`installationToWire` over
+`business.ApprovedDeclaration`), until an administrator reviews the target again and installs the reviewed release on the same
 installation (`InstallReviewedSolution` with a fresh review: the core's
 upgrade, its step converging the closure of the new review, its grants kept).
 The write that records an upgrade is fenced as an activation is, but for the

@@ -586,29 +586,39 @@ func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installation
 	return out, nil
 }
 
-// installationToWire is an installation as the interface states it, with the
-// roles its solution declares.
+// installationToWire is an installation as the interface states it: the roles
+// its holders may hold, from the declaration its consent approved
+// (business.ApprovedDeclaration, the core's rule), and upgrade_available
+// against the declaration delivered now. An installation whose approved
+// declaration is not kept lists no role: the core refuses its holders.
 func installationToWire(core *authority.Service, ctx context.Context, i domain.Installation) *installationv1.Installation {
 	m, err := core.Composed(ctx, i.Target)
 	if err != nil {
 		m = domain.Module{}
 	}
-	return installationWire(i, m)
+	approved := m
+	if service != nil {
+		if approved, err = service.ApprovedDeclaration(ctx, i, m); err != nil {
+			approved = domain.Module{}
+		}
+	}
+	return installationWire(i, m, approved)
 }
 
 // installationWire converts one snapshot beside the target's stored
-// declaration m (zero when the target is no longer composed), without another
-// authority read: the roles are m's, and upgrade_available is the core's
-// predicate over the consent the installation stands on and the generation m
-// is delivered at.
-func installationWire(i domain.Installation, m domain.Module) *installationv1.Installation {
+// declaration m (zero when the target is no longer composed) and the
+// declaration its consent approved, without another authority read: the
+// roles are approved's, and upgrade_available is the core's predicate over
+// the consent the installation stands on and the generation m is delivered
+// at.
+func installationWire(i domain.Installation, m, approved domain.Module) *installationv1.Installation {
 	st := map[domain.Status]installationv1.Installation_Status{
 		domain.Pending: installationv1.Installation_STATUS_PENDING, domain.Active: installationv1.Installation_STATUS_ACTIVE, domain.Revoked: installationv1.Installation_STATUS_REVOKED,
 	}[i.Status]
 	out := &installationv1.Installation{Id: i.ID, OrganizationId: i.Organization, Target: i.Target, Status: st, Revision: i.Revision,
 		Role: i.AgentRole, PrincipalId: i.PrincipalID, Namespace: i.Organization + "." + i.Target,
 		ApprovedGeneration: i.Consent.Generation, UpgradeAvailable: decide.UpgradeAvailable(i, m)}
-	for name := range m.Roles {
+	for name := range approved.Roles {
 		out.Roles = append(out.Roles, name)
 	}
 	slices.Sort(out.Roles)

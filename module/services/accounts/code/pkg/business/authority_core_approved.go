@@ -211,3 +211,29 @@ func signedAuthorityOf(delivered *SolutionDeliveryRecord) *compositionv1.SignedM
 	}
 	return &compositionv1.SignedManifestV1{Document: delivered.AuthorityDocument, Envelope: delivered.AuthorityEnvelope}
 }
+
+// ApprovedDeclaration is the declaration the core decides inst's holders
+// from, given m, its target as composed now: m while inst's consent stands at
+// m's generation or names none (no consent, or one recorded before the
+// generation was kept), otherwise the declaration that consent approved, as
+// the store keeps it. It is the core's own rule (approvedModule in the
+// authority core), read for a host that lists what a holder may hold. An
+// approved generation the store does not keep answers domain.ErrNotFound: the
+// core refuses that installation's holders.
+func (s *Service) ApprovedDeclaration(ctx context.Context, inst domain.Installation, m domain.Module) (domain.Module, error) {
+	c := inst.Consent
+	if c.OperationID == "" || c.Generation == 0 || c.Generation >= m.Generation || inst.Target != m.Name {
+		return m, nil
+	}
+	cores, ok := s.store.(AuthorityCoreStore)
+	if !ok {
+		return domain.Module{}, ErrAuthorityCoreUnconfigured
+	}
+	var approved domain.Module
+	err := cores.AuthorityCoreWithConsent(nil).Read(ctx, func(tx authority.Tx) error {
+		var err error
+		approved, err = tx.ApprovedModule(m.Name, c.Generation)
+		return err
+	})
+	return approved, err
+}

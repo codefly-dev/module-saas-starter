@@ -109,7 +109,7 @@ func newApprovedLine(t *testing.T, keepFirst bool) approvedLine {
 
 // boot configures a host's authority core over the shared store as accounts
 // does at start, with the delivery inbox it reads.
-func (line approvedLine) boot(t *testing.T) *authority.Service {
+func (line approvedLine) boot(t *testing.T) (*business.Service, *authority.Service) {
 	t.Helper()
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
@@ -119,11 +119,12 @@ func (line approvedLine) boot(t *testing.T) *authority.Service {
 	require.NoError(t, svc.ConfigureAuthorityCore(testCtx, "https://accounts.example.test", "approved-line", key))
 	core, err := svc.AuthorityCore()
 	require.NoError(t, err)
-	return core
+	return svc, core
 }
 
-// upgradeAvailable is the core's answer for the line's installation.
-func (line approvedLine) upgradeAvailable(t *testing.T, core *authority.Service) bool {
+// held is the line's installation as the core reads it, and its target as
+// composed now.
+func (line approvedLine) held(t *testing.T, core *authority.Service) (domain.Installation, domain.Module) {
 	t.Helper()
 	all, err := core.Installations(testCtx, authority.Person{ID: line.owner, Organization: line.org}, line.org)
 	require.NoError(t, err)
@@ -132,7 +133,7 @@ func (line approvedLine) upgradeAvailable(t *testing.T, core *authority.Service)
 	composed, err := core.Composed(testCtx, line.alias)
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), composed.Generation)
-	return decide.UpgradeAvailable(all[i], composed)
+	return all[i], composed
 }
 
 // A consent that approved an older generation is held to that generation's
@@ -141,8 +142,9 @@ func (line approvedLine) upgradeAvailable(t *testing.T, core *authority.Service)
 // upgrade an administrator approves. Booting again writes nothing new.
 func TestBootKeepsTheDeclarationAnOlderConsentApproved(t *testing.T) {
 	line := newApprovedLine(t, true)
-	core := line.boot(t)
-	require.True(t, line.upgradeAvailable(t, core))
+	svc, core := line.boot(t)
+	inst, composed := line.held(t, core)
+	require.True(t, decide.UpgradeAvailable(inst, composed))
 	issued, err := core.IssueForPerson(testCtx, authority.Person{ID: line.owner, Organization: line.org}, authority.IssueRequest{Audience: line.alias})
 	require.NoError(t, err, "the holder holds what generation 1 granted")
 	require.NotEmpty(t, issued.Context.GetAuthorityScopes())
@@ -156,6 +158,9 @@ func TestBootKeepsTheDeclarationAnOlderConsentApproved(t *testing.T) {
 	}))
 	require.NotContains(t, approved.Roles, "editor")
 	require.Contains(t, approved.Roles, "viewer")
+	listed, err := svc.ApprovedDeclaration(testCtx, inst, composed)
+	require.NoError(t, err)
+	require.Equal(t, approved, listed, "what a holder may hold is listed from the declaration the consent approved")
 
 	line.boot(t) // idempotent
 	require.NoError(t, testStore.AuthorityCore().Read(testCtx, func(tx authority.Tx) error {
@@ -170,9 +175,12 @@ func TestBootKeepsTheDeclarationAnOlderConsentApproved(t *testing.T) {
 // an administrator upgrades it.
 func TestBootWritesNothingForAnApprovedGenerationTheInboxLost(t *testing.T) {
 	line := newApprovedLine(t, false)
-	core := line.boot(t)
-	require.True(t, line.upgradeAvailable(t, core))
-	_, err := core.IssueForPerson(testCtx, authority.Person{ID: line.owner, Organization: line.org}, authority.IssueRequest{Audience: line.alias})
+	svc, core := line.boot(t)
+	inst, composed := line.held(t, core)
+	require.True(t, decide.UpgradeAvailable(inst, composed))
+	_, err := svc.ApprovedDeclaration(testCtx, inst, composed)
+	require.ErrorIs(t, err, domain.ErrNotFound, "no role is listed for an installation whose approved declaration is lost")
+	_, err = core.IssueForPerson(testCtx, authority.Person{ID: line.owner, Organization: line.org}, authority.IssueRequest{Audience: line.alias})
 	require.ErrorContains(t, err, "the generation 1 of "+line.alias+" that installation "+line.installation+" approved is not kept")
 	require.NoError(t, testStore.AuthorityCore().Read(testCtx, func(tx authority.Tx) error {
 		_, err := tx.ApprovedModule(line.alias, 1)

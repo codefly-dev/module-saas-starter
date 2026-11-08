@@ -89,7 +89,16 @@ func (s *HostOfferServer) ReviewOffer(ctx context.Context, req *installationv1.R
 			return nil, status.Errorf(codes.Unavailable, "the composed tool bindings cannot be read: %v", err)
 		}
 	}
-	return reviewedOffer(offer, bindings)
+	out, err := reviewedOffer(offer, bindings)
+	if err != nil || out.Installation == nil {
+		return out, err
+	}
+	// The offer is the delivered declaration (or, for a role holder, the one
+	// their installation's consent approved); the installation it names is
+	// stated as every installation read states it: the roles its holders may
+	// hold, and whether an upgrade waits.
+	out.Installation = installationToWire(core, ctx, offer.Installation)
+	return out, nil
 }
 
 // offerCaller is the signed-in administrator of org, as listing the offers
@@ -132,7 +141,7 @@ func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev
 		out.Approval = &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest}
 	}
 	if projected.Installation != nil {
-		out.Installation = installationWire(*projected.Installation, offer.Module)
+		out.Installation = installationWire(*projected.Installation, offer.Module, offer.Module)
 	}
 	for _, b := range projected.Ceiling {
 		out.Ceiling = append(out.Ceiling, &installationv1.OfferBinding{Binding: b.Binding, Module: b.Module, Scopes: offerScopesToWire(b.Scopes)})

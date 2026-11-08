@@ -177,43 +177,6 @@ func (a *SolutionAuthority) HeldBy(person string, teams []string, at SolutionRol
 	return held
 }
 
-// PersonSolutionRoles is what personID holds through principal's roles in
-// orgID, with the solution's declaration; a nil declaration says principal is
-// not a solution whose roles decide it, so the organisation's roles answer. A
-// solution not installed in the organisation, or not active there, grants
-// nothing.
-func (s *Service) PersonSolutionRoles(ctx context.Context, orgID, personID, principal string) (*SolutionAuthority, []*basev0.WorkScopeV1, error) {
-	authority, err := s.DeliveredSolutionAuthority(ctx, principal)
-	if err != nil || authority == nil {
-		return nil, nil, err
-	}
-	installationID, err := s.WorkContextAudienceInstallation(ctx, orgID, principal)
-	if errors.Is(err, ErrWorkContextNoAudienceInstallation) {
-		return authority, nil, nil
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	details, err := s.ReadHostInstallation(ctx, orgID, installationID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if details.Installation.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
-		return authority, nil, nil
-	}
-	teams, err := s.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: orgID, MemberId: personID})
-	if err != nil {
-		return nil, nil, err
-	}
-	var mine []string
-	for _, team := range teams.GetTeams() {
-		mine = append(mine, team.GetId())
-	}
-	return authority, authority.HeldBy(personID, mine, SolutionRoleHolders{
-		Owner: details.Installation.GetOwnerPrincipalId(), Role: details.Role, Teams: details.TeamIDs,
-	}), nil
-}
-
 // An installation of a solution holds one of the solution's roles as its
 // standing role: a role this host derives and owns per organisation, solution
 // and role name, whose permissions are the role's whole-kind grants (a role
