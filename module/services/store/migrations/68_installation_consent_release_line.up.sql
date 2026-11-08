@@ -29,9 +29,9 @@ GRANT SELECT,INSERT,UPDATE ON TABLE public.authority_core_approved_modules TO ap
 -- neither key, which the core reads as an approval of unknown generation and
 -- offers as an upgrade once. The host reviewed every one of these approvals
 -- itself and kept what it approved beside the receipt (host_plan.Approval), so
--- the approved generation and digest are filled from there, and nothing an
--- organization already approved flips to "update available" on the first
--- delivery after this ledger.
+-- the approved generation and digest are filled from there: a consent approved
+-- at the generation still delivered reads as current, and one approved at an
+-- older generation reads as upgrade_available, as it is.
 --
 -- One UPDATE over the core's installations; its row locks are bounded so a
 -- long transaction on the table fails this migration to be retried instead of
@@ -46,19 +46,26 @@ UPDATE public.authority_core_installations
    AND consent->'host_plan'->'Approval'->>'Generation' IS NOT NULL
    AND consent->'host_plan'->'Approval'->>'Digest' IS NOT NULL;
 
--- Every generation a live consent now names gets its approved declaration.
--- The store holds only the current declaration of each module; where the
--- approved generation is the current one, that is exactly what was approved.
--- Where an installation approved an older generation, the current declaration
--- is written under the approved generation too, because the one approved is
--- not kept anywhere: nothing is invented, and the difference between the two
--- surfaces as upgrade_available on the next delivery of that module, which
--- compares the consent's digest with the approved generation's.
+-- The declaration approved at a consent's generation is written here only
+-- where that generation is the module's current one: the store holds only the
+-- current declaration of each module, and it is exactly what was approved
+-- only then. A consent approved at an older generation gets no row from this
+-- migration. Writing the current declaration under the older generation
+-- would let the core decide that consent's holders from a declaration nobody
+-- approved for them, a redelivery's widened roles included. Instead accounts,
+-- when it configures the core at boot, rebuilds the declaration of that older
+-- generation from the delivery inbox (solution_delivery_documents keeps every
+-- generation's signed carrier and authority document, append-only) and writes
+-- it under that generation; where the inbox holds no document for it, nothing
+-- is written, the core refuses issuance through that installation by name
+-- (the approved generation is not kept), and the installation reads as
+-- upgrade_available until an administrator reviews and installs the
+-- delivered release on it.
 INSERT INTO public.authority_core_approved_modules (name, generation, principal, kind, stand_in, declarations)
-SELECT DISTINCT m.name, (i.consent->>'Generation')::bigint, m.principal, m.kind, m.stand_in, m.declarations
+SELECT DISTINCT m.name, m.generation, m.principal, m.kind, m.stand_in, m.declarations
   FROM public.authority_core_installations i
   JOIN public.authority_core_modules m ON m.name = i.target
  WHERE i.status IN ('pending', 'active')
    AND i.consent ? 'Generation'
-   AND (i.consent->>'Generation')::bigint > 0
+   AND (i.consent->>'Generation')::bigint = m.generation
 ON CONFLICT (name, generation) DO NOTHING;

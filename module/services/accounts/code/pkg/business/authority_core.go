@@ -66,7 +66,9 @@ func (k staticKeys) PublicKeys(context.Context) (map[string]ed25519.PublicKey, e
 // only by accounts' own consent (an administrator's install, within the module
 // envelope): the core installs none itself and reads accounts' records live
 // (HostInstallsModules), so an uninstall or a narrowed ceiling ends it there at
-// once.
+// once. Every applied delivery is composed in the core, and every declaration
+// a live consent approved that the store does not keep yet is written
+// (keepApprovedDeclarations).
 func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID string, key ed25519.PrivateKey) error {
 	state := s.authorityCoreState()
 	core, err := s.newAuthorityCore(issuer, keyID, key)
@@ -76,10 +78,14 @@ func (s *Service) ConfigureAuthorityCore(ctx context.Context, issuer, keyID stri
 	if err != nil {
 		return err
 	}
+	var failures []error
 	if err := s.reconcileAuthorityCore(ctx); err != nil {
-		return fmt.Errorf("authority core: compose the applied deliveries: %w", err)
+		failures = append(failures, fmt.Errorf("authority core: compose the applied deliveries: %w", err))
 	}
-	return nil
+	if err := s.keepApprovedDeclarations(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("authority core: keep the approved declarations: %w", err))
+	}
+	return errors.Join(failures...)
 }
 
 func (s *Service) newAuthorityCore(issuer, keyID string, key ed25519.PrivateKey) (*authority.Service, error) {

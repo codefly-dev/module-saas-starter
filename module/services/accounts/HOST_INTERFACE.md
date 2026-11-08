@@ -265,11 +265,21 @@ upgrade, its step converging the closure of the new review, its grants kept).
 still delivered under the consent's principal, and the consent naming a
 generation the delivered one stands on; the host compares no generation of
 its own. Migration 68 fills the approved generation and digest of every
-earlier consent from the host's own reviewed approval and writes the approved
-declaration under it from the current one, so nothing already approved reads
-as an update after the ledger moves; an older approval's difference surfaces
-as `upgrade_available` on the next delivery rather than being invented. The
-store-backed proof is `TestRedeliveryKeepsSolutionEntitled` (`pkg/infra`).
+earlier consent from the host's own reviewed approval, and writes the
+approved declaration only where that generation is still the delivered one
+(the module's current declaration is the approved one only then). A consent
+that approved an older generation reads as `upgrade_available`, and its
+declaration is rebuilt when the host configures the core at boot
+(`keepApprovedDeclarations`, `pkg/business/authority_core_approved.go`): from
+the delivery inbox's signed carrier and authority document for the target's
+binding at that generation, composed as a delivery composes it. Where the
+inbox kept no document for that generation, nothing is written and one line
+is logged naming the installation and the generation; the core then refuses
+issuance through the installation by name until an administrator reviews and
+installs the delivered release on it. The store-backed proofs are
+`TestRedeliveryKeepsSolutionEntitled` (`pkg/infra`) and
+`TestBootKeepsTheDeclarationAnOlderConsentApproved` /
+`TestBootWritesNothingForAnApprovedGenerationTheInboxLost` (`pkg/business`).
 
 Not yet: an upgrade's install step converges the closure and does not run the
 solution's setup job again (the durable job and its receiver are fenced to a

@@ -30,6 +30,7 @@ pkg/business/audit.go: (*DurableAuditEmitter).Emit: WithControlPlane
 pkg/business/audit.go: (*Service).AggregateAuditLog: WithControlPlane
 pkg/business/audit.go: (*Service).QueryAuditLog: WithControlPlane
 pkg/business/audit_archive.go: (*Service).archiveAuditDay: WithControlPlane
+pkg/business/authority_core_approved.go: (*Service).approvedDeclaration: WithControlPlane
 pkg/business/authority_core_delivery.go: (*Service).composeAppliedDelivery: WithControlPlane
 pkg/business/authority_delivery.go: (*Service).verifyAppliedAuthorityDocument: WithControlPlane
 pkg/business/canonical_solution_reads.go: (*Service).canonicalSolutionEntitlements: WithControlPlane

@@ -184,11 +184,7 @@ func (s *Service) composeAppliedDelivery(ctx context.Context, record *SolutionHo
 	if delivered == nil {
 		return nil
 	}
-	var signed *compositionv1.SignedManifestV1
-	if len(delivered.AuthorityDocument) > 0 {
-		signed = &compositionv1.SignedManifestV1{Document: delivered.AuthorityDocument, Envelope: delivered.AuthorityEnvelope}
-	}
-	_, err = s.applyCoreModule(ctx, manifest, delivered.Payload, signed)
+	_, err = s.applyCoreModule(ctx, manifest, delivered.Payload, signedAuthorityOf(delivered))
 	return err
 }
 
