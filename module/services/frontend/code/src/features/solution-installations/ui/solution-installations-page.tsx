@@ -155,16 +155,21 @@ function SolutionInstallationsForOrganization({
 	// (ListOffers): a solution always, a module when it declares roles — a
 	// module page. Solutions lists exactly those; supporting module
 	// administration lists the modules it does not. A module whose answer is
-	// not in yet is withheld, never shown as a supporting one, and a failed
-	// read is said.
+	// not in yet is withheld, never shown as a supporting one: supporting
+	// module administration lists nothing until the read succeeds, and a
+	// failed read is said as the host words it.
 	const offered = useOfferedTargets(orgId);
+	const modulesWithheld = showModules && !offered.isSuccess;
 	const chosen = (target: AvailableSolution | undefined) =>
 		target !== undefined &&
 		(target.kind === "solution" ||
 			offered.data?.has(target.routeAlias) === true);
 	const listed = (target: AvailableSolution | undefined) =>
 		showModules
-			? target !== undefined && target.kind === "module" && !chosen(target)
+			? !modulesWithheld &&
+				target !== undefined &&
+				target.kind === "module" &&
+				!chosen(target)
 			: chosen(target);
 	// A target that declares roles installs through a review of them, as a
 	// solution does; a module that declares none keeps its agent-role form.
@@ -245,7 +250,7 @@ function SolutionInstallationsForOrganization({
 					}
 					description="Installations belong to one organization at a time. Pick one from the selector above."
 				/>
-			) : (
+			) : modulesWithheld ? null : (
 				<>
 					<AvailableSection
 						showModules={showModules}
@@ -283,9 +288,10 @@ function SolutionInstallationsForOrganization({
 					tone="danger"
 					title="The targets this organization may choose could not be read"
 				>
-					{hostRefusal(offered.error)} A module is listed with the solutions
-					only once the authority says it declares roles, so module pages are
-					not listed yet.{" "}
+					{hostRefusal(offered.error)}{" "}
+					{showModules
+						? "A module is listed here only once the authority says it declares no roles, so no supporting module is listed yet."
+						: "A module is listed with the solutions only once the authority says it declares roles, so module pages are not listed yet."}{" "}
 					<Button
 						size="sm"
 						variant="outline"
@@ -296,7 +302,7 @@ function SolutionInstallationsForOrganization({
 				</Banner>
 			)}
 			<DelayedLoading
-				active={Boolean(installing) && offered.isPending}
+				active={(Boolean(installing) || showModules) && offered.isPending}
 				label="Reading which targets declare roles"
 			/>
 			{updating && (

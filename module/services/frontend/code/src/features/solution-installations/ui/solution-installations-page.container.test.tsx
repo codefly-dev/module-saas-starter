@@ -1771,6 +1771,9 @@ it("shows pending and failed installations and retries the failed step", async (
 		http.post(rpc("InstallationService", "ListAvailableSolutions"), () =>
 			HttpResponse.json(available),
 		),
+		// Supporting module administration lists a module once the authority
+		// says it declares no roles.
+		http.post(LIST_OFFERS, () => HttpResponse.json({ offers: [] })),
 		http.post(
 			rpc("InstallationService", "ListOrganizationInstallations"),
 			() => {
@@ -1958,6 +1961,66 @@ describe("Solutions lists a module page beside the solutions, by what the author
 		expect(
 			within(dialog).queryByRole("combobox", { name: "Agent role" }),
 		).toBeNull();
+	});
+
+	it("withholds every module from supporting module administration until the offers are read, and says a failed read as the host words it", async () => {
+		const reads = serve({
+			availableBody: catalogue,
+			installationsBody: installed,
+		});
+		let release: () => void = () => {};
+		const answered = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let offerReads = 0;
+		server.use(
+			http.post(LIST_OFFERS, async () => {
+				offerReads++;
+				if (offerReads === 1) {
+					await answered;
+					return HttpResponse.json(
+						{ code: "unavailable", message: "authority restarting" },
+						{ status: 503 },
+					);
+				}
+				return HttpResponse.json({
+					offers: ["payroll", "ledger", "directory", "archive"].map(
+						(target) => ({ target, generation: "5" }),
+					),
+				});
+			}),
+		);
+		renderInApp(<Page />);
+		// Both host reads are in while the authority has not answered: no
+		// module is shown, so no module page reads as a supporting one.
+		await waitFor(() => {
+			expect(reads.available).toBe(1);
+			expect(reads.installed).toBe(1);
+		});
+		expect(
+			screen.queryByRole("table", { name: "Available modules and solutions" }),
+		).toBeNull();
+		for (const alias of ["expenses", "ledger", "directory", "archive"])
+			expect(screen.queryByText(alias)).toBeNull();
+
+		release();
+		expect(await screen.findByText(/authority restarting/)).toBeTruthy();
+		expect(
+			screen.getByText(/so no supporting module is listed yet/),
+		).toBeTruthy();
+		expect(
+			screen.queryByRole("table", { name: "Available modules and solutions" }),
+		).toBeNull();
+		expect(screen.queryByText("ledger")).toBeNull();
+
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+		const availableTable = await screen.findByRole("table", {
+			name: "Available modules and solutions",
+		});
+		await within(availableTable).findByText("expenses");
+		for (const alias of ["payroll", "ledger", "directory", "archive"])
+			expect(within(availableTable).queryByText(alias)).toBeNull();
+		expect(offerReads).toBe(2);
 	});
 
 	it("lists on supporting module administration exactly the modules the authority offers to nobody", async () => {
