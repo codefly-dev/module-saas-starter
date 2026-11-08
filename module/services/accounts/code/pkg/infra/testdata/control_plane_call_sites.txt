@@ -134,7 +134,7 @@ pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
 pkg/business/retention.go: (*Service).RunRetention: WithControlPlane
-pkg/business/reviewed_solution_install.go: (*Service).reviewSolutionInstall: WithControlPlane
+pkg/business/reviewed_solution_install.go: (*Service).availableTarget: WithControlPlane
 pkg/business/reviewed_solution_install.go: (*Service).reviewedTargetDelivery: WithControlPlane
 pkg/business/service.go: (*Service).AssignRole: WithControlPlane
 pkg/business/service.go: (*Service).CheckPermission: WithControlPlane

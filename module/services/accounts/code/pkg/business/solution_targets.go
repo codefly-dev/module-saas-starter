@@ -96,9 +96,14 @@ type AvailableSolutionTarget struct {
 	// AppliedGeneration is the binding's newest applied generation, which is >=
 	// OpenedGeneration once a later present generation has been applied.
 	AppliedGeneration uint64
-	// Installed reports whether the asking organisation already holds an ACTIVE
-	// installation of this target.
+	// Installed reports whether the asking organisation already holds an
+	// installation of this target that is not revoked: active, or pending or
+	// failed on its way there. The install paths read it, since a second
+	// install of a held target is refused.
 	Installed bool
+	// Active reports whether that installation is ACTIVE, which is what a
+	// catalogue shows as installed: a pending attempt is not installed yet.
+	Active bool
 }
 
 // SolutionGenerationDecision is one entry in the generation history: a generation

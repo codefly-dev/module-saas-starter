@@ -45,23 +45,15 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 	if uuid.Validate(operation) != nil {
 		return nil, domain.Malformed("installation operation must be a UUID")
 	}
-	var targets []*AvailableSolutionTarget
-	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		var err error
-		targets, err = s.store.ListAvailableSolutionTargets(ctx, AvailableSolutionQuery{OrgID: org, TargetID: targetID, Limit: 1})
-		return err
-	})
+	available, err := s.availableTarget(ctx, org, targetID)
 	if err != nil {
 		return nil, err
-	}
-	if len(targets) != 1 {
-		return nil, domain.NotNow("the reviewed target is not available")
 	}
 	core, err := s.AuthorityCore()
 	if err != nil {
 		return nil, err
 	}
-	offer, err := core.ReviewOffer(ctx, caller, org, targets[0].RouteAlias)
+	offer, err := core.ReviewOffer(ctx, caller, org, available.RouteAlias)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +173,24 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 	return review, nil
 }
 
+// availableTarget is targetID as this host offers it to org; one it does not
+// offer is not available to review.
+func (s *Service) availableTarget(ctx context.Context, org, targetID string) (*AvailableSolutionTarget, error) {
+	var targets []*AvailableSolutionTarget
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		targets, err = s.store.ListAvailableSolutionTargets(ctx, AvailableSolutionQuery{OrgID: org, TargetID: targetID, Limit: 1})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(targets) != 1 {
+		return nil, domain.NotNow("the reviewed target is not available")
+	}
+	return targets[0], nil
+}
+
 func (s *Service) reviewedTargetDelivery(ctx context.Context, target *AvailableSolutionTarget) (release, digest string, err error) {
 	err = s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		record, err := s.store.GetSolutionHostBindingForUpdate(ctx, target.BindingID)
@@ -194,6 +204,41 @@ func (s *Service) reviewedTargetDelivery(ctx context.Context, target *AvailableS
 		return nil
 	})
 	return
+}
+
+// ReviewCurrent reports whether review still names what is delivered: the
+// target composed by the core and applied by this host at the generation it
+// was reviewed at, with the delivery digest it reviewed, and every required
+// supporting module at the generation and digest it reviewed. Replaying a
+// review that is not current is refused every time
+// (INSTALLATION_APPROVAL_GENERATION_CHANGED, or a module changed since
+// review), so a pending attempt is resumed from its review only while it is
+// current and reviewed afresh otherwise. A read that fails answers false: the
+// fresh review then says why.
+func (s *Service) ReviewCurrent(ctx context.Context, review *gen.ReviewedSolutionInstall) bool {
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return false
+	}
+	if m, err := core.Composed(ctx, review.GetTarget()); err != nil || m.Generation != review.GetApproval().GetGeneration() {
+		return false
+	}
+	target, err := s.availableTarget(ctx, review.GetOrgId(), review.GetTargetId())
+	if err != nil || target.BindingID != review.GetBindingId() || target.AppliedGeneration != review.GetApproval().GetGeneration() {
+		return false
+	}
+	if _, digest, err := s.reviewedTargetDelivery(ctx, target); err != nil || digest != review.GetDeliveryDigest() {
+		return false
+	}
+	for _, reviewed := range review.GetModules() {
+		if !reviewed.GetRequired() {
+			continue
+		}
+		if _, err := s.reviewedModuleTarget(ctx, review.GetOrgId(), reviewed); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // InstallReviewedSolution preserves the entire original review on the canonical

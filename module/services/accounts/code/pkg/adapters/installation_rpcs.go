@@ -238,8 +238,10 @@ func availableSolutionProto(entry *business.AvailableSolutionTarget) *gen.Availa
 		ReleaseVersion:    entry.ReleaseVersion,
 		OpenedGeneration:  entry.OpenedGeneration,
 		AppliedGeneration: entry.AppliedGeneration,
-		Installed:         entry.Installed,
-		Kind:              entry.Kind,
+		// Installed means ACTIVE, as the field says: a pending attempt reads
+		// false, and the wire has no field for it.
+		Installed: entry.Active,
+		Kind:      entry.Kind,
 	}
 }
 

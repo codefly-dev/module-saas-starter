@@ -403,9 +403,13 @@ and actual queue-to-receiver journey must be qualified together before delivery.
   `InstallReviewedSolutionAs`; the row's role is the installation role only
   where the declaration selects none), which converges its roleless closure;
   then the owner holds the installer role and each declared team the row's
-  role. A pending attempt of the owner's resumes from its review; an active
-  installation is left as it is and its grants granted again. A row for a
-  roleless module is installed by name. Rows converge in any order. A module's
+  role. A pending attempt of the owner's resumes from its review while that
+  review is current (the target's generation and delivery digest, and every
+  supporting module's, unchanged); once a delivery moved past it, the owner's
+  fresh review supersedes the attempt. An active installation is left as it
+  is and only the grants it does not hold are granted, so a restart's pass
+  writes and journals nothing. A row for a roleless module is installed by
+  name. Rows converge in any order. A module's
   installation is recorded once, in accounts' records, which the core reads.
 - The hop's per-instance pin and its registration proofs are kept in
   Postgres, shared across replicas; the instance is the pod the reviewed

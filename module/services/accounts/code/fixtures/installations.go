@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -208,10 +209,12 @@ var errCoreTargetNotComposed = errors.New("the authority core has not composed t
 // which converges the target's closure of roleless supporting modules with it,
 // then the owner is granted the installer role and each declared team the
 // row's role. A module holding no roles answers false: Converge installs it by
-// name. An installation the core holds active is left as it is and its grants
-// are granted again, idempotently; one it holds pending is resumed from the
-// review it was opened under when that review is the owner's, and superseded
-// by a fresh one otherwise; a revoked or absent one takes a fresh review.
+// name. An installation the core holds active is left as it is and only the
+// grants it does not hold yet are granted, so a pass over a converged row
+// changes and journals nothing; one it holds pending is resumed from the
+// review it was opened under while that review is the owner's and still
+// current, and superseded by a fresh one otherwise; a revoked or absent one
+// takes a fresh review.
 func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation) (bool, error) {
 	core, err := i.service.AuthorityCore()
 	if errors.Is(err, business.ErrAuthorityCoreUnconfigured) {
@@ -254,11 +257,19 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 			return false, fmt.Errorf("the authority core: %w", err)
 		}
 	}
+	granted, err := core.ListRoleGrants(ctx, caller, row.orgID, inst.ID)
+	if err != nil {
+		return false, fmt.Errorf("the authority core: %w", err)
+	}
 	grants := []authority.RoleRequest{{Organization: row.orgID, InstallationID: inst.ID, Role: domain.InstallerRole, PersonID: row.ownerID}}
 	for _, teamID := range row.allTeamIDs {
 		grants = append(grants, authority.RoleRequest{Organization: row.orgID, InstallationID: inst.ID, Role: row.declared.Role, TeamID: teamID})
 	}
 	for _, grant := range grants {
+		// The core journals every grant it writes, a repeated one too.
+		if slices.Contains(granted, domain.RoleGrant{InstallationID: grant.InstallationID, Role: grant.Role, PersonID: grant.PersonID, TeamID: grant.TeamID}) {
+			continue
+		}
 		if _, err := core.GrantRoleAsHost(ctx, grant); err != nil {
 			return false, fmt.Errorf("the authority core: grant %s: %w", grant.Role, err)
 		}
@@ -267,14 +278,20 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 }
 
 // reviewFor is the review the owner installs m with: the one a pending
-// attempt of theirs was opened under, which resumes it (what that attempt
-// installed is installed again under the same operation, idempotently), or a
-// fresh one.
+// attempt of theirs was opened under while it is still current, which resumes
+// it (what that attempt installed is installed again under the same
+// operation, idempotently), or a fresh one. A review a delivery has moved past
+// is refused on every replay, so the owner's fresh review supersedes that
+// attempt instead, as an administrator's does.
 func (i *Installations) reviewFor(ctx context.Context, caller authority.Person, m domain.Module, role string, inst domain.Installation, held bool) (*gen.ReviewedSolutionInstall, error) {
 	if store, ok := i.service.Store().(business.CanonicalInstallationSetupStore); ok && held && inst.Status == domain.Pending {
 		plan, err := store.SolutionInstallationPlan(ctx, caller.Organization, inst.ID)
 		if err == nil && plan.Review != nil && plan.Review.ActorId == caller.ID && plan.RequestedRole == role && plan.RequestedOwner == "" {
-			return plan.Review, nil
+			if i.service.ReviewCurrent(ctx, plan.Review) {
+				return plan.Review, nil
+			}
+			wool.Get(ctx).In("fixtures.Installations").Info("a pending fixture installation's review is no longer current; it is reviewed again",
+				wool.Field("target", m.Name), wool.Field("installation_id", inst.ID), wool.Field("reviewed_generation", plan.Review.GetApproval().GetGeneration()))
 		}
 	}
 	target, err := i.service.ResolveInstallationPrincipal(ctx, caller.Organization, m.Principal)

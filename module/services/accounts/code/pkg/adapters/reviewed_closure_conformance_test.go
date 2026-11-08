@@ -3,8 +3,11 @@ package adapters
 import (
 	"context"
 	"errors"
+	"iter"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 
@@ -13,6 +16,7 @@ import (
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
+	"accounts/pkg/infra/storetx"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
@@ -125,14 +129,17 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: support, installationRole: domain.NoInstallationRole,
 		ceilings: []*authorityv1.WorkScopeV1{wireScope(support+".item", "read")},
 		bindings: []solutionhost.AuthorityBinding{{ID: "page", Audience: page, Operations: map[string][]string{"invoke": {page + ".entry:read"}}}}})
-	reachingSolution := func(alias string, edges ...string) {
+	reaching := func(alias string, edges ...string) conformanceSolution {
 		note := wireScope(alias+".note", "read")
 		s := conformanceSolution{alias: alias, generation: 1, installationRole: domain.NoInstallationRole, ceilings: []*authorityv1.WorkScopeV1{note},
 			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}}
 		for _, edge := range edges {
 			s.edges = append(s.edges, modulecontract.EdgeDependency{Module: edge, Presence: "required"})
 		}
-		deliverSolution(t, h.ctx, h.conn, h.signer, s)
+		return s
+	}
+	reachingSolution := func(alias string, edges ...string) {
+		deliverSolution(t, h.ctx, h.conn, h.signer, reaching(alias, edges...))
 	}
 
 	// D1, D3: a module page a solution reaches is chosen by its own review.
@@ -290,7 +297,9 @@ installations:
 		}
 
 		// A second pass, and a restart's fresh pass over the same rows, are
-		// no-ops: nothing is installed again and no revision moves.
+		// no-ops: nothing is installed again, no revision moves, and no grant
+		// is written or journalled again.
+		granted := h.journalled(t, "saas.authority.role_granted", maps.Keys(orgs))
 		require.NoError(t, installations.Converge(h.ctx))
 		restarted, err := fixtures.SeedWithInstallations(h.ctx, h.svc, "closure-fixture")
 		require.NoError(t, err)
@@ -302,5 +311,83 @@ installations:
 				require.Equal(t, revisions[org+target], inst.Revision, "a repeated pass moved %s at %s", target, org)
 			}
 		}
+		require.Equal(t, granted, h.journalled(t, "saas.authority.role_granted", maps.Keys(orgs)), "a restart's pass journalled grants the rows already hold")
 	})
+
+	// F1: a fixture row's pending attempt whose target a delivery moved past
+	// cannot be resumed from its review (the core refuses the generation on
+	// every replay); the next pass reviews it afresh as the row's owner,
+	// which supersedes the attempt, and converges. Until then the catalogue
+	// does not read the pending target as installed.
+	t.Run("a pending fixture attempt whose target is redelivered converges on the next pass", func(t *testing.T) {
+		const solution, support = "conformance-closure-redelivered", "conformance-redelivered-support"
+		const org, owner = "00000000-0000-7000-8000-0000000001c3", "00000000-0000-7000-8000-0000000001f5"
+		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: support, installationRole: domain.NoInstallationRole})
+		delivered := reaching(solution, support)
+		deliverSolution(t, h.ctx, h.conn, h.signer, delivered)
+		path := filepath.Join(t.TempDir(), "redelivery-fixture.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(`users:
+  - {id: `+owner+`, email: owner@east.example.test, name: East Owner, role: member, provider: email, provider_id: fixture-east-owner}
+  - {id: 00000000-0000-7000-8000-0000000001f6, email: member@east.example.test, name: East Member, role: member, provider: email, provider_id: fixture-east-member}
+organizations:
+  - {id: `+org+`, name: Example East, owner: owner@east.example.test, members: [{email: member@east.example.test, role: member}]}
+teams:
+  - {name: Readers, org: Example East, members: [member@east.example.test]}
+installations:
+  - {org: Example East, target: `+solution+`, role: viewer, owner: owner@east.example.test, teams: [Readers]}
+`), 0o600))
+		t.Setenv("DEV_FIXTURE_PATH", path)
+		installations, err := fixtures.SeedWithInstallations(h.ctx, h.svc, "redelivery-fixture")
+		require.NoError(t, err)
+		resolved, err := h.svc.ResolveInstallationPrincipal(h.ctx, org, support)
+		require.NoError(t, err)
+		lost := errors.New("the store lost the connection")
+		h.faults.failOnce(resolved.TargetID, lost)
+		require.ErrorContains(t, installations.Converge(h.ctx), lost.Error())
+		east := authority.Person{ID: owner, Organization: org}
+		pending, held := h.coreInstallation(t, east, solution)
+		require.True(t, held)
+		require.Equal(t, domain.Pending, pending.Status)
+		require.Equal(t, uint64(1), pending.Consent.Generation)
+		installedInCatalogue := func() bool {
+			available, _, err := h.svc.ListAvailableSolutions(h.ctx, org, "", 500)
+			require.NoError(t, err)
+			for _, entry := range available {
+				if entry.RouteAlias == solution {
+					return entry.Active
+				}
+			}
+			t.Fatalf("%s is not offered at %s", solution, org)
+			return false
+		}
+		require.False(t, installedInCatalogue(), "the catalogue reads a pending attempt as installed")
+
+		// The delivery moves the solution to generation 2 under the pending
+		// attempt, as a boot's second delivery does.
+		delivered.generation = 2
+		deliverSolution(t, h.ctx, h.conn, h.signer, delivered)
+		require.NoError(t, installations.Converge(h.ctx), "the pending row is replayed from a review the delivery moved past")
+		active, _ := h.coreInstallation(t, east, solution)
+		require.Equal(t, domain.Active, active.Status)
+		require.Equal(t, pending.ID, active.ID)
+		require.Equal(t, uint64(2), active.Consent.Generation, "the installation approves the delivered generation")
+		require.NotEqual(t, pending.Consent.OperationID, active.Consent.OperationID, "the owner's fresh review superseded the stale attempt")
+		require.Equal(t, owner, active.InstalledBy)
+		grants, err := h.core.ListRoleGrants(h.ctx, east, org, active.ID)
+		require.NoError(t, err)
+		require.Contains(t, grants, domain.RoleGrant{InstallationID: active.ID, Role: "viewer", TeamID: teamNamed(t, h.ctx, h.svc, org, "Readers")})
+		require.NotNil(t, h.moduleInstallation(t, org, support), "the supporting module is installed")
+		require.True(t, installedInCatalogue(), "the catalogue reads the active installation as installed")
+	})
+}
+
+// journalled counts the audit records of event at any of orgs.
+func (h reviewedClosureHarness) journalled(t *testing.T, event string, orgs iter.Seq[string]) int {
+	t.Helper()
+	var count int
+	require.NoError(t, h.store.WithControlPlane(h.ctx, func(ctx context.Context) error {
+		return storetx.Tx(ctx).QueryRow(ctx, `SELECT count(*) FROM public.audit_events WHERE event_type = $1 AND payload->>'organization' = ANY($2::text[])`,
+			event, slices.Collect(orgs)).Scan(&count)
+	}))
+	return count
 }
