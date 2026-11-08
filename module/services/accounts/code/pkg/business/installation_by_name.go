@@ -75,6 +75,11 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		}
 	} else if undeclared := undeclaredInstallationRole(declaration); undeclared != nil {
 		return nil, false, undeclared
+	} else if role == "" && undeclaredAuthorityIsNone(declaration) {
+		// Neither an installation role nor any role declared, and no caller
+		// role: installed holding none, the one rule every installer applies
+		// (supportingInstallationRole); roleID stays empty and the registry
+		// selects no standing authority.
 	} else if authority != nil {
 		// A module page's signed installation_role selects its standing role
 		// as the core selects a solution's.
