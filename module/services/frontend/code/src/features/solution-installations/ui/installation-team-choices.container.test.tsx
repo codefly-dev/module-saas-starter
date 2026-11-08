@@ -422,6 +422,93 @@ describe("choices approved with Install", () => {
 	});
 });
 
+describe("the team named for a role", () => {
+	it("is chosen for that role at once, and stays removable", async () => {
+		teams = [
+			{ id: "team-1", name: "Example team" },
+			{ id: "team-2", name: "Example-Solution-Editor" },
+		];
+		renderInApp(
+			<InstallationTeamChoices
+				orgId="org-1"
+				targetId="target-1"
+				offer={reviewed()}
+			/>,
+		);
+		expect(
+			await screen.findByText(/Example-Solution-Editor — editor/),
+		).toBeTruthy();
+		expect(creates).toHaveLength(0);
+		expect(grants).toHaveLength(0);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Remove Example-Solution-Editor editor",
+			}),
+		);
+		await waitFor(() =>
+			expect(screen.queryByLabelText("Chosen team roles")).toBeNull(),
+		);
+	});
+
+	it("never replaces a team the person chose for the role", async () => {
+		teams = [
+			{ id: "team-1", name: "Example team" },
+			{ id: "team-2", name: "example-solution-editor" },
+		];
+		window.sessionStorage.clear();
+		renderInApp(
+			<InstallationTeamChoices
+				orgId="org-1"
+				targetId="target-1"
+				offer={reviewed()}
+			/>,
+		);
+		await screen.findByText(/example-solution-editor — editor/);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Remove example-solution-editor editor",
+			}),
+		);
+		const role = screen.getByLabelText("Team for editor");
+		fireEvent.change(within(role).getByLabelText("Team"), {
+			target: { value: "team:team-1" },
+		});
+		fireEvent.click(
+			within(role).getByRole("button", { name: "Use team for editor" }),
+		);
+		expect(await screen.findByText(/Example team — editor/)).toBeTruthy();
+		expect(screen.queryByText(/example-solution-editor — editor/)).toBeNull();
+	});
+
+	it("is created for every role still without one, in one act", async () => {
+		renderInApp(
+			<InstallationTeamChoices
+				orgId="org-1"
+				targetId="target-1"
+				offer={reviewed()}
+			/>,
+		);
+		const button = await screen.findByRole("button", {
+			name: "Create a team for each remaining role",
+		});
+		await waitFor(() =>
+			expect((button as HTMLButtonElement).disabled).toBe(false),
+		);
+		fireEvent.click(button);
+		expect(
+			await screen.findByText(/example-solution-editor — editor/),
+		).toBeTruthy();
+		expect(
+			await screen.findByText(/example-solution-reader — reader/),
+		).toBeTruthy();
+		expect(creates).toEqual([
+			{ orgId: "org-1", name: "example-solution-editor" },
+			{ orgId: "org-1", name: "example-solution-reader" },
+		]);
+		expect(grants).toHaveLength(0);
+	});
+});
+
 describe("a team name that is already taken", () => {
 	it("is surfaced instead of creating a duplicate or reusing the team, and an edited name creates a new team", async () => {
 		teams = [
@@ -434,6 +521,13 @@ describe("a team name that is already taken", () => {
 				targetId="target-1"
 				offer={reviewed()}
 			/>,
+		);
+		// The team named for the role is chosen for it; once the person removes
+		// it, creating a team of that name surfaces the one that exists.
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Remove Example-Solution-Editor editor",
+			}),
 		);
 		const button = await screen.findByRole("button", {
 			name: "Create team for editor",

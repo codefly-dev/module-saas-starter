@@ -1,7 +1,8 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { teamMutations } from "@/features/teams/service/mutations";
 import { teamQueries } from "@/features/teams/service/queries";
 import type { ReviewedOffer } from "@/gen/host/installation/v1/installation_pb";
 import { Button, DelayedLoading } from "@/shared/ui";
@@ -12,10 +13,13 @@ import {
 	type TeamChoice,
 	useInstallationTeamChoices,
 } from "../service/team-choices";
-import { RoleTeamChoice } from "./role-team-choice";
+import { RoleTeamChoice, suggestedTeamName } from "./role-team-choice";
 
 const sameChoice = (a: TeamChoice, b: TeamChoice) =>
 	a.teamId === b.teamId && a.role === b.role;
+
+const sameName = (a: string, b: string) =>
+	a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
  * One team per role the solution declares. Choosing or creating a team only
@@ -130,6 +134,65 @@ export function InstallationTeamChoices({
 		} else apply.mutate();
 	}, [autoKey, grant, blocked, changed, unavailable, draft, apply]);
 
+	// The team named for a role (`<target>-<role>`, the name Create offers)
+	// is that role's team unless the person chose another: it is chosen for
+	// them, once per reviewed declaration, and stays removable.
+	const conventional = (role: string) =>
+		teamList.find((team) =>
+			sameName(team.name, suggestedTeamName(offer.target, role)),
+		);
+	const unchosen = roles.filter(
+		(role) => !choices.some((c) => c.role === role),
+	);
+	const preselected = useRef("");
+	useEffect(() => {
+		if (blocked || changed || approved || !teams.isSuccess) return;
+		if (preselected.current === digest) return;
+		preselected.current = digest;
+		const found = unchosen.flatMap((role) => {
+			const team = conventional(role);
+			return team ? [{ teamId: team.id, teamName: team.name, role }] : [];
+		});
+		if (found.length) save([...choices, ...found], true);
+	});
+
+	// One act creates the conventional team for every role still without one
+	// and chooses it, so a first install needs no picking at all. A name that
+	// exists by the time the directory is re-read is used, never duplicated.
+	const client = useQueryClient();
+	const createMissing = useMutation({
+		mutationFn: async () => {
+			const current = await client.fetchQuery({
+				...teamQueries.list(orgId),
+				staleTime: 0,
+			});
+			const made: TeamChoice[] = [];
+			for (const role of unchosen) {
+				const name = suggestedTeamName(offer.target, role);
+				let team = current.teams.find((t) => sameName(t.name, name));
+				if (!team) {
+					const answer = await teamMutations.create(orgId, name);
+					if (!answer.team)
+						throw new Error(
+							`The host did not return the team ${name}. Try again to look it up.`,
+						);
+					team = answer.team;
+				}
+				made.push({ teamId: team.id, teamName: team.name, role });
+			}
+			return made;
+		},
+		onSuccess: async (made) => {
+			if (made.length) save([...choices, ...made], true);
+			await client.invalidateQueries({
+				queryKey: teamQueries.list(orgId).queryKey,
+			});
+		},
+	});
+	useEffect(() => {
+		setCreating(createMissing.isPending);
+	}, [createMissing.isPending]);
+
 	const failure = apply.error
 		? hostRefusal(apply.error)
 		: draft.value?.authorized?.failure;
@@ -195,6 +258,30 @@ export function InstallationTeamChoices({
 					A chosen team or role is no longer available. Remove or replace that
 					choice.
 				</p>
+			)}
+			{teams.isSuccess && unchosen.length > 0 && !approved && (
+				<div className="space-y-1">
+					<Button
+						type="button"
+						variant="outline"
+						disabled={blocked || changed}
+						onClick={() => createMissing.mutate()}
+					>
+						Create a team for each remaining role
+					</Button>
+					<p className="text-sm text-muted-foreground">
+						Creates{" "}
+						{unchosen
+							.map((role) => suggestedTeamName(offer.target, role))
+							.join(", ")}{" "}
+						and chooses each for its role. No members are added.
+					</p>
+					{createMissing.isError && (
+						<p role="alert">
+							Teams could not be created: {hostRefusal(createMissing.error)}
+						</p>
+					)}
+				</div>
 			)}
 			{offer.roles.map((role) => (
 				<RoleTeamChoice
