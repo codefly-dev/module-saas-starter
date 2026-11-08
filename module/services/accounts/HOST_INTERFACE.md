@@ -293,11 +293,17 @@ installs the delivered release on it. The store-backed proofs are
 `TestBootKeepsTheDeclarationAnOlderConsentApproved` /
 `TestBootWritesNothingForAnApprovedGenerationTheInboxLost` (`pkg/business`).
 
-Not yet: an upgrade's install step converges the closure and does not run the
-solution's setup job again (the durable job and its receiver are fenced to a
-pending attempt the row records, and an upgrade leaves the row active); a
-solution whose install endpoint must see every release is a follow-up on the
-job fences. The host's `WorkContextService` seal resolves a module page's
+**Setup is per installation, not per release.** A solution's install
+endpoint is called when its installation is set up: the first install, and an
+explicit retry of that same pending attempt. An upgrade in place converges the
+closure of the new review and does not call it again; the durable setup job
+and its receiver are fenced to the pending attempt the row records, and an
+upgrade leaves the row active. A release that needs its own state moved (a
+schema or data migration) delivers that through its own runtime when the
+release starts, never through the install step, which a release cannot count
+on seeing.
+
+Not yet: the host's `WorkContextService` seal resolves a module page's
 installation from the core's record; the gateway's `/_browser` path, which
 issues through the core, was not exercised in a composed run for this change.
 
