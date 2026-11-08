@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/wool"
 
@@ -205,10 +206,11 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 	if err != nil {
 		return false, err
 	}
-	// A module's installation is accounts' own record, which Converge's install
-	// made; the core reads it and installs no module itself. A target the core
-	// has not composed yet is waited on: the pass that applies its delivery
-	// composes it.
+	// A module holding no roles is accounts' own record, which Converge's
+	// install made; the core reads it and installs no such module itself. A
+	// target declaring roles (a solution, or a module page) is the core's,
+	// installed here through its review. A target the core has not composed
+	// yet is waited on: the pass that applies its delivery composes it.
 	m, err := core.Composed(ctx, row.declared.Target)
 	if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
 		return false, fmt.Errorf("%w: %s", errCoreTargetNotComposed, row.declared.Target)
@@ -216,7 +218,7 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 	if err != nil {
 		return false, fmt.Errorf("the authority core: %w", err)
 	}
-	if m.Kind != domain.KindSolution {
+	if !decide.RoleGated(m) {
 		return false, nil
 	}
 	caller := authority.Person{ID: row.ownerID, Organization: row.orgID}

@@ -59,6 +59,8 @@ afterEach(() => {
 
 const REVIEW_OFFER =
 	"http://localhost:3000/host.installation.v1.OfferService/ReviewOffer";
+const LIST_OFFERS =
+	"http://localhost:3000/host.installation.v1.OfferService/ListOffers";
 const EXPENSES_TARGET = "aaaaaaaa-0000-4000-8000-000000000001";
 const LEDGER_TARGET = "aaaaaaaa-0000-4000-8000-000000000002";
 // The consent the page sends: the reviewed target and generation, a zero
@@ -225,6 +227,9 @@ function serve({
 			reads.teams++;
 			return HttpResponse.json(teamsBody);
 		}),
+		// The authority offers nothing an administrator chooses here: every
+		// module declares no roles, so it is a supporting module.
+		http.post(LIST_OFFERS, () => HttpResponse.json({ offers: [] })),
 		// A module that declares no roles: the authority refuses its offer.
 		http.post(REVIEW_OFFER, () =>
 			HttpResponse.json(
@@ -1569,17 +1574,14 @@ describe("accessible validation and host text", () => {
 	});
 });
 
-describe("installing a module: the form follows its declared roles, not its kind", () => {
-	it("opens the agent-role form for a module whose offer the authority refuses", async () => {
+describe("installing a module: the form follows what the authority offers, not its kind", () => {
+	it("opens the agent-role form for a module the authority offers to nobody", async () => {
 		let asked: unknown;
 		serve();
 		server.use(
-			http.post(REVIEW_OFFER, async ({ request }) => {
+			http.post(LIST_OFFERS, async ({ request }) => {
 				asked = await request.json();
-				return HttpResponse.json(
-					{ code: "not_found", message: "declares no roles" },
-					{ status: 404 },
-				);
+				return HttpResponse.json({ offers: [] });
 			}),
 		);
 		renderInApp(<Page />);
@@ -1591,33 +1593,29 @@ describe("installing a module: the form follows its declared roles, not its kind
 			within(dialog).getByRole("combobox", { name: "Agent role" }),
 		).toBeTruthy();
 		expect(within(dialog).queryByText("Module access")).toBeNull();
-		expect(asked).toEqual({ organizationId: "org-1", target: "ledger" });
+		expect(asked).toEqual({ organizationId: "org-1" });
 	});
 
-	it("shows a failed read of a module's roles instead of guessing its form, and reads again", async () => {
+	it("shows a failed read of the offers instead of guessing a form, and reads again", async () => {
 		let reads = 0;
 		serve();
 		server.use(
-			http.post(REVIEW_OFFER, () => {
+			http.post(LIST_OFFERS, () => {
 				reads++;
 				return reads === 1
 					? HttpResponse.json(
 							{ code: "unavailable", message: "authority restarting" },
 							{ status: 503 },
 						)
-					: HttpResponse.json(
-							{ code: "not_found", message: "declares no roles" },
-							{ status: 404 },
-						);
+					: HttpResponse.json({ offers: [] });
 			}),
 		);
 		renderInApp(<Page />);
+		expect(await screen.findByText(/authority restarting/)).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Install ledger" }),
 		);
-		expect(await screen.findByText(/authority restarting/)).toBeTruthy();
-		expect(screen.queryByRole("dialog")).toBeNull();
-		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
 		const dialog = await screen.findByRole("dialog");
 		expect(
 			within(dialog).getByRole("combobox", { name: "Agent role" }),
@@ -1625,14 +1623,41 @@ describe("installing a module: the form follows its declared roles, not its kind
 		expect(reads).toBe(2);
 	});
 
-	it("reviews a module page that declares roles, installs it with no agent role, and opens its Set up", async () => {
+	it("reviews a module page the authority offers and installs it through its review, then opens its Set up", async () => {
 		let installed: unknown;
+		const approval = {
+			targetId: "module:ledger",
+			generation: "5",
+			digest: "sha256:ledger-5",
+			operationId: "cccccccc-0000-4000-8000-000000000009",
+		};
+		const review = {
+			orgId: "org-1",
+			actorId: "person-1",
+			targetId: LEDGER_TARGET,
+			target: "ledger",
+			bindingId: "binding-ledger",
+			release: "acme/ledger@0.9.1",
+			deliveryDigest: "delivery-5",
+			installationRole: "none",
+			approval,
+			modules: [],
+		};
 		serve();
 		server.use(
+			http.post(LIST_OFFERS, () =>
+				HttpResponse.json({ offers: [{ target: "ledger", generation: "5" }] }),
+			),
+			http.post(rpc("InstallationService", "ReviewSolutionInstall"), () =>
+				HttpResponse.json(review),
+			),
 			http.post(REVIEW_OFFER, () =>
 				HttpResponse.json({
 					target: "ledger",
 					installationRole: "none",
+					approval: { ...approval, operationId: "" },
+					rolesDeclared: true,
+					page: true,
 					roles: [
 						{
 							name: "installer",
@@ -1643,7 +1668,7 @@ describe("installing a module: the form follows its declared roles, not its kind
 				}),
 			),
 			http.post(
-				rpc("InstallationService", "InstallSolution"),
+				rpc("InstallationService", "InstallReviewedSolution"),
 				async ({ request }) => {
 					installed = await request.json();
 					return HttpResponse.json({
@@ -1655,14 +1680,14 @@ describe("installing a module: the form follows its declared roles, not its kind
 				},
 			),
 		);
-		renderInApp(<Page />);
+		renderInApp(<SolutionsPage />);
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Install ledger" }),
 		);
 		const dialog = await screen.findByRole("dialog");
 		await within(dialog).findByText("Module access");
 		// The module's own declaration decides its standing access; nothing
-		// asks for an organisation role.
+		// asks for an organisation role, and the review is a solution's.
 		expect(
 			within(dialog).getByText(
 				"This module receives no standing machine access.",
@@ -1671,26 +1696,18 @@ describe("installing a module: the form follows its declared roles, not its kind
 		expect(
 			within(dialog).queryByRole("combobox", { name: "Agent role" }),
 		).toBeNull();
-		const roles = within(dialog).getByRole("region", { name: "Roles" });
-		expect(within(roles).getByText(/installer:/)).toBeTruthy();
-		expect(
-			within(roles).getByText("viewer: No data access declared."),
-		).toBeTruthy();
-
 		const install = within(dialog).getByRole("button", {
 			name: "Install",
 		}) as HTMLButtonElement;
 		expect(install.disabled).toBe(true);
 		fireEvent.click(within(dialog).getByRole("checkbox"));
-		expect(install.disabled).toBe(false);
+		await waitFor(() => expect(install.disabled).toBe(false));
 		fireEvent.click(install);
 
 		await waitFor(() => expect(installed).toBeDefined());
-		expect(installed).toEqual({
+		expect(installed).toMatchObject({
 			orgId: "org-1",
-			targetId: LEDGER_TARGET,
-			approval: LEDGER_APPROVAL,
-			agentIdentifier: "acme/ledger:0.9.1",
+			review: { targetId: LEDGER_TARGET, target: "ledger", approval },
 		});
 		await waitFor(() =>
 			expect(push).toHaveBeenCalledWith(
@@ -1793,7 +1810,7 @@ it("shows pending and failed installations and retries the failed step", async (
 	expect(screen.queryByRole("button", { name: "Retry expenses" })).toBeNull();
 });
 
-describe("Solutions lists a module page beside the solutions, by what it declares", () => {
+describe("Solutions lists a module page beside the solutions, by what the authority offers", () => {
 	const PAYROLL_TARGET = "aaaaaaaa-0000-4000-8000-000000000003";
 	const DIRECTORY_TARGET = "aaaaaaaa-0000-4000-8000-000000000004";
 	const ARCHIVE_TARGET = "aaaaaaaa-0000-4000-8000-000000000005";
@@ -1807,9 +1824,9 @@ describe("Solutions lists a module page beside the solutions, by what it declare
 				routeAlias: "payroll",
 				releaseName: "payroll",
 			},
-			// A module page: it declares roles, so it is a solution's peer here.
+			// A module page: the authority offers it, so it is a solution's peer here.
 			available.solutions[1],
-			// A supporting module: the authority reads no roles of it.
+			// A supporting module: the authority offers it to nobody.
 			available.solutions[0],
 			{
 				...available.solutions[0],
@@ -1817,7 +1834,6 @@ describe("Solutions lists a module page beside the solutions, by what it declare
 				routeAlias: "directory",
 				releaseName: "directory",
 			},
-			// A module whose roles cannot be read right now.
 			{
 				...available.solutions[1],
 				targetId: ARCHIVE_TARGET,
@@ -1842,43 +1858,35 @@ describe("Solutions lists a module page beside the solutions, by what it declare
 			},
 		],
 	};
-	const declaresRoles = (target: string) =>
-		HttpResponse.json({
-			target,
-			installationRole: "none",
-			roles: [{ name: "viewer", scopes: [] }],
-		});
 
-	// The authority's answer per module: roles, none (NotFound), or a failure
-	// that is no answer until it is read again.
-	function serveSolutions({ archiveFailsTimes = 0 } = {}) {
-		const reviewed: string[] = [];
+	// The authority's one answer: which targets an administrator chooses. A
+	// failed read is no answer until it is read again.
+	function serveSolutions({ failsTimes = 0 } = {}) {
+		const reads = { offers: 0 };
 		serve({ availableBody: catalogue, installationsBody: installed });
 		server.use(
-			http.post(REVIEW_OFFER, async ({ request }) => {
-				const { target } = (await request.json()) as { target: string };
-				reviewed.push(target);
-				if (target === "expenses")
-					return HttpResponse.json(
-						{ code: "not_found", message: "declares no roles" },
-						{ status: 404 },
-					);
-				if (
-					target === "archive" &&
-					reviewed.filter((t) => t === "archive").length <= archiveFailsTimes
-				)
+			http.post(LIST_OFFERS, () => {
+				reads.offers++;
+				if (reads.offers <= failsTimes)
 					return HttpResponse.json(
 						{ code: "unavailable", message: "authority restarting" },
 						{ status: 503 },
 					);
-				return declaresRoles(target);
+				return HttpResponse.json({
+					offers: ["payroll", "ledger", "directory", "archive"].map(
+						(target) => ({
+							target,
+							generation: "5",
+						}),
+					),
+				});
 			}),
 		);
-		return reviewed;
+		return reads;
 	}
 
 	it("lists solutions and module pages, keeps a roleless module out, and says what it could not read", async () => {
-		const reviewed = serveSolutions({ archiveFailsTimes: 1 });
+		const reads = serveSolutions({ failsTimes: 1 });
 		renderInApp(<SolutionsPage />);
 
 		const availableTable = await screen.findByRole("table", {
@@ -1889,39 +1897,58 @@ describe("Solutions lists a module page beside the solutions, by what it declare
 				name: "Solution or module page",
 			}),
 		).toBeTruthy();
+		// A solution needs no answer; the module pages wait for the one read.
 		await within(availableTable).findByText("payroll");
+		expect(within(availableTable).queryByText("ledger")).toBeNull();
+		const banner = await screen.findByText(
+			"The targets this organization may choose could not be read",
+		);
+		expect(screen.getByText(/authority restarting/)).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
 		await within(availableTable).findByText("ledger");
 		await within(availableTable).findByText("directory");
+		await within(availableTable).findByText("archive");
 		expect(within(availableTable).queryByText("expenses")).toBeNull();
-		expect(within(availableTable).queryByText("archive")).toBeNull();
+		await waitFor(() => expect(banner.isConnected).toBe(false));
 
 		const installedTable = await screen.findByRole("table", {
 			name: "Installed solutions",
 		});
 		await within(installedTable).findByText("directory");
 		expect(within(installedTable).queryByText("expenses")).toBeNull();
-
-		// An unread module is withheld and said, never shown as roleless.
-		const banner = await screen.findByText(
-			"The roles some modules declare could not be read",
-		);
-		expect(screen.getByText(/authority restarting/)).toBeTruthy();
-		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-		await within(availableTable).findByText("archive");
-		await waitFor(() => expect(banner.isConnected).toBe(false));
-		// Each module is reviewed once, however many rows name it, and only the
-		// failed read again; a solution is never asked.
-		expect(reviewed.sort()).toEqual([
-			"archive",
-			"archive",
-			"directory",
-			"expenses",
-			"ledger",
-		]);
+		// One read answers every row, however many modules the catalogue names.
+		expect(reads.offers).toBe(2);
 	});
 
-	it("installs a module page from Solutions through its reviewed roles", async () => {
+	it("installs a module page from Solutions through its review, as a solution", async () => {
 		serveSolutions();
+		server.use(
+			http.post(rpc("InstallationService", "ReviewSolutionInstall"), () =>
+				HttpResponse.json({
+					orgId: "org-1",
+					actorId: "person-1",
+					targetId: LEDGER_TARGET,
+					target: "ledger",
+					installationRole: "none",
+					approval: {
+						targetId: "module:ledger",
+						generation: "5",
+						digest: "d",
+						operationId: "cccccccc-0000-4000-8000-000000000010",
+					},
+					modules: [],
+				}),
+			),
+			http.post(REVIEW_OFFER, () =>
+				HttpResponse.json({
+					target: "ledger",
+					installationRole: "none",
+					approval: { targetId: "module:ledger", generation: "5", digest: "d" },
+					rolesDeclared: true,
+					roles: [{ name: "viewer", scopes: [] }],
+				}),
+			),
+		);
 		renderInApp(<SolutionsPage />);
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Install ledger" }),
@@ -1933,15 +1960,16 @@ describe("Solutions lists a module page beside the solutions, by what it declare
 		).toBeNull();
 	});
 
-	it("still lists every module on supporting module administration without reading roles", async () => {
-		const reviewed = serveSolutions();
+	it("lists on supporting module administration exactly the modules the authority offers to nobody", async () => {
+		const reads = serveSolutions();
 		renderInApp(<Page />);
 		const availableTable = await screen.findByRole("table", {
 			name: "Available modules and solutions",
 		});
-		for (const alias of ["payroll", "ledger", "expenses", "directory", "archive"])
-			expect(within(availableTable).getByText(alias)).toBeTruthy();
-		expect(reviewed).toEqual([]);
+		await within(availableTable).findByText("expenses");
+		for (const alias of ["payroll", "ledger", "directory", "archive"])
+			expect(within(availableTable).queryByText(alias)).toBeNull();
+		expect(reads.offers).toBe(1);
 	});
 });
 
@@ -1997,12 +2025,21 @@ describe("an installation survives delivery: the host offers an update, and the 
 
 	it("says an update is available, keeps the installation healthy, and installs the reviewed release on the same installation", async () => {
 		let installedWith: unknown;
-		serve({ availableBody: { solutions: [payroll] }, installationsBody: installedPayroll(true) });
+		serve({
+			availableBody: { solutions: [payroll] },
+			installationsBody: installedPayroll(true),
+		});
 		server.use(
-			http.post(rpc("InstallationService", "ReviewSolutionInstall"), async ({ request }) => {
-				await assertBody(request, { orgId: "org-1", targetId: PAYROLL_TARGET });
-				return HttpResponse.json(review);
-			}),
+			http.post(
+				rpc("InstallationService", "ReviewSolutionInstall"),
+				async ({ request }) => {
+					await assertBody(request, {
+						orgId: "org-1",
+						targetId: PAYROLL_TARGET,
+					});
+					return HttpResponse.json(review);
+				},
+			),
 			http.post(REVIEW_OFFER, () =>
 				HttpResponse.json({
 					target: "payroll",
@@ -2010,35 +2047,70 @@ describe("an installation survives delivery: the host offers an update, and the 
 					approval: { ...approval, operationId: "" },
 					roles: [{ name: "installer", scopes: [] }],
 					rolesDeclared: true,
-					installation: { id: PAYROLL_INSTALLATION, status: "STATUS_ACTIVE", approvedGeneration: "5", upgradeAvailable: true },
+					installation: {
+						id: PAYROLL_INSTALLATION,
+						status: "STATUS_ACTIVE",
+						approvedGeneration: "5",
+						upgradeAvailable: true,
+					},
 				}),
 			),
-			http.post(rpc("InstallationService", "InstallReviewedSolution"), async ({ request }) => {
-				installedWith = await request.json();
-				return HttpResponse.json({ id: PAYROLL_INSTALLATION, orgId: "org-1", targetId: PAYROLL_TARGET, status: "INSTALLATION_STATUS_ACTIVE", approvedGeneration: "7" });
-			}),
+			http.post(
+				rpc("InstallationService", "InstallReviewedSolution"),
+				async ({ request }) => {
+					installedWith = await request.json();
+					return HttpResponse.json({
+						id: PAYROLL_INSTALLATION,
+						orgId: "org-1",
+						targetId: PAYROLL_TARGET,
+						status: "INSTALLATION_STATUS_ACTIVE",
+						approvedGeneration: "7",
+					});
+				},
+			),
 		);
 		renderInApp(<SolutionsPage />);
-		const installedTable = await screen.findByRole("table", { name: "Installed solutions" });
+		const installedTable = await screen.findByRole("table", {
+			name: "Installed solutions",
+		});
 		await within(installedTable).findByText("Update available");
 		expect(within(installedTable).getByText("Healthy")).toBeTruthy();
-		fireEvent.click(within(installedTable).getByRole("button", { name: "Update payroll" }));
+		fireEvent.click(
+			within(installedTable).getByRole("button", { name: "Update payroll" }),
+		);
 		const dialog = await screen.findByRole("dialog");
 		await within(dialog).findByText("Update payroll");
 		expect(within(dialog).getByText(/team grants are kept/)).toBeTruthy();
 		fireEvent.click(within(dialog).getByRole("checkbox"));
 		fireEvent.click(within(dialog).getByRole("button", { name: "Update" }));
 		await waitFor(() => expect(installedWith).toBeTruthy());
-		expect(installedWith).toMatchObject({ orgId: "org-1", review: { targetId: PAYROLL_TARGET, approval: { operationId: approval.operationId } } });
-		await waitFor(() => expect(toast.success).toHaveBeenCalledWith("payroll updated. Its team access is kept."));
+		expect(installedWith).toMatchObject({
+			orgId: "org-1",
+			review: {
+				targetId: PAYROLL_TARGET,
+				approval: { operationId: approval.operationId },
+			},
+		});
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledWith(
+				"payroll updated. Its team access is kept.",
+			),
+		);
 	});
 
 	it("offers no update while the installed release is the approved one", async () => {
-		serve({ availableBody: { solutions: [payroll] }, installationsBody: installedPayroll(false) });
+		serve({
+			availableBody: { solutions: [payroll] },
+			installationsBody: installedPayroll(false),
+		});
 		renderInApp(<SolutionsPage />);
-		const installedTable = await screen.findByRole("table", { name: "Installed solutions" });
+		const installedTable = await screen.findByRole("table", {
+			name: "Installed solutions",
+		});
 		await within(installedTable).findByText("payroll");
 		expect(within(installedTable).queryByText("Update available")).toBeNull();
-		expect(within(installedTable).queryByRole("button", { name: "Update payroll" })).toBeNull();
+		expect(
+			within(installedTable).queryByRole("button", { name: "Update payroll" }),
+		).toBeNull();
 	});
 });

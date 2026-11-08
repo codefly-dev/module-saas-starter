@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"strings"
 )
 
@@ -65,6 +67,10 @@ type WorkContextSealStore interface {
 	// solution binding bindingID in orgID, and
 	// ErrWorkContextNoAudienceInstallation when there is none.
 	WorkContextSolutionInstallation(ctx context.Context, orgID, bindingID string) (string, error)
+	// WorkContextRoleGatedInstallation answers the active installation of
+	// target (a module page, chosen through its review) the core recorded at
+	// orgID, or ErrWorkContextNoAudienceInstallation.
+	WorkContextRoleGatedInstallation(ctx context.Context, orgID, target string) (string, error)
 }
 
 // SetWorkContextSealStore wires the row-backed seal reads.
@@ -216,6 +222,18 @@ func (s *Service) WorkContextAudienceInstallation(ctx context.Context, orgID, au
 				}
 				return store.WorkContextSolutionInstallation(ctx, orgID, binding.BindingID)
 			}
+		}
+	}
+	// A module page (a module declaring roles) is chosen through its review
+	// and recorded by the core, like a solution: its installation is the
+	// core's record, never one of accounts' own.
+	if core, err := s.AuthorityCore(); err == nil {
+		if m, err := core.Composed(ctx, audience); err == nil && decide.RoleGated(m) && m.Kind != domain.KindSolution {
+			store, err := s.sealStore()
+			if err != nil {
+				return "", err
+			}
+			return store.WorkContextRoleGatedInstallation(ctx, orgID, m.Name)
 		}
 	}
 	live, err := s.liveModuleAuthority(ctx, ModulePrincipalID(audience), orgID, "")

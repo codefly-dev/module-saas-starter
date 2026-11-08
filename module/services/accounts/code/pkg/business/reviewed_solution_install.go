@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	installationv1 "accounts/pkg/gen/host/installation/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
@@ -81,6 +83,12 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 	dependencies, err := SolutionInstallationDependencies(offer)
 	if err != nil {
 		return nil, err
+	}
+	if disagreement := closureDisagreement(offer, dependencies); disagreement != "" {
+		// The core answers the closure too (ReviewedOffer.Closure); the host's
+		// walker is what the review and the activation fence install by, so a
+		// disagreement is said, never silently resolved either way.
+		wool.Get(ctx).In("ReviewSolutionInstall").Warn("the core's closure and the host's reviewed dependencies disagree", wool.Field("target", offer.Module.Name), wool.Field("disagreement", disagreement))
 	}
 	for _, dependency := range dependencies {
 		entry := &gen.ReviewedSupportingModule{Principal: dependency.Principal, Required: dependency.Required}
@@ -421,6 +429,31 @@ func (s *Service) InstallAuthoritySolution(ctx context.Context, caller authority
 		}
 	}
 	return s.installReviewedSolution(ctx, caller, org, review, role, owner)
+}
+
+// closureDisagreement compares the modules the core's closure names with the
+// required, delivered dependencies the host's walker found, by name; empty
+// when they agree. The core lists what installing the target brings along;
+// the host's walker lists what the review consents to, so the two must name
+// the same supporting modules.
+func closureDisagreement(offer authority.ReviewedOffer, dependencies []SolutionDependency) string {
+	names := map[string]string{}
+	for _, m := range offer.Modules {
+		names[m.Principal] = m.Name
+	}
+	var walked []string
+	for _, d := range dependencies {
+		if d.Required && d.Delivered {
+			walked = append(walked, names[d.Principal])
+		}
+	}
+	slices.Sort(walked)
+	core := slices.Clone(offer.Closure)
+	slices.Sort(core)
+	if slices.Equal(walked, core) {
+		return ""
+	}
+	return fmt.Sprintf("the core's closure is %v, the host's walker found %v", core, walked)
 }
 
 // supportingInstallationRole is the standing role a required supporting

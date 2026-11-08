@@ -87,7 +87,12 @@ describe("solution installation facts", () => {
 	});
 
 	it("retains the host's exact setup outcome after a fresh listing", () => {
-		for (const message of ["Setup is queued.", "Setup is temporarily unavailable and will retry.", "Setup refused: required configuration is missing.", "Setup acknowledged. Continue the original reviewed installation to finish activation."]) {
+		for (const message of [
+			"Setup is queued.",
+			"Setup is temporarily unavailable and will retry.",
+			"Setup refused: required configuration is missing.",
+			"Setup acknowledged. Continue the original reviewed installation to finish activation.",
+		]) {
 			const response = installed("t-1", true);
 			response.installation!.setupMessage = message;
 			const [row] = installedRows([response]);
@@ -101,7 +106,9 @@ describe("solution installation facts", () => {
 		const [row] = installedRows([response]);
 		expect(row.upgradeAvailable).toBe(true);
 		expect(row.target?.targetId).toBe("t-1");
-		expect(installedRows([installed("t-1", true)])[0].upgradeAvailable).toBe(false);
+		expect(installedRows([installed("t-1", true)])[0].upgradeAvailable).toBe(
+			false,
+		);
 	});
 
 	it("never guesses a name for a target the host no longer offers", () => {

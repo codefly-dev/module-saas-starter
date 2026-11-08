@@ -37,11 +37,10 @@ import {
 	useGrantInstallationToTeam,
 	useRetryInstallation,
 } from "../service/mutations";
-import { useInstallations } from "../service/queries";
+import { useInstallations, useOfferedTargets } from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
 import { Fact } from "./solution-installations-page";
 import { SolutionSetupPanel } from "./solution-setup-panel";
-import { useRolesDeclared } from "./when-roles-declared";
 
 /**
  * One module's or one solution's setup page: what it is and whether it is ready,
@@ -72,12 +71,16 @@ export function InstallationSetupPage({
 	);
 	// Where this installation is listed follows what it declares, not its
 	// kind: a solution and a module page sit on Solutions; only a module the
-	// authority reads no roles of is a supporting module. One read serves the
-	// header and the setup below.
-	const rolesDeclared = useRolesDeclared(
-		row?.target?.routeAlias ?? "",
-		row?.target?.kind,
-	);
+	// authority offers to nobody (it declares no roles) is a supporting
+	// module. The authority's one ListOffers read serves the header and the
+	// setup below.
+	const offered = useOfferedTargets(orgId);
+	const rolesDeclared =
+		row?.target?.kind === "solution"
+			? true
+			: row?.target && offered.isSuccess
+				? offered.data.has(row.target.routeAlias)
+				: undefined;
 	// Only a module the authority has answered "no roles" for is a supporting
 	// module; an unknown or still-loading row, and every solution, belongs to
 	// Solutions, which is also where the not-found state sends a person back.

@@ -108,6 +108,9 @@ func runHostInterfaceFixture(t *testing.T) {
 	t.Cleanup(store.Close)
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
+	// The row-backed Work Context seal reads, as work.go wires them: the host
+	// resolves a module page's installation from the core's record through it.
+	svc.SetWorkContextSealStore(store)
 	// The sign-in path, as production and the business tests wire it: a session
 	// store and an identity resolver over the store, a token minter with a test
 	// key, the audit emitter and the entitlement checker every audited RPC needs.
@@ -1093,29 +1096,28 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.NotEmpty(t, issued.GetContext().GetAuthorityScopes())
 	})
 
-	// A module page that declares roles reaches the navigation of a person
-	// holding one of them, and of no other member of the organization, as a
-	// solution does; its page's audience answers the same way. Redelivered
-	// without roles, it leaves the role holder's navigation: what lists it
-	// then is the organization's installation and a team's grant, as for any
-	// module.
+	// A module page that declares roles is chosen through its review and
+	// recorded by the core, as a solution is, and reaches the navigation of a
+	// person holding one of its roles, and of no other member of the
+	// organization; its page's audience answers the same way. Redelivered
+	// without roles, it leaves the role holder's navigation. The host's own
+	// module install path refuses it by name, and the core refuses a module
+	// page any standing authority but none.
 	t.Run("a module page's roles decide who is listed for it", func(t *testing.T) {
 		const module = "conformance-module-page"
 		note := wireScope(module+".note", "read")
 		page := &solutionhost.Frontend{Title: "Module page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload}
-		withRoles := conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{note}, page: page,
+		withRoles := conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{note}, page: page, installationRole: domain.NoInstallationRole,
 			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {note}, "viewer": {note}}}
 		deliverModule(t, ctx, conn, signer, withRoles)
-		require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, module))
-		installations, err := core.Installations(ctx, alex, fixtureOrganization)
+		// The host's module install path is for modules a closure reaches,
+		// which hold no roles; a module page is installed through its review.
+		_, _, err := svc.InstallFixtureTarget(ctx, conformanceAlex, fixtureOrganization, module, "", conformanceAlex)
+		require.ErrorContains(t, err, "installed through its review")
+		inst, err := installConformanceSolution(ctx, svc, core, module, "", conformanceAlex)
 		require.NoError(t, err)
-		var inst domain.Installation
-		for _, candidate := range installations {
-			if candidate.Target == module {
-				inst = candidate
-			}
-		}
-		require.Equal(t, domain.Active, inst.Status, "the module page is installed at Acme")
+		require.Equal(t, domain.Active, inst.Status, "the module page is installed at Acme, active at once: it declares no install step")
+		require.Equal(t, domain.NoInstallationRole, inst.AgentRole)
 		const nora, remi = "00000000-0000-7000-8000-0000000000b8", "00000000-0000-7000-8000-0000000000b2"
 		_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: "viewer", PersonID: nora})
 		require.NoError(t, err)
@@ -1130,7 +1132,7 @@ func runHostInterfaceFixture(t *testing.T) {
 			}
 			return false
 		}
-		require.True(t, listed(nora), "the viewer's navigation lists the module page")
+		require.True(t, listed(nora), "the viewer's navigation lists the module page, from the core's one record")
 		require.False(t, listed(remi), "another member's does not")
 		issue := func(token string) error {
 			_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(signIn(token), &authorityv1.IssueRequest{
@@ -1139,21 +1141,25 @@ func runHostInterfaceFixture(t *testing.T) {
 		}
 		require.NoError(t, issue("fixture-no-roles"), "the viewer is issued a capability at the page's audience")
 		require.Equal(t, codes.PermissionDenied, status.Code(issue("fixture-remi")), "another member is not")
+		sealed, err := svc.WorkContextAudienceInstallation(ctx, fixtureOrganization, module)
+		require.NoError(t, err)
+		require.Equal(t, inst.ID, sealed, "the host's seal resolves the module page's installation from the core's record")
 
 		withoutRoles := withRoles
 		withoutRoles.roles, withoutRoles.generation = nil, 2
 		deliverModule(t, ctx, conn, signer, withoutRoles)
 		require.False(t, listed(nora), "a module page without roles is listed by no role")
 
-		// A module page's signed installation_role selects its standing role,
-		// as the core selects a solution's: neither a role name nor a role id
-		// overrides it.
+		// A module page holds no standing authority: a declaration selecting
+		// one of its roles is refused by the core at install, whatever the
+		// caller names, and the host's module install path refuses the module
+		// page before any role is read.
 		const selected = "conformance-module-page-selected"
 		selectedNote := wireScope(selected+".note", "read")
 		deliverModule(t, ctx, conn, signer, conformanceModule{alias: selected, ceilings: []*authorityv1.WorkScopeV1{selectedNote}, page: page, installationRole: "viewer",
 			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {selectedNote}, "viewer": {selectedNote}}})
-		_, _, err = svc.InstallFixtureTarget(ctx, conformanceAlex, fixtureOrganization, selected, "installer", conformanceAlex)
-		require.ErrorContains(t, err, `role "installer" cannot override `+selected+`'s installation_role declaration`)
+		_, err = installConformanceSolution(ctx, svc, core, selected, "", conformanceAlex)
+		require.ErrorContains(t, err, "holds no standing authority")
 		available, _, err := svc.ListAvailableSolutions(ctx, fixtureOrganization, "", 500)
 		require.NoError(t, err)
 		var target *business.AvailableSolutionTarget
@@ -1163,45 +1169,10 @@ func runHostInterfaceFixture(t *testing.T) {
 			}
 		}
 		require.NotNil(t, target)
-		roles, err := svc.ListRoles(ctx, &gen.ListRolesRequest{OrgId: fixtureOrganization})
-		require.NoError(t, err)
-		var catalogue string
-		for _, role := range roles.GetRoles() {
-			if role.GetName() == "Use org-directory" {
-				catalogue = role.GetId()
-			}
-		}
-		require.NotEmpty(t, catalogue)
 		_, err = svc.InstallSolution(ctx, conformanceAlex, &business.InstallSolutionParams{OrgID: fixtureOrganization, TargetID: target.TargetID,
 			AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, DisplayName: selected, RootScopeLabel: selected,
-			RoleID: catalogue, OwnerPrincipalID: conformanceAlex})
-		require.ErrorContains(t, err, "cannot override "+selected+"'s installation_role declaration")
-		// The administrator's install with no role, as the module page review
-		// sends it: the signed installation_role selects the standing role.
-		installation, err := svc.InstallSolution(ctx, conformanceAlex, &business.InstallSolutionParams{OrgID: fixtureOrganization, TargetID: target.TargetID,
-			AgentIdentifier: target.ReleasePublisher + "/" + target.ReleaseName + ":" + target.ReleaseVersion, DisplayName: selected, RootScopeLabel: selected,
 			OwnerPrincipalID: conformanceAlex})
-		require.NoError(t, err, "an empty role installs a module page as its declared installation_role")
-		require.NoError(t, completeInstallStep(ctx, store, installation))
-		var standing []string
-		require.NoError(t, store.WithControlPlane(ctx, func(ctx context.Context) error {
-			rows, err := storetx.Tx(ctx).Query(ctx, `SELECT r.derived_from FROM public.scope_grants g JOIN public.roles r ON r.id = g.role_id
-				WHERE g.org_id = $1 AND g.subject_kind = 'principal' AND g.subject_id = $2`, fixtureOrganization, installation.GetAgentPrincipalId())
-			if err != nil {
-				return err
-			}
-			defer rows.Close()
-			for rows.Next() {
-				var from string
-				if err := rows.Scan(&from); err != nil {
-					return err
-				}
-				standing = append(standing, from)
-			}
-			return rows.Err()
-		}))
-		require.Equal(t, []string{"org=" + fixtureOrganization + ";solution=" + target.TargetID + ";role=viewer"}, standing,
-			"the agent's one standing grant is the declared viewer role")
+		require.ErrorContains(t, err, "installed through its review")
 	})
 
 	// Last, because the envelope it writes becomes every module's ceiling: a

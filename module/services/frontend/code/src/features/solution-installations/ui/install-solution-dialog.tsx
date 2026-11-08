@@ -111,7 +111,7 @@ export function InstallSolutionDialog({
 				{data && (
 					<div className="space-y-4 text-sm">
 						<DeclaredAccess
-							subject="solution"
+							subject={solution.kind === "module" ? "module" : "solution"}
 							installationRole={data.consent.installationRole}
 							offer={data.offer}
 						/>
@@ -171,8 +171,8 @@ export function InstallSolutionDialog({
 								onChange={(event) => setApproved(event.target.checked)}
 								disabled={isPending}
 							/>
-							I approve this {upgrade ? "release" : "target"} and the
-							required module access shown above.
+							I approve this {upgrade ? "release" : "target"} and the required
+							module access shown above.
 						</label>
 					</div>
 				)}

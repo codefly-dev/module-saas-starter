@@ -25,8 +25,8 @@ What accounts adds, and where:
 
 | Concern | Where |
 |---|---|
-| The core's records: modules, tombstones, solutions' installations, role grants, delegations, epochs, owner-aware revisions, consumed nonces | migration 56 (`authority_core_*`, control-plane relations) and `pkg/infra/postgres_authority_core.go` |
-| A module's installation is accounts' own record (`installations`, kind `module`): an administrator's install with consent, within the module envelope, retired by an uninstall or by a ceiling that no longer allows the organization. The core is configured with `HostInstallsModules`, so it installs no module itself and reads those records live, with what each consent allows: an installation whose consent allows no capability is not active for the core, and the bindings it allows (the module's grant within the envelope, intersected with the consent, as the native mint reads it) bound every issue through them (`Installation.Bindings`). The revision the core seals to is accounts' own revision, plus the core's raise when a redelivery narrows the module (`authority_core_module_revisions`), plus the committed envelope revision, so a narrowed consent and an envelope write each end what was issued before them | `pkg/infra/postgres_authority_core.go` (`moduleInstallations`), `pkg/business/authority_core_consent.go` |
+| The core's records: modules, tombstones, the installations of every role-gated target (a solution's, a module page's), each consent's approved declaration per generation (migration 68), role grants, delegations, epochs, owner-aware revisions, consumed nonces | migration 56 (`authority_core_*`, control-plane relations), migration 68 (`authority_core_approved_modules`) and `pkg/infra/postgres_authority_core.go` |
+| A module declaring no roles is installed by this host's own consent and its installation is accounts' own record (`installations`, kind `module`): an administrator's install, or a closure's, within the module envelope, retired by an uninstall or by a ceiling that no longer allows the organization. The core is configured with `HostInstallsModules`, so it installs no such module itself and reads those records live, with what each consent allows: an installation whose consent allows no capability is not active for the core, and the bindings it allows (the module's grant within the envelope, intersected with the consent, as the native mint reads it) bound every issue through them (`Installation.Bindings`). The revision the core seals to is accounts' own revision, plus the core's raise when a redelivery narrows the module (`authority_core_module_revisions`), plus the committed envelope revision, so a narrowed consent and an envelope write each end what was issued before them | `pkg/infra/postgres_authority_core.go` (`moduleInstallations`), `pkg/business/authority_core_consent.go` |
 | Identity, read only: organizations, memberships, teams, and the organization roles a member holds, from accounts' RBAC (role assignments and live scope grants, directly or through a team, and the membership's administrator role) | `pkg/infra/postgres_authority_core.go` (`Member`, `OrgRole`) |
 | Revocation levers shared with the product: the organization's authorization revision is accounts' own, and a person's epoch includes their principal revisions | same file |
 | Who the caller is: the session the perimeter verified (`signedInPerson`), or a workload credential the execution reviewer reviewed (`workload`), bound to the organization the module envelope pins the module to | `pkg/adapters/host_interface.go` |
@@ -94,7 +94,9 @@ behavior-preserving rollback.
 - **installation**: `Current` (a module reads its own active installation in
   the tenant of a current parent addressed to it, proving itself by its
   workload credential), `Review`, `Install` (consent bound to the reviewed target,
-  generation, revision, offer digest and a fresh operation id), `GrantRole`,
+  generation, revision, offer digest and a fresh operation id; on an active
+  installation a fresh approval of a newer offer is an upgrade in place, see
+  [the lifecycle](#one-lifecycle-for-every-role-gated-target)), `GrantRole`,
   `RevokeRole`, `ListRoleGrants`, `List`, `ListHeld` (a member's own
   navigation: each active installation of their organisation they hold a role
   on, granted to them or to a team of theirs, with those roles — the core reads
@@ -201,21 +203,81 @@ behavior-preserving rollback.
   moves first. The half that needs no network, one revision in `go.mod` and
   this document agreeing with the manifest, also runs with the `module/tools`
   tests in the module-package job.
-- Last recorded run: authority `dea37afac9ad` (its main on 2026-10-30, the
-  revision `go.mod` pins for all five authority libraries), from
-  `module/services/accounts/code`, on 2026-11-03:
+- Last recorded run: authority `f6b111350efc` (the head of its
+  installation-lifecycle branch on 2026-11-08, the revision `go.mod` pins for
+  all five authority libraries), from `module/services/accounts/code`, on
+  2026-11-08, with the codefly-started test store (`codefly` 0.1.238 on
+  `PATH`):
 
       GOWORK=off go test -count=1 -timeout 30m -run '^TestAccountsPassesTheHostInterfaceConformanceSuite$' -v ./pkg/adapters
 
-  passed 94 cases (the shared suite, the solution-principal target and the
+  passed 95 cases (the shared suite, the solution-principal target and the
   cases beyond the suite, as `go test -v` lists them one level under the
-  test), 294 subtests at every depth; failed 0; skipped 0; 74 s. The
-  admission-key case ("only the hop registers an admission key, published
-  apart from the Work Context keys") is among them, with the fixture's
-  `HopCredential`. The section below carries no red line from this run.
+  test), 304 subtests at every depth; failed 0; skipped 0; 78 s. "An
+  installation survives delivery" and "a module page is offered, reviewed and
+  installed like a solution" are among them. The harness seeds the two owned
+  solutions of the installation-resources case at the surface the suite
+  redelivers (the store they bind, their roles and owned scopes), so that
+  redelivery asks nothing new of their consent; a fixture module declaring
+  `installation_role: none` is installed holding none. The section below
+  carries no red line from this run.
 - The core's store contract (`authority-core/go/storetest`) runs against this
   Postgres store in `pkg/infra/postgres_authority_core_test.go`.
 - The core's own decisions are unit tested in `codefly-dev/authority`.
+
+## One lifecycle for every role-gated target
+
+A **target** is anything delivered with a paired declaration: a module or a
+solution. What the host installs by an administrator's review is any target
+the core offers (`decide.RoleGated`): a solution always, a module when it
+declares roles, a **module page**. Both walk one lifecycle here: `ListOffers`
+lists them; `ReviewSolutionInstall` reviews one (the core's `ReviewOffer`, with
+`roles_declared`, `page`, `closure` and `optional_edges`, and the host's walk of
+its supporting modules, which must name the modules the core's closure names);
+`InstallReviewedSolution` installs it through the core's `Install`, whose
+install step converges the closure (every supporting module installed or
+reused under its own consent) and, for a solution, runs its setup job; the
+record is the core's (`authority_core_installations`, with the principal the
+core gave it); roles are granted with `GrantRole`; health and entitlement are
+read from that one record. A module page declares no install endpoint, so it
+is active once its closure is converged, and it holds no standing authority
+(`installation_role: none`). A module declaring no roles is never offered or
+installed by an administrator: it is installed when a closure reaches it,
+holding none, as accounts' own record, and `InstallSolution` and the by-name
+install refuse a role-gated module by name. The frontend lists a module page
+beside the solutions from the one `ListOffers` read and installs it through
+the same review dialog; "Supporting module administration" lists exactly the
+modules the offers do not name.
+
+**Consent follows the release line.** The core records on each consent the
+generation and offer digest it approved and keeps the declaration approved
+per generation (`authority_core_approved_modules`). A redelivery whose
+reviewed surface asks nothing new re-converges the consent: the installation
+stays active, its approved generation advances, its revision moves, every
+grant is kept (grants of a role the new declaration drops end with the
+consent). A redelivery asking more leaves the installation on its consent,
+active and healthy, with `upgrade_available` on the installation read; its
+holders hold what the approved generation granted until an administrator
+reviews the target again and installs the reviewed release on the same
+installation (`InstallReviewedSolution` with a fresh review: the core's
+upgrade, its step converging the closure of the new review, its grants kept).
+`CanonicalSolutionSummaries` reads health from that record: active, its target
+still delivered under the consent's principal, and the consent naming a
+generation the delivered one stands on; the host compares no generation of
+its own. Migration 68 fills the approved generation and digest of every
+earlier consent from the host's own reviewed approval and writes the approved
+declaration under it from the current one, so nothing already approved reads
+as an update after the ledger moves; an older approval's difference surfaces
+as `upgrade_available` on the next delivery rather than being invented. The
+store-backed proof is `TestRedeliveryKeepsSolutionEntitled` (`pkg/infra`).
+
+Not yet: an upgrade's install step converges the closure and does not run the
+solution's setup job again (the durable job and its receiver are fenced to a
+pending attempt the row records, and an upgrade leaves the row active); a
+solution whose install endpoint must see every release is a follow-up on the
+job fences. The host's `WorkContextService` seal resolves a module page's
+installation from the core's record; the gateway's `/_browser` path, which
+issues through the core, was not exercised in a composed run for this change.
 
 ## Not yet
 
@@ -255,9 +317,10 @@ Source tests are not deployment qualification. The complete review form,
 dependency convergence, generated signed-carrier fields, SQL activation barrier
 and actual queue-to-receiver journey must be qualified together before delivery.
 
-- Accounts product `UninstallSolution` dispatches canonical solution records to
-  shared core `Uninstall`. It never removes supporting module installations.
-  Module uninstall remains the existing Accounts lifecycle, read live by core.
+- Accounts product `UninstallSolution` dispatches the core's records (a
+  solution's, a module page's) to shared core `Uninstall`. It never removes
+  supporting module installations. A supporting module's uninstall remains
+  the existing Accounts lifecycle, read live by core.
 - Existing fixture setup still records a solution twice: by the product's own records
   (`saas.accounts.v1.InstallationService`) and by the core; a fixture
   installation is performed in both. A module's is recorded once, in

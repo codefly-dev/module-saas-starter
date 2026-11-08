@@ -1,10 +1,15 @@
+import { createClient } from "@connectrpc/connect";
 import { useQuery } from "@tanstack/react-query";
+import { OfferService } from "@/gen/host/installation/v1/installation_pb";
 import {
 	type AvailableSolution,
 	InstallationStatus,
 	type OrganizationInstallation,
 } from "@/gen/saas/accounts/v1/installations_pb";
+import { apiTransport } from "@/lib/connect/transport";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
+
+const offers = createClient(OfferService, apiTransport);
 
 // The largest page each listing serves. Both listings are bounded per call, so
 // the page reads every page rather than showing the first and implying it is
@@ -14,7 +19,30 @@ const PAGE_SIZE = 500;
 export const solutionInstallationKeys = {
 	available: (orgId: string) => ["available-solutions", orgId] as const,
 	installed: (orgId: string) => ["solution-installations", orgId] as const,
+	offered: (orgId: string) => ["solution-offers", orgId] as const,
 };
+
+/**
+ * The targets this organization's administrator may choose, by route alias:
+ * the solutions and the module pages declaring roles, from the authority's
+ * one ListOffers read. A module not among them declares no roles: it is a
+ * supporting module, installed by a closure. One read answers every row, so
+ * nothing asks the authority per module.
+ */
+export function useOfferedTargets(orgId: string) {
+	return useQuery({
+		queryKey: solutionInstallationKeys.offered(orgId),
+		enabled: !!orgId,
+		retry: false,
+		refetchOnWindowFocus: false,
+		queryFn: async () =>
+			new Set(
+				(await offers.listOffers({ organizationId: orgId })).offers.map(
+					(offer) => offer.target,
+				),
+			),
+	});
+}
 
 /**
  * What this organization may install, from ListAvailableSolutions. Tenancy and

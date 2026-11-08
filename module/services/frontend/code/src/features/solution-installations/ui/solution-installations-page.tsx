@@ -49,7 +49,6 @@ import {
 	useLoadingPhase,
 } from "@/shared/ui";
 import {
-	agentIdentifierFor,
 	availableRows,
 	type FactView,
 	hostRefusal,
@@ -67,15 +66,14 @@ import {
 	useRevokeInstallationFromTeam,
 	useUninstallSolution,
 } from "../service/mutations";
-import { useAvailableSolutions, useInstallations } from "../service/queries";
+import {
+	useAvailableSolutions,
+	useInstallations,
+	useOfferedTargets,
+} from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
 import { InstallModuleDialog } from "./install-module-dialog";
-import { InstallModulePageDialog } from "./install-module-page-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
-import {
-	useRolesDeclaredFor,
-	useRolesDeclaredReview,
-} from "./when-roles-declared";
 
 /**
  * One fact. A gap reads as its label in muted italics with what it means on
@@ -136,20 +134,6 @@ export function SolutionInstallationsPage({
 	);
 }
 
-/** A module page's install: its release's agent and no agent role, which its declaration selects. */
-function moduleWithoutAgentRole(
-	target: AvailableSolution,
-): InstallSolutionValues {
-	return {
-		agentIdentifier: agentIdentifierFor(target),
-		displayName: "",
-		rootScopeLabel: "",
-		roleId: "",
-		allowedAudiences: "",
-		allowedScopes: "",
-	};
-}
-
 function SolutionInstallationsForOrganization({
 	orgId,
 	showModules,
@@ -167,33 +151,24 @@ function SolutionInstallationsForOrganization({
 	// This owner survives dismissal of the form and reports every host result.
 	const install = useInstallModule(orgId);
 	const combinedInstall = useInstallReviewedSolution(orgId);
+	// Which targets an administrator chooses is the authority's one answer
+	// (ListOffers): a solution always, a module when it declares roles — a
+	// module page. Solutions lists exactly those; supporting module
+	// administration lists the modules it does not. A module whose answer is
+	// not in yet is withheld, never shown as a supporting one, and a failed
+	// read is said.
+	const offered = useOfferedTargets(orgId);
+	const chosen = (target: AvailableSolution | undefined) =>
+		target !== undefined &&
+		(target.kind === "solution" ||
+			offered.data?.has(target.routeAlias) === true);
+	const listed = (target: AvailableSolution | undefined) =>
+		showModules
+			? target !== undefined && target.kind === "module" && !chosen(target)
+			: chosen(target);
 	// A target that declares roles installs through a review of them, as a
 	// solution does; a module that declares none keeps its agent-role form.
-	const {
-		declared: rolesDeclared,
-		error: rolesUnread,
-		retry: readRolesAgain,
-	} = useRolesDeclaredReview(installing?.routeAlias ?? "", installing?.kind);
-	// Solutions lists a module beside the solutions only when it declares
-	// roles — a module page — which is the authority's answer per module, read
-	// once here and shared with the install above. A module not yet answered
-	// is withheld, never shown as a supporting one; a failed read is said.
-	const {
-		declared: listedTargets,
-		error: pagesUnread,
-		retry: readPagesAgain,
-	} = useRolesDeclaredFor(
-		[
-			...(available.data ?? []),
-			...(installed.data ?? []).flatMap((row) =>
-				row.target ? [row.target] : [],
-			),
-		],
-		!showModules,
-	);
-	const listed = (target: AvailableSolution | undefined) =>
-		showModules ||
-		(target !== undefined && listedTargets[target.routeAlias] === true);
+	const installingChosen = installing ? chosen(installing) : false;
 	const installModule = (
 		target: AvailableSolution,
 		values: InstallSolutionValues,
@@ -230,7 +205,7 @@ function SolutionInstallationsForOrganization({
 					</h1>
 					<p className="text-muted-foreground">
 						{showModules
-							? "Supporting modules install and converge with the solutions that require them. This page is for administering one directly."
+							? "Supporting modules declare no roles: they install and converge with the solutions and module pages that reach them. This page is for administering one directly."
 							: "The solutions and module pages this organization can install. Choose one and review its access and supporting modules together; choose a team for each of its roles during review or in Set up, and access is granted only once setup is active."}
 					</p>
 					{!showModules && (
@@ -277,7 +252,7 @@ function SolutionInstallationsForOrganization({
 						listed={listed}
 						query={available}
 						installing={
-							(Boolean(installing) && rolesDeclared === undefined) ||
+							(Boolean(installing) && offered.isPending) ||
 							install.isPending ||
 							combinedInstall.isPending ||
 							!installed.isSuccess ||
@@ -303,40 +278,27 @@ function SolutionInstallationsForOrganization({
 				</>
 			)}
 
-			{!showModules && pagesUnread !== undefined && (
+			{offered.isError && (
 				<Banner
 					tone="danger"
-					title="The roles some modules declare could not be read"
+					title="The targets this organization may choose could not be read"
 				>
-					{hostRefusal(pagesUnread)} A module is listed here with the solutions
-					only once it is known to declare roles, so those modules are not
-					listed yet.{" "}
-					<Button size="sm" variant="outline" onClick={readPagesAgain}>
+					{hostRefusal(offered.error)} A module is listed with the solutions
+					only once the authority says it declares roles, so module pages are
+					not listed yet.{" "}
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={() => void offered.refetch()}
+					>
 						Try again
 					</Button>
 				</Banner>
 			)}
-
-			{/* A module's roles are read before its form opens: which form is
-			    the authority's answer, not the target's kind. */}
 			<DelayedLoading
-				active={
-					Boolean(installing) && rolesDeclared === undefined && !rolesUnread
-				}
-				label="Reading the roles this module declares"
+				active={Boolean(installing) && offered.isPending}
+				label="Reading which targets declare roles"
 			/>
-			{installing && rolesUnread !== undefined && (
-				<Banner
-					tone="danger"
-					title={`The roles ${installing.routeAlias} declares could not be read`}
-					onDismiss={() => setInstalling(null)}
-				>
-					{hostRefusal(rolesUnread)} Which install form applies depends on them.{" "}
-					<Button size="sm" variant="outline" onClick={readRolesAgain}>
-						Try again
-					</Button>
-				</Banner>
-			)}
 			{updating && (
 				<InstallSolutionDialog
 					orgId={orgId}
@@ -362,7 +324,7 @@ function SolutionInstallationsForOrganization({
 					onClose={() => setUpdating(null)}
 				/>
 			)}
-			{installing?.kind === "solution" && (
+			{installing && installingChosen && (
 				<InstallSolutionDialog
 					orgId={orgId}
 					solution={installing}
@@ -389,46 +351,27 @@ function SolutionInstallationsForOrganization({
 					onClose={() => setInstalling(null)}
 				/>
 			)}
-			{installing?.kind === "module" && rolesDeclared === true && (
-				<InstallModulePageDialog
-					orgId={orgId}
-					solution={installing}
-					isPending={install.isPending}
-					error={install.isError ? hostRefusal(install.error) : undefined}
-					onSubmit={() =>
-						// The module's signed installation role decides its standing
-						// access, so no agent role is sent; its roles are granted to
-						// teams in Set up, where the installation now lands.
-						installModule(installing, moduleWithoutAgentRole(installing), {
-							onSuccess: (installation) => {
-								toast.success(
-									`${installing.routeAlias} installation ${installation.status === InstallationStatus.ACTIVE ? "active" : "pending"}. Choose a team for each role in Set up.`,
-								);
-								setInstalling(null);
-								router.push(`/admin/solutions/${installation.id}`);
-							},
-						})
-					}
-					onClose={() => setInstalling(null)}
-				/>
-			)}
-			{installing?.kind === "module" && rolesDeclared === false && (
-				<InstallModuleDialog
-					orgId={orgId}
-					solution={installing}
-					isPending={install.isPending}
-					error={install.isError ? hostRefusal(install.error) : undefined}
-					onSubmit={(values) =>
-						installModule(installing, values, {
-							onSuccess: () => {
-								toast.success(`${installing.routeAlias} installation pending`);
-								setInstalling(null);
-							},
-						})
-					}
-					onClose={() => setInstalling(null)}
-				/>
-			)}
+			{installing?.kind === "module" &&
+				offered.isSuccess &&
+				!installingChosen && (
+					<InstallModuleDialog
+						orgId={orgId}
+						solution={installing}
+						isPending={install.isPending}
+						error={install.isError ? hostRefusal(install.error) : undefined}
+						onSubmit={(values) =>
+							installModule(installing, values, {
+								onSuccess: () => {
+									toast.success(
+										`${installing.routeAlias} installation pending`,
+									);
+									setInstalling(null);
+								},
+							})
+						}
+						onClose={() => setInstalling(null)}
+					/>
+				)}
 		</div>
 	);
 }
@@ -450,9 +393,7 @@ function AvailableSection({
 	const outcome = readOutcome(query.isError, query.error);
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the available modules and solutions");
-	const rows = withheld
-		? []
-		: availableRows((query.data ?? []).filter(listed));
+	const rows = withheld ? [] : availableRows((query.data ?? []).filter(listed));
 
 	return (
 		<Card>

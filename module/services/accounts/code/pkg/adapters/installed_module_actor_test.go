@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -378,4 +379,8 @@ func TestModuleActorSourceChildRetiresWithItsStanding(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func (s *solutionInstallations) WorkContextRoleGatedInstallation(ctx context.Context, orgID, target string) (string, error) {
+	return "", fmt.Errorf("%w: %s", business.ErrWorkContextNoAudienceInstallation, target)
 }

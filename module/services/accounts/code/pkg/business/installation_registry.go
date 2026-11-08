@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 
 	"google.golang.org/grpc/codes"
@@ -74,6 +75,13 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 	if declaration.Principal != "" && declaration.Principal != grant.Prefix {
 		return nil, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: the module principal differs from its paired declaration")
 	}
+	if decide.RoleGated(declaration) {
+		// A module declaring roles is a module page, chosen through its review
+		// (ReviewSolutionInstall, InstallReviewedSolution) and recorded by the
+		// core, exactly as a solution is; this path installs the modules a
+		// closure reaches, which hold no roles.
+		return nil, domain.Refuse("%s declares roles and is installed through its review, like a solution", target.RouteAlias)
+	}
 	if declaration.InstallationRole == domain.NoInstallationRole {
 		if params.RoleID != "" {
 			return nil, domain.Refuse("the delivered module declares no standing machine authority")
@@ -81,17 +89,6 @@ func (s *Service) prepareInstallation(ctx context.Context, params *InstallSoluti
 		params.NoStandingAuthority = true
 	} else if err := undeclaredInstallationRole(declaration); err != nil {
 		return nil, err
-	} else if declaration.InstallationRole != "" {
-		// A module page's signed installation_role selects its standing role,
-		// as the core selects a solution's: a role_id may only name it.
-		role, err := s.declaredInstallationRoleID(ctx, params.OrgID, target, declaration)
-		if err != nil {
-			return nil, err
-		}
-		if params.RoleID != "" && params.RoleID != role {
-			return nil, domain.Refuse("role %q cannot override %s's installation_role declaration", params.RoleID, declaration.Name)
-		}
-		params.RoleID = role
 	} else if params.RoleID == "" && undeclaredAuthorityIsNone(declaration) {
 		// A manifest that declares neither an installation role nor any role
 		// leaves this host nothing to select: with no caller role the module is

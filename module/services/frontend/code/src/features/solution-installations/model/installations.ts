@@ -238,7 +238,8 @@ export function installedRows(
 					health: healthView(health),
 					status: installation.status,
 					lifecycle: installationStatusView(installation.status),
-					failureReason: installation.setupMessage || installation.failureReason,
+					failureReason:
+						installation.setupMessage || installation.failureReason,
 					installedAt: installation.createdAt
 						? timestampDate(installation.createdAt).toISOString()
 						: undefined,

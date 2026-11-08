@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -55,48 +56,37 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		}
 		coOwners = existing.GetCoOwnerPrincipalIds()
 	}
-	// A solution that declares roles is installed holding one of its own: the
-	// role is the solution's word, never the organisation's catalogue's.
-	authority, _, err := s.deliveredTargetAuthority(ctx, available)
-	if err != nil {
-		return nil, false, err
-	}
+	// A target that declares roles (a solution, or a module page) is chosen
+	// through its review and recorded by the core: nothing here selects a role
+	// for it. What is installed by name is a module holding no roles, which
+	// the organisation's catalogue role names, or none at all.
 	var roleID string
 	declaration, err := s.moduleInstallationDeclaration(ctx, available)
 	if err != nil {
 		return nil, false, err
 	}
+	if decide.RoleGated(declaration) {
+		return nil, false, domain.Refuse("%s declares roles and is installed through its review, like a solution", available.RouteAlias)
+	}
 	if role == domain.NoInstallationRole {
 		return nil, false, domain.Refuse("none is a declaration marker, not an installation role input")
 	}
-	if declaration.InstallationRole == domain.NoInstallationRole {
+	switch {
+	case declaration.InstallationRole == domain.NoInstallationRole:
 		if role != "" {
 			return nil, false, domain.Refuse("the delivered module declares no standing machine authority")
 		}
-	} else if undeclared := undeclaredInstallationRole(declaration); undeclared != nil {
-		return nil, false, undeclared
-	} else if role == "" && undeclaredAuthorityIsNone(declaration) {
+	case undeclaredInstallationRole(declaration) != nil:
+		return nil, false, undeclaredInstallationRole(declaration)
+	case role == "" && undeclaredAuthorityIsNone(declaration):
 		// Neither an installation role nor any role declared, and no caller
 		// role: installed holding none, the one rule every installer applies
 		// (supportingInstallationRole); roleID stays empty and the registry
 		// selects no standing authority.
-	} else if authority != nil {
-		// A module page's signed installation_role selects its standing role
-		// as the core selects a solution's.
-		if declaration.InstallationRole != "" {
-			if role != "" && role != declaration.InstallationRole {
-				return nil, false, domain.Refuse("role %q cannot override %s's installation_role declaration", role, declaration.Name)
-			}
-			role = declaration.InstallationRole
+	default:
+		if roleID, err = s.organizationRoleNamed(ctx, orgID, role); err != nil {
+			return nil, false, err
 		}
-		roleID, err = s.solutionRoleID(ctx, orgID, available.TargetID, available.RouteAlias, authority, role)
-	} else if declaration.InstallationRole != "" {
-		return nil, false, declarationDiverged(declaration)
-	} else {
-		roleID, err = s.organizationRoleNamed(ctx, orgID, role)
-	}
-	if err != nil {
-		return nil, false, err
 	}
 	installation, err = s.InstallSolution(ctx, actorID, &InstallSolutionParams{
 		Approval:            approval,
@@ -149,26 +139,6 @@ func undeclaredInstallationRole(m domain.Module) error {
 		return nil
 	}
 	return domain.Missing("role %q is not one %s declares", m.InstallationRole, m.Name)
-}
-
-// declarationDiverged is why a module whose paired declaration names an
-// installation role cannot be installed while this host reads no role
-// declaration for it: the two deliveries disagree until the next pass.
-func declarationDiverged(m domain.Module) error {
-	return domain.NotNow("INSTALLATION_DELIVERY_CHANGED: module %q declares installation role %q and this host reads no role declaration for it", m.Name, m.InstallationRole)
-}
-
-// declaredInstallationRoleID is the id of the standing role m's signed
-// installation_role selects at orgID's installation of target.
-func (s *Service) declaredInstallationRoleID(ctx context.Context, orgID string, target *AvailableSolutionTarget, m domain.Module) (string, error) {
-	authority, _, err := s.deliveredTargetAuthority(ctx, target)
-	if err != nil {
-		return "", err
-	}
-	if authority == nil {
-		return "", declarationDiverged(m)
-	}
-	return s.solutionRoleID(ctx, orgID, target.TargetID, target.RouteAlias, authority, m.InstallationRole)
 }
 
 // availableTargetNamed is the organisation's catalogue entry whose route alias

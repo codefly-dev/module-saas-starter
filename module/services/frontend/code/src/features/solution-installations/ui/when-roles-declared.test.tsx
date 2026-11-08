@@ -47,10 +47,11 @@ describe("WhenRolesDeclared", () => {
 		expect(reviewOffer).not.toHaveBeenCalled();
 	});
 
-	// A module page's offer names its roles.
-	it("shows a module's children once its offer names roles", async () => {
+	// A module page's offer says it declares roles.
+	it("shows a module's children once its offer says it declares roles", async () => {
 		reviewOffer.mockResolvedValue(
 			create(ReviewedOfferSchema, {
+				rolesDeclared: true,
 				roles: [
 					create(OfferRoleSchema, { name: "installer" }),
 					create(OfferRoleSchema, { name: "viewer" }),

@@ -1086,13 +1086,18 @@ Migration 57 drops the former witness's local relations (`policy_log_commits`,
 
 ## The authority core's installations
 
-The authority core (migration 56) keeps the installations of solutions in
-`authority_core_installations`. A module's installation is not there: it is
-accounts' own `installations` row of kind `module`, an administrator's install
-with consent, within the module envelope, revoked by an uninstall or by a
-ceiling that no longer allows the organization, all in accounts' own
-transactions. The core reads those rows live as its installations and installs
-no module itself. Its one write to a module's installation, raising its
+The authority core (migration 56) keeps every installation it decides in
+`authority_core_installations`: a solution's, and a module page's (a module
+declaring roles, chosen through its review like a solution; its row carries the
+principal the core gave it, which a module's own record never has). Each
+consent's approved declaration is kept per module and generation in
+`authority_core_approved_modules` (migration 68), from which the core decides
+what a holder holds while a redelivery asks more than the consent approved.
+A module declaring no roles is not there: it is accounts' own `installations`
+row of kind `module`, an administrator's install with consent, within the
+module envelope, revoked by an uninstall or by a ceiling that no longer allows
+the organization, all in accounts' own transactions. The core reads those rows
+live as its installations and installs no such module itself. Its one write to a module's installation, raising its
 revision when a redelivery narrows the module, is kept beside the row in
 `authority_core_module_revisions`, because `installations.revision` is
 lifecycle-owned. The revision the core reads also adds the committed

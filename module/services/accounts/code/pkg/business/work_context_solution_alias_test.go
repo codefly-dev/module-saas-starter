@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -59,4 +60,8 @@ func TestADeliveredSolutionAliasResolvesToItsOwnInstallation(t *testing.T) {
 	installation, err = svc.WorkContextAudienceInstallation(context.Background(), org, "records")
 	require.NoError(t, err)
 	require.Equal(t, org+"/"+ModulePrincipalID("records"), installation, "a module is installed by composition")
+}
+
+func (s solutionInstallationSeals) WorkContextRoleGatedInstallation(ctx context.Context, orgID, target string) (string, error) {
+	return "", fmt.Errorf("%w: %s", ErrWorkContextNoAudienceInstallation, target)
 }

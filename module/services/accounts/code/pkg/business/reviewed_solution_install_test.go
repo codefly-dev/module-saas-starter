@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -364,4 +365,23 @@ func TestCombinedReviewUsesExactTargetHistoryAcrossPages(t *testing.T) {
 	host.historyErr = errors.New("history unavailable")
 	_, err = s.ReviewSolutionInstall(context.Background(), caller, caller.Organization, target)
 	require.ErrorContains(t, err, "history unavailable")
+}
+
+// The core computes the closure of a target (ReviewedOffer.Closure); the
+// host's walker is what the review installs by. On the fixtures the two name
+// the same supporting modules, and a disagreement is named rather than hidden.
+func TestReviewClosureAgreesWithTheCore(t *testing.T) {
+	s, _, _, caller, _ := reviewedInstallFixture(t, true)
+	core, err := s.AuthorityCore()
+	require.NoError(t, err)
+	offer, err := core.ReviewOffer(context.Background(), caller, caller.Organization, "example")
+	require.NoError(t, err)
+	require.Equal(t, []string{"records-route"}, offer.Closure, "the core names the required module by name; the optional edge is answered apart")
+	require.Equal(t, []string{"module:optional"}, offer.OptionalEdges)
+	dependencies, err := SolutionInstallationDependencies(offer)
+	require.NoError(t, err)
+	require.Empty(t, closureDisagreement(offer, dependencies))
+	// A walker that found one module more is a disagreement, said by name.
+	extra := append(slices.Clone(dependencies), SolutionDependency{Principal: "module:records", Required: true, Delivered: true})
+	require.Contains(t, closureDisagreement(offer, extra), "records-route")
 }

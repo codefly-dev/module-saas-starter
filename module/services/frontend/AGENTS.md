@@ -18,14 +18,22 @@ choose its routing kind. A shared module has one deployment, while each
 organisation installs it and grants team access independently through the same
 target-based entitlement projection. The organization administration destination
 is labelled "Solutions" and retains `/admin/solutions`, listing solutions and
-module pages: a module that declares roles (the authority's offer review
-answers, through `useRolesDeclaredFor`) is listed, installed and set up there
-exactly like a solution, and its setup page leads back there. A module the
-authority reads no roles of is a supporting module, installed by a solution's
-closure and administered at `/admin/modules`, which Solutions links to; a module
-whose roles could not be read is withheld and the failed read is shown, never
-passed off as a supporting one. Its empty state directs an administrator to the
-platform operator when nothing is available.
+module pages: every target the authority offers an administrator (its one
+`OfferService.ListOffers` read, `useOfferedTargets`) — a solution always, a
+module when it declares roles — is listed, reviewed, installed and set up there
+exactly like a solution, through `ReviewSolutionInstall` and
+`InstallReviewedSolution`, and its setup page leads back there. Nothing asks the
+authority per module: a module the offers do not name declares no roles and is a
+supporting module, installed by a closure and administered at `/admin/modules`,
+which Solutions links to and which lists exactly those; while the offers cannot
+be read, module pages are withheld and the failed read is shown, never passed
+off as supporting modules. The one place a single target's roles are read from
+its own review (`WhenRolesDeclared`, on `rolesDeclared`) is a member's own
+solution page, where no administrator read applies. An installed row whose
+host says `upgradeAvailable` shows "Update available" and an Update action: the
+same review dialog, installing the reviewed release on the existing installation,
+which stays active with its team grants. Its empty state directs an administrator
+to the platform operator when nothing is available.
 Each installed row links to `/admin/solutions/<installation id>`, that
 installation's setup page: what it is and whether it is READY (the host's
 `InstallationReadiness`, which is not the record's health), the unmet conditions

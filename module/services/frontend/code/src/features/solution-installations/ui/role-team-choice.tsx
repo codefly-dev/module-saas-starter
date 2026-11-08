@@ -96,8 +96,8 @@ export function RoleTeamChoice({
 		}
 	};
 	return (
-		<div
-			className="space-y-2 rounded border p-3"
+		<fieldset
+			className="min-w-0 space-y-2 rounded border p-3"
 			aria-label={`Team for ${role}`}
 		>
 			<h4 className="font-medium">{role}</h4>
@@ -150,6 +150,6 @@ export function RoleTeamChoice({
 					}
 				/>
 			)}
-		</div>
+		</fieldset>
 	);
 }

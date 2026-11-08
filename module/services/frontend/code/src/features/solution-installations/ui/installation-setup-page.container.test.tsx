@@ -129,6 +129,12 @@ function serve(installationsBody: JsonBodyType) {
 			HttpResponse.json(roles),
 		),
 		http.post(rpc("TeamService", "ListTeams"), () => HttpResponse.json(teams)),
+		// The authority offers nothing an administrator chooses unless a test
+		// says so: a module here is a supporting one.
+		http.post(
+			"http://localhost:3000/host.installation.v1.OfferService/ListOffers",
+			() => HttpResponse.json({ offers: [] }),
+		),
 		// The shared Setup UI's read; a test about it answers it itself.
 		http.post(
 			"http://localhost:3000/host.installation.v1.OfferService/ReviewOffer",
@@ -499,6 +505,12 @@ it("sets up a module page that declares roles through Setup's role grant form", 
 		],
 	});
 	server.use(
+		// The authority offers the module page: it declares roles.
+		http.post(
+			"http://localhost:3000/host.installation.v1.OfferService/ListOffers",
+			() =>
+				HttpResponse.json({ offers: [{ target: "suite", generation: "3" }] }),
+		),
 		http.post(
 			"http://localhost:3000/host.installation.v1.OfferService/ReviewOffer",
 			() =>
