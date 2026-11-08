@@ -32,6 +32,10 @@ type SolutionInstallationPlan struct {
 	SetupJobID     string
 	Dependencies   []ModuleInstallationPrerequisite
 	Review         *gen.ReviewedSolutionInstall
+	// Access is the access an administrator's install applies once active;
+	// nil for an install that assigns none (a fixture's, the host
+	// interface's, an upgrade, which keeps the grants that stand).
+	Access *InstallationAccess `json:",omitempty"`
 }
 
 type solutionPlanContextKey struct{}

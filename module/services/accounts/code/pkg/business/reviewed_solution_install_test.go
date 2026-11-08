@@ -115,21 +115,21 @@ func TestReviewedSolutionAPIKeepsOriginalApprovalAcrossPendingAndActiveReplay(t 
 		}
 		return nil
 	})
-	pending, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	pending, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 	require.ErrorContains(t, err, "receiver has not acknowledged")
 	require.Equal(t, domain.Pending, pending.Status)
 	require.True(t, proto.Equal(review, host.plan.Review))
 	changed := proto.Clone(review).(*gen.ReviewedSolutionInstall)
 	changed.DeliveryDigest = "another-review"
-	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, changed)
+	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, changed, InstallAccess{})
 	require.ErrorContains(t, err, "different original review")
 	acknowledged = true
-	active, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	active, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 	require.NoError(t, err)
 	require.Equal(t, domain.Active, active.Status)
 	require.Equal(t, pending.Consent, active.Consent)
 	require.Equal(t, pending.Revision, active.Revision)
-	replayed, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	replayed, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 	require.NoError(t, err)
 	require.Equal(t, active, replayed)
 }
@@ -172,7 +172,7 @@ func TestReviewedSolutionAPIRefusesTamperingOrStaleDeliveryBeforeAnyStep(t *test
 			}
 			calls := 0
 			s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
-			_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+			_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 			require.Error(t, err)
 			require.Zero(t, calls)
 		})
@@ -221,7 +221,7 @@ func TestAReachedModulePageIsNoSupportingModule(t *testing.T) {
 			}
 			calls := 0
 			s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
-			inst, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+			inst, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 			require.NoError(t, err)
 			require.Equal(t, domain.Active, inst.Status)
 			require.Equal(t, 1, calls)
@@ -261,7 +261,7 @@ func TestReviewedSolutionInstallsAnUndeclaredRolelessModuleHoldingNoAuthority(t 
 	// The same review is what the install reconstructs: nothing changed.
 	calls := 0
 	s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
-	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 	require.NoError(t, err)
 	require.Equal(t, 1, calls)
 }
@@ -311,7 +311,7 @@ func TestAReviewedInstallRefusedByAnyModuleLeavesNothingBehind(t *testing.T) {
 
 	calls := 0
 	s.SetAuthorityInstallStep(func(context.Context, domain.Installation) error { calls++; return nil })
-	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 	require.ErrorContains(t, err, "acme.example/records:")
 	require.Zero(t, calls, "the step that installs the closure ran")
 	core, err := s.AuthorityCore()
@@ -322,7 +322,7 @@ func TestAReviewedInstallRefusedByAnyModuleLeavesNothingBehind(t *testing.T) {
 
 	// Once the projection names it, the same review installs.
 	host.targets[1].ReleaseVersion = "1.0.0"
-	inst, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review)
+	inst, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, review, InstallAccess{})
 	require.NoError(t, err)
 	require.Equal(t, domain.Active, inst.Status)
 	require.Equal(t, 1, calls)
@@ -340,19 +340,19 @@ func TestFreshReviewedConsentSupersedesPendingWithoutReusingOldAttempt(t *testin
 	})
 	first, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
 	require.NoError(t, err)
-	old, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, first)
+	old, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, first, InstallAccess{})
 	require.ErrorContains(t, err, "awaiting setup")
 	fresh, err := s.ReviewSolutionInstall(ctx, caller, caller.Organization, target)
 	require.NoError(t, err)
 	require.NotEqual(t, first.Approval.OperationId, fresh.Approval.OperationId)
 	require.Equal(t, old.Revision, fresh.Approval.ExpectedRevision)
-	next, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, fresh)
+	next, err := s.InstallReviewedSolution(ctx, caller, caller.Organization, fresh, InstallAccess{})
 	require.ErrorContains(t, err, "awaiting setup")
 	require.Equal(t, old.ID, next.ID)
 	require.Greater(t, next.Revision, old.Revision)
 	require.NotEqual(t, old.Consent, next.Consent)
 	require.Equal(t, fresh.Approval.OperationId, host.plan.Receipt.OperationID)
-	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, first)
+	_, err = s.InstallReviewedSolution(ctx, caller, caller.Organization, first, InstallAccess{})
 	require.Error(t, err, "old approval cannot acknowledge the superseding attempt")
 }
 

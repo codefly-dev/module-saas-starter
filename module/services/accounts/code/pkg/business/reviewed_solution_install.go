@@ -244,17 +244,36 @@ func (s *Service) ReviewCurrent(ctx context.Context, review *gen.ReviewedSolutio
 // InstallReviewedSolution preserves the entire original review on the canonical
 // pending row before any module work. Core authorizes each continuation, while
 // the existing module installer records each separate module consent.
-func (s *Service) InstallReviewedSolution(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall) (domain.Installation, error) {
-	return s.installReviewedSolution(ctx, caller, org, review, "", "")
+//
+// It is an administrator's install, and it assigns access: each role the
+// target declares goes to the team access names for it, or else to the
+// organization's team named `<target>-<role>`, created when absent
+// (resolveInstallationAccess). The assignment is recorded on the plan, and
+// once the installation is active, by this call or by the resumed attempt
+// that activates it, the installer joins the teams of the roles they took and
+// every role is granted to its team. An upgrade of an active installation
+// assigns nothing: its grants and teams stand.
+func (s *Service) InstallReviewedSolution(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, access InstallAccess) (domain.Installation, error) {
+	return s.installReviewedSolution(ctx, caller, org, review, reviewedInstall{assignAccess: true, access: access})
 }
 
 // InstallReviewedSolutionAs installs a review made by ReviewSolutionInstallAs
-// with the role it was made with; resuming it names the same role.
+// with the role it was made with; resuming it names the same role. It
+// assigns no access: its caller grants the roles it declares.
 func (s *Service) InstallReviewedSolutionAs(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, role string) (domain.Installation, error) {
-	return s.installReviewedSolution(ctx, caller, org, review, role, "")
+	return s.installReviewedSolution(ctx, caller, org, review, reviewedInstall{role: role})
 }
 
-func (s *Service) installReviewedSolution(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, requestedRole, requestedOwner string) (domain.Installation, error) {
+// reviewedInstall is what an install asks beside its review: the machine role
+// and owner it requests, and whether, and to which teams, it assigns access.
+type reviewedInstall struct {
+	role, owner  string
+	assignAccess bool
+	access       InstallAccess
+}
+
+func (s *Service) installReviewedSolution(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, request reviewedInstall) (domain.Installation, error) {
+	requestedRole, requestedOwner := request.role, request.owner
 	if review == nil || review.OrgId != org || review.ActorId != caller.ID || review.Approval == nil {
 		return domain.Installation{}, domain.Refuse("the installation review belongs to another actor or organization")
 	}
@@ -266,10 +285,12 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 	if err != nil {
 		return domain.Installation{}, err
 	}
+	upgrade := false
 	for _, inst := range all {
 		if inst.Target != review.Target || (inst.Status != domain.Pending && inst.Status != domain.Active) {
 			continue
 		}
+		upgrade = upgrade || inst.Status == domain.Active
 		if inst.Consent.OperationID != review.Approval.OperationId {
 			// A fresh review must pass reconstruction and core's revision
 			// fence below: on a pending attempt it supersedes it; on an
@@ -305,12 +326,25 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 	if err := s.checkReviewedModulesInstallable(ctx, org, review); err != nil {
 		return domain.Installation{}, err
 	}
+	if request.assignAccess && !upgrade {
+		target, err := core.Composed(ctx, review.Target)
+		if err != nil {
+			return domain.Installation{}, err
+		}
+		if plan.Access, err = s.resolveInstallationAccess(ctx, caller, org, target, request.access); err != nil {
+			return domain.Installation{}, err
+		}
+	}
 	ctx = WithSolutionInstallationPlan(ctx, plan)
 	step, err := s.installStepFor(ctx, core, review.Target)
 	if err != nil {
 		return domain.Installation{}, err
 	}
-	return core.Install(ctx, caller, org, review.Target, requestedRole, requestedOwner, &plan.Approval, step)
+	inst, err := core.Install(ctx, caller, org, review.Target, requestedRole, requestedOwner, &plan.Approval, step)
+	if err != nil {
+		return inst, err
+	}
+	return inst, s.applyInstallationAccess(ctx, caller, inst, plan.Access)
 }
 
 // installStepFor is the install step the core runs for target: one that
@@ -546,7 +580,7 @@ func (s *Service) InstallAuthoritySolution(ctx context.Context, caller authority
 			return domain.Installation{}, domain.NotNow("module %q requires the combined installation review", dependency.Principal)
 		}
 	}
-	return s.installReviewedSolution(ctx, caller, org, review, role, owner)
+	return s.installReviewedSolution(ctx, caller, org, review, reviewedInstall{role: role, owner: owner})
 }
 
 // closureDisagreement compares the modules the core's closure names with the

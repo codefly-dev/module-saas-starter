@@ -1,6 +1,5 @@
 "use client";
 
-import { HostInstallationStatus } from "@codefly-dev/saas-sdk";
 import {
 	type SetupCondition,
 	type SetupSubject,
@@ -14,7 +13,6 @@ import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
 import { useOrgMembers } from "@/lib/hooks/use-organizations";
 import { Banner } from "@/shared/ui";
-import { InstallationTeamChoices } from "./installation-team-choices";
 
 /**
  * This host's mount of the one Setup UI, `<SolutionSetup>`, the same component
@@ -26,11 +24,9 @@ import { InstallationTeamChoices } from "./installation-team-choices";
 export function SolutionSetupPanel({
 	target,
 	conditions,
-	targetId,
 	installation,
 }: {
 	target: string;
-	targetId?: string;
 	installation?: Installation;
 	conditions?: readonly SetupCondition[];
 }) {
@@ -70,31 +66,6 @@ export function SolutionSetupPanel({
 			target={target}
 			conditions={conditions}
 			subjects={subjects}
-			renderAccessChoices={
-				targetId && installation
-					? (offer, clients, reload) => (
-							<InstallationTeamChoices
-								orgId={organizationId}
-								targetId={targetId}
-								offer={offer}
-								grant={
-									offer.installation?.id === installation.id &&
-									offer.installation.status === HostInstallationStatus.ACTIVE
-										? async (choice) => {
-												await clients.installations.grantRole({
-													organizationId,
-													installationId: installation.id,
-													teamId: choice.teamId,
-													role: choice.role,
-												});
-											}
-										: undefined
-								}
-								onApplied={reload}
-							/>
-						)
-					: undefined
-			}
 		/>
 	);
 }

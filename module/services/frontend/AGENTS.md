@@ -505,28 +505,20 @@ offer carries no consent digest for the host to check it against. On Setup, a
 module page's roles take teams through the shared role grant form; the staged
 team-per-role picker binds to a solution's consent digest and is not offered.
 
-The only installer configuration is a team for each role the solution's offer
-declares: an existing organization team, or one created inline through
-`TeamService.CreateTeam` with the editable suggested name `<solution>-<role>`.
-A name already taken is surfaced with an explicit "Use existing" choice; it is
-never reused or created twice, and no member is added. The choices are intent
-kept per person, organization and solution in session storage
-(`service/team-choices.ts`), so they survive a pending installation, a retry and
-a remount. Install marks them approved by its operation and binds them to the
-installation it returns; nothing is granted then. The Setup surface grants each
-one through the canonical `GrantRole` only when the authority's own offer reports
-that installation active — automatically once for choices approved by Install,
-otherwise by an explicit Apply — and drops each choice as its grant succeeds, so
-a retry never repeats one. Choices made against another declaration digest or
-generation need an explicit confirmation first. Assignments stay editable in the
-same Setup surface afterwards.
-
-**Open.** The authority core at the accounts pin decides whether a team belongs
-to the organization from its members, so a grant to a team created here with
-nobody in it is refused (`"<team>" is not a team of <organization>`). The
-refusal is shown and the choice retained for retry. The accounts store already
-answers `TeamExists` from the team directory; the decision moves when the
-authority core reads it and accounts takes that pin.
+**Install assigns access; the browser keeps no draft.** The host assigns it
+(`InstallReviewedSolution`'s `role_teams` and `installer_roles`): each declared
+role goes to the organization team `<solution>-<role>` (reused
+case-insensitively, created when absent) unless the administrator changes it,
+and is granted to it once setup is active; the installer joins the teams of the
+roles they keep ticked under "You will get" (all ticked by default), and no
+other. The dialog (`ui/installation-team-assignment.tsx`,
+`model/team-assignment.ts`) shows, per role, the team that will receive it —
+"(will be created)" or "existing team …" — and sends the teams that exist with
+the ticked roles; nothing must be picked. The host records the assignment with
+the installation, so a pending install that resumes, by retry or by the same
+review sent again, applies the same one; nothing in session storage and no
+client-side grant loop. An update keeps its teams and grants and shows no
+assignment. Set up keeps its own grant form for every later change.
 
 The combined review describes Accounts `namespaces` as event publication and
 `external_namespaces` as eligibility for declared external events to reach the

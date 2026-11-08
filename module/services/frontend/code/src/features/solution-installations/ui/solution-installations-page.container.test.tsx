@@ -1705,7 +1705,9 @@ describe("installing a module: the form follows what the authority offers, not i
 			name: "Install",
 		}) as HTMLButtonElement;
 		expect(install.disabled).toBe(true);
-		fireEvent.click(within(dialog).getByRole("checkbox"));
+		fireEvent.click(
+			within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
+		);
 		await waitFor(() => expect(install.disabled).toBe(false));
 		fireEvent.click(install);
 
@@ -2183,7 +2185,7 @@ describe("an installation survives delivery: the host offers an update, and the 
 		);
 	});
 
-	it("offers no update while the installed release is the approved one", async () => {
+	it("offers no update while the release in place is the approved one", async () => {
 		serve({
 			availableBody: { solutions: [payroll] },
 			installationsBody: installedPayroll(false),

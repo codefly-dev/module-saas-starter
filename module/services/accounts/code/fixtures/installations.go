@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 
@@ -257,22 +256,12 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 			return false, fmt.Errorf("the authority core: %w", err)
 		}
 	}
-	granted, err := core.ListRoleGrants(ctx, caller, row.orgID, inst.ID)
-	if err != nil {
-		return false, fmt.Errorf("the authority core: %w", err)
-	}
 	grants := []authority.RoleRequest{{Organization: row.orgID, InstallationID: inst.ID, Role: domain.InstallerRole, PersonID: row.ownerID}}
 	for _, teamID := range row.allTeamIDs {
 		grants = append(grants, authority.RoleRequest{Organization: row.orgID, InstallationID: inst.ID, Role: row.declared.Role, TeamID: teamID})
 	}
-	for _, grant := range grants {
-		// The core journals every grant it writes, a repeated one too.
-		if slices.Contains(granted, domain.RoleGrant{InstallationID: grant.InstallationID, Role: grant.Role, PersonID: grant.PersonID, TeamID: grant.TeamID}) {
-			continue
-		}
-		if _, err := core.GrantRoleAsHost(ctx, grant); err != nil {
-			return false, fmt.Errorf("the authority core: grant %s: %w", grant.Role, err)
-		}
+	if err := i.service.GrantInstallationRoles(ctx, caller, grants); err != nil {
+		return false, fmt.Errorf("the authority core: %w", err)
 	}
 	return inst.Status == domain.Active, nil
 }

@@ -254,7 +254,8 @@ its supporting modules, which must name the modules the core's closure names);
 install step converges the closure (every supporting module installed or
 reused under its own consent) and, for a solution, runs its setup job; the
 record is the core's (`authority_core_installations`, with the principal the
-core gave it); roles are granted with `GrantRole`; health and entitlement are
+core gave it); roles are granted with `GrantRole`, first by the install itself
+(below); health and entitlement are
 read from that one record. A module page declares no install endpoint, so it
 is active once its closure is converged, and it holds no standing authority
 (`installation_role: none`). A module declaring no roles is never offered or
@@ -287,6 +288,28 @@ is installed in the organization. Optional edges are shown, never installed.
 including a module page reached through a binding and through an edge; the
 conformance harness installs a solution reaching a module page before and after
 the page is installed through its own review.
+
+**Install assigns access.** `InstallReviewedSolution` is an administrator's
+install and assigns who holds the target's declared roles, since access is
+only by grant: each role goes to the team `role_teams` names for it, which
+must be a team of the organization, or else to the organization's team named
+`<target>-<role>` (lower case, matched case-insensitively), created through
+`CreateTeam` when absent; the installing person joins the teams of the roles
+named in `installer_roles` and no other, and no other team's members change.
+Everything requested is checked before any team is created. The resolved
+assignment is recorded on the installation's plan
+(`SolutionInstallationPlan.Access`) before the core records the attempt, and is
+applied only once the installation is active, by the call that activates it:
+the install itself, the same review sent again, or `RetryInstallation`. Both
+halves are idempotent (a member already is not added again, a grant held is
+not granted or journalled again), so a resumed install applies the recorded
+assignment once, never the one a replay names. An upgrade of an active
+installation assigns nothing; its teams and grants stand. An uninstall ends the
+installation's grants and keeps the teams, which are the organization's. The
+fixture's installations and the host interface's `Install` assign none and
+grant through the same check-before-grant (`GrantInstallationRoles`). The
+store-backed proofs are the `testInstallAssignsAccess` cases of the
+conformance harness (`pkg/adapters/install_access_conformance_test.go`).
 
 **Check first, then resume.** `InstallReviewedSolution` holds every supporting
 module the review installs fresh to the predicates `InstallSolution` holds it

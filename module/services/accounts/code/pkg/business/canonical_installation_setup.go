@@ -62,7 +62,13 @@ func (s *Service) continueCanonicalSolution(ctx context.Context, core *authority
 	if err != nil {
 		return domain.Installation{}, err
 	}
-	return core.Install(ctx, caller, inst.Organization, plan.Target, plan.RequestedRole, plan.RequestedOwner, &plan.Approval, step)
+	// The access the attempt recorded is applied once it is active, whoever
+	// resumes it; a browser's choices since play no part.
+	inst, err = core.Install(ctx, caller, inst.Organization, plan.Target, plan.RequestedRole, plan.RequestedOwner, &plan.Approval, step)
+	if err != nil {
+		return inst, err
+	}
+	return inst, s.applyInstallationAccess(ctx, caller, inst, plan.Access)
 }
 
 func (s *Service) canonicalInstallationStep(ctx context.Context, inst domain.Installation) error {

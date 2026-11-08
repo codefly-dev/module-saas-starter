@@ -324,6 +324,23 @@ message ReviewSolutionInstallRequest {
 message InstallReviewedSolutionRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   ReviewedSolutionInstall review = 2 [(buf.validate.field).required = true];
+  // The team of the organization that receives each declared role once the
+  // installation is active, by role name. A role not named receives the
+  // organization's team named `<target>-<role>`, created when absent; empty
+  // means every role does. A resumed install applies the assignment its first
+  // attempt recorded, never this one.
+  map<string, string> role_teams = 3 [
+    (buf.validate.field).map.max_pairs = 64,
+    (buf.validate.field).map.keys = {string: {min_len: 1, max_len: 128}},
+    (buf.validate.field).map.values = {string: {uuid: true}}
+  ];
+  // The declared roles the installing person takes: they join the team of each
+  // once the installation is active, and no other. Empty takes none.
+  repeated string installer_roles = 4 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items = {string: {min_len: 1, max_len: 128}}
+  ];
 }
 
 service InstallationService {

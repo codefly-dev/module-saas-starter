@@ -326,16 +326,19 @@ function SolutionInstallationsForOrganization({
 							? hostRefusal(combinedInstall.error)
 							: undefined
 					}
-					onSubmit={(review) =>
-						combinedInstall.mutate(review, {
-							onSuccess: () => {
-								toast.success(
-									`${updating.routeAlias} updated. Its team access is kept.`,
-								);
-								setUpdating(null);
+					onSubmit={(review, access) =>
+						combinedInstall.mutate(
+							{ review, access },
+							{
+								onSuccess: () => {
+									toast.success(
+										`${updating.routeAlias} updated. Its team access is kept.`,
+									);
+									setUpdating(null);
+								},
+								onError: (error) => toast.error(hostRefusal(error)),
 							},
-							onError: (error) => toast.error(hostRefusal(error)),
-						})
+						)
 					}
 					onClose={() => setUpdating(null)}
 				/>
@@ -350,19 +353,22 @@ function SolutionInstallationsForOrganization({
 							? hostRefusal(combinedInstall.error)
 							: undefined
 					}
-					onSubmit={(review) =>
-						combinedInstall.mutate(review, {
-							onSuccess: (installation) => {
-								toast.success(
-									installation.status === InstallationStatus.ACTIVE
-										? "Setup active. Completing selected team access in Set up."
-										: "Setup is pending. Your selected team roles are retained.",
-								);
-								setInstalling(null);
-								router.push(`/admin/solutions/${installation.id}`);
+					onSubmit={(review, access) =>
+						combinedInstall.mutate(
+							{ review, access },
+							{
+								onSuccess: (installation) => {
+									toast.success(
+										installation.status === InstallationStatus.ACTIVE
+											? "Installed. Each role's team holds it now."
+											: "Setup is pending. Each role's team receives it once setup is active.",
+									);
+									setInstalling(null);
+									router.push(`/admin/solutions/${installation.id}`);
+								},
+								onError: (error) => toast.error(hostRefusal(error)),
 							},
-							onError: (error) => toast.error(hostRefusal(error)),
-						})
+						)
 					}
 					onClose={() => setInstalling(null)}
 				/>

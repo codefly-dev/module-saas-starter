@@ -152,7 +152,7 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 		review, err := h.review(t, alex, before)
 		require.NoError(t, err)
 		require.Equal(t, []string{support}, requiredPrincipals(review), "the review lists the roleless module and not the page")
-		inst, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review)
+		inst, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err)
 		require.Equal(t, domain.Active, inst.Status)
 		_, held := h.coreInstallation(t, alex, page)
@@ -165,7 +165,7 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 		require.NoError(t, err, "a module page installed through its review fails the review of a solution reaching it")
 		require.Equal(t, []string{support}, requiredPrincipals(review))
 		require.NotEmpty(t, review.GetModules()[0].GetReuseInstallationId(), "the roleless module the first solution installed is reused")
-		inst, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review)
+		inst, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.NoError(t, err)
 		require.Equal(t, domain.Active, inst.Status)
 	})
@@ -190,7 +190,7 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 		}
 		lost := errors.New("the store lost the connection")
 		h.faults.failOnce(targetOf(modules[2]), lost)
-		pending, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review)
+		pending, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.ErrorContains(t, err, lost.Error())
 		require.Equal(t, domain.Pending, pending.Status)
 		first := map[string]*gen.Installation{}
@@ -208,7 +208,7 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 		// The original operation's replay installs the third and fails on
 		// the fourth; RetryInstallation then finishes the same attempt.
 		h.faults.failOnce(targetOf(modules[3]), lost)
-		resumed, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review)
+		resumed, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		require.ErrorContains(t, err, lost.Error())
 		require.Equal(t, pending.ID, resumed.ID)
 		require.Equal(t, pending.Revision, resumed.Revision, "the replay is the same attempt")

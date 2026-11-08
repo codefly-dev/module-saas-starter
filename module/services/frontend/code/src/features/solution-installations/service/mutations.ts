@@ -1,11 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReviewedSolutionInstall } from "@/gen/saas/accounts/v1/installations_pb";
-import { useAuth } from "@/lib/auth";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 import { parseList } from "../model/installations";
 import type { InstallSolutionValues } from "../model/schemas";
+import type { InstallAccess } from "../model/team-assignment";
 import { solutionInstallationKeys } from "./queries";
-import { acknowledgeTeamChoices } from "./team-choices";
 
 /**
  * Installs one available target. The target is the immutable identity the
@@ -128,23 +127,32 @@ function invalidate(
 	]);
 }
 
-/** Submit the original server review, including each supporting consent. */
+/**
+ * Submit the original server review, including each supporting consent, and
+ * the access the install assigns; the host records both and applies the
+ * access once setup is active.
+ */
 export function useInstallReviewedSolution(orgId: string) {
 	const service = useInstallationService();
-	const { user } = useAuth();
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: (review: ReviewedSolutionInstall) =>
-			service.installReviewedSolution({ orgId, review }),
-		onSuccess: (installation, review) =>
-			acknowledgeTeamChoices(
-				queryClient,
-				user?.id ?? "",
+		mutationFn: ({
+			review,
+			access,
+		}: {
+			review: ReviewedSolutionInstall;
+			access: InstallAccess;
+		}) =>
+			service.installReviewedSolution({
 				orgId,
-				review.targetId,
-				review.approval?.operationId ?? "",
-				installation.id,
-			),
-		onSettled: () => invalidate(queryClient, orgId),
+				review,
+				roleTeams: access.roleTeams,
+				installerRoles: access.installerRoles,
+			}),
+		onSettled: () =>
+			Promise.all([
+				invalidate(queryClient, orgId),
+				queryClient.invalidateQueries({ queryKey: ["teams", orgId] }),
+			]),
 	});
 }

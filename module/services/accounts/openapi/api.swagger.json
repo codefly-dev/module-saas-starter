@@ -2530,11 +2530,25 @@
     },
     "v1InstallReviewedSolutionRequest": {
       "properties": {
+        "installerRoles": {
+          "description": "The declared roles the installing person takes: they join the team of each\nonce the installation is active, and no other. Empty takes none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "orgId": {
           "type": "string"
         },
         "review": {
           "$ref": "#/definitions/v1ReviewedSolutionInstall"
+        },
+        "roleTeams": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The team of the organization that receives each declared role once the\ninstallation is active, by role name. A role not named receives the\norganization's team named `<target>-<role>`, created when absent; empty\nmeans every role does. A resumed install applies the assignment its first\nattempt recorded, never this one.",
+          "type": "object"
         }
       },
       "type": "object"

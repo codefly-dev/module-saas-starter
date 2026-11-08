@@ -73,6 +73,8 @@ const offer = {
 	installationRole: "none",
 	approval: { ...approval, operationId: "" },
 };
+let roles: { name: string }[];
+let teams: { id: string; name: string }[];
 let requests: unknown[];
 let reviews: number;
 let mismatch: boolean;
@@ -81,6 +83,8 @@ let installed: boolean;
 let readOnlyRequests: string[];
 beforeEach(() => {
 	window.sessionStorage.clear();
+	roles = [];
+	teams = [];
 	requests = [];
 	reviews = 0;
 	mismatch = false;
@@ -90,7 +94,7 @@ beforeEach(() => {
 	setToken("example-session-token");
 	server.use(
 		http.post(rpc("TeamService", "ListTeams"), () =>
-			HttpResponse.json({ teams: [] }),
+			HttpResponse.json({ teams }),
 		),
 		http.post(rpc("InstallationService", "ListAvailableSolutions"), () =>
 			HttpResponse.json({
@@ -139,8 +143,8 @@ beforeEach(() => {
 				readOnlyRequests.push(request.headers.get("Authorization") ?? "");
 				return HttpResponse.json(
 					mismatch
-						? { ...offer, approval: { ...approval, digest: "changed" } }
-						: offer,
+						? { ...offer, roles, approval: { ...approval, digest: "changed" } }
+						: { ...offer, roles },
 				);
 			},
 		),
@@ -259,5 +263,67 @@ describe("combined reviewed installation", () => {
 		const dialog = await open();
 		await within(dialog).findByText(/Required module records/);
 		expect(requests).toEqual([]);
+	});
+	it('the install dialog shows "You will get" with every role ticked and untickable', async () => {
+		roles = [{ name: "installer" }, { name: "viewer" }];
+		teams = [{ id: "team-viewers", name: "Example-Solution-Viewer" }];
+		renderInApp(<Page />);
+		const dialog = await open();
+		const access = await within(dialog).findByRole("region", {
+			name: "Team access",
+		});
+		await within(access).findByText(/existing team Example-Solution-Viewer/);
+		expect(
+			within(access).getByText(
+				"You will get the ticked roles; others get access by joining a team, here or in Set up.",
+			),
+		).toBeTruthy();
+		const gets = within(access).getByRole("group", { name: "You will get" });
+		const installer = within(gets).getByRole("checkbox", { name: "installer" });
+		const viewer = within(gets).getByRole("checkbox", { name: "viewer" });
+		expect((installer as HTMLInputElement).checked).toBe(true);
+		expect((viewer as HTMLInputElement).checked).toBe(true);
+		expect(
+			within(access).getByText(
+				/example-solution-installer \(will be created\)/,
+			),
+		).toBeTruthy();
+		fireEvent.click(viewer);
+		expect((viewer as HTMLInputElement).checked).toBe(false);
+		expect((installer as HTMLInputElement).checked).toBe(true);
+		// Nothing is picked: approving is all Install waits on.
+		fireEvent.click(
+			within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
+		);
+		expect(
+			(
+				within(dialog).getByRole("button", {
+					name: "Install",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(false);
+	});
+	it("Install is one click", async () => {
+		roles = [{ name: "installer" }, { name: "viewer" }];
+		teams = [{ id: "team-viewers", name: "Example-Solution-Viewer" }];
+		renderInApp(<Page />);
+		const dialog = await open();
+		const access = await within(dialog).findByRole("region", {
+			name: "Team access",
+		});
+		await within(access).findByText(/existing team Example-Solution-Viewer/);
+		fireEvent.click(
+			within(access).getByRole("checkbox", { name: "installer" }),
+		);
+		fireEvent.click(
+			within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
+		);
+		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
+		await waitFor(() => expect(requests).toHaveLength(1));
+		expect(requests[0]).toMatchObject({
+			orgId: "org-1",
+			roleTeams: { viewer: "team-viewers" },
+			installerRoles: ["viewer"],
+		});
 	});
 });

@@ -1116,7 +1116,7 @@ func runHostInterfaceFixture(t *testing.T) {
 			require.NoError(t, err)
 			review, err := svc.ReviewSolutionInstall(ctx, alex, fixtureOrganization, resolved.TargetID)
 			require.NoError(t, err)
-			return svc.InstallReviewedSolution(ctx, alex, fixtureOrganization, review)
+			return svc.InstallReviewedSolution(ctx, alex, fixtureOrganization, review, business.InstallAccess{})
 		}
 		installed, err := install()
 		require.NoError(t, err)
@@ -1229,7 +1229,9 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.ErrorContains(t, err, "installed through its review")
 	})
 
-	testReviewedClosures(t, reviewedClosureHarness{ctx: ctx, conn: conn, signer: signer, svc: svc, store: store, faults: faults, core: core, pagePayload: pagePayload})
+	closures := reviewedClosureHarness{ctx: ctx, conn: conn, signer: signer, svc: svc, store: store, faults: faults, core: core, pagePayload: pagePayload}
+	testReviewedClosures(t, closures)
+	testInstallAssignsAccess(t, closures)
 
 	// Last, because the envelope it writes becomes every module's ceiling: a
 	// real envelope write that narrows a module's binding (the write

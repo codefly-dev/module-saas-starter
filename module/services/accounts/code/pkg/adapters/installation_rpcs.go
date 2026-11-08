@@ -52,7 +52,7 @@ func (s *InstallationServer) InstallReviewedSolution(ctx context.Context, req *g
 	if err := requireOrgAdmin(ctx, actor, req.OrgId); err != nil {
 		return nil, err
 	}
-	inst, err := service.InstallReviewedSolution(ctx, authority.Person{ID: actor, Organization: req.OrgId}, req.OrgId, req.Review)
+	inst, err := service.InstallReviewedSolution(ctx, authority.Person{ID: actor, Organization: req.OrgId}, req.OrgId, req.Review, business.InstallAccess{RoleTeams: req.RoleTeams, InstallerRoles: req.InstallerRoles})
 	if err != nil {
 		return nil, mapInstallationError(err)
 	}

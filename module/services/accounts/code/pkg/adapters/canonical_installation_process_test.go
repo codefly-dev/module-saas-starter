@@ -213,7 +213,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 			resultCh := make(chan result, 1)
 			go func() {
 				if !historical {
-					inst, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review)
+					inst, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review, business.InstallAccess{})
 					resultCh <- result{inst, err}
 					return
 				}
@@ -297,7 +297,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 				require.Equal(t, "succeeded", read.SetupState)
 				require.Contains(t, read.SetupMessage, "Continue")
 				require.Equal(t, gen.InstallationStatus_INSTALLATION_STATUS_PENDING, read.Status, "late ACK alone never activates")
-				resumed, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review)
+				resumed, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review, business.InstallAccess{})
 				require.NoError(t, err)
 				require.Equal(t, domain.Active, resumed.Status)
 				require.Equal(t, done.inst.Consent, resumed.Consent)
@@ -307,7 +307,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 				// worker nor a successful job impersonates the approving user.
 				recovered, _ := startCanonicalReceiver(t, binary, review.Approval.TargetId, listener.Addr().String(), "ack")
 				go func() {
-					inst, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review)
+					inst, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review, business.InstallAccess{})
 					resultCh <- result{inst, err}
 				}()
 				var retry canonicalProcessClaim
@@ -339,7 +339,7 @@ func TestCanonicalCombinedInstallQueueThroughRuntime(t *testing.T) {
 				require.Equal(t, done.inst.Revision, resumed.inst.Revision)
 				done = resumed
 			}
-			replayed, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review)
+			replayed, err := svc.InstallReviewedSolution(ctx, caller, fixtureOrganization, review, business.InstallAccess{})
 			require.NoError(t, err)
 			require.Equal(t, done.inst, replayed)
 			projection, err := api.InstallReviewedSolution(personContext, decoded)
