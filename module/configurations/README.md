@@ -18,6 +18,10 @@ refused, with the two row indices; rows are never unioned or deduplicated:
 - assignments: `(org, role, subject lookup kind, subject identity, scope)`, with
   separate email and agent-identifier lookup namespaces;
 - installations: `(org, target)`, regardless of owner, role or team differences.
+  A row names `org`, `target` and `owner`; `role` only where the target holds
+  one (a module declaring `installation_role: none`, or no role at all, is
+  installed holding none), and `teams` only beside a `role`, since a team is
+  granted that role.
 
 These keys retain the seed's exact spelling, without case folding or trimming.
 The same role name in another organization and distinct assignment subjects or

@@ -86,8 +86,12 @@ func TestWorkspaceInstallationsJoinTheFixture(t *testing.T) {
 	f.Users = append(f.Users, fixtureUser{Email: "omar@acme.test", Provider: "email", ProviderID: "fixture-omar"})
 	f.Organizations[0].Members = []fixtureOrgMember{{Email: "omar@acme.test", Role: "member"}}
 
+	// A row names a role where teams are to hold one; a target that holds
+	// none (a module declaring `installation_role: none`, or no role at all)
+	// is declared without one and installed holding none.
 	grants, err := readWorkspaceGrants(grantsReader(`installations:
   - {org: Acme Corp, target: notes, role: viewer, owner: remi@acme.test}
+  - {org: Acme Corp, target: records, owner: remi@acme.test}
 `, nil))
 	if err != nil {
 		t.Fatal(err)
@@ -95,14 +99,16 @@ func TestWorkspaceInstallationsJoinTheFixture(t *testing.T) {
 	if err := withWorkspaceGrants(f, grants); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.Installations) != 1 || f.Installations[0].Target != "notes" || f.Installations[0].Owner != "remi@acme.test" {
+	if len(f.Installations) != 2 || f.Installations[0].Target != "notes" || f.Installations[0].Owner != "remi@acme.test" ||
+		f.Installations[1].Target != "records" || f.Installations[1].Role != "" {
 		t.Fatalf("installations did not join the fixture: %+v", f.Installations)
 	}
 
 	for document, want := range map[string]string{
 		`installations: [{org: Acme Corp, target: notes, role: viewer, owner: omar@acme.test}]`: "only an administrator installs",
 		`installations: [{org: Globex, target: notes, role: viewer, owner: remi@acme.test}]`:    "only an administrator installs",
-		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test}]`:               "org, target, role and owner are required",
+		`installations: [{org: Acme Corp, target: notes, role: viewer}]`:                        "org, target and owner are required",
+		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, teams: [Ops]}]`: "a row naming teams names a role",
 	} {
 		grants, err := readWorkspaceGrants(grantsReader(document, nil))
 		if err != nil {

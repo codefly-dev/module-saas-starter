@@ -18,7 +18,11 @@ import (
 // installing, the target by the name the composition gives it, the role it
 // holds, and the administrator who installs it and is its owner of record. It
 // is the host interface's Install by name, performed by a fixture person, then
-// granted to each team named: the teams whose members hold its role.
+// granted to each team named: the teams whose members hold its role. The role
+// is left out for a target that holds none: a module declaring
+// `installation_role: none`, or one declaring neither an installation role
+// nor any role, is installed holding no standing authority, and a row naming
+// no role names no teams, since a team grant carries the role.
 type fixtureInstallation struct {
 	Org    string   `yaml:"org"`
 	Target string   `yaml:"target"`
@@ -32,15 +36,18 @@ func (i fixtureInstallation) describe() string {
 }
 
 // validateInstallations holds each declared installation to the fixture it is
-// declared in: every field named, and an owner the fixture makes an
-// administrator of the organisation, as an install requires. Refused here, a
-// typo is read at boot instead of as an install refused at every pass.
+// declared in: the organisation, target and owner named, a role wherever a
+// team is to hold one, and an owner the fixture makes an administrator of the
+// organisation, as an install requires. Refused here, a typo is read at boot
+// instead of as an install refused at every pass.
 func validateInstallations(f *fixtureFile) error {
 	indexes := make(map[[2]string]int, len(f.Installations))
 	for i, installation := range f.Installations {
-		if strings.TrimSpace(installation.Org) == "" || strings.TrimSpace(installation.Target) == "" ||
-			strings.TrimSpace(installation.Role) == "" || strings.TrimSpace(installation.Owner) == "" {
-			return fmt.Errorf("installation[%d]: org, target, role and owner are required", i)
+		if strings.TrimSpace(installation.Org) == "" || strings.TrimSpace(installation.Target) == "" || strings.TrimSpace(installation.Owner) == "" {
+			return fmt.Errorf("installation[%d]: org, target and owner are required", i)
+		}
+		if strings.TrimSpace(installation.Role) == "" && len(installation.Teams) > 0 {
+			return fmt.Errorf("installation[%d] (%s): teams are granted the installation's role, so a row naming teams names a role", i, installation.describe())
 		}
 		if !fixtureAdministers(f, installation.Org, installation.Owner) {
 			return fmt.Errorf("installation[%d] (%s): %s is not an owner or admin of %q in this fixture, and only an administrator installs",
