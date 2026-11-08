@@ -78,7 +78,10 @@ export function InstallationSetupPage({
 		row?.target?.routeAlias ?? "",
 		row?.target?.kind,
 	);
-	const supporting = rolesDeclared === false;
+	// Only a module the authority has answered "no roles" for is a supporting
+	// module; an unknown or still-loading row, and every solution, belongs to
+	// Solutions, which is also where the not-found state sends a person back.
+	const supporting = row?.target?.kind === "module" && rolesDeclared === false;
 
 	return (
 		<div className="space-y-6">

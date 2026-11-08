@@ -280,7 +280,9 @@ func TestAWrittenEnvelopeNarrowsTheManifest(t *testing.T) {
 // manifest asking for it is entered nowhere and reported nowhere.
 func TestTheHostsOwnPrincipalNeedsNoEnvelopeGrant(t *testing.T) {
 	other := &ModuleEnvelope{Revision: 1, Principals: map[string]ModuleEnvelopePrincipal{"elsewhere": {}}}
-	host := deliveredHost(t, writtenEnvelope{other}, ceilingReleaseKey, testManifest(t, nil))
+	// The host's manifest asks for a binding: were it not exempt, the missing
+	// entry would leave a withheld reason on its own row.
+	host := deliveredHost(t, writtenEnvelope{other}, ceilingReleaseKey, testManifest(t, map[string][]string{"invoke": {"profiles:read"}}))
 	host.service.hostModule = testModulePrefix
 	require.NoError(t, host.modulePrincipals.RunOnce(context.Background()))
 	require.Empty(t, host.service.ModulePrincipals())

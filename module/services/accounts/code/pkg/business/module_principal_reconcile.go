@@ -357,8 +357,12 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 			case allowed:
 				grant, omitted, err = deriveModulePrincipalGrant(prefix, entry, manifest, workloads)
 			case prefix == host:
-				// The host's own principal: exempt from the envelope, entered
-				// nowhere, reported nowhere.
+				// The host's own principal, with an envelope that does not name
+				// it: exempt from the envelope requirement, so entered nowhere
+				// and reported nowhere (an envelope that names it, or no
+				// envelope at all, still registers it above). A manifest that
+				// merely claims the host's prefix is a signed misdelivery and
+				// is dropped the same way.
 				continue
 			default:
 				withheld = append(withheld, ModulePrincipalOmission{
@@ -378,7 +382,19 @@ func (r *ModulePrincipalReconciler) RunOnce(ctx context.Context) error {
 		next.sources[id] = modulePrincipalSource{binding: manifest.Binding, generation: manifest.Generation}
 	}
 	refusals = append(refusals, next.oneWorkloadOnePrincipal()...)
-	next.withheld, next.authorityReasons = withheldModuleAuthority(manifests, next.registry, slices.Concat(refusals, withheld))
+	// The host's own manifest is exempt from the envelope and from the
+	// withheld report alike: with no entry of its own, every binding it asked
+	// would otherwise read as withheld on its own row.
+	asking := make([]*solutionhost.ModuleManifest, 0, len(manifests))
+	for _, manifest := range manifests {
+		if manifest.Authority != nil && manifest.Authority.Principal == host && envelope != nil {
+			if _, named := envelope.Principals[host]; !named {
+				continue
+			}
+		}
+		asking = append(asking, manifest)
+	}
+	next.withheld, next.authorityReasons = withheldModuleAuthority(asking, next.registry, slices.Concat(refusals, withheld))
 
 	r.publish(next)
 	return errors.Join(refusals...)
