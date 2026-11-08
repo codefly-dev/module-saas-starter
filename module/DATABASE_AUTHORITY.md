@@ -1091,7 +1091,8 @@ The authority core (migration 56) keeps every installation it decides in
 declaring roles, chosen through its review like a solution; its row carries the
 principal the core gave it, which a module's own record never has). Each
 consent's approved declaration is kept per module and generation in
-`authority_core_approved_modules` (migration 68), from which the core decides
+`authority_core_approved_modules` (migration 68), written once and never
+replaced, from which the core decides
 what a holder holds while a redelivery asks more than the consent approved.
 A module declaring no roles is not there: it is accounts' own `installations`
 row of kind `module`, an administrator's install with consent, within the

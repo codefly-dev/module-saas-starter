@@ -227,20 +227,23 @@ func (s *Service) WorkContextAudienceInstallation(ctx context.Context, orgID, au
 	// A module page (a module declaring roles) is chosen through its review
 	// and recorded by the core, like a solution: its installation is the
 	// core's record, never one of accounts' own. An audience the core does not
-	// compose is no module page; a core that cannot answer is an error, never
-	// a reason to resolve the audience as a module of accounts' own.
-	if core, err := s.AuthorityCore(); err == nil {
-		m, err := core.Composed(ctx, audience)
-		if code, ok := domain.CodeOf(err); err != nil && (!ok || code != domain.NotFound) {
-			return "", fmt.Errorf("resolve audience %s in the authority core: %w", audience, err)
+	// compose is no module page; a core that cannot answer, or is not built,
+	// is an error, never a reason to resolve the audience as a module of
+	// accounts' own.
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return "", fmt.Errorf("resolve audience %s in the authority core: %w", audience, err)
+	}
+	m, err := core.Composed(ctx, audience)
+	if code, ok := domain.CodeOf(err); err != nil && (!ok || code != domain.NotFound) {
+		return "", fmt.Errorf("resolve audience %s in the authority core: %w", audience, err)
+	}
+	if err == nil && decide.RoleGated(m) && m.Kind != domain.KindSolution {
+		store, err := s.sealStore()
+		if err != nil {
+			return "", err
 		}
-		if err == nil && decide.RoleGated(m) && m.Kind != domain.KindSolution {
-			store, err := s.sealStore()
-			if err != nil {
-				return "", err
-			}
-			return store.WorkContextRoleGatedInstallation(ctx, orgID, m.Name)
-		}
+		return store.WorkContextRoleGatedInstallation(ctx, orgID, m.Name)
 	}
 	live, err := s.liveModuleAuthority(ctx, ModulePrincipalID(audience), orgID, "")
 	if errors.Is(err, ErrModuleInstallationInactive) {

@@ -2,9 +2,13 @@ package business
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"testing"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/memstore"
+	"github.com/codefly-dev/core/workcontext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,6 +53,14 @@ func TestADeliveredSolutionAliasResolvesToItsOwnInstallation(t *testing.T) {
 	})
 	svc.SetModuleAuthorityReads(everyPrincipalInstalled{}, nil)
 	svc.SetWorkContextSealStore(solutionInstallationSeals{installed: map[string]string{"acme.test.pages": "0199a000-0000-7000-8000-0000000000a1"}})
+	// The authority core composes no module page here, so a module audience
+	// resolves to the module's own installation.
+	_, key, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	core, err := authority.New(memstore.New(), authority.Config{Issuer: "accounts.test", KeyID: "alias-test", Signer: key,
+		Keys: staticKeys{"alias-test": key.Public().(ed25519.PublicKey)}, Replay: workcontext.NewMemoryReplayStore(), HostInstallsModules: true})
+	require.NoError(t, err)
+	svc.SetAuthorityCoreForTest(core)
 
 	installation, err := svc.WorkContextAudienceInstallation(context.Background(), org, "pages")
 	require.NoError(t, err)
@@ -64,4 +76,16 @@ func TestADeliveredSolutionAliasResolvesToItsOwnInstallation(t *testing.T) {
 
 func (s solutionInstallationSeals) WorkContextRoleGatedInstallation(ctx context.Context, orgID, target string) (string, error) {
 	return "", fmt.Errorf("%w: %s", ErrWorkContextNoAudienceInstallation, target)
+}
+
+// A module audience is resolved in the authority core first, since a module
+// page's installation is the core's record. A host whose core is not built
+// cannot tell, so it refuses rather than resolve the audience as a module of
+// its own, which would seal a page's capability to the wrong installation.
+func TestAModuleAudienceIsNotResolvedWithoutTheAuthorityCore(t *testing.T) {
+	svc, err := NewService(&liveDeclarationsStore{})
+	require.NoError(t, err)
+	svc.SetModuleAuthorityReads(everyPrincipalInstalled{}, nil)
+	_, err = svc.WorkContextAudienceInstallation(context.Background(), "00000000-0000-7000-8000-0000000000c1", "records")
+	require.ErrorIs(t, err, ErrAuthorityCoreUnconfigured)
 }

@@ -587,20 +587,18 @@ func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installation
 }
 
 // installationToWire is an installation as the interface states it: the roles
-// its holders may hold, from the declaration its consent approved
-// (business.ApprovedDeclaration, the core's rule), and upgrade_available
+// its holders may hold, from the declaration that governs them
+// (authority.ApprovedDeclaration, the core's own rule), and upgrade_available
 // against the declaration delivered now. An installation whose approved
-// declaration is not kept lists no role: the core refuses its holders.
+// declaration the core refuses lists no role: the core refuses its holders.
 func installationToWire(core *authority.Service, ctx context.Context, i domain.Installation) *installationv1.Installation {
 	m, err := core.Composed(ctx, i.Target)
 	if err != nil {
 		m = domain.Module{}
 	}
-	approved := m
-	if service != nil {
-		if approved, err = service.ApprovedDeclaration(ctx, i, m); err != nil {
-			approved = domain.Module{}
-		}
+	approved, err := core.ApprovedDeclaration(ctx, i)
+	if err != nil {
+		approved = domain.Module{}
 	}
 	return installationWire(i, m, approved)
 }

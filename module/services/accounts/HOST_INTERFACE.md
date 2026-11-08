@@ -246,11 +246,13 @@ is active once its closure is converged, and it holds no standing authority
 installed by an administrator: it is installed when a closure reaches it,
 holding none, as accounts' own record, and `InstallSolution` and the by-name
 install refuse a role-gated module by name. A module installed by name
-before it declared roles is never carried over silently: when the host
-configures the core at boot and finds an active module installation of its
-own whose target is now role-gated, it refuses to start
-(`ErrUnreviewedModulePage`), naming the organization, target and
-installation of each, and the remedy (uninstall it, then install the target
+is never carried over silently into a role-gated one: a delivery that would
+make a module role-gated while an active installation of it made by name
+stands is refused before anything is recorded, as a delivery conflict naming
+each installation (`refuseRoleGatingByName`). One that predates that refusal
+never stops the host: at boot and on every delivery pass it is logged at
+error level, and the installation read states it as an unmet readiness
+condition an organization administrator clears (uninstall it, then install it
 through its review). The frontend lists a module page
 beside the solutions from the one `ListOffers` read and installs it through
 the same review dialog; "Supporting module administration" lists exactly the
@@ -265,8 +267,8 @@ grant is kept (grants of a role the new declaration drops end with the
 consent). A redelivery asking more leaves the installation on its consent,
 active and healthy, with `upgrade_available` on the installation read; its
 holders hold what the approved generation granted, and every installation
-read lists those roles (`installationToWire` over
-`business.ApprovedDeclaration`), until an administrator reviews the target again and installs the reviewed release on the same
+read lists those roles (`installationToWire` over the core's own rule,
+`authority.ApprovedDeclaration`), until an administrator reviews the target again and installs the reviewed release on the same
 installation (`InstallReviewedSolution` with a fresh review: the core's
 upgrade, its step converging the closure of the new review, its grants kept).
 The write that records an upgrade is fenced as an activation is, but for the
@@ -283,17 +285,29 @@ earlier consent from the host's own reviewed approval, and writes the
 approved declaration only where that generation is still the delivered one
 (the module's current declaration is the approved one only then). A consent
 that approved an older generation reads as `upgrade_available`, and its
-declaration is rebuilt when the host configures the core at boot
+declaration is rebuilt at boot and on every delivery pass
 (`keepApprovedDeclarations`, `pkg/business/authority_core_approved.go`): from
 the delivery inbox's signed carrier and authority document for the target's
-binding at that generation, composed as a delivery composes it. Where the
-inbox kept no document for that generation, nothing is written and one line
-is logged naming the installation and the generation; the core then refuses
-issuance through the installation by name until an administrator reviews and
-installs the delivered release on it. The store-backed proofs are
-`TestRedeliveryKeepsSolutionEntitled` (`pkg/infra`) and
-`TestBootKeepsTheDeclarationAnOlderConsentApproved` /
-`TestBootWritesNothingForAnApprovedGenerationTheInboxLost` (`pkg/business`).
+binding at that generation, verified again with the pinned keys as delivery
+verifies them, from the binding's own ownership domain, and composed as a
+delivery composes it. It is written only when its offer digest, as the store
+answers it, is the one every consent naming that generation recorded. Where
+the inbox holds no document for that generation, the documents do not
+verify, or any consent recorded another digest, nothing is written and one
+line is logged per installation naming it, the generation and why; the core
+then refuses issuance through the installation by name until an
+administrator reviews and installs the delivered release on it, and a later
+pass writes what has since become available. The core holds itself to the
+same: it refuses a kept declaration whose digest is not the consent's, and a
+kept declaration is never replaced (the store refuses a different one at the
+same generation). The store-backed proofs are
+`TestRedeliveryKeepsSolutionEntitled` and
+`TestMigration68FillsOnlyTheDeclarationACurrentConsentApproved` (`pkg/infra`)
+and `TestADeliveryPassKeepsTheDeclarationAnOlderConsentApproved`,
+`TestAnApprovedDeclarationIsRebuiltOnlyFromDocumentsThatVerify`,
+`TestAnApprovedDeclarationIsWrittenOnceItsDocumentsArrive` and
+`TestAnApprovedDeclarationIsWrittenOnlyWhenEveryConsentApprovedIt`
+(`pkg/business`).
 
 **Setup is per installation, not per release.** A solution's install
 endpoint is called when its installation is set up: the first install, and an

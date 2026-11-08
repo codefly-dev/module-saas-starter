@@ -7,8 +7,10 @@ package business
 // a generation the store may hold nothing for: migration 68 writes the
 // declaration only where that generation is still the delivered one, because
 // the module's current declaration is the approved one only then. Every older
-// generation is rebuilt here, at boot, from the signed documents this host
-// received for it, which the delivery inbox keeps append-only.
+// generation is rebuilt here, at boot and on every delivery pass, from the
+// signed documents this host received for it, which the delivery inbox keeps
+// append-only: verified again as delivery verified them, and written only when
+// it is the offer every consent naming it approved.
 
 import (
 	"context"
@@ -35,17 +37,24 @@ type approvedGeneration struct {
 	held       []domain.Installation
 }
 
+// errNotTheApprovedOffer rolls back the write of a rebuilt declaration that
+// is not the offer every consent naming its generation approved.
+var errNotTheApprovedOffer = errors.New("the rebuilt declaration is not the offer a consent approved")
+
 // keepApprovedDeclarations writes, for every pending or active installation
 // whose consent names a generation the store keeps no declaration for, the
 // declaration of that generation: the composed module when the generation is
 // still the delivered one, otherwise the module rebuilt from the documents the
-// delivery inbox holds for the target's binding at that generation, exactly as
-// a delivery composes it. Where the inbox holds no such document (or one that
-// does not compose to the target as the core holds it), nothing is written:
-// the core then refuses issuance through that installation by name, the
-// installation reads as upgrade_available, and one line is logged naming it
-// and the generation. A declaration the store already keeps is never
-// replaced, so a second run writes nothing.
+// delivery inbox holds for the target's binding at that generation, verified
+// again with the pinned keys exactly as delivery verified them, from the
+// binding's own ownership domain. It is written only when its offer digest, as
+// the store answers it, is the one every installation naming that generation
+// consented to (ConsentReceipt.Digest); otherwise nothing is written for any
+// of them. Where nothing is written, the core refuses issuance through those
+// installations by name, they read as upgrade_available, and one line is
+// logged per installation naming it, the generation and why. A declaration
+// the store already keeps is never replaced, so a later run writes only what
+// an earlier one could not (a document that has arrived since).
 func (s *Service) keepApprovedDeclarations(ctx context.Context) error {
 	cores, ok := s.store.(AuthorityCoreStore)
 	if !ok {
@@ -61,6 +70,13 @@ func (s *Service) keepApprovedDeclarations(ctx context.Context) error {
 		return err
 	}
 	log := wool.Get(ctx).In("keepApprovedDeclarations")
+	unkept := func(want *approvedGeneration, reason func(domain.Installation) string) {
+		for _, inst := range want.held {
+			log.Warn("the declaration this installation's consent approved is not kept and is not written; the authority core refuses issuance through it until an administrator reviews and installs the delivered release",
+				wool.Field("installation", inst.ID), wool.Field("organization", inst.Organization), wool.Field("target", want.target),
+				wool.Field("generation", want.generation), wool.Field("reason", reason(inst)))
+		}
+	}
 	var failures []error
 	for _, want := range missing {
 		approved, reason, err := s.approvedDeclaration(ctx, bindings, want)
@@ -69,19 +85,43 @@ func (s *Service) keepApprovedDeclarations(ctx context.Context) error {
 			continue
 		}
 		if reason != "" {
-			for _, inst := range want.held {
-				log.Warn("the declaration this installation's consent approved is not kept and cannot be rebuilt; the authority core refuses issuance through it until an administrator reviews and installs the delivered release",
-					wool.Field("installation", inst.ID), wool.Field("organization", inst.Organization), wool.Field("target", want.target),
-					wool.Field("generation", want.generation), wool.Field("reason", reason))
-			}
+			unkept(want, func(domain.Installation) string { return reason })
 			continue
 		}
-		if err := store.Write(ctx, func(tx authority.Tx) error {
+		// The digest is the one a consent records: of the declaration as the
+		// store answers it, so it is compared after the write, in the same
+		// transaction, which a mismatch rolls back.
+		var stored string
+		err = store.Write(ctx, func(tx authority.Tx) error {
 			if _, err := tx.ApprovedModule(want.target, want.generation); !errors.Is(err, domain.ErrNotFound) {
 				return err // kept already (nil), or unreadable
 			}
-			return tx.PutApprovedModule(approved)
-		}); err != nil {
+			if err := tx.PutApprovedModule(approved); err != nil {
+				return err
+			}
+			kept, err := tx.ApprovedModule(want.target, want.generation)
+			if err != nil {
+				return err
+			}
+			if stored, err = authority.OfferDigest(kept); err != nil {
+				return err
+			}
+			for _, inst := range want.held {
+				if inst.Consent.Digest != stored {
+					return errNotTheApprovedOffer
+				}
+			}
+			return nil
+		})
+		switch {
+		case errors.Is(err, errNotTheApprovedOffer):
+			unkept(want, func(inst domain.Installation) string {
+				if inst.Consent.Digest == stored {
+					return fmt.Sprintf("another installation's consent to generation %d approved a different offer than the inbox's documents compose (%s); none is written", want.generation, stored)
+				}
+				return fmt.Sprintf("its consent approved offer %q, and the inbox's documents for generation %d compose %q", inst.Consent.Digest, want.generation, stored)
+			})
+		case err != nil:
 			failures = append(failures, fmt.Errorf("%s generation %d: %w", want.target, want.generation, err))
 		}
 	}
@@ -138,45 +178,55 @@ func unkeptApprovedGenerations(ctx context.Context, store authority.Store) ([]*a
 // approvedDeclaration is the declaration of want's generation, or the reason
 // it cannot be had: the composed module when that generation is still
 // delivered, otherwise the module the inbox's documents for the target's
-// binding at that generation compose to, which must be the target as the core
-// holds it (its name, principal and kind) at that generation.
+// binding at that generation compose to. Those documents are verified again
+// with the pinned keys (verifyDeliveredGeneration, as delivery verifies
+// them), must speak for the ownership domain the binding is applied under,
+// and must compose the target as the core holds it (its name, principal and
+// kind) at that generation.
 func (s *Service) approvedDeclaration(ctx context.Context, bindings []*SolutionHostBindingRecord, want *approvedGeneration) (domain.Module, string, error) {
 	if want.generation == want.current.Generation {
 		return want.current, "", nil
 	}
-	if s.deliveryStore == nil {
-		return domain.Module{}, "this host keeps no delivery inbox", nil
+	if s.deliveryStore == nil || s.deliveryVerifier == nil {
+		return domain.Module{}, "this host verifies no delivery inbox", nil
 	}
-	binding := ""
+	var binding *SolutionHostBindingRecord
 	for _, record := range bindings {
 		if record.Applied == nil || record.Applied.SolutionID != want.target {
 			continue
 		}
-		if binding != "" {
-			return domain.Module{}, fmt.Sprintf("bindings %s and %s both apply %s", binding, record.BindingID, want.target), nil
+		if binding != nil {
+			return domain.Module{}, fmt.Sprintf("bindings %s and %s both apply %s", binding.BindingID, record.BindingID, want.target), nil
 		}
-		binding = record.BindingID
+		binding = record
 	}
-	if binding == "" {
+	if binding == nil {
 		return domain.Module{}, "no binding applies the target", nil
 	}
-	var delivered *SolutionDeliveryRecord
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		var err error
-		delivered, err = s.deliveryStore.ReadDeliveredDocument(ctx, binding, want.generation)
-		return err
-	}); err != nil {
-		return domain.Module{}, "", err
+	delivered, verified, _, err := s.verifyDeliveredGeneration(ctx, want.target, binding.BindingID, want.generation)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return domain.Module{}, "", err
+		}
+		return domain.Module{}, fmt.Sprintf("binding %s generation %d does not verify: %v", binding.BindingID, want.generation, err), nil
 	}
 	if delivered == nil {
-		return domain.Module{}, fmt.Sprintf("the delivery inbox holds no document for binding %s at generation %d", binding, want.generation), nil
+		return domain.Module{}, fmt.Sprintf("the delivery inbox holds no document for binding %s at generation %d", binding.BindingID, want.generation), nil
+	}
+	applied := binding.ownershipDomain()
+	manifest, err := verified.Manifest()
+	if err != nil {
+		return domain.Module{}, fmt.Sprintf("binding %s generation %d does not read: %v", binding.BindingID, want.generation, err), nil
+	}
+	if applied == "" || delivered.OwnershipDomain != applied || manifest.Host.Domain != applied {
+		return domain.Module{}, fmt.Sprintf("binding %s is applied under ownership domain %q, and its generation %d speaks for %q", binding.BindingID, applied, want.generation, manifest.Host.Domain), nil
 	}
 	m, err := deliveredCoreModule(delivered)
 	if err != nil {
-		return domain.Module{}, fmt.Sprintf("binding %s generation %d does not compose: %v", binding, want.generation, err), nil
+		return domain.Module{}, fmt.Sprintf("binding %s generation %d does not compose: %v", binding.BindingID, want.generation, err), nil
 	}
 	if m.Name != want.target || m.Generation != want.generation || m.Principal != want.current.Principal || m.Kind != want.current.Kind {
-		return domain.Module{}, fmt.Sprintf("binding %s generation %d composes %s %s@%d (principal %q), not the target", binding, want.generation, m.Kind, m.Name, m.Generation, m.Principal), nil
+		return domain.Module{}, fmt.Sprintf("binding %s generation %d composes %s %s@%d (principal %q), not the target", binding.BindingID, want.generation, m.Kind, m.Name, m.Generation, m.Principal), nil
 	}
 	return m, "", nil
 }
@@ -210,30 +260,4 @@ func signedAuthorityOf(delivered *SolutionDeliveryRecord) *compositionv1.SignedM
 		return nil
 	}
 	return &compositionv1.SignedManifestV1{Document: delivered.AuthorityDocument, Envelope: delivered.AuthorityEnvelope}
-}
-
-// ApprovedDeclaration is the declaration the core decides inst's holders
-// from, given m, its target as composed now: m while inst's consent stands at
-// m's generation or names none (no consent, or one recorded before the
-// generation was kept), otherwise the declaration that consent approved, as
-// the store keeps it. It is the core's own rule (approvedModule in the
-// authority core), read for a host that lists what a holder may hold. An
-// approved generation the store does not keep answers domain.ErrNotFound: the
-// core refuses that installation's holders.
-func (s *Service) ApprovedDeclaration(ctx context.Context, inst domain.Installation, m domain.Module) (domain.Module, error) {
-	c := inst.Consent
-	if c.OperationID == "" || c.Generation == 0 || c.Generation >= m.Generation || inst.Target != m.Name {
-		return m, nil
-	}
-	cores, ok := s.store.(AuthorityCoreStore)
-	if !ok {
-		return domain.Module{}, ErrAuthorityCoreUnconfigured
-	}
-	var approved domain.Module
-	err := cores.AuthorityCoreWithConsent(nil).Read(ctx, func(tx authority.Tx) error {
-		var err error
-		approved, err = tx.ApprovedModule(m.Name, c.Generation)
-		return err
-	})
-	return approved, err
 }

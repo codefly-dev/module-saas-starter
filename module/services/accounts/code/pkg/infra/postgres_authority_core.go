@@ -527,7 +527,10 @@ func (t coreTx) PutModule(m domain.Module) error {
 // migration 68): the core writes one whenever a consent is taken or advances
 // and reads it to decide what a holder holds while the consent is behind the
 // delivered generation. A generation no active consent names may be dropped;
-// this store keeps every one it was given.
+// this store keeps every one it was given. A kept declaration is never
+// replaced: writing the same one again is accepted, writing a different one
+// at a kept (name, generation) answers domain.ErrApprovedDeclarationKept and
+// changes nothing, so the control plane holds no UPDATE on the table.
 func (t coreTx) ApprovedModule(name string, generation uint64) (domain.Module, error) {
 	m, err := scanCoreModule(t.q.QueryRow(t.ctx, `SELECT `+coreModuleColumns+` FROM public.authority_core_approved_modules WHERE name = $1 AND generation = $2`, name, int64(generation)))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -544,13 +547,38 @@ func (t coreTx) PutApprovedModule(m domain.Module) error {
 	if err != nil {
 		return err
 	}
-	_, err = t.q.Exec(t.ctx, `
+	tag, err := t.q.Exec(t.ctx, `
 		INSERT INTO public.authority_core_approved_modules (name, generation, principal, kind, stand_in, declarations)
 		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (name, generation) DO UPDATE SET principal = EXCLUDED.principal, kind = EXCLUDED.kind,
-		       stand_in = EXCLUDED.stand_in, declarations = EXCLUDED.declarations`,
+		ON CONFLICT (name, generation) DO NOTHING`,
 		m.Name, int64(m.Generation), m.Principal, m.Kind, m.StandIn, raw)
-	return err
+	if err != nil || tag.RowsAffected() == 1 {
+		return err
+	}
+	kept, err := t.ApprovedModule(m.Name, m.Generation)
+	if err != nil {
+		return err
+	}
+	// Compared as this store answers both: m as it would read back.
+	written := domain.Module{Name: m.Name, Principal: m.Principal, Kind: m.Kind, Generation: m.Generation, StandIn: m.StandIn}
+	if err := decodeModule(&written, raw); err != nil {
+		return err
+	}
+	same, err := sameOffer(kept, written)
+	if err != nil || same {
+		return err
+	}
+	return fmt.Errorf("%s generation %d: %w", m.Name, m.Generation, domain.ErrApprovedDeclarationKept)
+}
+
+// sameOffer: a and b are the same declaration, as a consent sees it.
+func sameOffer(a, b domain.Module) (bool, error) {
+	da, err := authority.OfferDigest(a)
+	if err != nil {
+		return false, err
+	}
+	db, err := authority.OfferDigest(b)
+	return da == db, err
 }
 
 func (t coreTx) DeleteModule(name string) error {

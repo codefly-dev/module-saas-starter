@@ -91,6 +91,9 @@ func TestInstalledContentReadPostgresRetainedBinding(t *testing.T) {
 	}))
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
+	// The host's authority core, built as boot builds it: a module audience is
+	// resolved there first.
+	require.NoError(t, svc.ConfigureAuthorityCore(testCtx, "accounts.test", "content-test", key))
 	previous := *adapters.WorkContextSingleton()
 	t.Cleanup(func() {
 		*adapters.WorkContextSingleton() = previous

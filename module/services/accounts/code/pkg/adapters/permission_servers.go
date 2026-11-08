@@ -2,7 +2,6 @@ package adapters
 
 import (
 	"context"
-	"errors"
 
 	"github.com/codefly-dev/core/wool"
 
@@ -61,15 +60,17 @@ func configurePermissionServerKeys() error {
 		Seals:      seals,
 	})
 	// The host interfaces are decided by the shared authority core, which signs
-	// with the same Work Context key Keys publishes. A module installed by name
-	// whose target now declares roles is not served past: the host refuses to
-	// start, naming each one.
+	// with the same Work Context key Keys publishes. A core that is built but
+	// whose boot reconciliation did not complete serves; the delivery pass
+	// retries what did not complete.
 	if service != nil {
 		if err := service.ConfigureAuthorityCore(context.Background(), plugin.WorkContextIssuer(), plugin.WorkContextKeyID(), plugin.Ed25519Key()); err != nil {
-			if errors.Is(err, business.ErrUnreviewedModulePage) {
-				return err
+			log := wool.Get(context.Background()).In("configurePermissionServerKeys")
+			if _, coreErr := service.AuthorityCore(); coreErr != nil {
+				log.Warn("the authority core is not configured; every host interface call answers Unavailable", wool.ErrField(err))
+			} else {
+				log.Error("the authority core is configured and serving, and its boot reconciliation did not complete; every delivery pass retries it", wool.ErrField(err))
 			}
-			wool.Get(context.Background()).In("configurePermissionServerKeys").Warn("the authority core is not configured; every host interface call answers Unavailable", wool.ErrField(err))
 		}
 	}
 	return nil

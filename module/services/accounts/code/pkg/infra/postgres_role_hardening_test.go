@@ -443,15 +443,17 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
 			// The authority core's records: an installation, a delegation or a
-			// tombstone is revoked or superseded, never erased, an approved
-			// declaration is kept for every generation a consent names, and an
-			// epoch or a revision only grows; a role grant is granted and
-			// revoked by row, and a consumed nonce is reclaimed once its
-			// capability expired.
+			// tombstone is revoked or superseded, never erased, and an epoch or
+			// a revision only grows; an approved declaration is written once
+			// per generation a consent names, never replaced nor erased; a
+			// role grant is granted and revoked by row, and a consumed nonce is
+			// reclaimed once its capability expired.
 			switch relation {
 			case "authority_core_clients", "authority_core_tombstones", "authority_core_installations", "authority_core_module_revisions", "authority_core_delegations",
-				"authority_core_person_epochs", "authority_core_grant_epochs", "authority_core_owner_aware", "authority_core_approved_modules":
+				"authority_core_person_epochs", "authority_core_grant_epochs", "authority_core_owner_aware":
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			case "authority_core_approved_modules":
+				want = relationPrivileges{selectRows: true, insertRows: true}
 			case "authority_core_role_grants", "authority_core_replay", "hop_admission_proofs":
 				want = relationPrivileges{selectRows: true, insertRows: true, deleteRows: true}
 			}

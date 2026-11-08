@@ -41,7 +41,7 @@ func (s *Service) ApplyComposition(ctx context.Context, req *compositionv1.Apply
 	}
 	// A delivery the authority core would refuse to compose is refused before
 	// anything is recorded, so accounts' record and the core's never part.
-	if err := precheckCoreModule(req); err != nil {
+	if err := s.precheckCoreModule(ctx, req); err != nil {
 		return nil, coreDeliveryError(err)
 	}
 	raw, err := solutionhost.MarshalSigned(&solutionhost.Signed{Document: req.GetCarrier().GetDocument(), Envelope: req.GetCarrier().GetEnvelope()})
@@ -267,33 +267,50 @@ func (s *Service) appliedAuthorityDocumentOf(ctx context.Context, audience strin
 // inbox and verifies both signatures with the pinned keys: the outcome kept
 // for that generation, with no document when it was delivered without one.
 func (s *Service) verifyAppliedAuthorityDocument(ctx context.Context, audience string, row *SolutionHostBindingRecord, manifest *solutionhost.ModuleManifest) (verifiedAuthorityDocument, error) {
-	var record *SolutionDeliveryRecord
-	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		var e error
-		record, e = s.deliveryStore.ReadDeliveredDocument(ctx, row.BindingID, manifest.Generation)
-		return e
-	})
+	record, core, doc, err := s.verifyDeliveredGeneration(ctx, audience, row.BindingID, manifest.Generation)
 	if err != nil {
 		return verifiedAuthorityDocument{}, err
 	}
 	if record == nil {
 		return verifiedAuthorityDocument{}, fmt.Errorf("%w: %s's applied generation %d has no inbox record", errNoAuthorityDocument, audience, manifest.Generation)
 	}
-	core, err := solutionhost.VerifyDelivered(ctx, carrierOf(record), s.deliveryVerifier)
-	if err != nil {
-		return verifiedAuthorityDocument{}, fmt.Errorf("%s delivery does not verify: %w", audience, err)
-	}
 	if delivery.Digest(core.Payload()) != row.Applied.Digest {
 		return verifiedAuthorityDocument{}, fmt.Errorf("%s applied delivery digest differs from its inbox", audience)
 	}
-	verified := verifiedAuthorityDocument{generation: row.Applied.Generation, digest: row.Applied.Digest}
+	return verifiedAuthorityDocument{generation: row.Applied.Generation, digest: row.Applied.Digest, doc: doc}, nil
+}
+
+// verifyDeliveredGeneration reads binding's generation from the delivery
+// inbox and verifies it as delivery did: the carrier against the pinned keys
+// (VerifyDelivered), and the authority document received with it against the
+// same keys and the carrier's signer (verifyAuthorityDocument). It answers no
+// record when the inbox holds none for that generation, and no document when
+// the generation was delivered without one.
+func (s *Service) verifyDeliveredGeneration(ctx context.Context, audience, binding string, generation uint64) (*SolutionDeliveryRecord, *solutionhost.Delivered, *compositionv1.AuthorityManifestV1, error) {
+	if s.deliveryStore == nil || s.deliveryVerifier == nil {
+		return nil, nil, nil, fmt.Errorf("%w: this host has no signed delivery wired", errNoAuthorityDocument)
+	}
+	var record *SolutionDeliveryRecord
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var e error
+		record, e = s.deliveryStore.ReadDeliveredDocument(ctx, binding, generation)
+		return e
+	})
+	if err != nil || record == nil {
+		return nil, nil, nil, err
+	}
+	core, err := solutionhost.VerifyDelivered(ctx, carrierOf(record), s.deliveryVerifier)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%s delivery does not verify: %w", audience, err)
+	}
 	if record.AuthorityDocument == nil {
-		return verified, nil
+		return record, core, nil, nil
 	}
-	if verified.doc, err = s.verifyAuthorityDocument(&compositionv1.SignedManifestV1{Document: record.AuthorityDocument, Envelope: record.AuthorityEnvelope}, core); err != nil {
-		return verifiedAuthorityDocument{}, err
+	doc, err := s.verifyAuthorityDocument(&compositionv1.SignedManifestV1{Document: record.AuthorityDocument, Envelope: record.AuthorityEnvelope}, core)
+	if err != nil {
+		return nil, nil, nil, err
 	}
-	return verified, nil
+	return record, core, doc, nil
 }
 
 func checkMethodPolicy(doc *compositionv1.AuthorityManifestV1, audience, method string, held []*basev0.WorkScopeV1) error {

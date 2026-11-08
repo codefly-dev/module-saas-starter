@@ -411,6 +411,13 @@ func (r *SolutionHostBindingReconciler) RunOnce(ctx context.Context) error {
 		}
 	}
 
+	// The authority core's own upkeep, once this pass's deliveries are
+	// composed: an approved declaration whose documents have arrived is
+	// written, and a module installation needing its review is reported.
+	if err := r.service.KeepAuthorityCoreCurrent(ctx); err != nil {
+		failures = append(failures, err)
+	}
+
 	// What waits on delivery runs last, once this pass's targets are open and
 	// the registry that decides who may install them is derived.
 	if r.afterPass != nil {
