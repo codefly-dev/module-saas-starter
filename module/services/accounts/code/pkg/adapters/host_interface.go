@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/workcontext"
@@ -588,22 +589,28 @@ func (s *HostInstallationServer) ListHeld(ctx context.Context, req *installation
 // installationToWire is an installation as the interface states it, with the
 // roles its solution declares.
 func installationToWire(core *authority.Service, ctx context.Context, i domain.Installation) *installationv1.Installation {
-	var roles []string
-	if m, err := core.Composed(ctx, i.Target); err == nil {
-		for name := range m.Roles {
-			roles = append(roles, name)
-		}
+	m, err := core.Composed(ctx, i.Target)
+	if err != nil {
+		m = domain.Module{}
 	}
-	return installationToWireWithRoles(i, roles)
+	return installationWire(i, m)
 }
 
-// installationToWireWithRoles converts one snapshot without another authority read.
-func installationToWireWithRoles(i domain.Installation, roles []string) *installationv1.Installation {
+// installationWire converts one snapshot beside the target's stored
+// declaration m (zero when the target is no longer composed), without another
+// authority read: the roles are m's, and upgrade_available is the core's
+// predicate over the consent the installation stands on and the generation m
+// is delivered at.
+func installationWire(i domain.Installation, m domain.Module) *installationv1.Installation {
 	st := map[domain.Status]installationv1.Installation_Status{
 		domain.Pending: installationv1.Installation_STATUS_PENDING, domain.Active: installationv1.Installation_STATUS_ACTIVE, domain.Revoked: installationv1.Installation_STATUS_REVOKED,
 	}[i.Status]
 	out := &installationv1.Installation{Id: i.ID, OrganizationId: i.Organization, Target: i.Target, Status: st, Revision: i.Revision,
-		Role: i.AgentRole, PrincipalId: i.PrincipalID, Namespace: i.Organization + "." + i.Target, Roles: slices.Clone(roles)}
+		Role: i.AgentRole, PrincipalId: i.PrincipalID, Namespace: i.Organization + "." + i.Target,
+		ApprovedGeneration: i.Consent.Generation, UpgradeAvailable: decide.UpgradeAvailable(i, m)}
+	for name := range m.Roles {
+		out.Roles = append(out.Roles, name)
+	}
 	slices.Sort(out.Roles)
 	return out
 }

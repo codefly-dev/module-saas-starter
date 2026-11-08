@@ -11,6 +11,7 @@ import (
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/jackc/pgx/v5"
 )
@@ -23,6 +24,13 @@ type solutionConsent struct {
 	Plan *business.SolutionInstallationPlan `json:"host_plan,omitempty"`
 }
 
+// solutionConsentForWrite is the consent column of inst as the core writes it,
+// with the host's reviewed plan kept beside it. The plan follows the consent
+// operation: a re-convergence by the core (the approved generation and digest
+// advance under the same operation) keeps it; a fresh approval replaces it
+// with the plan the host reviewed for that operation, whether the installation
+// is pending (a fresh install) or active (an upgrade in place); an activation
+// is fenced against its plan and the delivered rows it names.
 func (t coreTx) solutionConsentForWrite(inst domain.Installation) ([]byte, error) {
 	var previous solutionConsent
 	var raw []byte
@@ -37,19 +45,27 @@ func (t coreTx) solutionConsentForWrite(inst domain.Installation) ([]byte, error
 		}
 	}
 	current := solutionConsent{ConsentReceipt: inst.Consent}
-	if previous.ConsentReceipt == inst.Consent {
+	if previous.OperationID == inst.Consent.OperationID && previous.Intent == inst.Consent.Intent {
 		current.Plan = previous.Plan
 	}
-	if inst.Status == domain.Pending && current.Plan == nil {
+	if current.Plan == nil && inst.Consent.OperationID != "" {
 		if plan, ok := business.SolutionInstallationPlanFromContext(t.ctx); ok {
 			if plan.Organization != inst.Organization || plan.Target != inst.Target || plan.MachineRole != inst.AgentRole ||
-				plan.Approval.OperationID != inst.Consent.OperationID || inst.Consent.OperationID == "" {
+				plan.Approval.OperationID != inst.Consent.OperationID {
 				return nil, domain.NotNow("INSTALLATION_PLAN_MISMATCH: the reviewed plan names another install attempt")
 			}
 			plan.InstallationID, plan.Revision, plan.Receipt = inst.ID, inst.Revision, inst.Consent
+			if inst.Status == domain.Active && previousStatus == string(domain.Active) {
+				// An upgrade: the installation stays active and its plan is the
+				// one just reviewed, so the delivery it names must be the one
+				// the host applies now.
+				if _, err := t.deliveredSolutionTarget(plan); err != nil {
+					return nil, err
+				}
+			}
 			current.Plan = &plan
-		} else if t.hostSolutions {
-			return nil, domain.NotNow("INSTALLATION_PLAN_REQUIRED: review the solution and its supporting modules before installing")
+		} else if t.hostSolutions && inst.Status != domain.Revoked {
+			return nil, domain.NotNow("INSTALLATION_PLAN_REQUIRED: review the target and its supporting modules before installing")
 		}
 	}
 	if inst.Status == domain.Active && previousStatus == string(domain.Pending) && (t.hostSolutions || current.Plan != nil) {
@@ -63,30 +79,46 @@ func (t coreTx) solutionConsentForWrite(inst domain.Installation) ([]byte, error
 	return json.Marshal(current)
 }
 
+// deliveredSolutionTarget shares the delivered rows plan names and checks they
+// are the ones the plan was reviewed against; it answers the stored declaration
+// of the target, for the activation's dependency check.
+func (t coreTx) deliveredSolutionTarget(plan business.SolutionInstallationPlan) (domain.Module, error) {
+	var target, binding, release, digest, principal, kind string
+	var generation, coreGeneration uint64
+	var declaration []byte
+	err := t.q.QueryRow(t.ctx, `SELECT t.id::text,b.binding_id,b.applied_release,b.applied_digest,b.applied_generation,m.principal,m.generation,m.kind,m.declarations
+ FROM public.solution_targets t JOIN public.solution_host_bindings b ON b.binding_id=t.binding_id
+ JOIN public.authority_core_modules m ON m.name=t.solution_id
+ WHERE t.id=$1::uuid AND t.closed_generation IS NULL AND NOT b.applied_removed
+ FOR SHARE OF t,b,m`, plan.HostTargetID).Scan(&target, &binding, &release, &digest, &generation, &principal, &coreGeneration, &kind, &declaration)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Module{}, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: the reviewed target is no longer delivered")
+	}
+	if err != nil {
+		return domain.Module{}, err
+	}
+	if target != plan.HostTargetID || binding != plan.BindingID || release != plan.Release || digest != plan.DeliveryDigest ||
+		generation != plan.Approval.Generation || coreGeneration != plan.Approval.Generation || principal != plan.Approval.TargetID {
+		return domain.Module{}, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: review the current release again")
+	}
+	module := domain.Module{Name: plan.Target, Principal: principal, Kind: kind, Generation: coreGeneration}
+	if err := decodeModule(&module, declaration); err != nil {
+		return domain.Module{}, err
+	}
+	// The core installs what is role-gated and nothing else; the host holds
+	// the same line, so a module without roles never gets a record here.
+	if !decide.RoleGated(module) {
+		return domain.Module{}, domain.NotNow("INSTALLATION_DELIVERY_CHANGED: %q no longer declares roles; a module without roles is installed by composition", plan.Target)
+	}
+	return module, nil
+}
+
 // Every read below uses this SAME serializable core transaction. Locks protect
 // the durable delivery and module consent, not an in-memory registry snapshot.
 // No callback, enqueue, credential issuance or network effect is permitted here.
 func (t coreTx) validateSolutionActivation(inst domain.Installation, plan business.SolutionInstallationPlan) error {
-	var target, binding, release, digest, principal string
-	var generation, coreGeneration uint64
-	var declaration []byte
-	err := t.q.QueryRow(t.ctx, `SELECT t.id::text,b.binding_id,b.applied_release,b.applied_digest,b.applied_generation,m.principal,m.generation,m.declarations
- FROM public.solution_targets t JOIN public.solution_host_bindings b ON b.binding_id=t.binding_id
- JOIN public.authority_core_modules m ON m.name=t.solution_id
- WHERE t.id=$1::uuid AND t.closed_generation IS NULL AND NOT b.applied_removed AND m.kind='solution'
- FOR SHARE OF t,b,m`, plan.HostTargetID).Scan(&target, &binding, &release, &digest, &generation, &principal, &coreGeneration, &declaration)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.NotNow("INSTALLATION_DELIVERY_CHANGED: the reviewed solution is no longer delivered")
-	}
+	module, err := t.deliveredSolutionTarget(plan)
 	if err != nil {
-		return err
-	}
-	if target != plan.HostTargetID || binding != plan.BindingID || release != plan.Release || digest != plan.DeliveryDigest ||
-		generation != plan.Approval.Generation || coreGeneration != plan.Approval.Generation || principal != plan.Approval.TargetID {
-		return domain.NotNow("INSTALLATION_DELIVERY_CHANGED: review the current solution release again")
-	}
-	module := domain.Module{Name: inst.Target, Principal: principal, Kind: domain.KindSolution, Generation: coreGeneration}
-	if err := decodeModule(&module, declaration); err != nil {
 		return err
 	}
 	// The whole delivered catalogue, as the review read it: the dependency
@@ -123,7 +155,9 @@ func (t coreTx) validateSolutionActivation(inst domain.Installation, plan busine
 	if err != nil {
 		return err
 	}
-	return plan.ValidateActivation(inst, observed, job)
+	// A solution is set up by its install step; a module page declares no
+	// install endpoint and is active as soon as its closure is converged.
+	return plan.ValidateActivation(inst, observed, job, module.Kind == domain.KindSolution)
 }
 
 func (t coreTx) acknowledgedSolutionSetup(inst domain.Installation, jobID string) (string, error) {

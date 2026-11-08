@@ -77,7 +77,7 @@ type ModuleInstallationPrerequisite struct {
 // final serializable write. Reading and locking the observed rows is the store's
 // responsibility. It must call this before writing active, and perform no
 // enqueue or other external effect while Store.Write may retry.
-func (p SolutionInstallationPlan) ValidateActivation(inst domain.Installation, observed []ModuleInstallationPrerequisite, acknowledgedJobID string) error {
+func (p SolutionInstallationPlan) ValidateActivation(inst domain.Installation, observed []ModuleInstallationPrerequisite, acknowledgedJobID string, setupStep bool) error {
 	refuse := func(reason string) error {
 		return domain.NotNow("INSTALLATION_PREREQUISITES_CHANGED: %s; review the installation again", reason)
 	}
@@ -94,8 +94,11 @@ func (p SolutionInstallationPlan) ValidateActivation(inst domain.Installation, o
 	if inst.Status != domain.Active {
 		return refuse("the requested transition is not activation")
 	}
-	if p.SetupJobID == "" || acknowledgedJobID != p.SetupJobID {
+	if setupStep && (p.SetupJobID == "" || acknowledgedJobID != p.SetupJobID) {
 		return refuse("the exact setup job has not acknowledged this attempt")
+	}
+	if !setupStep && p.SetupJobID != "" {
+		return refuse("a target without an install step was queued a setup job")
 	}
 	if len(observed) != len(p.Dependencies) {
 		return refuse("a required module installation is absent or revoked")

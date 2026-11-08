@@ -58,7 +58,11 @@ func (s *Service) continueCanonicalSolution(ctx context.Context, core *authority
 	if inst.Status == domain.Pending {
 		ctx = context.WithValue(ctx, retryCanonicalSetupKey{}, true)
 	}
-	return core.Install(ctx, caller, inst.Organization, plan.Target, plan.RequestedRole, plan.RequestedOwner, &plan.Approval, s.AuthorityInstallStep())
+	step, err := s.installStepFor(ctx, core, plan.Target)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	return core.Install(ctx, caller, inst.Organization, plan.Target, plan.RequestedRole, plan.RequestedOwner, &plan.Approval, step)
 }
 
 func (s *Service) canonicalInstallationStep(ctx context.Context, inst domain.Installation) error {

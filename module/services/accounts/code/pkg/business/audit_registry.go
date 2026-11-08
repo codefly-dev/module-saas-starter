@@ -388,14 +388,17 @@ const (
 	// The authority core's changes (authority_core_audit.go), recorded at
 	// platform scope in the core's own transaction, the organization named in
 	// the payload: the core decides across organizations.
-	EventAuthorityInstallationRequested   EventType = "saas.authority.installation_requested"
-	EventAuthorityInstallationActivated   EventType = "saas.authority.installation_activated"
-	EventAuthorityInstallationUninstalled EventType = "saas.authority.installation_uninstalled"
-	EventAuthorityRoleGranted             EventType = "saas.authority.role_granted"
-	EventAuthorityRoleRevoked             EventType = "saas.authority.role_revoked"
-	EventAuthorityResourceAttached        EventType = "saas.authority.resource_attached"
-	EventAuthorityResourceDetached        EventType = "saas.authority.resource_detached"
-	EventAuthorityResourceTransferred     EventType = "saas.authority.resource_transferred"
+	EventAuthorityInstallationRequested        EventType = "saas.authority.installation_requested"
+	EventAuthorityInstallationActivated        EventType = "saas.authority.installation_activated"
+	EventAuthorityInstallationUninstalled      EventType = "saas.authority.installation_uninstalled"
+	EventAuthorityInstallationReconverged      EventType = "saas.authority.installation_reconverged"
+	EventAuthorityInstallationUpgradeAvailable EventType = "saas.authority.installation_upgrade_available"
+	EventAuthorityInstallationUpgraded         EventType = "saas.authority.installation_upgraded"
+	EventAuthorityRoleGranted                  EventType = "saas.authority.role_granted"
+	EventAuthorityRoleRevoked                  EventType = "saas.authority.role_revoked"
+	EventAuthorityResourceAttached             EventType = "saas.authority.resource_attached"
+	EventAuthorityResourceDetached             EventType = "saas.authority.resource_detached"
+	EventAuthorityResourceTransferred          EventType = "saas.authority.resource_transferred"
 
 	EventWorkContextTaskStarted  EventType = "saas.work_context.task_started"
 	EventWorkContextRootSession  EventType = "saas.work_context.root_session_started"
@@ -716,6 +719,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventAuthorityInstallationRequested, CategoryAccess, "An installation attempt was recorded pending, under the consent it was reviewed with.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationActivated, CategoryAccess, "An installation's install step converged and it became active.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationUninstalled, CategoryAccess, "An installation was uninstalled: its grants cleared and every capability sealed to it ended.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationReconverged, CategoryAccess, "A redelivery asked nothing new of an installation's consent, which now stands at the delivered generation; its grants are kept.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationUpgradeAvailable, CategoryAccess, "A redelivery asks more than an installation's consent approved; it stands on that consent until an administrator approves the new offer.", authorityChangeFields()...),
+	mutation(EventAuthorityInstallationUpgraded, CategoryAccess, "An administrator approved a newer offer on an active installation, which keeps its grants.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleGranted, CategoryAccess, "A solution role was granted on an installation to a person or a team.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleRevoked, CategoryAccess, "A solution role grant was revoked; its subject's capabilities through the installation ended.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceAttached, CategoryAccess, "A resource created through an installation was attached to it by the kind's serving module.", authorityChangeFields()...),
@@ -1406,5 +1412,5 @@ func (d AuditEventDefinition) payloadJSONSchema() map[string]any {
 func authorityChangeFields() []PayloadField {
 	return optionalFields([]PayloadField{str("organization"), str("actor"), str("subject"), str("target"), str("role"), str("person"), str("team"),
 		str("principal"), str("installed_by"), str("revision"), str("operation"), str("module"), str("purpose"), str("kind"), str("resource"),
-		str("from"), str("to"), str("store")})
+		str("from"), str("to"), str("store"), str("generation"), str("approved_generation"), str("widened")})
 }

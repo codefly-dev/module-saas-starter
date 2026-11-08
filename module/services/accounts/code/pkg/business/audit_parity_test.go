@@ -23,6 +23,12 @@ var eventsEmittedOutsideRPC = []EventType{
 	// host interfaces declare no uninstall RPC (codefly.dev/installation has
 	// none), so the host's own teardown is its one caller today.
 	EventAuthorityInstallationUninstalled,
+	// A delivery re-converges an installation's consent on the new
+	// generation, or leaves it offering an upgrade: the core journals either
+	// in the composition transaction, whose RPC emits no audit of its own
+	// (the delivery path records the applied binding itself).
+	EventAuthorityInstallationReconverged,
+	EventAuthorityInstallationUpgradeAvailable,
 	// The declared-presence reconcile pass emits this: delivery declares a
 	// generation and the host applies it, with no request behind it (#952).
 	EventSolutionHostBindingApplied,

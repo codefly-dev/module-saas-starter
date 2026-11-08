@@ -219,7 +219,8 @@ type InstallRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The organisation installing.
 	OrganizationId string `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
-	// The solution or module installed, by its name in the composition.
+	// The target installed, by its name in the composition: a solution, or a
+	// module page declaring roles.
 	Target string `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
 	// The role the installation holds; the least privilege it needs.
 	Role string `protobuf:"bytes,3,opt,name=role,proto3" json:"role,omitempty"`
@@ -879,9 +880,21 @@ type Installation struct {
 	// and target, reused by a reinstall. Empty for a module installation.
 	PrincipalId string `protobuf:"bytes,10,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
 	// The roles the solution declares, sorted.
-	Roles         []string `protobuf:"bytes,11,rep,name=roles,proto3" json:"roles,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Roles []string `protobuf:"bytes,11,rep,name=roles,proto3" json:"roles,omitempty"`
+	// The delivery generation the installation's consent approved. A
+	// redelivery that asks nothing new of the organization (no role, binding,
+	// edge dependency or method added, none reaching further, no standing
+	// authority asked) advances it without a click; one that asks more leaves
+	// it. Zero for an installation installed without consent (by composition
+	// or by the host's own setup).
+	ApprovedGeneration uint64 `protobuf:"varint,12,opt,name=approved_generation,json=approvedGeneration,proto3" json:"approved_generation,omitempty"`
+	// True when the delivered generation asks more than approved_generation
+	// did: the installation stands, active with its grants, until an
+	// administrator reviews the offer and approves it with Install. A host
+	// renders it as an update available.
+	UpgradeAvailable bool `protobuf:"varint,13,opt,name=upgrade_available,json=upgradeAvailable,proto3" json:"upgrade_available,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Installation) Reset() {
@@ -975,6 +988,20 @@ func (x *Installation) GetRoles() []string {
 		return x.Roles
 	}
 	return nil
+}
+
+func (x *Installation) GetApprovedGeneration() uint64 {
+	if x != nil {
+		return x.ApprovedGeneration
+	}
+	return 0
+}
+
+func (x *Installation) GetUpgradeAvailable() bool {
+	if x != nil {
+		return x.UpgradeAvailable
+	}
+	return false
 }
 
 // InstallationNotice is what the host hands the solution's install step.
@@ -1105,7 +1132,7 @@ func (x *ListOffersRequest) GetOrganizationId() string {
 	return ""
 }
 
-// ListOffersResponse is every delivered solution, by name.
+// ListOffersResponse is every delivered target an administrator chooses, by name.
 type ListOffersResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Offers        []*Offer               `protobuf:"bytes,1,rep,name=offers,proto3" json:"offers,omitempty"`
@@ -1150,10 +1177,10 @@ func (x *ListOffersResponse) GetOffers() []*Offer {
 	return nil
 }
 
-// Offer is one delivered solution.
+// Offer is one delivered target an administrator chooses.
 type Offer struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The solution's name in the composition: Install's target.
+	// The target's name in the composition: Install's target.
 	Target string `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
 	// The delivery generation an approval binds.
 	Generation    uint64 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
@@ -1205,7 +1232,7 @@ func (x *Offer) GetGeneration() uint64 {
 	return 0
 }
 
-// ReviewedOffer is one solution's authority offer and the consent that names it.
+// ReviewedOffer is one target's authority offer and the consent that names it.
 type ReviewedOffer struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// What Install takes, with a fresh operation_id; read with the rest.
@@ -1229,8 +1256,26 @@ type ReviewedOffer struct {
 	// Exact declared viewer-edge presence, covered by the reviewed digest.
 	// Required access and per-module approval are separate host review concerns.
 	EdgeDependencies []*OfferDependency `protobuf:"bytes,8,rep,name=edge_dependencies,json=edgeDependencies,proto3" json:"edge_dependencies,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// True when the target declares roles, which its Setup grants: always for
+	// a solution; a module is offered only when it does. A host reads it here
+	// instead of asking each module.
+	RolesDeclared bool `protobuf:"varint,9,opt,name=roles_declared,json=rolesDeclared,proto3" json:"roles_declared,omitempty"`
+	// True when the target declares a page a person opens, as the authority's
+	// stored declaration knows it. A module declaring roles always has one (a
+	// delivery declaring roles without a page is refused); a solution's is
+	// read as delivered, and a host whose store does not keep the flag answers
+	// false for it.
+	Page bool `protobuf:"varint,10,opt,name=page,proto3" json:"page,omitempty"`
+	// What installing the target brings along: every module it reaches through
+	// its bindings and edge dependencies, transitively, that holds no roles of
+	// its own, by its name in the composition, sorted. Such a module is
+	// installed with the target, holding no standing authority; a host that
+	// installs modules by its administrators' consent converges these with the
+	// install. A role-gated target reached is chosen by its own review and is
+	// not listed.
+	Closure       []string `protobuf:"bytes,11,rep,name=closure,proto3" json:"closure,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReviewedOffer) Reset() {
@@ -1315,6 +1360,27 @@ func (x *ReviewedOffer) GetInstallationRole() string {
 func (x *ReviewedOffer) GetEdgeDependencies() []*OfferDependency {
 	if x != nil {
 		return x.EdgeDependencies
+	}
+	return nil
+}
+
+func (x *ReviewedOffer) GetRolesDeclared() bool {
+	if x != nil {
+		return x.RolesDeclared
+	}
+	return false
+}
+
+func (x *ReviewedOffer) GetPage() bool {
+	if x != nil {
+		return x.Page
+	}
+	return false
+}
+
+func (x *ReviewedOffer) GetClosure() []string {
+	if x != nil {
+		return x.Closure
 	}
 	return nil
 }
@@ -1911,7 +1977,7 @@ const file_host_installation_v1_installation_proto_rawDesc = "" +
 	"\vListRequest\x12'\n" +
 	"\x0forganization_id\x18\x01 \x01(\tR\x0eorganizationId\"X\n" +
 	"\fListResponse\x12H\n" +
-	"\rinstallations\x18\x01 \x03(\v2\".host.installation.v1.InstallationR\rinstallations\"\xb0\x03\n" +
+	"\rinstallations\x18\x01 \x03(\v2\".host.installation.v1.InstallationR\rinstallations\"\x8e\x04\n" +
 	"\fInstallation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
 	"\x0forganization_id\x18\x02 \x01(\tR\x0eorganizationId\x12\x16\n" +
@@ -1922,7 +1988,9 @@ const file_host_installation_v1_installation_proto_rawDesc = "" +
 	"\tnamespace\x18\t \x01(\tR\tnamespace\x12!\n" +
 	"\fprincipal_id\x18\n" +
 	" \x01(\tR\vprincipalId\x12\x14\n" +
-	"\x05roles\x18\v \x03(\tR\x05roles\"[\n" +
+	"\x05roles\x18\v \x03(\tR\x05roles\x12/\n" +
+	"\x13approved_generation\x18\f \x01(\x04R\x12approvedGeneration\x12+\n" +
+	"\x11upgrade_available\x18\r \x01(\bR\x10upgradeAvailable\"[\n" +
 	"\x06Status\x12\x16\n" +
 	"\x12STATUS_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eSTATUS_PENDING\x10\x01\x12\x11\n" +
@@ -1939,7 +2007,7 @@ const file_host_installation_v1_installation_proto_rawDesc = "" +
 	"\x06target\x18\x01 \x01(\tR\x06target\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x02 \x01(\x04R\n" +
-	"generation\"\xcf\x03\n" +
+	"generation\"\xa4\x04\n" +
 	"\rReviewedOffer\x12A\n" +
 	"\bapproval\x18\x01 \x01(\v2%.host.installation.v1.ConsentApprovalR\bapproval\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x125\n" +
@@ -1948,7 +2016,11 @@ const file_host_installation_v1_installation_proto_rawDesc = "" +
 	"\aceiling\x18\x05 \x03(\v2\".host.installation.v1.OfferBindingR\aceiling\x12%\n" +
 	"\x0etools_composed\x18\x06 \x01(\bR\rtoolsComposed\x12+\n" +
 	"\x11installation_role\x18\a \x01(\tR\x10installationRole\x12R\n" +
-	"\x11edge_dependencies\x18\b \x03(\v2%.host.installation.v1.OfferDependencyR\x10edgeDependencies\"E\n" +
+	"\x11edge_dependencies\x18\b \x03(\v2%.host.installation.v1.OfferDependencyR\x10edgeDependencies\x12%\n" +
+	"\x0eroles_declared\x18\t \x01(\bR\rrolesDeclared\x12\x12\n" +
+	"\x04page\x18\n" +
+	" \x01(\bR\x04page\x12\x18\n" +
+	"\aclosure\x18\v \x03(\tR\aclosure\"E\n" +
 	"\x0fOfferDependency\x12\x16\n" +
 	"\x06module\x18\x01 \x01(\tR\x06module\x12\x1a\n" +
 	"\bpresence\x18\x02 \x01(\tR\bpresence\"z\n" +

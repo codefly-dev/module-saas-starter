@@ -121,7 +121,10 @@ func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev
 	if err != nil {
 		return nil, coreStatus(err)
 	}
-	out := &installationv1.ReviewedOffer{Target: projected.Target, ToolsComposed: projected.ToolsComposed, InstallationRole: projected.InstallationRole}
+	// roles_declared, page and closure are the core's own answers about the
+	// target, so a host's UI asks them of the one review and never per module.
+	out := &installationv1.ReviewedOffer{Target: projected.Target, ToolsComposed: projected.ToolsComposed, InstallationRole: projected.InstallationRole,
+		RolesDeclared: offer.RolesDeclared, Page: offer.Page, Closure: slices.Clone(offer.Closure)}
 	for _, edge := range projected.EdgeDependencies {
 		out.EdgeDependencies = append(out.EdgeDependencies, &installationv1.OfferDependency{Module: edge.Module, Presence: edge.Presence})
 	}
@@ -129,11 +132,7 @@ func reviewedOffer(offer authority.ReviewedOffer, bindings map[string]*runnablev
 		out.Approval = &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest}
 	}
 	if projected.Installation != nil {
-		roles := make([]string, 0, len(projected.Roles))
-		for _, role := range projected.Roles {
-			roles = append(roles, role.Name)
-		}
-		out.Installation = installationToWireWithRoles(*projected.Installation, roles)
+		out.Installation = installationWire(*projected.Installation, offer.Module)
 	}
 	for _, b := range projected.Ceiling {
 		out.Ceiling = append(out.Ceiling, &installationv1.OfferBinding{Binding: b.Binding, Module: b.Module, Scopes: offerScopesToWire(b.Scopes)})

@@ -583,15 +583,18 @@ func scanCoreInstallation(row pgx.Row) (domain.Installation, error) {
 	return inst, nil
 }
 
-// A module's installation is accounts' own record (public.installations,
-// kind 'module'): an administrator's consent within the module envelope,
-// retired by an uninstall or by a ceiling that no longer allows the
-// organization, all in accounts' own transactions. The core is configured with
-// HostInstallsModules, so it reads those records as its installations, live,
-// and writes a module's only to raise its revision when a redelivery narrows
-// the module; the raise is kept beside the record
-// (authority_core_module_revisions). authority_core_installations holds the
-// solutions' installations, which the core decides.
+// A module without roles is installed by this host's own consent: its record
+// is accounts' own (public.installations, kind 'module'), an administrator's
+// consent within the module envelope, retired by an uninstall or by a ceiling
+// that no longer allows the organization, all in accounts' own transactions.
+// The core is configured with HostInstallsModules, so it reads those records as
+// its installations, live, and writes one only to raise its revision when a
+// redelivery narrows the module; the raise is kept beside the record
+// (authority_core_module_revisions). authority_core_installations holds every
+// installation the core decides: a solution's, and a module page's (a module
+// declaring roles, chosen through Review and Install like a solution). A
+// module page's row is told from a module's own record by its principal: the
+// core gives every installation it decides one, and composition never does.
 
 // hostModules maps the principal accounts records a module's installation
 // under (business.ModulePrincipalID of its name) to every composed module.
@@ -736,9 +739,10 @@ func (t coreTx) InstallationByPrincipal(principal string) (domain.Installation, 
 // module installations accounts holds now (a retired one is read by its id).
 func (t coreTx) Installations(organization string) ([]domain.Installation, error) {
 	// A module's row the core wrote before accounts held its modules' records
-	// is not an installation any more.
+	// is not an installation any more; a module page's, which the core
+	// decided and gave a principal, is.
 	const solutions = `SELECT ` + coreInstallationColumns + ` FROM public.authority_core_installations
-		WHERE target NOT IN (SELECT name FROM public.authority_core_modules WHERE kind <> 'solution')`
+		WHERE (principal_id <> '' OR target NOT IN (SELECT name FROM public.authority_core_modules WHERE kind <> 'solution'))`
 	var rows pgx.Rows
 	var modules []domain.Installation
 	var err error
@@ -803,10 +807,15 @@ func (t coreTx) PutInstallation(inst domain.Installation) error {
 }
 
 // raiseModuleInstallation applies the one write the core makes to a module's
-// installation: raising its revision, when a redelivery narrows the module.
-// It reports whether inst is a module's installation at all; any other change
-// to one is refused, because the record is accounts' own.
+// own installation record: raising its revision, when a redelivery narrows the
+// module. It reports whether inst is such a record at all; any other change to
+// one is refused, because the record is accounts' own. A module page's
+// installation, which the core decided (it carries the principal the core
+// gave it), is written like a solution's and is never one of these.
 func (t coreTx) raiseModuleInstallation(inst domain.Installation) (bool, error) {
+	if inst.PrincipalID != "" {
+		return false, nil
+	}
 	var kind string
 	err := t.q.QueryRow(t.ctx, `SELECT kind FROM public.authority_core_modules WHERE name = $1`, inst.Target).Scan(&kind)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && kind == domain.KindSolution) {

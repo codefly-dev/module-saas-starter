@@ -673,7 +673,8 @@
         "audit": {
           "events": [
             "saas.authority.installation_requested",
-            "saas.authority.installation_activated"
+            "saas.authority.installation_activated",
+            "saas.authority.installation_upgraded"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -692,7 +693,7 @@
         "service": "accounts"
       },
       "source_proto": "host/installation/v1/installation.proto",
-      "policy_sha256": "9848918817951cb839354fccd74257a45731b1ff0ae86aaa3af89dadc0f32a1b",
+      "policy_sha256": "89fe3b4276d0343ab52e8a7256ccff7db57cb8f06129066fd9b1167728cda4d1",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {

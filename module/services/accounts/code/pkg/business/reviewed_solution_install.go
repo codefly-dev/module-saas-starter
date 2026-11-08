@@ -20,8 +20,12 @@ type solutionBundleStore interface {
 	RecordSolutionPrerequisites(context.Context, domain.Installation, []ModuleInstallationPrerequisite) error
 }
 
-// ReviewSolutionInstall uses the shared solution offer and the existing host
+// ReviewSolutionInstall uses the shared offer and the existing host
 // catalogue/module consent owner. It creates no installation, grant or job.
+// Its target is any role-gated target the core offers: a solution, or a
+// module page declaring roles, which is reviewed, installed, converged and set
+// up exactly as a solution is; the core refuses a module without roles, which
+// is installed by a closure and never chosen.
 func (s *Service) ReviewSolutionInstall(ctx context.Context, caller authority.Person, org, targetID string) (*gen.ReviewedSolutionInstall, error) {
 	return s.reviewSolutionInstall(ctx, caller, org, targetID, NewIDString(), "")
 }
@@ -39,8 +43,8 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 	if err != nil {
 		return nil, err
 	}
-	if len(targets) != 1 || targets[0].Kind != "solution" {
-		return nil, domain.NotNow("the reviewed solution target is not available")
+	if len(targets) != 1 {
+		return nil, domain.NotNow("the reviewed target is not available")
 	}
 	core, err := s.AuthorityCore()
 	if err != nil {
@@ -57,7 +61,7 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 		offer.Module.InstallationRole = requestedRole
 	}
 	if offer.Module.InstallationRole == "" {
-		return nil, domain.NotNow("solution %q declares no installation authority; its owner must declare it before installation", offer.Module.Principal)
+		return nil, domain.NotNow("%q declares no installation authority; its owner must declare it before installation", offer.Module.Principal)
 	}
 	target, err := s.ResolveInstallationPrincipal(ctx, org, offer.Module.Principal)
 	if err != nil {
@@ -197,8 +201,13 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 		if inst.Target != review.Target || (inst.Status != domain.Pending && inst.Status != domain.Active) {
 			continue
 		}
-		if inst.Status == domain.Pending && inst.Consent.OperationID != review.Approval.OperationId {
-			continue // A fresh review must pass reconstruction and core's revision fence below.
+		if inst.Consent.OperationID != review.Approval.OperationId {
+			// A fresh review must pass reconstruction and core's revision
+			// fence below: on a pending attempt it supersedes it; on an
+			// active installation it is an upgrade to the delivered offer,
+			// or refused by the core as already installed when it approves
+			// the offer the installation already holds.
+			continue
 		}
 		plan, err := s.store.(CanonicalInstallationSetupStore).SolutionInstallationPlan(ctx, org, inst.ID)
 		if err != nil {
@@ -222,7 +231,38 @@ func (s *Service) installReviewedSolution(ctx context.Context, caller authority.
 		Review: review, Approval: domain.ConsentApproval{TargetID: a.TargetId,
 			Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest, OperationID: a.OperationId}}
 	ctx = WithSolutionInstallationPlan(ctx, plan)
-	return core.Install(ctx, caller, org, review.Target, requestedRole, requestedOwner, &plan.Approval, s.AuthorityInstallStep())
+	step, err := s.installStepFor(ctx, core, review.Target)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	return core.Install(ctx, caller, org, review.Target, requestedRole, requestedOwner, &plan.Approval, step)
+}
+
+// installStepFor is the install step the core runs for target: a solution's
+// converges its closure and runs its setup through the durable queue
+// (AuthorityInstallStep); a module page declares no install endpoint, so its
+// step converges its closure and nothing more, and the installation is active
+// as soon as the core records it.
+func (s *Service) installStepFor(ctx context.Context, core *authority.Service, target string) (authority.InstallStep, error) {
+	m, err := core.Composed(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	if m.Kind == domain.KindSolution {
+		return s.AuthorityInstallStep(), nil
+	}
+	return s.convergeClosureStep, nil
+}
+
+// convergeClosureStep is the whole install step of a target without an
+// install endpoint: every supporting module its review reached is installed or
+// reused, and the witnesses are recorded on the plan for the activation fence.
+func (s *Service) convergeClosureStep(ctx context.Context, inst domain.Installation) error {
+	bundle, ok := s.store.(solutionBundleStore)
+	if !ok {
+		return domain.NotNow("INSTALLATION_SETUP_UNAVAILABLE: the host cannot converge supporting modules")
+	}
+	return s.convergeReviewedModules(ctx, inst, bundle)
 }
 
 func (s *Service) convergeReviewedModules(ctx context.Context, inst domain.Installation, store solutionBundleStore) error {

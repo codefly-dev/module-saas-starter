@@ -25,7 +25,7 @@ func TestReviewedSolutionPlanRequiresExactCanonicalReceiptAndPrerequisites(t *te
 		Dependencies: []business.ModuleInstallationPrerequisite{module},
 	}
 	inst := domain.Installation{ID: plan.InstallationID, Organization: plan.Organization, Target: plan.Target, AgentRole: plan.MachineRole, Revision: plan.Revision, Consent: receipt, Status: domain.Active}
-	if err := plan.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, plan.SetupJobID); err != nil {
+	if err := plan.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, plan.SetupJobID, true); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -72,26 +72,36 @@ func TestReviewedSolutionPlanRequiresExactCanonicalReceiptAndPrerequisites(t *te
 			current := inst
 			rows := []business.ModuleInstallationPrerequisite{module}
 			tc.change(&current, &rows)
-			if err := plan.ValidateActivation(current, rows, plan.SetupJobID); err == nil {
+			if err := plan.ValidateActivation(current, rows, plan.SetupJobID, true); err == nil {
 				t.Fatal("changed prerequisites were accepted for activation")
 			}
 		})
 	}
-	if err := (business.SolutionInstallationPlan{}).ValidateActivation(inst, nil, ""); err == nil {
+	if err := (business.SolutionInstallationPlan{}).ValidateActivation(inst, nil, "", true); err == nil {
 		t.Fatal("missing plan was accepted")
 	}
 	for _, job := range []string{"", "previous-attempt-job"} {
-		if err := plan.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, job); err == nil {
+		if err := plan.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, job, true); err == nil {
 			t.Fatal("missing or foreign setup acknowledgement was accepted")
 		}
 	}
+	// A target without an install step (a module page) activates with no
+	// setup job at all, and a job queued for one is a changed attempt.
+	stepless := plan
+	stepless.SetupJobID = ""
+	if err := stepless.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, plan.SetupJobID, false); err == nil {
+		t.Fatal("a setup job was accepted for a target that declares no install step")
+	}
 	module.NoStandingAuthority, module.RoleID = true, ""
 	plan.Dependencies = []business.ModuleInstallationPrerequisite{module}
-	if err := plan.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, plan.SetupJobID); err != nil {
+	if err := plan.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, plan.SetupJobID, true); err != nil {
 		t.Fatal(err)
 	}
 	module.RoleID = "unexpected-standing-grant"
-	if err := plan.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, plan.SetupJobID); err == nil {
+	if err := plan.ValidateActivation(inst, []business.ModuleInstallationPrerequisite{module}, plan.SetupJobID, true); err == nil {
 		t.Fatal("a declared no-standing module acquired a grant")
 	}
 }

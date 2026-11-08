@@ -53,7 +53,7 @@ func (s *PostgresStore) RecordSolutionPrerequisites(ctx context.Context, inst do
 	return s.WithControlPlane(ctx, func(ctx context.Context) error {
 		q := s.getQueryExecutor(ctx)
 		var raw []byte
-		if err := q.QueryRow(ctx, `SELECT consent FROM public.authority_core_installations WHERE id=$1 AND organization_id=$2::uuid AND revision=$3 AND status='pending' FOR UPDATE`, inst.ID, inst.Organization, inst.Revision).Scan(&raw); err != nil {
+		if err := q.QueryRow(ctx, `SELECT consent FROM public.authority_core_installations WHERE id=$1 AND organization_id=$2::uuid AND revision=$3 AND status IN ('pending','active') FOR UPDATE`, inst.ID, inst.Organization, inst.Revision).Scan(&raw); err != nil {
 			if err == pgx.ErrNoRows {
 				return domain.NotNow("INSTALLATION_APPROVAL_REVISION_CHANGED: the setup attempt was superseded or revoked")
 			}

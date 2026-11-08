@@ -64,9 +64,23 @@ func (s *Service) InstallFixtureTarget(ctx context.Context, actorID, orgID, targ
 	if err != nil {
 		return nil, false, err
 	}
-	if available.Installed && available.Kind != "module" {
+	if available.Installed {
 		existing, err := s.heldTargetInstallation(ctx, orgID, available.TargetID)
-		return existing, false, err
+		if err != nil {
+			return nil, false, err
+		}
+		// A solution's installation is the core's; so is a module page's,
+		// chosen through its review while it declared roles. A module that has
+		// since stopped declaring them keeps that installation (the core keeps
+		// a chosen one), so the host installs nothing beside it: one
+		// installation per organization and target.
+		canonical, err := s.canonicalSolutionSummaries(ctx, orgID, existing.GetId(), "", gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, 1)
+		if err != nil {
+			return nil, false, err
+		}
+		if available.Kind != "module" || len(canonical) == 1 {
+			return existing, false, nil
+		}
 	}
 	// The catalogue counts a solution as installed only through its canonical
 	// record. A host without the authority core still keeps legacy solution
