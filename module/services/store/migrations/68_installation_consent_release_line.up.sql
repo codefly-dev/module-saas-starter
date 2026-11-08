@@ -20,7 +20,10 @@ CREATE TABLE public.authority_core_approved_modules (
     CONSTRAINT authority_core_approved_modules_kind_check CHECK ((kind = ANY (ARRAY['module'::text, 'solution'::text]))),
     CONSTRAINT authority_core_approved_modules_generation_check CHECK ((generation > 0))
 );
-GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.authority_core_approved_modules TO app_control_plane;
+-- Kept, never erased: nothing deletes an approved declaration (a generation
+-- an active consent names must stay readable), so the control plane holds no
+-- DELETE.
+GRANT SELECT,INSERT,UPDATE ON TABLE public.authority_core_approved_modules TO app_control_plane;
 
 -- A receipt written before the generation and digest were kept carries
 -- neither key, which the core reads as an approval of unknown generation and
