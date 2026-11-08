@@ -241,14 +241,54 @@ func TestAWrittenEnvelopeNarrowsTheManifest(t *testing.T) {
 			grant.OperationAudiences["run"].InvokeScopes, "delete is the manifest's ask alone")
 		require.Equal(t, testEnvelopeTenant, grant.Tenant)
 	})
+	// A composed principal the envelope leaves out is a deployment defect on
+	// that module's row, not a failing pass: the pass derived exactly what the
+	// administrator wrote, so it returns no error and withholds the principal
+	// with its reason where an operator reads the binding.
 	t.Run("an envelope that does not", func(t *testing.T) {
 		other := &ModuleEnvelope{Revision: 1, Principals: map[string]ModuleEnvelopePrincipal{"elsewhere": {}}}
-		host := deliveredHost(t, writtenEnvelope{other}, ceilingReleaseKey, asking)
-		err := host.modulePrincipals.RunOnce(context.Background())
-		require.ErrorIs(t, err, ErrModulePrincipalOmitted)
-		require.Contains(t, err.Error(), "the administrative policy declares no grant for it")
+		host := deliveredHost(t, writtenEnvelope{other}, ceilingReleaseKey, asking, quietManifest(t))
+		require.NoError(t, host.modulePrincipals.RunOnce(context.Background()))
 		require.Empty(t, host.service.ModulePrincipals())
+
+		reasons := host.modulePrincipals.WithheldAuthorityReasons()
+		require.Len(t, reasons, 1, "exactly the asking binding carries a reason")
+		require.Contains(t, reasons[testPresenceBinding], "the administrative policy declares no grant for it")
+		require.Contains(t, reasons[testPresenceBinding], "so all 1 bindings it asks for are withheld")
+
+		host.modulePrincipals.mutex.Lock()
+		withheld := host.modulePrincipals.last.withheld
+		host.modulePrincipals.mutex.Unlock()
+		require.Len(t, withheld, 1)
+		require.Equal(t, "run", withheld[0].BindingID)
+		require.Contains(t, withheld[0].Error(), "the administrative policy declares no grant for it")
 	})
+	// A principal asking for no binding is still withheld whole, and says so.
+	t.Run("an envelope that does not, for a manifest asking no binding", func(t *testing.T) {
+		other := &ModuleEnvelope{Revision: 1, Principals: map[string]ModuleEnvelopePrincipal{"elsewhere": {}}}
+		host := deliveredHost(t, writtenEnvelope{other}, ceilingReleaseKey, testManifest(t, nil))
+		require.NoError(t, host.modulePrincipals.RunOnce(context.Background()))
+		require.Empty(t, host.service.ModulePrincipals())
+		reasons := host.modulePrincipals.WithheldAuthorityReasons()
+		require.Len(t, reasons, 1)
+		require.Contains(t, reasons[testPresenceBinding], "the administrative policy declares no grant for it")
+	})
+}
+
+// The host's own principal — the module this host was composed as — needs no
+// envelope grant: nothing mints as the host through this registry, so a
+// manifest asking for it is entered nowhere and reported nowhere.
+func TestTheHostsOwnPrincipalNeedsNoEnvelopeGrant(t *testing.T) {
+	other := &ModuleEnvelope{Revision: 1, Principals: map[string]ModuleEnvelopePrincipal{"elsewhere": {}}}
+	host := deliveredHost(t, writtenEnvelope{other}, ceilingReleaseKey, testManifest(t, nil))
+	host.service.hostModule = testModulePrefix
+	require.NoError(t, host.modulePrincipals.RunOnce(context.Background()))
+	require.Empty(t, host.service.ModulePrincipals())
+	require.Empty(t, host.modulePrincipals.WithheldAuthorityReasons())
+	host.modulePrincipals.mutex.Lock()
+	withheld := host.modulePrincipals.last.withheld
+	host.modulePrincipals.mutex.Unlock()
+	require.Empty(t, withheld)
 }
 
 // The mint's refusal of a prefix the registry does not hold names the prefix

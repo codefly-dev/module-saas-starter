@@ -36,6 +36,20 @@ What accounts adds, and where:
 | The hop's admission keys: leased rows judged by the database's clock, published apart from the Work Context key; each registration proves its key once (its nonce is kept in `hop_admission_proofs`), and one key is pinned per hop instance (its pod) while its registration holds | migrations 55 and 58, `pkg/business/hop_admission_keys.go`, `pkg/adapters/host_interface_admission.go` |
 | Tenancy at the perimeter: a member or an administrator of the organization a call names, before the core decides | `pkg/adapters/host_interface.go` (`requireOrgMember`, `requireOrgAdmin`) |
 
+The module registry the core reads is DERIVED each reconcile pass from the
+applied module manifests, narrowed by the module envelope where a platform
+administrator has written one (`pkg/business/module_principal_reconcile.go`).
+A composed principal the envelope does not name is **withheld, not a failing
+pass**: the pass applied every binding it was given, so the omission is
+recorded on that binding's own row (`pending_reason`, through
+`WithheldAuthorityReasons`) where an operator reads a delivery this host could
+not take, and the pass returns no error for it. The host's own principal — the
+module this host was composed as — needs no envelope grant: nothing mints as
+the host through this registry, so its manifest's principal is entered nowhere
+and leaves no row. A pass still fails for a defect in its inputs: an unreadable
+manifest or envelope, a manifest that no longer verifies, a workload two
+principals claim.
+
 ## Delegation lifetimes
 
 `Delegate.ttl_seconds` reaches the shared core unchanged in seconds. Negative

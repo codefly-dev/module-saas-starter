@@ -283,9 +283,9 @@ func TestConnectRecordsTheDelegationWhenTheEnvelopeAllowsTheBinding(t *testing.T
 }
 
 // The other shape that leaves the registry without the delegation binding: the
-// envelope declares no ceiling for the principal at all, so the pass omits the
-// whole module and no binding-level omission is reported for it. A connect must
-// refuse here too — the first draft of this fix noticed only the binding-level
+// envelope declares no ceiling for the principal at all, so the pass withholds
+// the whole module on its row and no binding-level omission is reported for it.
+// A connect must refuse here too — the first draft of this fix noticed only the binding-level
 // omission and would have reported success for this one.
 func TestConnectRefusesWhenTheEnvelopeDeclaresNoCeilingForTheModule(t *testing.T) {
 	raw, err := json.Marshal(map[string]any{"revision": 1, "principals": map[string]any{}})
@@ -293,7 +293,9 @@ func TestConnectRefusesWhenTheEnvelopeDeclaresNoCeilingForTheModule(t *testing.T
 	envelope, err := business.ParseModuleEnvelope(raw)
 	require.NoError(t, err)
 	host := newWithheldHost(t, envelope)
-	require.ErrorIs(t, host.derive(t), business.ErrModulePrincipalOmitted)
+	require.NoError(t, host.derive(t), "a principal the envelope leaves out is a withheld row, never a failing pass")
+	require.Contains(t, host.pass.ModulePrincipals().WithheldAuthorityReasons()[withheldManifestBinding],
+		"the administrative policy declares no grant for it")
 
 	_, err = host.svc.AddGitHubSource(context.Background(), "actor-1", business.AddGitHubSourceInput{
 		OrgID: testOrg, Repo: "acme/docs", Branch: "main", CollectionLabel: "guides", AccessToken: "t",
