@@ -93,22 +93,30 @@ func (s *Service) InstallFixtureTarget(ctx context.Context, actorID, orgID, targ
 			return existing, false, err
 		}
 	}
+	approval, err := s.freshApproval(ctx, orgID, available)
+	if err != nil {
+		return nil, false, err
+	}
+	return s.InstallTargetByName(ctx, actorID, orgID, target, role, ownerID, approval)
+}
+
+// freshApproval is a fresh consent of available at org, at the revision its
+// installation history stands at (revoked history included).
+func (s *Service) freshApproval(ctx context.Context, orgID string, available *AvailableSolutionTarget) (*InstallationApproval, error) {
 	approval := &InstallationApproval{TargetID: available.TargetID, Generation: available.AppliedGeneration, OperationID: uuid.NewString()}
 	for token := ""; ; {
 		rows, next, err := s.ListOrganizationInstallations(ctx, orgID, token, listInstallationsMaxPageSize)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		for _, row := range rows {
-			i := row.Summary.GetInstallation()
-			if i.GetTargetId() == available.TargetID {
+			if i := row.Summary.GetInstallation(); i.GetTargetId() == available.TargetID {
 				approval.ExpectedRevision = max(approval.ExpectedRevision, i.GetRevision())
 			}
 		}
 		if next == "" {
-			break
+			return approval, nil
 		}
 		token = next
 	}
-	return s.InstallTargetByName(ctx, actorID, orgID, target, role, ownerID, approval)
 }

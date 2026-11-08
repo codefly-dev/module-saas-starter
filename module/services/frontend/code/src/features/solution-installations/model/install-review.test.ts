@@ -195,4 +195,26 @@ describe("installation access review", () => {
 			},
 		]);
 	});
+	it("says each confinement in plain words", () => {
+		const offer = create(ReviewedOfferSchema, {
+			target: "Example",
+			roles: ["attached", "installation", "owner"].map((confinement) => ({
+				name: confinement,
+				reach: [
+					{
+						path: ["Example"],
+						module: "Example",
+						via: "role",
+						confinement,
+						operations: ["GET /pages/{id}"],
+					},
+				],
+			})),
+		});
+		expect(roleReach(offer)[0].roles).toEqual([
+			{ role: "attached", text: "get pages (attached items)" },
+			{ role: "installation", text: "get pages (this installation's items)" },
+			{ role: "owner", text: "get pages (items they own)" },
+		]);
+	});
 });

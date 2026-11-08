@@ -30,12 +30,19 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, p *business.Install
 		return nil, err
 	}
 	executor := s.getQueryExecutor(ctx)
-	admin, err := isCurrentOrgAdmin(ctx, executor, p.OrgID, p.GrantedBy)
-	if err != nil {
-		return nil, err
-	}
-	if !admin {
-		return nil, status.Error(codes.PermissionDenied, "INSTALLATION_APPROVAL_ADMIN_REQUIRED: only a current organization administrator may approve installation authority")
+	// The host's composition install of a module is no person's approval: it
+	// names no approver, and its owner of record is still held to a current
+	// administrator below. Every other approval is an administrator's.
+	if !p.ByComposition {
+		admin, err := isCurrentOrgAdmin(ctx, executor, p.OrgID, p.GrantedBy)
+		if err != nil {
+			return nil, err
+		}
+		if !admin {
+			return nil, status.Error(codes.PermissionDenied, "INSTALLATION_APPROVAL_ADMIN_REQUIRED: only a current organization administrator may approve installation authority")
+		}
+	} else if p.Kind != "module" || p.GrantedBy != "" {
+		return nil, status.Error(codes.PermissionDenied, "INSTALLATION_COMPOSITION_REQUIRED: only a module is installed by composition, and no person approves it")
 	}
 	if err := checkInstallationEnvelope(ctx, executor, p.EnvelopeRevision); err != nil {
 		return nil, err

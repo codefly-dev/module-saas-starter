@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
-	"github.com/codefly-dev/core/wool"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
@@ -17,15 +16,14 @@ import (
 // does what the core's composition does: on every delivery pass and at start
 // (KeepAuthorityCoreCurrent) for every organization, and for a new
 // organization when it is created. Each installation is the host's own module
-// record, made through the module install path (InstallFixtureTarget, the
-// host-owned consent), holding no standing authority: a module whose
+// record, made through the module install path by installByComposition,
+// recorded as the system's, holding no standing authority: a module whose
 // declaration selects none, or selects nothing at all, a module page included
 // (its roles decide who may use it, through grants a set up makes). Its
-// consent scope is the envelope's, as every module install's is. A module
-// whose declaration selects a standing role is not installed this way: that
-// role is an administrator's to consent to, and the pass says so. What is
-// installed already, pending or active, is never installed again; a
-// withdrawn module's installations are revoked by the withdrawal.
+// consent scope is the envelope's, as every module install's is. What is
+// installed already, pending or active, is never installed again; a person
+// never uninstalls one (UninstallSolution refuses), and a withdrawn module's
+// installations are revoked by the withdrawal.
 
 // compositionPageLimit bounds the organizations one pass reads per page.
 const compositionPageLimit = 200
@@ -64,14 +62,11 @@ func (s *Service) InstallComposedModules(ctx context.Context) error {
 type organizationOwner struct{ id, owner string }
 
 // installComposedModulesAt installs, by composition, every module org may
-// install and holds none of yet, as the organization's owner of record.
+// install and holds none of yet (installByComposition).
 func (s *Service) installComposedModulesAt(ctx context.Context, org, owner string) error {
 	core, err := s.AuthorityCore()
 	if err != nil {
 		return nil
-	}
-	if owner == "" {
-		return fmt.Errorf("organization %s has no owner to record its composed modules under", org)
 	}
 	var failures []error
 	for token := ""; ; {
@@ -91,12 +86,7 @@ func (s *Service) installComposedModulesAt(ctx context.Context, org, owner strin
 				failures = append(failures, fmt.Errorf("install %s at %s: %w", target.RouteAlias, org, err))
 				continue
 			}
-			if supportingInstallationRole(m) != domain.NoInstallationRole {
-				wool.Get(ctx).In("installComposedModulesAt").Warn("a module selecting a standing role is not installed by composition; an administrator consents to that role",
-					wool.Field("module", m.Name), wool.Field("organization", org), wool.Field("role", m.InstallationRole))
-				continue
-			}
-			if _, _, err := s.InstallFixtureTarget(ctx, owner, org, target.RouteAlias, "", owner); err != nil {
+			if err := s.installByComposition(ctx, org, owner, target, m); err != nil {
 				failures = append(failures, fmt.Errorf("install %s at %s: %w", target.RouteAlias, org, err))
 			}
 		}
@@ -105,6 +95,64 @@ func (s *Service) installComposedModulesAt(ctx context.Context, org, owner strin
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// installByComposition installs module m at org as the host's composition
+// does, through the module install path, recorded as the system's ("by":
+// "composition"): no person approves it. It holds no standing authority (a
+// declaration selecting none or nothing; a module page selects none). Its
+// owner of record, which every installation names, is the organization's
+// owner while they are a current administrator, or else its first current
+// administrator; an organization with none gets nothing installed, and says
+// so. A declaration selecting anything else is one the module install path
+// refuses (modulePageHoldsNothing, undeclaredInstallationRole), so it is
+// reported, never installed.
+func (s *Service) installByComposition(ctx context.Context, org, owner string, target *AvailableSolutionTarget, m domain.Module) error {
+	if role := supportingInstallationRole(m); role != domain.NoInstallationRole {
+		return fmt.Errorf("its declaration selects the standing role %q, which a module never holds by composition: a module page declares installation_role none, and a module without a page declares no role", role)
+	}
+	ownerOfRecord, err := s.compositionOwnerOfRecord(ctx, org, owner)
+	if err != nil {
+		return err
+	}
+	approval, err := s.freshApproval(ctx, org, target)
+	if err != nil {
+		return err
+	}
+	_, _, err = s.installTargetByName(ctx, "", org, target.RouteAlias, "", ownerOfRecord, approval, true)
+	return err
+}
+
+// compositionOwnerOfRecord is the organization's owner while they are a
+// current administrator, or else its first current administrator by id.
+func (s *Service) compositionOwnerOfRecord(ctx context.Context, org, owner string) (string, error) {
+	var members []*gen.OrgMembership
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		members, err = s.store.ListOrgMembers(ctx, org)
+		return err
+	}); err != nil {
+		return "", err
+	}
+	admin := func(m *gen.OrgMembership) bool {
+		return m.GetRole() == gen.OrgRole_ORG_ROLE_OWNER || m.GetRole() == gen.OrgRole_ORG_ROLE_ADMIN
+	}
+	var first string
+	for _, m := range members {
+		if !admin(m) {
+			continue
+		}
+		if m.GetUserId() == owner {
+			return owner, nil
+		}
+		if first == "" || m.GetUserId() < first {
+			first = m.GetUserId()
+		}
+	}
+	if first == "" {
+		return "", fmt.Errorf("organization %s has no current administrator to name as its modules' owner of record", org)
+	}
+	return first, nil
 }
 
 // ActiveOrPendingModuleInstallation is org's installation of the composed

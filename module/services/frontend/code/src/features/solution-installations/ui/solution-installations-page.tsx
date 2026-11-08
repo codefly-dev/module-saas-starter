@@ -187,7 +187,7 @@ function SolutionInstallationsForOrganization({
 					</h1>
 					<p className="text-muted-foreground">
 						{showModules
-							? "Modules are part of the platform: they install and converge with the solutions that reach them. This page is for administering one directly."
+							? "Modules are part of the platform: each is installed in every organization by composition and retired only by its withdrawal. This page shows them; nothing here installs or uninstalls one."
 							: "The solutions this organization can install, and the module pages whose access it sets up. Install a solution after reviewing what each role can do and its supporting modules; a module page is already part of the platform, and nobody can use it until its roles are given to teams."}
 					</p>
 					{!showModules && (
@@ -482,11 +482,8 @@ function AvailableSection({
 											)}
 										</TableCell>
 										<TableCell className="text-right">
-											{showModules ? (
-												<span className="text-sm text-muted-foreground">
-													Installed by composition
-												</span>
-											) : onSetUp && isModulePage(row.solution) ? (
+											{showModules ? null : onSetUp &&
+												isModulePage(row.solution) ? (
 												<Button
 													size="sm"
 													variant="outline"
@@ -615,7 +612,7 @@ function InstalledSection({
 				</CardTitle>
 				<CardDescription>
 					{unclassified
-						? "Every module this organization has installed. Which of them are module pages, installed through their review, is shown once the authority's offers are read."
+						? "Every module installed in this organization, by composition. Which targets are solutions is shown once the authority's offers are read."
 						: "What this organization has installed, at which release, and how healthy each installation is right now."}
 				</CardDescription>
 			</CardHeader>
@@ -757,6 +754,7 @@ function InstalledSection({
 											)}
 											{row.upgradeAvailable &&
 												row.target &&
+												row.target.kind !== "module" &&
 												row.status === InstallationStatus.ACTIVE && (
 													<Button
 														size="sm"
@@ -779,15 +777,19 @@ function InstalledSection({
 											>
 												Set up
 											</Link>
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={uninstall.isPending}
-												aria-label={`Uninstall ${name(row)}`}
-												onClick={() => setConfirming(row)}
-											>
-												Uninstall
-											</Button>
+											{/* A module is installed by composition; only its
+											    delivered withdrawal retires it. */}
+											{row.target?.kind !== "module" && (
+												<Button
+													variant="outline"
+													size="sm"
+													disabled={uninstall.isPending}
+													aria-label={`Uninstall ${name(row)}`}
+													onClick={() => setConfirming(row)}
+												>
+													Uninstall
+												</Button>
+											)}
 										</TableCell>
 									</TableRow>
 								))}
@@ -937,15 +939,18 @@ function TeamExposure({
 					{row.inheritedTeams.map((team) => team.team).join(", ")}
 				</p>
 			)}
-			<Button
-				variant="outline"
-				size="sm"
-				aria-label={`Grant a team access to ${name}`}
-				disabled={granting}
-				onClick={onGrant}
-			>
-				Grant a team
-			</Button>
+			{/* A module is used through its roles alone: no second access path. */}
+			{row.target?.kind !== "module" && (
+				<Button
+					variant="outline"
+					size="sm"
+					aria-label={`Grant a team access to ${name}`}
+					disabled={granting}
+					onClick={onGrant}
+				>
+					Grant a team
+				</Button>
+			)}
 		</div>
 	);
 }

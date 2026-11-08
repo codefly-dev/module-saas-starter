@@ -264,14 +264,29 @@ composition in every organization: accounts' own record
 the host, so the host does it (`InstallComposedModules`): on every delivery
 pass and at start (`KeepAuthorityCoreCurrent`), for every organization and
 every composed module it does not hold yet, and for a new organization when it
-is created. Each is made through the module install path holding no standing
-authority (a declaration selecting none or nothing, a module page included),
-its consent scope the envelope's, the organization's owner as owner of record
-(the module install fence requires a current administrator). A module whose
-declaration selects a standing role is not installed this way; the pass logs
-it. What is installed already, pending or active, is never installed again;
-a withdrawal revokes every installation. Supporting module administration is
-a read-only view of these installations. The core
+is created. Each is made through the module install path by
+`installByComposition`, recorded as the system's (`installation.created`
+with actor type `system` and `"by": "composition"`; the store's administrator
+fence is lifted for this one entry point alone, `ByComposition`), holding no
+standing authority (a declaration selecting none or nothing, a module page
+included), its consent scope the envelope's. Every installation names an
+owner of record (a NOT NULL column), so the organization's owner names it
+while they are a current administrator, or else its first current
+administrator. A module whose declaration selects a standing role is refused
+by name: the module install path takes none (a module page declares
+`installation_role: none`, and a module without a page declares no role), so
+the pass reports it and installs nothing. What is installed already, pending
+or active, is never installed again. A person never uninstalls a module
+(`UninstallSolution` refuses, as the core's `Uninstall` does); only its
+delivered withdrawal revokes its installations. Supporting module
+administration is a read-only view of these installations: no Install,
+Uninstall, Update or team grant on a module row.
+
+Deploy notes (Blue, checked 2026-11-08): Blue has a committed module envelope
+(revision 11), so composition installs carry the envelope's scope there; and
+Blue has no non-revoked installation of a module with a principal in the
+core's records (a module page installed through the retired review path), so
+nothing is stranded by the change. The core
 refuses a module at `ReviewOffer`, `Review` and `Install` (`NotFound`, "a module
 is installed by composition"). A **module page** (a module declaring a page and
 roles) holds no standing authority (`installation_role: none`; the module

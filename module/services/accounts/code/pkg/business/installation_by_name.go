@@ -33,6 +33,13 @@ var ErrInstallTargetNotPresent = errors.New("no installable target answers to th
 // Held is what the catalogue's
 // `installed` means: any installation not revoked, a pending one among them.
 func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, target, role, ownerID string, approval *InstallationApproval) (installation *gen.Installation, installed bool, err error) {
+	return s.installTargetByName(ctx, actorID, orgID, target, role, ownerID, approval, false)
+}
+
+// installTargetByName is InstallTargetByName, or the host's composition
+// install of a module when byComposition (installByComposition): no actor,
+// recorded as the system's.
+func (s *Service) installTargetByName(ctx context.Context, actorID, orgID, target, role, ownerID string, approval *InstallationApproval, byComposition bool) (installation *gen.Installation, installed bool, err error) {
 	approval, err = approval.bindIntent(struct {
 		Actor, Org, Target, Role, Owner string
 		Approval                        *InstallationApproval
@@ -97,6 +104,7 @@ func (s *Service) InstallTargetByName(ctx context.Context, actorID, orgID, targe
 		RoleID:              roleID,
 		OwnerPrincipalID:    ownerID,
 		CoOwnerPrincipalIDs: coOwners,
+		ByComposition:       byComposition,
 	})
 	if err != nil {
 		return nil, false, err

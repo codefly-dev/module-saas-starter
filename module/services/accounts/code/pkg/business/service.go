@@ -210,6 +210,8 @@ type Service struct {
 	// authorityCore decides every operation of the host interfaces: the shared
 	// authority core over this host's store (authority_core.go).
 	authorityCore *authorityCoreState
+	// upgradeCache keeps listings' upgrade_available answers per composition.
+	upgradeCache upgradeCache
 	// admissionKeys persists the hop's registered admission keys
 	// (hop_admission_keys.go). Nil publishes none and registers none.
 	admissionKeys AdmissionKeyStore

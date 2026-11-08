@@ -39,6 +39,8 @@ users:
   - {id: 00000000-0000-7000-8000-0000000000e1, email: artifact-approver@acme.test, name: Ada Artifactapprover, role: member, provider: email, provider_id: fixture-artifact-approver}
   - {id: 00000000-0000-7000-8000-0000000000e2, email: artifact-runner@acme.test, name: Rob Artifactrunner, role: member, provider: email, provider_id: fixture-artifact-runner}
   - {id: 00000000-0000-7000-8000-0000000000e3, email: newcomer@example.test, name: Nell Newcomer, role: member, provider: email, provider_id: fixture-newcomer}
+  - {id: 00000000-0000-7000-8000-0000000000e4, email: departing@example.test, name: Dana Departing, role: member, provider: email, provider_id: fixture-departing}
+  - {id: 00000000-0000-7000-8000-0000000000e5, email: steward@example.test, name: Sol Steward, role: member, provider: email, provider_id: fixture-steward}
 
 organizations:
   - id: 00000000-0000-7000-8000-0000000000c1

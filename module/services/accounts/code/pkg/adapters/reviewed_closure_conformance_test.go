@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 	"maps"
 	"os"
@@ -32,9 +33,32 @@ import (
 // other call is the store's own.
 type installFaults struct {
 	*infra.PostgresStore
-	mu     sync.Mutex
-	next   map[string]error
-	member error
+	mu      sync.Mutex
+	next    map[string]error
+	member  error
+	blocked map[string]bool
+}
+
+// blockComposition refuses the host's composition installs of modules (by
+// alias) until unblocked: what a host whose composition pass has not reached
+// an organization yet holds. Any other install of them is the store's own.
+func (f *installFaults) blockComposition(modules ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.blocked == nil {
+		f.blocked = map[string]bool{}
+	}
+	for _, m := range modules {
+		f.blocked[m] = true
+	}
+}
+
+func (f *installFaults) unblockComposition(modules ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, m := range modules {
+		delete(f.blocked, m)
+	}
 }
 
 // failNextMember fails the next team membership added, once.
@@ -66,6 +90,10 @@ func (f *installFaults) failOnce(targetID string, err error) {
 
 func (f *installFaults) InstallSolution(ctx context.Context, p *business.InstallSolutionParams) (*gen.Installation, error) {
 	f.mu.Lock()
+	if p.ByComposition && f.blocked[p.RouteAlias] {
+		f.mu.Unlock()
+		return nil, fmt.Errorf("composition of %s is held back by the harness", p.RouteAlias)
+	}
 	err, armed := f.next[p.TargetID]
 	delete(f.next, p.TargetID)
 	f.mu.Unlock()
@@ -123,20 +151,6 @@ func (h reviewedClosureHarness) coreInstallation(t *testing.T, caller authority.
 		}
 	}
 	return domain.Installation{}, false
-}
-
-// uncompose uninstalls, as admin, module's composition installation at org,
-// so a solution's closure installs it: what a host whose composition pass has
-// not reached org yet holds. No delivery runs before the caller installs, so
-// no composition pass installs it again first.
-func (h reviewedClosureHarness) uncompose(t *testing.T, org, admin string, modules ...string) {
-	t.Helper()
-	for _, module := range modules {
-		inst, err := h.svc.ActiveOrPendingModuleInstallation(h.ctx, org, module)
-		require.NoError(t, err)
-		require.NotNil(t, inst, "composition installed %s at %s", module, org)
-		require.NoError(t, h.svc.UninstallSolution(h.ctx, admin, org, inst.GetId()))
-	}
 }
 
 func requiredPrincipals(review *gen.ReviewedSolutionInstall) []string {
@@ -214,11 +228,12 @@ func testReviewedClosures(t *testing.T, h reviewedClosureHarness) {
 	t.Run("a convergence failing part-way resumes from the same review", func(t *testing.T) {
 		const solution = "conformance-closure-resume"
 		modules := []string{"conformance-resume-a", "conformance-resume-b", "conformance-resume-c", "conformance-resume-d"}
+		// Composition has not installed them: the closure does.
+		h.faults.blockComposition(modules...)
 		for _, m := range modules {
 			deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: m, installationRole: domain.NoInstallationRole})
 		}
 		reachingSolution(solution, modules...)
-		h.uncompose(t, fixtureOrganization, conformanceAlex, modules...)
 		review, err := h.review(t, alex, solution)
 		require.NoError(t, err)
 		require.Equal(t, modules, requiredPrincipals(review))
@@ -297,9 +312,11 @@ installations:
   - {org: Example South, target: `+solution+`, role: viewer, owner: owner@south.example.test, teams: [Readers]}
 `), 0o600))
 		t.Setenv("DEV_FIXTURE_PATH", path)
+		// The organizations seeded here get no composition install of the
+		// supporting module: the solution's review installs it.
+		h.faults.blockComposition(support)
 		installations, err := fixtures.SeedWithInstallations(h.ctx, h.svc, "closure-fixture")
 		require.NoError(t, err)
-		h.uncompose(t, "00000000-0000-7000-8000-0000000001c1", "00000000-0000-7000-8000-0000000001f1", support)
 		// The first pass loses the first solution's supporting module: that
 		// row stays pending and every other row converges, in either order.
 		// The next pass resumes the pending attempt from its own review.
@@ -367,6 +384,7 @@ installations:
 	t.Run("a pending fixture attempt whose target is redelivered converges on the next pass", func(t *testing.T) {
 		const solution, support = "conformance-closure-redelivered", "conformance-redelivered-support"
 		const org, owner = "00000000-0000-7000-8000-0000000001c3", "00000000-0000-7000-8000-0000000001f5"
+		h.faults.blockComposition(support)
 		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: support, installationRole: domain.NoInstallationRole})
 		delivered := reaching(solution, support)
 		deliverSolution(t, h.ctx, h.conn, h.signer, delivered)
@@ -384,7 +402,6 @@ installations:
 		t.Setenv("DEV_FIXTURE_PATH", path)
 		installations, err := fixtures.SeedWithInstallations(h.ctx, h.svc, "redelivery-fixture")
 		require.NoError(t, err)
-		h.uncompose(t, org, owner, support)
 		resolved, err := h.svc.ResolveInstallationPrincipal(h.ctx, org, support)
 		require.NoError(t, err)
 		lost := errors.New("the store lost the connection")

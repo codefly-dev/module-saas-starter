@@ -76,9 +76,9 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 	pendingAttempt := func(target string, access business.InstallAccess) (*gen.ReviewedSolutionInstall, domain.Installation) {
 		t.Helper()
 		support := target + "-support"
+		h.faults.blockComposition(support)
 		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: support, installationRole: domain.NoInstallationRole})
 		solution(target, support)
-		h.uncompose(t, fixtureOrganization, conformanceAlex, support)
 		review, err := h.review(t, alex, target)
 		require.NoError(t, err)
 		resolved, err := h.svc.ResolveInstallationPrincipal(h.ctx, fixtureOrganization, support)
@@ -219,7 +219,39 @@ func testInstallAssignsAccess(t *testing.T, h reviewedClosureHarness) {
 		require.Equal(t, []string{conformanceAlex}, teamMembers(t, h, viewer[0]))
 		require.Len(t, active.AccessProblems, 1)
 		require.Equal(t, "viewer", active.AccessProblems[0].Role)
-		require.Contains(t, active.AccessProblems[0].Problem, "no longer exists; granted to "+target+"-viewer instead")
+		require.Contains(t, active.AccessProblems[0].Problem, "no longer exists; granted to "+target+"-viewer, created for it")
+	})
+
+	t.Run("a deleted chosen team is never replaced by an existing team of the conventional name", func(t *testing.T) {
+		const target = "conformance-access-deleted-existing"
+		chosen := createTeam("conformance access deleted existing readers")
+		review, _ := pendingAttempt(target, business.InstallAccess{RoleTeams: map[string]string{"viewer": chosen}, InstallerRoles: []string{"installer"}})
+		require.NoError(t, h.svc.DeleteTeam(h.ctx, conformanceAlex, &gen.DeleteTeamRequest{TeamId: chosen}))
+		// Someone else's team holds the conventional name, with its own member.
+		existing := createTeam(target+"-viewer", conformanceMaya)
+		active, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
+		require.NoError(t, err)
+		require.Equal(t, domain.Active, active.Status)
+		require.Empty(t, grantsOf(active.Installation)["viewer"], "the viewer role is granted to nobody nobody chose")
+		require.Equal(t, []string{conformanceMaya}, teamMembers(t, h, existing), "the existing team is untouched")
+		require.Len(t, active.AccessProblems, 1)
+		require.Contains(t, active.AccessProblems[0].Problem, "already exists with members nobody chose for this role")
+	})
+
+	t.Run("a team shared by a ticked and an unticked role is refused", func(t *testing.T) {
+		const target = "conformance-access-shared"
+		solution(target)
+		shared := createTeam("conformance access shared")
+		review, err := h.review(t, alex, target)
+		require.NoError(t, err)
+		_, err = h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{
+			RoleTeams: map[string]string{"installer": shared, "viewer": shared}, InstallerRoles: []string{"installer"}})
+		require.ErrorContains(t, err, "conformance access shared carries both installer and viewer; give them separate teams or tick both")
+		_, held := h.coreInstallation(t, alex, target)
+		require.False(t, held, "nothing is installed")
+		// Ticking both is the installer's own choice.
+		installed := install(target, business.InstallAccess{RoleTeams: map[string]string{"installer": shared, "viewer": shared}, InstallerRoles: everyRole})
+		require.Equal(t, map[string][]string{"installer": {shared}, "viewer": {shared}}, grantsOf(installed))
 	})
 
 	t.Run("an access step failing after activation reports each role and applies the rest", func(t *testing.T) {

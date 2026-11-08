@@ -1,20 +1,25 @@
 package adapters
 
 import (
+	"context"
+	"slices"
 	"testing"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	"accounts/internal/deliverytest"
+	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
 	sessionv1 "accounts/pkg/gen/host/session/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra/storetx"
 )
 
 // testModulesInstalledByComposition holds the host to installing every
@@ -56,23 +61,80 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 	})
 
 	t.Run("a restart installs what is missing and nothing twice", func(t *testing.T) {
-		const module = "conformance-composed"
-		before := map[string]*gen.Installation{}
+		const module = "conformance-composed-restart"
+		h.faults.blockComposition(module)
+		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope(module+".item", "read")}})
 		for _, org := range orgs {
-			before[org] = installed(org, module)
+			require.Nil(t, installed(org, module), "held back at %s", org)
 		}
-		h.uncompose(t, fixtureOrganization, conformanceAlex, module)
-		require.Nil(t, installed(fixtureOrganization, module))
-		require.NoError(t, h.svc.KeepAuthorityCoreCurrent(h.ctx), "the pass a start and every delivery run")
-		again := installed(fixtureOrganization, module)
-		require.NotNil(t, again, "what is missing is installed")
-		require.NoError(t, h.svc.KeepAuthorityCoreCurrent(h.ctx))
-		still := installed(fixtureOrganization, module)
-		require.Equal(t, again.GetId(), still.GetId(), "nothing is installed twice")
-		require.Equal(t, again.GetRevision(), still.GetRevision(), "nor consented to again")
-		globex := installed(globexOrganization, module)
-		require.Equal(t, before[globexOrganization].GetId(), globex.GetId())
-		require.Equal(t, before[globexOrganization].GetRevision(), globex.GetRevision(), "an organization holding it is left as it is")
+		h.faults.unblockComposition(module)
+		// The pass a start and every delivery run; what other cases hold back
+		// is reported, this module is not.
+		pass := func() {
+			if err := h.svc.KeepAuthorityCoreCurrent(h.ctx); err != nil {
+				require.NotContains(t, err.Error(), module)
+			}
+		}
+		pass()
+		first := map[string]*gen.Installation{}
+		for _, org := range orgs {
+			first[org] = installed(org, module)
+			require.NotNil(t, first[org], "what is missing at %s is installed", org)
+		}
+		pass()
+		for _, org := range orgs {
+			still := installed(org, module)
+			require.Equal(t, first[org].GetId(), still.GetId(), "nothing is installed twice")
+			require.Equal(t, first[org].GetRevision(), still.GetRevision(), "nor consented to again")
+		}
+	})
+
+	t.Run("a composition install is recorded as the system's", func(t *testing.T) {
+		inst := installed(fixtureOrganization, "conformance-composed")
+		events, _, _, err := h.svc.QueryAuditLog(h.ctx, business.AuditQuery{OrgID: fixtureOrganization, EventType: string(business.EventInstallationCreated), PageSize: 500})
+		require.NoError(t, err)
+		i := slices.IndexFunc(events, func(e business.AuditEntry) bool { return e.ResourceID == inst.GetId() })
+		require.GreaterOrEqual(t, i, 0, "the install is audited")
+		require.Equal(t, business.ActorTypeSystem, events[i].ActorType)
+		require.Empty(t, events[i].ActorID, "no person installed it")
+		require.Equal(t, "composition", events[i].Payload["by"])
+	})
+
+	t.Run("a person never uninstalls a module", func(t *testing.T) {
+		inst := installed(fixtureOrganization, "conformance-composed")
+		err := h.svc.UninstallSolution(h.ctx, conformanceAlex, fixtureOrganization, inst.GetId())
+		require.ErrorContains(t, err, "only its delivered withdrawal retires it")
+		require.NotNil(t, installed(fixtureOrganization, "conformance-composed"), "it stays installed")
+	})
+
+	t.Run("an organization whose owner lost administration still gets its modules", func(t *testing.T) {
+		// Two people of no other organization, so nobody else's session changes.
+		const org, newcomer, steward, module = "00000000-0000-7000-8000-0000000002c2", "00000000-0000-7000-8000-0000000000e4", "00000000-0000-7000-8000-0000000000e5", "conformance-composed-later"
+		_, err := h.svc.CreateFixtureOrganization(h.ctx, newcomer, &gen.CreateOrganizationRequest{Name: "Composition Owner Left"}, org)
+		require.NoError(t, err)
+		require.NoError(t, h.svc.AddOrgMember(h.ctx, newcomer, &gen.AddOrgMemberRequest{OrgId: org, UserId: steward, Role: gen.OrgRole_ORG_ROLE_ADMIN}))
+		require.NoError(t, h.store.WithControlPlane(h.ctx, func(ctx context.Context) error {
+			_, err := storetx.Tx(ctx).Exec(ctx, `UPDATE public.organization_members SET role = 'member' WHERE org_id = $1 AND user_id = $2`, org, newcomer)
+			return err
+		}))
+		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope(module+".item", "read")}})
+		inst := installed(org, module)
+		require.NotNil(t, inst, "installed though the organization's owner is no administrator now")
+		require.Equal(t, steward, inst.GetOwnerPrincipalId(), "its owner of record is a current administrator")
+	})
+
+	t.Run("a module page selecting a standing role is reported, never installed", func(t *testing.T) {
+		const page = "conformance-composed-selecting"
+		entry := wireScope(page+".entry", "read")
+		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: "viewer",
+			page:  &solutionhost.Frontend{Title: "Selecting page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {entry}, "viewer": {entry}}})
+		for _, org := range orgs {
+			require.Nil(t, installed(org, page), "not installed at %s", org)
+		}
+		err := h.svc.KeepAuthorityCoreCurrent(h.ctx)
+		require.ErrorContains(t, err, page)
+		require.ErrorContains(t, err, `selects the standing role "viewer"`)
 	})
 
 	t.Run("a role-declaring module is installed this way and has no access until set up", func(t *testing.T) {
@@ -130,7 +192,7 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 		for _, org := range orgs {
 			ids[org] = installed(org, module).GetId()
 		}
-		withdrawModule(t, h, module, 2)
+		withdrawModule(t, h.ctx, h.conn, h.signer, module, 2)
 		for _, org := range orgs {
 			read, _, err := h.svc.GetInstallation(h.ctx, org, ids[org])
 			require.NoError(t, err)
@@ -140,14 +202,14 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 }
 
 // withdrawModule delivers module's withdrawal at generation, as the CLI does.
-func withdrawModule(t *testing.T, h reviewedClosureHarness, module string, generation uint64) {
+func withdrawModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterface, signer *solutionhost.InMemorySigner, module string, generation uint64) {
 	t.Helper()
 	manifest := &solutionhost.ModuleManifest{Schema: solutionhost.SchemaModuleManifestV1, Binding: module, Alias: module, Kind: solutionhost.KindModule, Generation: generation,
 		Host: solutionhost.HostTarget{Coordinate: "conformance-host", Domain: "acme"}, Release: solutionhost.Release{Publisher: "conformance", Name: module, Version: "0.1.0"}, Removed: true}
 	require.NoError(t, manifest.Validate())
 	raw, err := solutionhost.SignedPayload(manifest)
 	require.NoError(t, err)
-	_, err = compositionv1.NewCompositionServiceClient(h.conn).ApplyManifest(h.ctx, &compositionv1.ApplyManifestRequest{
-		Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, h.signer.KeyID())}, Credential: "delivery:" + module})
+	_, err = compositionv1.NewCompositionServiceClient(conn).ApplyManifest(ctx, &compositionv1.ApplyManifestRequest{
+		Carrier: &compositionv1.SignedManifestV1{Document: raw, Envelope: deliverytest.Envelope(t, raw, signer.KeyID())}, Credential: "delivery:" + module})
 	require.NoError(t, err)
 }

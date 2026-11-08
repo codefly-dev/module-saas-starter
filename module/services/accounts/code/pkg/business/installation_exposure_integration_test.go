@@ -354,7 +354,8 @@ func TestGrantInstallationToTeamSerializesWithUninstall(t *testing.T) {
 					return err
 				}
 			}
-			go func() { uninstalled <- testService.UninstallSolution(testCtx, w.admin, w.org, w.installation) }()
+			// A module's installation is retired by its lifecycle, never by a person.
+			go func() { uninstalled <- testService.RetireInstallation(testCtx, w.admin, w.org, w.installation) }()
 			requireARowLockWaiter(t, "the uninstall should wait on the installation row the grant holds")
 			select {
 			case err := <-uninstalled:

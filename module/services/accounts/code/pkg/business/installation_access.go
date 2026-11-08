@@ -93,13 +93,15 @@ func (s *Service) resolveInstallationAccess(ctx context.Context, caller authorit
 			return nil, domain.Malformed("%s declares no role %q", target.Name, role)
 		}
 	}
+	var teams []*gen.Team
 	if len(requested.RoleTeams) > 0 {
 		listed, err := s.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: org})
 		if err != nil {
 			return nil, err
 		}
+		teams = listed.GetTeams()
 		for role, id := range requested.RoleTeams {
-			if !slices.ContainsFunc(listed.GetTeams(), func(t *gen.Team) bool { return t.GetId() == id }) {
+			if !slices.ContainsFunc(teams, func(t *gen.Team) bool { return t.GetId() == id }) {
 				return nil, domain.Refuse("%q is not a team of this organization", id)
 			}
 			access.Teams[role] = id
@@ -110,7 +112,37 @@ func (s *Service) resolveInstallationAccess(ctx context.Context, caller authorit
 			access.Conventional[role] = ConventionalTeamName(target.Name, role)
 		}
 	}
-	return access, nil
+	return access, refuseSharedTeam(access, teams)
+}
+
+// refuseSharedTeam refuses an access that gives one team a role the installer
+// took and one they did not: joining that team for the first would give them
+// the second. A conventional name matches an existing team as the install
+// would find it (isConventionalTeam); a team created later is the role's own.
+func refuseSharedTeam(access *InstallationAccess, teams []*gen.Team) error {
+	if len(access.Teams) == 0 {
+		return nil
+	}
+	teamOf := map[string]*gen.Team{}
+	for _, role := range accessRoles(access) {
+		if id, named := access.Teams[role]; named {
+			if i := slices.IndexFunc(teams, func(t *gen.Team) bool { return t.GetId() == id }); i >= 0 {
+				teamOf[role] = teams[i]
+			}
+		} else if i := slices.IndexFunc(teams, func(t *gen.Team) bool { return isConventionalTeam(t, access.Conventional[role]) }); i >= 0 {
+			teamOf[role] = teams[i]
+		}
+	}
+	for _, ticked := range access.InstallerRoles {
+		for _, unticked := range accessRoles(access) {
+			if slices.Contains(access.InstallerRoles, unticked) || teamOf[ticked] == nil || teamOf[unticked] == nil ||
+				teamOf[ticked].GetId() != teamOf[unticked].GetId() {
+				continue
+			}
+			return domain.Malformed("%s carries both %s and %s; give them separate teams or tick both", teamOf[ticked].GetName(), ticked, unticked)
+		}
+	}
+	return nil
 }
 
 // applyInstallationAccess applies access once inst is active, as caller:
@@ -145,6 +177,23 @@ func (s *Service) applyInstallationAccess(ctx context.Context, caller authority.
 				resolved[role] = id
 				continue
 			}
+			// The team chosen is gone. Fail closed: the role goes only to a
+			// conventional team created now, whose members are nobody's but the
+			// installer's choice; an existing one has members nobody chose for
+			// this role, so it is granted nothing.
+			name := ConventionalTeamName(inst.Target, role)
+			if slices.ContainsFunc(teams, func(t *gen.Team) bool { return isConventionalTeam(t, name) }) {
+				report(role, "the team chosen for it no longer exists, and %s already exists with members nobody chose for this role; grant the role in Set up", name)
+				continue
+			}
+			team, err := s.conventionalTeam(ctx, caller, inst.Organization, name, &teams)
+			if err != nil {
+				report(role, "the team chosen for it no longer exists, and %s could not be created: %v", name, err)
+				continue
+			}
+			resolved[role] = team
+			report(role, "the team chosen for it no longer exists; granted to %s, created for it", name)
+			continue
 		}
 		name := access.Conventional[role]
 		if name == "" {
@@ -156,9 +205,6 @@ func (s *Service) applyInstallationAccess(ctx context.Context, caller authority.
 			continue
 		}
 		resolved[role] = team
-		if _, named := access.Teams[role]; named {
-			report(role, "the team chosen for it no longer exists; granted to %s instead", name)
-		}
 	}
 	for _, role := range slices.Sorted(maps.Keys(resolved)) {
 		grant := authority.RoleRequest{Organization: inst.Organization, InstallationID: inst.ID, Role: role, TeamID: resolved[role]}

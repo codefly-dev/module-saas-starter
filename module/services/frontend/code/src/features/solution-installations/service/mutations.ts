@@ -87,11 +87,6 @@ function invalidate(
 	]);
 }
 
-/**
- * Submit the original server review, including each supporting consent, and
- * the access the install assigns; the host records both and applies the
- * access once setup is active.
- */
 /** Sets up who may use a module page: its roles to teams, in one act. */
 export function useSetUpModulePage(orgId: string) {
 	const service = useInstallationService();
@@ -118,6 +113,11 @@ export function useSetUpModulePage(orgId: string) {
 	});
 }
 
+/**
+ * Submit the original server review, including each supporting consent, and
+ * the access the install assigns; the host records both and applies the
+ * access once setup is active.
+ */
 export function useInstallReviewedSolution(orgId: string) {
 	const service = useInstallationService();
 	const queryClient = useQueryClient();

@@ -262,7 +262,14 @@ function rowText(row: ReachRow) {
 	const text = operations.length
 		? listText(operations)
 		: scopesText(row.scopes);
-	return row.confinement === "attached" ? `${text} (attached items)` : text;
+	const confinement: Record<string, string> = {
+		attached: "attached items",
+		installation: "this installation's items",
+		owner: "items they own",
+	};
+	return confinement[row.confinement]
+		? `${text} (${confinement[row.confinement]})`
+		: text;
 }
 
 /**

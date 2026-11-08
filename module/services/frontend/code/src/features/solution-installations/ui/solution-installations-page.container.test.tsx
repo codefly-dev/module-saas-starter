@@ -238,6 +238,29 @@ function serve({
 	return reads;
 }
 
+// The same reads with expenses a solution: team exposure, its update and its
+// uninstall are a solution's, never a module's (installed by composition). The
+// bodies given are marked in place, so a handler's later edits of them show.
+function solutionBodies({
+	availableBody = structuredClone(available) as JsonBodyType,
+	installationsBody = structuredClone(installations) as JsonBodyType,
+}: {
+	availableBody?: JsonBodyType;
+	installationsBody?: JsonBodyType;
+} = {}) {
+	const available = availableBody as {
+		solutions?: { targetId: string; kind: string }[];
+	};
+	for (const target of available.solutions ?? [])
+		if (target.targetId === EXPENSES_TARGET) target.kind = "solution";
+	const installed = installationsBody as {
+		installations?: { target?: { targetId: string; kind: string } }[];
+	};
+	for (const row of installed.installations ?? [])
+		if (row.target?.targetId === EXPENSES_TARGET) row.target.kind = "solution";
+	return { availableBody, installationsBody };
+}
+
 async function openGrant() {
 	fireEvent.click(
 		await screen.findByRole("button", {
@@ -291,7 +314,9 @@ describe("SolutionInstallationsPage admin container", () => {
 		expect(
 			within(expenses).queryByRole("button", { name: /^Install/ }),
 		).toBeNull();
-		expect(within(ledger).getByText("Installed by composition")).toBeTruthy();
+		expect(
+			within(ledger).queryByRole("button", { name: /^Install/ }),
+		).toBeNull();
 
 		const installedTable = await screen.findByRole("table", {
 			name: "Installed modules and solutions",
@@ -303,6 +328,14 @@ describe("SolutionInstallationsPage admin container", () => {
 		expect(within(row).getByText("acme/expenses@1.4.0")).toBeTruthy();
 		expect(within(row).getByText("Generation 3 (opened at 2)")).toBeTruthy();
 		expect(within(row).getByText("Healthy")).toBeTruthy();
+		// A module is installed by composition and used through its roles:
+		// nobody uninstalls it, updates it or grants a team on it here.
+		for (const action of [
+			"Uninstall expenses",
+			"Update expenses",
+			"Grant a team access to expenses",
+		])
+			expect(within(row).queryByRole("button", { name: action })).toBeNull();
 		// Granted here and inherited from above are kept apart; only the first is
 		// removable here.
 		const granted = within(row).getByRole("list", {
@@ -341,7 +374,7 @@ describe("SolutionInstallationsPage admin container", () => {
 
 	it("shows a refused uninstall as the host words it, never as done", async () => {
 		let uninstalled: unknown;
-		serve();
+		serve(solutionBodies());
 		server.use(
 			http.post(
 				rpc("InstallationService", "UninstallSolution"),
@@ -358,7 +391,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				},
 			),
 		);
-		renderInApp(<Page />);
+		renderInApp(<SolutionsPage />);
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Uninstall expenses" }),
@@ -383,7 +416,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		expect(
 			within(
 				await screen.findByRole("table", {
-					name: "Installed modules and solutions",
+					name: "Installed solutions",
 				}),
 			).getByText("expenses"),
 		).toBeTruthy();
@@ -396,7 +429,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		// A grant does not make a disabled installation healthy.
 		installationsBody.installations[0].health =
 			"INSTALLATION_HEALTH_AGENT_DISABLED";
-		const reads = serve({ availableBody, installationsBody });
+		const reads = serve(solutionBodies({ availableBody, installationsBody }));
 		server.use(
 			http.post(
 				rpc("InstallationService", "GrantInstallationToTeam"),
@@ -417,7 +450,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				},
 			),
 		);
-		renderInApp(<Page />);
+		renderInApp(<SolutionsPage />);
 
 		fireEvent.click(
 			await screen.findByRole("button", {
@@ -441,7 +474,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		expect(reads.installed).toBe(2);
 		expect(
 			within(
-				screen.getByRole("table", { name: "Available modules and solutions" }),
+				screen.getByRole("table", { name: "Available solutions" }),
 			).getByText("Generation 4 (opened at 2)"),
 		).toBeTruthy();
 		expect(
@@ -451,7 +484,7 @@ describe("SolutionInstallationsPage admin container", () => {
 		).toBeTruthy();
 		expect(
 			within(
-				screen.getByRole("table", { name: "Installed modules and solutions" }),
+				screen.getByRole("table", { name: "Installed solutions" }),
 			).getByText("Agent disabled"),
 		).toBeTruthy();
 		expect(toast.success).toHaveBeenCalledExactlyOnceWith(
@@ -460,7 +493,7 @@ describe("SolutionInstallationsPage admin container", () => {
 	});
 
 	it("shows the host's refusal of a grant in its own words", async () => {
-		serve();
+		serve(solutionBodies());
 		server.use(
 			http.post(rpc("InstallationService", "GrantInstallationToTeam"), () =>
 				HttpResponse.json(
@@ -473,7 +506,7 @@ describe("SolutionInstallationsPage admin container", () => {
 				),
 			),
 		);
-		renderInApp(<Page />);
+		renderInApp(<SolutionsPage />);
 		fireEvent.click(
 			await screen.findByRole("button", {
 				name: "Grant a team access to expenses",
@@ -714,14 +747,18 @@ describe("organization administration boundary", () => {
 
 	it("discards the grant draft and scopes all reads and the next grant after an organization switch", async () => {
 		{
-			serve();
-			const { client, rerender } = renderInApp(<Page />);
+			serve(solutionBodies());
+			const { client, rerender } = renderInApp(<SolutionsPage />);
 			await openGrant();
 
 			const secondAvailable = structuredClone(available);
 			secondAvailable.solutions[0].routeAlias = "payables";
 			secondAvailable.solutions[1].routeAlias = "receipts";
 			const secondInstalled = structuredClone(installations);
+			solutionBodies({
+				availableBody: secondAvailable,
+				installationsBody: secondInstalled,
+			});
 			secondInstalled.installations[0].installation.id = "installation-org-2";
 			secondInstalled.installations[0].installation.orgId = "org-2";
 			secondInstalled.installations[0].target = secondAvailable.solutions[0];
@@ -761,7 +798,7 @@ describe("organization administration boundary", () => {
 			session.organizationId = "org-2";
 			rerender(
 				<QueryClientProvider client={client}>
-					<Page />
+					<SolutionsPage />
 				</QueryClientProvider>,
 			);
 			await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -769,7 +806,7 @@ describe("organization administration boundary", () => {
 			expect(
 				within(
 					await screen.findByRole("table", {
-						name: "Installed modules and solutions",
+						name: "Installed solutions",
 					}),
 				).queryByText("expenses"),
 			).toBeNull();
@@ -898,14 +935,14 @@ describe("host read refusals and retained data", () => {
 	it.each(pickers)(
 		"shows a cold read refusal beside $kind / $label",
 		async ({ kind, label, service, method, action }) => {
-			serve();
+			serve(solutionBodies());
 			server.use(
 				http.post(rpc(service, method), async ({ request }) => {
 					await assertBody(request, { orgId: "org-1" });
 					return refusal(`${method}: membership removed`);
 				}),
 			);
-			renderInApp(<Page />);
+			renderInApp(<SolutionsPage />);
 			fireEvent.click(
 				await screen.findByRole("button", {
 					name:
@@ -938,7 +975,7 @@ describe("host read refusals and retained data", () => {
 	it.each(pickers)(
 		"withholds $kind / $label and blocks a previously valid selection after refusal",
 		async ({ label, service, method, key, selected, action }) => {
-			serve();
+			serve(solutionBodies());
 			const mutation = vi.fn();
 			server.use(
 				http.post(rpc("InstallationService", "GrantInstallationToTeam"), () => {
@@ -946,7 +983,7 @@ describe("host read refusals and retained data", () => {
 					return HttpResponse.json({});
 				}),
 			);
-			const { client } = renderInApp(<Page />);
+			const { client } = renderInApp(<SolutionsPage />);
 			const dialog = await openGrant();
 			server.use(
 				http.post(rpc(service, method), async ({ request }) => {
@@ -986,8 +1023,8 @@ describe("host read refusals and retained data", () => {
 	it.each(pickers)(
 		"keeps $kind / $label options with a visible stale notice on transient failure",
 		async ({ label, service, method, key, selected }) => {
-			serve();
-			const { client } = renderInApp(<Page />);
+			serve(solutionBodies());
+			const { client } = renderInApp(<SolutionsPage />);
 			const dialog = await openGrant();
 			server.use(
 				http.post(rpc(service, method), async ({ request }) => {
@@ -1019,7 +1056,7 @@ describe("mutation results belong to the page", () => {
 	])(
 		"shows a delayed %s refusal after %s dismissal without success",
 		async (kind, dismiss) => {
-			const reads = serve();
+			const reads = serve(solutionBodies());
 			let finish!: () => void;
 			const pending = new Promise<void>((resolve) => {
 				finish = resolve;
@@ -1043,7 +1080,7 @@ describe("mutation results belong to the page", () => {
 					},
 				),
 			);
-			renderInApp(<Page />);
+			renderInApp(<SolutionsPage />);
 			const dialog = await openGrant();
 			fireEvent.click(
 				within(dialog).getByRole("button", {
@@ -1129,7 +1166,7 @@ describe("mutation results belong to the page", () => {
 	it("refreshes both reads after a witnessed uninstall", async () => {
 		const availableBody = structuredClone(available);
 		const installationsBody = structuredClone(installations);
-		const reads = serve({ availableBody, installationsBody });
+		const reads = serve(solutionBodies({ availableBody, installationsBody }));
 		server.use(
 			http.post(
 				rpc("InstallationService", "UninstallSolution"),
@@ -1144,7 +1181,7 @@ describe("mutation results belong to the page", () => {
 				},
 			),
 		);
-		renderInApp(<Page />);
+		renderInApp(<SolutionsPage />);
 		fireEvent.click(
 			await screen.findByRole("button", { name: "Uninstall expenses" }),
 		);
@@ -1159,7 +1196,7 @@ describe("mutation results belong to the page", () => {
 		expect(reads.installed).toBe(2);
 		expect(
 			screen.getByText(
-				"Nothing is installed in this organization. Once a module or solution is available above, choose it to install it.",
+				"Nothing is installed in this organization. Once a solution or module page is available above, choose it to install it.",
 			),
 		).toBeTruthy();
 		expect(
@@ -1172,7 +1209,7 @@ describe("accessible validation and host text", () => {
 	it.each(["grant"])(
 		"announces missing %s picker values and focuses the first invalid control",
 		async (kind) => {
-			serve();
+			serve(solutionBodies());
 			const mutation = vi.fn();
 			server.use(
 				http.post(rpc("InstallationService", "GrantInstallationToTeam"), () => {
@@ -1180,7 +1217,7 @@ describe("accessible validation and host text", () => {
 					return HttpResponse.json({});
 				}),
 			);
-			renderInApp(<Page />);
+			renderInApp(<SolutionsPage />);
 			fireEvent.click(
 				await screen.findByRole("button", {
 					name:

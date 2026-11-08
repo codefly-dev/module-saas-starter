@@ -240,6 +240,9 @@ func runHostInterfaceFixture(t *testing.T) {
 		{alias: "conformance-idle", ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-idle.task", "read")},
 			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:read"}, "headless": {"modelservice.profiles:read"}}}}},
 	}
+	// conformance-idle stays a declared workload installed nowhere: the
+	// harness holds its composition back.
+	faults.blockComposition("conformance-idle")
 	for _, m := range modules {
 		deliverModule(t, ctx, conn, signer, m)
 	}
@@ -266,6 +269,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	// decision asks of a policy. Installed at Acme alone, so Globex's
 	// administrator lists installations the module can never name.
 	const artifactModule = "conformance-artifact"
+	faults.blockComposition(artifactModule)
 	deliverModule(t, ctx, conn, signer, conformanceModule{alias: artifactModule,
 		ceilings: []*authorityv1.WorkScopeV1{wireScope(artifactModule+".intent", "activate", "run"), wireScope(artifactModule+".preview", "activate", "run")}})
 	require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, artifactModule))
@@ -485,15 +489,8 @@ func runHostInterfaceFixture(t *testing.T) {
 	// every action on every kind; the approver holds the policy's activate and
 	// run through a role and the runner its run alone, which is what proves
 	// consent is the action rather than an administrator tier. Globex's
-	// administrator is the outsider: the module is installed at Acme only.
-	// Composition installed it at Globex too; Globex's administrator
-	// uninstalls it there, after the suite's last delivery, so the next
-	// composition pass, which would install it again, does not run before
-	// the case.
-	globexArtifact, err := svc.ActiveOrPendingModuleInstallation(ctx, globexOrganization, artifactModule)
-	require.NoError(t, err)
-	require.NotNil(t, globexArtifact, "composition installs the artifact module at Globex")
-	require.NoError(t, svc.UninstallSolution(ctx, conformanceZoe, globexOrganization, globexArtifact.GetId()))
+	// administrator is the outsider: the module is installed at Acme only (its
+	// composition is held back, and Acme's administrator installs it).
 	conformance.RunArtifacts(t, conn, registeredDescriptors(t), conformance.ArtifactCase{
 		Module: artifactModule, Credential: credential(artifactModule), OtherCredential: credential("org-directory"),
 		Policy: artifactModule + ".intent",
@@ -703,9 +700,9 @@ func runHostInterfaceFixture(t *testing.T) {
 	// its next check. Anyone else learns nothing of it.
 	// A module is installed at every organization by composition, at its
 	// delivery: its workload is issued at each, nothing past the organization
-	// the module envelope pins it to, and nothing once an administrator
-	// uninstalls it, when what it was issued fails its next check.
-	t.Run("a module workload is issued only where it is installed, within its pin, until uninstalled", func(t *testing.T) {
+	// the module envelope pins it to, and nothing once its withdrawal is
+	// delivered, when what it was issued fails its next check.
+	t.Run("a module workload is issued only where it is installed, within its pin, until withdrawn", func(t *testing.T) {
 		client := authorityv1.NewAuthorityServiceClient(conn)
 		const module = "conformance-consent"
 		deliverModule(t, ctx, conn, signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-consent.task", "read")},
@@ -733,8 +730,8 @@ func runHostInterfaceFixture(t *testing.T) {
 		svc.SetModulePrincipals(registry)
 		requireCode(t, err, codes.PermissionDenied, "is bound to organization "+fixtureOrganization)
 
-		// Acme's administrator uninstalls it: nothing more is issued there, and
-		// what was issued fails its next check.
+		// Nobody uninstalls a module; its delivered withdrawal retires it:
+		// nothing more is issued, and what was issued fails its next check.
 		installed, err := core.Installations(ctx, alex, fixtureOrganization)
 		require.NoError(t, err)
 		var id string
@@ -744,9 +741,10 @@ func runHostInterfaceFixture(t *testing.T) {
 			}
 		}
 		require.NotEmpty(t, id)
-		require.NoError(t, svc.UninstallSolution(ctx, conformanceAlex, fixtureOrganization, id))
+		require.Error(t, svc.UninstallSolution(ctx, conformanceAlex, fixtureOrganization, id), "a person never uninstalls a module")
+		withdrawModule(t, ctx, conn, signer, module, 2)
 		_, err = issue(fixtureOrganization)
-		requireCode(t, err, codes.FailedPrecondition, "is not installed at "+fixtureOrganization)
+		require.Error(t, err, "a withdrawn module's workload is issued nothing")
 		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "model"})
 		require.Error(t, err, "a capability issued before the uninstall fails its check")
 	})
@@ -836,13 +834,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	t.Run("a delegation is bounded by its grantor and ends with its revocation", func(t *testing.T) {
 		client := authorityv1.NewAuthorityServiceClient(conn)
 		alex, bob, alice := signIn("fixture-alex"), signIn("dev-bob"), signIn("dev-alice")
-		// Composition installed conformance-idle at Acme; an administrator
-		// uninstalls it there, and nothing is delegated to it.
-		idle, err := svc.ActiveOrPendingModuleInstallation(ctx, fixtureOrganization, "conformance-idle")
-		require.NoError(t, err)
-		require.NotNil(t, idle)
-		require.NoError(t, svc.UninstallSolution(ctx, conformanceAlex, fixtureOrganization, idle.GetId()))
-		_, err = client.Delegate(alex, &authorityv1.DelegateRequest{Module: "conformance-idle", Scopes: records("read"), Purpose: "uninstalled"})
+		_, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "conformance-idle", Scopes: records("read"), Purpose: "uninstalled"})
 		requireCode(t, err, codes.FailedPrecondition, `module "conformance-idle" is not installed in organization`)
 		_, err = client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("write"), Purpose: "beyond"})
 		requireCode(t, err, codes.PermissionDenied, "delegates what they do not hold")
@@ -1150,7 +1142,12 @@ func runHostInterfaceFixture(t *testing.T) {
 				return err
 			}
 			require.True(t, upgrade)
-			return svc.UninstallSolution(ctx, conformanceAlex, fixtureOrganization, supporting)
+			// The supporting module's installation is retired between the step
+			// and the write, as its withdrawal at this organization would.
+			return store.WithOrgTx(ctx, fixtureOrganization, func(ctx context.Context) error {
+				_, _, err := store.UninstallSolution(ctx, fixtureOrganization, supporting)
+				return err
+			})
 		})
 		t.Cleanup(func() { svc.SetAuthorityInstallStep(acknowledgeSetup) })
 		_, err = install()

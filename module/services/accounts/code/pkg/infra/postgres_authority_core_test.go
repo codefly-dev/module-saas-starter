@@ -222,3 +222,57 @@ func TestAnApprovedReachReadsBackAsTheCoresEncoderWroteIt(t *testing.T) {
 	require.Equal(t, text, again, "what is read decodes to the rows the encoder wrote")
 	require.Equal(t, digest, againDigest)
 }
+
+// A consent re-recorded with no reviewed plan is accepted only as the core's
+// own adoption or re-convergence moves it: the same operation, intent, status,
+// organization, target, agent role and principal, a generation that never
+// goes back and a reach asking nothing new. Anything else is a new consent,
+// refused without its plan (INSTALLATION_PLAN_REQUIRED), as a first record
+// without a plan is.
+func TestAConsentReRecordedWithoutAPlanMovesOnlyWhatTheCoreMoves(t *testing.T) {
+	org, admin := uuid.NewString(), uuid.NewString()
+	seedAuthorityIdentity(t, storetest.Identity{
+		Organizations: []domain.Organization{{ID: org, Name: "Rerecord " + org[:8]}},
+		Members:       []storetest.Member{{Organization: org, Person: admin, Administrator: true}},
+	})
+	item := []*basev0.WorkScopeV1{{ResourceKind: "rerecord.item", Actions: []string{"read"}}}
+	reach := func(operations ...string) string {
+		text, _, err := decide.EncodeReach(map[string][]domain.ReachRow{"viewer": {{Path: []string{"rerecord", "store"}, Module: "store", Via: "binding", Scopes: item, Operations: operations}}})
+		require.NoError(t, err)
+		return text
+	}
+	approved := reach("/rerecord.Store/Get")
+	base := domain.Installation{ID: uuid.NewString(), Organization: org, Target: "rerecord-" + org[:8], Status: domain.Active, Revision: 1,
+		AgentRole: "installer", PrincipalID: uuid.NewString(), InstalledBy: admin,
+		Consent: domain.ConsentReceipt{OperationID: uuid.NewString(), Intent: "intent", Revision: 1, Generation: 2, Digest: "sha256:offer",
+			ReachDigest: decide.DigestReach(approved), Reach: approved}}
+	host := testStore.AuthorityCoreWithConsent(nil)
+	put := func(inst domain.Installation) error {
+		return host.Write(testCtx, func(tx authority.Tx) error { return tx.PutInstallation(inst) })
+	}
+	require.ErrorContains(t, put(base), "INSTALLATION_PLAN_REQUIRED", "a first record needs its reviewed plan")
+	// A record the host kept no plan for (written before plans were kept).
+	require.NoError(t, testStore.AuthorityCore().Write(testCtx, func(tx authority.Tx) error { return tx.PutInstallation(base) }))
+
+	unchanged := base
+	unchanged.Revision = 2
+	require.NoError(t, put(unchanged), "the core re-records the consent it holds")
+	narrowed := unchanged
+	narrowed.Consent.Generation, narrowed.Consent.Reach = 3, reach()
+	narrowed.Consent.ReachDigest = decide.DigestReach(narrowed.Consent.Reach)
+	require.NoError(t, put(narrowed), "a re-convergence that narrows the reach")
+
+	for name, edit := range map[string]func(*domain.Installation){
+		"another operation":       func(i *domain.Installation) { i.Consent.OperationID = uuid.NewString() },
+		"another agent role":      func(i *domain.Installation) { i.AgentRole = "viewer" },
+		"another principal":       func(i *domain.Installation) { i.PrincipalID = uuid.NewString() },
+		"another target":          func(i *domain.Installation) { i.Target = "elsewhere" },
+		"an earlier generation":   func(i *domain.Installation) { i.Consent.Generation = 1 },
+		"a status moved":          func(i *domain.Installation) { i.Status = domain.Pending },
+		"a reach asking for more": func(i *domain.Installation) { i.Consent.Reach = reach("/rerecord.Store/Purge") },
+	} {
+		changed := narrowed
+		edit(&changed)
+		require.ErrorContains(t, put(changed), "INSTALLATION_PLAN", "%s is a new consent, refused without its plan", name)
+	}
+}

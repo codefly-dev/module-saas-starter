@@ -51,6 +51,11 @@ type InstallSolutionParams struct {
 	// NoStandingAuthority is resolved from the paired module declaration. It is
 	// never a public input; the store rechecks it against locked delivery rows.
 	NoStandingAuthority bool `json:"-"`
+	// ByComposition marks the host's own composition install of a module
+	// (installByComposition): no person acts, so no administrator approves it
+	// and it is recorded as the system's, the owner of record still a current
+	// administrator. It is never a public input.
+	ByComposition bool `json:"-"`
 	// OwnerPrincipalID is the accountable human of record; empty defaults to the
 	// installing admin (GrantedBy). Must be a current org admin.
 	OwnerPrincipalID    string
@@ -145,6 +150,10 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		return nil, err
 	}
 	actorType := s.actorTypeForCreator(ctx, actorID)
+	var by map[string]any
+	if params.ByComposition {
+		actorID, actorType, by = "", ActorTypeSystem, map[string]any{"by": "composition"}
+	}
 	var installation *gen.Installation
 	if err := s.store.WithOrgTx(ctx, params.OrgID, func(ctx context.Context) error {
 		var e error
@@ -165,14 +174,18 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 			}); e != nil {
 			return e
 		}
+		payload := map[string]any{
+			"agent_principal_id": installation.AgentPrincipalId,
+			"target_id":          params.TargetID,
+			"role_id":            params.RoleID,
+			"allowed_audiences":  params.AllowedAudiences,
+			"allowed_scopes":     params.AllowedScopes,
+		}
+		for key, value := range by {
+			payload[key] = value
+		}
 		return s.emitTx(ctx, actorID, actorType, EventInstallationCreated,
-			"installation", installation.Id, params.OrgID, map[string]any{
-				"agent_principal_id": installation.AgentPrincipalId,
-				"target_id":          params.TargetID,
-				"role_id":            params.RoleID,
-				"allowed_audiences":  params.AllowedAudiences,
-				"allowed_scopes":     params.AllowedScopes,
-			})
+			"installation", installation.Id, params.OrgID, payload)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot install solution")
 	}
@@ -385,6 +398,9 @@ func (s *Service) TransferInstallationOwnership(ctx context.Context, actorID, or
 // scoping is not lost: every statement below names orgID explicitly, which is
 // what the tenant policy would have checked.
 func (s *Service) UninstallSolution(ctx context.Context, actorID, orgID, installationID string) error {
+	if err := s.refuseModuleUninstall(ctx, orgID, installationID); err != nil {
+		return err
+	}
 	canonical, err := s.canonicalSolutionSummaries(ctx, orgID, installationID, "", gen.InstallationStatus_INSTALLATION_STATUS_UNSPECIFIED, 1)
 	if err != nil {
 		return err
@@ -521,6 +537,25 @@ func (s *Service) modulePageRoles(ctx context.Context, available []*AvailableSol
 			return err
 		}
 		target.Roles = slices.Sorted(maps.Keys(m.Roles))
+	}
+	return nil
+}
+
+// refuseModuleUninstall refuses a person's uninstall of a module's
+// installation, as the core's Uninstall does: every module is installed by
+// composition in every organization, so only its delivered withdrawal retires
+// it (the next composition pass would install it again).
+func (s *Service) refuseModuleUninstall(ctx context.Context, orgID, installationID string) error {
+	inst, _, err := s.GetInstallation(ctx, orgID, installationID)
+	if err != nil || inst.GetTargetId() == "" {
+		return nil // The uninstall itself says what is wrong with the id.
+	}
+	target, err := s.availableTarget(ctx, orgID, inst.GetTargetId())
+	if err != nil {
+		return nil // A target no longer offered is retired already.
+	}
+	if target.Kind == "module" {
+		return domain.Refuse("%s is a module, installed by composition in every organization: nobody uninstalls it, and only its delivered withdrawal retires it", target.RouteAlias)
 	}
 	return nil
 }

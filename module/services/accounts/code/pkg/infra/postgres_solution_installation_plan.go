@@ -11,6 +11,7 @@ import (
 	"accounts/pkg/business"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	"github.com/jackc/pgx/v5"
 )
@@ -34,7 +35,9 @@ func (t coreTx) solutionConsentForWrite(inst domain.Installation) ([]byte, error
 	var previous solutionConsent
 	var raw []byte
 	var previousStatus string
-	err := t.q.QueryRow(t.ctx, `SELECT status, consent FROM public.authority_core_installations WHERE id=$1 FOR UPDATE`, inst.ID).Scan(&previousStatus, &raw)
+	var held domain.Installation
+	err := t.q.QueryRow(t.ctx, `SELECT status, consent, organization_id::text, target, agent_role, principal_id FROM public.authority_core_installations WHERE id=$1 FOR UPDATE`, inst.ID).
+		Scan(&previousStatus, &raw, &held.Organization, &held.Target, &held.AgentRole, &held.PrincipalID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
@@ -52,12 +55,12 @@ func (t coreTx) solutionConsentForWrite(inst domain.Installation) ([]byte, error
 		plan.Receipt, plan.Revision = inst.Consent, inst.Revision
 		current.Plan = &plan
 	}
-	// The core re-recording a consent it already holds, unchanged in its
-	// operation and intent (adopting its reach, re-converging it), is no new
-	// install: it keeps whatever plan the row had, none included. A fresh
-	// consent, and an activation (below), still need the reviewed plan.
-	rerecorded := err == nil && previous.OperationID == inst.Consent.OperationID && previous.Intent == inst.Consent.Intent &&
-		previousStatus == string(inst.Status)
+	// The core re-recording a consent it already holds (adopting its reach,
+	// re-converging it) is no new install: it keeps whatever plan the row had,
+	// none included (rerecordedWithoutPlan). A fresh consent, an activation
+	// (below), and any re-record that moves more than the core's own rules
+	// move, still need the reviewed plan.
+	rerecorded := err == nil && current.Plan == nil && rerecordedWithoutPlan(previousStatus, previous.ConsentReceipt, held, inst)
 	if current.Plan == nil && inst.Consent.OperationID != "" && !rerecorded {
 		if plan, ok := business.SolutionInstallationPlanFromContext(t.ctx); ok {
 			if plan.Organization != inst.Organization || plan.Target != inst.Target || plan.MachineRole != inst.AgentRole ||
@@ -91,6 +94,30 @@ func (t coreTx) solutionConsentForWrite(inst domain.Installation) ([]byte, error
 		}
 	}
 	return json.Marshal(current)
+}
+
+// rerecordedWithoutPlan reports whether inst re-records, with no reviewed plan,
+// the consent the row already holds (held, its status and receipt previous):
+// the same operation and intent, status, organization, target, agent role and
+// principal; a generation that never goes back; and a reach that, when one
+// was recorded and it moves, asks nothing it did not (decide.ReachWidens).
+// That is all the core's adoption and re-convergence move; anything else is a
+// new consent, which needs its plan.
+func rerecordedWithoutPlan(previousStatus string, previous domain.ConsentReceipt, held, inst domain.Installation) bool {
+	if previous.OperationID != inst.Consent.OperationID || previous.Intent != inst.Consent.Intent || previousStatus != string(inst.Status) ||
+		held.Organization != inst.Organization || held.Target != inst.Target || held.AgentRole != inst.AgentRole || held.PrincipalID != inst.PrincipalID ||
+		inst.Consent.Generation < previous.Generation {
+		return false
+	}
+	if previous.Reach == "" || previous.Reach == inst.Consent.Reach {
+		return true
+	}
+	approved, err := decide.DecodeReach(previous.Reach)
+	if err != nil {
+		return false
+	}
+	next, err := decide.DecodeReach(inst.Consent.Reach)
+	return err == nil && len(decide.ReachWidens(approved, next)) == 0
 }
 
 // deliveredSolutionTarget shares the delivered rows plan names and checks they
