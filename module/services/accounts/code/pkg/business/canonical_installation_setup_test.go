@@ -3,6 +3,7 @@ package business_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -119,6 +120,29 @@ func TestCanonicalSetupPendingWaitIsBoundedAndResumesSameAttempt(t *testing.T) {
 		}
 		if len(store.attempts) != 2 || store.attempts[0].ID != store.attempts[1].ID || store.attempts[0].Revision != store.attempts[1].Revision {
 			t.Fatal("resume replaced the receipt/revision")
+		}
+	})
+}
+
+// A read that the bounded wait ends is the wait's end, not the result
+// unavailable: the setup is reported pending, with the bound it outlived.
+func TestCanonicalSetupWaitEndingInsideTheReadIsPending(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, err := business.NewService(&canonicalSetupStore{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetJobOperations(canonicalSetupResults{get: func(ctx context.Context, _ string) (*jobsv1.GetJobResponse, error) {
+			<-ctx.Done()
+			return nil, fmt.Errorf("get job: %w", ctx.Err())
+		}})
+		start := time.Now()
+		err = s.AuthorityInstallStep()(context.Background(), domain.Installation{ID: "installation", Organization: "org", Revision: 7, Status: domain.Pending})
+		if err == nil || !strings.Contains(err.Error(), "INSTALLATION_SETUP_PENDING") || !strings.Contains(err.Error(), business.InstallationStepTimeout.String()) {
+			t.Fatalf("a wait ending inside the read is not reported pending with its bound: %v", err)
+		}
+		if time.Since(start) != business.InstallationStepTimeout {
+			t.Fatal("setup wait did not obey its bound")
 		}
 	})
 }

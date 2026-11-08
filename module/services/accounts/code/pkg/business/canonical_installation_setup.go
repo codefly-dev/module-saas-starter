@@ -94,11 +94,17 @@ func (s *Service) canonicalInstallationStep(ctx context.Context, inst domain.Ins
 	// delivery loop. Cancellation leaves the same canonical attempt pending.
 	wait, cancel := context.WithTimeout(ctx, InstallationStepTimeout)
 	defer cancel()
+	pending := domain.NotNow("INSTALLATION_SETUP_PENDING: setup has not acknowledged within %s; retry the same approved operation", InstallationStepTimeout)
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		result, err := s.jobOperations.GetJob(wait, &jobsv1.GetJobRequest{JobId: jobID})
 		if err != nil {
+			if wait.Err() != nil && ctx.Err() == nil {
+				// The bounded wait ended inside the read: setup is still
+				// pending, not its result unavailable.
+				return pending
+			}
 			return fmt.Errorf("installation setup result unavailable: %w", err)
 		}
 		job := result.GetJob()
@@ -116,7 +122,7 @@ func (s *Service) canonicalInstallationStep(ctx context.Context, inst domain.Ins
 		}
 		select {
 		case <-wait.Done():
-			return domain.NotNow("INSTALLATION_SETUP_PENDING: setup has not acknowledged yet; retry the same approved operation")
+			return pending
 		case <-ticker.C:
 		}
 	}
