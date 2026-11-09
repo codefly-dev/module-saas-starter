@@ -308,6 +308,14 @@ message ReviewedSolutionInstall {
   host.installation.v1.ConsentApproval approval = 8;
   string installation_role = 9;
   repeated ReviewedSupportingModule modules = 10;
+  // For an update of an installation whose consent recorded its reach: what
+  // each role reaches as that consent approved it, which its holders hold
+  // until this review is installed. The review's own roles' reach
+  // (host.installation.v1 ReviewedOffer) is the composition now, so a host
+  // names what the update asks beyond what was approved. Empty for a fresh
+  // install, or a consent recorded before reach was kept. Each role carries
+  // its name and reach only.
+  repeated host.installation.v1.OfferRole approved_roles = 11;
 }
 
 message ReviewedSupportingModule {

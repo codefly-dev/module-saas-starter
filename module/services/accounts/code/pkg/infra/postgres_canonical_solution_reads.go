@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
@@ -12,6 +13,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // CanonicalSolutionSummaries projects the canonical row into the host's existing
@@ -35,7 +37,7 @@ func (s *PostgresStore) CanonicalSolutionSummaries(ctx context.Context, org, id,
  COALESCE(t.closed_generation IS NULL AND NOT b.applied_removed
  AND b.applied_generation=m.generation AND m.principal=i.consent->'host_plan'->'Approval'->>'TargetID'
  AND COALESCE((i.consent->>'Generation')::bigint,0)<=m.generation,false),
- COALESCE(m.generation,0)
+ COALESCE(m.generation,0), i.installed_at
  FROM public.authority_core_installations i
  LEFT JOIN public.solution_targets t ON t.id::text=i.consent->'host_plan'->>'HostTargetID'
  LEFT JOIN public.solution_host_bindings b ON b.binding_id=t.binding_id
@@ -52,8 +54,13 @@ func (s *PostgresStore) CanonicalSolutionSummaries(ctx context.Context, org, id,
 			var raw []byte
 			var current bool
 			var delivered int64
-			if err := rows.Scan(&i.Id, &i.OrgId, &i.AgentPrincipalId, &i.OwnerPrincipalId, &state, &i.Revision, &raw, &current, &delivered); err != nil {
+			var installedAt *time.Time
+			if err := rows.Scan(&i.Id, &i.OrgId, &i.AgentPrincipalId, &i.OwnerPrincipalId, &state, &i.Revision, &raw, &current, &delivered, &installedAt); err != nil {
 				return err
+			}
+			// A record written before its install time was kept has none.
+			if installedAt != nil {
+				i.CreatedAt = timestamppb.New(*installedAt)
 			}
 			var receipt solutionConsent
 			if err := json.Unmarshal(raw, &receipt); err != nil {

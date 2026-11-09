@@ -3,6 +3,7 @@ package adapters
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
@@ -176,6 +177,10 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 			return read.GetUpgradeAvailable()
 		}
 		require.False(t, upgrade(), "a fresh installation offers no update")
+		read, _, err := h.svc.GetInstallation(h.ctx, fixtureOrganization, inst.ID)
+		require.NoError(t, err)
+		require.NotNil(t, read.GetCreatedAt(), "the listing says when it was installed")
+		require.WithinDuration(t, time.Now(), read.GetCreatedAt().AsTime(), 10*time.Minute)
 		// The store, not the solution, changes: Purge now needs write, which
 		// the viewer reaches through the solution's binding.
 		deliverStore(2, "write")
@@ -184,6 +189,20 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 		require.NoError(t, err)
 		require.Contains(t, reachOperations(offer, "viewer", store), "/conformance.reach.Store/Purge", "the administrator reviews the wider reach")
 		require.NotContains(t, approvedOperations(t, h, inst.Installation, "viewer", store), "/conformance.reach.Store/Purge", "holders keep the approved reach")
+		// The update's review carries the approved reach beside it, so the
+		// administrator is told what the update asks beyond it.
+		review, err := h.svc.ReviewSolutionInstall(h.ctx, alex, fixtureOrganization, available(target).TargetID)
+		require.NoError(t, err)
+		var approvedAtStore []string
+		for _, role := range review.GetApprovedRoles() {
+			for _, row := range role.GetReach() {
+				if role.GetName() == "viewer" && row.GetModule() == store {
+					approvedAtStore = append(approvedAtStore, row.GetOperations()...)
+				}
+			}
+		}
+		require.Contains(t, approvedAtStore, "/conformance.reach.Store/Get", "the review names what the viewer was approved to reach")
+		require.NotContains(t, approvedAtStore, "/conformance.reach.Store/Purge", "and not what the update asks beyond it")
 	})
 }
 

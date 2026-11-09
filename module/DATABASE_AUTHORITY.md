@@ -1094,6 +1094,9 @@ consent's approved declaration is kept per module and generation in
 `authority_core_approved_modules` (migration 68), written once and never
 replaced, from which the core decides
 what a holder holds while a redelivery asks more than the consent approved.
+`installed_at` (migration 69) is when a row was first written, the install
+date an administrator's listing shows; a row written before it was kept has
+none, and later writes never move it.
 A module declaring no roles is not there: it is accounts' own `installations`
 row of kind `module`, an administrator's install with consent, within the
 module envelope, revoked by an uninstall or by a ceiling that no longer allows

@@ -82,6 +82,9 @@ func (s *Service) reviewSolutionInstall(ctx context.Context, caller authority.Pe
 		BindingId: target.BindingID, Release: release, DeliveryDigest: digest, InstallationRole: offer.Module.InstallationRole,
 		Approval: &installationv1.ConsentApproval{TargetId: a.TargetID, Generation: a.Generation, ExpectedRevision: a.ExpectedRevision, Digest: a.Digest,
 			ReachDigest: a.ReachDigest, OperationId: operation}}
+	if review.ApprovedRoles, err = approvedRoles(offer.Installation); err != nil {
+		return nil, err
+	}
 	dependencies, err := SolutionInstallationDependencies(offer)
 	if err != nil {
 		return nil, err

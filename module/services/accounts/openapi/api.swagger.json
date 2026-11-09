@@ -3902,6 +3902,150 @@
       },
       "type": "object"
     },
+    "v1OfferCapability": {
+      "description": "OfferCapability is one module operation a role's scopes cover.",
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "operation": {
+          "description": "The operation as the module's authority document names it.",
+          "type": "string"
+        },
+        "requires": {
+          "description": "What a call to it must hold.",
+          "items": {
+            "$ref": "#/definitions/v1OfferScope",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "tools": {
+          "description": "The tools composed for this operation, from its prepared Runnable\nbindings; empty when no binding exposes it as a tool.",
+          "items": {
+            "$ref": "#/definitions/v1OfferTool",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1OfferReach": {
+      "description": "OfferReach is one module a role reaches, one way. Issuance, for a holder\nor for the installation's agent, never carries past it; it is an upper\nbound (resources and owners are checked at each call).",
+      "properties": {
+        "confinement": {
+          "description": "On the target: \"installation\" (the installation's own data) or\n\"attached\" (what is attached to it); empty otherwise.",
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "operations": {
+          "description": "The operations of module those scopes are admitted to, by its declared\nmethod policies; one per operation, whatever face serves it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "A shortest way from the target to module, by module name, the target\nfirst: a witness. Every way there, re-entries included, is accounted for\nin scopes and operations.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "description": "The most a holder's capability at module can carry.",
+          "items": {
+            "$ref": "#/definitions/v1OfferScope",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "via": {
+          "description": "\"role\": the role's own scopes on the target; \"binding\": the target, then\neach module on the path, acting for the holder; \"person\": an edge the\ntarget's page calls on the holder's own session, where the holder's own\ngrants decide (no scopes, no operations).",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1OfferRole": {
+      "description": "OfferRole is one declared role and what a grant of it reaches.",
+      "properties": {
+        "capabilities": {
+          "description": "Each composed operation the role's scopes cover.",
+          "items": {
+            "$ref": "#/definitions/v1OfferCapability",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "reach": {
+          "description": "Every place a holder of the role can cause an operation, as a static\nmaximum: on the target, through the target's bindings and onward, and\non the holder's own session. An administrator's review reads it in the\ncomposition now; a holder's, as the installation's consent approved it.",
+          "items": {
+            "$ref": "#/definitions/v1OfferReach",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "description": "The scopes the role declares.",
+          "items": {
+            "$ref": "#/definitions/v1OfferScope",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1OfferScope": {
+      "description": "OfferScope is one declared scope.",
+      "properties": {
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "attachedOnly": {
+          "description": "True when the scope reaches only the resources attached to the\ninstallation, listed in resource_ids (none until one is attached); false\nwhen it reaches every resource the installation owns.",
+          "type": "boolean"
+        },
+        "resourceIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "resourceKind": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "v1OfferTool": {
+      "description": "OfferTool is one tool-exposed Runnable of an operation.",
+      "properties": {
+        "binding": {
+          "description": "The prepared binding a caller names to run it.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The tool's name, as its exposure declares it.",
+          "type": "string"
+        },
+        "write": {
+          "description": "True when the tool changes data.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "v1OnboardingCompletionMethod": {
       "default": "ONBOARDING_COMPLETION_METHOD_UNSPECIFIED",
       "enum": [
@@ -4893,6 +5037,14 @@
         },
         "approval": {
           "$ref": "#/definitions/v1ConsentApproval"
+        },
+        "approvedRoles": {
+          "description": "For an update of an installation whose consent recorded its reach: what\neach role reaches as that consent approved it, which its holders hold\nuntil this review is installed. The review's own roles' reach\n(host.installation.v1 ReviewedOffer) is the composition now, so a host\nnames what the update asks beyond what was approved. Empty for a fresh\ninstall, or a consent recorded before reach was kept. Each role carries\nits name and reach only.",
+          "items": {
+            "$ref": "#/definitions/v1OfferRole",
+            "type": "object"
+          },
+          "type": "array"
         },
         "bindingId": {
           "type": "string"
