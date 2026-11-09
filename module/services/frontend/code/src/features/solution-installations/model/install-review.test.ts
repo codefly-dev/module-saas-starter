@@ -197,7 +197,7 @@ describe("installation access review", () => {
 	});
 	it("reads a row by what its scopes grant, never by every operation it reaches", () => {
 		const page = {
-			resourceKind: "wiki.page",
+			resourceKind: "example.page",
 			actions: ["read"],
 			attachedOnly: false,
 		};
@@ -262,12 +262,12 @@ describe("installation access review", () => {
 			target: "Example",
 			roles: ["editor", "installer", "viewer"].map((name) => ({
 				name,
-				reach: [own("tracing"), own("annotations"), own("robin")],
+				reach: [own("tracing"), own("annotations"), own("assistant")],
 			})),
 		});
 		expect(roleReach(offer)).toEqual([
 			{
-				where: "Uses your own access in annotations, robin and tracing",
+				where: "Uses your own access in annotations, assistant and tracing",
 				roles: [{ role: "every role", text: "what you hold there yourself" }],
 			},
 		]);
