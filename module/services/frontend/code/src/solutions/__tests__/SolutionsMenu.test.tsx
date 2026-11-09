@@ -146,6 +146,65 @@ describe("SolutionsMenu ownership (#949)", () => {
 		}
 	});
 
+	it("starts the next person's quick retries afresh, and drops the last person's", async () => {
+		vi.useFakeTimers();
+		try {
+			tokenState.fetch.mockResolvedValue(
+				Response.json({ error: "authority_unavailable" }, { status: 503 }),
+			);
+			await mountMenu();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(500);
+			});
+			// Alice's retry is waiting when Bob signs in.
+			await act(async () => signIn(BOB));
+			const afterSwitch = tokenState.fetch.mock.calls.length;
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(5_500);
+			});
+			// Bob's read on the switch plus his own five retries; Alice's timer is gone.
+			expect(tokenState.fetch.mock.calls.length - afterSwitch).toBe(5);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("does not ask again quickly on a 429, the organization's read budget", async () => {
+		vi.useFakeTimers();
+		try {
+			tokenState.fetch.mockResolvedValue(
+				Response.json({ error: "rate_limited" }, { status: 429 }),
+			);
+			await mountMenu();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(5_000);
+			});
+			expect(tokenState.fetch).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("leaves no retry behind when the last menu unmounts", async () => {
+		vi.useFakeTimers();
+		try {
+			tokenState.fetch.mockResolvedValue(
+				Response.json({ error: "authority_unavailable" }, { status: 503 }),
+			);
+			const view = await mountMenu();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(0);
+			});
+			view.unmount();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(5_000);
+			});
+			expect(tokenState.fetch).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("clears the list on a 401 the transport could not recover", async () => {
 		vi.useFakeTimers();
 		try {

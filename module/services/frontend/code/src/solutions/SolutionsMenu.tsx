@@ -96,6 +96,10 @@ function forgetIfViewerChanged(): boolean {
 	snapshotViewer = viewer;
 	answered = false;
 	firstReadRetries = 0;
+	if (firstReadTimer) {
+		clearTimeout(firstReadTimer);
+		firstReadTimer = null;
+	}
 	publish(EMPTY, false);
 	return true;
 }
@@ -118,6 +122,8 @@ function retryFirstRead(viewer: string): void {
 	firstReadRetries += 1;
 	firstReadTimer = setTimeout(() => {
 		firstReadTimer = null;
+		// The poll may have answered while this waited.
+		if (answered) return;
 		void refresh();
 	}, FIRST_READ_RETRY_MS);
 }
@@ -172,8 +178,9 @@ async function refresh(): Promise<void> {
 			// an unreadable registry or an authority that could not answer; 429 is
 			// the organization's read budget. Treating any of them as "no solutions"
 			// would empty a working nav on a blip — the reason the route
-			// distinguishes them from an empty projection at all.
-			retryFirstRead(viewer);
+			// distinguishes them from an empty projection at all. A 429 is the
+			// organization's read budget: asking again at once spends more of it.
+			if (response.status !== 429) retryFirstRead(viewer);
 			return;
 		}
 		const data: { solutions?: SolutionNav[] } = await response.json();
