@@ -8,6 +8,7 @@ import { getNavigationIcon } from "@/lib/navigation-icons";
 import { groupNavigation, selectNavigation } from "@/lib/plugins/presentation";
 import { useFrontendConfig } from "@/lib/providers";
 import { usePublicRuntimeConfig } from "@/lib/public-runtime-config-provider";
+import { ADMIN_CARD_DESCRIPTIONS } from "./admin-overview-descriptions";
 
 export default function AdminOverviewClient() {
 	const config = useFrontendConfig();
@@ -25,7 +26,9 @@ export default function AdminOverviewClient() {
 	return (
 		<div className="space-y-8">
 			<div>
-				<h1 data-slot="page-title" className="type-page-title">Admin</h1>
+				<h1 data-slot="page-title" className="type-page-title">
+					Admin
+				</h1>
 				<p className="text-muted-foreground mt-1">
 					Manage application and platform settings.
 				</p>
@@ -39,6 +42,9 @@ export default function AdminOverviewClient() {
 					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 						{group.items.map((item) => {
 							const Icon = getNavigationIcon(item.icon);
+							const description = item.id
+								? ADMIN_CARD_DESCRIPTIONS[item.id]
+								: undefined;
 							return (
 								<Link key={item.href} href={item.href}>
 									<Card className="hover:border-primary/50 transition-colors cursor-pointer h-full">
@@ -48,9 +54,11 @@ export default function AdminOverviewClient() {
 												{item.label}
 											</CardTitle>
 										</CardHeader>
-										<CardContent className="text-sm text-muted-foreground">
-											Open {item.label.toLocaleLowerCase()}.
-										</CardContent>
+										{description && (
+											<CardContent className="text-sm text-muted-foreground">
+												{description}
+											</CardContent>
+										)}
 									</Card>
 								</Link>
 							);

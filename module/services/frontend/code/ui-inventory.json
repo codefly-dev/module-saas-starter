@@ -5378,6 +5378,21 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
+      "source": "src/features/teams/ui/team-installation-access.tsx",
+      "imports": [
+        "next/link",
+        "@/gen/host/installation/v1/installation_pb",
+        "@/features/solution-installations/service/queries",
+        "@/solutions/SolutionsMenu",
+        "@/shared/ui"
+      ],
+      "owner": "host",
+      "disposition": "keep feature-local",
+      "reason": "The roles a team holds on installed solutions and module pages, read from each installation's role grants.",
+      "stories": [],
+      "coverage": "missing"
+    },
+    {
       "source": "src/features/teams/ui/team-members-panel.tsx",
       "imports": [
         "@bufbuild/protobuf/wkt",

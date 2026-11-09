@@ -17,6 +17,7 @@ import { toTeamRole } from "../model/types";
 import { teamMutations } from "../service/mutations";
 import { teamQueries } from "../service/queries";
 import { TeamForm } from "./team-form";
+import { TeamInstallationAccess } from "./team-installation-access";
 import { TeamMembersPanel } from "./team-members-panel";
 import { TeamRoles } from "./team-roles";
 
@@ -178,6 +179,7 @@ function TeamDetails({ team }: { team: Team }) {
 				orgId={team.orgId}
 				canGrant={hasPermission(platformRole, orgRole, PERMISSIONS.ROLES_WRITE)}
 			/>
+			<TeamInstallationAccess teamId={team.id} orgId={team.orgId} />
 			{editing && (
 				<>
 					<TeamForm

@@ -5,10 +5,16 @@ import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 import { UsersPage } from "./users-page";
 
-const { enterImpersonation } = vi.hoisted(() => ({
+const { enterImpersonation, auth } = vi.hoisted(() => ({
 	enterImpersonation: vi.fn(),
+	auth: {
+		platformRole: "super_admin" as string | undefined,
+		organizationId: "org-1",
+	},
 }));
-vi.mock("@/lib/auth", () => ({ useAuth: () => ({ enterImpersonation }) }));
+vi.mock("@/lib/auth", () => ({
+	useAuth: () => ({ enterImpersonation, ...auth }),
+}));
 
 const IMPERSONATION_TOKEN = "header.payload.signature";
 const JUSTIFICATION = "ticket SUP-4417: export failing for this account";
@@ -69,6 +75,43 @@ function openRowActions() {
 afterEach(() => {
 	cleanup();
 	enterImpersonation.mockClear();
+	auth.platformRole = "super_admin";
+});
+
+describe("UsersPage for an organization administrator", () => {
+	// An organization administrator holds no platform role, so the platform's
+	// account search refuses them. The page showed only "Users could not be
+	// loaded"; it shows their organization's people instead, and never asks.
+	it("lists the organization's members and never searches the platform", async () => {
+		auth.platformRole = undefined;
+		let searched = false;
+		server.use(
+			http.post(rpc("PlatformAdminService", "SearchUsers"), () => {
+				searched = true;
+				return HttpResponse.json({}, { status: 403 });
+			}),
+			http.post(rpc("OrganizationService", "GetOrganization"), () =>
+				HttpResponse.json({ id: "org-1", name: "Acme Corp" }),
+			),
+			http.post(rpc("OrganizationService", "ListMembers"), () =>
+				HttpResponse.json({
+					members: [
+						{
+							orgId: "org-1",
+							userId: "u-1",
+							userEmail: "maya@acme.test",
+							role: 3,
+						},
+					],
+				}),
+			),
+		);
+		renderInApp(<UsersPage />);
+		expect(await screen.findByText(/The people in Acme Corp/)).toBeTruthy();
+		expect(await screen.findByText("maya@acme.test")).toBeTruthy();
+		expect(screen.queryByText("Users could not be loaded")).toBeNull();
+		expect(searched).toBe(false);
+	});
 });
 
 describe("UsersPage admin container", () => {

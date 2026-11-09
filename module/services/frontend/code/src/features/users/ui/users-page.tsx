@@ -7,6 +7,8 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
 import { refusalToast } from "@/features/auth/model/step-up";
+import { orgQueries } from "@/features/organizations/service/queries";
+import { OrgMembersPanel } from "@/features/organizations/ui/org-members-panel";
 import { useAuth } from "@/lib/auth";
 import { Button, Input } from "@/shared/ui";
 import { toUserStatus, type User } from "../model/types";
@@ -18,7 +20,49 @@ import { ImpersonateForm } from "./impersonate-form";
 import { SuspendForm } from "./suspend-form";
 import { UsersTable } from "./users-table";
 
+/**
+ * Users: who can sign in, as the caller may see them. A platform role reads
+ * every account on the platform (search, suspend, impersonate); an
+ * organization's administrator holds none of that, and was shown a page that
+ * could only fail ("Users could not be loaded"). They see the people of their
+ * own organization instead, through the same roster the organization's page
+ * manages.
+ */
 export function UsersPage() {
+	const { platformRole, organizationId } = useAuth();
+	if (platformRole) return <PlatformUsersPage />;
+	return <OrganizationPeoplePage orgId={organizationId ?? ""} />;
+}
+
+function OrganizationPeoplePage({ orgId }: { orgId: string }) {
+	const { data } = useQuery(orgQueries.detail(orgId));
+	const orgName = data?.name ?? "";
+	return (
+		<div className="space-y-6">
+			<div>
+				<h2 data-slot="page-title" className="type-page-title">
+					Users
+				</h2>
+				<p className="text-muted-foreground mt-1">
+					{orgName
+						? `The people in ${orgName} and their organization roles.`
+						: "The people in your organization and their organization roles."}{" "}
+					What each person can do in a solution or module page is given by its
+					roles, under Solutions.
+				</p>
+			</div>
+			{orgId ? (
+				<OrgMembersPanel orgId={orgId} orgName={orgName} />
+			) : (
+				<p className="text-sm text-muted-foreground">
+					Choose an organization to see its people.
+				</p>
+			)}
+		</div>
+	);
+}
+
+function PlatformUsersPage() {
 	const queryClient = useQueryClient();
 	const { enterImpersonation } = useAuth();
 	const [search, setSearch] = useState("");
@@ -127,7 +171,9 @@ export function UsersPage() {
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
-				<h2 data-slot="page-title" className="type-page-title">Users</h2>
+				<h2 data-slot="page-title" className="type-page-title">
+					Users
+				</h2>
 				<div className="relative w-80">
 					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
