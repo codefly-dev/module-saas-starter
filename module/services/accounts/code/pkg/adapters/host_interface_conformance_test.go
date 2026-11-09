@@ -216,23 +216,31 @@ func runHostInterfaceFixture(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	// The composition, delivered as the CLI delivers it. documents is the
-	// audience the viewer reads at; org-directory the page module reading
-	// documents for the viewer through its one binding; model an audience the
-	// viewer's context at documents is not addressed to. documents and model
-	// bind to each other, so a delegate chain crosses from one to the other and
-	// back; model also binds to itself across both its kinds. conformance-agent
-	// is a module whose tools binding reaches an installed solution;
-	// conformance-idle a declared workload with no active installation.
+	// The composition, delivered as the CLI delivers it. records is the
+	// audience the viewer reads at; it checks no owner, so a person's
+	// organization roles reach it on their own session. documents checks
+	// owners: an organization role reaches nothing there on a person's own
+	// session (RBAC-4a), and a solution's role or an installation reaches its
+	// own principal's data. org-directory is the page module reading records
+	// for the viewer through its one binding; model an audience the viewer's
+	// context at records is not addressed to, checking owners of its datasets
+	// with its profiles shared. records and model bind to each other, so a
+	// delegate chain crosses from one to the other and back; model also binds
+	// to itself across both its kinds, and documents to the model's profiles
+	// and datasets. conformance-agent is a module whose tools binding reaches
+	// an installed solution; conformance-idle a declared workload with no
+	// active installation.
 	modules := []conformanceModule{
-		{alias: "documents", ceilings: []*authorityv1.WorkScopeV1{wireScope("example-records", "invoke", "read", "write", "ingest")},
+		{alias: "records", ownerUnaware: true, ceilings: []*authorityv1.WorkScopeV1{wireScope("example-entries", "invoke", "read", "write")},
 			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read"}}}}},
-		{alias: "org-directory", ceilings: []*authorityv1.WorkScopeV1{wireScope("directory.entry", "read")},
-			bindings: []solutionhost.AuthorityBinding{{ID: "documents", Audience: "documents", Operations: map[string][]string{
-				"invoke": {"example-records:invoke", "example-records:read"}, "lookup": {"example-records:read"}, "headless": {"example-records:invoke", "example-records:read"}}}}},
-		{alias: "model", ceilings: []*authorityv1.WorkScopeV1{wireScope("modelservice.profiles", "invoke", "read"), wireScope("modelservice.datasets", "read")},
+		{alias: "documents", ceilings: []*authorityv1.WorkScopeV1{wireScope("example-records", "invoke", "read", "write", "ingest")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read"}}}}},
+		{alias: "org-directory", ownerUnaware: true, ceilings: []*authorityv1.WorkScopeV1{wireScope("directory.entry", "read")},
+			bindings: []solutionhost.AuthorityBinding{{ID: "records", Audience: "records", Operations: map[string][]string{
+				"invoke": {"example-entries:invoke", "example-entries:read"}, "lookup": {"example-entries:read"}, "headless": {"example-entries:invoke", "example-entries:read"}}}}},
+		{alias: "model", sharedKinds: []string{"modelservice.profiles"}, ceilings: []*authorityv1.WorkScopeV1{wireScope("modelservice.profiles", "invoke", "read"), wireScope("modelservice.datasets", "read")},
 			bindings: []solutionhost.AuthorityBinding{
-				{ID: "records", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:invoke", "example-records:read"}, "lookup": {"example-records:read"}}},
+				{ID: "records", Audience: "records", Operations: map[string][]string{"invoke": {"example-entries:invoke", "example-entries:read"}, "lookup": {"example-entries:read"}}},
 				{ID: "self", Audience: "model", Operations: map[string][]string{
 					"invoke":   {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read"},
 					"headless": {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read"}}},
@@ -305,18 +313,18 @@ func runHostInterfaceFixture(t *testing.T) {
 		},
 		methods: []*compositionv1.MethodPolicyV1{{Method: "/tools.Solution/Read", Requires: []*authorityv1.WorkScopeV1{wireScope("conformance-proposals.item", "read")}}},
 	}, {
-		// An installation that acts for itself down a chain of three modules.
+		// An installation that acts for itself down a chain of the modules
+		// that check owners: documents, then the model's datasets.
 		alias: "conformance-assistant", generation: 1,
 		ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-assistant.page", "read")},
 		roles: map[string][]*authorityv1.WorkScopeV1{
 			"installer": {wireScope("conformance-assistant.page", "read")},
-			"viewer": {wireScope("conformance-assistant.page", "read"), wireScope("directory.entry", "read"),
-				wireScope("example-records", "read"), wireScope("modelservice.profiles", "invoke", "read")},
+			"viewer": {wireScope("conformance-assistant.page", "read"), wireScope("example-records", "read"),
+				wireScope("modelservice.profiles", "invoke", "read"), wireScope("modelservice.datasets", "read")},
 		},
 		bindings: []solutionhost.AuthorityBinding{
-			{ID: "directory", Audience: "org-directory", Operations: map[string][]string{"invoke": {"directory.entry:read"}}},
 			{ID: "documents", Audience: "documents", Operations: map[string][]string{"invoke": {"example-records:read"}}},
-			{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read"}}},
+			{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read"}}},
 		},
 	}} {
 		deliverSolution(t, ctx, conn, signer, solution)
@@ -358,13 +366,14 @@ func runHostInterfaceFixture(t *testing.T) {
 	_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed("conformance-owner-a"), Role: "viewer", TeamID: finance})
 	require.NoError(t, err)
 
-	documentsCredential, modelCredential, workloadCredential := credential("documents"), credential("model"), credential("org-directory")
-	// A delegate chain: an administrator issued at documents; documents hops to
-	// model through its binding for what the first token never carried, then
-	// model hops back to documents through its own.
-	chain := conformance.Chain{Token: "fixture-alex", Start: "documents", Hops: []conformance.Hop{
-		{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
-		{Credential: modelCredential, Binding: "records", Audience: "documents", AskKind: "example-records", AskAction: "read"},
+	documentsCredential, recordsCredential, modelCredential, workloadCredential := credential("documents"), credential("records"), credential("model"), credential("org-directory")
+	// A delegate chain: an administrator issued at records on his own session;
+	// records hops to model through its binding for what the first token never
+	// carried (the model's shared profiles), then model hops back to records
+	// through its own.
+	chain := conformance.Chain{Token: "fixture-alex", Start: "records", Hops: []conformance.Hop{
+		{Credential: recordsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
+		{Credential: modelCredential, Binding: "records", Audience: "records", AskKind: "example-entries", AskAction: "read"},
 	}}
 	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization, SessionID: "conformance-harness"}
 	const adminToken = "dev-alice"
@@ -382,10 +391,10 @@ func runHostInterfaceFixture(t *testing.T) {
 		// case compares the reviewed offer here too: a solution's roles and the
 		// permissions they carry are its declaration on either host.
 		ViewerToken: "dev-bob", AdminToken: adminToken,
-		Audience: "documents", ReadKind: "example-records",
-		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "documents", BindingAudience: "documents", Elsewhere: "model",
+		Audience: "records", ReadKind: "example-entries",
+		WorkloadModule: "org-directory", WorkloadCredential: workloadCredential, Binding: "records", BindingAudience: "records", Elsewhere: "model",
 		// The installed proposals solution and its own workload. Its roles name
-		// its own kind alone, so documents (Audience) is unrelated to it.
+		// its own kind alone, so records (Audience) is unrelated to it.
 		InstalledSolution: proposals, InstalledAudience: "conformance-proposals", InstalledCredential: credential("conformance-proposals"),
 		// An Acme owner who is not an administrator; a member with no role and no team.
 		OwnerToken: "fixture-owner", UnentitledToken: "fixture-no-roles",
@@ -407,30 +416,30 @@ func runHostInterfaceFixture(t *testing.T) {
 			Binding: "tools", Audience: "conformance-proposals", Kind: "conformance-proposals.item", Action: "read", Method: "/tools.Solution/Read"},
 		// org-directory is installed at both organisations; conformance-idle at none.
 		WorkloadOrganizations: &conformance.WorkloadOrganizationsCase{
-			Ambiguous: conformance.WorkloadOrganizationCase{Credential: workloadCredential, Module: "org-directory", Binding: "documents", Audience: "documents"},
+			Ambiguous: conformance.WorkloadOrganizationCase{Credential: workloadCredential, Module: "org-directory", Binding: "records", Audience: "records"},
 			None:      conformance.WorkloadOrganizationCase{Credential: credential("conformance-idle"), Module: "conformance-idle", Binding: "model", Audience: "model"},
 		},
-		// Maya reads one example record by grant, not the kind.
-		Resources: &conformance.ResourceCase{Token: "fixture-maya", Audience: "documents", Kind: "example-records", Action: "read",
+		// Maya reads one example entry by grant, not the kind.
+		Resources: &conformance.ResourceCase{Token: "fixture-maya", Audience: "records", Kind: "example-entries", Action: "read",
 			Covered: []string{"conformance-record-a"}, Uncovered: []string{"conformance-record-b"}, Unheld: "write"},
-		// Alex lets the directory page invoke example records for him; Bob, a
+		// Alex lets the directory page invoke example entries for him; Bob, a
 		// reader, cannot delegate what he does not hold.
 		Delegation: &conformance.DelegationCase{Token: "fixture-alex", Outsider: "dev-bob", Module: "org-directory", Credential: workloadCredential,
-			Binding: "documents", Audience: "documents", Kind: "example-records", Action: "invoke"},
+			Binding: "records", Audience: "records", Kind: "example-entries", Action: "invoke"},
 		// Alex's chain below, projected through each target binding.
 		ChildScopes: &conformance.ChildScopesCase{Chain: chain, FirstActions: []string{"invoke", "read"}, NextActions: []string{"invoke", "read"},
-			OutsideKind: "example-records", OutsideAction: "read", ResourceID: "a", OtherResourceID: "b", DroppedAction: "invoke"},
-		// Alex at model, out to documents and back, keeps what the root narrowed.
+			OutsideKind: "example-entries", OutsideAction: "read", ResourceID: "a", OtherResourceID: "b", DroppedAction: "invoke"},
+		// Alex at model, out to records and back, keeps what the root narrowed.
 		ParentLimits: &conformance.ParentLimitsCase{Token: "fixture-alex", Root: "model", Credential: modelCredential, SelfBinding: "self",
 			Kind: "modelservice.profiles", DroppedKind: "modelservice.datasets", Action: "read", DroppedAction: "invoke", ResourceID: "a", OtherResourceID: "b",
-			Out:  conformance.Hop{Credential: modelCredential, Audience: "documents", Binding: "records"},
-			Back: conformance.Hop{Credential: documentsCredential, Audience: "model", Binding: "model"}},
-		// The assistant's installation, acting for itself through three modules.
+			Out:  conformance.Hop{Credential: modelCredential, Audience: "records", Binding: "records"},
+			Back: conformance.Hop{Credential: recordsCredential, Audience: "model", Binding: "model"}},
+		// The assistant's installation, acting for itself through the two
+		// modules that check owners.
 		InstallationChain: &conformance.InstallationChainCase{Installation: assistant, Source: "conformance-assistant", Credential: credential("conformance-assistant"),
 			Hops: []conformance.Hop{
-				{Credential: credential("conformance-assistant"), Binding: "directory", Audience: "org-directory", AskKind: "directory.entry", AskAction: "read"},
-				{Credential: workloadCredential, Binding: "documents", Audience: "documents", AskKind: "example-records", AskAction: "read"},
-				{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.profiles", AskAction: "invoke"},
+				{Credential: credential("conformance-assistant"), Binding: "documents", Audience: "documents", AskKind: "example-records", AskAction: "read"},
+				{Credential: documentsCredential, Binding: "model", Audience: "model", AskKind: "modelservice.datasets", AskAction: "read"},
 			}},
 		// Two installed solutions, a store module and five resources; Ivy
 		// administers collection-x alone through her own organization grant.
@@ -474,16 +483,23 @@ func runHostInterfaceFixture(t *testing.T) {
 		Chain: &chain,
 		// The same binding read as a lookup carries its lookup scopes alone.
 		Lookup: &conformance.LookupCase{Token: "fixture-alex", Start: "model", Credential: modelCredential, Binding: "records",
-			Audience: "documents", Kind: "example-records", Invoke: "invoke", Lookup: "read"},
-		// The permission matrix: a collection reader, Acme administrators, a
-		// member who holds no role there, and a Globex member at Acme's content.
+			Audience: "records", Kind: "example-entries", Invoke: "invoke", Lookup: "read"},
+		// The permission matrix: a record viewer, Acme administrators, a member
+		// who holds no role there, and a Globex member at Acme's content. At
+		// documents, which checks owners, no organization role reaches anything
+		// on a person's own session, an administrator's every kind included
+		// (RBAC-4a); at the model only its shared profiles.
 		Matrix: []conformance.Expectation{
-			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "read", Allowed: true},
-			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "write", Allowed: false},
-			{Token: "dev-alice", Audience: "documents", Kind: "example-records", Action: "write", Allowed: true},
+			{Token: "dev-bob", Audience: "records", Kind: "example-entries", Action: "read", Allowed: true},
+			{Token: "dev-bob", Audience: "records", Kind: "example-entries", Action: "write", Allowed: false},
+			{Token: "dev-alice", Audience: "records", Kind: "example-entries", Action: "write", Allowed: true},
 			{Token: "fixture-alex", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: true},
+			{Token: "fixture-alex", Audience: "model", Kind: "modelservice.datasets", Action: "read", Allowed: false},
 			{Token: "fixture-maya", Audience: "model", Kind: "modelservice.profiles", Action: "invoke", Allowed: false},
-			{Token: "fixture-omar", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
+			{Token: "fixture-omar", Audience: "records", Kind: "example-entries", Action: "read", Allowed: false},
+			{Token: "dev-alice", Audience: "documents", Kind: "example-records", Action: "write", Allowed: false},
+			{Token: "fixture-alex", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
+			{Token: "dev-bob", Audience: "documents", Kind: "example-records", Action: "read", Allowed: false},
 		},
 	})
 
@@ -558,7 +574,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.Contains(t, status.Convert(err).Message(), reason)
 	}
 	records := func(actions ...string) []*authorityv1.WorkScopeV1 {
-		return []*authorityv1.WorkScopeV1{{ResourceKind: "example-records", Actions: actions}}
+		return []*authorityv1.WorkScopeV1{{ResourceKind: "example-entries", Actions: actions}}
 	}
 
 	// Each removal the target made is in accounts' audit journal, naming the
@@ -585,7 +601,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		// is issued nothing there any more.
 		leaver := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+leaverSession.GetBearer())
 		_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(leaver, &authorityv1.IssueRequest{
-			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "documents", Scopes: records("read")})
+			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "records", Scopes: records("read")})
 		requireCode(t, err, codes.PermissionDenied, "not a member of this organization")
 	})
 
@@ -850,7 +866,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		issue := func(scopes []*authorityv1.WorkScopeV1) (*authorityv1.IssueResponse, error) {
 			return client.Issue(ctx, &authorityv1.IssueRequest{
 				As:    &authorityv1.IssueRequest_Delegation{Delegation: &authorityv1.DelegationRef{DelegationId: d.GetDelegationId()}},
-				Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}, OperationBindingId: "documents", Audience: "documents", Scopes: scopes,
+				Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}, OperationBindingId: "records", Audience: "records", Scopes: scopes,
 			})
 		}
 		issued, err := issue(nil)
@@ -871,7 +887,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		requireCode(t, err, codes.NotFound, "delegation")
 
 		own, err := client.Issue(alex, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
-			Audience: "documents", Scopes: records("read")})
+			Audience: "records", Scopes: records("read")})
 		require.NoError(t, err)
 		revoked, err := client.RevokeDelegation(alex, &authorityv1.RevokeDelegationRequest{DelegationId: d.GetDelegationId()})
 		require.NoError(t, err)
@@ -881,7 +897,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.False(t, again.GetDelegation().GetActive())
 		_, err = issue(nil)
 		requireCode(t, err, codes.PermissionDenied, "is revoked")
-		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "documents"})
+		_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "records"})
 		require.Equal(t, codes.PermissionDenied, status.Code(err), "a capability issued before the revocation: %v", err)
 		read, err := client.GetDelegation(ctx, &authorityv1.GetDelegationRequest{DelegationId: d.GetDelegationId(), Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}})
 		require.NoError(t, err)
@@ -909,13 +925,13 @@ func runHostInterfaceFixture(t *testing.T) {
 			for _, operation := range order {
 				issued, err := client.Issue(ctx, &authorityv1.IssueRequest{
 					As:    &authorityv1.IssueRequest_Delegation{Delegation: &authorityv1.DelegationRef{DelegationId: d.GetDelegationId()}},
-					Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}, OperationBindingId: "documents", Operation: operation, Audience: "documents",
+					Actor: &authorityv1.WorkloadCredential{Credential: workloadCredential}, OperationBindingId: "records", Operation: operation, Audience: "records",
 				})
 				require.NoError(t, err, "%v: issue under %s", order, operation)
 				granted := issued.GetContext().GetActorChain()[0].GetGrantedScopes()
 				want := map[string][]string{"invoke": {"invoke", "read"}, "lookup": {"read"}}[operation]
 				require.Equal(t, want, granted[0].GetActions(), "%v: the %s issue carries its own scope set", order, operation)
-				_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "documents"})
+				_, err = client.Check(ctx, &authorityv1.CheckRequest{Token: issued.GetToken(), Audience: "records"})
 				require.NoError(t, err, "%v: the %s issue checks", order, operation)
 			}
 		}
