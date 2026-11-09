@@ -138,6 +138,22 @@ type solutionEntitlementProjection struct {
 	Org    string                     `json:"org"`
 	Viewer string                     `json:"viewer"`
 	Usable []solutionEntitlementEntry `json:"solutions"`
+	// ComposedModules answers composedModulesQuery: the organization's
+	// installation of every composed module that declares no roles. Never
+	// entitlements: nobody was granted them, and no proxy decision reads them.
+	ComposedModules []composedModuleEntry `json:"composedModules,omitempty"`
+}
+
+// composedModulesQuery asks the listing for the organization's composed
+// modules beside the entitled set. A page's binding asks it; the navigation's
+// poll does not, and does not pay for the read.
+const composedModulesQuery = "composedModules"
+
+// composedModuleEntry is one composed module without roles, as accounts names
+// it: its target, the join key, and the organization's installation of it.
+type composedModuleEntry struct {
+	TargetID       string `json:"targetId"`
+	InstallationID string `json:"installationId"`
 }
 
 type solutionEntitlementEntry struct {
@@ -245,7 +261,7 @@ func (g *Gateway) handleSolutionEntitlements(w http.ResponseWriter, r *http.Requ
 		RateLimitClass: edgeRateLimitClassStandardRead,
 	}
 	answer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		entries, err := g.collectSolutionEntitlements(r.Context(), org, viewer)
+		entries, composed, err := g.collectSolutionEntitlements(r.Context(), org, viewer, r.URL.Query().Get(composedModulesQuery) == "true")
 		if err != nil {
 			// The authority could not answer. 503, never an empty list: the
 			// frontend distinguishes the two and holds its last projection rather
@@ -254,7 +270,7 @@ func (g *Gateway) handleSolutionEntitlements(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		writeSolutionJSON(w, http.StatusOK, solutionEntitlementProjection{
-			Org: org, Viewer: viewer, Usable: entries,
+			Org: org, Viewer: viewer, Usable: entries, ComposedModules: composed,
 		})
 	})
 	if g.rateLimiter == nil {
@@ -284,19 +300,26 @@ func effectiveViewer(r *http.Request) string {
 
 // collectSolutionEntitlements reads every page of the viewer's entitled set. A
 // partial answer is not returned as a short list: the caller cannot tell it from
-// a genuinely smaller set, and would narrow a menu on it.
-func (g *Gateway) collectSolutionEntitlements(ctx context.Context, org, viewer string) ([]solutionEntitlementEntry, error) {
+// a genuinely smaller set, and would narrow a menu on it. With composed, it also
+// reads the organization's composed modules, which accounts answers on the
+// first page.
+func (g *Gateway) collectSolutionEntitlements(ctx context.Context, org, viewer string, composed bool) ([]solutionEntitlementEntry, []composedModuleEntry, error) {
 	entries := make([]solutionEntitlementEntry, 0)
+	var modules []composedModuleEntry
 	token := ""
 	for page := 0; page < solutionEntitlementPageLimit; page++ {
 		resp, err := g.solutionEntitlements.List(ctx, &accountsv1.ListSolutionEntitlementsRequest{
-			OrgId:     org,
-			SubjectId: viewer,
-			PageSize:  solutionEntitlementPageSize,
-			PageToken: token,
+			OrgId:                  org,
+			SubjectId:              viewer,
+			PageSize:               solutionEntitlementPageSize,
+			PageToken:              token,
+			IncludeComposedModules: composed,
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		for _, module := range resp.GetComposedModules() {
+			modules = append(modules, composedModuleEntry{TargetID: module.GetTargetId(), InstallationID: module.GetInstallationId()})
 		}
 		for _, entitlement := range resp.GetEntitlements() {
 			entries = append(entries, solutionEntitlementEntry{
@@ -308,10 +331,10 @@ func (g *Gateway) collectSolutionEntitlements(ctx context.Context, org, viewer s
 		}
 		token = resp.GetNextPageToken()
 		if token == "" {
-			return entries, nil
+			return entries, modules, nil
 		}
 	}
-	return nil, errSolutionEntitlementsUnbounded
+	return nil, nil, errSolutionEntitlementsUnbounded
 }
 
 // viewerSolutionAdmission is what the proxy decision needs from the authority:

@@ -302,21 +302,36 @@ export interface PageBinding {
  * viewer's own entitlements. Null when the viewer has no installation of the
  * page.
  *
- * A declared module joins to an installation only through the viewer's own
- * entitlement for that module's target, so a page is never told an
- * installation its viewer could not open directly.
+ * A declared module joins to an installation in one of two ways, by target:
+ *
+ * - a module with a page (and so, possibly, roles) through the viewer's own
+ *   entitlement for it, so a page is never told an installation of a module
+ *   its viewer was not granted;
+ * - a composed module with no page, `moduleTargets` (from the registry),
+ *   through the organization's composition installation of it, which the
+ *   gateway names only for a module that declares no roles
+ *   (`entitlements.composedModules`). Such a module decides every call on the
+ *   person's own access, so naming its installation widens nothing.
  */
 export function pageBinding(
 	entitled: ReturnType<typeof entitledSolutions>,
 	entitlements: ViewerEntitlements,
 	id: string,
+	moduleTargets: ReadonlyMap<string, string> = new Map(),
 ): PageBinding | null {
 	const byAlias = new Map(entitled.map((pair) => [pair.manifest.id, pair]));
 	const page = byAlias.get(id);
 	if (!page || page.entitlement.installationId === "") return null;
+	const composed = (alias: string): string | undefined => {
+		const target = moduleTargets.get(alias);
+		return target === undefined
+			? undefined
+			: entitlements.composedModules?.get(target);
+	};
 	const reach: PageBinding["reach"] = {};
 	for (const alias of page.manifest.reaches ?? []) {
-		const installationId = byAlias.get(alias)?.entitlement.installationId;
+		const installationId =
+			byAlias.get(alias)?.entitlement.installationId || composed(alias);
 		if (installationId) reach[alias] = { installationId };
 	}
 	return {

@@ -137,7 +137,13 @@ func (s *Service) ListSolutionEntitlements(ctx context.Context, req *gen.ListSol
 		// the row after the one the caller saw.
 		nextToken = entitlements[pageSize-1].GetInstallationId()
 	}
-	return &gen.ListSolutionEntitlementsResponse{Entitlements: entitlements, NextPageToken: nextToken}, nil
+	resp := &gen.ListSolutionEntitlementsResponse{Entitlements: entitlements, NextPageToken: nextToken}
+	if req.GetIncludeComposedModules() && req.GetPageToken() == "" {
+		if resp.ComposedModules, err = s.composedModuleInstallations(ctx, req.GetOrgId()); err != nil {
+			return nil, w.Wrapf(err, "cannot read the organization's composed modules")
+		}
+	}
+	return resp, nil
 }
 
 // Every proxied installation requires explicit registry-associated consent.

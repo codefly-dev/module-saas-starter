@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -227,4 +228,63 @@ func (s *Service) ActiveOrPendingModuleInstallation(ctx context.Context, org, mo
 		return nil, nil
 	}
 	return s.heldTargetInstallation(ctx, org, available.TargetID)
+}
+
+// composedModuleInstallations is org's active installation of every composed
+// module that declares no roles (ListSolutionEntitlementsResponse's
+// composed_modules): what a page consuming such a module on a person's session
+// is told it acts in. The module decides each of those calls on the person's
+// own organization access, so the installation is named to every member and
+// grants nobody anything. A module that declares roles is left out: it is
+// reached by grant alone, through the entitlements.
+func (s *Service) composedModuleInstallations(ctx context.Context, org string) ([]*gen.ComposedModuleInstallation, error) {
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return nil, nil // A host whose core is not built composes nothing.
+	}
+	roleless := map[string]bool{}
+	for token := ""; ; {
+		available, next, err := s.ListAvailableSolutions(ctx, org, token, listInstallationsMaxPageSize)
+		if err != nil {
+			return nil, err
+		}
+		for _, target := range available {
+			if target.Kind != "module" || !target.Active {
+				continue
+			}
+			m, err := core.Composed(ctx, target.RouteAlias)
+			if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
+				continue // Not composed: nothing reaches it.
+			}
+			if err != nil {
+				return nil, err
+			}
+			if !decide.RoleGated(m) {
+				roleless[target.TargetID] = true
+			}
+		}
+		if token = next; token == "" {
+			break
+		}
+	}
+	var out []*gen.ComposedModuleInstallation
+	token := ""
+	for page := 0; len(roleless) > 0; page++ {
+		if page == activeTargetInstallationPageLimit {
+			return nil, fmt.Errorf("installations of organization %s did not end within %d pages", org, activeTargetInstallationPageLimit)
+		}
+		resp, err := s.ListInstallations(ctx, &gen.ListInstallationsRequest{OrgId: org, Status: gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE, PageSize: listInstallationsMaxPageSize, PageToken: token})
+		if err != nil {
+			return nil, err
+		}
+		for _, summary := range resp.GetInstallations() {
+			if inst := summary.GetInstallation(); roleless[inst.GetTargetId()] {
+				out = append(out, &gen.ComposedModuleInstallation{TargetId: inst.GetTargetId(), InstallationId: inst.GetId()})
+			}
+		}
+		if token = resp.GetNextPageToken(); token == "" {
+			break
+		}
+	}
+	return out, nil
 }

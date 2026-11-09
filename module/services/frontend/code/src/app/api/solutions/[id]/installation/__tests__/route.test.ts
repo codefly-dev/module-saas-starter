@@ -22,15 +22,25 @@ function manifest(id: string): string {
 }
 
 /** The registry, and the gateway-verified entitlement read for the viewer. */
-type Registered = string | { id: string; kind: "module" | "solution"; reaches?: string[] };
+type Registered = string | { id: string; kind: "module" | "solution"; reaches?: string[]; page?: boolean };
 
-function gatewayServing(registered: Registered[], entitled: Array<{ id: string; installationId?: string; healthy?: boolean }>) {
+/**
+ * `composed` is the organization's composed modules without roles, which the
+ * gateway answers only to a read that asks for them.
+ */
+function gatewayServing(
+	registered: Registered[],
+	entitled: Array<{ id: string; installationId?: string; healthy?: boolean }>,
+	composed: Array<{ id: string; installationId: string }> = [],
+) {
 	return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-		const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
+		const url = new URL(input instanceof Request ? input.url : String(input));
+		const path = url.pathname;
 		if (path === "/solutions/_entitlements") {
 			if (!new Headers(init?.headers).get("authorization")) {
 				return new Response(JSON.stringify({ error: "unauthenticated" }), { status: 401 });
 			}
+			const asked = url.searchParams.get("composedModules") === "true";
 			return Response.json({
 				org: "org-acme",
 				viewer: "viewer-1",
@@ -40,14 +50,17 @@ function gatewayServing(registered: Registered[], entitled: Array<{ id: string; 
 					scopeNodeId: `node-${entry.id}`,
 					...(entry.installationId === undefined ? {} : { installationId: entry.installationId }),
 				})),
+				...(asked && composed.length > 0
+					? { composedModules: composed.map((entry) => ({ targetId: `target-${entry.id}`, installationId: entry.installationId })) }
+					: {}),
 			});
 		}
 		if (path === "/solutions/_registry") {
 			return Response.json({
 				revision: 1,
 				solutions: registered.map((entry) => {
-					const record = typeof entry === "string" ? { id: entry } : entry;
-					return { ...record, status: "active", targetId: `target-${record.id}`, manifest: manifest(record.id) };
+					const { page = true, ...record } = typeof entry === "string" ? { id: entry } : entry;
+					return { ...record, status: "active", targetId: `target-${record.id}`, ...(page ? { manifest: manifest(record.id) } : {}) };
 				}),
 			});
 		}
@@ -112,6 +125,30 @@ describe("solution installation route", () => {
 			// unrelated module is open but undeclared: neither is reach.
 			reach: { records: { installationId: "inst-records" }, documents: { installationId: "inst-documents" } },
 		});
+	});
+
+	it("hands a module page each composed module without a page it consumes, by the organization's installation of it", async () => {
+		const gateway = gatewayServing([
+			{ id: "people", kind: "module", reaches: ["records", "documents", "assistant", "roled"] },
+			{ id: "records", kind: "module", page: false },
+			{ id: "documents", kind: "module", page: false },
+			{ id: "assistant", kind: "module", page: false },
+			{ id: "roled", kind: "module" },
+		], [
+			{ id: "people", installationId: "inst-people" },
+		], [
+			{ id: "records", installationId: "inst-records" },
+			{ id: "documents", installationId: "inst-documents" },
+			{ id: "roled", installationId: "inst-roled" },
+		]);
+		vi.stubGlobal("fetch", gateway);
+		const body = await (await call("people")).json();
+		// The assistant is composed in no installation of this organization, and
+		// a module with a page joins only through the viewer's own entitlement,
+		// whatever else names it.
+		expect(body.reach).toEqual({ records: { installationId: "inst-records" }, documents: { installationId: "inst-documents" } });
+		const asked = gateway.mock.calls.map(([input]) => new URL(String(input))).find((url) => url.pathname === "/solutions/_entitlements");
+		expect(asked?.searchParams.get("composedModules")).toBe("true");
 	});
 
 	it("hands a solution the same binding, reaching only what it declares", async () => {

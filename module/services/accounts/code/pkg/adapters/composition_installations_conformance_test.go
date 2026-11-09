@@ -201,6 +201,30 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 		require.Empty(t, grants.GetGrants())
 	})
 
+	t.Run("a page's binding is told every composed module without roles, never a module page", func(t *testing.T) {
+		read := func(include bool, token string) *gen.ListSolutionEntitlementsResponse {
+			t.Helper()
+			out, err := h.svc.ListSolutionEntitlements(h.ctx, &gen.ListSolutionEntitlementsRequest{OrgId: fixtureOrganization, SubjectId: conformanceMaya, IncludeComposedModules: include, PageToken: token})
+			require.NoError(t, err)
+			return out
+		}
+		composed := map[string]string{}
+		for _, c := range read(true, "").GetComposedModules() {
+			composed[c.GetTargetId()] = c.GetInstallationId()
+		}
+		for _, module := range []string{"conformance-composed", "documents"} {
+			inst := installed(fixtureOrganization, module)
+			require.Equal(t, inst.GetId(), composed[inst.GetTargetId()], "%s, declaring no roles, is named by its composition installation", module)
+		}
+		page := installed(fixtureOrganization, "conformance-composed-page")
+		require.NotContains(t, composed, page.GetTargetId(), "a module declaring roles is reached by grant alone")
+		for _, e := range read(true, "").GetEntitlements() {
+			require.NotContains(t, composed, e.GetTargetId(), "naming a composed module entitles nobody to it")
+		}
+		require.Empty(t, read(false, "").GetComposedModules(), "the navigation and the proxy do not ask, and are not answered")
+		require.Empty(t, read(true, page.GetId()).GetComposedModules(), "a later page carries none")
+	})
+
 	t.Run("withdrawal revokes in every organization", func(t *testing.T) {
 		const module = "conformance-composed"
 		ids := map[string]string{}

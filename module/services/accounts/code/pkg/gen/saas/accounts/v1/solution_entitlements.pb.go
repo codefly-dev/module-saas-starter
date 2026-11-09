@@ -130,9 +130,13 @@ type ListSolutionEntitlementsRequest struct {
 	// installations can never return an unbounded result in one call.
 	PageSize int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// Opaque cursor from a previous response's next_page_token; empty for page one.
-	PageToken     string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	PageToken string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Also answer composed_modules, on the first page. Asked by a page's binding
+	// only: the navigation and the solution proxy decide on entitlements alone,
+	// and do not pay for a read they never use.
+	IncludeComposedModules bool `protobuf:"varint,5,opt,name=include_composed_modules,json=includeComposedModules,proto3" json:"include_composed_modules,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *ListSolutionEntitlementsRequest) Reset() {
@@ -193,14 +197,31 @@ func (x *ListSolutionEntitlementsRequest) GetPageToken() string {
 	return ""
 }
 
+func (x *ListSolutionEntitlementsRequest) GetIncludeComposedModules() bool {
+	if x != nil {
+		return x.IncludeComposedModules
+	}
+	return false
+}
+
 type ListSolutionEntitlementsResponse struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	Entitlements []*SolutionEntitlement `protobuf:"bytes,1,rep,name=entitlements,proto3" json:"entitlements,omitempty"`
 	// Set when more entitlements remain; pass it back as page_token. Empty on the
 	// last page.
 	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The organization's installation of every composed module that declares no
+	// roles, when include_composed_modules asked for it; on the first page only.
+	//
+	// Not entitlements, and never merged into them: nobody was granted these.
+	// Every composed module is installed in every organization by composition,
+	// and one declaring no roles decides each call on the caller's own
+	// organization access, so naming its installation to a page that consumes it
+	// on the person's session widens nothing. A module declaring roles is never
+	// listed here: it reaches a viewer only through entitlements, by grant.
+	ComposedModules []*ComposedModuleInstallation `protobuf:"bytes,3,rep,name=composed_modules,json=composedModules,proto3" json:"composed_modules,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ListSolutionEntitlementsResponse) Reset() {
@@ -247,6 +268,67 @@ func (x *ListSolutionEntitlementsResponse) GetNextPageToken() string {
 	return ""
 }
 
+func (x *ListSolutionEntitlementsResponse) GetComposedModules() []*ComposedModuleInstallation {
+	if x != nil {
+		return x.ComposedModules
+	}
+	return nil
+}
+
+// ComposedModuleInstallation is an organization's installation of one composed
+// module that declares no roles, joined like an entitlement on the target.
+type ComposedModuleInstallation struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TargetId       string                 `protobuf:"bytes,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	InstallationId string                 `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ComposedModuleInstallation) Reset() {
+	*x = ComposedModuleInstallation{}
+	mi := &file_saas_accounts_v1_solution_entitlements_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ComposedModuleInstallation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ComposedModuleInstallation) ProtoMessage() {}
+
+func (x *ComposedModuleInstallation) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_solution_entitlements_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ComposedModuleInstallation.ProtoReflect.Descriptor instead.
+func (*ComposedModuleInstallation) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_solution_entitlements_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ComposedModuleInstallation) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *ComposedModuleInstallation) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
 var File_saas_accounts_v1_solution_entitlements_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_solution_entitlements_proto_rawDesc = "" +
@@ -256,7 +338,7 @@ const file_saas_accounts_v1_solution_entitlements_proto_rawDesc = "" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x125\n" +
 	"\x12root_scope_node_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0frootScopeNodeId\x12\x18\n" +
 	"\ahealthy\x18\x04 \x01(\bR\ahealthy\x12%\n" +
-	"\ttarget_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetIdJ\x04\b\x01\x10\x02R\x13solution_identifier\"\xb3\x01\n" +
+	"\ttarget_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetIdJ\x04\b\x01\x10\x02R\x13solution_identifier\"\xed\x01\n" +
 	"\x1fListSolutionEntitlementsRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12'\n" +
 	"\n" +
@@ -264,10 +346,15 @@ const file_saas_accounts_v1_solution_entitlements_proto_rawDesc = "" +
 	"\tpage_size\x18\x03 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xf4\x03(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x04 \x01(\tR\tpageToken\"\x95\x01\n" +
+	"page_token\x18\x04 \x01(\tR\tpageToken\x128\n" +
+	"\x18include_composed_modules\x18\x05 \x01(\bR\x16includeComposedModules\"\xee\x01\n" +
 	" ListSolutionEntitlementsResponse\x12I\n" +
 	"\fentitlements\x18\x01 \x03(\v2%.saas.accounts.v1.SolutionEntitlementR\fentitlements\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageTokenB\xc1\x01\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12W\n" +
+	"\x10composed_modules\x18\x03 \x03(\v2,.saas.accounts.v1.ComposedModuleInstallationR\x0fcomposedModules\"v\n" +
+	"\x1aComposedModuleInstallation\x12%\n" +
+	"\ttarget_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\btargetId\x121\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationIdB\xc1\x01\n" +
 	"\x14com.saas.accounts.v1B\x19SolutionEntitlementsProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -282,19 +369,21 @@ func file_saas_accounts_v1_solution_entitlements_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_solution_entitlements_proto_rawDescData
 }
 
-var file_saas_accounts_v1_solution_entitlements_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_saas_accounts_v1_solution_entitlements_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_saas_accounts_v1_solution_entitlements_proto_goTypes = []any{
 	(*SolutionEntitlement)(nil),              // 0: saas.accounts.v1.SolutionEntitlement
 	(*ListSolutionEntitlementsRequest)(nil),  // 1: saas.accounts.v1.ListSolutionEntitlementsRequest
 	(*ListSolutionEntitlementsResponse)(nil), // 2: saas.accounts.v1.ListSolutionEntitlementsResponse
+	(*ComposedModuleInstallation)(nil),       // 3: saas.accounts.v1.ComposedModuleInstallation
 }
 var file_saas_accounts_v1_solution_entitlements_proto_depIdxs = []int32{
 	0, // 0: saas.accounts.v1.ListSolutionEntitlementsResponse.entitlements:type_name -> saas.accounts.v1.SolutionEntitlement
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 1: saas.accounts.v1.ListSolutionEntitlementsResponse.composed_modules:type_name -> saas.accounts.v1.ComposedModuleInstallation
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_solution_entitlements_proto_init() }
@@ -308,7 +397,7 @@ func file_saas_accounts_v1_solution_entitlements_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_solution_entitlements_proto_rawDesc), len(file_saas_accounts_v1_solution_entitlements_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
