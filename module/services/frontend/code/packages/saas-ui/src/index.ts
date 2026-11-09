@@ -145,6 +145,7 @@ export type {
 	EditSourceInput,
 	GroupBindingView,
 	SourceFetchScope,
+	SourceGovernanceView,
 	SourceOperationDeclaration,
 	SourceReconcileReceipt,
 	SourceSyncFailureReasonName,

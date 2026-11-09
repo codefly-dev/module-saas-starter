@@ -136,6 +136,7 @@ export function sourceRequest(
 		...(input.boundaryNodeId
 			? { boundaryNodeId: input.boundaryNodeId }
 			: { collectionLabel: input.targetCollection }),
+		...(input.governance ? { governance: { ...input.governance } } : {}),
 		...(credential.kind === "static_secret"
 			? {
 					credential: credential.secret,

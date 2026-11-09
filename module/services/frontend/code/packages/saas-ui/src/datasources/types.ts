@@ -184,6 +184,21 @@ export interface GitHubAppInstallationView {
 	repositories: GitHubAppRepositoryView[];
 }
 
+/**
+ * Ties a source to one solution's installation (the host's `SourceGovernance`):
+ * the source is then that installation's, connected, changed and removed by
+ * whoever the authority issues the scope named here — one the solution itself
+ * declares — and by nobody else, an organization administrator included. A
+ * solution's page passes its own; the organization's own sources carry none.
+ */
+export interface SourceGovernanceView {
+	installationId: string;
+	resourceKind: string;
+	action: string;
+	/** The solution's operation binding the scope is held through, if any. */
+	binding?: string;
+}
+
 /** The connect form's resolved output, ready for `addGitHubSource`. */
 export interface ConnectGitHubInput {
 	orgId: string;
@@ -200,6 +215,8 @@ export interface ConnectGitHubInput {
 	 */
 	accessToken?: string;
 	webhookSecret: string;
+	/** Ties the source to a solution's installation; omitted for the organization's own. */
+	governance?: SourceGovernanceView;
 }
 
 /**
@@ -468,6 +485,8 @@ export interface ConnectSourceInput {
 	credential: DatasourceCredential;
 	targetCollection: string;
 	boundaryNodeId?: string;
+	/** Ties the source to a solution's installation; omitted for the organization's own. */
+	governance?: SourceGovernanceView;
 }
 
 export interface DatasourceClient {
