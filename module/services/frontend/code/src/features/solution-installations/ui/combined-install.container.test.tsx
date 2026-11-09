@@ -352,29 +352,44 @@ describe("combined reviewed installation", () => {
 	});
 	it("the install review leads with what each role can do, grouped by where", async () => {
 		const page = { resourceKind: "example.page", actions: ["read"] };
+		const writePage = {
+			resourceKind: "example.page",
+			actions: ["read", "write"],
+		};
+		const document = { resourceKind: "documents", actions: ["read"] };
 		const row = (
 			via: string,
 			module: string,
 			operations: string[],
 			confinement = "",
+			scopes = [page],
 		) => ({
 			path: via === "role" ? [review.target] : [review.target, module],
 			module,
 			via,
 			confinement,
-			scopes: [page],
+			scopes: via === "person" ? [] : scopes,
 			operations,
 		});
 		roles = [
 			{
 				name: "editor",
-				scopes: [page],
+				scopes: [writePage],
 				reach: [
-					row("role", review.target, ["GET /pages/{id}"], "installation"),
-					row("binding", "documents", [
-						"/docs.Documents/ReadDocument",
-						"/docs.Documents/ListDocuments",
-					]),
+					row(
+						"role",
+						review.target,
+						["GET /pages/{id}", "DELETE /pages/{id}"],
+						"installation",
+						[writePage],
+					),
+					row(
+						"binding",
+						"documents",
+						["/docs.Documents/ReadDocument", "/docs.Documents/ListDocuments"],
+						"",
+						[document],
+					),
 					row("person", "directory", []),
 				],
 			},
@@ -403,9 +418,14 @@ describe("combined reviewed installation", () => {
 		expect(groups.map((g) => text.indexOf(g))).toEqual(
 			[...groups.map((g) => text.indexOf(g))].sort((a, b) => a - b),
 		);
-		expect(text).toContain("editor: get pages");
-		expect(text).toContain("viewer: get pages");
-		expect(text).toContain("editor: read document and list documents");
+		// What each role grants there, never the operations a target with no
+		// operation policy lets every role reach.
+		expect(text).toContain(
+			"editor: read and write pages (this installation's items)",
+		);
+		expect(text).toContain("viewer: read pages (this installation's items)");
+		expect(text).not.toMatch(/delete pages/);
+		expect(text).toContain("editor: read documents");
 		expect(text).toContain("editor: what you hold there yourself");
 		// Operations in plain words; identifiers only behind the disclosure.
 		expect(dialog.textContent).not.toMatch(/docs\.Documents|\{id\}/);

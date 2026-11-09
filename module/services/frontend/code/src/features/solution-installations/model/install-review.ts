@@ -256,12 +256,26 @@ export function operationText(operation: string): string {
 
 type ReachRow = OfferRole["reach"][number];
 
-/** What one reach row lets its holder do: its operations, or else its scopes. */
+/** At most this many operations name a row that carries no scopes. */
+const OPERATIONS_SHOWN = 5;
+
+/**
+ * What one reach row lets its holder do: its scopes in plain words ("read and
+ * write pages"), which is what the role grants there. A target whose
+ * operations carry no policy of their own lets every role reach every one of
+ * them, so its operations say nothing about the role; they are shown only
+ * behind the technical disclosure (reachDetail). A row with no scopes names
+ * a few of its operations instead.
+ */
 function rowText(row: ReachRow) {
 	const operations = [...new Set(row.operations.map(operationText))];
-	const text = operations.length
-		? listText(operations)
-		: scopesText(row.scopes);
+	const named =
+		operations.length > OPERATIONS_SHOWN
+			? `${operations.slice(0, OPERATIONS_SHOWN).join(", ")} and ${operations.length - OPERATIONS_SHOWN} more`
+			: listText(operations);
+	const text = row.scopes.length
+		? scopesText(row.scopes)
+		: named || "no data access";
 	const confinement: Record<string, string> = {
 		attached: "attached items",
 		installation: "this installation's items",
@@ -276,10 +290,11 @@ function rowText(row: ReachRow) {
  * What each declared role lets people do, in plain words, grouped by where:
  * "In <target>" (the role on the target itself), "Through <target>, in
  * <module>" (the target acting for the holder, directly or transitively),
- * and "Uses your own access in <module>" (an edge the target's page calls on
- * the holder's own session, where their own grants decide). The rows are the
- * core's reach (OfferRole.reach); a role whose offer carries none reads its
- * own scopes on the target.
+ * and "Uses your own access in <modules>" (edges the target's page calls on
+ * the holder's own session, where their own grants decide: one line for
+ * every such module). The rows are the core's reach (OfferRole.reach); a
+ * role whose offer carries none reads its own scopes on the target. A group
+ * where every role reads the same says it once, for every role.
  */
 export function roleReach(offer: Pick<ReviewedOffer, "roles" | "target">) {
 	const groups = new Map<
@@ -293,6 +308,16 @@ export function roleReach(offer: Pick<ReviewedOffer, "roles" | "target">) {
 		group.roles.set(role, texts);
 		groups.set(where, group);
 	};
+	const ownAccess = [
+		...new Set(
+			offer.roles.flatMap((role) =>
+				role.reach
+					.filter((row) => row.via === "person")
+					.map((row) => row.module),
+			),
+		),
+	].sort();
+	const ownWhere = `Uses your own access in ${listText(ownAccess)}`;
 	for (const role of offer.roles) {
 		if (!role.reach.length) {
 			add(`In ${offer.target}`, 0, role.name, scopesText(role.scopes));
@@ -300,12 +325,7 @@ export function roleReach(offer: Pick<ReviewedOffer, "roles" | "target">) {
 		}
 		for (const row of role.reach) {
 			if (row.via === "person")
-				add(
-					`Uses your own access in ${row.module}`,
-					2,
-					role.name,
-					"what you hold there yourself",
-				);
+				add(ownWhere, 2, role.name, "what you hold there yourself");
 			else if (row.via === "binding")
 				add(
 					`Through ${offer.target}, in ${row.module}`,
@@ -318,13 +338,22 @@ export function roleReach(offer: Pick<ReviewedOffer, "roles" | "target">) {
 	}
 	return [...groups]
 		.sort(([a, x], [b, y]) => x.order - y.order || a.localeCompare(b))
-		.map(([where, { roles }]) => ({
-			where,
-			roles: [...roles].map(([role, texts]) => ({
+		.map(([where, { roles }]) => {
+			const entries = [...roles].map(([role, texts]) => ({
 				role,
 				text: texts.join("; "),
-			})),
-		}));
+			}));
+			const shared =
+				entries.length > 1 &&
+				entries.length === offer.roles.length &&
+				entries.every((entry) => entry.text === entries[0].text);
+			return {
+				where,
+				roles: shared
+					? [{ role: "every role", text: entries[0].text }]
+					: entries,
+			};
+		});
 }
 
 /**

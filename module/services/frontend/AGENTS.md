@@ -521,10 +521,14 @@ declared role in plain words, its scopes merged per resource kind ("editor:
 read and write pages"), grouped by where they apply from the core's reach
 (`OfferRole.reach`, `roleReach`): "In <solution>" (the role on the solution),
 "Through <solution>, in <module>" (the solution acting for the holder, directly
-or transitively), "Uses your own access in <module>" (the holder's own
-session), operations in plain words with a Connect route and its gRPC
-procedure one capability (`operationText`), identifiers only in the technical
-disclosure (`reachDetail`); the supporting
+or transitively), "Uses your own access in <modules>" (one line naming every
+module the page reaches on the holder's own session). Each row reads its
+scopes, never the operations it reaches: a target whose operations carry no
+policy lets every role reach all of them, so listing them says nothing about
+the role. Only a row without scopes names its operations, at most five, in
+plain words with a Connect route and its gRPC procedure one capability
+(`operationText`). A group where every role reads the same says it once for
+"every role". Identifiers only in the technical disclosure (`reachDetail`); the supporting
 modules as one line each for what the install brings ("Also installs: …",
 naming each that holds a standing machine role as "module (role)") and what it
 reuses; team access; and one collapsed "Show technical access" holding the

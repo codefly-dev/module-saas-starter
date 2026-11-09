@@ -195,6 +195,83 @@ describe("installation access review", () => {
 			},
 		]);
 	});
+	it("reads a row by what its scopes grant, never by every operation it reaches", () => {
+		const page = {
+			resourceKind: "wiki.page",
+			actions: ["read"],
+			attachedOnly: false,
+		};
+		const routes = [
+			"GET /pages",
+			"DELETE /pages/{id}",
+			"PATCH /pages/{id}",
+			"POST /mcp",
+			"DELETE /mcp",
+			"GET /upload",
+			"HEAD /mcp",
+		];
+		const offer = create(ReviewedOfferSchema, {
+			target: "Example",
+			roles: [
+				{
+					name: "viewer",
+					reach: [
+						{
+							path: ["Example"],
+							module: "Example",
+							via: "role",
+							scopes: [page],
+							operations: routes,
+						},
+					],
+				},
+				{
+					name: "auditor",
+					reach: [
+						{
+							path: ["Example", "records"],
+							module: "records",
+							via: "binding",
+							operations: routes,
+						},
+					],
+				},
+			],
+		});
+		expect(roleReach(offer)).toEqual([
+			{ where: "In Example", roles: [{ role: "viewer", text: "read pages" }] },
+			{
+				where: "Through Example, in records",
+				roles: [
+					{
+						role: "auditor",
+						text: "get pages, delete pages, patch pages, post mcp, delete mcp and 2 more",
+					},
+				],
+			},
+		]);
+	});
+	it("says once every module the page reaches on your own access, and once what every role shares", () => {
+		const own = (module: string) => ({
+			path: ["Example", module],
+			module,
+			via: "person",
+			operations: [],
+		});
+		const offer = create(ReviewedOfferSchema, {
+			target: "Example",
+			roles: ["editor", "installer", "viewer"].map((name) => ({
+				name,
+				reach: [own("tracing"), own("annotations"), own("robin")],
+			})),
+		});
+		expect(roleReach(offer)).toEqual([
+			{
+				where: "Uses your own access in annotations, robin and tracing",
+				roles: [{ role: "every role", text: "what you hold there yourself" }],
+			},
+		]);
+	});
 	it("says each confinement in plain words", () => {
 		const offer = create(ReviewedOfferSchema, {
 			target: "Example",
