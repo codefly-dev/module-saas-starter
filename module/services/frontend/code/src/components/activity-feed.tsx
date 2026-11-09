@@ -67,14 +67,21 @@ export function ActivityFeed({
 	const { data, isLoading } = useAuditLog(
 		{
 			orgId: resolvedOrgId,
-			pageSize: limit,
+			// Read past the system's own rows, which this feed leaves out, so
+			// a busy minute of background work does not leave it empty.
+			pageSize: limit * SYSTEM_ROW_HEADROOM,
 		},
 		{
 			enabled: resolvedOrgId !== "",
 		},
 	);
 
-	const events: AuditEvent[] = data?.events ?? [];
+	// People's actions only. Background work the system attributes to itself
+	// ("System SYSTEM work context task started", six times a minute) buried
+	// what people did; the Audit Log behind "View all" still holds every row.
+	const events: AuditEvent[] = (data?.events ?? [])
+		.filter((e) => !isSystemRow(e))
+		.slice(0, limit);
 	const { directory: actorNames } = usePrincipalDirectory(
 		resolvedOrgId,
 		events.map((e) => e.actorId),
@@ -158,6 +165,16 @@ export function ActivityFeed({
 			</CardContent>
 		</Card>
 	);
+}
+
+/** How many rows are read for each one shown, to leave room for system rows. */
+const SYSTEM_ROW_HEADROOM = 4;
+
+/** A row the system attributed to itself rather than to a person or a key. */
+export function isSystemRow(
+	e: Pick<AuditEvent, "actorId" | "actorType">,
+): boolean {
+	return e.actorType === "system" || (!e.actorId && e.actorType !== "api_key");
 }
 
 // The name of what a row acted on, when this feed can tell: a team by its

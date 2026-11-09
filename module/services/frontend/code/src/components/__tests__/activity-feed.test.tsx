@@ -51,6 +51,40 @@ afterEach(() => {
 	teamNames.clear();
 });
 
+describe("ActivityFeed rows", () => {
+	// Six rows of "System SYSTEM work context task started" pushed what
+	// people did off the dashboard; the system's own rows stay in the Audit Log.
+	it("shows people's actions and leaves the system's own rows out", () => {
+		principalDirectory.set("user-2", "Maya Rossi");
+		useAuditLogMock.mockReturnValue({
+			data: {
+				events: [
+					event(new Date().toISOString(), {
+						id: "s1",
+						eventType: "saas.work_context.task_started",
+						actorId: "",
+						actorType: "system",
+					}),
+					event(new Date().toISOString(), {
+						id: "p1",
+						actorId: "user-2",
+						eventType: "saas.team.created",
+						resource: "team",
+						resourceId: "t-1",
+					}),
+				],
+			},
+			isLoading: false,
+		});
+
+		render(<ActivityFeed />);
+
+		expect(screen.getByText("Maya Rossi")).toBeTruthy();
+		expect(screen.queryByText("System")).toBeNull();
+		expect(screen.queryByText(/task started/)).toBeNull();
+	});
+});
+
 describe("ActivityFeed objects", () => {
 	// Eight rows read "alex joined a team (team)": which team, never said; the
 	// raw resource type in brackets instead.
