@@ -1436,16 +1436,21 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		const availableTable = await screen.findByRole("table", {
 			name: "Available solutions",
 		});
-		// A module page needs no offer: it is set up, never installed.
+		// A module page needs no offer: it is set up, never installed, and it
+		// is listed apart from the solutions.
+		const pagesTable = await screen.findByRole("table", {
+			name: "Available module pages",
+		});
 		for (const alias of ["ledger", "directory", "archive"]) {
-			await within(availableTable).findByText(alias);
+			await within(pagesTable).findByText(alias);
+			expect(within(availableTable).queryByText(alias)).toBeNull();
 			expect(
-				within(availableTable).getByRole("button", {
+				within(pagesTable).getByRole("button", {
 					name: `Set up access to ${alias}`,
 				}),
 			).toBeTruthy();
 			expect(
-				within(availableTable).queryByRole("button", {
+				screen.queryByRole("button", {
 					name: `Install ${alias}`,
 				}),
 			).toBeNull();

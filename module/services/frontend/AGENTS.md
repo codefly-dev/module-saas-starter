@@ -516,6 +516,12 @@ client-side grant loop. What the host could not apply comes back in
 `access_problems` and the page says so, naming Set up for the rest. An update keeps its teams and grants and shows no
 assignment. Set up keeps its own grant form for every later change.
 
+**Solutions and module pages are apart.** The sidebar lists solutions in
+their composition groups and module pages in one "Modules" section after them
+(`groupSolutionNavigation`, by the host-stamped `kind`); Admin → Solutions
+shows a "Solutions" card (install) and a "Module pages" card (set up access),
+and an installed solution offers no Install.
+
 **The review leads with what people can do.** The dialog shows, in order: each
 declared role in plain words, its scopes merged per resource kind ("editor:
 read and write pages"), grouped by where they apply from the core's reach

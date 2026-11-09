@@ -210,6 +210,7 @@ export function navProjection(
 ): SolutionNav {
 	return {
 		id: manifest.id,
+		kind: manifest.kind === "module" ? "module" : "solution",
 		nav: { ...manifest.nav },
 		...(manifest.kind === "solution" && manifest.group
 			? { group: { ...manifest.group } }

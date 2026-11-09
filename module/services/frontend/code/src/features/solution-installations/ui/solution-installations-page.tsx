@@ -232,7 +232,11 @@ function SolutionInstallationsForOrganization({
 					{!modulesWithheld && (
 						<AvailableSection
 							showModules={showModules}
-							listed={listed}
+							listed={
+								showModules
+									? listed
+									: (target) => listed(target) && !isModulePage(target)
+							}
 							query={available}
 							installing={
 								(Boolean(installing) && offered.isPending) ||
@@ -244,14 +248,22 @@ function SolutionInstallationsForOrganization({
 								combinedInstall.reset();
 								setInstalling(solution);
 							}}
-							onSetUp={
-								showModules
-									? undefined
-									: (page) => {
-											setUp.reset();
-											setSettingUp(page);
-										}
-							}
+						/>
+					)}
+					{!showModules && (
+						<AvailableSection
+							showModules={false}
+							title="Module pages"
+							description="Pages of modules that are part of the platform: installed for this organization already, and used only by the people their roles are given to."
+							hideWhenEmpty
+							listed={(target) => listed(target) && isModulePage(target)}
+							query={available}
+							installing={false}
+							onInstall={() => undefined}
+							onSetUp={(page) => {
+								setUp.reset();
+								setSettingUp(page);
+							}}
 						/>
 					)}
 					<InstalledSection
@@ -392,8 +404,17 @@ function AvailableSection({
 	installing,
 	onInstall,
 	onSetUp,
+	title = showModules ? "Available" : "Solutions",
+	description = showModules
+		? "What this host offers this organization right now, at the release it has applied."
+		: "The solutions this host offers this organization right now, at the release it has applied.",
+	hideWhenEmpty = false,
 }: {
 	showModules: boolean;
+	title?: string;
+	description?: string;
+	/** Renders nothing when no row is listed and the read succeeded. */
+	hideWhenEmpty?: boolean;
 	listed: (target: AvailableSolution | undefined) => boolean;
 	query: ReturnType<typeof useAvailableSolutions>;
 	installing: boolean;
@@ -406,15 +427,13 @@ function AvailableSection({
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the available modules and solutions");
 	const rows = withheld ? [] : availableRows((query.data ?? []).filter(listed));
+	if (hideWhenEmpty && query.isSuccess && rows.length === 0) return null;
 
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className="text-base">Available</CardTitle>
-				<CardDescription>
-					What this host offers this organization right now, at the release it
-					has applied.
-				</CardDescription>
+				<CardTitle className="text-base">{title}</CardTitle>
+				<CardDescription>{description}</CardDescription>
 			</CardHeader>
 			<CardContent>
 				{quiet ? null : indicator ? (
@@ -444,7 +463,7 @@ function AvailableSection({
 							aria-label={
 								showModules
 									? "Available modules and solutions"
-									: "Available solutions"
+									: `Available ${title.toLowerCase()}`
 							}
 						>
 							<TableHeader>
@@ -492,10 +511,10 @@ function AvailableSection({
 												>
 													Set up access
 												</Button>
-											) : (
+											) : row.installed ? null : (
 												<Button
 													size="sm"
-													disabled={row.installed || installing}
+													disabled={installing}
 													aria-label={`Install ${row.alias}`}
 													onClick={() => onInstall(row.solution)}
 												>

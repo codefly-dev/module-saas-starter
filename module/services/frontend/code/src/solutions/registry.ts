@@ -137,7 +137,7 @@ export interface SolutionSurface {
 /** The per-viewer navigation projection (see navProjection in projections.ts). */
 export type SolutionNav = Pick<
 	SolutionManifest,
-	"id" | "nav" | "assetVersion" | "group"
+	"id" | "nav" | "assetVersion" | "group" | "kind"
 > & {
 	/**
 	 * False when the solution is installed and granted but its installation is

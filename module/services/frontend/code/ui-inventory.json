@@ -5,11 +5,20 @@
   "families": [
     {
       "source": "packages/codefly-ui/src/playground/index.tsx",
-      "imports": ["react", "../content/index.js", "../layout/index.js"],
+      "imports": [
+        "react",
+        "../content/index.js",
+        "../layout/index.js"
+      ],
       "owner": "@codefly-dev/ui/playground",
       "disposition": "already canonical",
       "reason": "Shared scenario frame and operation evidence composed from layout and content primitives.",
-      "stories": [{"file": "packages/codefly-ui/stories/playground.stories.tsx", "export": "FixtureScenario"}],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/playground.stories.tsx",
+          "export": "FixtureScenario"
+        }
+      ],
       "coverage": "Owner fixture and Chromium light/dark desktop/mobile checks: navigation, refusals, log expansion, theme initialization and overflow.",
       "remaining": "Live backend calls, external skins and screen-reader qualification."
     },
@@ -1054,7 +1063,7 @@
       ],
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
-      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode \u2014 every caller here has a real phase to name.",
+      "reason": "Determinate progress bar; the phase ladder a long-running job's view fills in. Deliberately has no indeterminate mode — every caller here has a real phase to name.",
       "stories": [
         {
           "file": "packages/codefly-ui/stories/foundations.stories.tsx",
@@ -5129,36 +5138,37 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/features/solution-installations/ui/install-module-page-dialog.tsx",
+      "source": "src/features/solution-installations/ui/set-up-module-page-dialog.tsx",
       "imports": [
-        "@connectrpc/connect",
         "@tanstack/react-query",
         "react",
-        "@/gen/host/installation/v1/installation_pb",
+        "@/features/teams/service/queries",
         "@/gen/saas/accounts/v1/installations_pb",
-        "@/lib/connect/transport",
         "@/shared/ui",
-        "../model/install-review",
         "../model/installations",
-        "./declared-access"
+        "../model/team-assignment",
+        "./installation-team-assignment"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
-      "reason": "Reviews a module page that declares roles from the authority's offer and installs it with no agent role; its roles take teams in Setup. Lower-level presentation consumes the shared kit.",
+      "reason": "Sets up a module page's access in one act through SetUpModulePage. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/features/solution-installations/ui/install-module-dialog.tsx",
+      "source": "src/features/solution-installations/ui/install-review-summary.tsx",
       "imports": [
+        "react",
+        "@/gen/host/installation/v1/installation_pb",
+        "@/gen/saas/accounts/v1/installations_pb",
         "@/shared/ui",
-        "../model/installations",
-        "../service/mutations"
+        "../model/install-review",
+        "./declared-access"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
-      "reason": "Owns the explicit supporting-module installation form outside normal solution installation. Lower-level presentation consumes the shared kit.",
+      "reason": "Renders what each role can do, grouped by where, from the authority's reach for the install and upgrade reviews. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
@@ -5189,45 +5199,36 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/features/solution-installations/ui/installation-team-choices.tsx",
+      "source": "src/features/solution-installations/ui/installation-team-assignment.tsx",
       "imports": [
-        "@tanstack/react-query",
-        "react",
-        "@/features/teams/service/queries",
-        "@/gen/host/installation/v1/installation_pb",
+        "@/gen/saas/accounts/v1/common_pb",
         "@/shared/ui",
-        "../model/install-review",
-        "../model/installations",
-        "../service/team-choices",
-        "./role-team-choice"
+        "../model/team-assignment"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
-      "reason": "Owns the staged team-per-declared-role choices and when they are granted through the canonical GrantRole. Lower-level presentation consumes the shared kit.",
+      "reason": "Owns the install dialog's \"You will get\" roles and the team chosen for each declared role, sent with the install for the host to assign. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
-      "source": "src/features/solution-installations/ui/role-team-choice.tsx",
+      "source": "src/features/solution-installations/ui/module-page-access.tsx",
       "imports": [
         "@codefly-dev/saas-ui/solution",
+        "@connectrpc/connect",
         "@tanstack/react-query",
-        "react",
-        "@/features/teams/model/schemas",
-        "@/features/teams/service/mutations",
-        "@/features/teams/service/queries",
-        "@/features/teams/ui/team-form",
-        "@/gen/saas/accounts/v1/common_pb",
+        "@/gen/host/installation/v1/installation_pb",
+        "@/lib/connect/transport",
         "@/shared/ui",
         "../model/installations"
       ],
       "owner": "SaaS application",
       "disposition": "keep feature-local",
-      "reason": "Binds one declared role to an existing organization team or one created through the organization's CreateTeam; the picker is the kit's SolutionRoleGrantForm.",
+      "reason": "Owns a module page's access on its Setup page: its roles' grants on the composition installation. Lower-level presentation consumes the shared kit.",
       "stories": [],
       "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required; the picker is the kit's SolutionRoleGrantForm."
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
     },
     {
       "source": "src/features/solution-installations/ui/solution-installations-page.tsx",

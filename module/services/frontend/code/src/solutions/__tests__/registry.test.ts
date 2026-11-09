@@ -1074,6 +1074,7 @@ describe("projection availability", () => {
     // available, because it must not be routed as though it were serving.
     expect(navProjection(manifestFor("audit"), grantedButUnhealthy)).toEqual({
       id: "audit",
+      kind: "solution",
       nav: { title: "audit", path: "/s/audit" },
       available: false,
     });

@@ -18,6 +18,8 @@ interface SolutionNav {
 	id: string;
 	assetVersion?: string;
 	group?: SolutionGroup;
+	/** A module page, or a solution (the default): each has its own section. */
+	kind?: "module" | "solution";
 	nav: { title: string; path: string; order?: number };
 	/**
 	 * False when the solution is installed and granted but its installation is
@@ -225,7 +227,8 @@ export function SolutionsMenu({
 					aria-label={section.title}
 					className="flex flex-col gap-2"
 				>
-					{solutions.some((entry) => entry.group) && (
+					{(solutions.some((entry) => entry.group) ||
+						solutions.some((entry) => entry.kind === "module")) && (
 						<h3 className="text-sm font-medium text-muted-foreground">
 							{section.title}
 						</h3>

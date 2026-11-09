@@ -97,7 +97,7 @@ it("uses shared solution roles without offering a legacy host grant", async () =
 	render();
 	expect(
 		await screen.findByText(
-			/Assign people and teams using the solution roles above/,
+			/Grant a role here, or add people to a role.s team/,
 		),
 	).toBeTruthy();
 	expect(screen.queryByText("Team access on this host")).toBeNull();

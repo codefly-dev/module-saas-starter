@@ -53,4 +53,21 @@ describe("solution groups", () => {
 			{ key: "ungrouped", title: "Solutions", items: [c] },
 		]);
 	});
+	it("puts module pages in a section of their own, after every solution", () => {
+		const wiki = { id: "wiki", kind: "solution" as const };
+		const grouped = { id: "builder", kind: "solution" as const, group };
+		const directory = { id: "directory", kind: "module" as const, group };
+		expect(groupSolutionNavigation([directory, wiki])).toEqual([
+			{ key: "ungrouped", title: "Solutions", items: [wiki] },
+			{ key: "modules", title: "Modules", items: [directory] },
+		]);
+		expect(groupSolutionNavigation([directory, grouped, wiki])).toEqual([
+			{ key: "group:operations", title: "Operations", items: [grouped] },
+			{ key: "ungrouped", title: "Other", items: [wiki] },
+			{ key: "modules", title: "Modules", items: [directory] },
+		]);
+		expect(groupSolutionNavigation([directory])).toEqual([
+			{ key: "modules", title: "Modules", items: [directory] },
+		]);
+	});
 });

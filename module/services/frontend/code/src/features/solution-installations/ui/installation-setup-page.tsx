@@ -373,9 +373,10 @@ function InstallationSetup({
 				</Card>
 			) : (
 				<p className="text-sm text-muted-foreground">
-					Assign people and teams using the solution roles above. Installing a
-					solution does not grant anyone access or change their module
-					permissions.
+					Installing gave each role above to its team, and the installer the
+					roles they ticked. Grant a role here, or add people to a role's team,
+					to give anyone else access; nobody's own access in the supporting
+					modules changes.
 				</p>
 			)}
 
