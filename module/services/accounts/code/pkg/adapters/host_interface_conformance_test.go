@@ -224,10 +224,10 @@ func runHostInterfaceFixture(t *testing.T) {
 	// own principal's data. org-directory is the page module reading records
 	// for the viewer through its one binding; model an audience the viewer's
 	// context at records is not addressed to, checking owners of its datasets
-	// with its profiles shared. records and model bind to each other, so a
-	// delegate chain crosses from one to the other and back; model also binds
-	// to itself across both its kinds, and documents to the model's profiles
-	// and datasets. conformance-agent is a module whose tools binding reaches
+	// with its profiles and templates shared. records and model bind to each
+	// other, so a delegate chain crosses from one to the other and back; model
+	// also binds to itself across its three kinds, and documents to the
+	// model's profiles and datasets. conformance-agent is a module whose tools binding reaches
 	// an installed solution; conformance-idle a declared workload with no
 	// active installation.
 	modules := []conformanceModule{
@@ -245,9 +245,10 @@ func runHostInterfaceFixture(t *testing.T) {
 					"invoke":   {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read", "modelservice.templates:read"},
 					"headless": {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read", "modelservice.templates:read"}}},
 			}},
-		// conformance-agent checks owners, so the proposals solution's role
-		// reaches it selected to that solution's principal; its conversations
-		// are shared, so both people use it on their own session.
+		// conformance-agent's tools binding carries the person's role on the
+		// proposals solution to that solution; its conversations are shared,
+		// so both people use the agent on their own session through their
+		// organization roles.
 		{alias: "conformance-agent", sharedKinds: []string{"conformance-agent.conversation"}, ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-agent.conversation", "read")},
 			bindings: []solutionhost.AuthorityBinding{{ID: "tools", Audience: "conformance-proposals", Operations: map[string][]string{"invoke": {"conformance-proposals.item:read"}}}}},
 		{alias: "conformance-idle", ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-idle.task", "read")},
@@ -494,7 +495,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		// who holds no role there, and a Globex member at Acme's content. At
 		// documents, which checks owners, no organization role reaches anything
 		// on a person's own session, an administrator's every kind included
-		// (RBAC-4a); at the model only its shared profiles.
+		// (RBAC-4a); at the model only its shared kinds.
 		Matrix: []conformance.Expectation{
 			{Token: "dev-bob", Audience: "records", Kind: "example-entries", Action: "read", Allowed: true},
 			{Token: "dev-bob", Audience: "records", Kind: "example-entries", Action: "write", Allowed: false},
