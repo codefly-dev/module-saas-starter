@@ -614,7 +614,12 @@ func installationToWire(core *authority.Service, ctx context.Context, i domain.I
 	if err != nil {
 		upgrade = false
 	}
-	return installationWire(i, approved, upgrade)
+	out := installationWire(i, approved, upgrade)
+	// What its declared reach the composition leaves unreached, as the core
+	// answers it (Service.Unreached): a readiness condition beside
+	// upgrade_available; a read it cannot make answers none.
+	out.Unreached, _ = core.Unreached(ctx, i)
+	return out
 }
 
 // installationWire converts one snapshot beside the declaration its consent

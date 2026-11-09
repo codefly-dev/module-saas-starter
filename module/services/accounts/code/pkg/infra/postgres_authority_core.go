@@ -368,6 +368,12 @@ type moduleDocument struct {
 	HasMethods       bool                     `json:"has_methods,omitempty"`
 	InstallationRole string                   `json:"installation_role,omitempty"`
 	EdgeDependencies []domain.EdgeDependency  `json:"edge_dependencies,omitempty"`
+	// SharedKinds are the kinds the module declares unowned, issued
+	// unselected (domain.Module.SharedKinds).
+	SharedKinds []string `json:"shared_kinds,omitempty"`
+	// Through are, per role then binding, what a role names through one of
+	// the module's bindings (domain.Module.Through); Roles holds them too.
+	Through map[string]map[string][]storedScope `json:"through,omitempty"`
 }
 
 type storedScope struct {
@@ -410,7 +416,16 @@ func loadScopes(in []storedScope) []*basev0.WorkScopeV1 {
 
 func encodeModule(m domain.Module) ([]byte, error) {
 	doc := moduleDocument{ResourceKinds: storeScopes(m.ResourceKinds), OwnerAware: m.OwnerAware, HasRoles: m.Roles != nil, HasMethods: m.Methods != nil,
-		InstallationRole: m.InstallationRole, EdgeDependencies: m.EdgeDependencies}
+		InstallationRole: m.InstallationRole, EdgeDependencies: m.EdgeDependencies, SharedKinds: m.SharedKinds}
+	for role, bindings := range m.Through {
+		if doc.Through == nil {
+			doc.Through = map[string]map[string][]storedScope{}
+		}
+		doc.Through[role] = map[string][]storedScope{}
+		for id, scopes := range bindings {
+			doc.Through[role][id] = storeScopes(scopes)
+		}
+	}
 	if len(m.Bindings) > 0 {
 		doc.Bindings = map[string]storedBinding{}
 		for id, b := range m.Bindings {
@@ -444,7 +459,16 @@ func decodeModule(m *domain.Module, raw []byte) error {
 		return fmt.Errorf("module %s: stored declarations do not read: %w", m.Name, err)
 	}
 	m.ResourceKinds, m.OwnerAware = loadScopes(doc.ResourceKinds), doc.OwnerAware
-	m.InstallationRole, m.EdgeDependencies = doc.InstallationRole, doc.EdgeDependencies
+	m.InstallationRole, m.EdgeDependencies, m.SharedKinds = doc.InstallationRole, doc.EdgeDependencies, doc.SharedKinds
+	for role, bindings := range doc.Through {
+		if m.Through == nil {
+			m.Through = map[string]map[string][]*basev0.WorkScopeV1{}
+		}
+		m.Through[role] = map[string][]*basev0.WorkScopeV1{}
+		for id, scopes := range bindings {
+			m.Through[role][id] = loadScopes(scopes)
+		}
+	}
 	m.Bindings = map[string]domain.Binding{}
 	for id, b := range doc.Bindings {
 		m.Bindings[id] = domain.Binding{ID: id, Audience: b.Audience, InvokeScopes: loadScopes(b.Invoke), HeadlessScopes: loadScopes(b.Headless), LookupScopes: loadScopes(b.Lookup)}

@@ -317,3 +317,162 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		}
 	})
 }
+
+// testPagesReachThroughTheAgent holds the host to what a solution's page
+// reaches through an agent: the solution's roles name,
+// through their binding to the agent, what the agent's own bindings reach
+// (the model's shared profiles, the documents), delivered as the CLI
+// delivers them and read back from this store, and a person present on the
+// page is issued, at each of the agent's hops, their role cut to its binding,
+// owned by the solution's installation — the model's profiles unselected,
+// since the model declares them shared. An agent redelivered without what a
+// solution names through it is accepted: the solution's reach is reported
+// unreached and its hop there refused by name, and it re-converges by itself
+// once the agent reaches it again.
+func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
+	const model, docs, agent, notes, studio = "reach-model", "reach-docs", "reach-agent", "reach-notes", "reach-studio"
+	profiles, doc, intents, tasks := model+".profiles", docs+".doc", agent+".intents", agent+".tasks"
+	invoke := func(scopes ...string) map[string][]string { return map[string][]string{"invoke": scopes} }
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: model, ceilings: []*authorityv1.WorkScopeV1{wireScope(profiles, "invoke", "read")},
+		ownerUnaware: true, sharedKinds: []string{profiles}})
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: docs, ceilings: []*authorityv1.WorkScopeV1{wireScope(doc, "read", "write")}})
+	agentModule := func(generation uint64, withModel bool) conformanceModule {
+		bindings := []solutionhost.AuthorityBinding{
+			{ID: "evidence", Audience: docs, Operations: invoke(doc + ":read")},
+			{ID: "configuration-write", Audience: docs, Operations: invoke(doc + ":write")},
+		}
+		if withModel {
+			bindings = append(bindings, solutionhost.AuthorityBinding{ID: "model", Audience: model, Operations: invoke(profiles+":invoke", profiles+":read")})
+		}
+		return conformanceModule{alias: agent, generation: generation,
+			ceilings: []*authorityv1.WorkScopeV1{wireScope(intents, "read", "configure", "activate", "run"), wireScope(tasks, "execute")}, bindings: bindings}
+	}
+	deliverModule(t, h.ctx, h.conn, h.signer, agentModule(1, true))
+	turn := []*authorityv1.WorkScopeV1{wireScope(profiles, "invoke", "read"), wireScope(doc, "read")}
+	author := []*authorityv1.WorkScopeV1{wireScope(profiles, "invoke", "read"), wireScope(doc, "read", "write")}
+	solution := func(alias string, binding []string, roles map[string][]*authorityv1.WorkScopeV1, through map[string][]*authorityv1.WorkScopeV1) {
+		note := wireScope(alias+".note", "read")
+		for name := range roles {
+			roles[name] = append([]*authorityv1.WorkScopeV1{note}, roles[name]...)
+		}
+		roles["installer"] = []*authorityv1.WorkScopeV1{note}
+		reach := map[string]map[string][]*authorityv1.WorkScopeV1{}
+		for name, scopes := range through {
+			reach[name] = map[string][]*authorityv1.WorkScopeV1{"agent": scopes}
+		}
+		deliverSolution(t, h.ctx, h.conn, h.signer, conformanceSolution{alias: alias, generation: 1, installationRole: domain.NoInstallationRole,
+			ceilings: []*authorityv1.WorkScopeV1{note}, roles: roles, through: reach,
+			bindings: []solutionhost.AuthorityBinding{{ID: "agent", Audience: agent, Operations: invoke(binding...)}}})
+	}
+	solution(notes, []string{intents + ":read", intents + ":run", tasks + ":execute"},
+		map[string][]*authorityv1.WorkScopeV1{"viewer": {wireScope(intents, "read", "run"), wireScope(tasks, "execute")}},
+		map[string][]*authorityv1.WorkScopeV1{"viewer": turn})
+	solution(studio, []string{intents + ":read", intents + ":configure", intents + ":activate", intents + ":run", tasks + ":execute"},
+		map[string][]*authorityv1.WorkScopeV1{
+			"editor": {wireScope(intents, "read", "configure", "activate", "run"), wireScope(tasks, "execute")},
+			"viewer": {wireScope(intents, "read", "run"), wireScope(tasks, "execute")}},
+		map[string][]*authorityv1.WorkScopeV1{"editor": author, "viewer": turn})
+	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
+	installed := map[string]string{}
+	for _, target := range []string{notes, studio} {
+		review, err := h.review(t, alex, target)
+		require.NoError(t, err)
+		inst, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
+		require.NoError(t, err)
+		installed[target] = inst.ID
+	}
+	grant := func(target, role, person string) {
+		_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: installed[target], Role: role, PersonID: person})
+		require.NoError(t, err)
+	}
+	grant(notes, "viewer", conformanceMaya)
+	grant(studio, "editor", conformanceIvy)
+	grant(studio, "viewer", conformanceAlice)
+	person := func(id string) authority.Person { return authority.Person{ID: id, Organization: fixtureOrganization} }
+	atAgent := func(who, page string) authority.Issued {
+		out, err := h.core.IssueForPage(h.ctx, person(who), page, authority.IssueRequest{Audience: agent})
+		require.NoError(t, err)
+		return out
+	}
+	onward := func(parent authority.Issued, binding string) (authority.Issued, error) {
+		return h.core.IssueChild(h.ctx, parent.Token, authority.Workload{Module: agent}, authority.IssueRequest{Binding: binding})
+	}
+	granted := func(t *testing.T, i authority.Issued) []*basev0.WorkScopeV1 {
+		chain := i.Context.GetActorChain()
+		require.NotEmpty(t, chain)
+		return chain[len(chain)-1].GetGrantedScopes()
+	}
+	principal := func(target string) string {
+		inst, err := h.core.Installations(h.ctx, alex, fixtureOrganization)
+		require.NoError(t, err)
+		i := slices.IndexFunc(inst, func(i domain.Installation) bool { return i.Target == target && i.Status == domain.Active })
+		require.GreaterOrEqual(t, i, 0)
+		return inst[i].PrincipalID
+	}
+
+	t.Run("a non-admin notes viewer's turn reaches the model and reads the evidence, and writes nothing", func(t *testing.T) {
+		at := atAgent(conformanceMaya, notes)
+		toModel, err := onward(at, "model")
+		require.NoError(t, err, "the model's profiles are shared")
+		for _, sc := range granted(t, toModel) {
+			require.Empty(t, sc.GetResourceOwnerId(), "a shared kind is unselected")
+		}
+		evidence, err := onward(at, "evidence")
+		require.NoError(t, err)
+		require.Equal(t, principal(notes), granted(t, evidence)[0].GetResourceOwnerId(), "the evidence read is the notes's installation's")
+		_, err = onward(at, "configuration-write")
+		require.ErrorContains(t, err, "holds nothing at "+docs)
+	})
+	t.Run("a non-admin studio editor publishes, activates and runs", func(t *testing.T) {
+		at := atAgent(conformanceIvy, studio)
+		write, err := onward(at, "configuration-write")
+		require.NoError(t, err)
+		require.Equal(t, principal(studio), granted(t, write)[0].GetResourceOwnerId())
+		_, err = onward(at, "model")
+		require.NoError(t, err)
+		all, err := h.core.Installations(h.ctx, alex, fixtureOrganization)
+		require.NoError(t, err)
+		i := slices.IndexFunc(all, func(i domain.Installation) bool { return i.Target == agent && i.Status == domain.Active })
+		require.GreaterOrEqual(t, i, 0)
+		for _, action := range []string{decide.ArtifactActivate, decide.ArtifactRun} {
+			_, err := h.core.DecideArtifact(h.ctx, at.Token, authority.Workload{Module: agent}, all[i].ID, intents, action,
+				&decide.ArtifactIdentity{Schema: "s/v1", Source: fixtureOrganization + "." + studio, Subject: []byte("x")})
+			require.NoError(t, err, action)
+		}
+	})
+	t.Run("a studio viewer runs and neither writes a configuration nor activates", func(t *testing.T) {
+		at := atAgent(conformanceAlice, studio)
+		_, err := onward(at, "configuration-write")
+		require.ErrorContains(t, err, "holds nothing at "+docs)
+		_, err = onward(at, "model")
+		require.NoError(t, err)
+	})
+	t.Run("an agent redelivered without the model binding leaves the notes's reach unreached; it re-converges", func(t *testing.T) {
+		installation := func() domain.Installation {
+			all, err := h.core.Installations(h.ctx, alex, fixtureOrganization)
+			require.NoError(t, err)
+			i := slices.IndexFunc(all, func(i domain.Installation) bool { return i.Target == notes && i.Status == domain.Active })
+			require.GreaterOrEqual(t, i, 0)
+			return all[i]
+		}
+		deliverModule(t, h.ctx, h.conn, h.signer, agentModule(2, false))
+		gaps, err := h.core.Unreached(h.ctx, installation())
+		require.NoError(t, err)
+		require.Equal(t, []string{"role viewer reaches nothing of " + profiles + ":invoke, " + profiles + ":read through agent: no module agent reaches consumes it for a person"}, gaps)
+		at := atAgent(conformanceMaya, notes)
+		_, err = onward(at, "model")
+		require.ErrorContains(t, err, `operation binding "model" is not one `+agent+` declares`)
+		_, err = onward(at, "evidence")
+		require.NoError(t, err, "what the agent still reaches is issued")
+
+		deliverModule(t, h.ctx, h.conn, h.signer, agentModule(3, true))
+		gaps, err = h.core.Unreached(h.ctx, installation())
+		require.NoError(t, err)
+		require.Empty(t, gaps)
+		upgrade, err := h.core.UpgradeAvailable(h.ctx, installation())
+		require.NoError(t, err)
+		require.False(t, upgrade, "a declared reach reached again asks the administrator nothing new")
+		_, err = onward(atAgent(conformanceMaya, notes), "model")
+		require.NoError(t, err)
+	})
+}

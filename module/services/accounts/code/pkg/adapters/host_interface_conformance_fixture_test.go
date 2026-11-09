@@ -71,7 +71,10 @@ type conformanceSolution struct {
 	ceilings         []*authorityv1.WorkScopeV1
 	roles            map[string][]*authorityv1.WorkScopeV1
 	// owned are the installation-owned scopes of a role, by role name.
-	owned    map[string][]*authorityv1.WorkScopeV1
+	owned map[string][]*authorityv1.WorkScopeV1
+	// through are the scopes a role names through each of the solution's
+	// bindings, by role name, then binding id.
+	through  map[string]map[string][]*authorityv1.WorkScopeV1
 	methods  []*compositionv1.MethodPolicyV1
 	bindings []solutionhost.AuthorityBinding
 }
@@ -97,7 +100,11 @@ func deliverSolution(t *testing.T, ctx context.Context, conn grpc.ClientConnInte
 		document.EdgeDependencies = append(document.EdgeDependencies, &compositionv1.EdgeDependencyV1{Module: edge.Module, Presence: edge.Presence})
 	}
 	for name, scopes := range s.roles {
-		document.Roles = append(document.Roles, &compositionv1.RoleV1{Name: name, Scopes: scopes, InstallationOwnedScopes: s.owned[name]})
+		role := &compositionv1.RoleV1{Name: name, Scopes: scopes, InstallationOwnedScopes: s.owned[name]}
+		for _, binding := range slices.Sorted(maps.Keys(s.through[name])) {
+			role.Through = append(role.Through, &compositionv1.RoleThroughV1{Binding: binding, Scopes: s.through[name][binding]})
+		}
+		document.Roles = append(document.Roles, role)
 	}
 	doc, err := (proto.MarshalOptions{Deterministic: true}).Marshal(document)
 	require.NoError(t, err)
@@ -126,6 +133,10 @@ type conformanceModule struct {
 	roles map[string][]*authorityv1.WorkScopeV1
 	// methods are what each operation the module serves requires.
 	methods []*compositionv1.MethodPolicyV1
+	// ownerUnaware: the module checks no owner (owner_aware false);
+	// sharedKinds are the served kinds it declares unowned.
+	ownerUnaware bool
+	sharedKinds  []string
 }
 
 // deliverModule delivers m as the CLI does: core's manifest signed with the
@@ -149,7 +160,8 @@ func deliverModule(t *testing.T, ctx context.Context, conn grpc.ClientConnInterf
 	require.NoError(t, err)
 	sum := sha256.Sum256(raw)
 	document := &compositionv1.AuthorityManifestV1{Module: m.alias, Generation: generation,
-		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, Methods: m.methods, OwnerAware: true, InstallationRole: m.installationRole}
+		CoreManifestDigest: "sha256:" + hex.EncodeToString(sum[:]), ScopeCeilings: m.ceilings, Methods: m.methods, OwnerAware: !m.ownerUnaware, InstallationRole: m.installationRole,
+		SharedKinds: m.sharedKinds}
 	for _, name := range slices.Sorted(maps.Keys(m.roles)) {
 		document.Roles = append(document.Roles, &compositionv1.RoleV1{Name: name, Scopes: m.roles[name]})
 	}

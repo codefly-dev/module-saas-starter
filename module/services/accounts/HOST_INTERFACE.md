@@ -327,6 +327,16 @@ what a role reaches offers the update; holders keep the approved reach). At
 start the host has the core adopt, once, the reach of a consent recorded before
 reach was kept (`AdoptLegacyReach`, journalled `installation.reach_adopted`);
 until then the core holds it to that same reach.
+`unreached` is the core's `Service.Unreached` on the same read: what the
+target's roles name through one of its bindings (a role scope's `through`,
+carried in `RoleV1.through`) that the composition does not reach now. A
+delivery of a module such a reach walks through is never refused for it; the
+core journals `installation.reach_unreached` and, once a later delivery reaches
+it again, `installation.reach_restored` (audited as
+`saas.authority.installation_reach_unreached` / `_restored`), and the reach
+re-converges asking the administrator nothing new. A kind a module declares
+shared (`AuthorityManifestV1.shared_kinds`) is issued unselected through a
+solution.
 
 **Install assigns access.** `InstallReviewedSolution` is an administrator's
 install and assigns who holds the target's declared roles, since access is

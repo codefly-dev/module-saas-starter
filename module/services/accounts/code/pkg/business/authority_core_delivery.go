@@ -47,11 +47,19 @@ func documentOf(in *compositionv1.AuthorityManifestV1) *coredelivered.Document {
 	for _, edge := range in.GetEdgeDependencies() {
 		doc.EdgeDependencies = append(doc.EdgeDependencies, domain.EdgeDependency{Module: edge.GetModule(), Presence: edge.GetPresence()})
 	}
+	doc.SharedKinds = append(doc.SharedKinds, in.GetSharedKinds()...)
 	for _, m := range in.GetMethods() {
 		doc.Methods = append(doc.Methods, coredelivered.Method{Method: m.GetMethod(), Requires: wireScopes(m.GetRequires()), AnyCheckedCaller: m.GetAnyCheckedCaller()})
 	}
 	for _, r := range in.GetRoles() {
-		doc.Roles = append(doc.Roles, coredelivered.Role{Name: r.GetName(), Scopes: wireScopes(r.GetScopes()), InstallationOwned: wireScopes(r.GetInstallationOwnedScopes())})
+		role := coredelivered.Role{Name: r.GetName(), Scopes: wireScopes(r.GetScopes()), InstallationOwned: wireScopes(r.GetInstallationOwnedScopes())}
+		for _, through := range r.GetThrough() {
+			if role.Through == nil {
+				role.Through = map[string]coredelivered.Scopes{}
+			}
+			role.Through[through.GetBinding()] = append(role.Through[through.GetBinding()], wireScopes(through.GetScopes())...)
+		}
+		doc.Roles = append(doc.Roles, role)
 	}
 	return doc
 }

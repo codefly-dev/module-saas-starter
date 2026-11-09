@@ -25,6 +25,8 @@ var authorityEvents = map[domain.EventKind]struct {
 	domain.InstallationUpgradeAvailable: {EventAuthorityInstallationUpgradeAvailable, "installation"},
 	domain.InstallationUpgraded:         {EventAuthorityInstallationUpgraded, "installation"},
 	domain.InstallationReachAdopted:     {EventAuthorityInstallationReachAdopted, "installation"},
+	domain.InstallationReachUnreached:   {EventAuthorityInstallationReachUnreached, "installation"},
+	domain.InstallationReachRestored:    {EventAuthorityInstallationReachRestored, "installation"},
 	domain.RoleGranted:                  {EventAuthorityRoleGranted, "installation"},
 	domain.RoleRevoked:                  {EventAuthorityRoleRevoked, "installation"},
 	domain.DelegationGranted:            {EventModuleDelegationGranted, "module_delegation"},

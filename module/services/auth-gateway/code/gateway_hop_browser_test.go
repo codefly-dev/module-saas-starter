@@ -395,9 +395,9 @@ func TestBrowserAliasNamesThePageItServesToTheAuthority(t *testing.T) {
 	require.Equal(t, "gateway-workload", issuer.request.GetActor().GetCredential(), "the edge proves it names the page")
 	require.Equal(t, "documents", issuer.request.GetAudience())
 	require.Empty(t, face.header.Get(browserPageHeader), "the page is the authority's question, never the module's")
-	call(gw, bearer, "test-internal-token", "wiki")
+	call(gw, bearer, "test-internal-token", "notes")
 	require.Equal(t, 2, issuer.calls, "another page is another context")
-	require.Equal(t, "wiki", issuer.request.GetPageTarget())
+	require.Equal(t, "notes", issuer.request.GetPageTarget())
 
 	for _, tc := range []struct{ token, page string }{{"caller-supplied", "org-directory"}, {"", "org-directory"}, {"test-internal-token", "Org/Directory"}} {
 		gw, issuer, _, bearer := hopBrowserHarness(t)

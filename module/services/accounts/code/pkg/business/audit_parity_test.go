@@ -30,6 +30,10 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventAuthorityInstallationReconverged,
 	EventAuthorityInstallationUpgradeAvailable,
 	EventAuthorityInstallationReachAdopted,
+	// A delivery of a module a declared reach walks through journals what it
+	// left unreached, or reached again, in the composition transaction.
+	EventAuthorityInstallationReachUnreached,
+	EventAuthorityInstallationReachRestored,
 	// The declared-presence reconcile pass emits this: delivery declares a
 	// generation and the host applies it, with no request behind it (#952).
 	EventSolutionHostBindingApplied,
