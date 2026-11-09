@@ -352,6 +352,30 @@ message InstallReviewedSolutionRequest {
   ];
 }
 
+// A module page's access is set up the way a solution's install assigns it,
+// without an install: every module is installed by composition, and a module
+// page's roles decide who may use it, through grants on that composition
+// installation. Each declared role goes to the team role_teams names for it,
+// or else to the organization's team `<module>-<role>` (found by name or by
+// its slug, created when absent), and is granted to it on the composition
+// installation; the acting administrator joins the teams of installer_roles
+// and no other. Setting it up again changes nothing that is already so.
+message SetUpModulePageRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // The module page, as ListAvailableSolutions names it.
+  string target_id = 2 [(buf.validate.field).string.uuid = true];
+  map<string, string> role_teams = 3 [
+    (buf.validate.field).map.max_pairs = 64,
+    (buf.validate.field).map.keys = {string: {min_len: 1, max_len: 128}},
+    (buf.validate.field).map.values = {string: {uuid: true}}
+  ];
+  repeated string installer_roles = 4 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items = {string: {min_len: 1, max_len: 128}}
+  ];
+}
+
 service InstallationService {
   // Review one solution release and its supporting module access before consent.
   rpc ReviewSolutionInstall(ReviewSolutionInstallRequest) returns (ReviewedSolutionInstall) {
@@ -384,6 +408,24 @@ service InstallationService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (google.api.http) = {post: "/v1/solution-installations" body: "*"};
+  }
+  // Set up who may use a module page: its roles to teams on its composition
+  // installation, in one act; the answer is that installation, with what
+  // could not be applied in access_problems.
+  rpc SetUpModulePage(SetUpModulePageRequest) returns (Installation) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID}
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {post: "/v1/solution-installations/module-pages/setup" body: "*"};
   }
   // InstallSolution composes an installation in one transaction: an idempotent
   // agent Principal with its ceiling, a solution scope node, the agent's standing
@@ -978,6 +1020,11 @@ message AvailableSolution {
   // module and a solution are set up differently and the page says which it is.
   // Empty when the registration declared neither.
   string kind = 10 [(buf.validate.field).string.max_len = 32];
+  // The roles a module page declares (a module declaring roles), as the
+  // authority composes it: such a module is never installed by an
+  // administrator, its access is set up (SetUpModulePage). Empty for a
+  // solution, whose roles its review answers, and for a module without roles.
+  repeated string roles = 11;
 }
 
 message ListAvailableSolutionsRequest {
