@@ -5,9 +5,9 @@ import {
 	useAuthorityInstallations,
 	useRoleGrants,
 } from "@/features/solution-installations/service/queries";
+import { useTargetTitles } from "@/features/solution-installations/ui/target-name";
 import { Installation_Status } from "@/gen/host/installation/v1/installation_pb";
 import { Badge, Panel, Section, Spinner, Stack } from "@/shared/ui";
-import { useRegisteredSolutions } from "@/solutions/SolutionsMenu";
 
 export interface TeamInstallationRole {
 	installationId: string;
@@ -55,12 +55,7 @@ export function TeamInstallationAccess({
 	const installations = useAuthorityInstallations(orgId);
 	const ids = [...(installations.data?.keys() ?? [])];
 	const { grants, failed, pending } = useRoleGrants(orgId, ids);
-	const titles = new Map(
-		useRegisteredSolutions().map((solution) => [
-			solution.id,
-			solution.nav.title,
-		]),
-	);
+	const titles = useTargetTitles();
 	const held = teamInstallationRoles(
 		teamId,
 		new Map(
