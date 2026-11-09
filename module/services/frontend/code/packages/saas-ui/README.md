@@ -226,9 +226,17 @@ const directory = usePrincipalDirectory(); // loading | ready | refused | failed
 
 ## Solution setup: `<SolutionSetup>`
 
-A solution's Setup tab: is it ready, what each of its roles grants — scopes →
-module operations → agent tools, and the permission ceiling — and who holds
-them. It is the **only** Setup UI: the SaaS host's solution tab and admin
+A solution's Setup tab, read by an organisation administrator who is not an
+engineer: its status on one line (installed, ready, an update available and
+what it asks, a reach it cannot make right now), then, per role, **what a
+holder can do** — grouped "In <solution>", "Through <solution>, in <module>"
+(hop by hop, "Through <solution> and <agent>, in <module>"), and "With their
+own access in <modules>" — beside **who has it**, each holder removable and the
+role given to someone else in place. Operations, tools, the permission ceiling,
+reach paths and the consent's identifiers sit behind **Technical details**. The
+words come from `roleAbilities`, `updateAsks` and `unreachedText`
+(exported), which a host's install and update reviews use too, so one role
+never reads two ways. It is the **only** Setup UI: the SaaS host's solution tab and admin
 installation page, the local authority's setup page and every solution
 playground render this component, so a developer learns role setup once and it
 looks the same everywhere. Exported from `@codefly-dev/saas-ui/solution` and
@@ -269,9 +277,9 @@ its consent tuple and may grant; a member holding a role reads what it grants,
 read-only; anyone else sees the authority's one refusal. Every refusal is shown
 with its code and the authority's reason, verbatim, where the answer would have
 been. When `tools_composed: false`, the host has not supplied tool exposure
-metadata. The page says agent tools cannot be shown because that host reads no
-composed tool bindings, a limit of its read; it never claims that no tool is
-exposed, nor that the installation is fine. The permission ceiling lists each
+metadata; the technical details say tools are not listed because that host
+does not read them, and never claim that no tool is exposed. The permission
+ceiling (in the technical details) lists each
 module the solution binds, with what it may ask there as itself, and each
 module its declaration depends on (`edge_dependencies`, by presence), reached
 as the person using it; a role with no capability is explained as the
@@ -280,9 +288,13 @@ what it grants.
 
 **What a host adds.** Only what it knows and the authority does not: the
 organization its session is at (`organizationId`), the people and teams it can
-name (`subjects`; without them the page grants to an id and names holders by
-id), and its own unmet conditions (`conditions`: heading, detail, who clears
-it, and a link, an act, or a note). Nothing else is host-specific: no host
+name (`subjects`, each optionally with a `detail` such as "3 people" and an
+`href`; without them the page grants to an id and names holders by id), its own
+unmet conditions (`conditions`: heading, detail, who clears it, and a link, an
+act, or a note), facts for the status line (`facts`, e.g. "Healthy"), what an
+update asks (`update.asks`, from `updateAsks` over the review's approved reach)
+with its review control (`update.action`), and a control for a team holding a
+role (`teamControls`, e.g. adding and removing its people in place). Nothing else is host-specific: no host
 context, no host role gate, and only this kit's own components and tokens, so
 it renders identically in any shell.
 

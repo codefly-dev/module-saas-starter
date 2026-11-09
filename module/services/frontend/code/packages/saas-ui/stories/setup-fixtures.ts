@@ -27,6 +27,20 @@ const scope = (resourceKind: string, ...actions: string[]) => ({
 
 export const exampleTarget = "example-pages";
 
+/** One way a role reaches a module (`OfferReach`). */
+const reach = (
+	path: string[],
+	via: string,
+	scopes: ReturnType<typeof scope>[],
+) => ({
+	path,
+	module: path[path.length - 1],
+	via,
+	confinement: via === "role" ? "installation" : "",
+	scopes,
+	operations: [] as string[],
+});
+
 export const exampleOrganization = "org-acme";
 
 const installation = {
@@ -49,12 +63,18 @@ export function reviewedOffer({
 	installed = true,
 	administrator = true,
 	edgeDependencies = [],
+	upgradeAvailable = false,
+	unreached = [],
 }: {
 	tools: boolean;
 	installed?: boolean;
 	administrator?: boolean;
 	/** Modules the declaration depends on, by presence; a binding carries none. */
 	edgeDependencies?: { module: string; presence: string }[];
+	/** The authority offers an update asking more than was approved. */
+	upgradeAvailable?: boolean;
+	/** What the roles name through a binding the composition does not reach. */
+	unreached?: string[];
 }) {
 	const tool = (name: string, binding: string, write: boolean) =>
 		tools ? [{ name, binding, write }] : [];
@@ -70,7 +90,9 @@ export function reviewedOffer({
 					digest: "sha256:example",
 				}
 			: undefined,
-		installation: installed ? installation : undefined,
+		installation: installed
+			? { ...installation, upgradeAvailable, unreached }
+			: undefined,
 		ceiling: [
 			{
 				binding: "documents",
@@ -82,6 +104,15 @@ export function reviewedOffer({
 			{
 				name: "editor",
 				scopes: [scope("example-pages.page", "read", "write")],
+				reach: [
+					reach([exampleTarget], "role", [
+						scope("example-pages.page", "read", "write"),
+					]),
+					reach([exampleTarget, "assistant", "documents"], "binding", [
+						scope("documents.document", "read", "write"),
+					]),
+					reach([exampleTarget, "directory"], "person", []),
+				],
 				capabilities: [
 					{
 						module: exampleTarget,
@@ -100,6 +131,13 @@ export function reviewedOffer({
 			{
 				name: "viewer",
 				scopes: [scope("example-pages.page", "read")],
+				reach: [
+					reach([exampleTarget], "role", [scope("example-pages.page", "read")]),
+					reach([exampleTarget, "assistant", "model"], "binding", [
+						scope("model.profile", "invoke"),
+					]),
+					reach([exampleTarget, "directory"], "person", []),
+				],
 				capabilities: [
 					{
 						module: exampleTarget,

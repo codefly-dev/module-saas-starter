@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { accessLevel, accessMix, byAccess, nameList } from "../setup/model.js";
+import { listText } from "../setup/abilities.js";
+import { accessLevel, accessMix, byAccess } from "../setup/model.js";
 
 const scope = (resourceKind: string, ...actions: string[]) =>
 	({
@@ -33,9 +34,9 @@ describe("the access one operation demands", () => {
 	});
 
 	it("lists every changing action a module declares, without ranking them", () => {
-		expect(accessLevel([scope("example-pages.page", "publish", "create")])).toBe(
-			"create, publish",
-		);
+		expect(
+			accessLevel([scope("example-pages.page", "publish", "create")]),
+		).toBe("create, publish");
 	});
 
 	it("does not call an operation with no scope a read", () => {
@@ -62,10 +63,10 @@ describe("the access one operation demands", () => {
 		]);
 	});
 
-	it("names the roles that coincide as a sentence would", () => {
-		expect(nameList([])).toBe("");
-		expect(nameList(["editor"])).toBe("editor");
-		expect(nameList(["editor", "installer"])).toBe("editor and installer");
-		expect(nameList(["a", "b", "c"])).toBe("a, b and c");
+	it("names several things as a sentence would", () => {
+		expect(listText([])).toBe("");
+		expect(listText(["editor"])).toBe("editor");
+		expect(listText(["editor", "installer"])).toBe("editor and installer");
+		expect(listText(["a", "b", "c"])).toBe("a, b and c");
 	});
 });

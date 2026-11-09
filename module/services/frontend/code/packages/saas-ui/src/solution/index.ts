@@ -30,11 +30,25 @@ export {
 	solutionJson,
 } from "./request.js";
 export {
+	type AbilityGroup,
+	type AbilityReach,
+	type AbilityRole,
+	type AbilityScope,
+	article,
+	type RoleAbilities,
+	roleAbilities,
+	unreachedHeadline,
+	unreachedText,
+	updateAsks,
+} from "./setup/abilities.js";
+export {
 	refusalOf,
 	type SetupCondition,
+	type SetupFact,
 	type SetupSubject,
 } from "./setup/model.js";
 export {
+	RoleAbilitiesList,
 	SolutionRoleGrantForm,
 	SolutionSetup,
 	type SolutionSetupProps,
