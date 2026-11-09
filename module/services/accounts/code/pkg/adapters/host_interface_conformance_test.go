@@ -393,6 +393,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		// account hop in the authority module's namespace).
 		OtherAdminToken: "fixture-zoe",
 		HopCredential:   cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.HopService, Container: "app"}),
+		EdgeCredential:  cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.ModuleEdgeService, Container: "app"}),
 		// Maya, on finance, views the pages; Nora holds no role there. The
 		// viewer role writes example records at documents through the
 		// solution's binding, never on its own.
@@ -1231,7 +1232,9 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.ErrorContains(t, err, "holds no standing authority")
 	})
 
-	closures := reviewedClosureHarness{ctx: ctx, conn: conn, signer: signer, svc: svc, store: store, faults: faults, core: core, pagePayload: pagePayload}
+	closures := reviewedClosureHarness{ctx: ctx, conn: conn, signer: signer, svc: svc, store: store, faults: faults, core: core, pagePayload: pagePayload,
+		edgeCredential:   cluster.Run(executiontest.Workload{Namespace: business.HopModule, ServiceAccount: business.ModuleEdgeService, Container: "app"}),
+		moduleCredential: cluster.Run(executiontest.Workload{Namespace: "org-directory", ServiceAccount: "org-directory", Container: "app"})}
 	testReviewedClosures(t, closures)
 	testInstallAssignsAccess(t, closures)
 	testModulePagesAndReach(t, closures)

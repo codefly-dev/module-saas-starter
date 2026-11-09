@@ -82,6 +82,9 @@ type hopRole struct {
 	modules []string
 	routes  *routing.Routing
 	issuer  hopIssuer
+	// credential is this instance's workload credential: the actor that
+	// proves to the authority a page it names is the module edge's.
+	credential func() (string, error)
 	// face is the library's HTTP face: it decides with the authority's Check,
 	// signs the admission and forwards to the published listener.
 	face http.Handler
@@ -324,11 +327,24 @@ func (h *hopRole) workContext(ctx context.Context, bearer, module, page string) 
 	h.mu.Unlock()
 	ask, cancel := context.WithTimeout(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer), 10*time.Second)
 	defer cancel()
-	issued, err := h.issuer.Issue(ask, &authorityv1.IssueRequest{
+	req := &authorityv1.IssueRequest{
 		As:         &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
 		Audience:   module,
 		PageTarget: page,
-	})
+	}
+	if page != "" {
+		// The page is the module edge's to name; this instance's workload
+		// credential proves it is that edge, as it does for its admission key.
+		if h.credential == nil {
+			return "", status.Error(codes.Unavailable, "this hop holds no workload credential to name a page with")
+		}
+		credential, err := h.credential()
+		if err != nil {
+			return "", status.Error(codes.Unavailable, "this hop's workload credential cannot be read: "+err.Error())
+		}
+		req.Actor = &authorityv1.WorkloadCredential{Credential: credential}
+	}
+	issued, err := h.issuer.Issue(ask, req)
 	if err != nil {
 		return "", err
 	}
@@ -418,7 +434,7 @@ func newHopRole(ctx context.Context, authority hopAuthorityClient, credential fu
 		return nil, nil, err
 	}
 	log.Printf("hop: standing in front of %s", strings.Join(modules, ", "))
-	return &hopRole{modules: modules, routes: routes, issuer: authority, face: front.Handler, front: front}, front, nil
+	return &hopRole{modules: modules, routes: routes, issuer: authority, credential: credential, face: front.Handler, front: front}, front, nil
 }
 
 // hopFace is the hop's one face, as the hop endpoint serves it: a gRPC call

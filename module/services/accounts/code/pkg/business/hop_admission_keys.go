@@ -174,6 +174,35 @@ func (s *Service) RegisterAdmissionKey(ctx context.Context, credential string, p
 // an admission key: the composed authority module's hop, and this host's own
 // gateway when the host knows the module it was composed as. Each namespace is
 // read through the cell's rule, never written here.
+// ModuleEdgeService is the authority module's module edge: with this host's
+// gateway (GatewayHopService), the workloads a person's Issue may name a page
+// through (page_target).
+const ModuleEdgeService = "edge"
+
+// ErrNotTheModuleEdge refuses a page named by any caller other than this
+// host's module edge.
+var ErrNotTheModuleEdge = errors.New("a page is named by this host's module edge alone")
+
+// RequireModuleEdge is nil when credential is this host's module edge: the
+// authority module's edge, or this host's gateway standing as the hop. Only
+// they name a page to the authority (page_target), whose hop is the person
+// present on that page; a module, a solution backend holding a person's
+// bearer, or a caller with no credential never does.
+func (s *Service) RequireModuleEdge(ctx context.Context, credential string) error {
+	reviewed, err := s.reviewWorkloadCredential(ctx, credential)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrNotTheModuleEdge, err)
+	}
+	edges := []string{s.moduleNamespaces.Namespace(HopModule) + "/" + ModuleEdgeService}
+	if s.hostModule != "" {
+		edges = append(edges, s.moduleNamespaces.Namespace(s.hostModule)+"/"+GatewayHopService)
+	}
+	if !slices.Contains(edges, reviewed.Namespace+"/"+reviewed.ServiceAccount) {
+		return fmt.Errorf("%w (%s): the caller is %s/%s", ErrNotTheModuleEdge, strings.Join(edges, " or "), reviewed.Namespace, reviewed.ServiceAccount)
+	}
+	return nil
+}
+
 func (s *Service) hopWorkloads() []string {
 	hops := []string{s.moduleNamespaces.Namespace(HopModule) + "/" + HopService}
 	if s.hostModule != "" {

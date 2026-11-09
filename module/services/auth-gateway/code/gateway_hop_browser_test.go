@@ -88,7 +88,8 @@ func hopBrowserHarness(t *testing.T) (*Gateway, *issuerFake, *faceRecorder, stri
 	t.Helper()
 	gw, _, _, priv := newGatewayHarness(t)
 	issuer, face := &issuerFake{}, &faceRecorder{}
-	gw.hop = &hopRole{modules: []string{"documents", "tracing"}, routes: testHopRoutes(t), issuer: issuer, face: face}
+	gw.hop = &hopRole{modules: []string{"documents", "tracing"}, routes: testHopRoutes(t), issuer: issuer, face: face,
+		credential: func() (string, error) { return "gateway-workload", nil }}
 	return gw, issuer, face, signValidToken(t, priv)
 }
 
@@ -391,6 +392,7 @@ func TestBrowserAliasNamesThePageItServesToTheAuthority(t *testing.T) {
 	gw, issuer, face, bearer := hopBrowserHarness(t)
 	call(gw, bearer, "test-internal-token", "org-directory")
 	require.Equal(t, "org-directory", issuer.request.GetPageTarget())
+	require.Equal(t, "gateway-workload", issuer.request.GetActor().GetCredential(), "the edge proves it names the page")
 	require.Equal(t, "documents", issuer.request.GetAudience())
 	require.Empty(t, face.header.Get(browserPageHeader), "the page is the authority's question, never the module's")
 	call(gw, bearer, "test-internal-token", "wiki")
@@ -401,5 +403,6 @@ func TestBrowserAliasNamesThePageItServesToTheAuthority(t *testing.T) {
 		gw, issuer, _, bearer := hopBrowserHarness(t)
 		call(gw, bearer, tc.token, tc.page)
 		require.Empty(t, issuer.request.GetPageTarget(), "%+v is on the person's own access", tc)
+		require.Nil(t, issuer.request.GetActor(), "with no page, no actor")
 	}
 }

@@ -214,6 +214,9 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		// A page's call on the module edge goes through its target's
 		// binding to the audience when the target declares one.
 		if page := req.GetPageTarget(); page != "" {
+			if err := service.RequireModuleEdge(ctx, req.GetActor().GetCredential()); err != nil {
+				return nil, status.Error(codes.PermissionDenied, err.Error())
+			}
 			out, err = core.IssueForPage(ctx, person, page, r)
 			// Through a binding it is the target's hop, recorded as a child.
 			child = err == nil && len(out.Context.GetActorChain()) > 0

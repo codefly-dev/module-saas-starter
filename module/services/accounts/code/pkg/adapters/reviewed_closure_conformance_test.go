@@ -114,6 +114,9 @@ type reviewedClosureHarness struct {
 	faults      *installFaults
 	core        *authority.Service
 	pagePayload *solutionhost.FrontendPayload
+	// edgeCredential is the module edge's workload credential, the one actor
+	// a page is named with; moduleCredential is a module's.
+	edgeCredential, moduleCredential string
 }
 
 // review reviews target at org as caller, by its delivered name.

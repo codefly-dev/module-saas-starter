@@ -285,15 +285,22 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		sess, err := sessionv1.NewSessionServiceClient(h.conn).SignIn(h.ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-maya"})
 		require.NoError(t, err)
 		asMaya := metadata.AppendToOutgoingContext(h.ctx, "authorization", "Bearer "+sess.GetBearer())
+		issueAs := func(actor, audience string, scopes ...*authorityv1.WorkScopeV1) (*authorityv1.IssueResponse, error) {
+			req := &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: audience, PageTarget: page, Scopes: scopes}
+			if actor != "" {
+				req.Actor = &authorityv1.WorkloadCredential{Credential: actor}
+			}
+			return authorityv1.NewAuthorityServiceClient(h.conn).Issue(asMaya, req)
+		}
 		issue := func(audience string, scopes ...*authorityv1.WorkScopeV1) (*authorityv1.IssueResponse, error) {
-			return authorityv1.NewAuthorityServiceClient(h.conn).Issue(asMaya, &authorityv1.IssueRequest{
-				As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: audience, PageTarget: page, Scopes: scopes})
+			return issueAs(h.edgeCredential, audience, scopes...)
 		}
 		got, err := issue(store)
 		require.NoError(t, err)
 		chain := got.GetContext().GetActorChain()
 		require.NotEmpty(t, chain, "issued as the page's target's hop")
 		require.Equal(t, page, chain[len(chain)-1].GetPrincipalId())
+		require.Equal(t, "page", chain[len(chain)-1].GetPrincipalKind(), "the person present on the page")
 		granted := chain[len(chain)-1].GetGrantedScopes()
 		require.Len(t, granted, 1)
 		require.Equal(t, row, granted[0].GetResourceKind())
@@ -302,5 +309,11 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "refused what the role lacks")
 		_, err = issue(other)
 		require.ErrorContains(t, err, "holds nothing at this audience", "a module the target declares no binding to is on the person's own access")
+		// Only the module edge names a page: a solution backend holding her
+		// bearer, or a module, cannot mint the page hop.
+		for _, actor := range []string{"", h.moduleCredential} {
+			_, err := issueAs(actor, store)
+			require.ErrorContains(t, err, "module edge alone")
+		}
 	})
 }
