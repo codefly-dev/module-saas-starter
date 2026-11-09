@@ -283,8 +283,19 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		require.Len(t, granted, 1)
 		require.Equal(t, row, granted[0].GetResourceKind())
 		require.Equal(t, []string{"read"}, granted[0].GetActions())
-		require.Empty(t, granted[0].GetResourceOwnerId(), "a page's role selects no owner")
+		// The store checks owners: the page's role reaches it as the data the
+		// page's composition installation owns, as a solution's role does
+		// (RBAC-1), never every owner's.
+		require.Equal(t, authority.StablePrincipalID(fixtureOrganization, page), all[i].PrincipalID, "a module's composition installation holds the principal the core gives it")
+		require.Equal(t, all[i].PrincipalID, granted[0].GetResourceOwnerId(), "a page's role is its installation's data at a module checking owners")
 		require.Equal(t, store, child.Context.GetAudience())
+	})
+
+	t.Run("and never another installation's data (RBAC-1)", func(t *testing.T) {
+		_, err := through(maya, &basev0.WorkScopeV1{ResourceKind: row, Actions: []string{"read"}, ResourceOwnerId: authority.StablePrincipalID(globexOrganization, page)})
+		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`)
+		_, err = through(maya, &basev0.WorkScopeV1{ResourceKind: row, Actions: []string{"read"}})
+		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "the whole kind, every owner's, is refused")
 	})
 
 	t.Run("and nothing beyond it", func(t *testing.T) {
