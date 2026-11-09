@@ -183,6 +183,7 @@ export {
 	PrincipalNamesProvider,
 	type PrincipalNamesProviderProps,
 	type ReachedInstallation,
+	RemoveHolder,
 	type RoleAbilities,
 	RoleAbilitiesList,
 	refusalOf,

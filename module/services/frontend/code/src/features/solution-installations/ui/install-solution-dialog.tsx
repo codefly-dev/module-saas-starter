@@ -3,7 +3,7 @@
 import { roleAbilities } from "@codefly-dev/saas-ui/solution";
 import { createClient } from "@connectrpc/connect";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { teamQueries } from "@/features/teams/service/queries";
 import { OfferService } from "@/gen/host/installation/v1/installation_pb";
 import type {
@@ -72,6 +72,7 @@ export function InstallSolutionDialog({
 }) {
 	const service = useInstallationService();
 	const { user } = useAuth();
+	const top = useRef<HTMLDivElement>(null);
 	const [chosen, setChosen] = useState<Record<string, string>>({});
 	const [untaken, setUntaken] = useState<ReadonlySet<string>>(new Set());
 	const [approved, setApproved] = useState(false);
@@ -116,7 +117,13 @@ export function InstallSolutionDialog({
 			};
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[640px]">
+			{/* Focus lands on the dialog itself, never on a control further
+			    down, so a short screen opens it at its top. */}
+			<DialogContent
+				ref={top}
+				initialFocus={top}
+				className="max-h-[85vh] overflow-y-auto sm:max-w-[640px]"
+			>
 				<DialogHeader>
 					<DialogTitle>
 						{upgrade ? "Update" : "Install"} {solution.routeAlias}

@@ -573,6 +573,12 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 			name: "Remove viewer from Team Support",
 		}),
 	);
+	// Support is the viewer's only holder: it asks before leaving nobody.
+	expect(
+		viewer.getByText("Nobody will have viewer access to suite."),
+	).toBeTruthy();
+	expect(changes).toHaveLength(0);
+	fireEvent.click(viewer.getByRole("button", { name: "Remove anyway" }));
 	await waitFor(() => expect(changes).toHaveLength(1));
 	expect(changes[0]).toEqual({
 		procedure: "RevokeRole",

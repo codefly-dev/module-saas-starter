@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	RemoveHolder,
 	type SetupSubject,
 	SolutionRoleGrantForm,
 } from "@codefly-dev/saas-ui/solution";
@@ -11,7 +12,6 @@ import { InstallationService } from "@/gen/host/installation/v1/installation_pb"
 import { apiTransport } from "@/lib/connect/transport";
 import {
 	Banner,
-	Button,
 	Card,
 	CardContent,
 	CardDescription,
@@ -130,12 +130,13 @@ export function ModulePageAccess({
 												) : (
 													<span>{name}</span>
 												)}
-												<Button
-													size="sm"
-													variant="outline"
-													aria-label={`Remove ${role} from ${name}`}
-													disabled={change.isPending}
-													onClick={() =>
+												<RemoveHolder
+													role={role}
+													target={target}
+													name={name}
+													last={holders.length === 1}
+													busy={change.isPending}
+													onRemove={() =>
 														change.mutate(
 															installations.revokeRole({
 																organizationId,
@@ -146,9 +147,7 @@ export function ModulePageAccess({
 															}),
 														)
 													}
-												>
-													Remove
-												</Button>
+												/>
 											</div>
 											{who.kind === "team" && teamControls?.(who)}
 										</li>

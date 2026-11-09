@@ -297,6 +297,8 @@ describe("combined reviewed installation", () => {
 			name: "Roles",
 		});
 		await within(access).findByText(/existing team Example-Solution-Viewer/);
+		// It opens at its top: focus is on the dialog, not a control below.
+		expect(document.activeElement).toBe(dialog);
 		const me = (role: string) =>
 			within(
 				within(access).getByRole("region", { name: `Role ${role}` }),

@@ -439,6 +439,16 @@ describe("Who has each role", () => {
 		fireEvent.click(
 			screen.getByRole("button", { name: "Remove editor from Jane Doe" }),
 		);
+		// Jane is the editor's only holder: it asks before leaving nobody.
+		expect(fixture.calls).toHaveLength(0);
+		expect(
+			role("editor").getByText(
+				/Nobody will have editor access to example-pages\./,
+			),
+		).toBeTruthy();
+		fireEvent.click(
+			role("editor").getByRole("button", { name: "Remove anyway" }),
+		);
 		await waitFor(() => expect(fixture.calls).toHaveLength(1));
 		expect(fixture.calls[0]).toMatchObject({
 			method: "RevokeRole",
@@ -449,6 +459,32 @@ describe("Who has each role", () => {
 		).toBeTruthy();
 		expect(
 			screen.getByText(/Refused: installation administration requires/),
+		).toBeTruthy();
+	});
+
+	it("removes one of several holders in one click, and keeps the last one when asked", async () => {
+		const fixture = await mounted(
+			setupFixture({
+				grants: [
+					{ role: "viewer", personId: "", teamId: "team-finance" },
+					{ role: "viewer", personId: "person-jane", teamId: "" },
+					{ role: "editor", personId: "person-jane", teamId: "" },
+				],
+			}),
+			{ subjects },
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove viewer from Jane Doe" }),
+		);
+		await waitFor(() => expect(fixture.calls).toHaveLength(1));
+		expect(screen.queryByText(/Nobody will have viewer access/)).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Remove editor from Jane Doe" }),
+		);
+		fireEvent.click(role("editor").getByRole("button", { name: "Keep" }));
+		expect(fixture.calls).toHaveLength(1);
+		expect(
+			screen.getByRole("button", { name: "Remove editor from Jane Doe" }),
 		).toBeTruthy();
 	});
 

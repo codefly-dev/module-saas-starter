@@ -527,6 +527,7 @@ function RolesSection({
 								) : (
 									<Holders
 										role={role.role}
+										target={offer.target}
 										grants={(grants ?? []).filter((g) => g.role === role.role)}
 										subjects={subjects}
 										teamControls={teamControls}
@@ -564,9 +565,71 @@ function RolesSection({
 	);
 }
 
+/**
+ * Removing one holder of a role: one click, unless it is the role's last
+ * holder, when it first says that nobody will have the role and asks again.
+ */
+export function RemoveHolder({
+	role,
+	target,
+	name,
+	last,
+	busy,
+	onRemove,
+}: {
+	role: string;
+	target: string;
+	name: string;
+	/** Whether this is the role's only holder. */
+	last: boolean;
+	busy: boolean;
+	onRemove: () => void;
+}) {
+	const [confirming, setConfirming] = useState(false);
+	if (confirming)
+		return (
+			<span
+				role="alert"
+				className="flex flex-wrap items-center gap-2 text-warning"
+			>
+				Nobody will have {role} access to {target}.
+				<Button
+					size="sm"
+					variant="destructive"
+					disabled={busy}
+					onClick={() => {
+						setConfirming(false);
+						onRemove();
+					}}
+				>
+					Remove anyway
+				</Button>
+				<Button
+					size="sm"
+					variant="outline"
+					onClick={() => setConfirming(false)}
+				>
+					Keep
+				</Button>
+			</span>
+		);
+	return (
+		<Button
+			size="sm"
+			variant="outline"
+			disabled={busy}
+			aria-label={`Remove ${role} from ${name}`}
+			onClick={() => (last ? setConfirming(true) : onRemove())}
+		>
+			Remove
+		</Button>
+	);
+}
+
 /** The teams and people holding one role, each removable. */
 function Holders({
 	role,
+	target,
 	grants,
 	subjects,
 	teamControls,
@@ -574,6 +637,7 @@ function Holders({
 	onRevoke,
 }: {
 	role: string;
+	target: string;
 	grants: readonly RoleGrant[];
 	subjects?: readonly SetupSubject[];
 	teamControls?: (team: SetupSubject) => ReactNode;
@@ -615,15 +679,14 @@ function Holders({
 									</span>
 								)}
 							</span>
-							<Button
-								size="sm"
-								variant="outline"
-								disabled={busy}
-								aria-label={`Remove ${role} from ${name}`}
-								onClick={() => onRevoke(g)}
-							>
-								Remove
-							</Button>
+							<RemoveHolder
+								role={role}
+								target={target}
+								name={name}
+								last={grants.length === 1}
+								busy={busy}
+								onRemove={() => onRevoke(g)}
+							/>
 						</div>
 						{kind === "team" && teamControls?.(subject)}
 					</li>

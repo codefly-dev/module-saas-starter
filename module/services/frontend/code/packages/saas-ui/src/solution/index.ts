@@ -50,6 +50,7 @@ export {
 	type SetupSubject,
 } from "./setup/model.js";
 export {
+	RemoveHolder,
 	RoleAbilitiesList,
 	SolutionRoleGrantForm,
 	SolutionSetup,

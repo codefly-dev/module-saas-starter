@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { teamQueries } from "@/features/teams/service/queries";
 import type { AvailableSolution } from "@/gen/saas/accounts/v1/installations_pb";
 import {
@@ -44,6 +44,7 @@ export function SetUpModulePageDialog({
 	error?: string;
 	onClose: () => void;
 }) {
+	const top = useRef<HTMLDivElement>(null);
 	const [chosen, setChosen] = useState<Record<string, string>>({});
 	const [untaken, setUntaken] = useState<ReadonlySet<string>>(new Set());
 	const teams = useQuery({
@@ -59,7 +60,13 @@ export function SetUpModulePageDialog({
 	};
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[640px]">
+			{/* Focus lands on the dialog itself, never on a control further
+			    down, so a short screen opens it at its top. */}
+			<DialogContent
+				ref={top}
+				initialFocus={top}
+				className="max-h-[85vh] overflow-y-auto sm:max-w-[640px]"
+			>
 				<DialogHeader>
 					<DialogTitle>Set up access to {target}</DialogTitle>
 					<DialogDescription>
