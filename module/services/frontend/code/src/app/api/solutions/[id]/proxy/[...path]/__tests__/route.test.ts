@@ -1189,6 +1189,8 @@ describe("generated clients through the browser module forwarder", () => {
 		expect(init.headers.get("authorization")).toBe("Bearer viewer");
 		expect(init.headers.get("connect-protocol-version")).toBe("1");
 		expect(init.headers.get("X-Codefly-Internal-Token")).toBe(INTERNAL_TOKEN);
+		// The page the call comes from is the route's, never the caller's.
+		expect(init.headers.get("X-Codefly-Page")).toBe("audit");
 		expect(init.redirect).toBe("error");
 		// This descriptor tests generic forwarding only: gateway tests separately
 		// refuse host namespaces and admit only composed-module publications.

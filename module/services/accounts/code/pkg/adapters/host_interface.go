@@ -211,7 +211,15 @@ func (s *HostAuthorityServer) Issue(ctx context.Context, req *authorityv1.IssueR
 		if err := requireOrgMember(ctx, person.ID, person.Organization); err != nil {
 			return nil, err
 		}
-		out, err = core.IssueForPerson(ctx, person, r)
+		// A page's call on the module edge goes through its target's
+		// binding to the audience when the target declares one.
+		if page := req.GetPageTarget(); page != "" {
+			out, err = core.IssueForPage(ctx, person, page, r)
+			// Through a binding it is the target's hop, recorded as a child.
+			child = err == nil && len(out.Context.GetActorChain()) > 0
+		} else {
+			out, err = core.IssueForPerson(ctx, person, r)
+		}
 	case *authorityv1.IssueRequest_Workload:
 		w, werr := workload(ctx, as.Workload.GetCredential(), "workload")
 		if werr != nil {

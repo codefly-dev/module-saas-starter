@@ -369,3 +369,37 @@ func TestBrowserAliasConnectClientKeepsAuthorityRefusal(t *testing.T) {
 		})
 	}
 }
+
+// A module call the frontend proxies for a page names the page beside its
+// internal token, and the authority is asked to issue through that page's
+// target's binding (page_target). A page named without the token, or not a
+// route alias, is not honoured: the call is on the person's own access. The
+// page never reaches the module, and two pages hold two contexts.
+func TestBrowserAliasNamesThePageItServesToTheAuthority(t *testing.T) {
+	call := func(gw *Gateway, bearer, token, page string) {
+		t.Helper()
+		req := listCollectionRequest("/_browser" + listCollection)
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		if token != "" {
+			req.Header.Set("X-Codefly-Internal-Token", token)
+		}
+		req.Header.Set(browserPageHeader, page)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	}
+	gw, issuer, face, bearer := hopBrowserHarness(t)
+	call(gw, bearer, "test-internal-token", "org-directory")
+	require.Equal(t, "org-directory", issuer.request.GetPageTarget())
+	require.Equal(t, "documents", issuer.request.GetAudience())
+	require.Empty(t, face.header.Get(browserPageHeader), "the page is the authority's question, never the module's")
+	call(gw, bearer, "test-internal-token", "wiki")
+	require.Equal(t, 2, issuer.calls, "another page is another context")
+	require.Equal(t, "wiki", issuer.request.GetPageTarget())
+
+	for _, tc := range []struct{ token, page string }{{"caller-supplied", "org-directory"}, {"", "org-directory"}, {"test-internal-token", "Org/Directory"}} {
+		gw, issuer, _, bearer := hopBrowserHarness(t)
+		call(gw, bearer, tc.token, tc.page)
+		require.Empty(t, issuer.request.GetPageTarget(), "%+v is on the person's own access", tc)
+	}
+}

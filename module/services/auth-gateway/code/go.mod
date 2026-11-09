@@ -5,10 +5,10 @@ go 1.27.3
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	connectrpc.com/connect v1.21.1
-	github.com/codefly-dev/authority/libraries/authority-client/go v0.0.0-20261027143830-b0da2a09e63a
+	github.com/codefly-dev/authority/libraries/authority-client/go v0.1.1-0.20261109132906-e4e071f2ef6e
 	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261028195314-39369d67a088
 	github.com/codefly-dev/authority/libraries/hop/go v0.1.1-0.20261028210015-681f0cca49eb
-	github.com/codefly-dev/core v0.19.17-0.20261029043538-2aa2e9aaf950
+	github.com/codefly-dev/core v0.19.19
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
 	github.com/codefly-dev/sdk-go v0.4.1
 	github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458

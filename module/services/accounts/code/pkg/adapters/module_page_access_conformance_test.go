@@ -10,10 +10,12 @@ import (
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
 	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	compositionv1 "accounts/pkg/gen/host/composition/v1"
+	sessionv1 "accounts/pkg/gen/host/session/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -273,5 +275,32 @@ func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureH
 		require.ErrorContains(t, err, "holds no role on "+page, "an administrator holding no role is refused like any member")
 		_, err = h.core.IssueForPerson(h.ctx, maya, authority.IssueRequest{Audience: store})
 		require.ErrorContains(t, err, "holds nothing at this audience", "on her own session, her own grants at the store decide")
+	})
+
+	// The host's module edge names the page a call comes from, and the
+	// authority interface issues through the page's target's binding.
+	t.Run("a page's call on the module edge goes through its target's binding; an unbound module on the person's own access", func(t *testing.T) {
+		const other = "conformance-reach-page-unbound"
+		deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: other, ceilings: []*authorityv1.WorkScopeV1{wireScope(other+".row", "read")}})
+		sess, err := sessionv1.NewSessionServiceClient(h.conn).SignIn(h.ctx, &sessionv1.SignInRequest{FixtureToken: "fixture-maya"})
+		require.NoError(t, err)
+		asMaya := metadata.AppendToOutgoingContext(h.ctx, "authorization", "Bearer "+sess.GetBearer())
+		issue := func(audience string, scopes ...*authorityv1.WorkScopeV1) (*authorityv1.IssueResponse, error) {
+			return authorityv1.NewAuthorityServiceClient(h.conn).Issue(asMaya, &authorityv1.IssueRequest{
+				As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: audience, PageTarget: page, Scopes: scopes})
+		}
+		got, err := issue(store)
+		require.NoError(t, err)
+		chain := got.GetContext().GetActorChain()
+		require.NotEmpty(t, chain, "issued as the page's target's hop")
+		require.Equal(t, page, chain[len(chain)-1].GetPrincipalId())
+		granted := chain[len(chain)-1].GetGrantedScopes()
+		require.Len(t, granted, 1)
+		require.Equal(t, row, granted[0].GetResourceKind())
+		require.Equal(t, []string{"read"}, granted[0].GetActions(), "the viewer's role cut to the binding")
+		_, err = issue(store, wireScope(row, "write"))
+		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "refused what the role lacks")
+		_, err = issue(other)
+		require.ErrorContains(t, err, "holds nothing at this audience", "a module the target declares no binding to is on the person's own access")
 	})
 }
