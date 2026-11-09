@@ -439,12 +439,14 @@ func (s *HostInstallationServer) Current(ctx context.Context, req *installationv
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, status.Convert(err).Message())
 	}
-	inst, err := core.CurrentInstallation(ctx, req.GetParentToken(), actor)
+	// The namespace is where the parent authors: the installation's own, or,
+	// for a parent owned by a solution installation, that installation's.
+	inst, namespace, err := core.CurrentAuthoring(ctx, req.GetParentToken(), actor)
 	if err != nil {
 		return nil, coreStatus(err)
 	}
 	return &installationv1.CurrentInstallation{Id: inst.ID, OrganizationId: inst.Organization, Target: inst.Target,
-		Revision: inst.Revision, Namespace: inst.Organization + "." + inst.Target}, nil
+		Revision: inst.Revision, Namespace: namespace}, nil
 }
 
 // Review reads the exact authority offer an administrator consents to,
