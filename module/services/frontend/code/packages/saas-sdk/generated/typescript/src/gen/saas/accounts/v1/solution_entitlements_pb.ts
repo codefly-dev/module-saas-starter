@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/solution_entitlements.proto.
  */
 export const file_saas_accounts_v1_solution_entitlements: GenFile = /*@__PURE__*/
-  fileDesc("CixzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX2VudGl0bGVtZW50cy5wcm90bxIQc2Fhcy5hY2NvdW50cy52MSKnAQoTU29sdXRpb25FbnRpdGxlbWVudBIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgDIAEoCUIIukgFcgOwAQESDwoHaGVhbHRoeRgEIAEoCBIbCgl0YXJnZXRfaWQYBSABKAlCCLpIBXIDsAEBSgQIARACUhNzb2x1dGlvbl9pZGVudGlmaWVyIowBCh9MaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHAoKc3ViamVjdF9pZBgCIAEoCUIIukgFcgOwAQESHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkieAogTGlzdFNvbHV0aW9uRW50aXRsZW1lbnRzUmVzcG9uc2USOwoMZW50aXRsZW1lbnRzGAEgAygLMiUuc2Fhcy5hY2NvdW50cy52MS5Tb2x1dGlvbkVudGl0bGVtZW50EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCWIGcHJvdG8z", [file_buf_validate_validate]);
+  fileDesc("CixzYWFzL2FjY291bnRzL3YxL3NvbHV0aW9uX2VudGl0bGVtZW50cy5wcm90bxIQc2Fhcy5hY2NvdW50cy52MSKnAQoTU29sdXRpb25FbnRpdGxlbWVudBIhCg9pbnN0YWxsYXRpb25faWQYAiABKAlCCLpIBXIDsAEBEiQKEnJvb3Rfc2NvcGVfbm9kZV9pZBgDIAEoCUIIukgFcgOwAQESDwoHaGVhbHRoeRgEIAEoCBIbCgl0YXJnZXRfaWQYBSABKAlCCLpIBXIDsAEBSgQIARACUhNzb2x1dGlvbl9pZGVudGlmaWVyIq4BCh9MaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESHAoKc3ViamVjdF9pZBgCIAEoCUIIukgFcgOwAQESHQoJcGFnZV9zaXplGAMgASgFQgq6SAcaBRj0AygAEhIKCnBhZ2VfdG9rZW4YBCABKAkSIAoYaW5jbHVkZV9jb21wb3NlZF9tb2R1bGVzGAUgASgIIsABCiBMaXN0U29sdXRpb25FbnRpdGxlbWVudHNSZXNwb25zZRI7CgxlbnRpdGxlbWVudHMYASADKAsyJS5zYWFzLmFjY291bnRzLnYxLlNvbHV0aW9uRW50aXRsZW1lbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEkYKEGNvbXBvc2VkX21vZHVsZXMYAyADKAsyLC5zYWFzLmFjY291bnRzLnYxLkNvbXBvc2VkTW9kdWxlSW5zdGFsbGF0aW9uIlwKGkNvbXBvc2VkTW9kdWxlSW5zdGFsbGF0aW9uEhsKCXRhcmdldF9pZBgBIAEoCUIIukgFcgOwAQESIQoPaW5zdGFsbGF0aW9uX2lkGAIgASgJQgi6SAVyA7ABAWIGcHJvdG8z", [file_buf_validate_validate]);
 
 /**
  * SolutionEntitlement is one installed solution a subject may use. It is
@@ -116,6 +116,15 @@ export type ListSolutionEntitlementsRequest = Message<"saas.accounts.v1.ListSolu
    * @generated from field: string page_token = 4;
    */
   pageToken: string;
+
+  /**
+   * Also answer composed_modules, on the first page. Asked by a page's binding
+   * only: the navigation and the solution proxy decide on entitlements alone,
+   * and do not pay for a read they never use.
+   *
+   * @generated from field: bool include_composed_modules = 5;
+   */
+  includeComposedModules: boolean;
 };
 
 /**
@@ -141,6 +150,21 @@ export type ListSolutionEntitlementsResponse = Message<"saas.accounts.v1.ListSol
    * @generated from field: string next_page_token = 2;
    */
   nextPageToken: string;
+
+  /**
+   * The organization's installation of every composed module that declares no
+   * roles, when include_composed_modules asked for it; on the first page only.
+   *
+   * Not entitlements, and never merged into them: nobody was granted these.
+   * Every composed module is installed in every organization by composition,
+   * and one declaring no roles decides each call on the caller's own
+   * organization access, so naming its installation to a page that consumes it
+   * on the person's session widens nothing. A module declaring roles is never
+   * listed here: it reaches a viewer only through entitlements, by grant.
+   *
+   * @generated from field: repeated saas.accounts.v1.ComposedModuleInstallation composed_modules = 3;
+   */
+  composedModules: ComposedModuleInstallation[];
 };
 
 /**
@@ -149,3 +173,28 @@ export type ListSolutionEntitlementsResponse = Message<"saas.accounts.v1.ListSol
  */
 export const ListSolutionEntitlementsResponseSchema: GenMessage<ListSolutionEntitlementsResponse> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_solution_entitlements, 2);
+
+/**
+ * ComposedModuleInstallation is an organization's installation of one composed
+ * module that declares no roles, joined like an entitlement on the target.
+ *
+ * @generated from message saas.accounts.v1.ComposedModuleInstallation
+ */
+export type ComposedModuleInstallation = Message<"saas.accounts.v1.ComposedModuleInstallation"> & {
+  /**
+   * @generated from field: string target_id = 1;
+   */
+  targetId: string;
+
+  /**
+   * @generated from field: string installation_id = 2;
+   */
+  installationId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ComposedModuleInstallation.
+ * Use `create(ComposedModuleInstallationSchema)` to create a new message.
+ */
+export const ComposedModuleInstallationSchema: GenMessage<ComposedModuleInstallation> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_solution_entitlements, 3);
