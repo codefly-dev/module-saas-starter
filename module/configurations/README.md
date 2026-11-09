@@ -35,7 +35,7 @@ team:
 ```yaml
 installations:
   - org: Acme Corp
-    target: wiki
+    target: example-solution
     owner: alex@acme.test
     installer_roles: [installer]
     members: {editor: [maya@acme.test], viewer: [remi@acme.test]}
