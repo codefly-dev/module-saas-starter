@@ -471,7 +471,9 @@ function AvailableSection({
 									<TableHead>
 										{showModules
 											? "Module or solution"
-											: "Solution or module page"}
+											: title === "Module pages"
+												? "Module page"
+												: "Solution"}
 									</TableHead>
 									<TableHead>Release</TableHead>
 									<TableHead>Generation</TableHead>
