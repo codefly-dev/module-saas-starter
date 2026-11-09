@@ -106,7 +106,8 @@ func testModulePagesAndReach(t *testing.T, h reviewedClosureHarness) {
 
 	t.Run("a composed module page has no access until set up", func(t *testing.T) {
 		inst := composed()
-		require.Empty(t, inst.PrincipalID, "its installation is composition's, holding no standing authority")
+		require.Equal(t, authority.StablePrincipalID(fixtureOrganization, page), inst.PrincipalID, "its installation is composition's, owning its page's data (RBAC-1)")
+		require.Empty(t, inst.InstalledBy, "holding no standing authority")
 		grants, err := h.core.ListRoleGrants(h.ctx, alex, fixtureOrganization, inst.ID)
 		require.NoError(t, err)
 		require.Empty(t, grants, "nobody holds a role on it")

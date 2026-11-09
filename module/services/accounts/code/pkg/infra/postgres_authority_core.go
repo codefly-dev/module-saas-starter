@@ -756,10 +756,16 @@ func (t coreTx) moduleInstallations(where string, args ...any) ([]domain.Install
 		// the module): a module page's roles reach a module that checks owners
 		// as the data this installation owns, as a solution's do (RBAC-1).
 		return record{inst: domain.Installation{ID: id.String(), Organization: org.String(), Target: modules[principal],
-			Status: moduleInstallationStatus(status), Revision: uint64(revision) + envelope, Owned: map[string][]string{},
-			PrincipalID: authority.StablePrincipalID(org.String(), modules[principal])}, scope: consented}, nil
+			Status: moduleInstallationStatus(status), Revision: uint64(revision) + envelope, Owned: map[string][]string{}}, scope: consented}, nil
 	})
 	if err != nil {
+		return nil, err
+	}
+	insts := make([]*domain.Installation, len(records))
+	for i := range records {
+		insts[i] = &records[i].inst
+	}
+	if err := t.withComposedPrincipals(insts); err != nil {
 		return nil, err
 	}
 	out := make([]domain.Installation, 0, len(records))
@@ -824,15 +830,43 @@ func (t coreTx) InstallationByPrincipal(principal string) (domain.Installation, 
 	}
 	// A module's installation record answers to the principal the core
 	// gives it (moduleInstallations); it is derived, never stored, so it is
-	// found among the records.
-	modules, err := t.moduleInstallations(``)
+	// found by deriving it from each record's cheap columns, the live record
+	// before a retired one, then read once in full.
+	modules, err := t.hostModules()
+	if err != nil || len(modules) == 0 {
+		return domain.Installation{}, coreMissingOr(err, principal)
+	}
+	principals := make([]uuid.UUID, 0, len(modules))
+	for p := range modules {
+		principals = append(principals, p)
+	}
+	rows, err := t.q.Query(t.ctx, `
+		SELECT i.id, i.org_id, i.registry_principal_id FROM public.installations i
+		 WHERE i.kind = 'module' AND i.registry_principal_id = ANY($1)
+		 ORDER BY (i.status = 'revoked'), i.revision DESC, i.id`, principals)
 	if err != nil {
 		return domain.Installation{}, err
 	}
-	for _, m := range modules {
-		if m.PrincipalID == principal {
-			return m, nil
+	type candidate struct{ id, org, registry uuid.UUID }
+	candidates, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (candidate, error) {
+		var c candidate
+		return c, row.Scan(&c.id, &c.org, &c.registry)
+	})
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	for _, c := range candidates {
+		if authority.StablePrincipalID(c.org.String(), modules[c.registry]) != principal {
+			continue
 		}
+		found, err := t.moduleInstallations(` AND i.id = $2`, c.id)
+		if err != nil {
+			return domain.Installation{}, err
+		}
+		if len(found) == 1 && found[0].PrincipalID == principal {
+			return found[0], nil
+		}
+		break
 	}
 	return domain.Installation{}, coreMissing("principal", principal)
 }
@@ -841,8 +875,8 @@ func (t coreTx) InstallationByPrincipal(principal string) (domain.Installation, 
 // module installations accounts holds now (a retired one is read by its id).
 func (t coreTx) Installations(organization string) ([]domain.Installation, error) {
 	// A module's row the core wrote before accounts held its modules' records
-	// is not an installation any more; a module page's, which the core
-	// decided and gave a principal, is.
+	// is not an installation any more; a module page's the core decided
+	// through Review and Install (it carries a principal it stored) still is.
 	const solutions = `SELECT ` + coreInstallationColumns + ` FROM public.authority_core_installations
 		WHERE (principal_id <> '' OR target NOT IN (SELECT name FROM public.authority_core_modules WHERE kind <> 'solution'))`
 	var rows pgx.Rows
@@ -908,6 +942,48 @@ func (t coreTx) PutInstallation(inst domain.Installation) error {
 	return err
 }
 
+func coreMissingOr(err error, principal string) error {
+	if err != nil {
+		return err
+	}
+	return coreMissing("principal", principal)
+}
+
+// withComposedPrincipals gives each module record the principal the core gives
+// a composition installation (authority.StablePrincipalID of the organization
+// and the module) when no other identity holds it, exactly as the core's own
+// composition does (principalFree): not a row the core decided, a module, a
+// withdrawn module, an external client or a person. A taken principal leaves
+// the record without one, owning nothing (RBAC-1).
+func (t coreTx) withComposedPrincipals(insts []*domain.Installation) error {
+	if len(insts) == 0 {
+		return nil
+	}
+	derived := make([]string, len(insts))
+	for i, inst := range insts {
+		derived[i] = authority.StablePrincipalID(inst.Organization, inst.Target)
+	}
+	rows, err := t.q.Query(t.ctx, `
+		SELECT principal_id FROM public.authority_core_installations WHERE principal_id = ANY($1)
+		UNION SELECT principal FROM public.authority_core_modules WHERE principal = ANY($1)
+		UNION SELECT principal FROM public.authority_core_tombstones WHERE principal = ANY($1)
+		UNION SELECT id FROM public.authority_core_clients WHERE id = ANY($1)
+		UNION SELECT uuid::text FROM public.users WHERE uuid::text = ANY($1)`, derived)
+	if err != nil {
+		return err
+	}
+	taken, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for i, inst := range insts {
+		if !slices.Contains(taken, derived[i]) {
+			inst.PrincipalID = derived[i]
+		}
+	}
+	return nil
+}
+
 // raiseModuleInstallation applies the one write the core makes to a module's
 // own installation record: raising its revision, when a redelivery narrows the
 // module. It reports whether inst is such a record at all; any other change to
@@ -933,7 +1009,7 @@ func (t coreTx) raiseModuleInstallation(inst domain.Installation) (bool, error) 
 	}
 	if current.Organization != inst.Organization || current.Target != inst.Target || current.Status != inst.Status ||
 		inst.AgentRole != "" || inst.PrincipalID != current.PrincipalID || inst.InstalledBy != "" || len(inst.Owned) > 0 || inst.Revision <= current.Revision {
-		return true, fmt.Errorf("module installation %s is accounts' own record: the authority core only raises its revision", inst.ID)
+		return true, domain.Refuse("module installation %s is accounts' own record: the authority core only raises its revision; it records no attachment or other change on it", inst.ID)
 	}
 	_, err = t.q.Exec(t.ctx, `
 		INSERT INTO public.authority_core_module_revisions (installation_id, raised) VALUES ($1, $2)

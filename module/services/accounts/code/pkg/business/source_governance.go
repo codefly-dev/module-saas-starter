@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -96,6 +97,18 @@ func (s *Service) issuedGovernance(ctx context.Context, who authority.Person, in
 	if target.Kind == domain.KindSolution {
 		// A solution's roles grant only on the data its installation owns.
 		asked.ResourceOwnerId = inst.PrincipalID
+	} else if b, ok := target.Bindings[g.Binding]; ok {
+		// A module page's roles reach a module that checks owners only as
+		// the data its composition installation owns (RBAC-1), through the
+		// page's hop: asked as that owner's, as the page's own call is.
+		if audience, err := core.Composed(ctx, b.Audience); err == nil && audience.OwnerAware && !slices.Contains(audience.SharedKinds, g.Kind) {
+			asked.ResourceOwnerId = inst.PrincipalID
+			_, err = core.IssueForPage(ctx, who, target.Name, authority.IssueRequest{
+				Audience: b.Audience, Binding: g.Binding, Organization: who.Organization,
+				Scopes: decide.Scopes{asked}, TTL: sourceGovernanceProbeTTL,
+			})
+			return err
+		}
 	}
 	_, err = core.IssueForPerson(ctx, who, authority.IssueRequest{
 		Audience: target.Principal, Binding: g.Binding, Organization: who.Organization,
