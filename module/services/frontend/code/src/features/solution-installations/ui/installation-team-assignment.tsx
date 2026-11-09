@@ -65,9 +65,7 @@ export function InstallationTeamAssignment({
 			{assignment.map((entry, i) => {
 				const fallback = conventional[i];
 				const items: Record<string, string> = {
-					[CONVENTIONAL]: fallback.team
-						? fallback.name
-						: `${fallback.name} (new team)`,
+					[CONVENTIONAL]: fallback.name,
 				};
 				for (const team of teams)
 					if (team.id !== fallback.team?.id) items[team.id] = team.name;

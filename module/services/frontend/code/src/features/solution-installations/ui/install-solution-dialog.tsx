@@ -124,7 +124,8 @@ export function InstallSolutionDialog({
 					<DialogDescription
 						title={data?.consent.release ?? releaseText(solution)}
 					>
-						Version {solution.releaseVersion}.{" "}
+						Version{" "}
+						{data?.consent.release.split("@").pop() || solution.releaseVersion}.{" "}
 						{upgrade
 							? "It asks for more than you approved. Review what it adds; it stays installed, and everyone keeps the access you approved until you update."
 							: "Review what each role can do and who gets it, then install."}
@@ -188,8 +189,8 @@ export function InstallSolutionDialog({
 								onChange={(event) => setApproved(event.target.checked)}
 								disabled={isPending}
 							/>
-							I approve this {upgrade ? "release" : "target"} and the access it
-							and its supporting modules require, including the technical
+							I approve this {upgrade ? "release" : "solution"} and the access
+							it and its supporting modules require, including the technical
 							details.
 						</label>
 					</div>

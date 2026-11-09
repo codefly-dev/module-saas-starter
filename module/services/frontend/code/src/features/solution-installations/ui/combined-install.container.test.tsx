@@ -313,7 +313,7 @@ describe("combined reviewed installation", () => {
 		expect(me("installer").checked).toBe(true);
 		// Nothing is picked: approving is all Install waits on.
 		fireEvent.click(
-			within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
+			within(dialog).getByRole("checkbox", { name: /I approve this solution/ }),
 		);
 		expect(
 			(
@@ -338,7 +338,7 @@ describe("combined reviewed installation", () => {
 			).getByRole("checkbox", { name: "Add me to this team" }),
 		);
 		fireEvent.click(
-			within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
+			within(dialog).getByRole("checkbox", { name: /I approve this solution/ }),
 		);
 		fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
 		await waitFor(() => expect(requests).toHaveLength(1));
@@ -540,7 +540,9 @@ describe("combined reviewed installation", () => {
 			const dialog = await open();
 			await within(dialog).findByRole("region", { name: "Roles" });
 			fireEvent.click(
-				within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
+				within(dialog).getByRole("checkbox", {
+					name: /I approve this solution/,
+				}),
 			);
 			fireEvent.click(within(dialog).getByRole("button", { name: "Install" }));
 			return dialog;
