@@ -356,7 +356,10 @@ export type SourceGovernance = Message<"saas.accounts.v1.SourceGovernance"> & {
    * The governing scope: one resource kind and one action. Without binding it
    * is one of the solution's own kinds, as its roles grant it on the
    * installation's data; with binding, one its roles reach through that
-   * operation binding (a kind of the module the binding addresses).
+   * operation binding (a kind of the module the binding addresses). Either
+   * way it is a scope only the solution's fullest roles hold: one a role is
+   * granted without everything the solution's roles grant (a viewer's read
+   * beside an editor's write) governs no source and is refused.
    *
    * @generated from field: string resource_kind = 2;
    */

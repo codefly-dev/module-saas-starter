@@ -426,7 +426,12 @@ service InstallationService {
       tenant: TENANT_REQUIREMENT_ORG_ADMIN
       resource_bindings: {request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID}
       mfa: MFA_REQUIREMENT_NONE
-      audit: {emission: AUDIT_EMISSION_NONE}
+      audit: {
+        events: "saas.authority.role_granted"
+        events: "saas.team.created"
+        events: "saas.team.member_added"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
       rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
       request_sensitivity: SENSITIVITY_CONFIDENTIAL

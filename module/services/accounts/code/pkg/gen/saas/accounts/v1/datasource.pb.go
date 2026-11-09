@@ -1386,7 +1386,10 @@ type SourceGovernance struct {
 	// The governing scope: one resource kind and one action. Without binding it
 	// is one of the solution's own kinds, as its roles grant it on the
 	// installation's data; with binding, one its roles reach through that
-	// operation binding (a kind of the module the binding addresses).
+	// operation binding (a kind of the module the binding addresses). Either
+	// way it is a scope only the solution's fullest roles hold: one a role is
+	// granted without everything the solution's roles grant (a viewer's read
+	// beside an editor's write) governs no source and is refused.
 	ResourceKind string `protobuf:"bytes,2,opt,name=resource_kind,json=resourceKind,proto3" json:"resource_kind,omitempty"`
 	// The governing action on resource_kind, as the solution declares it.
 	Action string `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
