@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 
@@ -16,22 +18,41 @@ import (
 )
 
 // fixtureInstallation is one installation a fixture declares: the organisation
-// installing, the target by the name the composition gives it, the role it
-// holds, and the administrator who installs it and is its owner of record. A
-// role-gated target (a solution, or a module page declaring roles) is reviewed
-// and installed through that review by that person, as an administrator
-// installs it, and its role is granted to each team named; a roleless module
-// is the host interface's Install by name. The role
-// is left out for a target that holds none: a module declaring
-// `installation_role: none`, or one declaring neither an installation role
-// nor any role, is installed holding no standing authority, and a row naming
-// no role names no teams, since a team grant carries the role.
+// installing, the target by the name the composition gives it, and the
+// administrator who installs it and is its owner of record.
+//
+// A role-gated target (a solution, or a module page declaring roles) is
+// installed exactly as an administrator installs it in the admin area: a
+// solution through its reviewed install (InstallReviewedSolution), a module
+// page by composition and then its Set up (SetUpModulePage), each with the
+// access the row asks for — every declared role to its `<target>-<role>` team,
+// created for it, unless the row names a team for its `role`; the installer
+// joining the teams of `installer_roles`. Then, as an administrator adds people
+// to a team, each person under `members` joins the team holding that role. A
+// person holds what the installation's roles give their teams, and nothing
+// else.
+//
+// `role` is the standing role the installer selects where the target's
+// declaration selects none (a roleless module installed by name, or a solution
+// declaring no installation role), and the role `teams` are granted. A
+// declaration that selects one (`installation_role: none` included) is never
+// overridden.
 type fixtureInstallation struct {
-	Org    string   `yaml:"org"`
-	Target string   `yaml:"target"`
-	Role   string   `yaml:"role"`
-	Owner  string   `yaml:"owner"`
-	Teams  []string `yaml:"teams,omitempty"`
+	Org    string `yaml:"org"`
+	Target string `yaml:"target"`
+	Role   string `yaml:"role"`
+	Owner  string `yaml:"owner"`
+	// Teams names the organisation's existing team `role` goes to, as an
+	// administrator may name one instead of the conventional team (one team
+	// per role). A host without the authority core exposes the installation to
+	// each team named instead.
+	Teams []string `yaml:"teams,omitempty"`
+	// InstallerRoles are the declared roles the installing administrator takes:
+	// they join those roles' teams.
+	InstallerRoles []string `yaml:"installer_roles,omitempty"`
+	// Members are, by declared role, the people an administrator adds to the
+	// team holding that role.
+	Members map[string][]string `yaml:"members,omitempty"`
 }
 
 func (i fixtureInstallation) describe() string {
@@ -52,6 +73,17 @@ func validateInstallations(f *fixtureFile) error {
 		if strings.TrimSpace(installation.Role) == "" && len(installation.Teams) > 0 {
 			return fmt.Errorf("installation[%d] (%s): teams are granted the installation's role, so a row naming teams names a role", i, installation.describe())
 		}
+		for role, people := range installation.Members {
+			if strings.TrimSpace(role) == "" || len(people) == 0 {
+				return fmt.Errorf("installation[%d] (%s): members name a role and the people who take it", i, installation.describe())
+			}
+			for _, email := range people {
+				if !fixtureMember(f, installation.Org, email) {
+					return fmt.Errorf("installation[%d] (%s): %s is not a member of %q in this fixture, and only a member joins its team",
+						i, installation.describe(), email, installation.Org)
+				}
+			}
+		}
 		if !fixtureAdministers(f, installation.Org, installation.Owner) {
 			return fmt.Errorf("installation[%d] (%s): %s is not an owner or admin of %q in this fixture, and only an administrator installs",
 				i, installation.describe(), installation.Owner, installation.Org)
@@ -63,6 +95,25 @@ func validateInstallations(f *fixtureFile) error {
 		indexes[key] = i
 	}
 	return nil
+}
+
+// fixtureMember reports whether the fixture makes email a member (or the
+// owner) of org.
+func fixtureMember(f *fixtureFile, org, email string) bool {
+	for _, organization := range f.Organizations {
+		if organization.Name != org {
+			continue
+		}
+		if organization.Owner == email {
+			return true
+		}
+		for _, member := range organization.Members {
+			if member.Email == email {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func fixtureAdministers(f *fixtureFile, org, email string) bool {
@@ -104,6 +155,8 @@ type pendingInstallation struct {
 	ownerID  string
 	// teamIDs are the declared teams not exposed yet, allTeamIDs every one.
 	teamIDs, allTeamIDs []string
+	// memberIDs are, by declared role, the people who join its team.
+	memberIDs map[string][]string
 	// waiting is set once the first pass found the target undelivered, so the
 	// wait is said once rather than at every pass.
 	waiting bool
@@ -131,6 +184,18 @@ func newInstallations(service *business.Service, declared []fixtureInstallation,
 			}
 			row.teamIDs = append(row.teamIDs, teamID)
 			row.allTeamIDs = append(row.allTeamIDs, teamID)
+		}
+		for role, people := range installation.Members {
+			for _, email := range people {
+				userID, ok := userIDs[email]
+				if !ok {
+					return nil, fmt.Errorf("installation %s references unknown member %q", installation.describe(), email)
+				}
+				if row.memberIDs == nil {
+					row.memberIDs = map[string][]string{}
+				}
+				row.memberIDs[role] = append(row.memberIDs[role], userID)
+			}
 		}
 		installations.pending = append(installations.pending, row)
 	}
@@ -232,18 +297,18 @@ func setupPending(err error) bool {
 // authority core has not composed yet; the next pass installs it there.
 var errCoreTargetNotComposed = errors.New("the authority core has not composed this target yet")
 
-// coreInstall installs a solution as an administrator does: the row's owner
-// reviews it (ReviewSolutionInstallAs) and installs that review
-// (InstallReviewedSolutionAs), which converges the solution's closure of
-// supporting modules with it, then the owner is granted the installer role and
-// each declared team the row's role. A module page is installed by
-// composition and set up the same way (modulePageInstall). A module without
-// roles answers false: Converge installs it by name, as composition does. An installation the core holds active is left as it is and only the
-// grants it does not hold yet are granted, so a pass over a converged row
-// changes and journals nothing; one it holds pending is resumed from the
-// review it was opened under while that review is the owner's and still
-// current, and superseded by a fresh one otherwise; a revoked or absent one
-// takes a fresh review.
+// coreInstall installs a role-gated target as an administrator does in the
+// admin area, with the access the row asks for (installAccess): a solution
+// through its reviewed install (InstallReviewedSolution), which converges its
+// closure of supporting modules with it and assigns the access once active; a
+// module page by composition and then its Set up (modulePageInstall). An
+// installation the core holds active already is assigned the same access
+// again, check-before-write, so a pass over a converged row changes nothing;
+// one it holds pending is resumed from the review it was opened under while
+// that review is the owner's and still current, and superseded by a fresh one
+// otherwise. Then the row's members join their roles' teams (joinMembers). A
+// module without roles answers false: Converge installs it by name, as
+// composition does.
 func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation) (bool, error) {
 	core, err := i.service.AuthorityCore()
 	if errors.Is(err, business.ErrAuthorityCoreUnconfigured) {
@@ -261,13 +326,17 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 	if err != nil {
 		return false, fmt.Errorf("the authority core: %w", err)
 	}
-	if m.Kind != domain.KindSolution {
-		if len(m.Roles) == 0 {
-			return false, nil
+	if m.Kind != domain.KindSolution && len(m.Roles) == 0 {
+		if len(row.declared.InstallerRoles) > 0 || len(row.declared.Members) > 0 {
+			return false, fmt.Errorf("%s declares no roles: installer_roles and members have no team to join", m.Name)
 		}
-		return i.modulePageInstall(ctx, row)
+		return false, nil
 	}
+	access := installAccess(row)
 	caller := authority.Person{ID: row.ownerID, Organization: row.orgID}
+	if m.Kind != domain.KindSolution {
+		return i.modulePageInstall(ctx, row, caller, m, access)
+	}
 	all, err := core.Installations(ctx, caller, row.orgID)
 	if err != nil {
 		return false, fmt.Errorf("the authority core: %w", err)
@@ -279,33 +348,128 @@ func (i *Installations) coreInstall(ctx context.Context, row pendingInstallation
 		role = row.declared.Role
 	}
 	inst, held := heldInstallation(all, authority.StableInstallationID(row.orgID, row.declared.Target))
-	if !held || inst.Status != domain.Active {
+	var problems []business.AccessProblem
+	if held && inst.Status == domain.Active {
+		if problems, err = i.service.ApplyInstallAccess(ctx, caller, inst, access); err != nil {
+			return false, fmt.Errorf("the authority core: %w", err)
+		}
+	} else {
 		review, err := i.reviewFor(ctx, caller, m, role, inst, held)
 		if err != nil {
 			return false, err
 		}
-		inst, err = i.service.InstallReviewedSolutionAs(ctx, caller, row.orgID, review, role)
+		installed, err := i.service.InstallReviewedSolutionAs(ctx, caller, row.orgID, review, role, access)
 		if err != nil {
 			return false, fmt.Errorf("the authority core: %w", err)
 		}
+		if inst, problems = installed.Installation, installed.AccessProblems; inst.Status != domain.Active {
+			return false, fmt.Errorf("%w: %s is pending its install step", errCoreTargetNotComposed, row.declared.Target)
+		}
 	}
-	grants := []authority.RoleRequest{{Organization: row.orgID, InstallationID: inst.ID, Role: domain.InstallerRole, PersonID: row.ownerID}}
-	for _, teamID := range row.allTeamIDs {
-		grants = append(grants, authority.RoleRequest{Organization: row.orgID, InstallationID: inst.ID, Role: row.declared.Role, TeamID: teamID})
+	if err := accessRefused(problems); err != nil {
+		return false, err
+	}
+	if err := i.alsoGrant(ctx, row, caller, inst.ID); err != nil {
+		return false, err
+	}
+	return true, i.joinMembers(ctx, row, caller, inst.ID)
+}
+
+// installAccess is the access a row asks an install for, as the admin area
+// asks it: the first team named for the row's role, if any (an install names
+// one team per role), and the roles the installer takes. A further team named
+// is granted the role afterwards, as an administrator grants a role to another
+// team in Set up (alsoGrant).
+func installAccess(row pendingInstallation) business.InstallAccess {
+	access := business.InstallAccess{InstallerRoles: row.declared.InstallerRoles}
+	if len(row.allTeamIDs) > 0 {
+		access.RoleTeams = map[string]string{row.declared.Role: row.allTeamIDs[0]}
+	}
+	return access
+}
+
+// alsoGrant grants the row's role to every further team it names, on the
+// installation, as an administrator grants a role to a team in Set up.
+func (i *Installations) alsoGrant(ctx context.Context, row pendingInstallation, caller authority.Person, installationID string) error {
+	if len(row.allTeamIDs) < 2 {
+		return nil
+	}
+	var grants []authority.RoleRequest
+	for _, teamID := range row.allTeamIDs[1:] {
+		grants = append(grants, authority.RoleRequest{Organization: row.orgID, InstallationID: installationID, Role: row.declared.Role, TeamID: teamID})
 	}
 	if err := i.service.GrantInstallationRoles(ctx, caller, grants); err != nil {
-		return false, fmt.Errorf("the authority core: %w", err)
+		return fmt.Errorf("the authority core: %w", err)
 	}
-	return inst.Status == domain.Active, nil
+	return nil
+}
+
+// accessRefused is the access an install could not assign, as an error: the
+// fixture's people would otherwise hold less than it declares, silently.
+func accessRefused(problems []business.AccessProblem) error {
+	if len(problems) == 0 {
+		return nil
+	}
+	return fmt.Errorf("access not assigned: %s", strings.Join(business.AccessProblemsToWire(problems), "; "))
+}
+
+// joinMembers adds each of the row's members to the team their role went to
+// at install (the first team the row names for its role, else the role's
+// `<target>-<role>` team), as an administrator adds a person to a team; one
+// who is a member already is left as they are.
+func (i *Installations) joinMembers(ctx context.Context, row pendingInstallation, caller authority.Person, installationID string) error {
+	for _, role := range slices.Sorted(maps.Keys(row.memberIDs)) {
+		team, err := i.roleTeam(ctx, row, caller, installationID, role)
+		if err != nil {
+			return err
+		}
+		for _, userID := range row.memberIDs[role] {
+			joined, err := i.service.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: row.orgID, MemberId: userID})
+			if err != nil {
+				return err
+			}
+			if slices.ContainsFunc(joined.GetTeams(), func(t *gen.Team) bool { return t.GetId() == team }) {
+				continue
+			}
+			if err := i.service.AddTeamMember(ctx, row.ownerID, &gen.AddTeamMemberRequest{TeamId: team, UserId: userID}); err != nil {
+				return fmt.Errorf("%s: add a member to the %s team: %w", row.declared.describe(), role, err)
+			}
+		}
+	}
+	return nil
+}
+
+// roleTeam is the team role went to at install: the first team the row names
+// for its role, else the role's `<target>-<role>` team holding it.
+func (i *Installations) roleTeam(ctx context.Context, row pendingInstallation, caller authority.Person, installationID, role string) (string, error) {
+	if role == row.declared.Role && len(row.allTeamIDs) > 0 {
+		return row.allTeamIDs[0], nil
+	}
+	holding, err := i.service.InstallationRoleTeams(ctx, caller, row.orgID, installationID, role)
+	if err != nil {
+		return "", fmt.Errorf("the authority core: %w", err)
+	}
+	listed, err := i.service.ListTeams(ctx, &gen.ListTeamsRequest{OrgId: row.orgID})
+	if err != nil {
+		return "", err
+	}
+	name := business.ConventionalTeamName(row.declared.Target, role)
+	for _, team := range listed.GetTeams() {
+		if slices.Contains(holding, team.GetId()) && strings.EqualFold(team.GetName(), name) {
+			return team.GetId(), nil
+		}
+	}
+	return "", fmt.Errorf("%s: no %s team holds %s on the installation, so its members have no team to join", row.declared.describe(), name, role)
 }
 
 // modulePageInstall installs a module page as every module is installed, by
 // composition, holding no standing authority (the row's role names who may use
-// it, never what it holds), then grants, on that composition installation, the
-// installer role to the row's owner and the row's role to each declared team.
-// One still pending its install step waits for the next pass; one installed
+// it, never what it holds), then sets it up as an administrator does
+// (SetUpModulePage): each declared role to its team, the installer joining the
+// teams of the roles they take; then the row's members join their teams. One
+// still pending its install step waits for the next pass; one installed
 // already is not installed or consented to again.
-func (i *Installations) modulePageInstall(ctx context.Context, row pendingInstallation) (bool, error) {
+func (i *Installations) modulePageInstall(ctx context.Context, row pendingInstallation, caller authority.Person, m domain.Module, access business.InstallAccess) (bool, error) {
 	// Installed once: a pass over a converged row consents to nothing again.
 	var installation *gen.Installation
 	if id, err := i.service.WorkContextAudienceInstallation(ctx, row.orgID, row.declared.Target); err == nil && id != "" {
@@ -318,14 +482,21 @@ func (i *Installations) modulePageInstall(ctx context.Context, row pendingInstal
 	if installation.GetStatus() != gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE {
 		return false, fmt.Errorf("%w: %s is pending its install step", errCoreTargetNotComposed, row.declared.Target)
 	}
-	grants := []authority.RoleRequest{{Organization: row.orgID, InstallationID: installation.GetId(), Role: domain.InstallerRole, PersonID: row.ownerID}}
-	for _, teamID := range row.allTeamIDs {
-		grants = append(grants, authority.RoleRequest{Organization: row.orgID, InstallationID: installation.GetId(), Role: row.declared.Role, TeamID: teamID})
+	target, err := i.service.ResolveInstallationPrincipal(ctx, row.orgID, m.Principal)
+	if err != nil {
+		return false, err
 	}
-	if err := i.service.GrantInstallationRoles(ctx, authority.Person{ID: row.ownerID, Organization: row.orgID}, grants); err != nil {
-		return false, fmt.Errorf("the authority core: %w", err)
+	setUp, err := i.service.SetUpModulePage(ctx, caller, row.orgID, target.TargetID, access)
+	if err != nil {
+		return false, fmt.Errorf("set up %s: %w", row.declared.Target, err)
 	}
-	return true, nil
+	if err := accessRefused(setUp.AccessProblems); err != nil {
+		return false, err
+	}
+	if err := i.alsoGrant(ctx, row, caller, setUp.ID); err != nil {
+		return false, err
+	}
+	return true, i.joinMembers(ctx, row, caller, setUp.ID)
 }
 
 // reviewFor is the review the owner installs m with: the one a pending

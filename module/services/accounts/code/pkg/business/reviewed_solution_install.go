@@ -270,11 +270,10 @@ type InstalledSolution struct {
 }
 
 // InstallReviewedSolutionAs installs a review made by ReviewSolutionInstallAs
-// with the role it was made with; resuming it names the same role. It
-// assigns no access: its caller grants the roles it declares.
-func (s *Service) InstallReviewedSolutionAs(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, role string) (domain.Installation, error) {
-	installed, err := s.installReviewedSolution(ctx, caller, org, review, reviewedInstall{role: role})
-	return installed.Installation, err
+// with the role it was made with (resuming it names the same role), and
+// assigns access exactly as InstallReviewedSolution does.
+func (s *Service) InstallReviewedSolutionAs(ctx context.Context, caller authority.Person, org string, review *gen.ReviewedSolutionInstall, role string, access InstallAccess) (InstalledSolution, error) {
+	return s.installReviewedSolution(ctx, caller, org, review, reviewedInstall{role: role, assignAccess: true, access: access})
 }
 
 // reviewedInstall is what an install asks beside its review: the machine role

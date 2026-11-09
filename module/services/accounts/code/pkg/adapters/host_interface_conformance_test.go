@@ -1283,6 +1283,91 @@ installations:
 		require.Equal(t, domain.Active, all[i].Status)
 	})
 
+	// A fixture installs as an administrator does in the admin area: a solution
+	// through its reviewed install and a module page by composition then its Set
+	// up, each declared role to its `<target>-<role>` team, the installer joining
+	// the teams of the roles they take, and each declared member joining their
+	// role's team. A person holds nothing else, and a second pass changes nothing.
+	t.Run("a fixture installs like an administrator: each role to its team, the installer and the members joining theirs", func(t *testing.T) {
+		const solution, module, org = "conformance-fixture-admin", "conformance-fixture-admin-page", "00000000-0000-7000-8000-0000000002d1"
+		const owner, editor, viewer = "00000000-0000-7000-8000-0000000002d2", "00000000-0000-7000-8000-0000000002d3", "00000000-0000-7000-8000-0000000002d4"
+		note := wireScope(solution+".note", "read", "write")
+		deliverSolution(t, ctx, conn, signer, conformanceSolution{alias: solution, generation: 1, installationRole: domain.NoInstallationRole,
+			ceilings: []*authorityv1.WorkScopeV1{note}, roles: map[string][]*authorityv1.WorkScopeV1{
+				"installer": {note}, "editor": {note}, "viewer": {wireScope(solution+".note", "read")}}})
+		entry := wireScope(module+".entry", "read")
+		deliverModule(t, ctx, conn, signer, conformanceModule{alias: module, ceilings: []*authorityv1.WorkScopeV1{entry}, installationRole: domain.NoInstallationRole,
+			page:  &solutionhost.Frontend{Title: "Fixture page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload},
+			roles: map[string][]*authorityv1.WorkScopeV1{"installer": {entry}, "viewer": {entry}}})
+		path := filepath.Join(t.TempDir(), "admin-fixture.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(`users:
+  - {id: `+owner+`, email: owner@admin-fixture.example.test, name: Admin Fixture Owner, role: member, provider: email, provider_id: fixture-admin-fixture-owner}
+  - {id: `+editor+`, email: editor@admin-fixture.example.test, name: Admin Fixture Editor, role: member, provider: email, provider_id: fixture-admin-fixture-editor}
+  - {id: `+viewer+`, email: viewer@admin-fixture.example.test, name: Admin Fixture Viewer, role: member, provider: email, provider_id: fixture-admin-fixture-viewer}
+organizations:
+  - id: `+org+`
+    name: Example Admin Fixture
+    owner: owner@admin-fixture.example.test
+    members:
+      - {email: editor@admin-fixture.example.test, role: member}
+      - {email: viewer@admin-fixture.example.test, role: member}
+installations:
+  - org: Example Admin Fixture
+    target: `+solution+`
+    owner: owner@admin-fixture.example.test
+    installer_roles: [installer]
+    members: {editor: [editor@admin-fixture.example.test], viewer: [viewer@admin-fixture.example.test]}
+  - org: Example Admin Fixture
+    target: `+module+`
+    owner: owner@admin-fixture.example.test
+    installer_roles: [installer]
+    members: {viewer: [editor@admin-fixture.example.test, viewer@admin-fixture.example.test]}
+`), 0o600))
+		t.Setenv("DEV_FIXTURE_PATH", path)
+		rows, err := fixtures.SeedWithInstallations(ctx, svc, "admin-fixture")
+		require.NoError(t, err)
+		require.NoError(t, rows.Converge(ctx))
+		require.NoError(t, rows.Converge(ctx), "a converged row changes nothing")
+
+		installer := authority.Person{ID: owner, Organization: org}
+		teamsOf := func(member string) []string {
+			t.Helper()
+			var teams []*gen.Team
+			require.NoError(t, svc.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+				var err error
+				teams, err = svc.Store().ListTeams(ctx, org, member)
+				return err
+			}))
+			var names []string
+			for _, team := range teams {
+				names = append(names, team.GetName())
+			}
+			slices.Sort(names)
+			return names
+		}
+		require.Equal(t, []string{solution + "-editor", module + "-viewer"}, teamsOf(editor))
+		require.Equal(t, []string{module + "-viewer", solution + "-viewer"}, teamsOf(viewer))
+		require.Equal(t, []string{solution + "-installer", module + "-installer"}, teamsOf(owner), "the installer joins the teams of the roles they take, and only those")
+		require.Len(t, teamsOf(""), 5, "one team per declared role, created by the install and nothing else")
+
+		for target, roles := range map[string][]string{solution: {"editor", "installer", "viewer"}, module: {"installer", "viewer"}} {
+			id := authority.StableInstallationID(org, target)
+			if target == module {
+				id, err = svc.WorkContextAudienceInstallation(ctx, org, module)
+				require.NoError(t, err)
+			}
+			grants, err := core.ListRoleGrants(ctx, installer, org, id)
+			require.NoError(t, err)
+			var held []string
+			for _, grant := range grants {
+				require.Empty(t, grant.PersonID, "%s: a role is granted to a team, never to a person", target)
+				held = append(held, grant.Role)
+			}
+			slices.Sort(held)
+			require.Equal(t, roles, held, "%s: each declared role to its one team", target)
+		}
+	})
+
 	// Last, because the envelope it writes becomes every module's ceiling: a
 	// real envelope write that narrows a module's binding (the write
 	// PutModuleEnvelope makes, without its platform administrator check) is

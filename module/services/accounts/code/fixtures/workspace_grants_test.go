@@ -105,10 +105,12 @@ func TestWorkspaceInstallationsJoinTheFixture(t *testing.T) {
 	}
 
 	for document, want := range map[string]string{
-		`installations: [{org: Acme Corp, target: notes, role: viewer, owner: omar@acme.test}]`: "only an administrator installs",
-		`installations: [{org: Globex, target: notes, role: viewer, owner: remi@acme.test}]`:    "only an administrator installs",
-		`installations: [{org: Acme Corp, target: notes, role: viewer}]`:                        "org, target and owner are required",
-		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, teams: [Ops]}]`: "a row naming teams names a role",
+		`installations: [{org: Acme Corp, target: notes, role: viewer, owner: omar@acme.test}]`:                            "only an administrator installs",
+		`installations: [{org: Globex, target: notes, role: viewer, owner: remi@acme.test}]`:                               "only an administrator installs",
+		`installations: [{org: Acme Corp, target: notes, role: viewer}]`:                                                   "org, target and owner are required",
+		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, teams: [Ops]}]`:                            "a row naming teams names a role",
+		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, members: {viewer: [stranger@acme.test]}}]`: "only a member joins its team",
+		`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, members: {viewer: []}}]`:                   "members name a role and the people who take it",
 	} {
 		grants, err := readWorkspaceGrants(grantsReader(document, nil))
 		if err != nil {
@@ -120,6 +122,50 @@ func TestWorkspaceInstallationsJoinTheFixture(t *testing.T) {
 		if err := withWorkspaceGrants(f, grants); err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("%s: want a refusal naming %q, got %v", document, want, err)
 		}
+	}
+}
+
+// A row installs as an administrator does: the roles the installer takes, and
+// by declared role the people who join that role's team, each a member of the
+// organisation.
+func TestWorkspaceInstallationsDeclareInstallerRolesAndMembers(t *testing.T) {
+	f := baseFixture()
+	f.Users = append(f.Users, fixtureUser{Email: "omar@acme.test", Provider: "email", ProviderID: "fixture-omar"})
+	f.Organizations[0].Members = []fixtureOrgMember{{Email: "omar@acme.test", Role: "member"}}
+	grants, err := readWorkspaceGrants(grantsReader(`installations:
+  - org: Acme Corp
+    target: notes
+    owner: remi@acme.test
+    installer_roles: [installer]
+    members: {editor: [omar@acme.test], viewer: [remi@acme.test]}
+`, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := withWorkspaceGrants(f, grants); err != nil {
+		t.Fatal(err)
+	}
+	row := f.Installations[0]
+	if len(row.InstallerRoles) != 1 || row.InstallerRoles[0] != "installer" || len(row.Members["editor"]) != 1 || row.Members["viewer"][0] != "remi@acme.test" {
+		t.Fatalf("the row did not read: %+v", row)
+	}
+	if _, err := readWorkspaceGrants(grantsReader(`installations: [{org: Acme Corp, target: notes, owner: remi@acme.test, member: {viewer: [omar@acme.test]}}]`, nil)); err == nil {
+		t.Fatal("a misspelled field was accepted")
+	}
+}
+
+// The access a row asks an install for is the admin area's: the first team
+// named for the row's role (an install names one team per role; a further
+// team is granted the role in Set up), and the roles the installer takes.
+func TestARowAsksTheInstallForTheAdministratorsAccess(t *testing.T) {
+	row := pendingInstallation{declared: fixtureInstallation{Role: "viewer", InstallerRoles: []string{"installer"}}}
+	if access := installAccess(row); access.RoleTeams != nil || len(access.InstallerRoles) != 1 {
+		t.Fatalf("no team named: every role goes to its conventional team, got %+v", access)
+	}
+	row.allTeamIDs = []string{"finance", "engineering"}
+	access := installAccess(row)
+	if len(access.RoleTeams) != 1 || access.RoleTeams["viewer"] != "finance" {
+		t.Fatalf("the first named team holds the row's role at install, got %+v", access)
 	}
 }
 

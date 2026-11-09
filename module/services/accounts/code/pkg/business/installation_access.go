@@ -353,3 +353,48 @@ func (s *Service) SetUpModulePage(ctx context.Context, caller authority.Person, 
 	}
 	return InstalledSolution{Installation: installed[i], AccessProblems: s.applyInstallationAccess(ctx, caller, installed[i], access)}, nil
 }
+
+// ApplyInstallAccess assigns, as caller, the access requested on inst, an
+// installation already active: exactly what an administrator's install assigns
+// on activation (resolveInstallationAccess, applyInstallationAccess), for the
+// installation that install made. Every step is check-before-write, so applying
+// it again changes nothing. A target declaring no roles has nothing to assign.
+func (s *Service) ApplyInstallAccess(ctx context.Context, caller authority.Person, inst domain.Installation, requested InstallAccess) ([]AccessProblem, error) {
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return nil, err
+	}
+	target, err := core.Composed(ctx, inst.Target)
+	if err != nil {
+		return nil, err
+	}
+	if len(target.Roles) == 0 {
+		return nil, domain.Refuse("%s declares no roles: there is no access of a person to assign", target.Name)
+	}
+	access, err := s.resolveInstallationAccess(ctx, caller, inst.Organization, target, requested)
+	if err != nil {
+		return nil, err
+	}
+	return s.applyInstallationAccess(ctx, caller, inst, access), nil
+}
+
+// InstallationRoleTeams are the teams holding role on the installation, as
+// caller reads its grants: where an administrator adds the people who take
+// that role (a team member holds what the team is granted).
+func (s *Service) InstallationRoleTeams(ctx context.Context, caller authority.Person, org, installationID, role string) ([]string, error) {
+	core, err := s.AuthorityCore()
+	if err != nil {
+		return nil, err
+	}
+	grants, err := core.ListRoleGrants(ctx, caller, org, installationID)
+	if err != nil {
+		return nil, err
+	}
+	var teams []string
+	for _, grant := range grants {
+		if grant.Role == role && grant.TeamID != "" && !slices.Contains(teams, grant.TeamID) {
+			teams = append(teams, grant.TeamID)
+		}
+	}
+	return teams, nil
+}
