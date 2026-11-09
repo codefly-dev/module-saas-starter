@@ -179,7 +179,12 @@ function TeamDetails({ team }: { team: Team }) {
 				orgId={team.orgId}
 				canGrant={hasPermission(platformRole, orgRole, PERMISSIONS.ROLES_WRITE)}
 			/>
-			<TeamInstallationAccess teamId={team.id} orgId={team.orgId} />
+			{/* Reading an organization's installations is an administrator's
+			    read (a member's own is ListHeld), and the links go to admin pages:
+			    a member's team page leaves the section out rather than refuse it. */}
+			{hasPermission(platformRole, orgRole, PERMISSIONS.ROLES_WRITE) && (
+				<TeamInstallationAccess teamId={team.id} orgId={team.orgId} />
+			)}
 			{editing && (
 				<>
 					<TeamForm

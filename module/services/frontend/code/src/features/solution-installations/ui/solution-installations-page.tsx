@@ -631,18 +631,17 @@ function AvailableSection({
 export function uninstallLosers(row: InstalledRow, access: AccessView): string {
 	const grants = access.grants.get(row.installationId);
 	if (!grants) return "";
-	const holders = [
-		...new Set(
-			holdersByRole(
-				access.roles(row.installationId),
-				grants,
-				access.name,
-			).flatMap((entry) => entry.holders),
-		),
-	];
+	const names = grants.map((grant) => ({
+		name: access.name(grant),
+		id: grant.teamId || grant.personId,
+	}));
+	// A holder whose name is not read yet would be shown as its id: say the
+	// general sentence rather than name anyone by an id.
+	if (names.some(({ name, id }) => !name || name === id)) return "";
+	const holders = [...new Set(names.map(({ name }) => name))].sort();
 	if (holders.length === 0) return "";
-	if (holders.length === 1) return holders[0];
-	return `${holders.slice(0, -1).join(", ")} and ${holders[holders.length - 1]}`;
+	if (holders.length === 1) return `${holders[0]} loses`;
+	return `${holders.slice(0, -1).join(", ")} and ${holders[holders.length - 1]} lose`;
 }
 
 function InstalledSection({
@@ -686,6 +685,7 @@ function InstalledSection({
 
 	const name = (row: InstalledRow) =>
 		row.solution.kind === "value" ? row.solution.text : "this installation";
+	const losers = confirming ? uninstallLosers(confirming, access) : "";
 
 	const runRetry = (row: InstalledRow) => {
 		setRefusal(null);
@@ -953,8 +953,8 @@ function InstalledSection({
 							Uninstall {confirming ? name(confirming) : ""}
 						</AlertDialogTitle>
 						<AlertDialogDescription>
-							{confirming && uninstallLosers(confirming, access)
-								? `${uninstallLosers(confirming, access)} lose access to ${name(confirming)} at once. `
+							{losers
+								? `${losers} access to ${confirming ? name(confirming) : ""} at once. `
 								: "Everyone who holds one of its roles loses access at once. "}
 							Its record and audit trail remain. Shared supporting module
 							installations are kept.

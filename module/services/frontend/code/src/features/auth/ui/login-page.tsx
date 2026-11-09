@@ -205,7 +205,7 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 						</span>
 					</div>
 
-					<div className="space-y-8 max-w-md">
+					<div className="my-auto space-y-8 max-w-md">
 						<div>
 							<h2 className="text-4xl font-bold tracking-tight leading-tight">
 								Welcome back to {branding.name}.
@@ -244,8 +244,6 @@ export function LoginPage({ identity }: { identity: IdentityConfig }) {
 							</li>
 						</ul>
 					</div>
-
-					<span aria-hidden />
 				</div>
 			</div>
 

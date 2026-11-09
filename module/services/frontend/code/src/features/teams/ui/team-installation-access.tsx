@@ -54,7 +54,7 @@ export function TeamInstallationAccess({
 }) {
 	const installations = useAuthorityInstallations(orgId);
 	const ids = [...(installations.data?.keys() ?? [])];
-	const { grants, failed } = useRoleGrants(orgId, ids);
+	const { grants, failed, pending } = useRoleGrants(orgId, ids);
 	const titles = new Map(
 		useRegisteredSolutions().map((solution) => [
 			solution.id,
@@ -78,7 +78,7 @@ export function TeamInstallationAccess({
 			description="Roles given to this team on what the organization has installed. Change them under Admin → Solutions."
 		>
 			<Panel>
-				{installations.isLoading ? (
+				{installations.isLoading || pending ? (
 					<Spinner label="Loading what this team can use" size="sm" />
 				) : installations.isError ? (
 					<span role="alert" className="text-sm text-muted-foreground">

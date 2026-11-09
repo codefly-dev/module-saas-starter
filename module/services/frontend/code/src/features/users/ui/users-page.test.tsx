@@ -79,6 +79,29 @@ afterEach(() => {
 });
 
 describe("UsersPage for an organization administrator", () => {
+	// A billing role does not reach the platform's account search either.
+	it("gives a billing role the organization's people, not the platform search", async () => {
+		auth.platformRole = "billing";
+		let searched = false;
+		server.use(
+			http.post(rpc("PlatformAdminService", "SearchUsers"), () => {
+				searched = true;
+				return HttpResponse.json({}, { status: 403 });
+			}),
+			http.post(rpc("OrganizationService", "GetOrganization"), () =>
+				HttpResponse.json({ id: "org-1", name: "Acme Corp" }),
+			),
+			http.post(rpc("OrganizationService", "ListMembers"), () =>
+				HttpResponse.json({ members: [] }),
+			),
+		);
+		renderInApp(<UsersPage />);
+		expect(
+			await screen.findByText(/Organization roles for each person/),
+		).toBeTruthy();
+		expect(searched).toBe(false);
+	});
+
 	// An organization administrator holds no platform role, so the platform's
 	// account search refuses them. The page showed only "Users could not be
 	// loaded"; it shows their organization's people instead, and never asks.
@@ -107,7 +130,8 @@ describe("UsersPage for an organization administrator", () => {
 			),
 		);
 		renderInApp(<UsersPage />);
-		expect(await screen.findByText(/The people in Acme Corp/)).toBeTruthy();
+		expect(await screen.findByText(/Members of/)).toBeTruthy();
+		expect(await screen.findByText("Acme Corp")).toBeTruthy();
 		expect(await screen.findByText("maya@acme.test")).toBeTruthy();
 		expect(screen.queryByText("Users could not be loaded")).toBeNull();
 		expect(searched).toBe(false);

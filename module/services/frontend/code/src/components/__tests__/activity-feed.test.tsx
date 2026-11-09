@@ -82,6 +82,29 @@ describe("ActivityFeed rows", () => {
 		expect(screen.getByText("Maya Rossi")).toBeTruthy();
 		expect(screen.queryByText("System")).toBeNull();
 		expect(screen.queryByText(/task started/)).toBeNull();
+		// It reads past the system's rows: four times what it shows.
+		expect(useAuditLogMock.mock.calls[0]?.[0]).toMatchObject({ pageSize: 32 });
+	});
+
+	it("keeps the card, with the way to the Audit Log, when every row read is the system's", () => {
+		useAuditLogMock.mockReturnValue({
+			data: {
+				events: [
+					event(new Date().toISOString(), {
+						id: "s1",
+						eventType: "saas.work_context.task_started",
+						actorId: "",
+						actorType: "system",
+					}),
+				],
+			},
+			isLoading: false,
+		});
+
+		render(<ActivityFeed />);
+
+		expect(screen.getByText(/No recent activity by people/)).toBeTruthy();
+		expect(screen.getByText("View all →")).toBeTruthy();
 	});
 });
 

@@ -199,6 +199,11 @@ export function useRegisteredSolutions(): SolutionNav[] {
 	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+/** Whether the menu titles each of its groups itself (any group, or a module page). */
+function titlesGroups(solutions: SolutionNav[]): boolean {
+	return solutions.some((entry) => entry.group || entry.kind === "module");
+}
+
 /** Whether this viewer's first authenticated projection has arrived. */
 export function useRegisteredSolutionsLoaded(): boolean {
 	return useSyncExternalStore(
@@ -226,8 +231,7 @@ export function SolutionsMenu({
 					aria-label={section.title}
 					className="flex flex-col gap-2"
 				>
-					{(solutions.some((entry) => entry.group) ||
-						solutions.some((entry) => entry.kind === "module")) && (
+					{titlesGroups(solutions) && (
 						<h3 className="text-sm font-medium text-muted-foreground">
 							{section.title}
 						</h3>
@@ -317,9 +321,7 @@ export function SolutionsHomeSection() {
 	}
 	// When the cards are grouped they title each group themselves ("Solutions",
 	// "Modules"); a "SOLUTIONS" heading above a "Solutions" group said it twice.
-	const titled = solutions.some(
-		(entry) => entry.group || entry.kind === "module",
-	);
+	const titled = titlesGroups(solutions);
 	return (
 		<section className="flex flex-col gap-3" aria-label="Solutions">
 			{!titled && (

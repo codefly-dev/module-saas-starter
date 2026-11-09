@@ -88,7 +88,9 @@ export function ActivityFeed({
 	);
 	const teamNames = useTeamNames(resolvedOrgId, events);
 
-	if (!isLoading && events.length === 0) return null;
+	// Hidden only for an organization with no activity at all. When every row
+	// read was the system's, the card stays with its way to the Audit Log.
+	if (!isLoading && (data?.events ?? []).length === 0) return null;
 
 	return (
 		<Card>
@@ -114,6 +116,10 @@ export function ActivityFeed({
 						<Skeleton className="h-9 w-full" />
 						<Skeleton className="h-9 w-full" />
 					</div>
+				) : events.length === 0 ? (
+					<p className="text-sm text-muted-foreground">
+						No recent activity by people. The Audit Log has the system's own.
+					</p>
 				) : (
 					<ul className="space-y-2.5">
 						{events.map((e) => {

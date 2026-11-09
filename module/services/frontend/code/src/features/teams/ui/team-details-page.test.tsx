@@ -38,6 +38,13 @@ beforeEach(() => {
 		http.post(rpc("TeamService", "ListTeams"), () =>
 			HttpResponse.json({ teams: [team] }),
 		),
+		http.post(
+			"http://localhost:3000/host.installation.v1.InstallationService/List",
+			() => HttpResponse.json({ installations: [] }),
+		),
+		http.get("http://localhost:3000/api/solutions", () =>
+			HttpResponse.json({ solutions: [] }),
+		),
 		http.post(rpc("TeamService", "ListMembers"), () =>
 			HttpResponse.json({
 				members: removed
@@ -260,5 +267,60 @@ describe("team details", () => {
 			),
 		);
 		expect(screen.queryByText("No members in this team yet.")).toBeNull();
+	});
+});
+
+const HOST = "http://localhost:3000/host.installation.v1.InstallationService";
+
+describe("access through solutions and module pages", () => {
+	// Listing an organization's installations is an administrator's read; a
+	// member allowed onto the team page was shown an alert for it.
+	it("is left out for a member, who never reads the installations", async () => {
+		let listed = false;
+		server.use(
+			http.post(`${HOST}/List`, () => {
+				listed = true;
+				return HttpResponse.json({}, { status: 403 });
+			}),
+		);
+		renderInApp(<TeamDetailsPage teamId={team.id} />);
+		await screen.findByText("Example team");
+		expect(
+			screen.queryByText("Access through solutions and module pages"),
+		).toBeNull();
+		expect(listed).toBe(false);
+	});
+
+	// While an installation's grants were on their way the section said the
+	// team held no role on anything: the claim the section exists to correct.
+	it("says nothing about holdings until every installation's grants are read", async () => {
+		auth.orgRole = "admin";
+		let answer: () => void = () => {};
+		const gate = new Promise<void>((resolve) => {
+			answer = resolve;
+		});
+		server.use(
+			http.post(`${HOST}/List`, () =>
+				HttpResponse.json({
+					installations: [
+						{ id: "inst-1", target: "expenses", status: "STATUS_ACTIVE" },
+					],
+				}),
+			),
+			http.post(`${HOST}/ListRoleGrants`, async () => {
+				await gate;
+				return HttpResponse.json({
+					grants: [{ role: "editor", teamId: team.id }],
+				});
+			}),
+		);
+		renderInApp(<TeamDetailsPage teamId={team.id} />);
+		await screen.findByText("Access through solutions and module pages");
+		await screen.findByText("Loading what this team can use");
+		expect(
+			screen.queryByText(/holds no role on any solution or module page/),
+		).toBeNull();
+		answer();
+		expect(await screen.findByText("expenses: editor")).toBeTruthy();
 	});
 });

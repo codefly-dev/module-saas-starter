@@ -5,13 +5,19 @@ import {
 	uninstallLosers,
 } from "./solution-installations-page";
 
+const NAMES = new Map([
+	["team-1", "expenses-editor"],
+	["team-2", "expenses-viewer"],
+]);
+
 function view(grants: Partial<RoleGrant>[] | undefined): AccessView {
 	return {
 		grants: new Map(grants ? [["inst-1", grants as RoleGrant[]]] : []),
 		failed: new Set(),
 		unreached: () => [],
 		roles: () => ["editor", "viewer"],
-		name: (grant) => grant.teamId || grant.personId,
+		// As the page does: the team's name when read, else its id.
+		name: (grant) => NAMES.get(grant.teamId ?? "") ?? grant.teamId ?? "",
 	};
 }
 
@@ -27,12 +33,33 @@ describe("uninstallLosers", () => {
 			uninstallLosers(
 				row,
 				view([
-					{ role: "editor", teamId: "expenses-editor", personId: "" },
-					{ role: "viewer", teamId: "expenses-viewer", personId: "" },
-					{ role: "viewer", teamId: "expenses-editor", personId: "" },
+					{ role: "editor", teamId: "team-1", personId: "" },
+					{ role: "viewer", teamId: "team-2", personId: "" },
+					{ role: "viewer", teamId: "team-1", personId: "" },
 				]),
 			),
-		).toBe("expenses-editor and expenses-viewer");
+		).toBe("expenses-editor and expenses-viewer lose");
+	});
+
+	it("agrees with a single holder", () => {
+		expect(
+			uninstallLosers(
+				row,
+				view([{ role: "editor", teamId: "team-1", personId: "" }]),
+			),
+		).toBe("expenses-editor loses");
+	});
+
+	it("names nobody by an id while a holder's name is not read yet", () => {
+		expect(
+			uninstallLosers(
+				row,
+				view([
+					{ role: "editor", teamId: "team-1", personId: "" },
+					{ role: "viewer", teamId: "team-unread", personId: "" },
+				]),
+			),
+		).toBe("");
 	});
 
 	it("says nothing when the holders are unknown or there are none", () => {

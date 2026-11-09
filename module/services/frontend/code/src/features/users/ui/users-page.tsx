@@ -30,13 +30,15 @@ import { UsersTable } from "./users-table";
  */
 export function UsersPage() {
 	const { platformRole, organizationId } = useAuth();
-	if (platformRole) return <PlatformUsersPage />;
+	// The platform's account search requires the support role or above
+	// (PLATFORM_ROLE_REQUIREMENT_SUPPORT); a billing role does not reach it.
+	if (platformRole === "super_admin" || platformRole === "support")
+		return <PlatformUsersPage />;
 	return <OrganizationPeoplePage orgId={organizationId ?? ""} />;
 }
 
 function OrganizationPeoplePage({ orgId }: { orgId: string }) {
 	const { data } = useQuery(orgQueries.detail(orgId));
-	const orgName = data?.name ?? "";
 	return (
 		<div className="space-y-6">
 			<div>
@@ -44,15 +46,12 @@ function OrganizationPeoplePage({ orgId }: { orgId: string }) {
 					Users
 				</h2>
 				<p className="text-muted-foreground mt-1">
-					{orgName
-						? `The people in ${orgName} and their organization roles.`
-						: "The people in your organization and their organization roles."}{" "}
-					What each person can do in a solution or module page is given by its
-					roles, under Solutions.
+					Organization roles for each person. What a person can do in a solution
+					or module page is given by its roles, under Solutions.
 				</p>
 			</div>
 			{orgId ? (
-				<OrgMembersPanel orgId={orgId} orgName={orgName} />
+				<OrgMembersPanel orgId={orgId} orgName={data?.name ?? ""} />
 			) : (
 				<p className="text-sm text-muted-foreground">
 					Choose an organization to see its people.
