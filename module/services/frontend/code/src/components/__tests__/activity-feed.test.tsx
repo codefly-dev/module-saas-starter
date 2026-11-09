@@ -15,12 +15,14 @@ vi.mock("@/lib/auth", () => ({
 
 const useAuditLogMock = vi.fn();
 const principalDirectory = new Map<string, string>();
+const teamNames = new Map<string, string>();
 vi.mock("@/features/audit/service/queries", () => ({
 	useAuditLog: (...args: unknown[]) => useAuditLogMock(...args),
 	usePrincipalDirectory: () => ({
 		directory: principalDirectory,
 		failed: false,
 	}),
+	useTeamNames: () => teamNames,
 }));
 
 import {
@@ -46,6 +48,40 @@ afterEach(() => {
 	cleanup();
 	useAuditLogMock.mockReset();
 	principalDirectory.clear();
+	teamNames.clear();
+});
+
+describe("ActivityFeed objects", () => {
+	// Eight rows read "alex joined a team (team)": which team, never said; the
+	// raw resource type in brackets instead.
+	it("names the team a row acted on, and never prints the resource type", () => {
+		teamNames.set("team-7", "expenses-editor");
+		useAuditLogMock.mockReturnValue({
+			data: {
+				events: [
+					event(new Date().toISOString(), {
+						id: "e7",
+						eventType: "saas.team.member_added",
+						resource: "team",
+						resourceId: "team-7",
+					}),
+					event(new Date().toISOString(), {
+						id: "e8",
+						eventType: "saas.team.created",
+						resource: "team",
+						resourceId: "team-gone",
+					}),
+				],
+			},
+			isLoading: false,
+		});
+
+		render(<ActivityFeed />);
+
+		expect(screen.getByText("· expenses-editor")).toBeTruthy();
+		expect(screen.queryByText(/\(team\)/)).toBeNull();
+		expect(screen.getByText("created a team")).toBeTruthy();
+	});
 });
 
 // The icon and phrase maps are keyed on registered audit event types. Before

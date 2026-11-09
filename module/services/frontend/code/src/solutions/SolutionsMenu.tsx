@@ -1,18 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import {
-	groupSolutionNavigation,
-	type SolutionGroup,
-} from "@/solutions/solution-groups";
 import { useSyncExternalStore } from "react";
-
 import { decodeJWTPayload } from "@/lib/auth-session";
 import {
 	authedFetch,
 	getToken,
 	subscribeToken,
 } from "@/lib/connect/token-store";
+import {
+	groupSolutionNavigation,
+	type SolutionGroup,
+} from "@/solutions/solution-groups";
 
 interface SolutionNav {
 	id: string;
@@ -270,8 +269,10 @@ function SolutionLinks({
 							href={solution.nav.path}
 							className="rounded-xl border p-4 transition-colors hover:bg-accent/40"
 						>
+							{/* The title only: the route alias under it ("Expenses /
+							    expenses") is a builder's id, not something a person
+							    reads. */}
 							<div className="text-sm font-medium">{solution.nav.title}</div>
-							<div className="text-xs opacity-60">{solution.id}</div>
 						</Link>
 					),
 				)}
@@ -314,11 +315,18 @@ export function SolutionsHomeSection() {
 	if (solutions.length === 0) {
 		return null;
 	}
+	// When the cards are grouped they title each group themselves ("Solutions",
+	// "Modules"); a "SOLUTIONS" heading above a "Solutions" group said it twice.
+	const titled = solutions.some(
+		(entry) => entry.group || entry.kind === "module",
+	);
 	return (
-		<section className="flex flex-col gap-3">
-			<h2 className="text-sm font-semibold uppercase tracking-wide opacity-60">
-				Solutions
-			</h2>
+		<section className="flex flex-col gap-3" aria-label="Solutions">
+			{!titled && (
+				<h2 className="text-sm font-semibold uppercase tracking-wide opacity-60">
+					Solutions
+				</h2>
+			)}
 			<SolutionsMenu variant="cards" />
 		</section>
 	);

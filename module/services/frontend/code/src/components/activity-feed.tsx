@@ -34,6 +34,7 @@ import type { AuditEvent } from "@/features/audit/model/types";
 import {
 	useAuditLog,
 	usePrincipalDirectory,
+	useTeamNames,
 } from "@/features/audit/service/queries";
 import { useAuth } from "@/lib/auth";
 
@@ -78,6 +79,7 @@ export function ActivityFeed({
 		resolvedOrgId,
 		events.map((e) => e.actorId),
 	);
+	const teamNames = useTeamNames(resolvedOrgId, events);
 
 	if (!isLoading && events.length === 0) return null;
 
@@ -134,10 +136,13 @@ export function ActivityFeed({
 											<span className="text-muted-foreground">
 												{humanize(e.eventType)}
 											</span>
-											{e.resource && (
-												<span className="text-muted-foreground">
+											{/* The object by its name when one is known ("joined a
+											    team · Design"); never the raw resource type, which
+											    read "joined a team (team)". */}
+											{resourceName(e, teamNames) && (
+												<span className="font-medium">
 													{" "}
-													({e.resource})
+													· {resourceName(e, teamNames)}
 												</span>
 											)}
 										</div>
@@ -153,6 +158,16 @@ export function ActivityFeed({
 			</CardContent>
 		</Card>
 	);
+}
+
+// The name of what a row acted on, when this feed can tell: a team by its
+// name. Anything else says nothing rather than its resource type.
+export function resourceName(
+	e: Pick<AuditEvent, "resource" | "resourceId">,
+	teamNames: ReadonlyMap<string, string>,
+): string {
+	if (e.resource === "team") return teamNames.get(e.resourceId) ?? "";
+	return "";
 }
 
 // The verb phrase each registered event type renders as. Exported alongside

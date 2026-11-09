@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const authState = vi.hoisted(() => ({
 	isAuthenticated: true,
 	organizationId: "org-1",
+	orgRole: "owner" as string,
 	switchOrganization: vi.fn(),
 }));
 
@@ -72,6 +73,18 @@ afterEach(() => {
 });
 
 describe("the optional-setup reminder", () => {
+	// Its steps are an administrator's; a member saw it over every page.
+	it("is not shown to a member, who has nothing to set up", async () => {
+		authState.orgRole = "member";
+		try {
+			await renderGate();
+			expect(screen.getByText("dashboard content")).toBeTruthy();
+			expect(reminder()).toBeNull();
+		} finally {
+			authState.orgRole = "owner";
+		}
+	});
+
 	// A green run must mean "the reminder was there and went away", never "the
 	// mock did not take and there was nothing to dismiss".
 	it("appears while optional setup is outstanding", async () => {
