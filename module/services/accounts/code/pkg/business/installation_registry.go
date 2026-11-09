@@ -175,6 +175,11 @@ func (s *Service) NarrowInstallationScope(ctx context.Context, actorID, orgID, i
 	if current.Revision != revision {
 		return NewStoreError(fmt.Errorf("installation revision changed"), ErrTypeConflict)
 	}
+	if current.Kind == "module" && s.moduleEnvelopes != nil && snapshot.envelopeRevision != 0 {
+		// moduleConsent reads every module installation as following the
+		// envelope: a narrowing recorded here would hold nothing back.
+		return NewStoreError(fmt.Errorf("a module holds what the operator's envelope grants it; no organisation narrows it"), ErrTypeValidation)
+	}
 	grant, found := snapshot.registry[current.PrincipalID]
 	if !found || current.BindingID != grant.PresenceBinding || !moduleAvailableToOrganization(grant, orgID) ||
 		!InstallationScopeWithin(scope, current.Scope) {

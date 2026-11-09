@@ -31,10 +31,19 @@ func (s *Service) moduleConsent(prefix string, raw []byte, committedEnvelope uin
 			return nil, false, fmt.Errorf("module %s: the recorded consent does not read: %w", prefix, err)
 		}
 	}
+	snapshot := s.moduleRegistrySnapshot()
+	// Under an administrative envelope no organisation consents to a module:
+	// every module is installed by composition and holds what the operator's
+	// envelope grants it, so its installation follows the envelope whatever
+	// an earlier consent recorded (one pinned to a profile digest, or to a
+	// binding a later generation renamed, would otherwise refuse it). With no
+	// envelope the recorded consent stays the organisation's own.
+	if s.moduleEnvelopes != nil && snapshot != nil && snapshot.envelopeRevision != 0 {
+		consent = InstallationScope{Capabilities: true, Follows: true}
+	}
 	if !consent.Capabilities {
 		return nil, false, nil
 	}
-	snapshot := s.moduleRegistrySnapshot()
 	if s.moduleEnvelopes != nil && snapshot.envelopeRevision != committedEnvelope {
 		s.requestRegistryPass()
 		return nil, false, fmt.Errorf("%w: the registry was derived from envelope revision %d and revision %d is committed",

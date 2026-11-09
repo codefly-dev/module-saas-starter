@@ -76,4 +76,18 @@ func TestAModuleInstallationsConsentIsWhatTheCoreIssuesWithin(t *testing.T) {
 		_, _, err := s.moduleConsent(prefix, consentOf(t, InstallationScope{Capabilities: true}), 3)
 		require.True(t, errors.Is(err, ErrModuleRegistryStale), "%v", err)
 	})
+
+	t.Run("under an envelope a module installation follows it, whatever an earlier consent recorded", func(t *testing.T) {
+		s := &Service{}
+		s.SetModuleEnvelopeStore(fencedEnvelopes{})
+		s.InstallDerivedModulePrincipals(ModulePrincipalRegistry{ModulePrincipalID(prefix): grant}, 12, nil)
+		pinned := InstallationScope{Capabilities: true, OperationAudiences: map[string]ModuleOperationAudience{
+			"model": {Audience: "model", HeadlessScopes: read}}}
+		for _, consent := range []InstallationScope{pinned, {Capabilities: false}, {Capabilities: true}} {
+			bindings, active, err := s.moduleConsent(prefix, consentOf(t, consent), 12)
+			require.NoError(t, err)
+			require.True(t, active)
+			require.ElementsMatch(t, []string{"read", "write"}, bindings["model"].HeadlessScopes[0].GetActions(), "the envelope's grant, not the recorded one")
+		}
+	})
 }
