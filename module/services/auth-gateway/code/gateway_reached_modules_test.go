@@ -9,6 +9,7 @@ import (
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	modulecontract "github.com/codefly-dev/core/contracts/module"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 )
@@ -56,6 +57,35 @@ func TestARecordReachesTheModulesItDeclaresItInvokes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string][]string{"people": {"records"}}, snapshot.reaches)
 	require.Equal(t, map[string][]string{"notes-runtime": {"notes-a", "notes-b"}}, snapshot.sharedPrincipals)
+}
+
+// A page's edge dependencies are reach too: the modules it calls with the
+// person's own Work Context, named by principal, resolved to the alias that
+// carries each, beside the modules its bindings invoke for the person. One
+// named twice is listed once; one nothing carries, or its own, is not.
+func TestARecordReachesTheModulesItsPageDependsOn(t *testing.T) {
+	invoke := map[string][]string{"invoke": {"record:read"}}
+	page := reachingBinding(t, "people", "people-runtime",
+		solutionhost.AuthorityBinding{ID: "rows", Audience: "rows-runtime", Operations: invoke})
+	m, ok := appliedManifest(page)
+	require.True(t, ok)
+	m.Authority.EdgeDependencies = []modulecontract.EdgeDependency{
+		{Module: "assistant-runtime", Presence: "optional"},
+		{Module: "rows-runtime", Presence: "required"},
+		{Module: "people-runtime", Presence: "optional"},
+		{Module: "not-applied", Presence: "optional"},
+	}
+	body, err := solutionhost.Marshal(m)
+	require.NoError(t, err)
+	page.Applied.Generation.Document = string(body)
+	s := &appliedBindingsRegistry{bindings: []*accountsv1.SolutionHostBindingState{
+		page,
+		reachingBinding(t, "records", "rows-runtime"),
+		reachingBinding(t, "assistant", "assistant-runtime"),
+	}}
+	snapshot, err := s.List(context.Background(), nil)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]string{"people": {"assistant", "records"}}, snapshot.reaches)
 }
 
 // The frontend reads a record's reach from the registry snapshot route, so the

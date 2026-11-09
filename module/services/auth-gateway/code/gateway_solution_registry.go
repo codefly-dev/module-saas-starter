@@ -179,31 +179,42 @@ func principalCarriers(principals map[string]string) (map[string]string, map[str
 	return aliasOf, shared
 }
 
-// reachedModuleAliases is what an applied manifest declares it consumes, named
-// by the aliases a page can key on: the audience of every binding that invokes
-// on the asking person's session, other than the record's own principal.
+// reachedModuleAliases is what an applied manifest declares it consumes on
+// the asking person's session, named by the aliases a page can key on: every
+// edge dependency (a module the record's page calls with the person's own Work
+// Context, named by its principal), and the audience of every binding that
+// invokes for the person, other than the record's own principal.
 //
-// It mirrors the declared half of accounts' reached-module rule
+// The bindings mirror the declared half of accounts' reached-module rule
 // (accounts pkg/business/installation_readiness.go, readinessFor), not the
 // whole of it: accounts also drops a binding its DERIVED module registry
 // withheld (grant.OperationAudiences — the manifest's ask narrowed by any
 // module envelope), and that registry lives in accounts alone; no read this
 // gateway makes carries it. So a binding an envelope withheld is still listed
 // here, and the module's authority hop refuses those calls with its reason,
-// while the installation's readiness reports the binding as omitted. An
-// audience no single applied record carries as its principal resolves to
-// nothing and is left out, so a page sees it as not composed.
+// while the installation's readiness reports the binding as omitted. A
+// principal no single applied record carries resolves to nothing and is left
+// out, so a page sees it as not composed. Either way the list is a statement,
+// never a grant: what the person may do there is decided per call.
 func reachedModuleAliases(manifest *solutionhost.ModuleManifest, aliasOf map[string]string) []string {
 	own := manifest.Authority.Principal
 	seen := map[string]bool{}
 	var reached []string
-	for _, binding := range manifest.Authority.Bindings {
-		alias, known := aliasOf[binding.Audience]
-		if binding.Audience == own || len(binding.Operations[modulecontract.OperationInvoke]) == 0 || !known || seen[alias] {
-			continue
+	reach := func(principal string) {
+		alias, known := aliasOf[principal]
+		if principal == own || !known || seen[alias] {
+			return
 		}
 		seen[alias] = true
 		reached = append(reached, alias)
+	}
+	for _, edge := range manifest.Authority.EdgeDependencies {
+		reach(edge.Module)
+	}
+	for _, binding := range manifest.Authority.Bindings {
+		if len(binding.Operations[modulecontract.OperationInvoke]) > 0 {
+			reach(binding.Audience)
+		}
 	}
 	slices.Sort(reached)
 	return reached
