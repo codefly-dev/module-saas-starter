@@ -238,14 +238,17 @@ func runHostInterfaceFixture(t *testing.T) {
 		{alias: "org-directory", ownerUnaware: true, ceilings: []*authorityv1.WorkScopeV1{wireScope("directory.entry", "read")},
 			bindings: []solutionhost.AuthorityBinding{{ID: "records", Audience: "records", Operations: map[string][]string{
 				"invoke": {"example-entries:invoke", "example-entries:read"}, "lookup": {"example-entries:read"}, "headless": {"example-entries:invoke", "example-entries:read"}}}}},
-		{alias: "model", sharedKinds: []string{"modelservice.profiles"}, ceilings: []*authorityv1.WorkScopeV1{wireScope("modelservice.profiles", "invoke", "read"), wireScope("modelservice.datasets", "read")},
+		{alias: "model", sharedKinds: []string{"modelservice.profiles", "modelservice.templates"}, ceilings: []*authorityv1.WorkScopeV1{wireScope("modelservice.profiles", "invoke", "read"), wireScope("modelservice.datasets", "read"), wireScope("modelservice.templates", "read")},
 			bindings: []solutionhost.AuthorityBinding{
 				{ID: "records", Audience: "records", Operations: map[string][]string{"invoke": {"example-entries:invoke", "example-entries:read"}, "lookup": {"example-entries:read"}}},
 				{ID: "self", Audience: "model", Operations: map[string][]string{
-					"invoke":   {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read"},
-					"headless": {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read"}}},
+					"invoke":   {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read", "modelservice.templates:read"},
+					"headless": {"modelservice.profiles:invoke", "modelservice.profiles:read", "modelservice.datasets:read", "modelservice.templates:read"}}},
 			}},
-		{alias: "conformance-agent", ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-agent.conversation", "read")},
+		// conformance-agent checks owners, so the proposals solution's role
+		// reaches it selected to that solution's principal; its conversations
+		// are shared, so both people use it on their own session.
+		{alias: "conformance-agent", sharedKinds: []string{"conformance-agent.conversation"}, ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-agent.conversation", "read")},
 			bindings: []solutionhost.AuthorityBinding{{ID: "tools", Audience: "conformance-proposals", Operations: map[string][]string{"invoke": {"conformance-proposals.item:read"}}}}},
 		{alias: "conformance-idle", ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-idle.task", "read")},
 			bindings: []solutionhost.AuthorityBinding{{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:read"}, "headless": {"modelservice.profiles:read"}}}}},
@@ -280,7 +283,10 @@ func runHostInterfaceFixture(t *testing.T) {
 	// administrator lists installations the module can never name.
 	const artifactModule = "conformance-artifact"
 	faults.blockComposition(artifactModule)
-	deliverModule(t, ctx, conn, signer, conformanceModule{alias: artifactModule,
+	// It checks no owner: the artifact decision is reached through the
+	// people's organization roles on their own session, which reach no owned
+	// kind of a module that checks owners (RBAC-4a).
+	deliverModule(t, ctx, conn, signer, conformanceModule{alias: artifactModule, ownerUnaware: true,
 		ceilings: []*authorityv1.WorkScopeV1{wireScope(artifactModule+".intent", "activate", "run"), wireScope(artifactModule+".preview", "activate", "run")}})
 	require.NoError(t, consentModule(ctx, svc, store, fixtureOrganization, conformanceAlex, artifactModule))
 
@@ -431,7 +437,7 @@ func runHostInterfaceFixture(t *testing.T) {
 			OutsideKind: "example-entries", OutsideAction: "read", ResourceID: "a", OtherResourceID: "b", DroppedAction: "invoke"},
 		// Alex at model, out to records and back, keeps what the root narrowed.
 		ParentLimits: &conformance.ParentLimitsCase{Token: "fixture-alex", Root: "model", Credential: modelCredential, SelfBinding: "self",
-			Kind: "modelservice.profiles", DroppedKind: "modelservice.datasets", Action: "read", DroppedAction: "invoke", ResourceID: "a", OtherResourceID: "b",
+			Kind: "modelservice.profiles", DroppedKind: "modelservice.templates", Action: "read", DroppedAction: "invoke", ResourceID: "a", OtherResourceID: "b",
 			Out:  conformance.Hop{Credential: modelCredential, Audience: "records", Binding: "records"},
 			Back: conformance.Hop{Credential: recordsCredential, Audience: "model", Binding: "model"}},
 		// The assistant's installation, acting for itself through the two
@@ -573,7 +579,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.Equal(t, code, status.Code(err), "%v", err)
 		require.Contains(t, status.Convert(err).Message(), reason)
 	}
-	records := func(actions ...string) []*authorityv1.WorkScopeV1 {
+	entries := func(actions ...string) []*authorityv1.WorkScopeV1 {
 		return []*authorityv1.WorkScopeV1{{ResourceKind: "example-entries", Actions: actions}}
 	}
 
@@ -601,7 +607,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		// is issued nothing there any more.
 		leaver := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+leaverSession.GetBearer())
 		_, err := authorityv1.NewAuthorityServiceClient(conn).Issue(leaver, &authorityv1.IssueRequest{
-			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "records", Scopes: records("read")})
+			As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}}, Audience: "records", Scopes: entries("read")})
 		requireCode(t, err, codes.PermissionDenied, "not a member of this organization")
 	})
 
@@ -853,14 +859,14 @@ func runHostInterfaceFixture(t *testing.T) {
 	t.Run("a delegation is bounded by its grantor and ends with its revocation", func(t *testing.T) {
 		client := authorityv1.NewAuthorityServiceClient(conn)
 		alex, bob, alice := signIn("fixture-alex"), signIn("dev-bob"), signIn("dev-alice")
-		_, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "conformance-idle", Scopes: records("read"), Purpose: "uninstalled"})
+		_, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "conformance-idle", Scopes: entries("read"), Purpose: "uninstalled"})
 		requireCode(t, err, codes.FailedPrecondition, `module "conformance-idle" is not installed in organization`)
-		_, err = client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("write"), Purpose: "beyond"})
+		_, err = client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: entries("write"), Purpose: "beyond"})
 		requireCode(t, err, codes.PermissionDenied, "delegates what they do not hold")
-		_, err = client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: strings.Repeat("p", authority.MaxDelegationPurpose+1)})
+		_, err = client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: entries("read"), Purpose: strings.Repeat("p", authority.MaxDelegationPurpose+1)})
 		requireCode(t, err, codes.InvalidArgument, "at most 1024 characters")
 
-		d, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: "a scheduled job"})
+		d, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: entries("read"), Purpose: "a scheduled job"})
 		require.NoError(t, err)
 		require.True(t, d.GetActive())
 		issue := func(scopes []*authorityv1.WorkScopeV1) (*authorityv1.IssueResponse, error) {
@@ -876,7 +882,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		require.Len(t, hops, 1)
 		require.Equal(t, d.GetDelegationId(), hops[0].GetDelegationId())
 		require.Equal(t, []string{"read"}, hops[0].GetGrantedScopes()[0].GetActions())
-		_, err = issue(records("invoke"))
+		_, err = issue(entries("invoke"))
 		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 		_, err = client.Issue(ctx, &authorityv1.IssueRequest{
 			As:    &authorityv1.IssueRequest_Delegation{Delegation: &authorityv1.DelegationRef{DelegationId: d.GetDelegationId()}},
@@ -887,7 +893,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		requireCode(t, err, codes.NotFound, "delegation")
 
 		own, err := client.Issue(alex, &authorityv1.IssueRequest{As: &authorityv1.IssueRequest_Person{Person: &authorityv1.PersonSession{}},
-			Audience: "records", Scopes: records("read")})
+			Audience: "records", Scopes: entries("read")})
 		require.NoError(t, err)
 		revoked, err := client.RevokeDelegation(alex, &authorityv1.RevokeDelegationRequest{DelegationId: d.GetDelegationId()})
 		require.NoError(t, err)
@@ -906,7 +912,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		// capability is issued again rather than relied on across it.
 		_ = own
 
-		bobs, err := client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: records("read"), Purpose: "a member's job"})
+		bobs, err := client.Delegate(bob, &authorityv1.DelegateRequest{Module: "org-directory", Scopes: entries("read"), Purpose: "a member's job"})
 		require.NoError(t, err)
 		ended, err := client.RevokeDelegation(alice, &authorityv1.RevokeDelegationRequest{DelegationId: bobs.GetDelegationId()})
 		require.NoError(t, err, "an administrator of the organization ends a member's delegation")
@@ -920,7 +926,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		alex := signIn("fixture-alex")
 		for _, order := range [][]string{{"invoke", "lookup"}, {"lookup", "invoke"}} {
 			d, err := client.Delegate(alex, &authorityv1.DelegateRequest{Module: "org-directory", Purpose: "two issues, " + strings.Join(order, " then "),
-				Scopes: records("invoke", "read")})
+				Scopes: entries("invoke", "read")})
 			require.NoError(t, err)
 			for _, operation := range order {
 				issued, err := client.Issue(ctx, &authorityv1.IssueRequest{

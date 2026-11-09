@@ -101,6 +101,9 @@ roles:
     permissions:
       - {resource: example-entries, action: read}
       - {resource: directory.entry, action: read}
+      # The whole example-records kind as well, which documents serves: on the
+      # viewer's own session it reaches nothing there, documents checking owners.
+      - {resource: example-records, action: read}
   # A record reader holds example entries one id at a time (a resource-limited
   # grant): what ListResources answers by grant.
   - org: Acme Corp
