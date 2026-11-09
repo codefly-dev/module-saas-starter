@@ -22,7 +22,9 @@ an administrator installs (the authority's one `OfferService.ListOffers` read,
 `useOfferedTargets`: solutions alone) and, beside them, the module pages whose
 access is set up: a module declaring roles (`AvailableSolution.roles`,
 `isModulePage`) is installed by composition, never by an administrator, so its
-row says "Module page" and offers "Set up access", one act
+row offers "Set up" until someone holds one of its roles (the authority's
+`ListRoleGrants` on its composition installation), then reads "Set up" and
+offers "Manage access"; setting up is one act
 (`SetUpModulePageDialog`, `SetUpModulePage`): each role to its team, the
 conventional `<module>-<role>` unless changed, the administrator taking the
 ticked roles, exactly as an install assigns them. Every module, a module page
@@ -132,14 +134,17 @@ integration and is not established by this repository.
 
 The Setup loading state follows the kit's delay and minimum visible duration,
 including when the authority answers immediately after the indicator appears.
-When the host cannot read composed tool bindings, the kit says agent tools
-cannot be shown because this host reads no composed tool bindings, a limit of
-the read and never proof of no exposure or reassurance about the installation.
-Its permission ceiling lists the modules the solution binds (what it may ask as
-itself) and the modules its declaration depends on (`edge_dependencies`,
-reached as the person, asking nothing as itself); roles that cover no
-operation are explained as the authority's answer that no delivered module
-declares an operation requiring what they grant.
+The kit reads for an organisation administrator: a status line (with this
+host's health, an update available and what it asks beyond the approved reach,
+from `ReviewedSolutionInstall.approved_roles`, and what `Installation.unreached`
+says cannot be reached now), then per role what a holder can do, grouped by
+where, beside who has it (a team linked to its page with its people added and
+removed in place). Operations, tools, the permission ceiling and the consent's
+identifiers are under Technical details; when the host reads no composed tool
+bindings, that section says tools are not listed, never that none is exposed.
+The install and update reviews use the same words (`roleAbilities`,
+`updateAsks`), and Admin → Solutions names each installed target's status on
+one line, who holds each role by team name, and its install date.
 
 The browser reaches that interface at exactly the procedures the local
 authority's edge serves a browser (`src/lib/host-setup-procedures.ts`):

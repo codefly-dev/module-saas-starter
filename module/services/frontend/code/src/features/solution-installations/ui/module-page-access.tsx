@@ -6,6 +6,7 @@ import {
 } from "@codefly-dev/saas-ui/solution";
 import { createClient } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { InstallationService } from "@/gen/host/installation/v1/installation_pb";
 import { apiTransport } from "@/lib/connect/transport";
 import {
@@ -33,11 +34,14 @@ export function ModulePageAccess({
 	installationId,
 	target,
 	subjects,
+	teamControls,
 }: {
 	organizationId: string;
 	installationId: string;
 	target: string;
 	subjects: readonly SetupSubject[];
+	/** The host's control for a team holding a role: its people, in place. */
+	teamControls?: (team: SetupSubject) => ReactNode;
 }) {
 	const queryClient = useQueryClient();
 	const key = ["module-page-access", organizationId, installationId];
@@ -57,17 +61,27 @@ export function ModulePageAccess({
 	});
 	const change = useMutation({
 		mutationFn: (request: Promise<unknown>) => request,
-		onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+		onSettled: () =>
+			Promise.all([
+				queryClient.invalidateQueries({ queryKey: key }),
+				queryClient.invalidateQueries({
+					queryKey: ["installation-role-grants", organizationId],
+				}),
+			]),
 	});
-	const label = (kind: "person" | "team", id: string) =>
-		subjects.find((s) => s.kind === kind && s.id === id)?.label ?? id;
+	const subject = (kind: "person" | "team", id: string): SetupSubject =>
+		subjects.find((s) => s.kind === kind && s.id === id) ?? {
+			kind,
+			id,
+			label: id,
+		};
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className="text-base">Who may use {target}</CardTitle>
+				<CardTitle className="text-base">Who has access to {target}</CardTitle>
 				<CardDescription>
-					A module page is part of the platform; its roles decide who may use
-					it. Grant a role to a team or a person, or revoke one.
+					{target} is part of the platform; its roles decide who can use it.
+					Each role goes to teams or people, and anyone in a team has it.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-4">
@@ -81,68 +95,88 @@ export function ModulePageAccess({
 						{hostRefusal(change.error)}
 					</Banner>
 				)}
-				{read.data && (
-					<>
-						<ul aria-label="Role holders" className="space-y-1">
-							{read.data.grants.length === 0 && (
-								<li className="text-muted-foreground">
-									Nobody holds a role on it yet.
-								</li>
-							)}
-							{read.data.grants.map((g) => {
-								const who = g.teamId
-									? `team ${label("team", g.teamId)}`
-									: label("person", g.personId);
-								return (
-									<li
-										key={`${g.role}:${g.teamId}:${g.personId}`}
-										className="flex items-center justify-between gap-2"
-									>
-										<span>
-											{g.role}: {who}
-										</span>
-										<Button
-											size="sm"
-											variant="outline"
-											aria-label={`Revoke ${g.role} from ${who}`}
-											disabled={change.isPending}
-											onClick={() =>
-												change.mutate(
-													installations.revokeRole({
-														organizationId,
-														installationId,
-														role: g.role,
-														personId: g.personId,
-														teamId: g.teamId,
-													}),
-												)
-											}
+				{read.data?.roles.map((role) => {
+					const holders = read.data.grants.filter((g) => g.role === role);
+					return (
+						<section
+							key={role}
+							aria-label={`Role ${role}`}
+							className="space-y-2 rounded-lg border p-3"
+						>
+							<h4 className="font-medium">
+								{role[0]?.toUpperCase()}
+								{role.slice(1)}
+							</h4>
+							<ul aria-label={`Who has ${role}`} className="space-y-2">
+								{holders.length === 0 && (
+									<li className="text-muted-foreground">Nobody has it yet.</li>
+								)}
+								{holders.map((g) => {
+									const who = g.teamId
+										? subject("team", g.teamId)
+										: subject("person", g.personId);
+									const name =
+										who.kind === "team" ? `Team ${who.label}` : who.label;
+									return (
+										<li
+											key={`${g.teamId}:${g.personId}`}
+											className="space-y-1 rounded-md bg-muted/40 p-2"
 										>
-											Revoke
-										</Button>
-									</li>
-								);
-							})}
-						</ul>
-						<SolutionRoleGrantForm
-							roles={read.data.roles}
-							subjects={subjects}
-							allowUnlistedSubjects={false}
-							busy={change.isPending}
-							onGrant={({ role, personId, teamId }) =>
-								change.mutate(
-									installations.grantRole({
-										organizationId,
-										installationId,
-										role,
-										personId,
-										teamId,
-									}),
-								)
-							}
-						/>
-					</>
-				)}
+											<div className="flex items-center justify-between gap-2">
+												{who.href ? (
+													<a className="underline" href={who.href}>
+														{name}
+													</a>
+												) : (
+													<span>{name}</span>
+												)}
+												<Button
+													size="sm"
+													variant="outline"
+													aria-label={`Remove ${role} from ${name}`}
+													disabled={change.isPending}
+													onClick={() =>
+														change.mutate(
+															installations.revokeRole({
+																organizationId,
+																installationId,
+																role: g.role,
+																personId: g.personId,
+																teamId: g.teamId,
+															}),
+														)
+													}
+												>
+													Remove
+												</Button>
+											</div>
+											{who.kind === "team" && teamControls?.(who)}
+										</li>
+									);
+								})}
+							</ul>
+							<SolutionRoleGrantForm
+								roles={[role]}
+								fixedRole={role}
+								subjects={subjects}
+								allowUnlistedSubjects={false}
+								busy={change.isPending}
+								submitLabel={`Give ${role} access`}
+								onGrant={({ personId, teamId }) =>
+									change.mutate(
+										installations.grantRole({
+											organizationId,
+											installationId,
+											role,
+											personId,
+											teamId,
+										}),
+									)
+								}
+							/>
+						</section>
+					);
+				})}
 			</CardContent>
 		</Card>
 	);

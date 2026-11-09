@@ -186,7 +186,10 @@ export function RoleAbilitiesList({
 	return (
 		<ul
 			className="flex flex-col gap-2"
-			aria-label={label ?? `What a ${abilities.role} can do`}
+			aria-label={
+				label ??
+				`What ${article(abilities.role).toLowerCase()} ${abilities.role} can do`
+			}
 		>
 			{abilities.groups.map((group) => (
 				<li key={group.key}>
@@ -281,11 +284,11 @@ function StatusSection({
 									{update.asks.map((asks) => (
 										<div key={asks.role}>
 											<p className="type-emphasis">
-												A {asks.role} would also be able to
+												{article(asks.role)} {asks.role} would also be able to
 											</p>
 											<RoleAbilitiesList
 												abilities={asks}
-												label={`What the update adds for a ${asks.role}`}
+												label={`What the update adds for ${article(asks.role).toLowerCase()} ${asks.role}`}
 											/>
 										</div>
 									))}

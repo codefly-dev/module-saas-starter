@@ -1,6 +1,11 @@
+import { updateAsks } from "@codefly-dev/saas-ui/solution";
 import { createClient } from "@connectrpc/connect";
-import { useQuery } from "@tanstack/react-query";
-import { OfferService } from "@/gen/host/installation/v1/installation_pb";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import {
+	InstallationService as HostInstallationService,
+	OfferService,
+	type RoleGrant,
+} from "@/gen/host/installation/v1/installation_pb";
 import {
 	type AvailableSolution,
 	InstallationStatus,
@@ -10,6 +15,7 @@ import { apiTransport } from "@/lib/connect/transport";
 import { useInstallationService } from "@/lib/hooks/use-api-client";
 
 const offers = createClient(OfferService, apiTransport);
+const hostInstallations = createClient(HostInstallationService, apiTransport);
 
 // The largest page each listing serves. Both listings are bounded per call, so
 // the page reads every page rather than showing the first and implying it is
@@ -20,7 +26,63 @@ export const solutionInstallationKeys = {
 	available: (orgId: string) => ["available-solutions", orgId] as const,
 	installed: (orgId: string) => ["solution-installations", orgId] as const,
 	offered: (orgId: string) => ["solution-offers", orgId] as const,
+	held: (orgId: string) => ["installation-authority", orgId] as const,
+	grants: (orgId: string, installationId: string) =>
+		["installation-role-grants", orgId, installationId] as const,
 };
+
+/**
+ * Each installation as the authority holds it, by id: its declared roles and
+ * what its roles name through a binding that the composition does not reach
+ * now (`unreached`), which the host's own listing does not carry.
+ */
+export function useAuthorityInstallations(orgId: string) {
+	return useQuery({
+		queryKey: solutionInstallationKeys.held(orgId),
+		enabled: !!orgId,
+		retry: false,
+		queryFn: async () =>
+			new Map(
+				(
+					await hostInstallations.list({ organizationId: orgId })
+				).installations.map((installation) => [installation.id, installation]),
+			),
+	});
+}
+
+/**
+ * Who holds which role on each of these installations, as the authority
+ * answers ListRoleGrants: one read per installation, keyed by its id. An
+ * installation whose read failed is absent, and `failed` names it.
+ */
+export function useRoleGrants(
+	orgId: string,
+	installationIds: readonly string[],
+) {
+	return useQueries({
+		queries: installationIds.map((installationId) => ({
+			queryKey: solutionInstallationKeys.grants(orgId, installationId),
+			enabled: !!orgId,
+			retry: false,
+			queryFn: async () =>
+				(
+					await hostInstallations.listRoleGrants({
+						organizationId: orgId,
+						installationId,
+					})
+				).grants,
+		})),
+		combine: (results) => {
+			const grants = new Map<string, RoleGrant[]>();
+			const failed = new Set<string>();
+			results.forEach((result, i) => {
+				if (result.data) grants.set(installationIds[i], result.data);
+				else if (result.isError) failed.add(installationIds[i]);
+			});
+			return { grants, failed };
+		},
+	});
+}
 
 /**
  * The targets this organization's administrator may choose, by route alias:
@@ -100,6 +162,38 @@ export function useInstallations(orgId: string) {
 				pageToken = page.nextPageToken;
 			} while (pageToken);
 			return installations;
+		},
+	});
+}
+
+/**
+ * What an update the authority offers on an installed solution asks beyond
+ * what was approved, in words (`updateAsks`): the host's review of the
+ * target beside the authority's review of the composition now. `asks` is
+ * undefined when the approval did not record its reach.
+ */
+export function useUpdateAsks(
+	orgId: string,
+	targetId: string,
+	enabled: boolean,
+) {
+	const service = useInstallationService();
+	return useQuery({
+		queryKey: ["solution-update-asks", orgId, targetId],
+		enabled: enabled && !!orgId && !!targetId,
+		retry: false,
+		refetchOnWindowFocus: false,
+		queryFn: async () => {
+			const review = await service.reviewSolutionInstall({ orgId, targetId });
+			const offer = await offers.reviewOffer({
+				organizationId: orgId,
+				target: review.target,
+			});
+			return {
+				asks: review.approvedRoles.length
+					? updateAsks(offer.target, offer.roles, review.approvedRoles)
+					: undefined,
+			};
 		},
 	});
 }

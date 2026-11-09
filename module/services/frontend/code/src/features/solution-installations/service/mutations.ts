@@ -84,6 +84,12 @@ function invalidate(
 		queryClient.invalidateQueries({
 			queryKey: solutionInstallationKeys.installed(orgId),
 		}),
+		queryClient.invalidateQueries({
+			queryKey: solutionInstallationKeys.held(orgId),
+		}),
+		queryClient.invalidateQueries({
+			queryKey: ["installation-role-grants", orgId],
+		}),
 	]);
 }
 

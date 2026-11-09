@@ -1,3 +1,4 @@
+import { scopesText } from "@codefly-dev/saas-ui/solution";
 import type { ReviewedOffer } from "@/gen/host/installation/v1/installation_pb";
 import { offerScopeText } from "../model/install-review";
 
@@ -19,15 +20,15 @@ export function DeclaredAccess({
 	const machineRole = offer.roles.find(
 		(role) => role.name === installationRole,
 	);
-	const heading = subject === "solution" ? "Solution access" : "Module access";
+	const heading = `What the ${subject} can do on its own`;
 	return (
 		<section aria-label={heading} className="space-y-2">
 			<h3 className="font-medium">{heading}</h3>
 			{installationRole === "none" ? (
 				<p>
-					This {subject} receives no standing machine access.
+					Nothing: it only acts for the person using it.
 					{subject === "solution" &&
-						" Setup receives only temporary permission to complete this installation."}
+						" While it is being set up, it gets temporary permission to finish."}
 				</p>
 			) : !installationRole ? (
 				<p>
@@ -35,20 +36,13 @@ export function DeclaredAccess({
 					install it until its owner declares one.
 				</p>
 			) : (
-				<>
-					<p>
-						The {subject} declares its installation access as “
-						{machineRole?.name ?? installationRole}”.
-					</p>
-					<ul className="list-disc pl-5">
-						{machineRole?.scopes.map(offerScopeText).map((text) => (
-							<li key={text}>{text}</li>
-						))}
-					</ul>
-					{machineRole?.scopes.length === 0 && (
-						<p>This declared role grants no data access.</p>
-					)}
-				</>
+				<p>
+					It acts on its own as its “{machineRole?.name ?? installationRole}”
+					role:{" "}
+					{machineRole?.scopes.length
+						? `${scopesText(machineRole.scopes)}, only what this installation owns.`
+						: "with no access to any data."}
+				</p>
 			)}
 		</section>
 	);

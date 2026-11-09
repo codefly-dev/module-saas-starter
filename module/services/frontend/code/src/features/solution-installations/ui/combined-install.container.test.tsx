@@ -209,14 +209,14 @@ describe("combined reviewed installation", () => {
 		let dialog = await open();
 		await within(dialog).findByText(/Also installs: Records/);
 		expect(
-			within(dialog).getByText("Already installed and reused: Runtime"),
+			within(dialog).getByText("Already installed, used as is: Runtime"),
 		).toBeTruthy();
 		expect(
 			within(dialog).getByText("Optional, not installed: module:optional"),
 		).toBeTruthy();
 		expect(within(dialog).queryByText(/Run jobs in: index/)).toBeNull();
 		fireEvent.click(
-			within(dialog).getByRole("button", { name: "Show technical access" }),
+			within(dialog).getByRole("button", { name: "Technical details" }),
 		);
 		expect(within(dialog).getByText(/Run jobs in: index/)).toBeTruthy();
 		expect(
@@ -294,27 +294,23 @@ describe("combined reviewed installation", () => {
 		renderInApp(<Page />);
 		const dialog = await open();
 		const access = await within(dialog).findByRole("region", {
-			name: "Team access",
+			name: "Roles",
 		});
 		await within(access).findByText(/existing team Example-Solution-Viewer/);
+		const me = (role: string) =>
+			within(
+				within(access).getByRole("region", { name: `Role ${role}` }),
+			).getByRole("checkbox", {
+				name: "Add me to this team",
+			}) as HTMLInputElement;
+		expect(me("installer").checked).toBe(true);
+		expect(me("viewer").checked).toBe(true);
 		expect(
-			within(access).getByText(
-				"You will get the ticked roles; others get access by joining a team, here or in Set up.",
-			),
+			within(access).getByText(/example-solution-installer will be created/),
 		).toBeTruthy();
-		const gets = within(access).getByRole("group", { name: "You will get" });
-		const installer = within(gets).getByRole("checkbox", { name: "installer" });
-		const viewer = within(gets).getByRole("checkbox", { name: "viewer" });
-		expect((installer as HTMLInputElement).checked).toBe(true);
-		expect((viewer as HTMLInputElement).checked).toBe(true);
-		expect(
-			within(access).getByText(
-				/example-solution-installer \(will be created\)/,
-			),
-		).toBeTruthy();
-		fireEvent.click(viewer);
-		expect((viewer as HTMLInputElement).checked).toBe(false);
-		expect((installer as HTMLInputElement).checked).toBe(true);
+		fireEvent.click(me("viewer"));
+		expect(me("viewer").checked).toBe(false);
+		expect(me("installer").checked).toBe(true);
 		// Nothing is picked: approving is all Install waits on.
 		fireEvent.click(
 			within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
@@ -333,11 +329,13 @@ describe("combined reviewed installation", () => {
 		renderInApp(<Page />);
 		const dialog = await open();
 		const access = await within(dialog).findByRole("region", {
-			name: "Team access",
+			name: "Roles",
 		});
 		await within(access).findByText(/existing team Example-Solution-Viewer/);
 		fireEvent.click(
-			within(access).getByRole("checkbox", { name: "installer" }),
+			within(
+				within(access).getByRole("region", { name: "Role installer" }),
+			).getByRole("checkbox", { name: "Add me to this team" }),
 		);
 		fireEvent.click(
 			within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
@@ -404,36 +402,44 @@ describe("combined reviewed installation", () => {
 		renderInApp(<Page />);
 		const dialog = await open();
 		const reach = await within(dialog).findByRole("region", {
-			name: "What people can do",
+			name: "Roles",
 		});
-		const text = reach.textContent ?? "";
+		// Each role reads what its holder can do, grouped by where: direct
+		// first, then through the solution, then the holder's own access.
+		const editor = within(reach).getByRole("list", {
+			name: "What an editor can do",
+		});
+		const text = editor.textContent ?? "";
 		const groups = [
-			"In Example Solution:",
-			"Through Example Solution, in documents:",
-			"Uses your own access in directory:",
+			"In Example Solution",
+			"Through Example Solution, in documents",
+			"With their own access in directory",
 		];
 		for (const group of groups)
-			expect(within(reach).getByText(group)).toBeTruthy();
-		// Direct first, then through the solution, then the holder's own access.
+			expect(within(editor).getByText(group)).toBeTruthy();
 		expect(groups.map((g) => text.indexOf(g))).toEqual(
 			[...groups.map((g) => text.indexOf(g))].sort((a, b) => a - b),
 		);
 		// What each role grants there, never the operations a target with no
 		// operation policy lets every role reach.
-		expect(text).toContain(
-			"editor: read and write pages (this installation's items)",
-		);
-		expect(text).toContain("viewer: read pages (this installation's items)");
+		expect(within(editor).getByText("Read and edit pages")).toBeTruthy();
+		expect(within(editor).getByText("Read documents")).toBeTruthy();
+		expect(
+			within(editor).getByText("Only what they already hold there themselves"),
+		).toBeTruthy();
 		expect(text).not.toMatch(/delete pages/);
-		expect(text).toContain("editor: read documents");
-		expect(text).toContain("editor: what you hold there yourself");
+		expect(
+			within(
+				within(reach).getByRole("list", { name: "What a viewer can do" }),
+			).getByText("Read pages"),
+		).toBeTruthy();
 		// Operations in plain words; identifiers only behind the disclosure.
 		expect(dialog.textContent).not.toMatch(/docs\.Documents|\{id\}/);
 		fireEvent.click(
-			within(dialog).getByRole("button", { name: "Show technical access" }),
+			within(dialog).getByRole("button", { name: "Technical details" }),
 		);
 		const technical = within(dialog).getByRole("region", {
-			name: "Technical access",
+			name: "Technical details",
 		});
 		expect(technical.textContent).toContain(
 			"editor — binding Example Solution → documents: /docs.Documents/ReadDocument, /docs.Documents/ListDocuments",
@@ -491,21 +497,21 @@ describe("combined reviewed installation", () => {
 		});
 		expect(
 			within(supporting).getByText(
-				"Also installs: Alpha, Bravo, Charlie, Delta — no standing machine access",
+				"Also installs: Alpha, Bravo, Charlie, Delta — none acts on its own",
 			),
 		).toBeTruthy();
 		expect(
 			within(supporting).getByText(
-				"Already installed and reused: Echo, Foxtrot, Golf, Hotel",
+				"Already installed, used as is: Echo, Foxtrot, Golf, Hotel",
 			),
 		).toBeTruthy();
 		expect(within(dialog).queryByText(/Perform operations/)).toBeNull();
 		expect(dialog.textContent).not.toMatch(/EXAMPLE__|Run jobs in/);
 		fireEvent.click(
-			within(dialog).getByRole("button", { name: "Show technical access" }),
+			within(dialog).getByRole("button", { name: "Technical details" }),
 		);
 		const technical = within(dialog).getByRole("region", {
-			name: "Technical access",
+			name: "Technical details",
 		});
 		// One line per module for the operation both faces reach, never its id.
 		expect(
@@ -532,7 +538,7 @@ describe("combined reviewed installation", () => {
 		renderInApp(<Page />);
 		const install = async () => {
 			const dialog = await open();
-			await within(dialog).findByRole("region", { name: "Team access" });
+			await within(dialog).findByRole("region", { name: "Roles" });
 			fireEvent.click(
 				within(dialog).getByRole("checkbox", { name: /I approve this target/ }),
 			);

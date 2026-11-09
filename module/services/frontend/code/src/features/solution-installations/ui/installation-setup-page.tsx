@@ -24,6 +24,7 @@ import {
 	Spinner,
 	useLoadingPhase,
 } from "@/shared/ui";
+import { healthFacts } from "../model/access";
 import {
 	hostRefusal,
 	installedRows,
@@ -39,10 +40,16 @@ import {
 } from "../model/readiness";
 import {
 	useGrantInstallationToTeam,
+	useInstallReviewedSolution,
 	useRetryInstallation,
 } from "../service/mutations";
-import { useAvailableSolutions, useInstallations } from "../service/queries";
+import {
+	useAvailableSolutions,
+	useInstallations,
+	useUpdateAsks,
+} from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
+import { InstallSolutionDialog } from "./install-solution-dialog";
 import { Fact } from "./solution-installations-page";
 import { SolutionSetupPanel } from "./solution-setup-panel";
 
@@ -107,8 +114,8 @@ export function InstallationSetupPage({
 						{row?.target?.routeAlias || "This installation"}
 					</h1>
 					<p className="text-muted-foreground">
-						{entryKindText(row, rolesDeclared)} — what it is, what it still
-						needs before it will work, and who may reach it.
+						{entryKindText(row, rolesDeclared)} — where it stands, what each
+						role can do, and who has it.
 					</p>
 				</div>
 				<Button
@@ -160,6 +167,17 @@ function InstallationSetup({
 	const offers = reachOffers(row.reachedModules);
 	const retry = useRetryInstallation(orgId);
 	const grant = useGrantInstallationToTeam(orgId);
+	// An update the authority offers: what it asks, and its review here.
+	const upgradeAvailable =
+		row.installation?.upgradeAvailable === true &&
+		row.target?.kind === "solution";
+	const asks = useUpdateAsks(
+		orgId,
+		row.target?.targetId ?? "",
+		upgradeAvailable,
+	);
+	const update = useInstallReviewedSolution(orgId);
+	const [updating, setUpdating] = useState(false);
 	const [granting, setGranting] = useState(false);
 	const [refusal, setRefusal] = useState<string | null>(null);
 	// What the last grant carried, as the host reported it in the grant's own
@@ -224,7 +242,50 @@ function InstallationSetup({
 				conditions={conditions}
 				installation={row.installation}
 				modulePage={row.target?.kind === "module" && rolesDeclared === true}
+				facts={healthFacts(row.health)}
+				update={
+					upgradeAvailable
+						? {
+								asks: asks.data?.asks,
+								action: (
+									<div>
+										<Button
+											size="sm"
+											disabled={update.isPending}
+											onClick={() => {
+												update.reset();
+												setUpdating(true);
+											}}
+										>
+											Review update
+										</Button>
+									</div>
+								),
+							}
+						: undefined
+				}
 			/>
+			{updating && row.target && (
+				<InstallSolutionDialog
+					orgId={orgId}
+					solution={row.target}
+					upgrade
+					isPending={update.isPending}
+					error={update.isError ? hostRefusal(update.error) : undefined}
+					onSubmit={(review, access) =>
+						update.mutate(
+							{ review, access },
+							{
+								onSuccess: () => {
+									toast.success(`${name} updated. Everyone keeps their role.`);
+									setUpdating(false);
+								},
+							},
+						)
+					}
+					onClose={() => setUpdating(false)}
+				/>
+			)}
 
 			{hasHostScopeRoot ? (
 				<Card>
@@ -373,10 +434,9 @@ function InstallationSetup({
 				</Card>
 			) : (
 				<p className="text-sm text-muted-foreground">
-					Installing gave each role above to its team, and the installer the
-					roles they ticked. Grant a role here, or add people to a role's team,
-					to give anyone else access; nobody's own access in the supporting
-					modules changes.
+					To give someone a role, add them to a team that has it, or give the
+					role to them or their team above. What they already hold in other
+					modules does not change.
 				</p>
 			)}
 

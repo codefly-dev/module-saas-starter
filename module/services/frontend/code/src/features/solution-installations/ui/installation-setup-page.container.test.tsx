@@ -97,7 +97,7 @@ it("uses shared solution roles without offering a legacy host grant", async () =
 	render();
 	expect(
 		await screen.findByText(
-			/Grant a role here, or add people to a role.s team/,
+			/To give someone a role, add them to a team that has it/,
 		),
 	).toBeTruthy();
 	expect(screen.queryByText("Team access on this host")).toBeNull();
@@ -393,19 +393,28 @@ it("shows the solution's roles, what they grant and who holds them, from the aut
 	);
 	render();
 
-	// One list of the declared roles, and the operations they reach grouped by
-	// module, closed until asked for: a wire path is not what an administrator
-	// opened this page to read.
+	// Each role reads what its holder can do and who has it, a team linked to
+	// its page; the operations, by module, wait behind the technical details.
+	const viewer = within(
+		await screen.findByRole("region", { name: "Role viewer" }),
+	);
+	expect(viewer.getByText("Read pages")).toBeTruthy();
 	expect(
-		within(await screen.findByRole("list", { name: "Roles" })).getByText(
-			"viewer",
+		(await viewer.findByRole("link", { name: "Team Support" })).getAttribute(
+			"href",
 		),
-	).toBeTruthy();
+	).toBe(`/admin/teams/${SUPPORT_TEAM}`);
+	expect(screen.queryByText("GET /pages/{id}")).toBeNull();
+	fireEvent.click(screen.getByRole("button", { name: "Technical details" }));
 	fireEvent.click(
 		await screen.findByRole("button", { name: /^suite · 1 operation/ }),
 	);
 	expect(await screen.findByText("GET /pages/{id}")).toBeTruthy();
-	expect(await screen.findByText("viewer · Team Support")).toBeTruthy();
+	// The status line carries the host's readiness and health.
+	const status = within(screen.getByRole("list", { name: "Status" }));
+	expect(status.getByText("Installed")).toBeTruthy();
+	expect(status.getByText("Ready")).toBeTruthy();
+	expect(status.getByText("Healthy")).toBeTruthy();
 	expect(screen.getByText("Team access on this host")).toBeTruthy();
 	expect(asked[0]).toEqual({
 		procedure: "OfferService/ReviewOffer",
@@ -465,6 +474,12 @@ it("names a required module in the ceiling, explains roles that cover no operati
 	);
 	render();
 
+	// The ceiling, the operations and the tool note are an engineer's: closed
+	// until asked for, and plain when opened.
+	expect(screen.queryByRole("list", { name: "Permission ceiling" })).toBeNull();
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Technical details" }),
+	);
 	const ceiling = within(
 		await screen.findByRole("list", { name: "Permission ceiling" }),
 	);
@@ -476,21 +491,17 @@ it("names a required module in the ceiling, explains roles that cover no operati
 		"Required: the solution does not work without it.",
 	);
 	expect(screen.queryByText("The solution calls no other module.")).toBeNull();
-
 	expect(
 		screen.getByText(
-			/no delivered module declares an operation that requires what they grant/,
+			"No delivered module declares an operation these roles cover.",
 		),
 	).toBeTruthy();
 	expect(
-		screen.queryByText("No composed operation is covered by any role."),
-	).toBeNull();
-
-	expect(
 		screen.getByText(
-			"Agent tools cannot be shown: this host reads no composed tool bindings.",
+			"Agent tools are not listed: this host does not read them.",
 		),
 	).toBeTruthy();
+	expect(screen.queryByText(/Agent tools cannot be shown/)).toBeNull();
 	expect(screen.queryByText(/nothing about this installation/)).toBeNull();
 });
 
@@ -550,11 +561,16 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 	);
 	render();
 
-	const holders = await screen.findByRole("list", { name: "Role holders" });
-	await within(holders).findByText("viewer: team Support");
+	const viewer = within(
+		await screen.findByRole("region", { name: "Role viewer" }),
+	);
+	const holders = within(
+		await viewer.findByRole("list", { name: "Who has viewer" }),
+	);
+	await holders.findByRole("link", { name: "Team Support" });
 	fireEvent.click(
-		within(holders).getByRole("button", {
-			name: "Revoke viewer from team Support",
+		holders.getByRole("button", {
+			name: "Remove viewer from Team Support",
 		}),
 	);
 	await waitFor(() => expect(changes).toHaveLength(1));
@@ -567,13 +583,16 @@ it("a set-up module page's grants are edited from its Setup page", async () => {
 			teamId: SUPPORT_TEAM,
 		},
 	});
-	fireEvent.change(screen.getByLabelText("Role"), {
-		target: { value: "installer" },
-	});
-	fireEvent.change(screen.getByLabelText("Person or team"), {
+	const installer = within(
+		screen.getByRole("region", { name: "Role installer" }),
+	);
+	expect(installer.getByText("Nobody has it yet.")).toBeTruthy();
+	fireEvent.change(installer.getByLabelText("Person or team"), {
 		target: { value: `team:${SUPPORT_TEAM}` },
 	});
-	fireEvent.click(screen.getByRole("button", { name: "Grant role" }));
+	fireEvent.click(
+		installer.getByRole("button", { name: "Give installer access" }),
+	);
 	await waitFor(() => expect(changes).toHaveLength(2));
 	expect(changes[1]).toEqual({
 		procedure: "GrantRole",
@@ -613,4 +632,76 @@ it("keeps the host team access card for a module the authority reads no roles of
 			.getAttribute("href"),
 	).toBe("/admin/modules");
 	expect(screen.getByText(/^Module — /)).toBeTruthy();
+});
+
+// An update the authority offers is named on the installation's own page, in
+// the roles' words, with what can't be reached right now, and is reviewed
+// from there.
+it("says what an update asks and what can't be reached, and reviews the update from the page", async () => {
+	const collections = (actions: string[]) => ({
+		path: ["suite", "agent", "documents"],
+		module: "documents",
+		via: "binding",
+		scopes: [{ resourceKind: "documents.collection", actions }],
+	});
+	serve({
+		installations: [
+			installation({
+				rootScopePath: "",
+				installation: {
+					...installation().installation,
+					upgradeAvailable: true,
+				},
+				readiness: { ready: true, unmet: [] },
+			}),
+		],
+	});
+	server.use(
+		http.post(rpc("InstallationService", "ReviewSolutionInstall"), () =>
+			HttpResponse.json({
+				orgId: "org-1",
+				targetId: SUITE_TARGET,
+				target: "suite",
+				installationRole: "none",
+				approval: { targetId: "suite", generation: "5", digest: "d" },
+				approvedRoles: [{ name: "editor", reach: [collections(["read"])] }],
+			}),
+		),
+		http.post(
+			"http://localhost:3000/host.installation.v1.OfferService/ReviewOffer",
+			() =>
+				HttpResponse.json({
+					target: "suite",
+					installationRole: "none",
+					approval: { targetId: "suite", generation: "5", digest: "d" },
+					installation: {
+						id: SUITE_INSTALLATION,
+						status: "STATUS_ACTIVE",
+						upgradeAvailable: true,
+						unreached: [
+							"role viewer reaches nothing of model.profile:invoke through agent: no module agent reaches consumes it for a person",
+						],
+					},
+					roles: [{ name: "editor", reach: [collections(["read", "create"])] }],
+				}),
+		),
+		http.post(
+			"http://localhost:3000/host.installation.v1.InstallationService/ListRoleGrants",
+			() => HttpResponse.json({ grants: [] }),
+		),
+	);
+	render();
+	const added = await screen.findByRole("list", {
+		name: "What the update adds for an editor",
+	});
+	expect(within(added).getByText("Create collections")).toBeTruthy();
+	expect(within(added).queryByText("Read collections")).toBeNull();
+	expect(
+		screen.getByText(
+			"A viewer can't use profiles through agent right now: agent no longer passes it on.",
+		),
+	).toBeTruthy();
+	fireEvent.click(screen.getByRole("button", { name: "Review update" }));
+	const dialog = await screen.findByRole("dialog");
+	expect(within(dialog).getByText("Update suite")).toBeTruthy();
 });

@@ -5276,6 +5276,26 @@
       "remaining": "Owner stories or a reviewed nonvisual exclusion still required; the presentation is the kit's SolutionSetup, with its own stories."
     },
     {
+      "source": "src/features/solution-installations/ui/team-people.tsx",
+      "imports": [
+        "@codefly-dev/saas-ui/solution",
+        "@tanstack/react-query",
+        "react",
+        "@/components/user-picker",
+        "@/features/teams/model/types",
+        "@/features/teams/service/mutations",
+        "@/features/teams/service/queries",
+        "@/shared/ui",
+        "../model/installations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the people of a team holding a role, where the role is read on Setup: their count, and adding or removing them in place. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
       "source": "src/features/solution-installations/ui/when-roles-declared.tsx",
       "imports": [
         "@connectrpc/connect",

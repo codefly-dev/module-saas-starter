@@ -1,17 +1,20 @@
 "use client";
 
+import {
+	type AbilityRole,
+	article,
+	RoleAbilitiesList,
+	roleAbilities,
+	updateAsks,
+} from "@codefly-dev/saas-ui/solution";
 import { useState } from "react";
 import type { ReviewedOffer } from "@/gen/host/installation/v1/installation_pb";
 import type { ReviewedSupportingModule } from "@/gen/saas/accounts/v1/installations_pb";
 import { Button } from "@/shared/ui";
-import {
-	reachDetail,
-	roleReach,
-	supportingSummary,
-} from "../model/install-review";
+import { reachDetail, supportingSummary } from "../model/install-review";
 import { DeclaredOperations } from "./declared-access";
 
-/** What each declared role lets people do, in plain words, grouped by where. */
+/** What each declared role lets people do, one card per role. */
 export function RoleReach({
 	offer,
 }: {
@@ -19,20 +22,71 @@ export function RoleReach({
 }) {
 	if (!offer.roles.length) return null;
 	return (
-		<section aria-label="What people can do" className="space-y-2">
-			<h3 className="font-medium">What people can do</h3>
-			{roleReach(offer).map(({ where, roles }) => (
-				<div key={where}>
-					<p>{where}:</p>
-					<ul className="list-disc pl-5">
-						{roles.map(({ role, text }) => (
-							<li key={role}>
-								<span className="font-medium">{role}</span>: {text}
-							</li>
-						))}
-					</ul>
-				</div>
+		<section aria-label="Roles" className="space-y-3">
+			<h3 className="font-medium">Roles</h3>
+			{roleAbilities(offer.target, offer.roles).map((abilities) => (
+				<section
+					key={abilities.role}
+					aria-label={`Role ${abilities.role}`}
+					className="space-y-2 rounded-lg border p-3"
+				>
+					<h4 className="font-medium">
+						What {article(abilities.role).toLowerCase()} {abilities.role} can do
+					</h4>
+					<RoleAbilitiesList abilities={abilities} />
+				</section>
 			))}
+		</section>
+	);
+}
+
+/**
+ * What an update asks beyond what was approved, role by role, in the same
+ * words as the roles themselves. `approved` is the review's approved reach;
+ * an approval recorded before reach was kept has none to compare with.
+ */
+export function UpdateAsks({
+	offer,
+	approved,
+}: {
+	offer: Pick<ReviewedOffer, "roles" | "target">;
+	approved: readonly AbilityRole[];
+}) {
+	const asks = approved.length
+		? updateAsks(offer.target, offer.roles, approved)
+		: [];
+	return (
+		<section
+			aria-label="What this update adds"
+			className="space-y-2 rounded-lg border border-warning/40 bg-warning/5 p-3"
+		>
+			<h3 className="font-medium">What this update adds</h3>
+			{!approved.length ? (
+				<p>
+					What you approved earlier was not recorded in detail, so everything
+					each role can do is shown below.
+				</p>
+			) : !asks.length ? (
+				<p>
+					Nothing a role can do changes; the release itself asks for more. See
+					the technical details.
+				</p>
+			) : (
+				asks.map((role) => (
+					<div key={role.role}>
+						<p className="font-medium">
+							{article(role.role)} {role.role} would also be able to
+						</p>
+						<RoleAbilitiesList
+							abilities={role}
+							label={`What the update adds for ${article(role.role).toLowerCase()} ${role.role}`}
+						/>
+					</div>
+				))
+			)}
+			<p className="text-muted-foreground">
+				Until you update, everyone keeps exactly the access you approved.
+			</p>
 		</section>
 	);
 }
@@ -47,25 +101,24 @@ export function SupportingModules({
 	return (
 		<section aria-label="Supporting modules" className="space-y-1">
 			<h3 className="font-medium">Supporting modules</h3>
-			{!modules.length && <p>No supporting modules are required.</p>}
+			{!modules.length && <p>It needs no other module.</p>}
 			{installs.length > 0 && (
 				<p>
 					Also installs: {installs.join(", ")} —{" "}
 					{standing.length
-						? `standing machine access: ${standing.join(", ")}; each with its own consent record`
-						: "no standing machine access"}
+						? `each acting on its own with: ${standing.join(", ")}`
+						: "none acts on its own"}
 				</p>
 			)}
 			{reused.length > 0 && (
-				<p>Already installed and reused: {reused.join(", ")}</p>
+				<p>Already installed, used as is: {reused.join(", ")}</p>
 			)}
 			{optional.length > 0 && (
 				<p>Optional, not installed: {optional.join(", ")}</p>
 			)}
 			{modules.length > 0 && (
 				<p className="text-muted-foreground">
-					Supporting modules keep their own installation and revocation records.
-					Uninstalling this solution keeps shared modules installed.
+					Uninstalling it later keeps the modules other solutions share.
 				</p>
 			)}
 		</section>
@@ -92,7 +145,7 @@ export function TechnicalAccess({
 		({ module }) => module.required && !module.reuseInstallationId,
 	);
 	return (
-		<section aria-label="Technical access" className="space-y-2">
+		<section aria-label="Technical details" className="space-y-2">
 			<Button
 				type="button"
 				variant="ghost"
@@ -100,7 +153,7 @@ export function TechnicalAccess({
 				aria-expanded={open}
 				onClick={() => setOpen(!open)}
 			>
-				{open ? "Hide technical access" : "Show technical access"}
+				{open ? "Hide technical details" : "Technical details"}
 			</Button>
 			{open && (
 				<div className="space-y-3">

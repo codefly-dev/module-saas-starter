@@ -472,11 +472,12 @@ describe("SolutionInstallationsPage admin container", () => {
 		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 		expect(reads.available).toBe(2);
 		expect(reads.installed).toBe(2);
+		// The Solutions page names a version, the release behind its title.
 		expect(
-			within(
-				screen.getByRole("table", { name: "Available solutions" }),
-			).getByText("Generation 4 (opened at 2)"),
-		).toBeTruthy();
+			within(screen.getByRole("table", { name: "Available solutions" }))
+				.getByText("1.4.0")
+				.getAttribute("title"),
+		).toBe("acme/expenses@1.4.0");
 		expect(
 			within(
 				screen.getByRole("list", { name: "Teams granted expenses" }),
@@ -822,7 +823,9 @@ describe("organization administration boundary", () => {
 			fireEvent.click(within(dialog).getByRole("button", { name: "Grant" }));
 			await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 			expect(grant).toHaveBeenCalledOnce();
-			expect(reads).toEqual({ available: 2, installed: 2, roles: 1, teams: 1 });
+			// Teams are read for the page, which names who holds each role, and
+			// again as the grant dialog opens.
+			expect(reads).toEqual({ available: 2, installed: 2, roles: 1, teams: 2 });
 		}
 	});
 });
@@ -1341,7 +1344,7 @@ it("shows pending and failed installations and retries the failed step", async (
 	expect(await screen.findByText("Example setup refused")).toBeTruthy();
 	expect(screen.queryByRole("button", { name: /grant.*team/i })).toBeNull();
 	fireEvent.click(screen.getByRole("button", { name: "Retry expenses" }));
-	expect(await screen.findByText("Pending")).toBeTruthy();
+	expect(await screen.findByText("Being set up")).toBeTruthy();
 	expect(screen.queryByRole("button", { name: "Retry expenses" })).toBeNull();
 });
 
@@ -1482,21 +1485,17 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 			await screen.findByRole("button", { name: "Set up access to ledger" }),
 		);
 		const dialog = await screen.findByRole("dialog");
-		const access = await within(dialog).findByRole("region", {
-			name: "Team access",
-		});
+		await within(dialog).findByRole("region", { name: "Roles" });
+		const me = (role: string) =>
+			within(
+				within(dialog).getByRole("region", { name: `Role ${role}` }),
+			).getByRole("checkbox", {
+				name: "Add me to this team",
+			}) as HTMLInputElement;
 		// Every role ticked for the administrator; nothing must be picked.
 		for (const role of ["installer", "viewer"])
-			expect(
-				(
-					within(access).getByRole("checkbox", {
-						name: role,
-					}) as HTMLInputElement
-				).checked,
-			).toBe(true);
-		fireEvent.click(
-			within(access).getByRole("checkbox", { name: "installer" }),
-		);
+			expect(me(role).checked).toBe(true);
+		fireEvent.click(me("installer"));
 		fireEvent.click(
 			within(dialog).getByRole("button", { name: "Set up access" }),
 		);
@@ -1510,6 +1509,65 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		expect(toast.success).toHaveBeenCalledWith(
 			"Access to ledger is set up. Each role's team holds it now.",
 		);
+	});
+
+	it("a module page someone holds a role on reads Set up, and offers Manage access instead", async () => {
+		serveSolutions();
+		const pageInstalled = structuredClone(installed);
+		pageInstalled.installations[1].rootScopePath = "";
+		serve({ availableBody: catalogue, installationsBody: pageInstalled });
+		server.use(
+			http.post(LIST_OFFERS, () =>
+				HttpResponse.json({ offers: [{ target: "payroll", generation: "5" }] }),
+			),
+			http.post(
+				"http://localhost:3000/host.installation.v1.InstallationService/List",
+				() =>
+					HttpResponse.json({
+						installations: [
+							{ id: DIRECTORY_INSTALLATION, roles: ["installer", "viewer"] },
+						],
+					}),
+			),
+			http.post(
+				"http://localhost:3000/host.installation.v1.InstallationService/ListRoleGrants",
+				() =>
+					HttpResponse.json({
+						grants: [{ role: "viewer", teamId: FINANCE_TEAM }],
+					}),
+			),
+		);
+		renderInApp(<SolutionsPage />);
+		const pagesTable = await screen.findByRole("table", {
+			name: "Available module pages",
+		});
+		const directory = (
+			await within(pagesTable).findByText("directory")
+		).closest("tr") as HTMLElement;
+		const manage = await within(directory).findByRole("link", {
+			name: "Manage access to directory",
+		});
+		expect(manage.getAttribute("href")).toBe(
+			`/admin/solutions/${DIRECTORY_INSTALLATION}`,
+		);
+		expect(within(directory).getByText("Set up")).toBeTruthy();
+		expect(
+			within(directory).queryByRole("button", {
+				name: "Set up access to directory",
+			}),
+		).toBeNull();
+		// A page nobody holds a role on is still set up from here.
+		expect(
+			within(pagesTable).getByRole("button", {
+				name: "Set up access to ledger",
+			}),
+		).toBeTruthy();
+		// The installed row names who holds each role, by team name.
+		const holders = await screen.findByRole("list", {
+			name: "Who has access to directory",
+		});
+		expect(holders.textContent).toContain("viewer: Finance");
+		expect(holders.textContent).toContain("installer: nobody");
 	});
 
 	it("offers no module on supporting module administration until the offers are read, and says a failed read as the host words it", async () => {
@@ -1604,6 +1662,12 @@ describe("an installation survives delivery: the host offers an update, and the 
 		approval,
 		modules: [],
 	};
+	const collections = (actions: string[]) => ({
+		path: ["payroll", "agent", "documents"],
+		module: "documents",
+		via: "binding",
+		scopes: [{ resourceKind: "documents.collection", actions }],
+	});
 	const installedPayroll = (upgradeAvailable: boolean) => ({
 		installations: [
 			{
@@ -1638,7 +1702,14 @@ describe("an installation survives delivery: the host offers an update, and the 
 						orgId: "org-1",
 						targetId: PAYROLL_TARGET,
 					});
-					return HttpResponse.json(review);
+					// The editor was approved to read collections through the agent.
+					return HttpResponse.json({
+						...review,
+						approvedRoles: [
+							{ name: "installer" },
+							{ name: "editor", reach: [collections(["read"])] },
+						],
+					});
 				},
 			),
 			http.post(REVIEW_OFFER, () =>
@@ -1646,7 +1717,10 @@ describe("an installation survives delivery: the host offers an update, and the 
 					target: "payroll",
 					installationRole: "none",
 					approval: { ...approval, operationId: "" },
-					roles: [{ name: "installer", scopes: [] }],
+					roles: [
+						{ name: "editor", reach: [collections(["read", "create"])] },
+						{ name: "installer", scopes: [] },
+					],
 					rolesDeclared: true,
 					installation: {
 						id: PAYROLL_INSTALLATION,
@@ -1681,7 +1755,21 @@ describe("an installation survives delivery: the host offers an update, and the 
 		);
 		const dialog = await screen.findByRole("dialog");
 		await within(dialog).findByText("Update payroll");
-		expect(within(dialog).getByText(/team grants are kept/)).toBeTruthy();
+		// It names what the update asks beyond what was approved, in words.
+		const adds = within(
+			await within(dialog).findByRole("region", {
+				name: "What this update adds",
+			}),
+		);
+		expect(adds.getByText("An editor would also be able to")).toBeTruthy();
+		expect(
+			adds.getByText("Through payroll and agent, in documents"),
+		).toBeTruthy();
+		expect(adds.getByText("Create collections")).toBeTruthy();
+		expect(adds.queryByText("Read collections")).toBeNull();
+		expect(
+			adds.getByText(/everyone keeps exactly the access you approved/),
+		).toBeTruthy();
 		fireEvent.click(within(dialog).getByRole("checkbox"));
 		fireEvent.click(within(dialog).getByRole("button", { name: "Update" }));
 		await waitFor(() => expect(installedWith).toBeTruthy());

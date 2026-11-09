@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Layers, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -7,11 +8,14 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { OrgSelector } from "@/components/org-selector";
+import { teamQueries } from "@/features/teams/service/queries";
+import type { RoleGrant } from "@/gen/host/installation/v1/installation_pb";
 import {
 	type AvailableSolution,
 	InstallationStatus,
 } from "@/gen/saas/accounts/v1/installations_pb";
 import { useAuth } from "@/lib/auth";
+import { useOrgMembers } from "@/lib/hooks/use-organizations";
 import {
 	mayKeepRetainedRows,
 	readOutcome,
@@ -47,6 +51,7 @@ import {
 	TableRow,
 	useLoadingPhase,
 } from "@/shared/ui";
+import { holdersByRole, statusLine } from "../model/access";
 import {
 	availableRows,
 	type FactView,
@@ -56,7 +61,6 @@ import {
 	isModulePage,
 	type TeamGrantRow,
 } from "../model/installations";
-import { readinessSummary } from "../model/readiness";
 import {
 	useGrantInstallationToTeam,
 	useInstallReviewedSolution,
@@ -66,9 +70,11 @@ import {
 	useUninstallSolution,
 } from "../service/mutations";
 import {
+	useAuthorityInstallations,
 	useAvailableSolutions,
 	useInstallations,
 	useOfferedTargets,
+	useRoleGrants,
 } from "../service/queries";
 import { GrantTeamDialog } from "./grant-team-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
@@ -162,6 +168,48 @@ function SolutionInstallationsForOrganization({
 	// module to install and lists what is installed without saying which is a
 	// module page: only that classification waits on the authority.
 	const modulesWithheld = showModules && !offered.isSuccess;
+	// Who holds which role on each installation the authority grants roles
+	// on (no host scope root), named as the organization names its teams and
+	// people, and what each cannot reach now: the Solutions page only.
+	const held = useAuthorityInstallations(showModules ? "" : orgId);
+	const teams = useQuery({
+		...teamQueries.list(orgId),
+		enabled: !showModules && Boolean(orgId),
+	});
+	const members = useOrgMembers(showModules ? null : orgId);
+	const roleGranted = showModules
+		? []
+		: (installed.data ?? []).flatMap(({ installation, rootScopePath }) =>
+				installation?.status === InstallationStatus.ACTIVE && !rootScopePath
+					? [installation.id]
+					: [],
+			);
+	const roleGrants = useRoleGrants(orgId, roleGranted);
+	const access: AccessView = {
+		...roleGrants,
+		unreached: (id) => held.data?.get(id)?.unreached ?? [],
+		roles: (id) => held.data?.get(id)?.roles ?? [],
+		name: (grant) =>
+			grant.teamId
+				? (teams.data?.teams.find((team) => team.id === grant.teamId)?.name ??
+					grant.teamId)
+				: members.data?.find((member) => member.userId === grant.personId)
+						?.userEmail || grant.personId,
+	};
+	// A module page's composition installation, and whether anyone holds a
+	// role on it: set up, or not yet.
+	const pageAccess = (page: AvailableSolution) => {
+		const id = (installed.data ?? []).find(
+			(row) =>
+				row.target?.targetId === page.targetId &&
+				row.installation?.status === InstallationStatus.ACTIVE,
+		)?.installation?.id;
+		const grants = id ? roleGrants.grants.get(id) : undefined;
+		return {
+			installationId: id,
+			setUp: grants ? grants.length > 0 : undefined,
+		};
+	};
 	const chosen = (target: AvailableSolution | undefined) =>
 		target !== undefined &&
 		(target.kind === "solution" ||
@@ -260,6 +308,7 @@ function SolutionInstallationsForOrganization({
 							query={available}
 							installing={false}
 							onInstall={() => undefined}
+							pageAccess={pageAccess}
 							onSetUp={(page) => {
 								setUp.reset();
 								setSettingUp(page);
@@ -273,6 +322,7 @@ function SolutionInstallationsForOrganization({
 						unclassified={modulesWithheld}
 						listed={listedInstalled}
 						updating={combinedInstall.isPending}
+						access={access}
 						onUpdate={(target) => {
 							combinedInstall.reset();
 							setUpdating(target);
@@ -404,6 +454,7 @@ function AvailableSection({
 	installing,
 	onInstall,
 	onSetUp,
+	pageAccess,
 	title = showModules ? "Available" : "Solutions",
 	description = showModules
 		? "What this host offers this organization right now, at the release it has applied."
@@ -421,6 +472,11 @@ function AvailableSection({
 	onInstall: (solution: AvailableSolution) => void;
 	/** Sets up a module page's access; absent where pages are not set up. */
 	onSetUp?: (page: AvailableSolution) => void;
+	/** A module page's installation, and whether anyone holds a role on it. */
+	pageAccess?: (page: AvailableSolution) => {
+		installationId?: string;
+		setUp?: boolean;
+	};
 }) {
 	const { indicator, quiet } = useLoadingPhase(query.isLoading);
 	const outcome = readOutcome(query.isError, query.error);
@@ -475,8 +531,8 @@ function AvailableSection({
 												? "Module page"
 												: "Solution"}
 									</TableHead>
-									<TableHead>Release</TableHead>
-									<TableHead>Generation</TableHead>
+									<TableHead>{showModules ? "Release" : "Version"}</TableHead>
+									{showModules && <TableHead>Generation</TableHead>}
 									<TableHead>State</TableHead>
 									<TableHead className="text-right">Action</TableHead>
 								</TableRow>
@@ -485,15 +541,33 @@ function AvailableSection({
 								{rows.map((row) => (
 									<TableRow key={row.targetId}>
 										<TableCell className="font-medium">{row.alias}</TableCell>
-										<TableCell className="font-mono text-sm">
-											{row.release}
-										</TableCell>
-										<TableCell className="text-sm text-muted-foreground">
-											{row.generation}
-										</TableCell>
+										{showModules ? (
+											<>
+												<TableCell className="font-mono text-sm">
+													{row.release}
+												</TableCell>
+												<TableCell className="text-sm text-muted-foreground">
+													{row.generation}
+												</TableCell>
+											</>
+										) : (
+											<TableCell className="text-sm" title={row.release}>
+												{row.solution.releaseVersion}
+											</TableCell>
+										)}
 										<TableCell>
 											{onSetUp && isModulePage(row.solution) ? (
-												<Badge variant="outline">Module page</Badge>
+												pageAccess?.(row.solution).setUp ? (
+													<Badge tone="success" dot>
+														Set up
+													</Badge>
+												) : pageAccess?.(row.solution).setUp === false ? (
+													<Badge tone="warning" dot>
+														Nobody has access yet
+													</Badge>
+												) : (
+													<Badge variant="outline">Module page</Badge>
+												)
 											) : row.installed ? (
 												<Badge tone="success" dot>
 													Installed
@@ -505,14 +579,27 @@ function AvailableSection({
 										<TableCell className="text-right">
 											{showModules ? null : onSetUp &&
 												isModulePage(row.solution) ? (
-												<Button
-													size="sm"
-													variant="outline"
-													aria-label={`Set up access to ${row.alias}`}
-													onClick={() => onSetUp(row.solution)}
-												>
-													Set up access
-												</Button>
+												pageAccess?.(row.solution).setUp &&
+												pageAccess(row.solution).installationId ? (
+													<Link
+														href={`/admin/solutions/${pageAccess(row.solution).installationId}`}
+														aria-label={`Manage access to ${row.alias}`}
+														className={buttonVariants({
+															variant: "outline",
+															size: "sm",
+														})}
+													>
+														Manage access
+													</Link>
+												) : (
+													<Button
+														size="sm"
+														aria-label={`Set up access to ${row.alias}`}
+														onClick={() => onSetUp(row.solution)}
+													>
+														Set up
+													</Button>
+												)
 											) : row.installed ? null : (
 												<Button
 													size="sm"
@@ -543,7 +630,10 @@ function InstalledSection({
 	query,
 	updating,
 	onUpdate,
+	access,
 }: {
+	/** Who holds which role, and what each cannot reach, by installation. */
+	access: AccessView;
 	orgId: string;
 	query: ReturnType<typeof useInstallations>;
 	showModules: boolean;
@@ -684,11 +774,8 @@ function InstalledSection({
 											? "Module or solution"
 											: "Solution or module page"}
 									</TableHead>
-									<TableHead>Revision</TableHead>
 									<TableHead>Status</TableHead>
-									<TableHead>Ready</TableHead>
-									<TableHead>Health</TableHead>
-									<TableHead>Teams</TableHead>
+									<TableHead>Who has access</TableHead>
 									<TableHead>Installed</TableHead>
 									<TableHead className="text-right">Action</TableHead>
 								</TableRow>
@@ -697,43 +784,49 @@ function InstalledSection({
 								{rows.map((row) => (
 									<TableRow key={row.installationId}>
 										<TableCell className="font-medium">
-											<Fact view={row.solution} />
-										</TableCell>
-										<TableCell>
-											<Fact view={row.revision} />
-											{row.upgradeAvailable && (
-												<Badge
-													tone="warning"
-													dot
-													title="The applied release asks more than this installation's consent approved. It keeps working as approved until you review and update it."
-												>
-													Update available
-												</Badge>
+											<Link
+												href={`/admin/solutions/${row.installationId}`}
+												className="hover:underline"
+											>
+												<Fact view={row.solution} />
+											</Link>
+											{showModules ? (
+												<span className="block font-normal">
+													<Fact view={row.revision} />
+												</span>
+											) : (
+												row.target && (
+													<span
+														className="block text-xs font-normal text-muted-foreground"
+														title={
+															row.revision.kind === "value"
+																? row.revision.text
+																: undefined
+														}
+													>
+														Version {row.target.releaseVersion}
+													</span>
+												)
 											)}
 										</TableCell>
 										<TableCell>
-											<Fact view={row.lifecycle} />
+											<StatusLine
+												row={row}
+												unreached={access.unreached(row.installationId)}
+											/>
 											{row.failureReason && (
 												<p className="mt-1 text-sm text-muted-foreground">
 													{row.failureReason}
 												</p>
 											)}
 										</TableCell>
-										<TableCell>
-											<Readiness row={row} />
-										</TableCell>
-										<TableCell>
-											{row.status === InstallationStatus.ACTIVE ? (
-												<Fact view={row.health} />
-											) : (
-												<span className="text-sm text-muted-foreground">
-													Unavailable
-												</span>
-											)}
-										</TableCell>
-										<TableCell>
-											{row.status === InstallationStatus.ACTIVE ? (
-												row.hasHostScopeRoot ? (
+										{
+											<TableCell>
+												{row.status !== InstallationStatus.ACTIVE ? (
+													<span className="text-sm text-muted-foreground">
+														Given once it is installed
+													</span>
+												) : row.hasHostScopeRoot ? (
 													<TeamExposure
 														row={row}
 														name={name(row)}
@@ -745,72 +838,78 @@ function InstalledSection({
 														}}
 														onRevoke={(team) => runRevoke(row, team)}
 													/>
+												) : showModules ? (
+													<span className="text-sm text-muted-foreground">
+														—
+													</span>
 												) : (
-													<Link href={`/admin/solutions/${row.installationId}`}>
-														Manage solution roles
-													</Link>
-												)
+													<RoleHoldersCell row={row} access={access} />
+												)}
+											</TableCell>
+										}
+										<TableCell className="text-sm text-muted-foreground">
+											{row.installedAt ? (
+												formatDate(row.installedAt)
 											) : (
-												<span className="text-sm text-muted-foreground">
-													Available after activation
+												<span title="This installation was made before install dates were kept.">
+													Not recorded
 												</span>
 											)}
 										</TableCell>
-										<TableCell className="text-sm text-muted-foreground">
-											{formatDate(row.installedAt)}
-										</TableCell>
 										<TableCell className="text-right">
-											{(row.status === InstallationStatus.FAILED ||
-												(row.status === InstallationStatus.PENDING &&
-													!row.hasHostScopeRoot)) && (
-												<Button
-													variant="outline"
-													size="sm"
-													disabled={retry.isPending || uninstall.isPending}
-													aria-label={`Retry ${name(row)}`}
-													onClick={() => runRetry(row)}
-												>
-													Retry
-												</Button>
-											)}
-											{row.upgradeAvailable &&
-												row.target &&
-												row.target.kind !== "module" &&
-												row.status === InstallationStatus.ACTIVE && (
+											<div className="flex flex-wrap justify-end gap-2">
+												{(row.status === InstallationStatus.FAILED ||
+													(row.status === InstallationStatus.PENDING &&
+														!row.hasHostScopeRoot)) && (
 													<Button
+														variant="outline"
 														size="sm"
-														disabled={updating || uninstall.isPending}
-														aria-label={`Update ${name(row)}`}
-														onClick={() => {
-															if (row.target) onUpdate(row.target);
-														}}
+														disabled={retry.isPending || uninstall.isPending}
+														aria-label={`Retry ${name(row)}`}
+														onClick={() => runRetry(row)}
 													>
-														Update
+														Retry
 													</Button>
 												)}
-											<Link
-												href={`/admin/solutions/${row.installationId}`}
-												aria-label={`Set up ${name(row)}`}
-												className={buttonVariants({
-													variant: "outline",
-													size: "sm",
-												})}
-											>
-												Set up
-											</Link>
-											{/* A module is installed by composition; only its
-											    delivered withdrawal retires it. */}
-											{row.target?.kind !== "module" && (
-												<Button
-													variant="outline"
-													size="sm"
-													disabled={uninstall.isPending}
-													aria-label={`Uninstall ${name(row)}`}
-													onClick={() => setConfirming(row)}
+												{row.upgradeAvailable &&
+													row.target &&
+													row.target.kind !== "module" &&
+													row.status === InstallationStatus.ACTIVE && (
+														<Button
+															size="sm"
+															disabled={updating || uninstall.isPending}
+															aria-label={`Update ${name(row)}`}
+															onClick={() => {
+																if (row.target) onUpdate(row.target);
+															}}
+														>
+															Review update
+														</Button>
+													)}
+												<Link
+													href={`/admin/solutions/${row.installationId}`}
+													aria-label={`Manage access to ${name(row)}`}
+													className={buttonVariants({
+														variant: "outline",
+														size: "sm",
+													})}
 												>
-													Uninstall
-												</Button>
-											)}
+													Manage access
+												</Link>
+												{/* A module is installed by composition; only its
+												    delivered withdrawal retires it. */}
+												{row.target?.kind !== "module" && (
+													<Button
+														variant="outline"
+														size="sm"
+														disabled={uninstall.isPending}
+														aria-label={`Uninstall ${name(row)}`}
+														onClick={() => setConfirming(row)}
+													>
+														Uninstall
+													</Button>
+												)}
+											</div>
 										</TableCell>
 									</TableRow>
 								))}
@@ -875,29 +974,99 @@ function InstalledSection({
 }
 
 /**
- * Whether the host says this row will work. It sits beside Health deliberately:
- * health answers about the installation RECORD, and on a validation cell ten
- * read healthy while four declared bindings had derived nothing. The link goes
- * to the one place that lists why, because a row cannot carry the conditions.
+ * Where one installation stands, on one line: the host's status, readiness
+ * and health, an update the authority offers, and what it cannot reach now.
+ * Anything that needs an administrator links to the installation's page,
+ * which lists why.
  */
-function Readiness({ row }: { row: InstalledRow }) {
-	const summary = readinessSummary(row.readiness);
-	if (summary.ready) {
-		return (
-			<Badge tone="success" dot>
-				Ready
-			</Badge>
-		);
-	}
+function StatusLine({
+	row,
+	unreached,
+}: {
+	row: InstalledRow;
+	unreached: readonly string[];
+}) {
 	return (
-		<Link
-			href={`/admin/solutions/${row.installationId}`}
-			className="hover:underline"
+		<ul
+			className="flex max-w-xs flex-wrap gap-1"
+			aria-label={`Status of ${row.solution.kind === "value" ? row.solution.text : "this installation"}`}
 		>
-			<Badge tone={summary.tone} dot>
-				{summary.text}
-			</Badge>
-		</Link>
+			{statusLine(row, unreached).map((fact) => (
+				<li key={fact.text}>
+					{fact.tone === "success" ? (
+						<Badge tone="success" dot>
+							{fact.text}
+						</Badge>
+					) : (
+						<Link
+							href={`/admin/solutions/${row.installationId}`}
+							className="hover:underline"
+						>
+							<Badge tone={fact.tone} dot>
+								{fact.text}
+							</Badge>
+						</Link>
+					)}
+				</li>
+			))}
+		</ul>
+	);
+}
+
+/** Who holds which role and the people and teams the host names. */
+export interface AccessView {
+	grants: Map<string, RoleGrant[]>;
+	failed: Set<string>;
+	unreached: (installationId: string) => readonly string[];
+	roles: (installationId: string) => readonly string[];
+	name: (grant: RoleGrant) => string;
+}
+
+/** Each role and who holds it, by name, as the authority's grants say. */
+function RoleHoldersCell({
+	row,
+	access,
+}: {
+	row: InstalledRow;
+	access: AccessView;
+}) {
+	if (access.failed.has(row.installationId))
+		return (
+			<span className="text-sm text-muted-foreground">
+				Could not be read.{" "}
+				<Link
+					href={`/admin/solutions/${row.installationId}`}
+					className="underline"
+				>
+					Open
+				</Link>
+			</span>
+		);
+	const grants = access.grants.get(row.installationId);
+	if (!grants) return <span className="text-sm text-muted-foreground">…</span>;
+	const roles = holdersByRole(
+		access.roles(row.installationId),
+		grants,
+		access.name,
+	);
+	if (!roles.length)
+		return <span className="text-sm text-muted-foreground">No roles</span>;
+	return (
+		<ul
+			className="space-y-0.5 text-sm"
+			aria-label={`Who has access to ${row.solution.kind === "value" ? row.solution.text : "this installation"}`}
+		>
+			{roles.map(({ role, holders }) => (
+				<li key={role}>
+					<span className="text-muted-foreground">{role}:</span>{" "}
+					{holders.length ? (
+						holders.join(", ")
+					) : (
+						<span className="italic text-muted-foreground">nobody</span>
+					)}
+				</li>
+			))}
+		</ul>
 	);
 }
 

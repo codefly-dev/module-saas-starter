@@ -1,5 +1,6 @@
 "use client";
 
+import { roleAbilities } from "@codefly-dev/saas-ui/solution";
 import { createClient } from "@connectrpc/connect";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -37,6 +38,7 @@ import {
 	RoleReach,
 	SupportingModules,
 	TechnicalAccess,
+	UpdateAsks,
 } from "./install-review-summary";
 import { InstallationTeamAssignment } from "./installation-team-assignment";
 
@@ -119,11 +121,13 @@ export function InstallSolutionDialog({
 					<DialogTitle>
 						{upgrade ? "Update" : "Install"} {solution.routeAlias}
 					</DialogTitle>
-					<DialogDescription>
-						{data?.consent.release ?? releaseText(solution)}.{" "}
+					<DialogDescription
+						title={data?.consent.release ?? releaseText(solution)}
+					>
+						Version {solution.releaseVersion}.{" "}
 						{upgrade
-							? "This release asks more than the installed one was approved for. Review what it asks and its supporting modules together; the installation stays active and its team grants are kept."
-							: "Review it and its supporting modules together."}
+							? "It asks for more than you approved. Review what it adds; it stays installed, and everyone keeps the access you approved until you update."
+							: "Review what each role can do and who gets it, then install."}
 					</DialogDescription>
 				</DialogHeader>
 				<DelayedLoading
@@ -133,21 +137,22 @@ export function InstallSolutionDialog({
 				{review.isError && <p role="alert">{hostRefusal(review.error)}</p>}
 				{data && (
 					<div className="space-y-4 text-sm">
-						<RoleReach offer={data.offer} />
-						<DeclaredAccess
-							subject={solution.kind === "module" ? "module" : "solution"}
-							installationRole={data.consent.installationRole}
-							offer={data.offer}
-						/>
-						<SupportingModules
-							modules={data.modules.map(({ module }) => module)}
-						/>
+						{upgrade && (
+							<UpdateAsks
+								offer={data.offer}
+								approved={data.consent.approvedRoles}
+							/>
+						)}
+						{(upgrade || roles.length === 0) && (
+							<RoleReach offer={data.offer} />
+						)}
 						{!upgrade && roles.length > 0 && (
 							<InstallationTeamAssignment
 								assignment={assignment}
 								conventional={teamAssignment(target, roles, teamList, {})}
 								teams={teamList}
 								taken={new Set(access.installerRoles)}
+								abilities={roleAbilities(target, data.offer.roles)}
 								teamsError={
 									teams.isError ? hostRefusal(teams.error) : undefined
 								}
@@ -167,6 +172,14 @@ export function InstallSolutionDialog({
 								}
 							/>
 						)}
+						<DeclaredAccess
+							subject={solution.kind === "module" ? "module" : "solution"}
+							installationRole={data.consent.installationRole}
+							offer={data.offer}
+						/>
+						<SupportingModules
+							modules={data.modules.map(({ module }) => module)}
+						/>
 						<TechnicalAccess offer={data.offer} modules={data.modules} />
 						<label className="flex items-start gap-2">
 							<input
@@ -177,7 +190,7 @@ export function InstallSolutionDialog({
 							/>
 							I approve this {upgrade ? "release" : "target"} and the access it
 							and its supporting modules require, including the technical
-							access.
+							details.
 						</label>
 					</div>
 				)}

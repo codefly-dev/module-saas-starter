@@ -169,7 +169,7 @@ describe("Status", () => {
 		const update = within(
 			screen.getByText("Update available").closest("[role]") as HTMLElement,
 		);
-		expect(update.getByText("A editor would also be able to")).toBeTruthy();
+		expect(update.getByText("An editor would also be able to")).toBeTruthy();
 		expect(update.getByText("Create collections")).toBeTruthy();
 		expect(
 			update.getByRole("button", { name: "Review the update" }),

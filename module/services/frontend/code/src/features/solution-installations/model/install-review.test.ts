@@ -1,4 +1,5 @@
 import { clone, create } from "@bufbuild/protobuf";
+import { roleAbilities, updateAsks } from "@codefly-dev/saas-ui/solution";
 import { describe, expect, it } from "vitest";
 import {
 	OfferScopeSchema,
@@ -9,8 +10,6 @@ import {
 	assertMatchingOffer,
 	moduleConsentText,
 	offerScopeText,
-	operationText,
-	roleReach,
 	supportingSummary,
 } from "./install-review";
 
@@ -162,13 +161,6 @@ describe("installation access review", () => {
 		);
 	});
 	it("renders one capability per operation, whatever face serves it", () => {
-		expect(operationText("/docs.Documents/ListDocuments")).toBe(
-			"list documents",
-		);
-		expect(operationText("POST /docs.Documents/ListDocuments")).toBe(
-			"list documents",
-		);
-		expect(operationText("GET /pages/{id}")).toBe("get pages");
 		const offer = create(ReviewedOfferSchema, {
 			target: "Example",
 			roles: [
@@ -188,110 +180,46 @@ describe("installation access review", () => {
 				},
 			],
 		});
-		expect(roleReach(offer)).toEqual([
+		expect(roleAbilities(offer.target, offer.roles)).toEqual([
 			{
-				where: "Through Example, in documents",
-				roles: [{ role: "viewer", text: "list documents" }],
+				role: "viewer",
+				groups: [
+					{
+						key: "binding:Example>documents",
+						where: "Through Example, in documents",
+						lines: ["list documents"],
+					},
+				],
 			},
 		]);
 	});
-	it("reads a row by what its scopes grant, never by every operation it reaches", () => {
-		const page = {
-			resourceKind: "example.page",
-			actions: ["read"],
-			attachedOnly: false,
-		};
-		const routes = [
-			"GET /pages",
-			"DELETE /pages/{id}",
-			"PATCH /pages/{id}",
-			"POST /mcp",
-			"DELETE /mcp",
-			"GET /upload",
-			"HEAD /mcp",
-		];
+	it("names what an update asks from the review's approved reach, in the same words", () => {
+		const row = (actions: string[]) => ({
+			path: ["Example", "agent", "documents"],
+			module: "documents",
+			via: "binding",
+			scopes: [{ resourceKind: "documents.collection", actions }],
+		});
 		const offer = create(ReviewedOfferSchema, {
 			target: "Example",
-			roles: [
+			roles: [{ name: "editor", reach: [row(["read", "create"])] }],
+		});
+		const review = create(ReviewedSolutionInstallSchema, {
+			approvedRoles: [{ name: "editor", reach: [row(["read"])] }],
+		});
+		expect(updateAsks(offer.target, offer.roles, review.approvedRoles)).toEqual(
+			[
 				{
-					name: "viewer",
-					reach: [
+					role: "editor",
+					groups: [
 						{
-							path: ["Example"],
-							module: "Example",
-							via: "role",
-							scopes: [page],
-							operations: routes,
-						},
-					],
-				},
-				{
-					name: "auditor",
-					reach: [
-						{
-							path: ["Example", "records"],
-							module: "records",
-							via: "binding",
-							operations: routes,
+							key: "binding:Example>agent>documents",
+							where: "Through Example and agent, in documents",
+							lines: ["create collections"],
 						},
 					],
 				},
 			],
-		});
-		expect(roleReach(offer)).toEqual([
-			{ where: "In Example", roles: [{ role: "viewer", text: "read pages" }] },
-			{
-				where: "Through Example, in records",
-				roles: [
-					{
-						role: "auditor",
-						text: "get pages, delete pages, patch pages, post mcp, delete mcp and 2 more",
-					},
-				],
-			},
-		]);
-	});
-	it("says once every module the page reaches on your own access, and once what every role shares", () => {
-		const own = (module: string) => ({
-			path: ["Example", module],
-			module,
-			via: "person",
-			operations: [],
-		});
-		const offer = create(ReviewedOfferSchema, {
-			target: "Example",
-			roles: ["editor", "installer", "viewer"].map((name) => ({
-				name,
-				reach: [own("tracing"), own("annotations"), own("assistant")],
-			})),
-		});
-		expect(roleReach(offer)).toEqual([
-			{
-				where: "Uses your own access in annotations, assistant and tracing",
-				roles: [{ role: "every role", text: "what you hold there yourself" }],
-			},
-		]);
-	});
-	it("says each confinement in plain words", () => {
-		const offer = create(ReviewedOfferSchema, {
-			target: "Example",
-			roles: ["attached", "installation", "owner"].map((confinement) => ({
-				name: confinement,
-				reach: [
-					{
-						path: ["Example"],
-						module: "Example",
-						via: "role",
-						confinement,
-						operations: ["GET /pages/{id}"],
-					},
-				],
-			})),
-		});
-		expect(roleReach(offer)[0].roles).toEqual([
-			{ role: "attached", text: "get pages (attached items)" },
-			{ role: "installation", text: "get pages (this installation's items)" },
-			{ role: "owner", text: "get pages (items they own)" },
-		]);
+		);
 	});
 });

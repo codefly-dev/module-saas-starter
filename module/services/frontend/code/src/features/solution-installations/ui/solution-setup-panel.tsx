@@ -2,8 +2,10 @@
 
 import {
 	type SetupCondition,
+	type SetupFact,
 	type SetupSubject,
 	SolutionSetup,
+	type SolutionSetupProps,
 } from "@codefly-dev/saas-ui/solution";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -14,6 +16,7 @@ import { apiTransport } from "@/lib/connect/transport";
 import { useOrgMembers } from "@/lib/hooks/use-organizations";
 import { Banner } from "@/shared/ui";
 import { ModulePageAccess } from "./module-page-access";
+import { TeamPeople } from "./team-people";
 
 /**
  * This host's mount of the one Setup UI, `<SolutionSetup>`, the same component
@@ -27,12 +30,18 @@ export function SolutionSetupPanel({
 	conditions,
 	installation,
 	modulePage = false,
+	facts,
+	update,
 }: {
 	target: string;
 	installation?: Installation;
 	conditions?: readonly SetupCondition[];
 	/** A module page: its access is edited on its composition installation. */
 	modulePage?: boolean;
+	/** What the host knows beside the authority, for the status line. */
+	facts?: readonly SetupFact[];
+	/** What an update asks, and the control that reviews it. */
+	update?: SolutionSetupProps["update"];
 }) {
 	const { organizationId = "" } = useAuth();
 	// Names only: a person who may not list them sees ids, and the authority
@@ -50,6 +59,7 @@ export function SolutionSetupPanel({
 				kind: "team" as const,
 				id: t.id,
 				label: t.name || t.id,
+				href: `/admin/teams/${t.id}`,
 			})),
 		],
 		[members.data, teams.data],
@@ -69,6 +79,9 @@ export function SolutionSetupPanel({
 				installationId={installation.id}
 				target={target}
 				subjects={subjects}
+				teamControls={(team) => (
+					<TeamPeople orgId={organizationId} team={team} />
+				)}
 			/>
 		);
 	return (
@@ -79,6 +92,9 @@ export function SolutionSetupPanel({
 			target={target}
 			conditions={conditions}
 			subjects={subjects}
+			facts={facts}
+			update={update}
+			teamControls={(team) => <TeamPeople orgId={organizationId} team={team} />}
 		/>
 	);
 }
