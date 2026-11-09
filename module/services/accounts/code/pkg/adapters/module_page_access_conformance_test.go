@@ -7,6 +7,7 @@ import (
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/codefly-dev/core/solutionhost"
 	"github.com/stretchr/testify/require"
 
@@ -215,4 +216,62 @@ func approvedOperations(t *testing.T, h reviewedClosureHarness, inst domain.Inst
 		}
 	}
 	return out
+}
+
+// testModulePageRoleReachesThroughItsBinding holds the host to a module
+// page's roles reaching through the page's own bindings as a solution's do:
+// a person holding only the page's viewer role is issued, through the page's
+// binding, a child narrowed to the role intersected with the binding, and
+// nothing beyond it, without the role, or on their own session at the module
+// the page reaches.
+func testModulePageRoleReachesThroughItsBinding(t *testing.T, h reviewedClosureHarness) {
+	const page, store = "conformance-reach-page", "conformance-reach-page-store"
+	entry, row := page+".entry", store+".row"
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: store, ceilings: []*authorityv1.WorkScopeV1{wireScope(row, "read", "write")}})
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: page, ceilings: []*authorityv1.WorkScopeV1{wireScope(entry, "read", "write")}, installationRole: domain.NoInstallationRole,
+		page:     &solutionhost.Frontend{Title: "Reaching page", ExposedModule: "./Page", HostContract: 1, Payload: h.pagePayload},
+		bindings: []solutionhost.AuthorityBinding{{ID: "rows", Audience: store, Operations: map[string][]string{"invoke": {row + ":read", row + ":write"}}}},
+		roles: map[string][]*authorityv1.WorkScopeV1{
+			"installer": {wireScope(entry, "read", "write"), wireScope(row, "read", "write")},
+			"viewer":    {wireScope(entry, "read"), wireScope(row, "read")},
+		}})
+	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
+	all, err := h.core.Installations(h.ctx, alex, fixtureOrganization)
+	require.NoError(t, err)
+	i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == page && inst.Status == domain.Active })
+	require.GreaterOrEqual(t, i, 0, "the module page is installed by composition")
+	_, err = h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: all[i].ID, Role: "viewer", PersonID: conformanceMaya})
+	require.NoError(t, err)
+
+	maya := authority.Person{ID: conformanceMaya, Organization: fixtureOrganization}
+	through := func(who authority.Person, scopes ...*basev0.WorkScopeV1) (authority.Issued, error) {
+		t.Helper()
+		parent, err := h.core.IssueForPerson(h.ctx, who, authority.IssueRequest{Audience: page})
+		if err != nil {
+			return parent, err
+		}
+		return h.core.IssueChild(h.ctx, parent.Token, authority.Workload{Module: page}, authority.IssueRequest{Binding: "rows", Scopes: scopes})
+	}
+
+	t.Run("a module page's viewer is issued, through its binding, the role cut to the binding", func(t *testing.T) {
+		child, err := through(maya)
+		require.NoError(t, err)
+		chain := child.Context.GetActorChain()
+		require.NotEmpty(t, chain)
+		granted := chain[len(chain)-1].GetGrantedScopes()
+		require.Len(t, granted, 1)
+		require.Equal(t, row, granted[0].GetResourceKind())
+		require.Equal(t, []string{"read"}, granted[0].GetActions())
+		require.Empty(t, granted[0].GetResourceOwnerId(), "a page's role selects no owner")
+		require.Equal(t, store, child.Context.GetAudience())
+	})
+
+	t.Run("and nothing beyond it", func(t *testing.T) {
+		_, err := through(maya, &basev0.WorkScopeV1{ResourceKind: row, Actions: []string{"write"}})
+		require.ErrorContains(t, err, `widens what its owner holds through binding "rows"`, "the binding carries write; the viewer role does not")
+		_, err = through(authority.Person{ID: conformanceAlice, Organization: fixtureOrganization})
+		require.ErrorContains(t, err, "holds no role on "+page, "an administrator holding no role is refused like any member")
+		_, err = h.core.IssueForPerson(h.ctx, maya, authority.IssueRequest{Audience: store})
+		require.ErrorContains(t, err, "holds nothing at this audience", "on her own session, her own grants at the store decide")
+	})
 }
