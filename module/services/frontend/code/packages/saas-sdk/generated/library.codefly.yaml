@@ -12,7 +12,13 @@ sources:
       module: saas-starter
       service: accounts
       endpoint: connect
+<<<<<<< HEAD
       contract-digest: sha256:7fa1eefde6d19ecc72687a6e66cb578b7318fd4bfb56624c9d5da0c8e63929fd
+||||||| parent of 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
+      contract-digest: sha256:b98b5b443260612003bf171945021343b44aec9c622953ce175b55cac925ec36
+=======
+      contract-digest: sha256:4f0a30b0eccaa4d762a81271ce2953541034f330b9106147ea24477ba8b54214
+>>>>>>> 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
       services:
         - AccessibleScopeService
         - AuditService

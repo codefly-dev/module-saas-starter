@@ -1242,6 +1242,7 @@ func runHostInterfaceFixture(t *testing.T) {
 	testPagesReachThroughTheAgent(t, closures)
 	testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t, closures)
 	testModulesInstalledByComposition(t, closures)
+	testSolutionSourcesAreGovernedByTheirScope(t, closures)
 
 	// A fixture's solution row runs inside a delivery pass, so its install
 	// step never waits on the solution's setup: a pass with a setup that has

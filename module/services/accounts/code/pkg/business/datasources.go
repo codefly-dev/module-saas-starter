@@ -439,6 +439,11 @@ type DatasourceSource struct {
 	LastDeliveryID     string
 	ReconcileInterval  time.Duration
 	NextReconcileAt    *time.Time
+
+	// Governance ties the source to the installation that governs it
+	// (SourceGovernance); nil for an organization's own source. Written once,
+	// with the row.
+	Governance *SourceGovernance
 }
 
 // WebhookConfigured reports whether a signing secret is stored, i.e. whether
@@ -462,6 +467,9 @@ type AddGitHubSourceInput struct {
 	CollectionLabel string
 	AccessToken     string
 	WebhookSecret   string
+	// Governance ties the source to a solution's installation; the caller
+	// decided it with AuthorizeSourceGovernance. Nil for the organization's own.
+	Governance *SourceGovernance
 }
 
 // GitHubContentClient is the per-source GitHub client the datasource connector
@@ -669,6 +677,9 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	if err := requireBoundarySpec(input.BoundaryNodeID, input.CollectionLabel); err != nil {
 		return nil, w.Wrap(err)
 	}
+	if err := input.Governance.validate(); err != nil {
+		return nil, err
+	}
 	extensions, err := normalizeFileExtensions(input.FileExtensions)
 	if err != nil {
 		return nil, w.Wrap(err)
@@ -699,6 +710,7 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		// from birth must be resolvable by installation the moment it exists, or
 		// an App-level delivery cannot reach it. Empty for a PAT source.
 		GitHubInstallationID: credential.InstallationID,
+		Governance:           input.Governance,
 	}
 	nextReconcile := time.Now().UTC().Add(source.ReconcileInterval)
 	source.NextReconcileAt = &nextReconcile
@@ -788,6 +800,9 @@ type AddSourceInput struct {
 	CollectionLabel string
 	Credential      string
 	WebhookSecret   string
+	// Governance ties the source to a solution's installation; the caller
+	// decided it with AuthorizeSourceGovernance. Nil for the organization's own.
+	Governance *SourceGovernance
 
 	// GitHub provider config.
 	Repo           string
@@ -835,14 +850,18 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 	if err := requireBoundarySpec(input.BoundaryNodeID, input.CollectionLabel); err != nil {
 		return nil, w.Wrap(err)
 	}
+	if err := input.Governance.validate(); err != nil {
+		return nil, err
+	}
 	if s.datasourceCipher == nil {
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
 	source := &DatasourceSource{
-		ID:       NewIDString(),
-		OrgID:    orgID,
-		Provider: input.Provider,
-		Status:   DatasourceStatusActive,
+		ID:         NewIDString(),
+		OrgID:      orgID,
+		Provider:   input.Provider,
+		Status:     DatasourceStatusActive,
+		Governance: input.Governance,
 	}
 	// Every provider is scheduled, not just GitHub. A pull provider used to be
 	// inserted with next_reconcile_at NULL, which put it outside the reconcile

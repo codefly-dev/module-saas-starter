@@ -82,6 +82,39 @@ changing. The repository and the credential are out of reach for the same
 reason — one is the source's identity, the other rebinds whose authority its
 syncs run under (a reconnect, through `SyncSource`).
 
+### A source a solution connects is governed by the solution's own scope
+
+A connect may tie its source to one installation of a role-gated target (a
+solution, or a module page declaring roles) with `governance`
+(`SourceGovernance`: the installation id and one scope of that target's own
+declaration — a kind and action it serves, or one its roles reach through a
+named operation binding). The target declares the scope; the host adds no
+permission of its own. Every decision asks the shared authority core, never a
+second rule: the host has the core issue the caller that scope at the
+installation (`IssueForPerson`, the token discarded), exactly as the core
+would for the target's page.
+
+- **Connect**: the method's `org_admin` floor first, then the installation must
+  be an active one of the organization and the caller must be issued the scope
+  there now. The tie is written with the row and never moves (migration 69).
+- **Change** (`UpdateSource`, `SyncSource` including a reconnect,
+  `DeleteSource`, `MigrateGitHubSourceToApp`, `DeclareSourceOperations`,
+  `DelegateSourceTriggers`): the declared floor, then the same issue. An
+  organization administrator who is not issued the scope is refused, by name,
+  with the core's reason: administering the organization is not a role on the
+  solution.
+- **Read** (`ListSources`, `GetSource`, `GetSourceSync`): a holder of any role
+  on the installation (the core's `HeldInstallations`); anyone else does not
+  list it and is refused a point read.
+- **Lapse**: once the installation is uninstalled, its sources are the
+  organization's again, so an administrator can still remove what no role
+  governs any more.
+
+A source with no `governance` is the organization's own and is decided exactly
+as before. The tie is a narrowing beside the descriptor floor, never a
+widening: a role holder who does not administer the organization is still
+refused by the floor.
+
 Who *triggered* a source's sync is not a datasource field. `ListSources` and
 `GetSource` project `Datasource` to any org member under no declared permission,
 while `SyncSource` is org-admin only and reading its actor goes through

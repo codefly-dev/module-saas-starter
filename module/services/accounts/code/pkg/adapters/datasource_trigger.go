@@ -35,6 +35,9 @@ func (h *datasourceConnectHandler) DelegateSourceTriggers(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	if err := h.authorizeSourceChange(ctx, actorID, req.Msg.OrgId, req.Msg.SourceId); err != nil {
+		return nil, err
+	}
 	references, err := h.svc.DelegateSourceTriggers(ctx, actorID, req.Msg.OrgId, req.Msg.SourceId)
 	if err != nil {
 		// Not found, and personal to another member, are business refusals

@@ -8,6 +8,8 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
+
 	"accounts/pkg/business"
 	"accounts/pkg/datasource/connector"
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -17,8 +19,40 @@ import (
 // datasourceConnectHandler exposes the tenant-facing datasource management
 // surface. Every RPC is org-gated at the handler layer (the business methods do
 // not authz themselves): the mutating RPCs require org admin, the reads require
-// org membership.
+// org membership. A source a solution governs (business.SourceGovernance) is
+// held to more: a change requires the scope that governs it, issued by the
+// authority core, and a read a role on its installation.
 type datasourceConnectHandler struct{ svc *business.Service }
+
+// sourcePerson is the caller as the authority core decides a governed source
+// for them: the person, at the organization the call is for.
+func sourcePerson(actorID, orgID string) authority.Person {
+	return authority.Person{ID: actorID, Organization: orgID}
+}
+
+// authorizeSourceChange is the governed-source check a change to source id
+// adds to the organization rule its handler already applied.
+func (h *datasourceConnectHandler) authorizeSourceChange(ctx context.Context, actorID, orgID, id string) error {
+	return translateGRPCError(h.svc.AuthorizeSourceChangeByID(ctx, sourcePerson(actorID, orgID), orgID, id))
+}
+
+// sourceGovernanceFromProto is the tie a connect asks for; nil for none.
+func sourceGovernanceFromProto(g *gen.SourceGovernance) *business.SourceGovernance {
+	if g == nil {
+		return nil
+	}
+	return &business.SourceGovernance{InstallationID: g.GetInstallationId(), Kind: g.GetResourceKind(), Action: g.GetAction(), Binding: g.GetBinding()}
+}
+
+// connectGovernance decides the tie a connect asks for, before anything is
+// stored, and returns it for the source.
+func (h *datasourceConnectHandler) connectGovernance(ctx context.Context, actorID, orgID string, requested *gen.SourceGovernance) (*business.SourceGovernance, error) {
+	g := sourceGovernanceFromProto(requested)
+	if err := h.svc.AuthorizeSourceGovernance(ctx, sourcePerson(actorID, orgID), g); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	return g, nil
+}
 
 func (h *datasourceConnectHandler) AddGitHubSource(
 	ctx context.Context,
@@ -32,6 +66,10 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	governance, err := h.connectGovernance(ctx, actorID, req.Msg.OrgId, req.Msg.GetGovernance())
+	if err != nil {
+		return nil, err
+	}
 	source, err := h.svc.AddGitHubSource(ctx, actorID, business.AddGitHubSourceInput{
 		OrgID:           req.Msg.OrgId,
 		Repo:            req.Msg.Repo,
@@ -42,6 +80,7 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 		CollectionLabel: req.Msg.GetCollectionLabel(),
 		AccessToken:     req.Msg.AccessToken,
 		WebhookSecret:   req.Msg.WebhookSecret,
+		Governance:      governance,
 	})
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -61,6 +100,10 @@ func (h *datasourceConnectHandler) AddSource(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	governance, err := h.connectGovernance(ctx, actorID, req.Msg.OrgId, req.Msg.GetGovernance())
+	if err != nil {
+		return nil, err
+	}
 	input := business.AddSourceInput{
 		OrgID:              req.Msg.OrgId,
 		Provider:           datasourceProviderFromProto(req.Msg.Provider),
@@ -69,6 +112,7 @@ func (h *datasourceConnectHandler) AddSource(
 		Credential:         req.Msg.Credential,
 		WebhookSecret:      req.Msg.WebhookSecret,
 		OAuth2ClientSecret: req.Msg.Oauth2ClientSecret,
+		Governance:         governance,
 	}
 	if gh := req.Msg.GetGithub(); gh != nil {
 		input.Repo = gh.Repo
@@ -131,6 +175,9 @@ func (h *datasourceConnectHandler) UpdateSource(
 	}
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
+	}
+	if err := h.authorizeSourceChange(ctx, actorID, req.Msg.OrgId, req.Msg.Id); err != nil {
+		return nil, err
 	}
 	input := business.UpdateSourceInput{
 		OrgID:          req.Msg.OrgId,
@@ -195,6 +242,11 @@ func (h *datasourceConnectHandler) ListSources(
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
+	// A source a solution governs is listed only to a holder of a role on its
+	// installation.
+	if sources, err = h.svc.ReadableSources(ctx, sourcePerson(actorID, req.Msg.OrgId), sources); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	out := make([]*gen.Datasource, 0, len(sources))
 	for _, source := range sources {
 		if source.PersonalOwnerUserID != "" && source.PersonalOwnerUserID != actorID {
@@ -221,6 +273,9 @@ func (h *datasourceConnectHandler) GetSource(
 	if err != nil {
 		return nil, translateGRPCError(err)
 	}
+	if err := h.svc.AuthorizeSourceRead(ctx, sourcePerson(actorID, req.Msg.OrgId), source); err != nil {
+		return nil, translateGRPCError(err)
+	}
 	return connect.NewResponse(&gen.GetSourceResponse{Datasource: datasourceSourceToProto(source, h.svc.DatasourceConnectors(), h.svc.LiveDeliveryFor(source))}), nil
 }
 
@@ -235,6 +290,9 @@ func (h *datasourceConnectHandler) SyncSource(
 	}
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
+	}
+	if err := h.authorizeSourceChange(ctx, actorID, req.Msg.OrgId, req.Msg.Id); err != nil {
+		return nil, err
 	}
 	var jobID string
 	if req.Msg.Reconnect {
@@ -268,7 +326,11 @@ func (h *datasourceConnectHandler) GetSourceSync(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	if _, err := h.svc.GetDatasourceSourceForActor(ctx, req.Msg.OrgId, req.Msg.SourceId, actorID); err != nil {
+	source, err := h.svc.GetDatasourceSourceForActor(ctx, req.Msg.OrgId, req.Msg.SourceId, actorID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := h.svc.AuthorizeSourceRead(ctx, sourcePerson(actorID, req.Msg.OrgId), source); err != nil {
 		return nil, translateGRPCError(err)
 	}
 	operation, err := h.svc.GetDatasourceSync(ctx, req.Msg.OrgId, req.Msg.SourceId, req.Msg.JobId)
@@ -296,6 +358,9 @@ func (h *datasourceConnectHandler) DeleteSource(
 	}
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
+	}
+	if err := h.authorizeSourceChange(ctx, actorID, req.Msg.OrgId, req.Msg.Id); err != nil {
+		return nil, err
 	}
 	if err := h.svc.DeleteDatasourceSource(ctx, actorID, req.Msg.OrgId, req.Msg.Id); err != nil {
 		return nil, translateGRPCError(err)
@@ -371,6 +436,9 @@ func (h *datasourceConnectHandler) MigrateGitHubSourceToApp(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
+	if err := h.authorizeSourceChange(ctx, actorID, req.Msg.OrgId, req.Msg.Id); err != nil {
+		return nil, err
+	}
 	source, err := h.svc.MigrateGitHubSourceToApp(ctx, actorID, req.Msg.OrgId, req.Msg.Id)
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -401,6 +469,9 @@ func datasourceSourceToProto(source *business.DatasourceSource, registry *connec
 		CreatedAt:          timestamppb.New(source.CreatedAt),
 		UpdatedAt:          timestamppb.New(source.UpdatedAt),
 		LastIngestedCommit: source.LastIngestedCommit,
+	}
+	if g := source.Governance; g != nil {
+		out.Governance = &gen.SourceGovernance{InstallationId: g.InstallationID, ResourceKind: g.Kind, Action: g.Action, Binding: g.Binding}
 	}
 	// Zero means "no periodic reconcile for this source", which is a real state
 	// (an operator may set the interval to zero) and is exactly what the wire

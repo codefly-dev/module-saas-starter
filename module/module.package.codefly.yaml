@@ -18,12 +18,24 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/authority/contract.binpb
+<<<<<<< HEAD
         digest: sha256:dd2d79d00be32561906c601852abfdc452ae1f2140ec47e2301b9861b882ba6c
+||||||| parent of 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
+        digest: sha256:d9d37f93c929792b50d38c9f27be5266677eee6489fcfff7fb8f710fba437041
+=======
+        digest: sha256:4f0a30b0eccaa4d762a81271ce2953541034f330b9106147ea24477ba8b54214
+>>>>>>> 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
       - endpoint: connect
         kind: protobuf
         package: ""
         path: contracts/api/accounts/connect/contract.binpb
+<<<<<<< HEAD
         digest: sha256:dd2d79d00be32561906c601852abfdc452ae1f2140ec47e2301b9861b882ba6c
+||||||| parent of 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
+        digest: sha256:d9d37f93c929792b50d38c9f27be5266677eee6489fcfff7fb8f710fba437041
+=======
+        digest: sha256:4f0a30b0eccaa4d762a81271ce2953541034f330b9106147ea24477ba8b54214
+>>>>>>> 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:

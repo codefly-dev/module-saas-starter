@@ -233,6 +233,44 @@ message UploadDatasourceConfig {
   }];
 }
 
+// SourceGovernance ties a source to one installation of a solution (or of a
+// module page declaring roles), and names the one scope of that solution's
+// own declaration that governs the source. A source carrying it is the
+// installation's: every later change to it (update, sync, reconnect, removal,
+// operations and trigger declarations) requires, beside the organization rule
+// its method declares, that the authority issue the caller this scope there,
+// exactly as it would issue it for the solution's page; and it is read only by
+// someone who holds a role on the installation. An organization administrator
+// who holds no such role is refused by name. A source without it is the
+// organization's own, governed by the organization rule alone, as before.
+//
+// The tie is set once, when the source is connected, and never moves; it
+// lapses only when its installation is uninstalled, and the source is then
+// the organization's again.
+message SourceGovernance {
+  // The installation the source belongs to: the authority's installation id.
+  string installation_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  // The governing scope: one resource kind and one action. Without binding it
+  // is one of the solution's own kinds, as its roles grant it on the
+  // installation's data; with binding, one its roles reach through that
+  // operation binding (a kind of the module the binding addresses).
+  string resource_kind = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  // The governing action on resource_kind, as the solution declares it.
+  string action = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+  }];
+  // The solution's operation binding the scope is held through; empty for one
+  // of its own kinds.
+  string binding = 4 [(buf.validate.field).string.max_len = 255];
+}
+
 // Datasource is one connected external datasource. It is org-scoped and carries
 // only non-secret projection fields; credential material is deliberately absent.
 // Exactly one provider config (github, api, crawler, or upload) is set, matching
@@ -303,6 +341,9 @@ message Datasource {
   // it, which together with live_delivery NONE means it only ever changes when
   // somebody presses "Sync now".
   google.protobuf.Duration reconcile_interval = 22;
+  // The installation that governs this source, and the scope it is governed
+  // by; unset for an organization's own source.
+  SourceGovernance governance = 23;
 }
 
 message AddGitHubSourceRequest {
@@ -363,6 +404,10 @@ message AddGitHubSourceRequest {
       }
     }
   }];
+  // Ties the source to a solution's installation, governed by the scope it
+  // names (SourceGovernance). The caller must be issued that scope there now.
+  // Omitted for an organization's own source.
+  SourceGovernance governance = 11;
 }
 
 message AddGitHubSourceResponse {
@@ -413,6 +458,10 @@ message AddSourceRequest {
   // confidential client. Optional (a public client omits it). Encrypted at
   // receipt alongside the refresh token carried in credential; never projected.
   string oauth2_client_secret = 10 [(buf.validate.field).string.max_len = 1024];
+  // Ties the source to a solution's installation, governed by the scope it
+  // names (SourceGovernance). The caller must be issued that scope there now.
+  // Omitted for an organization's own source.
+  SourceGovernance governance = 14;
 }
 
 message AddSourceResponse {
