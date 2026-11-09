@@ -46,8 +46,8 @@ github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
 github.com/codefly-dev/authority/libraries/authority-client/go v0.2.0 h1:tVuBmsE97RLB0hKSDuNYBn7fE6JeJOTRdx7iTPk0Zjg=
 github.com/codefly-dev/authority/libraries/authority-client/go v0.2.0/go.mod h1:mzTVpQPX7DVHsy1bDBGkmt/10giDBVpsLr+jM8/0Psg=
-github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261109213200-414bf5f9e83c h1:fkU/GN+K5RcdLdUggwqB9s6ZCnA2OiSwZM6jOSkGTag=
-github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261109213200-414bf5f9e83c/go.mod h1:BgFMPVhHwxzhG3we1mxxTmPuEJ4PvtzLdtKqDv7/H4U=
+github.com/codefly-dev/authority/libraries/authority-core/go v0.1.0 h1:T/5rtNNJW+793t+kKT2RVCpjqUBeqk6gMTjuFJr/svA=
+github.com/codefly-dev/authority/libraries/authority-core/go v0.1.0/go.mod h1:BgFMPVhHwxzhG3we1mxxTmPuEJ4PvtzLdtKqDv7/H4U=
 github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261109213200-414bf5f9e83c h1:oKmv2H9GHnnEjUuO5hDXTth18ciekFzP6YfeUkFL7gk=
 github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261109213200-414bf5f9e83c/go.mod h1:XsOFnO2MQdr37vM3ULa0Uwi8ZWptyVx7hRSUyIdaZ1Q=
 github.com/codefly-dev/authority/libraries/hop/go v0.2.0 h1:H4JoPvzQPvFJvwF2TlcQ4gaXsK5reFeXPB6F+1tLHVM=

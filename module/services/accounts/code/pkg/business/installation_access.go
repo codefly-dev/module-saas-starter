@@ -342,7 +342,9 @@ func (s *Service) SetUpModulePage(ctx context.Context, caller authority.Person, 
 		return InstalledSolution{}, err
 	}
 	i := slices.IndexFunc(installed, func(inst domain.Installation) bool {
-		return inst.Target == m.Name && inst.PrincipalID == "" && inst.Status == domain.Active
+		// The composition installation: active, installed by nobody under
+		// no consent (a core-decided row has an installer and a receipt).
+		return inst.Target == m.Name && inst.InstalledBy == "" && inst.Consent.OperationID == "" && inst.Status == domain.Active
 	})
 	if i < 0 {
 		return InstalledSolution{}, domain.NotNow("%s is not installed in this organization yet: composition installs it (a solution that reaches it, or supporting module administration); set up its access once it is", m.Name)

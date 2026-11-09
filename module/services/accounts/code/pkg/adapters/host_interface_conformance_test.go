@@ -1188,7 +1188,7 @@ func runHostInterfaceFixture(t *testing.T) {
 		i := slices.IndexFunc(all, func(inst domain.Installation) bool { return inst.Target == module && inst.Status == domain.Active })
 		require.GreaterOrEqual(t, i, 0, "the module page is installed by composition at Acme")
 		inst := all[i]
-		require.Empty(t, inst.PrincipalID, "its installation is the host's own record, with no principal")
+		require.Equal(t, authority.StablePrincipalID(fixtureOrganization, module), inst.PrincipalID, "its installation is the host's own record, owning its page's data (RBAC-1)")
 		require.Empty(t, inst.AgentRole, "holding no standing authority")
 		const nora, remi = "00000000-0000-7000-8000-0000000000b8", "00000000-0000-7000-8000-0000000000b2"
 		_, err = core.GrantRoleAsHost(ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: "viewer", PersonID: nora})
