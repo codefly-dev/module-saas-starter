@@ -99,6 +99,53 @@ describe("SolutionsMenu ownership (#949)", () => {
 		expect(screen.queryByText("LEDGER")).not.toBeNull();
 	});
 
+	// After a person switch the first read could meet a session the host had
+	// not settled yet; the menu showed no page at all until the next 10 s poll.
+	it("asks again within a second when a viewer's first read is not answered", async () => {
+		vi.useFakeTimers();
+		try {
+			tokenState.fetch
+				.mockResolvedValueOnce(
+					Response.json({ error: "authority_unavailable" }, { status: 503 }),
+				)
+				.mockResolvedValue(listing("ledger"));
+			await mountMenu();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(0);
+			});
+			expect(screen.queryByText("LEDGER")).toBeNull();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(1_000);
+			});
+			expect(screen.queryByText("LEDGER")).not.toBeNull();
+			expect(tokenState.fetch).toHaveBeenCalledTimes(2);
+			// Answered: no quick retries any more, only the poll.
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(5_000);
+			});
+			expect(tokenState.fetch).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("stops asking quickly after a few unanswered first reads", async () => {
+		vi.useFakeTimers();
+		try {
+			tokenState.fetch.mockResolvedValue(
+				Response.json({ error: "authority_unavailable" }, { status: 503 }),
+			);
+			await mountMenu();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(9_000);
+			});
+			// The first read and five quick retries; then only the 10 s poll.
+			expect(tokenState.fetch).toHaveBeenCalledTimes(6);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("clears the list on a 401 the transport could not recover", async () => {
 		vi.useFakeTimers();
 		try {
