@@ -476,3 +476,107 @@ func testPagesReachThroughTheAgent(t *testing.T, h reviewedClosureHarness) {
 		require.NoError(t, err)
 	})
 }
+
+// testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows holds the host,
+// on its own store and delivery path, to a solution editor's first save and
+// tool offer through an agent (W19-3, W19-4):
+//
+//   - the agent's configuration-write binding carries the collection create
+//     its call declares (as the CLI derives it from the store's CreateDocument
+//     carries), so an editor whose role names it through the agent is issued
+//     it, and the store attaches the collection the first write creates to
+//     the solution's installation; a viewer is issued no write at all;
+//   - each runnable operation's prepared binding, the agent's own operations
+//     among them (addressed to the agent itself), issues the operation's scopes
+//     asked for the solution's installation (the owner the agent's admitted
+//     capability is confined to) within the role cut to the binding: an
+//     editor is offered the document, record and agent tools their role
+//     names, a viewer only the document read; an owner-blind ask is a
+//     widening.
+func testAnEditorSavesAndIsOfferedTheRunnablesTheirRoleAllows(t *testing.T, h reviewedClosureHarness) {
+	const docs, records, agent, studio = "tools-docs", "tools-records", "tools-agent", "tools-studio"
+	doc, collection, row, intents, tasks := docs+".doc", docs+".collection", records+".row", agent+".intents", agent+".tasks"
+	invoke := func(scopes ...string) map[string][]string { return map[string][]string{"invoke": scopes} }
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: docs, ceilings: []*authorityv1.WorkScopeV1{wireScope(doc, "read", "write"), wireScope(collection, "read", "create")}})
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: records, ceilings: []*authorityv1.WorkScopeV1{wireScope(row, "read")}})
+	deliverModule(t, h.ctx, h.conn, h.signer, conformanceModule{alias: agent,
+		ceilings: []*authorityv1.WorkScopeV1{wireScope(intents, "read", "configure", "activate", "run"), wireScope(tasks, "execute")},
+		bindings: []solutionhost.AuthorityBinding{
+			{ID: "configuration-write", Audience: docs, Operations: invoke(doc+":write", collection+":create")},
+			{ID: "DOCS__SEARCH", Audience: docs, Operations: invoke(doc+":read", collection+":read")},
+			{ID: "RECORDS__LIST", Audience: records, Operations: invoke(row + ":read")},
+			{ID: "AGENT__READ_INTENT", Audience: agent, Operations: invoke(intents + ":read")},
+		}})
+	note := wireScope(studio+".note", "read")
+	deliverSolution(t, h.ctx, h.conn, h.signer, conformanceSolution{alias: studio, generation: 1, installationRole: domain.NoInstallationRole,
+		ceilings: []*authorityv1.WorkScopeV1{note},
+		roles: map[string][]*authorityv1.WorkScopeV1{
+			"installer": {note},
+			"editor":    {note, wireScope(intents, "read", "configure", "activate", "run"), wireScope(tasks, "execute")},
+			"viewer":    {note, wireScope(intents, "read", "run"), wireScope(tasks, "execute")},
+		},
+		through: map[string]map[string][]*authorityv1.WorkScopeV1{
+			"editor": {"agent": {wireScope(doc, "read", "write"), wireScope(collection, "read", "create"), wireScope(row, "read")}},
+			"viewer": {"agent": {wireScope(doc, "read"), wireScope(collection, "read")}},
+		},
+		bindings: []solutionhost.AuthorityBinding{{ID: "agent", Audience: agent, Operations: invoke(intents+":read", intents+":configure", intents+":activate", intents+":run", tasks+":execute")}}})
+	alex := authority.Person{ID: conformanceAlex, Organization: fixtureOrganization}
+	review, err := h.review(t, alex, studio)
+	require.NoError(t, err)
+	inst, err := h.svc.InstallReviewedSolution(h.ctx, alex, fixtureOrganization, review, business.InstallAccess{})
+	require.NoError(t, err)
+	for role, person := range map[string]string{"editor": conformanceIvy, "viewer": conformanceAlice} {
+		_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: role, PersonID: person})
+		require.NoError(t, err)
+	}
+	all, err := h.core.Installations(h.ctx, alex, fixtureOrganization)
+	require.NoError(t, err)
+	i := slices.IndexFunc(all, func(i domain.Installation) bool { return i.ID == inst.ID })
+	require.GreaterOrEqual(t, i, 0)
+	owner := all[i].PrincipalID
+	atAgent := func(who string) authority.Issued {
+		out, err := h.core.IssueForPage(h.ctx, authority.Person{ID: who, Organization: fixtureOrganization}, studio, authority.IssueRequest{Audience: agent})
+		require.NoError(t, err)
+		return out
+	}
+	onward := func(parent authority.Issued, binding string, asked ...*basev0.WorkScopeV1) (authority.Issued, error) {
+		return h.core.IssueChild(h.ctx, parent.Token, authority.Workload{Module: agent}, authority.IssueRequest{Binding: binding, Scopes: asked})
+	}
+	owned := func(kind string, actions ...string) *basev0.WorkScopeV1 {
+		return &basev0.WorkScopeV1{ResourceKind: kind, Actions: actions, ResourceOwnerId: owner}
+	}
+
+	t.Run("a non-admin editor's first save creates the installation's collection", func(t *testing.T) {
+		write, err := onward(atAgent(conformanceIvy), "configuration-write")
+		require.NoError(t, err)
+		attachedTo, err := h.core.AttachResource(h.ctx, authority.AttachmentRequest{Token: write.Token, Kind: collection, ResourceID: "assistant-configuration", Store: authority.Workload{Module: docs}})
+		require.NoError(t, err, "the write carries the collection create the role names")
+		require.Equal(t, inst.ID, attachedTo)
+		_, err = onward(atAgent(conformanceAlice), "configuration-write")
+		require.ErrorContains(t, err, "holds nothing at "+docs)
+	})
+	t.Run("an editor is offered the document, record and agent tools their role names", func(t *testing.T) {
+		at := atAgent(conformanceIvy)
+		for binding, asked := range map[string][]*basev0.WorkScopeV1{
+			"DOCS__SEARCH":       {owned(doc, "read"), owned(collection, "read")},
+			"RECORDS__LIST":      {owned(row, "read")},
+			"AGENT__READ_INTENT": {owned(intents, "read")},
+		} {
+			_, err := onward(at, binding, asked...)
+			require.NoError(t, err, binding)
+		}
+		_, err := onward(at, "DOCS__SEARCH", wireCore(doc, "read"), wireCore(collection, "read"))
+		require.ErrorContains(t, err, "a child widens what its owner holds", "owner-blind, the ask is the whole kind")
+	})
+	t.Run("a viewer is offered the document read alone", func(t *testing.T) {
+		at := atAgent(conformanceAlice)
+		_, err := onward(at, "DOCS__SEARCH", owned(doc, "read"), owned(collection, "read"))
+		require.NoError(t, err)
+		_, err = onward(at, "RECORDS__LIST", owned(row, "read"))
+		require.ErrorContains(t, err, "holds nothing at "+records)
+	})
+}
+
+func wireCore(kind string, actions ...string) *basev0.WorkScopeV1 {
+	return &basev0.WorkScopeV1{ResourceKind: kind, Actions: actions}
+}
