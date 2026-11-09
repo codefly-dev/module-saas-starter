@@ -1568,6 +1568,11 @@ describe("Admin → Solutions lists solutions; module pages appear only as set-u
 		});
 		expect(holders.textContent).toContain("viewer: Finance");
 		expect(holders.textContent).toContain("installer: nobody");
+		// Its install date sits under its name.
+		const installedRow = holders.closest("tr") as HTMLElement;
+		expect(
+			within(installedRow).getByText(/^Installed (Sep 30|Oct 1), 2026/),
+		).toBeTruthy();
 	});
 
 	it("offers no module on supporting module administration until the offers are read, and says a failed read as the host words it", async () => {

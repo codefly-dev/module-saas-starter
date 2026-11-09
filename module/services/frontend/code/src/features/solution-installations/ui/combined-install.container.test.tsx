@@ -425,7 +425,9 @@ describe("combined reviewed installation", () => {
 		expect(within(editor).getByText("Read and edit pages")).toBeTruthy();
 		expect(within(editor).getByText("Read documents")).toBeTruthy();
 		expect(
-			within(editor).getByText("Only what they already hold there themselves"),
+			within(editor).getByText(
+				"Nothing more than they already have there themselves",
+			),
 		).toBeTruthy();
 		expect(text).not.toMatch(/delete pages/);
 		expect(

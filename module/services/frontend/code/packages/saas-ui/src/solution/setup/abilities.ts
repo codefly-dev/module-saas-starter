@@ -155,7 +155,7 @@ function whereOf(target: string, row: AbilityReach) {
 	return { key: "role", order: 0, where: `In ${target}` };
 }
 
-const OWN_ACCESS = "only what they already hold there themselves";
+const OWN_ACCESS = "nothing more than they already have there themselves";
 
 /**
  * What each role lets its holder do, grouped by where: "In <target>" (the
@@ -280,20 +280,24 @@ export function updateAsks(
 const UNREACHED = /^role (\S+) reaches nothing of (.+) through (\S+): (.+)$/;
 
 /**
- * One line naming what an installation's unreached conditions cannot reach:
- * "Can't reach model through assistant" (each kind's module, from its
- * prefix), for a status line; `unreachedText` says each in full.
+ * One line naming who cannot reach what, from an installation's unreached
+ * conditions: "Viewers can't reach model through assistant" (each kind's
+ * module, from its prefix), for a status line; `unreachedText` says each in
+ * full.
  */
 export function unreachedHeadline(conditions: readonly string[]): string {
 	const through = new Map<string, Set<string>>();
+	const roles = new Set<string>();
 	for (const condition of conditions) {
 		const parsed = UNREACHED.exec(condition);
 		if (!parsed) return "Some access can't be reached right now";
+		roles.add(parsed[1]);
 		const modules = through.get(parsed[3]) ?? new Set<string>();
 		for (const pair of parsed[2].split(", ")) modules.add(pair.split(".")[0]);
 		through.set(parsed[3], modules);
 	}
-	return `Can't reach ${listText(
+	const who = listText([...roles].sort().map((role) => `${role}s`));
+	return `${who[0].toUpperCase()}${who.slice(1)} can't reach ${listText(
 		[...through].map(
 			([binding, modules]) => `${listText([...modules])} through ${binding}`,
 		),

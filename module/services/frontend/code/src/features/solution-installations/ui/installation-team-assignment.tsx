@@ -115,6 +115,12 @@ export function InstallationTeamAssignment({
 									: `${entry.name} will be created`}
 							</span>
 						</div>
+						{entry.chosen && taken.has(entry.role) && (
+							<p className="text-muted-foreground">
+								Joining {entry.name} also gives you whatever else {entry.name}{" "}
+								has.
+							</p>
+						)}
 						<label className="inline-flex items-center gap-2">
 							<input
 								type="checkbox"

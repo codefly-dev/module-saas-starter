@@ -206,7 +206,7 @@ export function reachDetail(offer: Pick<ReviewedOffer, "roles">) {
 	return offer.roles.flatMap((role) =>
 		role.reach.map(
 			(row) =>
-				`${role.name} — ${row.via} ${row.path.join(" → ")}${row.confinement ? ` (${row.confinement})` : ""}: ${row.operations.join(", ") || "no operation of its own"}`,
+				`${role.name} — ${row.via} ${row.path.join(" → ")}${row.confinement ? ` (${row.confinement})` : ""}: ${row.operations.join(", ") || "no operation listed"}`,
 		),
 	);
 }

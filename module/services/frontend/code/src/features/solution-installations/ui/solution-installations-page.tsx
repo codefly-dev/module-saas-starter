@@ -458,7 +458,7 @@ function AvailableSection({
 	title = showModules ? "Available" : "Solutions",
 	description = showModules
 		? "What this host offers this organization right now, at the release it has applied."
-		: "The solutions this host offers this organization right now, at the release it has applied.",
+		: "The solutions your organization can install.",
 	hideWhenEmpty = false,
 }: {
 	showModules: boolean;
@@ -776,7 +776,6 @@ function InstalledSection({
 									</TableHead>
 									<TableHead>Status</TableHead>
 									<TableHead>Who has access</TableHead>
-									<TableHead>Installed</TableHead>
 									<TableHead className="text-right">Action</TableHead>
 								</TableRow>
 							</TableHeader>
@@ -808,6 +807,18 @@ function InstalledSection({
 													</span>
 												)
 											)}
+											<span
+												className="block text-xs font-normal text-muted-foreground"
+												title={
+													row.installedAt
+														? undefined
+														: "This installation was made before install dates were kept."
+												}
+											>
+												{row.installedAt
+													? `Installed ${formatDate(row.installedAt)}`
+													: "Install date not recorded"}
+											</span>
 										</TableCell>
 										<TableCell>
 											<StatusLine
@@ -847,17 +858,8 @@ function InstalledSection({
 												)}
 											</TableCell>
 										}
-										<TableCell className="text-sm text-muted-foreground">
-											{row.installedAt ? (
-												formatDate(row.installedAt)
-											) : (
-												<span title="This installation was made before install dates were kept.">
-													Not recorded
-												</span>
-											)}
-										</TableCell>
 										<TableCell className="text-right">
-											<div className="flex flex-wrap justify-end gap-2">
+											<div className="flex flex-col items-end gap-2">
 												{(row.status === InstallationStatus.FAILED ||
 													(row.status === InstallationStatus.PENDING &&
 														!row.hasHostScopeRoot)) && (
@@ -1002,7 +1004,11 @@ function StatusLine({
 							href={`/admin/solutions/${row.installationId}`}
 							className="hover:underline"
 						>
-							<Badge tone={fact.tone} dot>
+							<Badge
+								tone={fact.tone}
+								dot
+								className="h-auto whitespace-normal text-left"
+							>
 								{fact.text}
 							</Badge>
 						</Link>

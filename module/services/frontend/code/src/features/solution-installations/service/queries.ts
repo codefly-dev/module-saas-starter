@@ -193,6 +193,7 @@ export function useUpdateAsks(
 				asks: review.approvedRoles.length
 					? updateAsks(offer.target, offer.roles, review.approvedRoles)
 					: undefined,
+				approved: review.approvedRoles,
 			};
 		},
 	});

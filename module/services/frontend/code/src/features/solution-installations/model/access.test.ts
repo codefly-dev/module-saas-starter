@@ -64,7 +64,7 @@ describe("an installation's status line", () => {
 			"2 things to fix",
 			"Healthy",
 			"Update available",
-			"Can't reach model through agent",
+			"Viewers can't reach model through agent",
 		]);
 	});
 

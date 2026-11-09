@@ -176,6 +176,40 @@ describe("Status", () => {
 		).toBeTruthy();
 	});
 
+	it("reads each role as approved while an update waits, never as the release under review", async () => {
+		await mounted(
+			setupFixture({
+				offer: reviewedOffer({ tools: false, upgradeAvailable: true }),
+			}),
+			{
+				update: {
+					approved: [
+						{
+							name: "editor",
+							scopes: [],
+							reach: [
+								{
+									path: [exampleTarget],
+									module: exampleTarget,
+									via: "role",
+									confinement: "installation",
+									scopes: [
+										{ resourceKind: "example-pages.page", actions: ["read"] },
+									],
+									operations: [],
+								},
+							],
+						},
+					],
+				},
+			},
+		);
+		const editor = role("editor");
+		expect(editor.getByText("Read pages")).toBeTruthy();
+		expect(editor.queryByText("Read and edit documents")).toBeNull();
+		expect(screen.getByText(/as you approved it/)).toBeTruthy();
+	});
+
 	it("says an update is available even when the host has not read what it asks", async () => {
 		await mounted(
 			setupFixture({

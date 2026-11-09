@@ -60,7 +60,7 @@ describe("what a role can do", () => {
 			["Through pages and agent, in model", ["use profiles"]],
 			[
 				"With their own access in directory",
-				["only what they already hold there themselves"],
+				["nothing more than they already have there themselves"],
 			],
 		]);
 	});
@@ -229,7 +229,7 @@ describe("an unreached reach", () => {
 				"role viewer reaches nothing of model.profile:invoke through agent: agent not composed",
 				"role editor reaches nothing of model.profile:invoke, documents.document:write through agent: no module agent reaches consumes it for a person",
 			]),
-		).toBe("Can't reach model and documents through agent");
+		).toBe("Editors and viewers can't reach model and documents through agent");
 		expect(unreachedHeadline(["other"])).toBe(
 			"Some access can't be reached right now",
 		);

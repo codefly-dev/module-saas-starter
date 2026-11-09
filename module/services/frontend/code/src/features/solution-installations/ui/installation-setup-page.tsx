@@ -114,8 +114,10 @@ export function InstallationSetupPage({
 						{row?.target?.routeAlias || "This installation"}
 					</h1>
 					<p className="text-muted-foreground">
-						{entryKindText(row, rolesDeclared)} — where it stands, what each
-						role can do, and who has it.
+						{entryKindText(row, rolesDeclared)} —{" "}
+						{row?.target?.kind === "module"
+							? "who has each of its roles."
+							: "where it stands, what each role can do, and who has it."}
 					</p>
 				</div>
 				<Button
@@ -247,6 +249,7 @@ function InstallationSetup({
 					upgradeAvailable
 						? {
 								asks: asks.data?.asks,
+								approved: asks.data?.approved,
 								action: (
 									<div>
 										<Button

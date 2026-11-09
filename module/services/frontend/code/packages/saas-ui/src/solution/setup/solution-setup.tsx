@@ -32,6 +32,7 @@ import { Fragment, type ReactNode, useMemo, useState } from "react";
 import type { SolutionRequestBinding } from "../binding.js";
 import { solutionTransport } from "../transport.js";
 import {
+	type AbilityRole,
 	article,
 	type RoleAbilities,
 	roleAbilities,
@@ -87,7 +88,16 @@ export type SolutionSetupProps = SolutionSetupTransport & {
 	 * approved, in words (`updateAsks`), when the host has read it, and the
 	 * host's control that reviews it.
 	 */
-	update?: { asks?: readonly RoleAbilities[]; action?: ReactNode };
+	update?: {
+		asks?: readonly RoleAbilities[];
+		/**
+		 * Each role's reach as the installation's consent approved it: what its
+		 * holders hold until the update. The roles are read from it while an
+		 * update waits, never from the release not yet approved.
+		 */
+		approved?: readonly AbilityRole[];
+		action?: ReactNode;
+	};
 	/** The host's own control for a team holding a role: its people, in place. */
 	teamControls?: (team: SetupSubject) => ReactNode;
 	className?: string;
@@ -141,6 +151,11 @@ export function SolutionSetup(props: SolutionSetupProps) {
 						grantsError={state.grantsError}
 						subjects={props.subjects}
 						teamControls={props.teamControls}
+						approved={
+							state.offer?.installation?.upgradeAvailable
+								? props.update?.approved
+								: undefined
+						}
 						clients={clients}
 						onChanged={reload}
 					/>
@@ -313,8 +328,9 @@ function StatusSection({
 								))}
 							</ul>
 							<p>
-								A later release of the module it goes through brings it back by
-								itself; nobody gains anything meanwhile.
+								Until a later release of the module it goes through restores it,
+								the people holding that role can't do this; everything else they
+								hold keeps working, and nothing is ever widened meanwhile.
 							</p>
 						</div>
 					</Banner>
@@ -419,6 +435,7 @@ function RolesSection({
 	grantsError,
 	subjects,
 	teamControls,
+	approved,
 	clients,
 	onChanged,
 }: {
@@ -429,6 +446,8 @@ function RolesSection({
 	grantsError?: unknown;
 	subjects?: readonly SetupSubject[];
 	teamControls?: (team: SetupSubject) => ReactNode;
+	/** The approved reach, while an update waits. */
+	approved?: readonly AbilityRole[];
 	clients: SetupClients;
 	onChanged: () => void;
 }) {
@@ -452,11 +471,25 @@ function RolesSection({
 		installationId: installation?.id ?? "",
 		...grant,
 	});
-	const abilities = offer ? roleAbilities(offer.target, offer.roles) : [];
+	// While an update waits, holders hold what was approved: the roles read
+	// that, and say so; a consent that recorded no reach reads the release
+	// under review, and says that instead.
+	const waiting = offer?.installation?.upgradeAvailable === true;
+	const read = (role: OfferRole): AbilityRole =>
+		(waiting && approved?.find((a) => a.name === role.name)) || role;
+	const abilities = offer
+		? roleAbilities(offer.target, offer.roles.map(read))
+		: [];
 	return (
 		<Card
 			title="Roles"
-			description="What each role lets people do, and who has it. Nobody can use it without a role."
+			description={
+				!waiting
+					? "What each role lets people do, and who has it. Nobody can use it without a role."
+					: approved?.length
+						? "What each role lets people do today, as you approved it, and who has it. The update would add what is listed above."
+						: "What each role lets people do once updated, and who has it. Until you update, what the update adds is not available to anyone."
+			}
 		>
 			{!offer ? (
 				<Refusal error={offerError} what="the roles" />
