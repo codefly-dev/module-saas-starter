@@ -100,6 +100,21 @@ func testModulesInstalledByComposition(t *testing.T, h reviewedClosureHarness) {
 		require.Equal(t, "composition", events[i].Payload["by"])
 	})
 
+	t.Run("with no envelope, an installation's own consent is never adopted", func(t *testing.T) {
+		// This host has no administrative envelope: a consent is the
+		// organisation's snapshot, and composition never widens it
+		// (adoptsByComposition holds the case with an envelope).
+		const module = "conformance-composed"
+		inst := installed(fixtureOrganization, module)
+		require.NoError(t, h.svc.NarrowInstallation(h.ctx, conformanceAlex, fixtureOrganization, inst.GetId(), business.InstallationScope{Capabilities: true}))
+		narrowed := installed(fixtureOrganization, module)
+		if err := h.svc.KeepAuthorityCoreCurrent(h.ctx); err != nil {
+			require.NotContains(t, err.Error(), module)
+		}
+		still := installed(fixtureOrganization, module)
+		require.Equal(t, narrowed.GetRevision(), still.GetRevision(), "not installed again")
+	})
+
 	t.Run("a person never uninstalls a module", func(t *testing.T) {
 		inst := installed(fixtureOrganization, "conformance-composed")
 		err := h.svc.UninstallSolution(h.ctx, conformanceAlex, fixtureOrganization, inst.GetId())
