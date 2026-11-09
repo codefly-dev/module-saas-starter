@@ -8,12 +8,12 @@ require (
 	connectrpc.com/connect v1.21.1
 	connectrpc.com/otelconnect v0.9.0
 	github.com/codefly-dev/authority/libraries/authority-client/go v0.1.1-0.20261109185355-2178ef5a33b2
-	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261109212037-04bc3dcea0d1
-	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261109212037-04bc3dcea0d1
+	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261109214705-65d0ddc06488
+	github.com/codefly-dev/authority/libraries/conformance/go v0.0.0-20261109214705-65d0ddc06488
 	github.com/codefly-dev/authority/libraries/delivery/go v0.0.0-20261109185355-2178ef5a33b2
 	github.com/codefly-dev/authority/libraries/resources/go v0.0.0-20261109185355-2178ef5a33b2
 	github.com/codefly-dev/cli/contracts/deployment v0.0.0-20261006151622-5824cf5342fc
-	github.com/codefly-dev/core v0.19.19
+	github.com/codefly-dev/core v0.19.20-0.20261109211818-3e7b38e3d9ad
 	github.com/codefly-dev/interface-cache/go/cache v0.4.1
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
 	github.com/codefly-dev/sdk-go v0.4.1
