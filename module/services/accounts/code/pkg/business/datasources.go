@@ -728,7 +728,7 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		boundaryID, err := s.resolveBoundary(ctx, orgID, input.BoundaryNodeID, input.CollectionLabel)
+		boundaryID, err := s.resolveSourceBoundary(ctx, orgID, input.Governance, input.BoundaryNodeID, input.CollectionLabel)
 		if err != nil {
 			return err
 		}
@@ -1000,7 +1000,7 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		boundaryID, err := s.resolveBoundary(ctx, orgID, input.BoundaryNodeID, input.CollectionLabel)
+		boundaryID, err := s.resolveSourceBoundary(ctx, orgID, input.Governance, input.BoundaryNodeID, input.CollectionLabel)
 		if err != nil {
 			return err
 		}

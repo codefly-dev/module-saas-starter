@@ -68,10 +68,7 @@ func (h *datasourceConnectHandler) DeclareSourceOperations(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	if err := requireOrgAdmin(ctx, actor, req.Msg.OrgId); err != nil {
-		return nil, translateGRPCError(err)
-	}
-	if err := h.authorizeSourceChange(ctx, actor, req.Msg.OrgId, req.Msg.SourceId); err != nil {
+	if err := h.authorizeSourceWrite(ctx, actor, req.Msg.OrgId, req.Msg.SourceId); err != nil {
 		return nil, err
 	}
 	declarations := make([]operations.Declaration, 0, len(req.Msg.Operations))

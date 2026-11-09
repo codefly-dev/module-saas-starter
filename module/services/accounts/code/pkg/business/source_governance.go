@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"github.com/codefly-dev/authority/libraries/authority-core/go/authority"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
@@ -142,13 +144,13 @@ func (s *Service) AuthorizeSourceGovernance(ctx context.Context, who authority.P
 	return nil
 }
 
-// AuthorizeSourceChange decides a change to source by who, beyond the
-// organization rule its method declares: an organization's own source needs
-// nothing more; a governed one needs the core to issue who its governing scope
-// at its installation, and an organization administrator who is not issued it
-// is refused by name. A governance whose installation was uninstalled has
-// lapsed: the source is the organization's again, so its administrators can
-// still remove what no role governs any more.
+// AuthorizeSourceChange decides a change to a governed source by who, a member
+// of its organization: the core must issue who its governing scope at its
+// installation, and anyone it does not, an organization administrator
+// included, is refused by name. It answers nothing for a source without a
+// live governance (one never tied, or whose installation was uninstalled):
+// that is the organization's own, its administrators' to change, which the
+// caller decides (SourceGoverned).
 func (s *Service) AuthorizeSourceChange(ctx context.Context, who authority.Person, source *DatasourceSource) error {
 	g := source.Governance
 	if g == nil {
@@ -162,20 +164,6 @@ func (s *Service) AuthorizeSourceChange(ctx context.Context, who authority.Perso
 		return governanceRefusal(err, "source %s belongs to installation %s of %s, and changing it requires %s there, which %s is not issued", source.ID, inst.ID, inst.Target, g.scope(), who.ID)
 	}
 	return nil
-}
-
-// AuthorizeSourceChangeByID is AuthorizeSourceChange for the source id of org.
-// An absent source is left to the change itself, which answers for it as it
-// always has.
-func (s *Service) AuthorizeSourceChangeByID(ctx context.Context, who authority.Person, org, id string) error {
-	source, err := s.GetDatasourceSource(ctx, org, id)
-	if errors.Is(err, ErrDatasourceSourceNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return s.AuthorizeSourceChange(ctx, who, source)
 }
 
 // AuthorizeSourceRead decides whether who may read source: an organization's
@@ -257,4 +245,40 @@ func (s *Service) liveGovernance(ctx context.Context, source *DatasourceSource) 
 		return inst, false, err
 	}
 	return inst, found && inst.Status != domain.Revoked, nil
+}
+
+// resolveSourceBoundary is resolveBoundary for a connect: an organization's
+// own source may name any node of the organization's, or a label reusing any
+// collection of that name, as before; a governed source writes only into its
+// installation's own collections — a node a source the same installation
+// governs already writes into, or a label reusing one of those or minting a
+// new one — never another node of the organization's, which its connecting
+// member may administer nothing of. Runs inside the source-insert transaction.
+func (s *Service) resolveSourceBoundary(ctx context.Context, orgID string, g *SourceGovernance, boundaryNodeID, collectionLabel string) (string, error) {
+	if g == nil {
+		return s.resolveBoundary(ctx, orgID, boundaryNodeID, collectionLabel)
+	}
+	if boundaryNodeID = strings.TrimSpace(boundaryNodeID); boundaryNodeID != "" {
+		own, err := s.store.GovernedBoundaryNode(ctx, orgID, g.InstallationID, boundaryNodeID)
+		if err != nil {
+			return "", err
+		}
+		if !own {
+			return "", status.Errorf(codes.PermissionDenied, "boundary node %s is not a collection of installation %s: a source it governs writes only into its own collections", boundaryNodeID, g.InstallationID)
+		}
+		return boundaryNodeID, nil
+	}
+	node := &gen.ScopeNode{Id: NewIDString(), OrgId: orgID, Kind: ScopeNodeKindCollection, Label: strings.TrimSpace(collectionLabel)}
+	node.ScopePath = strings.ReplaceAll(node.Id, "-", "_")
+	return s.store.GetOrCreateGovernedCollectionNode(ctx, node, g.InstallationID)
+}
+
+// SourceGoverned reports whether source is governed now: it carries a
+// governance whose installation was not uninstalled.
+func (s *Service) SourceGoverned(ctx context.Context, source *DatasourceSource) (bool, error) {
+	if source == nil || source.Governance == nil {
+		return false, nil
+	}
+	_, live, err := s.liveGovernance(ctx, source)
+	return live, err
 }

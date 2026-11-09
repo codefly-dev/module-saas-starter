@@ -1366,13 +1366,15 @@ func (x *UploadDatasourceConfig) GetFileExtensions() []string {
 // SourceGovernance ties a source to one installation of a solution (or of a
 // module page declaring roles), and names the one scope of that solution's
 // own declaration that governs the source. A source carrying it is the
-// installation's: every later change to it (update, sync, reconnect, removal,
-// operations and trigger declarations) requires, beside the organization rule
-// its method declares, that the authority issue the caller this scope there,
-// exactly as it would issue it for the solution's page; and it is read only by
-// someone who holds a role on the installation. An organization administrator
-// who holds no such role is refused by name. A source without it is the
-// organization's own, governed by the organization rule alone, as before.
+// installation's: connecting it and every later change to it (update, sync,
+// reconnect, removal, operations and trigger declarations, an account link)
+// are decided by that scope alone — any member the authority issues it there,
+// exactly as it would for the solution's page, whether or not they administer
+// the organization, and nobody else, an organization administrator included,
+// who is refused by name. It writes only into the installation's own
+// collections, and is read only by someone holding a role on the
+// installation. A source without it is the organization's own, changed by its
+// administrators alone, as before.
 //
 // The tie is set once, when the source is connected, and never moves; it
 // lapses only when its installation is uninstalled, and the source is then
@@ -1748,8 +1750,10 @@ type AddGitHubSourceRequest struct {
 	// Optional file suffix allowlist, intersected with paths (not a glob).
 	FileExtensions []string `protobuf:"bytes,10,rep,name=file_extensions,json=fileExtensions,proto3" json:"file_extensions,omitempty"`
 	// Ties the source to a solution's installation, governed by the scope it
-	// names (SourceGovernance). The caller must be issued that scope there now.
-	// Omitted for an organization's own source.
+	// names (SourceGovernance): the caller must be issued that scope there now,
+	// and need not administer the organization; the boundary must be one of the
+	// installation's own collections. Omitted for an organization's own source,
+	// which an organization administrator connects.
 	Governance    *SourceGovernance `protobuf:"bytes,11,opt,name=governance,proto3" json:"governance,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1966,8 +1970,10 @@ type AddSourceRequest struct {
 	// receipt alongside the refresh token carried in credential; never projected.
 	Oauth2ClientSecret string `protobuf:"bytes,10,opt,name=oauth2_client_secret,json=oauth2ClientSecret,proto3" json:"oauth2_client_secret,omitempty"`
 	// Ties the source to a solution's installation, governed by the scope it
-	// names (SourceGovernance). The caller must be issued that scope there now.
-	// Omitted for an organization's own source.
+	// names (SourceGovernance): the caller must be issued that scope there now,
+	// and need not administer the organization; the boundary must be one of the
+	// installation's own collections. Omitted for an organization's own source,
+	// which an organization administrator connects.
 	Governance    *SourceGovernance `protobuf:"bytes,14,opt,name=governance,proto3" json:"governance,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -8277,16 +8283,16 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\teffect_id\x10\x04\x18\x030\x01:\x02\x10\x01@\x01H\x03P\x03X\x04`\x01\x82\xd3\xe4\x93\x02/\x12-/v1/datasource-operation-receipts/{effect_id}\x12\x85\x02\n" +
 	"\x14ListSourceOperations\x12-.saas.accounts.v1.ListSourceOperationsRequest\x1a..saas.accounts.v1.ListSourceOperationsResponse\"\x8d\x01\xc2\xf3\x18D\b\x02\x10\x03\x1a\x0fdatasource:read\"\x0fdatasource:read*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02?\x12=/v1/organizations/{org_id}/datasources/{source_id}/operations\x12\x93\x02\n" +
-	"\x17DeclareSourceOperations\x120.saas.accounts.v1.DeclareSourceOperationsRequest\x1a1.saas.accounts.v1.DeclareSourceOperationsResponse\"\x92\x01\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +
+	"\x17DeclareSourceOperations\x120.saas.accounts.v1.DeclareSourceOperationsRequest\x1a1.saas.accounts.v1.DeclareSourceOperationsResponse\"\x92\x01\xc2\xf3\x18F\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
 	"\"saas.datasource.operation.declared\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02B:\x01*\"=/v1/organizations/{org_id}/datasources/{source_id}/operations\x12\xac\x01\n" +
-	"\x0fAddGitHubSource\x12(.saas.accounts.v1.AddGitHubSourceRequest\x1a).saas.accounts.v1.AddGitHubSourceResponse\"D\xc2\xf3\x18@\b\x02\x10\x04*\f\n" +
+	"\x0fAddGitHubSource\x12(.saas.accounts.v1.AddGitHubSourceRequest\x1a).saas.accounts.v1.AddGitHubSourceResponse\"D\xc2\xf3\x18@\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01: \n" +
 	"\x1csaas.datasource.source.added\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\x9a\x01\n" +
-	"\tAddSource\x12\".saas.accounts.v1.AddSourceRequest\x1a#.saas.accounts.v1.AddSourceResponse\"D\xc2\xf3\x18@\b\x02\x10\x04*\f\n" +
+	"\tAddSource\x12\".saas.accounts.v1.AddSourceRequest\x1a#.saas.accounts.v1.AddSourceResponse\"D\xc2\xf3\x18@\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01: \n" +
 	"\x1csaas.datasource.source.added\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\xa5\x01\n" +
-	"\fUpdateSource\x12%.saas.accounts.v1.UpdateSourceRequest\x1a&.saas.accounts.v1.UpdateSourceResponse\"F\xc2\xf3\x18B\b\x02\x10\x04*\f\n" +
+	"\fUpdateSource\x12%.saas.accounts.v1.UpdateSourceRequest\x1a&.saas.accounts.v1.UpdateSourceResponse\"F\xc2\xf3\x18B\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
 	"\x1esaas.datasource.source.updated\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\x8f\x01\n" +
 	"\x14GetDatasourceCatalog\x12-.saas.accounts.v1.GetDatasourceCatalogRequest\x1a..saas.accounts.v1.GetDatasourceCatalogResponse\"\x18\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x02`\x01\x12\x82\x01\n" +
@@ -8295,12 +8301,12 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\tGetSource\x12\".saas.accounts.v1.GetSourceRequest\x1a#.saas.accounts.v1.GetSourceResponse\"&\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\x9e\x01\n" +
 	"\n" +
-	"SyncSource\x12#.saas.accounts.v1.SyncSourceRequest\x1a$.saas.accounts.v1.SyncSourceResponse\"E\xc2\xf3\x18A\b\x02\x10\x04*\f\n" +
+	"SyncSource\x12#.saas.accounts.v1.SyncSourceRequest\x1a$.saas.accounts.v1.SyncSourceResponse\"E\xc2\xf3\x18A\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:!\n" +
 	"\x1dsaas.datasource.source.synced\x10\x02@\x01H\x04P\x04X\x02`\x01\x12\x88\x01\n" +
-	"\rGetSourceSync\x12&.saas.accounts.v1.GetSourceSyncRequest\x1a'.saas.accounts.v1.GetSourceSyncResponse\"&\xc2\xf3\x18\"\b\x02\x10\x04*\f\n" +
+	"\rGetSourceSync\x12&.saas.accounts.v1.GetSourceSyncRequest\x1a'.saas.accounts.v1.GetSourceSyncResponse\"&\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\xa5\x01\n" +
-	"\fDeleteSource\x12%.saas.accounts.v1.DeleteSourceRequest\x1a&.saas.accounts.v1.DeleteSourceResponse\"F\xc2\xf3\x18B\b\x02\x10\x04*\f\n" +
+	"\fDeleteSource\x12%.saas.accounts.v1.DeleteSourceRequest\x1a&.saas.accounts.v1.DeleteSourceResponse\"F\xc2\xf3\x18B\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
 	"\x1esaas.datasource.source.removed\x10\x02@\x01H\x04P\x02X\x02`\x01\x12\xc4\x01\n" +
 	"\x13BeginGitHubAppSetup\x12,.saas.accounts.v1.BeginGitHubAppSetupRequest\x1a-.saas.accounts.v1.BeginGitHubAppSetupResponse\"P\xc2\xf3\x18L\b\x02\x10\x04*\f\n" +
@@ -8309,7 +8315,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x16CompleteGitHubAppSetup\x12/.saas.accounts.v1.CompleteGitHubAppSetupRequest\x1a0.saas.accounts.v1.CompleteGitHubAppSetupResponse\"R\xc2\xf3\x18N\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:.\n" +
 	"*saas.datasource.github_app.setup_completed\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\xcd\x01\n" +
-	"\x18MigrateGitHubSourceToApp\x121.saas.accounts.v1.MigrateGitHubSourceToAppRequest\x1a2.saas.accounts.v1.MigrateGitHubSourceToAppResponse\"J\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +
+	"\x18MigrateGitHubSourceToApp\x121.saas.accounts.v1.MigrateGitHubSourceToAppRequest\x1a2.saas.accounts.v1.MigrateGitHubSourceToAppResponse\"J\xc2\xf3\x18F\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
 	"\"saas.datasource.credential.updated\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xd5\x01\n" +
 	"\x1aBeginDatasourceAccountLink\x123.saas.accounts.v1.BeginDatasourceAccountLinkRequest\x1a4.saas.accounts.v1.BeginDatasourceAccountLinkResponse\"L\xc2\xf3\x18H\b\x02\x10\x03*\f\n" +
@@ -8345,7 +8351,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x16RevokeSourceDelegation\x12/.saas.accounts.v1.RevokeSourceDelegationRequest\x1a0.saas.accounts.v1.RevokeSourceDelegationResponse\"J\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
 	"\"saas.datasource.delegation.revoked\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xeb\x01\n" +
-	"\x16DelegateSourceTriggers\x12/.saas.accounts.v1.DelegateSourceTriggersRequest\x1a0.saas.accounts.v1.DelegateSourceTriggersResponse\"n\xc2\xf3\x18j\b\x02\x10\x04*\f\n" +
+	"\x16DelegateSourceTriggers\x12/.saas.accounts.v1.DelegateSourceTriggersRequest\x1a0.saas.accounts.v1.DelegateSourceTriggersResponse\"n\xc2\xf3\x18j\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:J\n" +
 	"\"saas.datasource.delegation.created\n" +
 	"\"saas.datasource.delegation.revoked\x10\x02@\x01H\x04P\x02X\x03`\x01\x12\xb2\x01\n" +

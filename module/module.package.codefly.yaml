@@ -19,16 +19,6 @@ services:
         package: saas.accounts.v1
         path: contracts/api/accounts/authority/contract.binpb
 <<<<<<< HEAD
-        digest: sha256:dd2d79d00be32561906c601852abfdc452ae1f2140ec47e2301b9861b882ba6c
-||||||| parent of 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
-        digest: sha256:d9d37f93c929792b50d38c9f27be5266677eee6489fcfff7fb8f710fba437041
-=======
-        digest: sha256:4f0a30b0eccaa4d762a81271ce2953541034f330b9106147ea24477ba8b54214
->>>>>>> 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
-      - endpoint: connect
-        kind: protobuf
-        package: ""
-        path: contracts/api/accounts/connect/contract.binpb
 <<<<<<< HEAD
         digest: sha256:dd2d79d00be32561906c601852abfdc452ae1f2140ec47e2301b9861b882ba6c
 ||||||| parent of 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
@@ -36,6 +26,28 @@ services:
 =======
         digest: sha256:4f0a30b0eccaa4d762a81271ce2953541034f330b9106147ea24477ba8b54214
 >>>>>>> 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
+||||||| parent of 06c09eca (fix(accounts): a governed source is its scope holders' to change; the organization's own stays its administrators')
+        digest: sha256:4f0a30b0eccaa4d762a81271ce2953541034f330b9106147ea24477ba8b54214
+=======
+        digest: sha256:3a3f8818d5a4c4754e8b235a9bc970e5dc34ee36d8295d8bb146e36aca05d986
+>>>>>>> 06c09eca (fix(accounts): a governed source is its scope holders' to change; the organization's own stays its administrators')
+      - endpoint: connect
+        kind: protobuf
+        package: ""
+        path: contracts/api/accounts/connect/contract.binpb
+<<<<<<< HEAD
+<<<<<<< HEAD
+        digest: sha256:dd2d79d00be32561906c601852abfdc452ae1f2140ec47e2301b9861b882ba6c
+||||||| parent of 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
+        digest: sha256:d9d37f93c929792b50d38c9f27be5266677eee6489fcfff7fb8f710fba437041
+=======
+        digest: sha256:4f0a30b0eccaa4d762a81271ce2953541034f330b9106147ea24477ba8b54214
+>>>>>>> 27257ed8 (fix(accounts): a source a solution connects is changed only by the scope it declares)
+||||||| parent of 06c09eca (fix(accounts): a governed source is its scope holders' to change; the organization's own stays its administrators')
+        digest: sha256:4f0a30b0eccaa4d762a81271ce2953541034f330b9106147ea24477ba8b54214
+=======
+        digest: sha256:3a3f8818d5a4c4754e8b235a9bc970e5dc34ee36d8295d8bb146e36aca05d986
+>>>>>>> 06c09eca (fix(accounts): a governed source is its scope holders' to change; the organization's own stays its administrators')
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:

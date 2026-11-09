@@ -3865,7 +3865,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -3891,7 +3891,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Connect a GitHub repository as a datasource, storing its access token and optional webhook secret encrypted.",
       "owner": {
         "module": "saas-starter",
@@ -3916,7 +3916,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -3942,7 +3942,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Connect a datasource for any provider, storing its config and encrypted credential.",
       "owner": {
         "module": "saas-starter",
@@ -4281,7 +4281,7 @@
       ],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -4307,7 +4307,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Atomically replace an API source's declared operations as an organization administrator.",
       "owner": {
         "module": "saas-starter",
@@ -4332,7 +4332,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -4359,7 +4359,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Record the delegation a declared release's triggers run under for a source.",
       "owner": {
         "module": "saas-starter",
@@ -4486,7 +4486,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -4512,7 +4512,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Remove a connected datasource and its stored credentials.",
       "owner": {
         "module": "saas-starter",
@@ -4678,7 +4678,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -4702,7 +4702,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Read one source sync's typed stages, durable lifecycle and module-reported execution references; with no job id, the source's latest sync.",
       "owner": {
         "module": "saas-starter",
@@ -5214,7 +5214,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -5240,7 +5240,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history.",
       "owner": {
         "module": "saas-starter",
@@ -5426,7 +5426,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -5452,7 +5452,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Pull the source's current contents and enqueue ingestion deliveries.",
       "owner": {
         "module": "saas-starter",
@@ -5528,7 +5528,7 @@
       "http_bindings": [],
       "policy": {
         "exposure": "EXPOSURE_AUTHENTICATED",
-        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
         "permissions": [],
         "scopes": [],
         "resource_bindings": [
@@ -5554,7 +5554,7 @@
         "conditions": [],
         "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
-      "policy_tier": "org_admin",
+      "policy_tier": "org_member",
       "description": "Change what a connected source fetches — its branch and path and file-type filters — keeping its credential, history and collection.",
       "owner": {
         "module": "saas-starter",

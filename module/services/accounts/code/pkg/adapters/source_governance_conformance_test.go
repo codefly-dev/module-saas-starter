@@ -17,16 +17,22 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// conformanceDev is another of Acme's administrators.
-const conformanceDev = "00000000-0000-7000-8000-0000000000b4"
+// The harness's people this case decides for, beside Alex, Alice and Maya:
+// Dev administers Acme; Remi is a member and administers nothing.
+const (
+	conformanceDev  = "00000000-0000-7000-8000-0000000000b4"
+	conformanceRemi = "00000000-0000-7000-8000-0000000000b2"
+)
 
 // testSolutionSourcesAreGovernedByTheirScope holds the host's datasource
 // surface to a solution's own declaration: a source tied to a solution's
-// installation is changed only by someone the authority core issues the
-// governing scope there, an organization administrator included, and read
-// only by a holder of a role on it; an organization's own source is decided
-// by the organization rule alone, as before. Every call goes through the
-// Connect listener, as a page's would, with each person's own session.
+// installation is connected, changed, synced, linked and removed by whoever
+// the authority core issues its governing scope there, whether or not they
+// administer the organization, and by nobody else, an administrator included;
+// it is read by the holders of a role on the installation, and writes only
+// into the installation's own collections. An organization's own source stays
+// its administrators' to change. Every call goes through the Connect listener,
+// as a page's would, with each person's own session.
 func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureHarness) {
 	const target = "conformance-governed-sources"
 	page := target + ".page"
@@ -43,9 +49,10 @@ func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureH
 	})
 	inst, err := installConformanceSolution(h.ctx, h.svc, h.core, target, "viewer", conformanceAlex)
 	require.NoError(t, err)
-	// Alex administers the organization and edits; Dev administers it and
-	// views; Maya, a member, views; Alice administers it and holds no role.
-	for person, role := range map[string]string{conformanceAlex: "editor", conformanceDev: "viewer", conformanceMaya: "viewer"} {
+	// Remi edits and administers nothing; Alex edits and administers; Dev
+	// administers and views; Maya views; Alice administers and holds no role;
+	// Nora is a member holding nothing.
+	for person, role := range map[string]string{conformanceRemi: "editor", conformanceAlex: "editor", conformanceDev: "viewer", conformanceMaya: "viewer"} {
 		_, err := h.core.GrantRoleAsHost(h.ctx, authority.RoleRequest{Organization: fixtureOrganization, InstallationID: inst.ID, Role: role, PersonID: person})
 		require.NoError(t, err)
 	}
@@ -61,12 +68,22 @@ func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureH
 		require.NoError(t, err)
 		return metadata.AppendToOutgoingContext(h.ctx, "authorization", "Bearer "+session.GetBearer())
 	}
-	alex, dev, alice, maya, nora := signIn("fixture-alex"), signIn("fixture-dev"), signIn("dev-alice"), signIn("fixture-maya"), signIn("fixture-no-roles")
-	connect := func(as context.Context, label string, governance *gen.SourceGovernance) (*gen.Datasource, error) {
-		out, err := sources.AddSource(as, &gen.AddSourceRequest{OrgId: fixtureOrganization, Provider: gen.DatasourceProvider_DATASOURCE_PROVIDER_API,
+	remi, alex, dev, alice, maya, nora := signIn("fixture-remi"), signIn("fixture-alex"), signIn("fixture-dev"), signIn("dev-alice"), signIn("fixture-maya"), signIn("fixture-no-roles")
+	connectTo := func(as context.Context, boundary *gen.AddSourceRequest, governance *gen.SourceGovernance) (*gen.Datasource, error) {
+		request := &gen.AddSourceRequest{OrgId: fixtureOrganization, Provider: gen.DatasourceProvider_DATASOURCE_PROVIDER_API,
 			Config:   &gen.AddSourceRequest_Api{Api: &gen.ApiDatasourceConfig{BaseUrl: "https://api.example.test", CredentialKind: gen.ApiCredentialKind_API_CREDENTIAL_KIND_BEARER}},
-			Boundary: &gen.AddSourceRequest_CollectionLabel{CollectionLabel: label}, Credential: "example-token", Governance: governance})
+			Boundary: boundary.GetBoundary(), Credential: "example-token", Governance: governance}
+		out, err := sources.AddSource(as, request)
 		return out.GetDatasource(), err
+	}
+	labelled := func(label string) *gen.AddSourceRequest {
+		return &gen.AddSourceRequest{Boundary: &gen.AddSourceRequest_CollectionLabel{CollectionLabel: label}}
+	}
+	node := func(id string) *gen.AddSourceRequest {
+		return &gen.AddSourceRequest{Boundary: &gen.AddSourceRequest_BoundaryNodeId{BoundaryNodeId: id}}
+	}
+	connect := func(as context.Context, label string, governance *gen.SourceGovernance) (*gen.Datasource, error) {
+		return connectTo(as, labelled(label), governance)
 	}
 	refused := func(t *testing.T, err error, code codes.Code, reason ...string) {
 		t.Helper()
@@ -85,35 +102,69 @@ func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureH
 		_, err := sources.SyncSource(as, &gen.SyncSourceRequest{OrgId: fixtureOrganization, Id: id})
 		return err
 	}
+	update := func(as context.Context, id string) error {
+		_, err := sources.UpdateSource(as, &gen.UpdateSourceRequest{OrgId: fixtureOrganization, Id: id, Expected: &gen.SourceFetchScope{}})
+		return err
+	}
 	remove := func(as context.Context, id string) error {
 		_, err := sources.DeleteSource(as, &gen.DeleteSourceRequest{OrgId: fixtureOrganization, Id: id})
 		return err
 	}
+	link := func(as context.Context, id string) error {
+		_, err := sources.BeginDatasourceAccountLink(as, &gen.BeginDatasourceAccountLinkRequest{OrgId: fixtureOrganization, Connector: "api", SourceId: id})
+		return err
+	}
 	byEditors := &gen.SourceGovernance{InstallationId: inst.ID, ResourceKind: page, Action: "write"}
+	governedRefusal := "belongs to installation " + inst.ID
 
-	t.Run("an organization's own source is decided by the organization rule alone", func(t *testing.T) {
-		own, err := connect(dev, "Governed sources: the organization's", nil)
-		require.NoError(t, err, "an administrator holding no editor role connects the organization's own source")
-		require.Nil(t, own.GetGovernance())
+	// The organization's own source, and its collection, the governed sources
+	// below must never write into.
+	own, err := connect(dev, "Governed sources: the organization's", nil)
+	require.NoError(t, err, "an administrator holding no role connects the organization's own source")
+	require.Nil(t, own.GetGovernance())
+
+	t.Run("an organization's own source stays its administrators' to change", func(t *testing.T) {
 		require.True(t, listed(nora, own.GetId()), "every member lists it")
-		require.NoError(t, remove(alice, own.GetId()), "and any administrator removes it")
+		_, err := connect(remi, "Governed sources: a member's own", nil)
+		refused(t, err, codes.PermissionDenied)
+		for _, change := range []func(context.Context, string) error{sync, update, remove} {
+			refused(t, change(remi, own.GetId()), codes.PermissionDenied)
+		}
+		require.True(t, listed(nora, own.GetId()), "a member who edits a solution changed nothing of the organization's")
 	})
 
-	t.Run("a governed source is connected only by someone issued its governing scope", func(t *testing.T) {
-		_, err := connect(dev, "Governed sources: a viewer's", byEditors)
+	t.Run("a governed source is connected by whoever is issued its governing scope", func(t *testing.T) {
+		_, err := connect(maya, "Governed sources: a viewer's", byEditors)
 		refused(t, err, codes.PermissionDenied, "may not connect a source governed by "+page+":write", inst.ID)
-		_, err = connect(alice, "Governed sources: an outsider's", byEditors)
+		_, err = connect(dev, "Governed sources: an administrator who views", byEditors)
 		refused(t, err, codes.PermissionDenied, "may not connect a source governed by "+page+":write")
-		_, err = connect(maya, "Governed sources: a member's", byEditors)
-		require.Equal(t, codes.PermissionDenied, status.Code(err), "the organization rule still holds first: %v", err)
-		_, err = connect(alex, "Governed sources: elsewhere", &gen.SourceGovernance{InstallationId: "no-such-installation", ResourceKind: page, Action: "write"})
+		_, err = connect(alice, "Governed sources: an administrator holding nothing", byEditors)
+		refused(t, err, codes.PermissionDenied, "may not connect a source governed by "+page+":write")
+		_, err = connect(remi, "Governed sources: elsewhere", &gen.SourceGovernance{InstallationId: "no-such-installation", ResourceKind: page, Action: "write"})
 		refused(t, err, codes.FailedPrecondition, "no-such-installation is not an active installation")
 	})
 
-	governed, err := connect(alex, "Governed sources: the editors'", byEditors)
-	require.NoError(t, err, "an administrator who edits connects a source governed by the editors' scope")
+	governed, err := connect(remi, "Governed sources: the editors'", byEditors)
+	require.NoError(t, err, "an editor who administers nothing connects a source governed by the editors' scope")
 	require.Equal(t, inst.ID, governed.GetGovernance().GetInstallationId())
 	require.Equal(t, page, governed.GetGovernance().GetResourceKind())
+
+	t.Run("a governed source writes only into its installation's own collections", func(t *testing.T) {
+		_, err := connectTo(remi, node(own.GetBoundaryNodeId()), byEditors)
+		refused(t, err, codes.PermissionDenied, "is not a collection of installation "+inst.ID)
+		same, err := connect(remi, "Governed sources: the organization's", byEditors)
+		require.NoError(t, err)
+		require.NotEqual(t, own.GetBoundaryNodeId(), same.GetBoundaryNodeId(), "a label an organization collection bears mints the installation's own")
+		again, err := connectTo(remi, node(governed.GetBoundaryNodeId()), byEditors)
+		require.NoError(t, err, "an existing collection of the installation's may be named")
+		require.Equal(t, governed.GetBoundaryNodeId(), again.GetBoundaryNodeId())
+		reused, err := connect(remi, "Governed sources: the editors'", byEditors)
+		require.NoError(t, err)
+		require.Equal(t, governed.GetBoundaryNodeId(), reused.GetBoundaryNodeId(), "and a label reuses it")
+		for _, id := range []string{same.GetId(), again.GetId(), reused.GetId()} {
+			require.NoError(t, remove(remi, id))
+		}
+	})
 
 	t.Run("a governed source is read by the holders of a role on its installation", func(t *testing.T) {
 		require.True(t, listed(maya, governed.GetId()), "a viewer lists it")
@@ -126,38 +177,46 @@ func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureH
 		refused(t, err, codes.PermissionDenied, "reading it requires a role there")
 	})
 
-	t.Run("a governed source is changed only by someone issued its governing scope", func(t *testing.T) {
-		for name, as := range map[string]context.Context{"an administrator who views": dev, "an administrator holding no role": alice} {
-			refused(t, sync(as, governed.GetId()), codes.PermissionDenied, "belongs to installation "+inst.ID, "requires "+page+":write")
-			refused(t, remove(as, governed.GetId()), codes.PermissionDenied, "belongs to installation "+inst.ID)
-			_, err := sources.UpdateSource(as, &gen.UpdateSourceRequest{OrgId: fixtureOrganization, Id: governed.GetId(), Expected: &gen.SourceFetchScope{}})
-			refused(t, err, codes.PermissionDenied, "belongs to installation "+inst.ID)
-			require.True(t, listed(alex, governed.GetId()), "%s changed nothing", name)
+	t.Run("a governed source is changed only by whoever is issued its governing scope", func(t *testing.T) {
+		for name, as := range map[string]context.Context{"a viewer": maya, "an administrator who views": dev, "an administrator holding no role": alice, "a member holding nothing": nora} {
+			refused(t, sync(as, governed.GetId()), codes.PermissionDenied, governedRefusal, "requires "+page+":write")
+			refused(t, update(as, governed.GetId()), codes.PermissionDenied, governedRefusal)
+			refused(t, remove(as, governed.GetId()), codes.PermissionDenied, governedRefusal)
+			refused(t, link(as, governed.GetId()), codes.PermissionDenied, governedRefusal)
+			require.True(t, listed(remi, governed.GetId()), "%s changed nothing", name)
 		}
-		require.Equal(t, codes.PermissionDenied, status.Code(remove(maya, governed.GetId())), "a viewer who administers nothing changes nothing")
-		require.True(t, listed(alex, governed.GetId()))
+		// The editor passes the governance; what follows is the business's own
+		// answer for an operations-only source and an unconfigured connector.
+		for _, change := range []func(context.Context, string) error{sync, update, link} {
+			if err := change(remi, governed.GetId()); err != nil {
+				require.NotContains(t, status.Convert(err).Message(), governedRefusal)
+				require.NotEqual(t, codes.PermissionDenied, status.Code(err), "%v", err)
+			}
+		}
 	})
 
 	t.Run("the governing scope may be one the solution's roles reach through its binding", func(t *testing.T) {
 		throughDocuments := &gen.SourceGovernance{InstallationId: inst.ID, ResourceKind: "example-records", Action: "write", Binding: "documents"}
-		_, err := connect(dev, "Governed sources: a viewer's records", throughDocuments)
+		_, err := connect(maya, "Governed sources: a viewer's records", throughDocuments)
 		refused(t, err, codes.PermissionDenied, "example-records:write through binding documents")
-		records, err := connect(alex, "Governed sources: the editors' records", throughDocuments)
+		records, err := connect(remi, "Governed sources: the editors' records", throughDocuments)
 		require.NoError(t, err)
-		refused(t, remove(dev, records.GetId()), codes.PermissionDenied, "belongs to installation "+inst.ID)
-		require.NoError(t, remove(alex, records.GetId()), "an editor removes it")
+		refused(t, remove(dev, records.GetId()), codes.PermissionDenied, governedRefusal)
+		require.NoError(t, remove(alex, records.GetId()), "an editor who administers removes it too")
 	})
 
-	t.Run("an editor changes the governed source", func(t *testing.T) {
-		require.NoError(t, remove(alex, governed.GetId()))
-		require.False(t, listed(alex, governed.GetId()))
+	t.Run("an editor who administers nothing removes the governed source", func(t *testing.T) {
+		require.NoError(t, remove(remi, governed.GetId()))
+		require.False(t, listed(remi, governed.GetId()))
 	})
 
 	t.Run("an uninstalled installation's sources are the organization's again", func(t *testing.T) {
-		lapsing, err := connect(alex, "Governed sources: outliving the installation", byEditors)
+		lapsing, err := connect(remi, "Governed sources: outliving the installation", byEditors)
 		require.NoError(t, err)
 		require.NoError(t, h.core.UninstallAsHost(h.ctx, fixtureOrganization, inst.ID))
 		require.True(t, listed(nora, lapsing.GetId()), "every member lists it")
-		require.NoError(t, remove(alice, lapsing.GetId()), "and any administrator removes what no role governs any more")
+		refused(t, remove(remi, lapsing.GetId()), codes.PermissionDenied)
+		require.NoError(t, remove(alice, lapsing.GetId()), "and an administrator removes what no role governs any more")
+		require.NoError(t, remove(alice, own.GetId()))
 	})
 }

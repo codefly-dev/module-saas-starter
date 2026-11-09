@@ -94,26 +94,32 @@ second rule: the host has the core issue the caller that scope at the
 installation (`IssueForPerson`, the token discarded), exactly as the core
 would for the target's page.
 
-- **Connect**: the method's `org_admin` floor first, then the installation must
-  be an active one of the organization and the caller must be issued the scope
-  there now. The tie is written with the row and never moves (migration 69).
-- **Change** (`UpdateSource`, `SyncSource` including a reconnect,
-  `DeleteSource`, `MigrateGitHubSourceToApp`, `DeclareSourceOperations`,
-  `DelegateSourceTriggers`): the declared floor, then the same issue. An
-  organization administrator who is not issued the scope is refused, by name,
-  with the core's reason: administering the organization is not a role on the
-  solution.
-- **Read** (`ListSources`, `GetSource`, `GetSourceSync`): a holder of any role
-  on the installation (the core's `HeldInstallations`); anyone else does not
-  list it and is refused a point read.
-- **Lapse**: once the installation is uninstalled, its sources are the
-  organization's again, so an administrator can still remove what no role
-  governs any more.
+The source-changing methods declare `org_member`, and the handler decides the
+rest before anything is written:
 
-A source with no `governance` is the organization's own and is decided exactly
-as before. The tie is a narrowing beside the descriptor floor, never a
-widening: a role holder who does not administer the organization is still
-refused by the floor.
+- **An organization's own source** (no `governance`, or one whose installation
+  was uninstalled, or an id that is not there): an organization
+  administrator, as before. A member is refused.
+- **A governed source** — connect (`AddSource`, `AddGitHubSource`) and change
+  (`UpdateSource`, `SyncSource` including a reconnect, `DeleteSource`,
+  `MigrateGitHubSourceToApp`, `DeclareSourceOperations`,
+  `DelegateSourceTriggers`, and `BeginDatasourceAccountLink` naming it): any
+  member the core issues the governing scope at the installation, whether or
+  not they administer the organization. Anyone it does not issue, an
+  organization administrator included, is refused by name with the core's
+  reason. A connect also requires the installation to be active.
+- **Where a governed source writes**: only into its installation's own
+  collections — a node a source the same installation governs already writes
+  into, or a label that reuses one of those or mints a new one. Naming any
+  other node of the organization is refused, and a label another collection of
+  the organization bears mints the installation's own.
+- **Read** (`ListSources`, `GetSource`, `GetSourceSync`): a governed source is
+  read by the holders of any role on the installation (the core's
+  `HeldInstallations`); anyone else does not list it and is refused a point
+  read. An organization's own source is read as before (`GetSourceSync`
+  stays its administrators').
+
+The tie is written with the row and never moves (migration 70).
 
 Who *triggered* a source's sync is not a datasource field. `ListSources` and
 `GetSource` project `Datasource` to any org member under no declared permission,

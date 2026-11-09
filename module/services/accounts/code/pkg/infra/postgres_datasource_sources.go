@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // datasourceSourceColumns is the shared projection; COALESCE keeps the optional
@@ -742,4 +743,47 @@ func (s *PostgresStore) GetDatasourceSourceByID(ctx context.Context, id string) 
 		return nil, err
 	}
 	return source, nil
+}
+
+// GovernedBoundaryNode reports whether nodeID is the boundary of a source
+// governed by installationID. Runs under the caller's WithOrgTx.
+func (s *PostgresStore) GovernedBoundaryNode(ctx context.Context, orgID, installationID, nodeID string) (bool, error) {
+	var governed bool
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM datasource_sources
+		                WHERE org_id = $1 AND governing_installation_id = $2 AND boundary_node_id::text = $3)`,
+		orgID, installationID, nodeID).Scan(&governed)
+	return governed, err
+}
+
+// GetOrCreateGovernedCollectionNode reuses the collection labelled node.Label
+// that a source governed by installationID writes into, or registers node. It
+// takes the same per-label lock GetOrCreateCollectionNode takes, keyed by the
+// installation too, so two connects of one installation agree on one node.
+// Runs under the caller's WithOrgTx.
+func (s *PostgresStore) GetOrCreateGovernedCollectionNode(ctx context.Context, node *gen.ScopeNode, installationID string) (string, error) {
+	executor := s.getQueryExecutor(ctx)
+	if err := validateScopePath(node.ScopePath); err != nil {
+		return "", err
+	}
+	if _, err := executor.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, node.OrgId, installationID+"/"+node.Label); err != nil {
+		return "", err
+	}
+	var existing string
+	err := executor.QueryRow(ctx, `
+		SELECT n.id::text FROM scope_nodes n
+		  JOIN datasource_sources d ON d.org_id = n.org_id AND d.boundary_node_id = n.id
+		 WHERE n.org_id = $1 AND n.kind = $2 AND n.label = $3 AND d.governing_installation_id = $4
+		 ORDER BY n.created_at
+		 LIMIT 1`, node.OrgId, node.Kind, node.Label, installationID).Scan(&existing)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	if err := s.RegisterScopeNode(ctx, node); err != nil {
+		return "", err
+	}
+	return node.Id, nil
 }
