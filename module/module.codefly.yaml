@@ -26,8 +26,8 @@ interface:
           implements:
               - codefly.dev/artifact@0.1.0
               - codefly.dev/authority@0.3.6
-              - codefly.dev/composition@0.2.0
-              - codefly.dev/installation@0.4.0
+              - codefly.dev/composition@0.2.1
+              - codefly.dev/installation@0.5.0
               - codefly.dev/session@0.2.1
         - service: auth-gateway
           endpoint: grpc
