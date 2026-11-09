@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,10 +24,12 @@ import (
 // that target's own declaration that governs it: Kind and Action, held on the
 // target's own kinds or, with Binding, reached through that operation binding.
 //
-// The target declares the scope, the host declares nothing: the host only asks
-// the authority core whether it would issue the caller that scope at the
-// installation, as it would for the target's page (IssueForPerson), so the
-// answer is the core's role decision and never a second one. A source without
+// The scope is one of the target's own, and only one its fullest roles alone
+// hold (governingScopeDeclared): a scope a lesser role also holds is refused,
+// whatever the request names. The host then only asks the authority core
+// whether it would issue the caller that scope at the installation, as it
+// would for the target's page (IssueForPerson), so the answer is the core's
+// role decision and never a second one. A source without
 // governance is the organization's own and is decided by the organization rule
 // alone, as before. The tie is written once, at connect, and never moves.
 type SourceGovernance struct {
@@ -92,6 +96,9 @@ func (s *Service) issuedGovernance(ctx context.Context, who authority.Person, in
 	if !decide.RoleGated(target) {
 		return domain.Refuse("%s declares no roles, so it governs no source", inst.Target)
 	}
+	if err := governingScopeDeclared(target, g.Kind, g.Action); err != nil {
+		return err
+	}
 	asked := &basev0.WorkScopeV1{ResourceKind: g.Kind, Actions: []string{g.Action}}
 	if target.Kind == domain.KindSolution {
 		// A solution's roles grant only on the data its installation owns.
@@ -102,6 +109,53 @@ func (s *Service) issuedGovernance(ctx context.Context, who authority.Person, in
 		Scopes: decide.Scopes{asked}, TTL: sourceGovernanceProbeTTL,
 	})
 	return err
+}
+
+// governingScopeDeclared holds a requested governing scope to the target's
+// own roles, so the request never picks a scope its caller already holds. The
+// target's declaration names no scope that governs a source, so the host
+// admits only one no role is granted unless that role is granted everything
+// the target's roles grant: the scope of the target's fullest roles. A scope
+// a lesser role also holds (a viewer's read beside an editor's write) would
+// hand every holder of that role what the fullest roles manage, and is
+// refused; a target whose roles are all partial governs no source. This is
+// the host's interim rule until the declaration names the governing scope
+// itself; it narrows what may be asked and leaves issuance to the core.
+func governingScopeDeclared(target domain.Module, kind, action string) error {
+	granted := map[string]map[string]bool{}
+	every := map[string]bool{}
+	grant := func(role string, scopes []*basev0.WorkScopeV1) {
+		if granted[role] == nil {
+			granted[role] = map[string]bool{}
+		}
+		for _, scope := range scopes {
+			for _, a := range scope.GetActions() {
+				granted[role][scope.GetResourceKind()+":"+a] = true
+				every[scope.GetResourceKind()+":"+a] = true
+			}
+		}
+	}
+	for role, scopes := range target.Roles {
+		grant(role, scopes)
+	}
+	for role, scopes := range target.OwnedRoles {
+		grant(role, scopes)
+	}
+	asked := kind + ":" + action
+	held := false
+	for _, role := range slices.Sorted(maps.Keys(granted)) {
+		if !granted[role][asked] {
+			continue
+		}
+		held = true
+		if len(granted[role]) < len(every) {
+			return domain.Refuse("%s's role %s is granted %s without everything %s's roles grant, so %s governs no source: only a scope its fullest roles alone hold does", target.Name, role, asked, target.Name, asked)
+		}
+	}
+	if !held {
+		return domain.Refuse("no role of %s is granted %s, so it governs no source", target.Name, asked)
+	}
+	return nil
 }
 
 // governanceRefusal names who was refused what, and why, on one source.

@@ -144,6 +144,17 @@ func testSolutionSourcesAreGovernedByTheirScope(t *testing.T, h reviewedClosureH
 		refused(t, err, codes.FailedPrecondition, "no-such-installation is not an active installation")
 	})
 
+	t.Run("the request never picks a governing scope a lesser role holds", func(t *testing.T) {
+		// A viewer names the read every viewer is issued: were it admitted, the
+		// source would be tied to the installation, written into its
+		// collections, and every viewer could sync, relink or remove it.
+		byViewers := &gen.SourceGovernance{InstallationId: inst.ID, ResourceKind: page, Action: "read"}
+		_, err := connect(maya, "Governed sources: a viewer's own choice of scope", byViewers)
+		refused(t, err, codes.PermissionDenied, "may not connect a source governed by "+page+":read", "without everything")
+		_, err = connect(remi, "Governed sources: an editor naming the viewers' scope", byViewers)
+		refused(t, err, codes.PermissionDenied, "may not connect a source governed by "+page+":read", "without everything")
+	})
+
 	governed, err := connect(remi, "Governed sources: the editors'", byEditors)
 	require.NoError(t, err, "an editor who administers nothing connects a source governed by the editors' scope")
 	require.Equal(t, inst.ID, governed.GetGovernance().GetInstallationId())
