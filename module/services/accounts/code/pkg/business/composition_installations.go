@@ -22,9 +22,7 @@ import (
 // declaration selects none, or selects nothing at all, a module page included
 // (its roles decide who may use it, through grants a set up makes). Its
 // consent scope is the envelope's, as every module install's is. What is
-// installed already, pending or active, is never installed again, except an
-// active installation holding a consent of its own under an envelope
-// (adoptsByComposition), installed again once so it follows; a person
+// installed already, pending or active, is never installed again; a person
 // never uninstalls one (UninstallSolution refuses), and a withdrawn module's
 // installations are revoked by the withdrawal.
 
@@ -83,20 +81,8 @@ func (s *Service) installComposedModulesAt(ctx context.Context, org, owner strin
 			return fmt.Errorf("install the composed modules at %s: %w", org, err)
 		}
 		for _, target := range available {
-			if target.Kind != "module" {
+			if target.Kind != "module" || target.Installed {
 				continue
-			}
-			if target.Installed {
-				pinned, err := s.compositionConsentPinned(ctx, org, target)
-				if err != nil {
-					failures = append(failures, fmt.Errorf("install %s at %s: %w", target.RouteAlias, org, err))
-				}
-				if !pinned {
-					continue
-				}
-				// Installed with a consent of its own, before composition held
-				// every module: it is installed again by composition, so it
-				// follows the envelope as every module does.
 			}
 			m, err := core.Composed(ctx, target.RouteAlias)
 			if code, ok := domain.CodeOf(err); ok && code == domain.NotFound {
@@ -141,48 +127,6 @@ func (s *Service) installByComposition(ctx context.Context, org, owner string, t
 	}
 	_, _, err = s.installTargetByName(ctx, "", org, target.RouteAlias, "", ownerOfRecord, approval, true)
 	return err
-}
-
-// compositionConsentPinned reports whether org's installation of target holds
-// a consent of its own instead of following the module's grant: one recorded
-// by an administrator before every module was composition's, or narrowed
-// since. A module's ceiling is the operator's envelope and no organisation
-// consents to a module, so such an installation is installed again by
-// composition, once, and then follows; a consent pinned to one definition
-// (a profile digest, a binding a later generation renamed) otherwise refuses
-// every binding it no longer names.
-func (s *Service) compositionConsentPinned(ctx context.Context, org string, target *AvailableSolutionTarget) (bool, error) {
-	store, ok := s.store.(InstallationScopeStore)
-	if !ok {
-		return false, nil
-	}
-	held, err := s.heldTargetInstallation(ctx, org, target.TargetID)
-	if err != nil {
-		return false, err
-	}
-	var state *InstallationAuthorityState
-	if err := s.store.WithOrgTx(ctx, org, func(ctx context.Context) error {
-		var err error
-		state, err = store.InstallationAuthorityState(ctx, org, held.GetId())
-		return err
-	}); err != nil {
-		return false, err
-	}
-	envelope := uint64(0)
-	if s.moduleEnvelopes != nil {
-		envelope = s.moduleRegistrySnapshot().envelopeRevision
-	}
-	return adoptsByComposition(envelope, held.GetStatus(), state.Scope), nil
-}
-
-// adoptsByComposition is whether composition installs an existing module
-// installation again so it follows the envelope: only an active one holding a
-// consent of its own, and only while an administrative envelope sets every
-// module's grant. With no envelope a consent is the organisation's snapshot,
-// and a later generation's widening must reach no organisation until its
-// administrator takes it, so nothing is adopted.
-func adoptsByComposition(envelopeRevision uint64, status gen.InstallationStatus, scope InstallationScope) bool {
-	return envelopeRevision != 0 && status == gen.InstallationStatus_INSTALLATION_STATUS_ACTIVE && !scope.Follows
 }
 
 // compositionOwnerOfRecord is the organization's owner while they are a
