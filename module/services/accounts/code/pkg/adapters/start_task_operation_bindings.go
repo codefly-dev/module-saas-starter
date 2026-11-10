@@ -8,6 +8,9 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
+	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
+	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
+	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -50,17 +53,34 @@ type operationBindingProjection struct {
 // if the person holds it at the binding target, by the same check every mint makes; a binding the
 // person holds nothing under is refused by name. A scope the caller already
 // named is not added twice.
+//
+// Through a module that declares no roles, what the person holds at the target
+// is what their own session holds there, as the core reads a binding
+// (throughSolutions): at a target that checks owners, none of its owned kinds
+// (ownSessionRule). Through a role-gated module the core reads its roles,
+// which this mint does not, so that projection is left as it was.
 func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Context, orgID, audience string, asked []*gen.WorkContextScope, names []string) (*operationBindingProjection, error) {
 	ownerID, err := s.authorizeOwner(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
+	through, composed, err := composedAudience(ctx, audience)
+	if err != nil {
+		return nil, err
+	}
+	ownSessionThrough := composed && !decide.RoleGated(through)
 	module := business.ModuleCaller{PrincipalID: business.ModulePrincipalID(audience), BoundOrg: orgID}
 	out := &operationBindingProjection{scopes: slices.Clone(asked)}
 	for _, name := range names {
 		binding, err := service.ModuleOperationAudience(ctx, module, orgID, audience, name)
 		if err != nil {
 			return nil, err
+		}
+		target, ruled := domain.Module{}, false
+		if ownSessionThrough {
+			if target, ruled, err = composedAudience(ctx, binding.Audience); err != nil {
+				return nil, err
+			}
 		}
 		held := 0
 		for _, scope := range binding.InvokeScopes {
@@ -69,6 +89,9 @@ func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Cont
 				return nil, err
 			}
 			for _, part := range kept {
+				if ruled && ownSessionRule(target, []*basev0.WorkScopeV1{{ResourceKind: part.ResourceKind, Actions: part.Actions}}) != nil {
+					continue
+				}
 				held++
 				if !slices.ContainsFunc(out.scopes, func(existing *gen.WorkContextScope) bool { return proto.Equal(existing, part) }) {
 					out.scopes = append(out.scopes, part)

@@ -627,6 +627,13 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
+	// A person's own session: what it carries at the audience, asked or
+	// projected through a binding, is held to the core's owner rule there.
+	if req.GetActorPrincipalId() == "" {
+		if err := holdOwnSession(ctx, req.GetAudience(), scopes); err != nil {
+			return nil, err
+		}
+	}
 	taskID, err := s.taskBoundary(ctx, req.GetOrgId(), req.GetTaskId())
 	if err != nil {
 		return nil, err
@@ -1364,6 +1371,13 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err := enforceActorAudience(ctx, actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
+	// The owner's own session re-issued at a new audience carries every scope
+	// of the parent there, so it is held to the core's owner rule there.
+	if ownSession(parent.Context()) {
+		if err := holdOwnSession(ctx, req.GetAudience(), parent.Context().GetAuthorityScopes()); err != nil {
+			return nil, err
+		}
+	}
 	token, signed, err := s.remint(ctx, parent.Context(), req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),
 		nil, "", moduleBindingSeal{})
@@ -1419,6 +1433,18 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	attenuated, err := attenuateEffective(parent, scopes)
 	if err != nil {
 		return nil, err
+	}
+	// The owner exchanging their own session (no module exercising a binding)
+	// is held to the core's owner rule at the new audience, on what the
+	// exchanged capability carries there.
+	if exercised == (moduleBindingSeal{}) && ownSession(parent) {
+		carried := attenuated
+		if carried == nil {
+			carried = parent.GetAuthorityScopes()
+		}
+		if err := holdOwnSession(ctx, req.GetAudience(), carried); err != nil {
+			return nil, err
+		}
 	}
 	token, signed, err := s.remint(ctx, parent, req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),

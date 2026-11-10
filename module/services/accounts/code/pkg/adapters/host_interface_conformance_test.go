@@ -1394,6 +1394,12 @@ installations:
 		}
 	})
 
+	// Beyond the suite: accounts' own person Work Context mints, beside the
+	// host Issue, follow the core's owner rule (RBAC-4a).
+	t.Run("a person's own Work Context mints follow the core's owner rule", func(t *testing.T) {
+		testOwnSessionOwnerRule(t, conn, signIn("fixture-alex"))
+	})
+
 	// Last, because the envelope it writes becomes every module's ceiling: a
 	// real envelope write that narrows a module's binding (the write
 	// PutModuleEnvelope makes, without its platform administrator check) is
