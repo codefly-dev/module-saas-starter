@@ -1501,6 +1501,10 @@ installations:
 				}
 			},
 			withdraw: func(module string) error { return core.WithdrawModule(ctx, module) },
+			registered: func(module string) bool {
+				_, carried := svc.ModulePrincipals()[business.ModulePrincipalID(module)]
+				return carried
+			},
 		})
 	})
 }

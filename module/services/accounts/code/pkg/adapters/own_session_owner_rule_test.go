@@ -206,8 +206,10 @@ type installedActorHarness struct {
 	// body keyed by module) and derives the registry from it.
 	grant func(principals string)
 	// withdraw withdraws a module from the core alone, as a delivery the core
-	// has not composed: the host's registry still serves it.
+	// has not composed: the host still declares it.
 	withdraw func(module string) error
+	// registered reports whether the host's module registry carries module.
+	registered func(module string) bool
 }
 
 // installedActorModule checks no owner and binds twice to the model: once
@@ -253,6 +255,19 @@ func testInstalledActorOwnSession(t *testing.T, h installedActorHarness) {
 	require.NoError(t, h.withdraw(module))
 	_, err = h.contexts.StartTask(h.admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: module,
 		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: module + ".task", Actions: []string{"read"}}}})
+	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Contains(t, status.Convert(err).Message(), "does not compose it yet")
+
+	// documents is a module the host declares that the envelope above omits
+	// from the registry. Withdrawn from the core alone, it is still a module
+	// this host serves, so a person's own mint there is refused as well.
+	require.False(t, h.registered("documents"), "the last envelope omits documents from the registry")
+	_, err = h.contexts.StartTask(h.admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "documents",
+		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "example-records", Actions: []string{"read"}}}})
+	refusedByOwnerRule(t, err, "documents")
+	require.NoError(t, h.withdraw("documents"))
+	_, err = h.contexts.StartTask(h.admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "documents",
+		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "example-records", Actions: []string{"read"}}}})
 	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
 	require.Contains(t, status.Convert(err).Message(), "does not compose it yet")
 }

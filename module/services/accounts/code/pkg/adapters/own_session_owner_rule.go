@@ -38,7 +38,14 @@ func composedAudience(ctx context.Context, audience string) (domain.Module, bool
 	if errors.Is(err, business.ErrAuthorityCoreUnconfigured) {
 		return domain.Module{}, false, nil
 	}
-	return composedBy(m, err, service.ServesModule(audience), audience)
+	served := false
+	if notComposed(err) {
+		var serr error
+		if served, serr = service.ServesModule(ctx, audience); serr != nil {
+			return domain.Module{}, false, status.Errorf(codes.Unavailable, "cannot read whether this host serves %q", audience)
+		}
+	}
+	return composedBy(m, err, served, audience)
 }
 
 // composedBy is what the core's read of audience answered. A module this host
@@ -46,8 +53,7 @@ func composedAudience(ctx context.Context, audience string) (domain.Module, bool
 // yet) is Unavailable, as is any other failure to read: a declaration that
 // cannot be read is not one that checks no owner.
 func composedBy(m domain.Module, err error, served bool, audience string) (domain.Module, bool, error) {
-	code, refused := domain.CodeOf(err)
-	if errors.Is(err, domain.ErrNotFound) || (refused && code == domain.NotFound) {
+	if notComposed(err) {
 		if !served {
 			return domain.Module{}, false, nil
 		}
@@ -58,6 +64,13 @@ func composedBy(m domain.Module, err error, served bool, audience string) (domai
 		return domain.Module{}, false, status.Errorf(codes.Unavailable, "cannot read what the authority core composed for %q", audience)
 	}
 	return m, true, nil
+}
+
+// notComposed reports whether err is the core's answer that it composes no
+// module by that principal.
+func notComposed(err error) bool {
+	code, refused := domain.CodeOf(err)
+	return errors.Is(err, domain.ErrNotFound) || (refused && code == domain.NotFound)
 }
 
 // ownSessionRule is the core's answer for scopes a person's own session

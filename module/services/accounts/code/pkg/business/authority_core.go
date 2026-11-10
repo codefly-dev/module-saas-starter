@@ -163,11 +163,21 @@ func (s *Service) ComposedAudience(ctx context.Context, audience string) (domain
 	return m, err
 }
 
-// ServesModule reports whether this host's module registry serves the module
-// whose principal is prefix.
-func (s *Service) ServesModule(prefix string) bool {
-	_, served := s.declaredModules()[ModulePrincipalID(prefix)]
-	return served
+// ServesModule reports whether this host serves a module under prefix: one
+// its registry carries, or one it declares (a declared module's alias, as the
+// host's audience vocabulary admits it, HostAudiences), which the registry
+// omits while its envelope does not name it or while it is fenced.
+func (s *Service) ServesModule(ctx context.Context, prefix string) (bool, error) {
+	if _, served := s.declaredModules()[ModulePrincipalID(prefix)]; served {
+		return true, nil
+	}
+	bindings, err := s.liveDeclaredBindings(ctx)
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(bindings, func(b LiveDeclaredBinding) bool {
+		return b.Kind == SolutionDeclaredKindModule && strings.TrimSpace(b.Alias) == prefix
+	}), nil
 }
 
 // SetAuthorityInstallStep sets the step a solution installation runs before
