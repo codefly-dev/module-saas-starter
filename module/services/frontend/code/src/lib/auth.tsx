@@ -421,6 +421,13 @@ interface AuthContextType extends AuthState {
 	// trace of the target; a cookie that no longer works logs out rather than
 	// leaving the impersonation token installed.
 	exitImpersonation: () => Promise<void>;
+	// Installs the session of a role view the host opened (SessionService
+	// OpenRoleView) as the active one. The authority recorded the view, not
+	// this browser; it narrows what the session is issued and is never widened.
+	enterRoleView: (accessToken: string) => void;
+	// Returns to all of the person's roles by re-exchanging the refresh cookie,
+	// which a role view never touched.
+	exitRoleView: () => Promise<void>;
 	getToken: () => string | null;
 }
 
@@ -897,6 +904,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		[applyAccessToken],
 	);
 
+	const enterRoleView = useCallback(
+		(accessToken: string) => {
+			if (!accessToken) throw new Error("Opening a role view returned no session");
+			applyAccessToken(accessToken);
+		},
+		[applyAccessToken],
+	);
+
+	const exitRoleView = useCallback(async () => {
+		const outcome = await exchangeRefreshCookie();
+		if (outcome.status !== "ok") {
+			throw new Error("Could not restore your session — please try again.");
+		}
+		setTokens(outcome.accessToken, outcome.refreshToken);
+	}, [setTokens]);
+
 	const exitImpersonation = useCallback(async () => {
 		// Ending the window server-side is what makes the impersonation bearer
 		// stop working. The exchange below only changes which token this browser
@@ -1112,6 +1135,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			switchOrganization,
 			enterImpersonation,
 			exitImpersonation,
+			enterRoleView,
+			exitRoleView,
 			getToken,
 		}),
 		[
@@ -1128,6 +1153,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			switchOrganization,
 			enterImpersonation,
 			exitImpersonation,
+			enterRoleView,
+			exitRoleView,
 			getToken,
 		],
 	);

@@ -77,6 +77,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"authority_core_owner_aware":      {},
 	"authority_core_person_epochs":    {},
 	"authority_core_replay":           {},
+	"authority_core_role_views":       {},
 	"authority_core_role_grants":      {},
 	"authority_core_tombstones":       {},
 	"job_attempts":                    {},
@@ -452,7 +453,7 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			case "authority_core_clients", "authority_core_tombstones", "authority_core_installations", "authority_core_module_revisions", "authority_core_delegations",
 				"authority_core_person_epochs", "authority_core_grant_epochs", "authority_core_owner_aware":
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
-			case "authority_core_approved_modules":
+			case "authority_core_approved_modules", "authority_core_role_views":
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			case "authority_core_role_grants", "authority_core_replay", "hop_admission_proofs":
 				want = relationPrivileges{selectRows: true, insertRows: true, deleteRows: true}
