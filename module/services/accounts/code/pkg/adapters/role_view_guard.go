@@ -13,6 +13,7 @@ import (
 
 	accountsauth "accounts/pkg/auth"
 	"accounts/pkg/business"
+	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
 // A role view fixes a session to act as some of the roles its person holds on
@@ -38,9 +39,14 @@ func refuseInRoleView(ctx context.Context) error {
 	if !ok || identity.SessionID == uuid.Nil || service == nil {
 		return nil
 	}
-	core, err := authorityCore()
+	core, err := service.AuthorityCore()
+	if errors.Is(err, business.ErrAuthorityCoreUnconfigured) {
+		return nil // a host that builds no core has no views
+	}
 	if err != nil {
-		return nil
+		// A core that cannot be read right now must not open the restricted
+		// surface to a session that may be a view.
+		return status.Errorf(codes.Unavailable, "cannot read whether this session views as some of its roles: %v", err)
 	}
 	view, err := core.RoleViewOf(ctx, identity.SessionID.String())
 	if errors.Is(err, domain.ErrNotFound) {
@@ -59,21 +65,60 @@ func refuseInRoleView(ctx context.Context) error {
 		strings.Join(viewed, "; "))
 }
 
+// roleViewWrites are the accounts writes a session may make while viewing as
+// some of its roles, because they act on the person's own account or content and
+// widen no authority. Everything else that is not a read is refused in a view.
+// The list is closed on purpose: a new operation is refused until someone names
+// it here, which is the opposite of the failure the review found (an operation
+// that mints or administers is refused only if somebody remembered to say so).
+var roleViewWrites = map[string]bool{
+	"AuthService/Logout": true, "AuthService/SwitchOrganization": true,
+	"ConsentService/AcceptTerms": true, "ConsentService/UpdatePreferences": true,
+	"DashboardService/CreateDashboard": true, "DashboardService/UpdateDashboard": true, "DashboardService/DeleteDashboard": true,
+	"NotificationService/MarkRead": true, "NotificationService/MarkAllRead": true, "NotificationService/DeleteNotification": true,
+	"ResourceFollowService/Follow": true, "ResourceFollowService/Unfollow": true,
+	"OnboardingService/CompleteStep": true, "OnboardingService/SkipStep": true,
+}
+
+// roleViewReadsThatWrite are operations whose descriptor says STANDARD_READ but
+// that decide something: DecideDelegation approves a delegation and mints from
+// it. They are refused in a view whatever their rate-limit class says.
+var roleViewReadsThatWrite = map[string]bool{"DelegationService/DecideDelegation": true}
+
+// roleViewAdmits reports whether a session viewing as some of its roles may call
+// an accounts operation. Default deny: only a declared read, a login-flow call
+// that carries no session authority, or a named person-owned write passes.
+func roleViewAdmits(fullMethod string, policy business.RPCPolicy, resolved bool) bool {
+	if !resolved {
+		return false
+	}
+	short := strings.TrimPrefix(fullMethod, "/saas.accounts.v1.")
+	if roleViewReadsThatWrite[short] {
+		return false
+	}
+	switch policy.MethodPolicy.GetRateLimit() {
+	case policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_READ,
+		policyv1.RateLimitClass_RATE_LIMIT_CLASS_PUBLIC,
+		policyv1.RateLimitClass_RATE_LIMIT_CLASS_AUTHENTICATION:
+		return !business.ImpersonationForbidden(policy) || short == "AuthService/Logout"
+	}
+	return roleViewWrites[short]
+}
+
 // enforceRoleViewPolicy refuses, in a role view, every operation of the accounts
-// API that the descriptors withhold from an impersonated session. Those are the
-// privileged mutations (API keys, approvals, platform administration, person
-// Work Context mints, organisation and member administration), and every one is
-// decided by organisation roles, which a role view does not narrow; the session
-// the view was opened from performs them as before. The host interfaces
-// (host.*) are exempt because the authority core decides them and reads the
-// view itself; TestEveryPersonMintEntryPointHonoursOrRefusesARoleView holds
-// each of those to a stated decision. A new restricted accounts operation is
-// therefore refused in a view by default, with nothing to remember.
+// API that roleViewAdmits does not name. Those operations are decided by
+// organisation roles (API keys, approvals, delegations, installs, platform and
+// member administration, the person Work Context mints), which a role view does
+// not narrow; the session the view was opened from performs them as before. The
+// host interfaces (host.*) are exempt because the authority core decides them
+// and reads the view itself; TestEveryPersonMintEntryPointHonoursOrRefusesARoleView
+// holds each of those to a stated decision.
 func enforceRoleViewPolicy(ctx context.Context, fullMethod string) error {
 	if !strings.HasPrefix(fullMethod, "/saas.accounts.v1.") {
 		return nil
 	}
-	if policy, ok := business.LookupRPCPolicy(fullMethod); ok && !business.ImpersonationForbidden(policy) {
+	policy, resolved := business.LookupRPCPolicy(fullMethod)
+	if roleViewAdmits(fullMethod, policy, resolved) {
 		return nil
 	}
 	return refuseInRoleView(ctx)

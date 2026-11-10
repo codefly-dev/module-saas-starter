@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -14,10 +15,12 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"accounts/pkg/business"
 	authorityv1 "accounts/pkg/gen/host/authority/v1"
 	installationv1 "accounts/pkg/gen/host/installation/v1"
 	sessionv1 "accounts/pkg/gen/host/session/v1"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
 // How each entry point that mints, derives or decides a person's authority
@@ -102,22 +105,22 @@ func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInte
 	require.Contains(t, status.Convert(err).Message(), "this session views as")
 	require.Contains(t, status.Convert(err).Message(), "use the session the view was opened from")
 
-	// Every accounts operation the descriptors withhold from an impersonated session
-	// is refused in a view too, by name and before its handler runs: API keys,
-	// approvals, platform administration, member administration. The list is the
-	// impersonation restriction set itself, so a new restricted operation is
-	// covered without being remembered here.
+	// Every accounts operation roleViewAdmits does not name is refused in a view,
+	// by name and before its handler runs: API keys, approvals, delegations,
+	// installs, platform and member administration. The set is computed from the
+	// reviewed policies, so a new operation is refused without being remembered here.
 	refusedInView := 0
-	for _, procedure := range restrictedProcedures(t) {
-		if !strings.HasPrefix(procedure, "/saas.accounts.v1.") {
-			continue
+	for _, policy := range business.RPCPolicies() {
+		if !strings.HasPrefix(policy.FullMethod, "/saas.accounts.v1.") || roleViewAdmits(policy.FullMethod, policy, true) ||
+			policy.MethodPolicy.GetExposure() != policyv1.Exposure_EXPOSURE_AUTHENTICATED {
+			continue // internal operations are reached with a workload credential, never a person's session
 		}
 		refusedInView++
-		err := conn.Invoke(viewing, procedure, &emptypb.Empty{}, &emptypb.Empty{})
-		require.Equal(t, codes.PermissionDenied, status.Code(err), "%s: %v", procedure, err)
-		require.Contains(t, status.Convert(err).Message(), "this session views as", procedure)
+		err := conn.Invoke(viewing, policy.FullMethod, &emptypb.Empty{}, &emptypb.Empty{})
+		require.Equal(t, codes.PermissionDenied, status.Code(err), "%s: %v", policy.FullMethod, err)
+		require.Contains(t, status.Convert(err).Message(), "this session views as", policy.FullMethod)
 	}
-	require.Greater(t, refusedInView, 50, "the restriction set names the accounts operations a view refuses")
+	require.Greater(t, refusedInView, 100, "a view refuses most of the accounts surface by default")
 
 	// The session it was opened from mints as before, and Current says it views nothing.
 	_, err = contexts.StartTask(person, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: "records",
@@ -131,4 +134,34 @@ func testRoleViewRefusesOrganizationMints(t *testing.T, conn grpc.ClientConnInte
 	_, err = sessionv1.NewSessionServiceClient(conn).OpenRoleView(metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer not-a-token"),
 		&sessionv1.OpenRoleViewRequest{InstallationId: one.GetInstallation().GetId(), Roles: one.GetRoles()[:1]})
 	require.Error(t, err)
+}
+
+// The closed list of what a view may do must stay true to the descriptors: every
+// named write is a real, resolvable, non-restricted operation, every admitted
+// operation that is not a declared read is on the list, and nothing admitted as a
+// read has the name of a mutation (a mislabelled descriptor would otherwise open
+// a hole for ever).
+func TestRoleViewAdmitsOnlyReadsLoginFlowsAndNamedPersonWrites(t *testing.T) {
+	mutating := regexp.MustCompile(`^(Create|Update|Delete|Decide|Install|Uninstall|Grant|Revoke|Add|Remove|Set|Enable|Disable|Share|Transfer|Narrow|Accept|Register|Put|Upsert|Sync|Start|Issue|Rotate|Reset|Mint|Approve|Request)`)
+	for short := range roleViewWrites {
+		policy, ok := business.LookupRPCPolicy("/saas.accounts.v1." + short)
+		require.True(t, ok, "%s is on roleViewWrites but is not an accounts operation", short)
+		require.False(t, business.ImpersonationForbidden(policy), "%s is on roleViewWrites but is a restricted operation", short)
+	}
+	for short := range roleViewReadsThatWrite {
+		_, ok := business.LookupRPCPolicy("/saas.accounts.v1." + short)
+		require.True(t, ok, "%s is on roleViewReadsThatWrite but is not an accounts operation", short)
+	}
+	for _, policy := range business.RPCPolicies() {
+		if !strings.HasPrefix(policy.FullMethod, "/saas.accounts.v1.") || !roleViewAdmits(policy.FullMethod, policy, true) {
+			continue
+		}
+		short := strings.TrimPrefix(policy.FullMethod, "/saas.accounts.v1.")
+		if roleViewWrites[short] || policy.MethodPolicy.GetRateLimit() != policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_READ {
+			continue // login flows carry no session authority; named writes are on the list
+		}
+		name := short[strings.LastIndex(short, "/")+1:]
+		require.False(t, mutating.MatchString(name),
+			"%s is admitted in a role view as a read or login flow but is named like a mutation: fix its descriptor, or add it to roleViewReadsThatWrite", short)
+	}
 }
