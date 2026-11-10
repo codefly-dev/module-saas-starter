@@ -8,7 +8,7 @@ require (
 	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.0
 	github.com/codefly-dev/authority/libraries/authority-core/go v0.1.0
 	github.com/codefly-dev/authority/libraries/hop/go v0.2.0
-	github.com/codefly-dev/core v0.19.20
+	github.com/codefly-dev/core v0.19.22
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
 	github.com/codefly-dev/sdk-go v0.4.1
 	github.com/codefly-dev/sdk-go/workcontext v0.1.1-0.20261018052022-70dc7a546458
