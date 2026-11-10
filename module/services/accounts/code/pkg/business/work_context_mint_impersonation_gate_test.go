@@ -8,12 +8,9 @@ import (
 
 // No Work Context is ever minted on an impersonated request.
 //
-// This is not a style rule — it is the premise the platform-read branch of
-// workContextPermissionAllowed rests on. platformReadAdmissible refuses a
-// platform administrator's authority on an impersonated request, and
-// platform_read_authority.go justifies leaving that check out of every
-// downstream seam with "A Work Context cannot be minted while impersonating, so
-// a module's forwarded viewer is always someone acting as themselves."
+// This is not a style rule — it is the premise every downstream seam rests on:
+// a Work Context cannot be minted while impersonating, so a module's forwarded
+// viewer is always someone acting as themselves.
 //
 // That premise was five hand-written proto annotations with nothing holding
 // them: the policy matrix reads whatever a method declares and never asks
@@ -60,8 +57,8 @@ func TestNoWorkContextIsMintedOnAnImpersonatedRequest(t *testing.T) {
 			}
 			t.Errorf(
 				"%s mints a Work Context with exposure=%s and impersonation=%s; a mint reachable from an "+
-					"end-user session must declare IMPERSONATION_REQUIREMENT_FORBIDDEN, because platform read "+
-					"authority is admitted at the mint only on the premise that no mint runs while impersonating",
+					"end-user session must declare IMPERSONATION_REQUIREMENT_FORBIDDEN, because a module's "+
+					"forwarded viewer must be someone acting as themselves, never an impersonated session",
 				method.FullName(), policy.GetExposure(), policy.GetImpersonation(),
 			)
 		}

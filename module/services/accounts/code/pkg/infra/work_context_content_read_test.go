@@ -160,34 +160,17 @@ func TestContentReadThroughARecordShareRequiresAPlacedRecord(t *testing.T) {
 	requirePermissionRefused(t, resolveContentRead(t, org, member, read), "a revoked share confers nothing")
 }
 
-// Platform read authority is the third basis, and it reaches a plain member who
-// holds no grant anywhere — the same authority the read oracles already honour
-// for a platform administrator. It stays narrow on its own axes: `super_admin`
-// only, `read` only, and only when the adapters flagged the permission.
-func TestContentReadIsHeldThroughPlatformReadAuthority(t *testing.T) {
-	org, member, _ := contentReadFixture(t)
+// A platform role is not a basis: a super_admin holding no grant and no share
+// has no standing to read content, the same as any other member.
+func TestContentReadIsNotHeldThroughAPlatformRole(t *testing.T) {
 	read := business.WorkContextPermission{ResourceKind: contentKind, Action: "read", ContentRead: true}
-
+	org, member, _ := contentReadFixture(t)
 	requirePermissionRefused(t, resolveContentRead(t, org, member, read), "no basis at all confers nothing")
 
-	grantPlatformRoleForTest(t, member, "super_admin")
-	require.NoError(t, resolveContentRead(t, org, member, read))
-
-	for name, permission := range map[string]business.WorkContextPermission{
-		"not read":  {ResourceKind: contentKind, Action: "write", ContentRead: true},
-		"unflagged": {ResourceKind: contentKind, Action: "read"},
-	} {
-		requirePermissionRefused(t, resolveContentRead(t, org, member, permission), name)
+	for _, role := range []string{"super_admin", "support", "billing"} {
+		org, user, _ := contentReadFixture(t)
+		grantPlatformRoleForTest(t, user, role)
+		requirePermissionRefused(t, resolveContentRead(t, org, user, read),
+			"a platform "+role+" role is not a basis for content read")
 	}
-}
-
-// Only `super_admin`. `support` and `billing` gain nothing here, exactly as they
-// gain nothing in the read oracles this branch mirrors.
-func TestContentReadIsNotHeldThroughANonReadPlatformRole(t *testing.T) {
-	org, member, _ := contentReadFixture(t)
-	grantPlatformRoleForTest(t, member, "support")
-	requirePermissionRefused(t,
-		resolveContentRead(t, org, member,
-			business.WorkContextPermission{ResourceKind: contentKind, Action: "read", ContentRead: true}),
-		"a support platform role is not platform read authority")
 }

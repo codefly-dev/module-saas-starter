@@ -557,7 +557,7 @@ func (s *TeamServer) DeleteTeam(ctx context.Context, req *gen.DeleteTeamRequest)
 
 // requireRoleScope gates mutations on a role scope. Global roles (OrgId
 // empty) require platform super_admin; org-scoped roles require org admin
-// on the target org (or platform super_admin bypass).
+// on the target org; a platform role confers nothing there.
 func requireRoleScope(ctx context.Context, actorID, orgID string) error {
 	if orgID == "" {
 		return requirePlatformRole(ctx, actorID, "super_admin")
@@ -1418,7 +1418,8 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		return nil, err
 	}
 	// Audit log is read-through-membership: org members see their own org's
-	// audit trail; platform admins see anything. No org_id means a platform-wide
+	// audit trail and nobody else's — a platform role reads no organization's
+	// trail without being a member of it. No org_id means a platform-wide
 	// read, which requires platform admin — UNLESS the caller carries a verified
 	// active org: default the read to that org rather than denying, so an org
 	// member (including a solution acting on the user's behalf, e.g. a composed solution)
@@ -1433,12 +1434,7 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		}
 	} else {
 		if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
-			if !IsPermissionDenied(err) {
-				return nil, err
-			}
-			if paErr := requirePlatformAdmin(ctx, actorID); paErr != nil {
-				return nil, err
-			}
+			return nil, err
 		}
 	}
 

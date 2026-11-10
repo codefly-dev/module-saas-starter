@@ -102,15 +102,12 @@ func (s *OrgServer) DeleteOrganization(ctx context.Context, req *gen.DeleteOrgan
 	return &emptypb.Empty{}, nil
 }
 
-// requireOrgOwner admits the organization's owner or a platform super
-// administrator. The membership read is the caller's own pair, which is the only
-// one lookupMembership answers.
+// requireOrgOwner admits the organization's owner. A platform role confers
+// nothing. The membership read is the caller's own pair, which is the only one
+// lookupMembership answers.
 func requireOrgOwner(ctx context.Context, actorID, orgID string) error {
 	if err := refuseInRoleView(ctx); err != nil {
 		return err
-	}
-	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
-		return nil
 	}
 	role, err := lookupMembership(ctx, orgID, actorID)
 	if err != nil {

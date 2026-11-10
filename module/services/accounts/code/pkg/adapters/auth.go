@@ -221,15 +221,13 @@ func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action 
 	return nil
 }
 
-// requireOrgAdmin verifies that actorID has admin-or-owner role in orgID.
-// Platform super_admin bypasses the check. Cache-backed same as above.
+// requireOrgAdmin verifies that actorID has admin-or-owner role in orgID. A
+// platform role confers nothing here: a platform operator who must administer an
+// organization is a member of it, which the organization can see and withdraw.
+// Cache-backed same as above.
 func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
 	if err := refuseInRoleView(ctx); err != nil {
 		return err
-	}
-	// Platform super_admin always passes.
-	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
-		return nil
 	}
 	if orgID == "" {
 		return status.Error(codes.InvalidArgument, "org_id required")
@@ -325,9 +323,6 @@ func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
 	if orgID == "" {
 		return status.Error(codes.InvalidArgument, "org_id required")
 	}
-	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
-		return nil
-	}
 
 	role, err := lookupMembership(ctx, orgID, actorID)
 	if err != nil {
@@ -357,7 +352,7 @@ func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
 }
 
 // requireTeamAdmin verifies actorID has admin-or-owner role within
-// the team. Platform super_admin bypasses. team_members is RLS-
+// the team. A platform role confers nothing. team_members is RLS-
 // protected (Phase 2C) and the policy JOINs to teams (also RLS), so
 // the lookup has to enter WithOrgTx scoped to the team's owning
 // org. We resolve team→org under WithControlPlane first since the auth
@@ -370,19 +365,6 @@ func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
 func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, error) {
 	if err := refuseInRoleView(ctx); err != nil {
 		return "", err
-	}
-	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
-		// Even for super_admin we still need to resolve the org so
-		// the downstream WithOrgTx is correctly scoped.
-		var orgID string
-		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
-			o, err := service.Store().GetTeamOrgID(ctx, teamID)
-			orgID = o
-			return err
-		}); err != nil {
-			return "", status.Errorf(codes.Internal, "cannot resolve team org: %v", err)
-		}
-		return orgID, nil
 	}
 	if teamID == "" {
 		return "", status.Error(codes.InvalidArgument, "team_id required")
@@ -399,8 +381,8 @@ func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, erro
 		return "", status.Error(codes.PermissionDenied, "not a member of this team")
 	}
 	// An org admin/owner administers every team in their org — without this, a
-	// freshly created team (zero members) is a bootstrap deadlock: nobody short
-	// of platform super_admin could ever add the FIRST member. (Found by a
+	// freshly created team (zero members) is a bootstrap deadlock: nobody
+	// could ever add the FIRST member. (Found by a
 	// consumer's live provisioning flow.)
 	role, err := lookupMembership(ctx, orgID, actorID)
 	if err != nil {

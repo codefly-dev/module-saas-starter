@@ -147,51 +147,29 @@ grant + share union as `CheckAccess` — a node is returned exactly when
 `CheckAccess` would allow the same `(resource_type, action)` on it — so the two
 never disagree.
 
-## Platform administrators read without a grant
+## No role reads without a grant
 
-A platform `super_admin` (a `platform_admins` row with that role) reads every
-scope node — every collection and every record placed under one — of whichever
-organization the request acts in, with no scope grant or record share. Any
-organization, but one tenant at a time: every oracle still runs under that
-tenant's `codefly.current_tenant_id`, so RLS and the queries' explicit `org_id`
-predicates confine the answer to it (behaviour B2), exactly as they do for a
-grant. It is a third branch beside grant and share in every layered-access read
-oracle, all in
-`pkg/infra/postgres_layered_access.go` and `postgres_readable_sources.go`, with
-the rule itself in `pkg/infra/platform_read_authority.go`: `CheckAccess`,
-`ListAccessibleScopes` / `ListMyAccessibleScopes`, the point and candidate
-checks behind them, and the module-facing `ListReadableSourceCollections` and
-`CheckWorkContextRecordAccess`. So the host UI, a module acting for a viewer and
-the notification fan-out give one answer.
+Every read is explicit. A platform role (`super_admin`, `support`, `billing`)
+reads no collection and no record through these oracles, and neither does an
+organization owner or administrator: only a live scope grant or record share the subject holds (or its
+team holds) confers a read. This holds in every layered-access read oracle, all
+in `pkg/infra/postgres_layered_access.go` and `postgres_readable_sources.go`:
+`CheckAccess`, `ListAccessibleScopes` / `ListMyAccessibleScopes`, the point and
+candidate checks behind them, the module-facing `ListReadableSourceCollections`
+and `CheckWorkContextRecordAccess`, and the Work Context mint's content-read
+standing. So the host UI, a module acting for a viewer and the notification
+fan-out give one answer.
 
-It is narrow, and fails closed on every other axis:
+There used to be a `super_admin` read of every scope node in any organization,
+with `basis: ACCESS_BASIS_PLATFORM_ADMINISTRATOR`. It is removed: it let a role
+reach data it was never granted, and it hid a broken grant path because every
+journey run as that administrator passed on the bypass. A platform operator who
+legitimately needs to read an organization's data is given a scope grant by that
+organization, which is visible in its audit trail and ends when it is revoked.
+`ACCESS_BASIS_PLATFORM_ADMINISTRATOR` stays in the contract only so old clients
+decode; nothing returns it.
 
-- **`super_admin` only.** `support` and `billing` gain nothing, and neither does
-  an organization owner or administrator — a flat organization role still never
-  substitutes for a collection grant.
-- **`read` only**, spelled exactly; a wildcard action is not read.
-- **A principal only**, never a team.
-- **Never on an impersonated request**, in either direction: the impersonator's
-  platform role does not reach the subject they act as, and an impersonated
-  administrator's role is not the impersonator's to borrow. A Work Context
-  cannot be minted while impersonating, so a module's forwarded viewer is always
-  someone acting as themselves.
-- **Ordinary delegated subjects read independently.** A Work Context read
-  intersects the owner and every ordinary actor in its chain; an actor with no
-  grant fails the intersection whatever the owner's role. The explicitly marked
-  installed content-read child described below authenticates module execution
-  separately and retains the human's personal visibility.
-- **It replaces the grant, never the declaration.** A module that declares no
-  content resource reads nothing, administrator or not.
-
-The decision says so. `CheckAccess` reports `granted via
-platform_administrator`, and each `AccessibleScope` carries `basis:
-ACCESS_BASIS_PLATFORM_ADMINISTRATOR` when no grant or share reaches the node
-(`ACCESS_BASIS_GRANT` whenever one does). These reads emit no audit event —
-the oracles are `AUDIT_EMISSION_NONE` for grants too — so the basis on the
-decision is the record. Granting or revoking the platform role itself is
-audited, and bumps the authorization revision of every organization the user
-belongs to, which invalidates outstanding Work Contexts and read cursors.
+Refusals say why: `CheckAccess` answers `no scope grant or record share`.
 
 ## Explicit installed content-read delegation
 
@@ -201,7 +179,7 @@ only a human root without actor hops, authenticated independently from the
 calling module. Core creates a child with that module's actual service actor.
 The exact binding records both modules' installation/presence lifetime and the
 envelope revision. Every content read revalidates that lifetime before using
-the owner's existing collection grants, shares or platform read authority.
+the owner's existing collection grants or shares.
 The module actor contributes no personal grants; it also does not remove the
 human's valid visibility by being treated as a second collection reader.
 The actor hop is journaled before the child is returned; an append failure
@@ -238,7 +216,7 @@ still resolves node by node through the oracles above (the readable-source
 projection, the exact-record check), intersected over the owner and every
 ordinary delegated actor. So the mint admits that one permission on the same bases those oracles
 accept — an organization-level role as before, **or** a live scope grant (the
-owner's or a team's), a live record share, or platform read authority on at
+owner's or a team's) or a live record share on at
 least one node. Without this a member granted read on one collection could see
 "Read" on it and still be refused every read, because the mint demanded an
 organization-wide role no collection grant confers.
@@ -285,7 +263,7 @@ the adapters' `markContentReads`):
   boot.
 - **Live — by re-resolution, not by a revision bump.** Revoking or expiring the
   last grant withdraws the standing on the next mint and on every recheck,
-  because the branch requires a live grant, share or platform role each time it
+  because the branch requires a live grant or share each time it
   is asked. It does **not** move the authorization revision: unlike
   `role_assignments`, `scope_grants` and `record_shares` carry only
   `bump_source_read_revision`, so the sealed `authorization_revision` a

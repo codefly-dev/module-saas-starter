@@ -49,8 +49,7 @@ func (s *PostgresStore) ListSolutionEntitlements(
 	}
 
 	// $1 subject, $2 resource_type, $3 action, $4 org, $5 the node kind this
-	// narrows to, $6 platform admissibility — the parameter contract
-	// accessibleScopesQuery documents. The shared listing numbers its own
+	// narrows to — the parameter contract accessibleScopesQuery documents. The shared listing numbers its own
 	// parameters after these.
 	//
 	// The node predicate is the node KIND rather than a candidate id set: a
@@ -58,7 +57,7 @@ func (s *PostgresStore) ListSolutionEntitlements(
 	// asking the union for accessible solution nodes is the question, and it needs
 	// no array of ids assembled by a prior query.
 	admitted, err := accessibleScopesQuery(
-		gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "node_id", "n.kind = $5", "$6")
+		gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "node_id", "n.kind = $5")
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +74,7 @@ func (s *PostgresStore) ListSolutionEntitlements(
 	summaries, err := s.listInstallationSummaries(ctx, executor, orgID, "active", cursor, limit,
 		"i.kind = 'module' AND i.root_scope_node_id::text IN ("+admitted+")",
 		subjectID, business.ResourceTypeSolution, business.ActionUseSolution, orgID,
-		business.ScopeNodeKindSolution,
-		platformReadAdmissible(ctx, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, business.ActionUseSolution))
+		business.ScopeNodeKindSolution)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to list solution entitlements")
 	}

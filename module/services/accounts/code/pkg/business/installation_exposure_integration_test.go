@@ -382,12 +382,10 @@ func TestGrantInstallationToTeamSerializesWithUninstall(t *testing.T) {
 	})
 }
 
-// A platform super administrator passes the organization-admin check for every
-// organization (requireOrgAdmin, shared by every organization-admin method), so
-// these doors admit one for an organization it is not a member of. Pinned so the
-// inherited reach is a decision someone has to change on purpose. A lesser
-// platform role is not admitted.
-func TestInstallationExposureAdmitsPlatformSuperAdmin(t *testing.T) {
+// A platform role is not membership: no platform role, super administrator
+// included, passes the organization-admin check for an organization it is not an
+// administrator of, so these doors refuse it. This used to pin the opposite.
+func TestInstallationExposureRefusesPlatformRolesThatAreNotMembers(t *testing.T) {
 	w := newExposureWorld(t)
 	server := &adapters.InstallationServer{}
 	superAdmin, ownOrg := mustUserAndOrg(t, testCtx, "super@platform.test", "platform-super", "Platform Home")
@@ -395,20 +393,20 @@ func TestInstallationExposureAdmitsPlatformSuperAdmin(t *testing.T) {
 	support, supportOrg := mustUserAndOrg(t, testCtx, "support@platform.test", "platform-support", "Support Home")
 	grantPlatformRole(t, support, "support", support)
 
-	listed, err := server.ListOrganizationInstallations(storyCallerContext(testCtx, superAdmin, ownOrg),
-		&gen.ListOrganizationInstallationsRequest{OrgId: w.org})
-	require.NoError(t, err)
-	require.Len(t, listed.GetInstallations(), 1)
-	require.Equal(t, w.installation, listed.GetInstallations()[0].GetInstallation().GetId())
-	_, err = server.GrantInstallationToTeam(storyCallerContext(testCtx, superAdmin, ownOrg), &gen.GrantInstallationToTeamRequest{
+	// A platform super administrator is not a member of this organization, so it
+	// lists no installation here and grants or revokes no team's access to one.
+	// It used to be admitted for every organization; all roles are explicit.
+	superCaller := storyCallerContext(testCtx, superAdmin, ownOrg)
+	_, err := server.ListOrganizationInstallations(superCaller, &gen.ListOrganizationInstallationsRequest{OrgId: w.org})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	_, err = server.GrantInstallationToTeam(superCaller, &gen.GrantInstallationToTeamRequest{
 		OrgId: w.org, InstallationId: w.installation, TeamId: w.team, RoleId: w.useRole,
 	})
-	require.NoError(t, err)
-
-	_, err = server.RevokeInstallationFromTeam(storyCallerContext(testCtx, superAdmin, ownOrg), &gen.RevokeInstallationFromTeamRequest{
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	_, err = server.RevokeInstallationFromTeam(superCaller, &gen.RevokeInstallationFromTeamRequest{
 		OrgId: w.org, InstallationId: w.installation, TeamId: w.team, RoleId: w.useRole,
 	})
-	require.NoError(t, err)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
 
 	supportCaller := storyCallerContext(testCtx, support, supportOrg)
 	_, err = server.ListOrganizationInstallations(supportCaller, &gen.ListOrganizationInstallationsRequest{OrgId: w.org})

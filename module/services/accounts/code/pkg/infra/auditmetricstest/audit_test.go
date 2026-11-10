@@ -389,16 +389,19 @@ func TestPostgresExistingAndNewSourceBindingRevocation(t *testing.T) {
 	_, err = tx.Exec(ctx, `DELETE FROM record_shares; UPDATE scope_grants SET subject_kind='principal',subject_id='reader'; UPDATE role_permissions SET resource='*',action='*'`)
 	require.NoError(t, err)
 	parity([]string{"boundary-a"})
-	// A platform super_admin reads every node of the tenant with no grant, and
-	// the point check and the listing still agree; the lesser platform roles
-	// read nothing more than their grants.
+	// No platform role reads anything beyond its grants: a super_admin is held to
+	// the same grant as everyone else, and the point check and the listing still
+	// agree. (A super_admin used to read every node of the tenant with no grant.)
 	_, err = tx.Exec(ctx, `INSERT INTO platform_admins VALUES ('reader','super_admin')`)
 	require.NoError(t, err)
-	parity([]string{"boundary-a", "boundary-b", "placed"})
+	parity([]string{"boundary-a"})
+	_, err = tx.Exec(ctx, `DELETE FROM scope_grants`)
+	require.NoError(t, err)
+	parity(nil)
 	_, err = tx.Exec(ctx, `UPDATE platform_admins SET platform_role='support'`)
 	require.NoError(t, err)
-	parity([]string{"boundary-a"})
-	_, err = tx.Exec(ctx, `DELETE FROM platform_admins`)
+	parity(nil)
+	_, err = tx.Exec(ctx, `DELETE FROM platform_admins; INSERT INTO scope_grants VALUES ('org-a','principal','reader','reader-role','a',NULL)`)
 	require.NoError(t, err)
 	q := business.AuditQuery{OrgID: "org-a", Resource: "datasource", ResourceID: "existing", EventType: "saas.datasource.sync.completed"}
 	check := func(want codes.Code) {
