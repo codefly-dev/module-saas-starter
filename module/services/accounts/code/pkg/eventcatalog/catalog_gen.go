@@ -60,6 +60,7 @@ var published = [...]PublishedEvent{
 	{Type: "saas.authority.resource_transferred", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.authority.role_granted", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.authority.role_revoked", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
+	{Type: "saas.authority.role_view_opened", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.billing.checkout_started", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.billing.free_plan_selected", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.billing.portal_opened", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},

@@ -337,7 +337,7 @@ func enforceCentralPolicy(ctx context.Context, fullMethod string) error {
 // denied here rather than left to the caller's ordering against authorize.
 func enforceImpersonationPolicy(ctx context.Context, fullMethod string) error {
 	if !auth.ImpersonatedRequest(ctx) {
-		return nil
+		return enforceRoleViewPolicy(ctx, fullMethod)
 	}
 	policy, ok := business.LookupRPCPolicy(fullMethod)
 	if !ok {

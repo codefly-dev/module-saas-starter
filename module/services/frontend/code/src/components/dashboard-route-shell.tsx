@@ -6,6 +6,7 @@ import { AdminLayout } from "@/components/admin-layout";
 import { CommandPalette } from "@/components/command-palette";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RoleViewBanner, RoleViewSelector } from "@/features/role-view/role-view";
 import { OnboardingGate } from "@/features/onboarding/ui/onboarding-gate";
 import { useAuth } from "@/lib/auth";
 
@@ -29,6 +30,8 @@ export function DashboardRouteShell({ children }: { children: ReactNode }) {
 	return (
 		<>
 			<ImpersonationBanner />
+			<RoleViewBanner />
+			<RoleViewSelector />
 			<CommandPalette />
 			<OnboardingGate>
 				<AdminLayout>{children}</AdminLayout>

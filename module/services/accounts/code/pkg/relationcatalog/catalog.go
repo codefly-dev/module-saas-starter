@@ -123,6 +123,7 @@ var authorities = map[string]Authority{
 	"authority_core_owner_aware":      {Scope: ScopeGlobal},
 	"authority_core_person_epochs":    {Scope: ScopeGlobal},
 	"authority_core_replay":           {Scope: ScopeGlobal},
+	"authority_core_role_views":       {Scope: ScopeGlobal},
 	"authority_core_role_grants":      {Scope: ScopeGlobal},
 	"authority_core_tombstones":       {Scope: ScopeGlobal},
 

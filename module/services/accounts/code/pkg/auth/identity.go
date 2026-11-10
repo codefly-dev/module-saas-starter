@@ -43,6 +43,11 @@ type Identity struct {
 	// UserID.
 	ActingAsUserID uuid.UUID
 
+	// AccessOnly marks a session that is never refreshed: its token is its
+	// whole life, capped like an impersonation window's, and its row carries no
+	// refresh token. A role view is one (MintRoleView).
+	AccessOnly bool
+
 	// Actor records the delegation chain when a service mints or forwards this
 	// token on the end user's behalf (RFC 8693 `act`). UserID/`sub` stays the
 	// end user end-to-end; Actor names the immediate caller acting for them,

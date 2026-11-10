@@ -85,6 +85,12 @@ type JWTMinter interface {
 	// client can ask to change at refresh time.
 	MintForClient(ctx context.Context, userID, authorizingSessionID uuid.UUID, clientID, resource string) (*TokenPair, error)
 
+	// MintRoleView issues the access-only session of a role view the authority
+	// core recorded for viewSessionID, from the host session parentSessionID
+	// the person opened it from. It refuses a parent that is revoked, timed out,
+	// impersonating or a client's, as MintForClient does.
+	MintRoleView(ctx context.Context, userID, parentSessionID, viewSessionID uuid.UUID) (*TokenPair, error)
+
 	// SwitchOrganization issues a fresh access token for a current membership
 	// while preserving the refresh token, session row, device family, and both
 	// lifetime boundaries. userID and sessionID must come from verified request
