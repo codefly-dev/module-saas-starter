@@ -1405,6 +1405,13 @@ installations:
 		}, &solutionhost.Frontend{Title: "Owner page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload})
 	})
 
+	// The organization role "admin" or "owner" holds no scope: an administrator
+	// with no grant is refused at a module that is neither role-gated nor
+	// owner-aware, and issued the scope once granted.
+	t.Run("an administrator with no grant is issued nothing without one", func(t *testing.T) {
+		testAdministratorWithoutAGrant(t, conn, signIn("fixture-alex"), signIn("fixture-dev"), "00000000-0000-7000-8000-0000000000b4")
+	})
+
 	// The mints decided by organization RBAC are refused, by name, to a session
 	// that views as some of its roles; the session it was opened from mints as before.
 	t.Run("a role view mints no person Work Context of organization RBAC", func(t *testing.T) {
