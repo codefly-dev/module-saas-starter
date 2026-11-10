@@ -3,6 +3,8 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
@@ -36,21 +38,9 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 	start := func(audience string, scopes ...*gen.WorkContextScope) (*gen.IssuedWorkContext, error) {
 		return contexts.StartTask(admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: audience, AuthorityScopes: scopes})
 	}
-	carried := func(t *testing.T, issued *gen.IssuedWorkContext) []string {
-		t.Helper()
-		decoded, err := corework.Decode(issued.GetToken())
-		require.NoError(t, err)
-		var kinds []string
-		for _, sc := range decoded.Context().GetAuthorityScopes() {
-			kinds = append(kinds, sc.GetResourceKind())
-		}
-		return kinds
-	}
-	refusedByRule := func(t *testing.T, err error, audience string) {
-		t.Helper()
-		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
-		require.Contains(t, status.Convert(err).Message(),
-			audience+" checks owners, so an organization role reaches none of its owned data on a person's own session")
+	carried, refusedByRule := carriedKinds, refusedByOwnerRule
+	exchangeAs := func(module, binding, parent string) (*gen.IssuedWorkContext, error) {
+		return moduleExchange(t, credential, module, binding, parent)
 	}
 	// A parent at records, which checks no owner, carrying an owned kind of
 	// each module that checks owners and the model's shared profiles.
@@ -123,13 +113,6 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 	// module declares no roles, so the child carries at the binding's audience
 	// only what the person's own session holds there.
 	t.Run("a module's binding exchange of a person's own session", func(t *testing.T) {
-		exchangeAs := func(module, binding, parent string) (*gen.IssuedWorkContext, error) {
-			identity, err := ModuleCapabilitiesSingleton().MintModuleWorkContext(context.Background(), &gen.ModuleMintWorkContextRequest{
-				Prefix: module, ServiceAccountToken: credential(module), OrganizationId: fixtureOrganization})
-			require.NoError(t, err)
-			return ModuleCapabilitiesSingleton().ExchangeDelegatedOperationAudience(presentedAs(t, identity.GetToken()),
-				&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent})
-		}
 		// documents' model binding invokes the profiles and reads the datasets.
 		projected, err := contexts.StartTask(admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(),
 			Audience: "documents", OperationBindings: []string{"model"}})
@@ -171,17 +154,107 @@ func testOwnSessionOwnerRule(t *testing.T, conn grpc.ClientConnInterface, admin 
 			Audience: module, OperationBindings: []string{"documents"}})
 		require.NoError(t, err, "a projection through a role-gated module")
 		require.Equal(t, []string{"example-records"}, carried(t, through))
+		child, err := exchangeAs(module, "documents", through.GetToken())
+		require.NoError(t, err, "the role-gated module's exchange through its binding")
+		require.Equal(t, []string{"example-records"}, carried(t, child))
 	})
 }
 
-// composedFrom answers one module, or one error, for any name.
-type composedFrom struct {
-	module domain.Module
-	err    error
+// carriedKinds are the kinds an issued capability carries in effect: its last
+// hop's granted scopes, or its owner's when the owner acts directly (as
+// attenuateEffective reads it).
+func carriedKinds(t *testing.T, issued *gen.IssuedWorkContext) []string {
+	t.Helper()
+	decoded, err := corework.Decode(issued.GetToken())
+	require.NoError(t, err)
+	effective := decoded.Context().GetAuthorityScopes()
+	if chain := decoded.Context().GetActorChain(); len(chain) > 0 {
+		effective = chain[len(chain)-1].GetGrantedScopes()
+	}
+	var kinds []string
+	for _, sc := range effective {
+		kinds = append(kinds, sc.GetResourceKind())
+	}
+	return kinds
 }
 
-func (c composedFrom) Composed(context.Context, string) (domain.Module, error) {
-	return c.module, c.err
+// refusedByOwnerRule: err is the core's owner-rule refusal at audience.
+func refusedByOwnerRule(t *testing.T, err error, audience string) {
+	t.Helper()
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.Contains(t, status.Convert(err).Message(),
+		audience+" checks owners, so an organization role reaches none of its owned data on a person's own session")
+}
+
+// moduleExchange is module exchanging parent through its binding, presenting
+// the module identity its workload credential is minted.
+func moduleExchange(t *testing.T, credential func(string) string, module, binding, parent string) (*gen.IssuedWorkContext, error) {
+	t.Helper()
+	identity, err := ModuleCapabilitiesSingleton().MintModuleWorkContext(context.Background(), &gen.ModuleMintWorkContextRequest{
+		Prefix: module, ServiceAccountToken: credential(module), OrganizationId: fixtureOrganization})
+	require.NoError(t, err)
+	return ModuleCapabilitiesSingleton().ExchangeDelegatedOperationAudience(presentedAs(t, identity.GetToken()),
+		&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent})
+}
+
+// installedActorHarness is what the installed-actor case needs of the harness.
+type installedActorHarness struct {
+	admin      context.Context
+	contexts   gen.WorkContextServiceClient
+	credential func(string) string
+	// grant writes the next envelope revision with principals (a JSON object
+	// body keyed by module) and derives the registry from it.
+	grant func(principals string)
+	// withdraw withdraws a module from the core alone, as a delivery the core
+	// has not composed: the host's registry still serves it.
+	withdraw func(module string) error
+}
+
+// installedActorModule checks no owner and binds twice to the model: once
+// for its profiles and datasets, once for its datasets alone. The harness
+// delivers and installs it before any envelope is written, since a delivery
+// after one derives a registry the committed envelope fences.
+var installedActorModule = conformanceModule{alias: "conformance-dataset-actor", ownerUnaware: true,
+	ceilings: []*authorityv1.WorkScopeV1{wireScope("conformance-dataset-actor.task", "read")},
+	bindings: []solutionhost.AuthorityBinding{
+		{ID: "model", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.profiles:read", "modelservice.datasets:read"}}},
+		{ID: "datasets", Audience: "model", Operations: map[string][]string{"invoke": {"modelservice.datasets:read"}}},
+	}}
+
+// testInstalledActorOwnSession: an installed module_actor binding of a module
+// that checks no owner, exchanging a person's own session, is a hop held at
+// its audience as the ordinary arm's is. The case writes an envelope, which
+// becomes every module's ceiling, so the harness runs it last.
+func testInstalledActorOwnSession(t *testing.T, h installedActorHarness) {
+	module := installedActorModule.alias
+	actor := func(kinds ...string) string {
+		var scopes []string
+		for _, kind := range kinds {
+			scopes = append(scopes, fmt.Sprintf(`{"resource_kind":%q,"actions":["read"]}`, kind))
+		}
+		return `{"audience":"model","delegation_mode":"module_actor","invoke_scopes":[` + strings.Join(scopes, ",") + `]}`
+	}
+	h.grant(fmt.Sprintf(`%q:{"grant":{"tenant":%q,"resources":[%q],"operation_audiences":{"model":%s,"datasets":%s}}},`+
+		`"model":{"grant":{"tenant":%q,"resources":["modelservice.profiles","modelservice.datasets","modelservice.templates"]}}`,
+		module, fixtureOrganization, module+".task", actor("modelservice.datasets", "modelservice.profiles"), actor("modelservice.datasets"), fixtureOrganization))
+
+	// The module serves neither kind, so the person's own session carries both there.
+	parent, err := h.contexts.StartTask(h.admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: module,
+		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "modelservice.profiles", Actions: []string{"read"}}, {ResourceKind: "modelservice.datasets", Actions: []string{"read"}}}})
+	require.NoError(t, err)
+	child, err := moduleExchange(t, h.credential, module, "model", parent.GetToken())
+	require.NoError(t, err, "the shared kind is issued through the installed binding")
+	require.Equal(t, []string{"modelservice.profiles"}, carriedKinds(t, child))
+	_, err = moduleExchange(t, h.credential, module, "datasets", parent.GetToken())
+	refusedByOwnerRule(t, err, "model")
+
+	// The core no longer composes the module the host still serves: what it
+	// checks is unknown, so a person's own mint there is refused.
+	require.NoError(t, h.withdraw(module))
+	_, err = h.contexts.StartTask(h.admin, &gen.StartTaskWorkContextRequest{OrgId: fixtureOrganization, TaskId: uuid.NewString(), Audience: module,
+		AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: module + ".task", Actions: []string{"read"}}}})
+	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Contains(t, status.Convert(err).Message(), "does not compose it yet")
 }
 
 // TestOwnSessionRuleFailsClosedOnAnUnreadComposition: the rule applies nowhere
@@ -189,19 +262,23 @@ func (c composedFrom) Composed(context.Context, string) (domain.Module, error) {
 // name; a module this host serves that the core does not compose, or a core
 // that cannot be read, refuses rather than reading as one that checks no owner.
 func TestOwnSessionRuleFailsClosedOnAnUnreadComposition(t *testing.T) {
-	missing := composedFrom{err: domain.Missing("no module named documents")}
-	_, composed, err := composedBy(t.Context(), missing, false, "documents")
-	require.NoError(t, err)
-	require.False(t, composed, "nothing composed and nothing served: no rule applies")
+	for name, missing := range map[string]error{
+		"the store's": fmt.Errorf("audience %q: %w", "documents", domain.ErrNotFound),
+		"a refusal's": domain.Missing("no module named documents"),
+	} {
+		_, composed, err := composedBy(domain.Module{}, missing, false, "documents")
+		require.NoError(t, err, name)
+		require.False(t, composed, "%s: nothing composed and nothing served, no rule applies", name)
 
-	_, _, err = composedBy(t.Context(), missing, true, "documents")
+		_, _, err = composedBy(domain.Module{}, missing, true, "documents")
+		require.Equal(t, codes.Unavailable, status.Code(err), "%s: %v", name, err)
+		require.Contains(t, status.Convert(err).Message(), "does not compose it yet")
+	}
+
+	_, _, err := composedBy(domain.Module{}, errors.New("store unreachable"), false, "documents")
 	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
-	require.Contains(t, status.Convert(err).Message(), "does not compose it yet")
 
-	_, _, err = composedBy(t.Context(), composedFrom{err: errors.New("store unreachable")}, false, "documents")
-	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
-
-	m, composed, err := composedBy(t.Context(), composedFrom{module: domain.Module{Name: "documents", OwnerAware: true}}, true, "documents")
+	m, composed, err := composedBy(domain.Module{Name: "documents", OwnerAware: true}, nil, true, "documents")
 	require.NoError(t, err)
 	require.True(t, composed)
 	require.Equal(t, "documents", m.Name)

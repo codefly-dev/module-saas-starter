@@ -142,6 +142,34 @@ func (s *Service) AuthorityCore() (*authority.Service, error) {
 	return state.core, nil
 }
 
+// ComposedAudience is the module the core composed under audience, the
+// principal every capability to it names, read as the core reads an audience
+// (IssueForPerson reads its module by principal, not by its delivery's name).
+// A module the core does not compose is domain.ErrNotFound; a host that
+// builds no core answers ErrAuthorityCoreUnconfigured.
+func (s *Service) ComposedAudience(ctx context.Context, audience string) (domain.Module, error) {
+	if _, err := s.AuthorityCore(); err != nil {
+		return domain.Module{}, err
+	}
+	store, ok := s.store.(AuthorityCoreStore)
+	if !ok {
+		return domain.Module{}, ErrAuthorityCoreUnconfigured
+	}
+	var m domain.Module
+	err := store.AuthorityCoreWithConsent(s.moduleConsent).Read(ctx, func(tx authority.Tx) (err error) {
+		m, err = tx.Module(audience)
+		return err
+	})
+	return m, err
+}
+
+// ServesModule reports whether this host's module registry serves the module
+// whose principal is prefix.
+func (s *Service) ServesModule(prefix string) bool {
+	_, served := s.declaredModules()[ModulePrincipalID(prefix)]
+	return served
+}
+
 // SetAuthorityInstallStep sets the step a solution installation runs before
 // it is active; nil restores the host's durable setup adapter.
 func (s *Service) SetAuthorityInstallStep(step authority.InstallStep) {

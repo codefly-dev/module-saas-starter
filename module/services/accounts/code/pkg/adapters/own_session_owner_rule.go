@@ -25,37 +25,29 @@ import (
 // or a module page, is decided by its roles, which these mints do not read, so
 // the rule leaves it as it was.
 
-// composedAudience is the module the core composed under audience. ok is false
-// when the core composes nothing by that name and this host serves no module
-// by it (the host's own audiences, a solution binding's), or when this host
-// builds no core, which composes nothing: no rule of the core's then applies.
+// composedAudience is the module the core composed under audience, read by
+// principal as the core reads an audience. ok is false when the core composes
+// nothing by that principal and this host serves no module by it (the host's
+// own audiences, a solution binding's), or when this host builds no core,
+// which composes nothing: no rule of the core's then applies.
 func composedAudience(ctx context.Context, audience string) (domain.Module, bool, error) {
 	if service == nil {
 		return domain.Module{}, false, nil
 	}
-	core, err := service.AuthorityCore()
+	m, err := service.ComposedAudience(ctx, audience)
 	if errors.Is(err, business.ErrAuthorityCoreUnconfigured) {
 		return domain.Module{}, false, nil
 	}
-	if err != nil {
-		return domain.Module{}, false, status.Error(codes.Unavailable, "cannot read what the authority core composed")
-	}
-	_, served := service.ModulePrincipals()[business.ModulePrincipalID(audience)]
-	return composedBy(ctx, core, served, audience)
+	return composedBy(m, err, service.ServesModule(audience), audience)
 }
 
-// composer is the core's read of what it composed.
-type composer interface {
-	Composed(ctx context.Context, name string) (domain.Module, error)
-}
-
-// composedBy reads audience from core. A module this host serves that the core
-// does not compose (a delivery the core has not composed yet) is Unavailable,
-// as is any other failure to read: a declaration that cannot be read is not
-// one that checks no owner.
-func composedBy(ctx context.Context, core composer, served bool, audience string) (domain.Module, bool, error) {
-	m, err := core.Composed(ctx, audience)
-	if code, refused := domain.CodeOf(err); refused && code == domain.NotFound {
+// composedBy is what the core's read of audience answered. A module this host
+// serves that the core does not compose (a delivery the core has not composed
+// yet) is Unavailable, as is any other failure to read: a declaration that
+// cannot be read is not one that checks no owner.
+func composedBy(m domain.Module, err error, served bool, audience string) (domain.Module, bool, error) {
+	code, refused := domain.CodeOf(err)
+	if errors.Is(err, domain.ErrNotFound) || (refused && code == domain.NotFound) {
 		if !served {
 			return domain.Module{}, false, nil
 		}
