@@ -8,8 +8,8 @@
 -- stayed valid until it lapsed. The other RBAC tables (role_assignments,
 -- organization_members, teams) already bump it in a trigger, which is the one
 -- place no writer can forget; this puts scope_grants with them, and like the
--- role_assignments trigger it fires BEFORE the row changes, so the revision is
--- taken before the row (the order organization deletion takes them in).
+-- role_assignments trigger it fires BEFORE the row change (the target row is
+-- locked first, then the revision, the same order that trigger takes).
 --
 -- Only UPDATE and DELETE move it. Granting more ends nothing that was issued,
 -- and an INSERT bump would refuse every capability of the organization at each
@@ -19,11 +19,14 @@
 -- changes); the capability lifetime ceiling (authority.DefaultMaxTTL, fifteen
 -- minutes) bounds that case.
 --
--- An installation's standing grant (the agent principal's own grant at its
--- root) is not covered: its lifecycle owns that revision (uninstall raises the
--- installation's and the organization's), and the lock order of uninstall
--- against organization deletion is pinned by
--- TestDeleteOrganizationWaitsForUninstallBeforeMembershipDeletion.
+-- An installation agent's own grant at its root (its standing grant) is not
+-- covered here. Uninstall deletes it and then revokes the agent principal,
+-- whose trigger takes the organization's and the principal's revisions, in the
+-- order TestDeleteOrganizationWaitsForUninstallBeforeMembershipDeletion pins;
+-- taking the revision at the grant's delete would invert it. Revoking that
+-- grant through RevokeScope alone, with the installation left in place, still
+-- moves nothing: the capability lifetime bounds it. That path is not how a
+-- standing grant is removed and is left to a follow-up.
 --
 -- A grant to a person moves the person's revision as well as the
 -- organization's; a team's moves the organization's.

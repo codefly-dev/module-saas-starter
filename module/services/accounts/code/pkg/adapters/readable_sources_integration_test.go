@@ -284,7 +284,8 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	_, err = client.ListReadableSourceCollections(ctx, next)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 
-	// Grant expiration changes no row, but still invalidates a partial enumeration.
+	// Grant expiration still invalidates a partial enumeration (setting it below
+	// rewrites the grant, which also moves the revision).
 	exec(`UPDATE scope_grants SET expires_at=now()+interval '1 second' WHERE org_id=$1`, readOrg)
 	reissue() // setting the expiry rewrote the grant, which moved the revision
 	first, err = client.ListReadableSourceCollections(ctx, sourceReadRequest(token))
@@ -297,6 +298,8 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	}, 3*time.Second, 50*time.Millisecond)
 	exec(`UPDATE scope_grants SET expires_at=NULL WHERE org_id=$1`, readOrg)
 	exec(`DELETE FROM scope_grants WHERE org_id=$1`, readOrg)
+	_, err = client.ListReadableSourceCollections(ctx, sourceReadRequest(token))
+	require.Error(t, err, "the context issued while the grant stood is stale once it is removed")
 	reissue()
 	result, err = client.ListReadableSourceCollections(ctx, sourceReadRequest(token))
 	require.NoError(t, err)
