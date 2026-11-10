@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -801,9 +802,53 @@ func (s *HostSessionServer) Current(ctx context.Context, _ *sessionv1.CurrentReq
 		return session, nil
 	}
 	session.OrganizationId = identity.OrgID.String()
+	return session, s.describe(ctx, session)
+}
+
+// OpenRoleView opens a session that acts as some of the roles the caller's
+// own session acts as on one installation. The authority core decides and
+// records the view under the new session's id; this host then mints that
+// session, access-only, from the session the person called with. A view is
+// never widened here or anywhere: the session it was opened from is the way
+// back. Only an interactive session of a person calls (signedInPerson).
+func (s *HostSessionServer) OpenRoleView(ctx context.Context, req *sessionv1.OpenRoleViewRequest) (*sessionv1.Session, error) {
+	person, err := signedInPerson(ctx, "open a role view")
+	if err != nil {
+		return nil, err
+	}
+	core, err := authorityCore()
+	if err != nil {
+		return nil, err
+	}
+	minter := s.service.JWTMinter()
+	if minter == nil {
+		return nil, status.Error(codes.Unavailable, "this host mints no sessions")
+	}
+	userID, err := uuid.Parse(person.ID)
+	parent, perr := uuid.Parse(person.SessionID)
+	if err != nil || perr != nil {
+		return nil, status.Error(codes.PermissionDenied, "a role view is opened from a session of a person")
+	}
+	viewID := business.NewID()
+	if _, err := core.OpenRoleView(ctx, person, authority.RoleViewRequest{
+		Organization: person.Organization, InstallationID: req.GetInstallationId(), SessionID: viewID.String(), Roles: req.GetRoles()}); err != nil {
+		return nil, coreStatus(err)
+	}
+	pair, err := minter.MintRoleView(ctx, userID, parent, viewID)
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "the role view could not be opened as a session: %v", err)
+	}
+	session := &sessionv1.Session{SessionId: viewID.String(), PersonId: person.ID, OrganizationId: person.Organization, Bearer: pair.AccessToken}
+	return session, s.describe(ctx, session)
+}
+
+// describe names, on session, what Current and OpenRoleView answer of the
+// organisation it is in: the person's role, display names, teams, and the role
+// view it was opened with.
+func (s *HostSessionServer) describe(ctx context.Context, session *sessionv1.Session) error {
 	role, err := lookupMembership(ctx, session.OrganizationId, session.PersonId)
 	if err != nil {
-		return nil, membershipLookupStatus("cannot read the session's membership", err)
+		return membershipLookupStatus("cannot read the session's membership", err)
 	}
 	if role != "" {
 		// The role as SignIn and the fixture listing state it.
@@ -812,12 +857,26 @@ func (s *HostSessionServer) Current(ctx context.Context, _ *sessionv1.CurrentReq
 	// The organization is named for display to a member only: a session whose
 	// person left it does not name it to them.
 	if err := s.nameForDisplay(ctx, session, role != ""); err != nil {
-		return nil, err
+		return err
 	}
 	if err := s.teamsOf(ctx, session); err != nil {
-		return nil, err
+		return err
 	}
-	return session, nil
+	core, err := authorityCore()
+	if err != nil {
+		return nil // no core, no role views to state
+	}
+	view, err := core.RoleViewOf(ctx, session.SessionId)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "cannot read the session's role view: %v", err)
+	}
+	for _, id := range slices.Sorted(maps.Keys(view.Roles)) {
+		session.RoleView = append(session.RoleView, &sessionv1.RoleViewEntry{InstallationId: id, Roles: view.Roles[id]})
+	}
+	return nil
 }
 
 // ListFixturePeople answers who fixture sign-in admits, in the fixture's order;

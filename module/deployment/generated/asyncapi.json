@@ -394,6 +394,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.authority.role_view_opened": {
+      "address": "saas.authority.role_view_opened",
+      "title": "saas.authority.role_view_opened",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.authority.role_view_opened"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.billing.checkout_started": {
       "address": "saas.billing.checkout_started",
       "title": "saas.billing.checkout_started",
@@ -2576,6 +2587,13 @@
       },
       "title": "saas publishes saas.authority.role_revoked"
     },
+    "send:saas.authority.role_view_opened": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.authority.role_view_opened"
+      },
+      "title": "saas publishes saas.authority.role_view_opened"
+    },
     "send:saas.billing.checkout_started": {
       "action": "send",
       "channel": {
@@ -4045,6 +4063,13 @@
       "saas.authority.role_revoked": {
         "name": "saas.authority.role_revoked",
         "title": "saas.authority.role_revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.authority.role_view_opened": {
+        "name": "saas.authority.role_view_opened",
+        "title": "saas.authority.role_view_opened",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

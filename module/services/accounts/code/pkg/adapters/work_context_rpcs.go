@@ -1845,6 +1845,9 @@ func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID s
 	if err := requireOrgMember(ctx, ownerID, orgID); err != nil {
 		return "", err
 	}
+	if err := refuseInRoleView(ctx); err != nil {
+		return "", err
+	}
 	return ownerID, nil
 }
 

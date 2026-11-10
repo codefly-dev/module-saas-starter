@@ -339,7 +339,7 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		idleExpiresAt     time.Time
 		absoluteExpiresAt time.Time
 	)
-	if identity.ActingAsUserID != uuid.Nil {
+	if identity.ActingAsUserID != uuid.Nil || identity.AccessOnly {
 		// The row's lifetime is the token's acceptance window, extended past exp
 		// by the verifier leeway for the same reason RevokeAccess extends a
 		// revocation marker: the token is admitted until exp+ClockSkew, so a row
@@ -379,6 +379,7 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		ClientID:              identity.ClientID,
 		Resource:              identity.Resource,
 		ActingAsUserID:        identity.ActingAsUserID,
+		AccessOnly:            identity.AccessOnly,
 		RefreshHash:           hash,
 		IssuedAt:              now,
 		LastActiveAt:          now,
@@ -879,7 +880,7 @@ func (m *Minter) RevokeSessionAccess(ctx context.Context, sessionID string) erro
 // belt-and-suspenders.
 func (m *Minter) accessTTL(identity *auth.Identity) time.Duration {
 	ttl := m.cfg.AccessTokenTTL
-	if identity.ActingAsUserID != uuid.Nil {
+	if identity.ActingAsUserID != uuid.Nil || identity.AccessOnly {
 		if impTTL := m.cfg.ImpersonationTokenTTL; impTTL > 0 && impTTL < ttl {
 			ttl = impTTL
 		}
@@ -1037,6 +1038,42 @@ func GenerateKey() (ed25519.PublicKey, ed25519.PrivateKey, error) {
 	return ed25519.GenerateKey(rand.Reader)
 }
 
+// MintRoleView implements auth.JWTMinter.MintRoleView: the session the authority
+// core recorded a role view for, minted from the host session it was opened from
+// (resolved and locked by the store, as a client's is). It is access-only: no
+// refresh token, so no rotation can give the session a successor the view does
+// not name, and it carries no platform role. Its id is its family's, and the
+// caller's, so the view the core keyed to it is the session's for its whole life.
+func (m *Minter) MintRoleView(ctx context.Context, userID, parentSessionID, viewSessionID uuid.UUID) (*auth.TokenPair, error) {
+	if m.configErr != nil {
+		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
+	}
+	if viewSessionID == uuid.Nil {
+		return nil, errors.New("ed25519minter: a role view names the session it fixes")
+	}
+	var pair *auth.TokenPair
+	err := m.store.AuthorizeClientSession(ctx, userID, parentSessionID, func(
+		current *auth.SessionRecord,
+		authorization auth.RefreshAuthorization,
+	) (*auth.SessionRecord, error) {
+		identity, err := identityFromCurrentAuthorization(current, authorization, m.now(), viewSessionID)
+		if err != nil {
+			return nil, err
+		}
+		identity.AccessOnly, identity.PlatformRole = true, ""
+		var next *auth.SessionRecord
+		pair, next, err = m.prepareMint(identity, viewSessionID)
+		return next, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if pair == nil {
+		return nil, errors.New("ed25519minter: role view returned no token pair")
+	}
+	return pair, nil
+}
+
 // Compile-time assertion that Minter satisfies the interface.
 var _ auth.JWTMinter = (*Minter)(nil)
 
@@ -1060,6 +1097,10 @@ func (m *Minter) MintForClient(
 		current *auth.SessionRecord,
 		authorization auth.RefreshAuthorization,
 	) (*auth.SessionRecord, error) {
+		if current.AccessOnly {
+			// A role view narrows its person; a client's session would not.
+			return nil, auth.ErrSessionUnavailable
+		}
 		identity, err := identityFromCurrentAuthorization(current, authorization, m.now(), business.NewID())
 		if err != nil {
 			return nil, err

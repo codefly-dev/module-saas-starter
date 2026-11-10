@@ -21,7 +21,7 @@ func TestAuthorityChangesAreRecordedAsRegisteredMutations(t *testing.T) {
 		require.Equal(t, DurabilityTransactional, d.Durability, "%s records %s as a mutation", kind, mapped.event)
 	}
 	for _, kind := range []domain.EventKind{domain.InstallationRequested, domain.InstallationActivated, domain.InstallationUninstalled,
-		domain.RoleGranted, domain.RoleRevoked, domain.DelegationGranted, domain.DelegationRevoked,
+		domain.RoleGranted, domain.RoleViewOpened, domain.RoleRevoked, domain.DelegationGranted, domain.DelegationRevoked,
 		domain.ResourceAttached, domain.ResourceDetached, domain.ResourceTransferred} {
 		_, recorded := authorityEvents[kind]
 		require.True(t, recorded, "%s is a change of authority this host records", kind)
