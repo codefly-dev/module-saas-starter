@@ -475,6 +475,15 @@ type Store interface {
 	// half of removing an organization member: it commits with the membership
 	// deletion or not at all.
 	RemoveOrgTeamMemberships(ctx context.Context, orgID string, userID string) (int64, error)
+	// EndMemberAuthority ends, in the caller's transaction, every grant the
+	// user holds inside the organization in their own name: role assignments,
+	// scope grants, record shares, the installation roles and delegations the
+	// authority core keeps for them, and their API keys. These are gated on
+	// current membership when read, which only hides them: a later re-add of
+	// the same person would otherwise restore them with nothing recorded. It
+	// returns what it ended as "kind:count" entries, none for a kind with
+	// nothing to end.
+	EndMemberAuthority(ctx context.Context, orgID string, userID string) ([]string, error)
 	// GetTeamMembership is the authorization hot path. Nil means the user is
 	// not a member; list access remains a separate, explicitly authorized API.
 	GetTeamMembership(ctx context.Context, orgID string, teamID string, userID string) (*gen.TeamMembership, error)

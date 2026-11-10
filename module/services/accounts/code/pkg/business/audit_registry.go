@@ -809,8 +809,11 @@ var auditEventCatalog = []AuditEventDefinition{
 
 	mutation(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name")),
 	mutation(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization."),
-	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization.", uid("user_id")),
-	mutation(EventOrgMemberLeft, CategoryOrganization, "A member left an organization."),
+	// ended_authority names what ended with the membership ("api_keys:2"): the
+	// grants the person held in their own name, none of which a later re-add
+	// brings back.
+	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization.", uid("user_id"), strs("ended_authority")),
+	mutation(EventOrgMemberLeft, CategoryOrganization, "A member left an organization.", strs("ended_authority")),
 	mutation(EventOrgUpdated, CategoryOrganization, "An organization was renamed or its slug changed.", str("name"), str("slug")),
 	mutation(EventOrgDeleted, CategoryOrganization, "An organization was deleted: archived, its members removed and its credentials revoked.", str("slug")),
 	mutation(EventOrgSettingsUpdated, CategoryOrganization, "Organization branding settings were updated."),

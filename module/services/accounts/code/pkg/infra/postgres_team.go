@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"accounts/pkg/business"
@@ -174,6 +175,55 @@ func (s *PostgresStore) RemoveOrgTeamMemberships(ctx context.Context, orgID stri
 		return 0, w.Wrapf(err, "failed to remove org team memberships")
 	}
 	return tag.RowsAffected(), nil
+}
+
+// EndMemberAuthority is business.Store's: one statement, so what it counts is
+// what it ended. A module installation's role grants are keyed by the
+// installation's id, a solution installation's by the core's own.
+func (s *PostgresStore) EndMemberAuthority(ctx context.Context, orgID string, userID string) ([]string, error) {
+	w := wool.Get(ctx).In("EndMemberAuthority")
+	var assignments, scopeGrants, shares, keys, roles, delegations int64
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		WITH assignments AS (
+			DELETE FROM role_assignments
+			 WHERE org_id = $1 AND subject_kind = 'principal' AND subject_id = $2 RETURNING 1),
+		scope_grants_ended AS (
+			DELETE FROM scope_grants
+			 WHERE org_id = $1 AND subject_kind = 'principal' AND subject_id = $2 RETURNING 1),
+		shares AS (
+			DELETE FROM record_shares
+			 WHERE org_id = $1 AND subject_kind = 'principal' AND subject_id = $2 RETURNING 1),
+		keys AS (
+			UPDATE api_keys SET revoked_at = NOW()
+			 WHERE organization_id = $1 AND user_id = $2 AND revoked_at IS NULL RETURNING 1),
+		roles AS (
+			DELETE FROM authority_core_role_grants
+			 WHERE person_id = $2::text
+			   AND installation_id IN (
+			       SELECT id FROM authority_core_installations WHERE organization_id = $1
+			       UNION SELECT id::text FROM installations WHERE org_id = $1) RETURNING 1),
+		delegations AS (
+			UPDATE authority_core_delegations SET revoked = true
+			 WHERE organization_id = $1 AND grantor = $2::text AND NOT revoked RETURNING 1)
+		SELECT (SELECT count(*) FROM assignments), (SELECT count(*) FROM scope_grants_ended),
+		       (SELECT count(*) FROM shares), (SELECT count(*) FROM keys),
+		       (SELECT count(*) FROM roles), (SELECT count(*) FROM delegations)`,
+		orgID, userID,
+	).Scan(&assignments, &scopeGrants, &shares, &keys, &roles, &delegations)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to end the member's grants")
+	}
+	var ended []string
+	for _, kind := range []struct {
+		name  string
+		count int64
+	}{{"api_keys", keys}, {"delegations", delegations}, {"record_shares", shares}, {"role_assignments", assignments},
+		{"role_grants", roles}, {"scope_grants", scopeGrants}} {
+		if kind.count > 0 {
+			ended = append(ended, fmt.Sprintf("%s:%d", kind.name, kind.count))
+		}
+	}
+	return ended, nil
 }
 
 func (s *PostgresStore) GetTeamMembership(ctx context.Context, orgID string, teamID string, userID string) (*gen.TeamMembership, error) {
