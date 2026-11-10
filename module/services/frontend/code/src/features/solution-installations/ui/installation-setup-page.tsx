@@ -52,6 +52,7 @@ import { GrantTeamDialog } from "./grant-team-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
 import { Fact } from "./solution-installations-page";
 import { SolutionSetupPanel } from "./solution-setup-panel";
+import { TargetName, useTargetTitles } from "./target-name";
 
 /**
  * One module's or one solution's setup page: what it is and whether it is ready,
@@ -98,6 +99,7 @@ export function InstallationSetupPage({
 	// module; an unknown or still-loading row, and every solution, belongs to
 	// Solutions, which is also where the not-found state sends a person back.
 	const supporting = row?.target?.kind === "module" && rolesDeclared === false;
+	const titles = useTargetTitles();
 
 	return (
 		<div className="space-y-6">
@@ -111,7 +113,11 @@ export function InstallationSetupPage({
 						{supporting ? "Supporting modules" : "Solutions"}
 					</Link>
 					<h1 data-slot="page-title" className="type-page-title">
-						{row?.target?.routeAlias || "This installation"}
+						{row?.target?.routeAlias ? (
+							<TargetName alias={row.target.routeAlias} titles={titles} />
+						) : (
+							"This installation"
+						)}
 					</h1>
 					<p className="text-muted-foreground">
 						{entryKindText(row, rolesDeclared)} —{" "}

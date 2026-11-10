@@ -94,8 +94,38 @@ function forgetIfViewerChanged(): boolean {
 	const viewer = currentViewer();
 	if (viewer === snapshotViewer) return false;
 	snapshotViewer = viewer;
+	answered = false;
+	firstReadRetries = 0;
+	if (firstReadTimer) {
+		clearTimeout(firstReadTimer);
+		firstReadTimer = null;
+	}
 	publish(EMPTY, false);
 	return true;
+}
+
+// Whether this viewer has had one listing answered, and how many quick retries
+// their first read has used. Right after a person switch the first read can
+// meet a session the host has not settled yet (401, 503, a dropped request);
+// the menu then showed no page at all until the next 10 s poll. Until the
+// first answer lands it is asked again after a second, a few times.
+let answered = false;
+let firstReadRetries = 0;
+let firstReadTimer: ReturnType<typeof setTimeout> | null = null;
+const FIRST_READ_RETRY_MS = 1_000;
+const FIRST_READ_RETRIES = 5;
+
+function retryFirstRead(viewer: string): void {
+	if (answered || firstReadTimer || firstReadRetries >= FIRST_READ_RETRIES)
+		return;
+	if (listeners.size === 0 || currentViewer() !== viewer) return;
+	firstReadRetries += 1;
+	firstReadTimer = setTimeout(() => {
+		firstReadTimer = null;
+		// The poll may have answered while this waited.
+		if (answered) return;
+		void refresh();
+	}, FIRST_READ_RETRY_MS);
 }
 
 function sameList(a: SolutionNav[], b: SolutionNav[]): boolean {
@@ -140,6 +170,7 @@ async function refresh(): Promise<void> {
 			// authedFetch already tried to recover the session and could not, so
 			// this viewer is no longer signed in. Their list is not kept on screen.
 			publish(EMPTY);
+			retryFirstRead(viewer);
 			return;
 		}
 		if (!response.ok) {
@@ -147,14 +178,18 @@ async function refresh(): Promise<void> {
 			// an unreadable registry or an authority that could not answer; 429 is
 			// the organization's read budget. Treating any of them as "no solutions"
 			// would empty a working nav on a blip — the reason the route
-			// distinguishes them from an empty projection at all.
+			// distinguishes them from an empty projection at all. A 429 is the
+			// organization's read budget: asking again at once spends more of it.
+			if (response.status !== 429) retryFirstRead(viewer);
 			return;
 		}
 		const data: { solutions?: SolutionNav[] } = await response.json();
 		if (currentViewer() !== viewer) return;
+		answered = true;
 		publish(data.solutions ?? []);
 	} catch {
 		// Network blip — keep the last known list.
+		retryFirstRead(viewer);
 	}
 }
 
@@ -178,6 +213,10 @@ function subscribe(listener: Listener): () => void {
 			}
 			stopWatchingToken?.();
 			stopWatchingToken = null;
+			if (firstReadTimer) {
+				clearTimeout(firstReadTimer);
+				firstReadTimer = null;
+			}
 		}
 	};
 }

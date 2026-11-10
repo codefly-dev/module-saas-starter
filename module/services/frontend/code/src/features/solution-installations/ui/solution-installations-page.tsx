@@ -79,6 +79,7 @@ import {
 import { GrantTeamDialog } from "./grant-team-dialog";
 import { InstallSolutionDialog } from "./install-solution-dialog";
 import { SetUpModulePageDialog } from "./set-up-module-page-dialog";
+import { TargetName, useTargetTitles } from "./target-name";
 
 /**
  * One fact. A gap reads as its label in muted italics with what it means on
@@ -483,6 +484,7 @@ function AvailableSection({
 	const withheld = !mayKeepRetainedRows(outcome);
 	const stale = staleReadNotice(outcome, "the available modules and solutions");
 	const rows = withheld ? [] : availableRows((query.data ?? []).filter(listed));
+	const titles = useTargetTitles();
 	if (hideWhenEmpty && query.isSuccess && rows.length === 0) return null;
 
 	return (
@@ -540,7 +542,9 @@ function AvailableSection({
 							<TableBody>
 								{rows.map((row) => (
 									<TableRow key={row.targetId}>
-										<TableCell className="font-medium">{row.alias}</TableCell>
+										<TableCell className="font-medium">
+											<TargetName alias={row.alias} titles={titles} />
+										</TableCell>
 										{showModules ? (
 											<>
 												<TableCell className="font-mono text-sm">
@@ -682,6 +686,7 @@ function InstalledSection({
 	const rows = withheld
 		? []
 		: installedRows((query.data ?? []).filter((row) => listed(row.target)));
+	const titles = useTargetTitles();
 
 	const name = (row: InstalledRow) =>
 		row.solution.kind === "value" ? row.solution.text : "this installation";
@@ -810,7 +815,14 @@ function InstalledSection({
 												href={`/admin/solutions/${row.installationId}`}
 												className="hover:underline"
 											>
-												<Fact view={row.solution} />
+												{row.solution.kind === "value" ? (
+													<TargetName
+														alias={row.solution.text}
+														titles={titles}
+													/>
+												) : (
+													<Fact view={row.solution} />
+												)}
 											</Link>
 											{showModules ? (
 												<span className="block font-normal">
