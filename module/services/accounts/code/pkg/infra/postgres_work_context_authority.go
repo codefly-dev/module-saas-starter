@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"accounts/pkg/business"
-	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -342,11 +341,11 @@ func workContextPermissionAllowed(
 		    -- A contributed permission declared for every member (members: true)
 		    -- is held by any current member of the organization, as a person.
 		    -- $5 is false for a delegated actor, so an agent never gains it this
-		    -- way; $10 is decided in Go from the generated catalog, never from
+		    -- way; $9 is decided in Go from the generated catalog, never from
 		    -- the request. Like a NULL-scope assignment it is organization-wide.
 		    OR (
 		        $5
-		        AND $10
+		        AND $9
 		        AND EXISTS (
 		            SELECT 1
 		            FROM organization_members AS member
@@ -426,8 +425,7 @@ func workContextPermissionAllowed(
 		    -- host then authorizes node by node at read time. It is held through
 		    -- the same three bases the read oracles in
 		    -- postgres_readable_sources.go and postgres_layered_access.go accept —
-		    -- a live scope grant (the owner's or a team's), a live record share,
-		    -- or platform read authority — on at least one node. Owner only: an
+		    -- a live scope grant (the owner's or a team's) or a live record share, on at least one node. Owner only: an
 		    -- actor's authority is never widened here.
 		    --
 		    -- Every arm is bound to a real node, because the standing this admits
@@ -487,7 +485,6 @@ func workContextPermissionAllowed(
 		                      )
 		                  )
 		            )
-		            OR `+platformReadPredicate("$9", "$2")+`
 		        )
 		    )`,
 		orgID,
@@ -498,7 +495,6 @@ func workContextPermissionAllowed(
 		permission.ResourceID,
 		includeScopeGrants,
 		permission.ContentRead && permission.ResourceID == "" && permission.Action == "read",
-		platformReadAdmissible(ctx, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, permission.Action),
 		isMemberPermission(permission.ResourceKind, permission.Action),
 	).Scan(&allowed)
 	return allowed, err
