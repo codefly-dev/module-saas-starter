@@ -2046,10 +2046,11 @@ service DatasourceService {
   rpc MigrateGitHubSourceToApp(MigrateGitHubSourceToAppRequest) returns (MigrateGitHubSourceToAppResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED
-      // Any member reaches the handler, which holds an organization's own
-      // source to its administrators and a governed one (SourceGovernance)
-      // to the holders of its governing scope, before anything is written.
-      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      // The organization's GitHub App is its administrators' to attach, one
+      // source at a time; a governed source (SourceGovernance) is also held
+      // to the holders of its governing scope, so an administrator attaching
+      // the App to one holds that scope too.
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
       resource_bindings: {
         request_field: "org_id"
         target: RESOURCE_TARGET_ORGANIZATION

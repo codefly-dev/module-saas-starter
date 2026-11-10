@@ -75,19 +75,24 @@ func sourceGovernanceFromProto(g *gen.SourceGovernance) *business.SourceGovernan
 // authorizeConnect decides a connect before anything is stored: an
 // organization's own source is its administrators' to connect; one tied to a
 // solution's installation, any member's the core issues its governing scope
-// there. It returns the tie for the source.
-func (h *datasourceConnectHandler) authorizeConnect(ctx context.Context, actorID, orgID string, requested *gen.SourceGovernance) (*business.SourceGovernance, error) {
+// there. It returns the tie for the source, and whether the caller
+// administers the organization: only an administrator's governed connect may
+// read through the organization's own credentials (business.governedCredential).
+func (h *datasourceConnectHandler) authorizeConnect(ctx context.Context, actorID, orgID string, requested *gen.SourceGovernance) (*business.SourceGovernance, bool, error) {
 	g := sourceGovernanceFromProto(requested)
 	if g == nil {
-		return nil, translateGRPCError(requireOrgAdmin(ctx, actorID, orgID))
+		if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
+			return nil, false, translateGRPCError(err)
+		}
+		return nil, true, nil
 	}
 	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
-		return nil, translateGRPCError(err)
+		return nil, false, translateGRPCError(err)
 	}
 	if err := h.svc.AuthorizeSourceGovernance(ctx, sourcePerson(actorID, orgID), g); err != nil {
-		return nil, translateGRPCError(err)
+		return nil, false, translateGRPCError(err)
 	}
-	return g, nil
+	return g, requireOrgAdmin(ctx, actorID, orgID) == nil, nil
 }
 
 func (h *datasourceConnectHandler) AddGitHubSource(
@@ -99,7 +104,7 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 	if err != nil {
 		return nil, err
 	}
-	governance, err := h.authorizeConnect(ctx, actorID, req.Msg.OrgId, req.Msg.GetGovernance())
+	governance, administrator, err := h.authorizeConnect(ctx, actorID, req.Msg.OrgId, req.Msg.GetGovernance())
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +119,8 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 		AccessToken:     req.Msg.AccessToken,
 		WebhookSecret:   req.Msg.WebhookSecret,
 		Governance:      governance,
+
+		ByOrganizationAdministrator: administrator,
 	})
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -130,7 +137,7 @@ func (h *datasourceConnectHandler) AddSource(
 	if err != nil {
 		return nil, err
 	}
-	governance, err := h.authorizeConnect(ctx, actorID, req.Msg.OrgId, req.Msg.GetGovernance())
+	governance, administrator, err := h.authorizeConnect(ctx, actorID, req.Msg.OrgId, req.Msg.GetGovernance())
 	if err != nil {
 		return nil, err
 	}
@@ -143,6 +150,8 @@ func (h *datasourceConnectHandler) AddSource(
 		WebhookSecret:      req.Msg.WebhookSecret,
 		OAuth2ClientSecret: req.Msg.Oauth2ClientSecret,
 		Governance:         governance,
+
+		ByOrganizationAdministrator: administrator,
 	}
 	if gh := req.Msg.GetGithub(); gh != nil {
 		input.Repo = gh.Repo
@@ -466,6 +475,12 @@ func (h *datasourceConnectHandler) MigrateGitHubSourceToApp(
 	}
 	if err := h.authorizeSourceWrite(ctx, actorID, req.Msg.OrgId, req.Msg.Id); err != nil {
 		return nil, err
+	}
+	// The organization's GitHub App is its administrators' to attach, one
+	// source at a time, a governed source included: a member who holds a
+	// source's governing scope changes it, and never through the App.
+	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
 	}
 	source, err := h.svc.MigrateGitHubSourceToApp(ctx, actorID, req.Msg.OrgId, req.Msg.Id)
 	if err != nil {

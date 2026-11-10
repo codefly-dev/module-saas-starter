@@ -333,6 +333,22 @@ func (s *Service) listGitHubAppRepositories(ctx context.Context, orgID, installa
 	return repositories, nil
 }
 
+// governedCredential refuses a connect of a source a solution governs, by
+// someone who does not administer the organization, that brings no
+// credential of its own. Without one, the connect would read through the
+// organization's: its GitHub App installation, which covers repositories the
+// caller may have no access to, or a read the organization's host makes.
+// Those are its administrators' to attach, to one source at a time
+// (MigrateGitHubSourceToApp). A governed connect by a member therefore brings
+// a credential scoped to that source, their own token.
+func governedCredential(g *SourceGovernance, byAdministrator bool, credential string) error {
+	if g == nil || byAdministrator || strings.TrimSpace(credential) != "" {
+		return nil
+	}
+	return status.Errorf(codes.PermissionDenied,
+		"a source governed by installation %s is connected by a member who does not administer the organization with their own repository-scoped token: the organization's GitHub App, and any read without a credential, are its administrators' to attach", g.InstallationID)
+}
+
 // githubConnectCredential is how a new GitHub source will authenticate, as
 // resolved and proven at connect time.
 type githubConnectCredential struct {

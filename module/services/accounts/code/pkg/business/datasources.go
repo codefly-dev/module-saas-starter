@@ -470,6 +470,10 @@ type AddGitHubSourceInput struct {
 	// Governance ties the source to a solution's installation; the caller
 	// decided it with AuthorizeSourceGovernance. Nil for the organization's own.
 	Governance *SourceGovernance
+	// ByOrganizationAdministrator says the caller administers the
+	// organization. A governed connect by anyone else brings its own
+	// credential and never reads through the organization's (governedCredential).
+	ByOrganizationAdministrator bool
 }
 
 // GitHubContentClient is the per-source GitHub client the datasource connector
@@ -688,6 +692,9 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
 
+	if err := governedCredential(input.Governance, input.ByOrganizationAdministrator, input.AccessToken); err != nil {
+		return nil, err
+	}
 	credential, err := s.resolveGitHubConnectCredential(ctx, orgID, repo, input.Branch, input.AccessToken)
 	if err != nil {
 		return nil, err
@@ -803,6 +810,10 @@ type AddSourceInput struct {
 	// Governance ties the source to a solution's installation; the caller
 	// decided it with AuthorizeSourceGovernance. Nil for the organization's own.
 	Governance *SourceGovernance
+	// ByOrganizationAdministrator says the caller administers the
+	// organization. A governed connect by anyone else brings its own
+	// credential and never reads through the organization's (governedCredential).
+	ByOrganizationAdministrator bool
 
 	// GitHub provider config.
 	Repo           string
@@ -887,6 +898,9 @@ func (s *Service) addSource(ctx context.Context, actorID string, input AddSource
 		// repository-scoped PAT, and none connects through the deployment's App.
 		// Sharing it keeps the provider-agnostic call from refusing a connect the
 		// GitHub-specific one accepts.
+		if err := governedCredential(input.Governance, input.ByOrganizationAdministrator, credential); err != nil {
+			return nil, err
+		}
 		resolved, err := s.resolveGitHubConnectCredential(ctx, orgID, repo, input.Branch, credential)
 		if err != nil {
 			return nil, err
