@@ -1424,6 +1424,9 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	if scopes, err = holdOwnSessionExchange(ctx, parent, req.GetAudience(), scopes, exercised); err != nil {
+		return nil, err
+	}
 	// Enforce both dimensions of the actor ceiling: an exchange can name a new
 	// audience AND re-declare scopes, so the scope cap must apply here too, not
 	// only the audience.
@@ -1433,18 +1436,6 @@ func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
 	attenuated, err := attenuateEffective(parent, scopes)
 	if err != nil {
 		return nil, err
-	}
-	// The owner exchanging their own session (no module exercising a binding)
-	// is held to the core's owner rule at the new audience, on what the
-	// exchanged capability carries there.
-	if exercised == (moduleBindingSeal{}) && ownSession(parent) {
-		carried := attenuated
-		if carried == nil {
-			carried = parent.GetAuthorityScopes()
-		}
-		if err := holdOwnSession(ctx, req.GetAudience(), carried); err != nil {
-			return nil, err
-		}
 	}
 	token, signed, err := s.remint(ctx, parent, req.GetAudience(),
 		workContextReplayPolicy(req.GetReplayPolicy()), workContextTTL(req.GetTtlSeconds()),

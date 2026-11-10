@@ -1397,7 +1397,10 @@ installations:
 	// Beyond the suite: accounts' own person Work Context mints, beside the
 	// host Issue, follow the core's owner rule (RBAC-4a).
 	t.Run("a person's own Work Context mints follow the core's owner rule", func(t *testing.T) {
-		testOwnSessionOwnerRule(t, conn, signIn("fixture-alex"))
+		testOwnSessionOwnerRule(t, conn, signIn("fixture-alex"), credential, func(m conformanceModule) {
+			deliverModule(t, ctx, conn, signer, m)
+			require.NoError(t, installModule(ctx, m.alias))
+		}, &solutionhost.Frontend{Title: "Owner page", ExposedModule: "./Page", HostContract: 1, Payload: pagePayload})
 	})
 
 	// Last, because the envelope it writes becomes every module's ceiling: a

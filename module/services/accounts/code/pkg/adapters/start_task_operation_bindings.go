@@ -8,8 +8,6 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
-	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
-	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -64,11 +62,10 @@ func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
-	through, composed, err := composedAudience(ctx, audience)
+	through, err := ownSessionThrough(ctx, audience)
 	if err != nil {
 		return nil, err
 	}
-	ownSessionThrough := composed && !decide.RoleGated(through)
 	module := business.ModuleCaller{PrincipalID: business.ModulePrincipalID(audience), BoundOrg: orgID}
 	out := &operationBindingProjection{scopes: slices.Clone(asked)}
 	for _, name := range names {
@@ -76,22 +73,18 @@ func (s *WorkContextAuthorityServer) withOperationBindingScopes(ctx context.Cont
 		if err != nil {
 			return nil, err
 		}
-		target, ruled := domain.Module{}, false
-		if ownSessionThrough {
-			if target, ruled, err = composedAudience(ctx, binding.Audience); err != nil {
-				return nil, err
-			}
-		}
 		held := 0
 		for _, scope := range binding.InvokeScopes {
 			kept, err := s.heldBindingScope(ctx, orgID, ownerID, binding.Audience, scope)
 			if err != nil {
 				return nil, err
 			}
-			for _, part := range kept {
-				if ruled && ownSessionRule(target, []*basev0.WorkScopeV1{{ResourceKind: part.ResourceKind, Actions: part.Actions}}) != nil {
-					continue
+			if through {
+				if kept, err = heldProjection(ctx, binding.Audience, kept); err != nil {
+					return nil, err
 				}
+			}
+			for _, part := range kept {
 				held++
 				if !slices.ContainsFunc(out.scopes, func(existing *gen.WorkContextScope) bool { return proto.Equal(existing, part) }) {
 					out.scopes = append(out.scopes, part)
@@ -163,4 +156,18 @@ func (s *WorkContextAuthorityServer) heldBindingScope(ctx context.Context, orgID
 		}
 	}
 	return out, nil
+}
+
+// heldProjection is parts of a binding's scope narrowed to what the core's
+// owner rule holds at the binding's audience: a part of a kind it owns is not
+// held, so it is not projected, and a binding that holds nothing is refused by
+// its own name.
+func heldProjection(ctx context.Context, audience string, parts []*gen.WorkContextScope) ([]*gen.WorkContextScope, error) {
+	target, composed, err := composedAudience(ctx, audience)
+	if err != nil || !composed {
+		return parts, err
+	}
+	return slices.DeleteFunc(parts, func(part *gen.WorkContextScope) bool {
+		return ownSessionRule(target, []*basev0.WorkScopeV1{{ResourceKind: part.ResourceKind, Actions: part.Actions}}) != nil
+	}), nil
 }

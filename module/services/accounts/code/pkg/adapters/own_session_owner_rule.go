@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/codefly-dev/authority/libraries/authority-core/go/decide"
 	"github.com/codefly-dev/authority/libraries/authority-core/go/domain"
@@ -25,10 +26,9 @@ import (
 // the rule leaves it as it was.
 
 // composedAudience is the module the core composed under audience. ok is false
-// when it composes nothing by that name (the host's own audiences, a solution
-// binding's) or when this host builds no core, which composes nothing: no rule
-// of the core's then applies. Any other failure to read is Unavailable, since
-// a declaration that cannot be read is not one that checks no owner.
+// when the core composes nothing by that name and this host serves no module
+// by it (the host's own audiences, a solution binding's), or when this host
+// builds no core, which composes nothing: no rule of the core's then applies.
 func composedAudience(ctx context.Context, audience string) (domain.Module, bool, error) {
 	if service == nil {
 		return domain.Module{}, false, nil
@@ -40,9 +40,27 @@ func composedAudience(ctx context.Context, audience string) (domain.Module, bool
 	if err != nil {
 		return domain.Module{}, false, status.Error(codes.Unavailable, "cannot read what the authority core composed")
 	}
+	_, served := service.ModulePrincipals()[business.ModulePrincipalID(audience)]
+	return composedBy(ctx, core, served, audience)
+}
+
+// composer is the core's read of what it composed.
+type composer interface {
+	Composed(ctx context.Context, name string) (domain.Module, error)
+}
+
+// composedBy reads audience from core. A module this host serves that the core
+// does not compose (a delivery the core has not composed yet) is Unavailable,
+// as is any other failure to read: a declaration that cannot be read is not
+// one that checks no owner.
+func composedBy(ctx context.Context, core composer, served bool, audience string) (domain.Module, bool, error) {
 	m, err := core.Composed(ctx, audience)
 	if code, refused := domain.CodeOf(err); refused && code == domain.NotFound {
-		return domain.Module{}, false, nil
+		if !served {
+			return domain.Module{}, false, nil
+		}
+		return domain.Module{}, false, status.Errorf(codes.Unavailable,
+			"this host serves %q and the authority core does not compose it yet, so what it checks is unknown", audience)
 	}
 	if err != nil {
 		return domain.Module{}, false, status.Errorf(codes.Unavailable, "cannot read what the authority core composed for %q", audience)
@@ -79,4 +97,55 @@ func holdOwnSession(ctx context.Context, audience string, scopes []*basev0.WorkS
 // with no actor acting for them.
 func ownSession(wc *basev0.WorkContextV1) bool {
 	return wc.GetOwnerPrincipalKind() == business.PrincipalKindHuman && len(wc.GetActorChain()) == 0
+}
+
+// ownSessionThrough reports whether a person's own session reaches past
+// module through its bindings as their own session, as the core reads a hop
+// (throughSolutions): through a composed module that declares no roles. A
+// role-gated module is decided by its roles, which these mints do not read.
+func ownSessionThrough(ctx context.Context, module string) (bool, error) {
+	m, composed, err := composedAudience(ctx, module)
+	return composed && !decide.RoleGated(m), err
+}
+
+// heldThrough is scopes, carried by a person's own session through a module
+// that declares no roles to audience, narrowed to what the core's owner rule
+// holds there: every scope but those of a kind audience owns. When nothing is
+// held, it refuses by the rule's name.
+func heldThrough(ctx context.Context, audience string, scopes []*basev0.WorkScopeV1) ([]*basev0.WorkScopeV1, error) {
+	target, composed, err := composedAudience(ctx, audience)
+	if err != nil || !composed {
+		return scopes, err
+	}
+	held := slices.DeleteFunc(slices.Clone(scopes), func(sc *basev0.WorkScopeV1) bool {
+		return ownSessionRule(target, []*basev0.WorkScopeV1{sc}) != nil
+	})
+	if len(held) == 0 && len(scopes) > 0 {
+		return nil, coreStatus(ownSessionRule(target, scopes))
+	}
+	return held, nil
+}
+
+// holdOwnSessionExchange holds what a person's own session is re-issued with
+// at audience. The owner's own exchange (no module exercising a binding)
+// carries it there as their own session, refused by the rule's name when it
+// names an owned kind. A module exchanging it through its binding carries only
+// what the person holds at the binding's audience, when that module declares
+// no roles. Scopes empty re-issue the parent's.
+func holdOwnSessionExchange(ctx context.Context, parent *basev0.WorkContextV1, audience string, scopes []*basev0.WorkScopeV1, exercised moduleBindingSeal) ([]*basev0.WorkScopeV1, error) {
+	if !ownSession(parent) {
+		return scopes, nil
+	}
+	carried := scopes
+	if len(carried) == 0 {
+		carried = parent.GetAuthorityScopes()
+	}
+	if exercised == (moduleBindingSeal{}) {
+		return scopes, holdOwnSession(ctx, audience, carried)
+	}
+	through, err := ownSessionThrough(ctx, parent.GetAudience())
+	if err != nil || !through {
+		return scopes, err
+	}
+	return heldThrough(ctx, audience, carried)
 }
