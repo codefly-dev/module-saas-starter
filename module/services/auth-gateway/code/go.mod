@@ -7,8 +7,8 @@ require (
 	connectrpc.com/connect v1.21.1
 	github.com/codefly-dev/authority/libraries/authority-client/go v0.2.1-0.20261109220601-1f0887616bde
 	github.com/codefly-dev/authority/libraries/authority-core/go v0.0.0-20261028195314-39369d67a088
-	github.com/codefly-dev/authority/libraries/conformance/hop/go v0.0.0-20261110004504-11bc2ef34acf
-	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261110004504-11bc2ef34acf
+	github.com/codefly-dev/authority/libraries/conformance/hop/go v0.0.0-20261110011859-facc802716cb
+	github.com/codefly-dev/authority/libraries/hop/go v0.2.1-0.20261110011859-facc802716cb
 	github.com/codefly-dev/core v0.19.20-0.20261109211818-3e7b38e3d9ad
 	github.com/codefly-dev/module-saas-starter/module/frontendpayload v0.0.0-20261021192505-6fd56dae2e04
 	github.com/codefly-dev/sdk-go v0.4.1
