@@ -398,6 +398,7 @@ const (
 	EventAuthorityInstallationReachUnreached   EventType = "saas.authority.installation_reach_unreached"
 	EventAuthorityInstallationReachRestored    EventType = "saas.authority.installation_reach_restored"
 	EventAuthorityRoleGranted                  EventType = "saas.authority.role_granted"
+	EventAuthorityRoleViewOpened               EventType = "saas.authority.role_view_opened"
 	EventAuthorityRoleRevoked                  EventType = "saas.authority.role_revoked"
 	EventAuthorityResourceAttached             EventType = "saas.authority.resource_attached"
 	EventAuthorityResourceDetached             EventType = "saas.authority.resource_detached"
@@ -728,6 +729,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventAuthorityInstallationReachAdopted, CategoryAccess, "A consent recorded before its reach was kept adopted, once, what its approved roles reach in the composition as it stood; nothing issued ended.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationReachUnreached, CategoryAccess, "A delivery left what an installation's target names through a binding unreached; the delivery stands and it grants nothing there until a delivery reaches it again.", authorityChangeFields()...),
 	mutation(EventAuthorityInstallationReachRestored, CategoryAccess, "A delivery reached again everything an installation's target names through a binding.", authorityChangeFields()...),
+	mutation(EventAuthorityRoleViewOpened, CategoryAccess, "A person fixed a session to act as some of the roles they hold on an installation; the session only narrows and is never widened.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleGranted, CategoryAccess, "A solution role was granted on an installation to a person or a team.", authorityChangeFields()...),
 	mutation(EventAuthorityRoleRevoked, CategoryAccess, "A solution role grant was revoked; its subject's capabilities through the installation ended.", authorityChangeFields()...),
 	mutation(EventAuthorityResourceAttached, CategoryAccess, "A resource created through an installation was attached to it by the kind's serving module.", authorityChangeFields()...),

@@ -156,12 +156,21 @@ func requireAuth(ctx context.Context) (string, error) {
 }
 
 // platformRole resolves the platform role an authorization decision may use.
-// An impersonated request has none. The effective subject's platform grants are
+// An impersonated request, or a role view, has none. The effective subject's platform grants are
 // not the actor's to borrow, and the actor's own grants are deliberately left
 // behind when they step into someone else's session — so both directions of
 // that leak close here, at the one lookup every platform gate shares.
 func platformRole(ctx context.Context, actorID string) (string, error) {
 	if auth.ImpersonatedRequest(ctx) {
+		return "", nil
+	}
+	// A role view carries no platform role either: the token says so, but this
+	// lookup reads the store, so the view is closed here, at the same one place.
+	view, err := roleViewOf(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(view.Roles) > 0 {
 		return "", nil
 	}
 	return service.Store().GetPlatformRole(ctx, actorID)

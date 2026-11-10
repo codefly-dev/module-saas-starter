@@ -147,6 +147,12 @@ func (s *SessionStore) admitSession(ctx context.Context, tx pgx.Tx, rec *auth.Se
 		return err
 	}
 
+	// A role view is not a device either, and lives as long as its access token:
+	// it takes no device slot and evicts none.
+	if rec.AccessOnly {
+		return nil
+	}
+
 	// A registered client's session is not a browser device: it lives on a
 	// machine the person did not sign in on, and it is revoked per client. It
 	// therefore takes no device slot — but, like an impersonation window, it
@@ -258,10 +264,10 @@ func prepareSessionRecord(rec *auth.SessionRecord) error {
 	}
 	// An impersonation window holds no rotatable credential; every other
 	// session must, or it would be unreachable by its own refresh.
-	if len(rec.RefreshHash) == 0 && rec.ActingAsUserID == uuid.Nil {
+	if len(rec.RefreshHash) == 0 && rec.ActingAsUserID == uuid.Nil && !rec.AccessOnly {
 		return errors.New("pgauth: session record missing refresh hash")
 	}
-	if len(rec.RefreshHash) > 0 && rec.ActingAsUserID != uuid.Nil {
+	if len(rec.RefreshHash) > 0 && (rec.ActingAsUserID != uuid.Nil || rec.AccessOnly) {
 		return errors.New("pgauth: impersonation session record carries a refresh hash")
 	}
 	if rec.ExpiresAt.IsZero() {
@@ -310,17 +316,17 @@ func insertSession(ctx context.Context, tx pgx.Tx, rec *auth.SessionRecord) erro
 				created_at, last_active_at, idle_expires_at, expires_at,
 				org_id, org_role, platform_role, mfa_satisfied,
 				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name, acting_as_user_id, client_id, resource
+				email, display_name, acting_as_user_id, client_id, resource, role_view
 			) VALUES (
 				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-				$14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+				$14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
 			)`,
 		rec.ID, rec.UserID, hashArg, rec.FamilyID, deviceInfo, nilIfEmpty(rec.IPAddress),
 		rec.IssuedAt, rec.LastActiveAt, rec.IdleExpiresAt, rec.ExpiresAt,
 		orgIDArg, rec.OrgRole, rec.PlatformRole, rec.MFASatisfied,
 		authenticationMethods, authenticatedAtArg, rec.AssuranceLevel, mfaVerifiedAtArg,
 		nilIfEmpty(rec.Email), nilIfEmpty(rec.DisplayName), actingAsArg, nilIfEmpty(rec.ClientID),
-		nilIfEmpty(rec.Resource),
+		nilIfEmpty(rec.Resource), rec.AccessOnly,
 	)
 	return err
 }

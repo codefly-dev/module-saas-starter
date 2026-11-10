@@ -73,6 +73,11 @@ func (s *SessionStore) AuthorizeClientSession(
 		if current.ActingAsUserID != uuid.Nil {
 			return auth.ErrSessionUnavailable
 		}
+		// A role view is read here so a client's own session, which holds every role
+		// its person does, is never minted from one: MintForClient refuses it.
+		if err := tx.QueryRow(ctx, `SELECT role_view FROM sessions WHERE id = $1`, authorizingSessionID).Scan(&current.AccessOnly); err != nil {
+			return err
+		}
 		// One client cannot authorize another, and a client session cannot
 		// bootstrap a second one: only the host's own web session authorizes.
 		if current.ClientID != "" {
@@ -130,7 +135,7 @@ func (s *SessionStore) AuthorizeClientSession(
 		if next.FamilyID == current.FamilyID {
 			return errors.New("pgauth: client session reused the authorizing device family")
 		}
-		if next.ClientID == "" {
+		if next.ClientID == "" && !next.AccessOnly {
 			return errors.New("pgauth: client session names no client")
 		}
 		// Admission bounds the client's families and re-checks the account under

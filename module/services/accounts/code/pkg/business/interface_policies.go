@@ -245,6 +245,15 @@ func InterfaceMethodPolicies() map[string]*policyv1.MethodPolicy {
 		// Current is the caller's own session: authenticated by the bearer it
 		// describes, organisation-less like the session itself may be.
 		"/host.session.v1.SessionService/Current": read(policyv1.Exposure_EXPOSURE_AUTHENTICATED, policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE, policyv1.Sensitivity_SENSITIVITY_CONFIDENTIAL),
+		// OpenRoleView mints a session (a bearer), so its response is secret and its
+		// retry is not idempotent. Any member opens one: the core decides which roles
+		// the caller acts as, and journals the view in its own transaction.
+		"/host.session.v1.SessionService/OpenRoleView": func() *policyv1.MethodPolicy {
+			p := authenticatedMint(string(EventAuthorityRoleViewOpened))
+			p.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE
+			p.RateLimit = policyv1.RateLimitClass_RATE_LIMIT_CLASS_STANDARD_WRITE
+			return p
+		}(),
 		// The sign-in page reads it before anyone signs in; it answers none
 		// unless fixture sign-in is enabled, and then the tokens SignIn takes.
 		"/host.session.v1.SessionService/ListFixturePeople": {
@@ -332,6 +341,7 @@ var interfaceDescriptions = map[string]string{
 	"AuthorityService/RevokeDelegation":     "End a delegation; every capability issued from it is refused from then on.",
 	"AuthorityService/GetDelegation":        "Read whether one delegation still stands, for its module or its grantor.",
 	"SessionService/SignIn":                 "Open a session for a fixture person by their fixture token.",
+	"SessionService/OpenRoleView":           "Open a session that acts as some of the roles the caller holds on one installation; it only narrows.",
 	"SessionService/Current":                "Answer the session the caller's bearer belongs to, without the bearer.",
 	"SessionService/ListFixturePeople":      "List the people fixture sign-in admits, in the fixture's order; none where it is not enabled.",
 }
