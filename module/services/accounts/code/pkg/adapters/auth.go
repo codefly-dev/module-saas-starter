@@ -199,6 +199,9 @@ func requireOrgMember(ctx context.Context, actorID, orgID string) error {
 // in that organization. API-key scopes remain a separate ceiling enforced by
 // requireScope before this helper is called.
 func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action string) error {
+	if err := refuseInRoleView(ctx); err != nil {
+		return err
+	}
 	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
 		return err
 	}
@@ -221,6 +224,9 @@ func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action 
 // requireOrgAdmin verifies that actorID has admin-or-owner role in orgID.
 // Platform super_admin bypasses the check. Cache-backed same as above.
 func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
+	if err := refuseInRoleView(ctx); err != nil {
+		return err
+	}
 	// Platform super_admin always passes.
 	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
 		return nil
@@ -313,6 +319,9 @@ func requireSubjectInOrg(ctx context.Context, orgID, subjectID string, kind gen.
 // and organization admins retain their expected access; a member can also be
 // delegated the narrower billing:write permission through a custom role.
 func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
+	if err := refuseInRoleView(ctx); err != nil {
+		return err
+	}
 	if orgID == "" {
 		return status.Error(codes.InvalidArgument, "org_id required")
 	}

@@ -106,6 +106,9 @@ func (s *OrgServer) DeleteOrganization(ctx context.Context, req *gen.DeleteOrgan
 // administrator. The membership read is the caller's own pair, which is the only
 // one lookupMembership answers.
 func requireOrgOwner(ctx context.Context, actorID, orgID string) error {
+	if err := refuseInRoleView(ctx); err != nil {
+		return err
+	}
 	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
 		return nil
 	}

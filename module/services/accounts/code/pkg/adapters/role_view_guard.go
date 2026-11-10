@@ -81,6 +81,13 @@ func refuseInRoleView(ctx context.Context) error {
 // SwitchOrganization is deliberately not here: it re-signs the access token for another
 // organisation and the new token would not be a view's, so a view refuses it by name.
 //
+// The organization-role helpers (requireOrgAdmin, requireOrgOwner, requireOrgPermission,
+// requireBillingAdmin) call refuseInRoleView first: an organization role is the
+// person's own, not the viewed roles', so a session that views holds none of it.
+// They are the one place accounts decides by organization role, so the declared
+// reads that a view admits (the invitation list, the installation list, the SSO
+// configuration, usage) cannot show an administrator what a viewer cannot.
+//
 // roleViewWrites are the accounts writes a session may make while viewing as
 // some of its roles, because they act on the person's own account or content and
 // widen no authority. Everything else that is not a read is refused in a view.
